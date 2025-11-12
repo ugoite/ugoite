@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -23,8 +23,8 @@ jobs:
 
       - name: Run ty check (backend)
         working-directory: ./backend
-        run: uv run ty check .
+        run: uvx ty check .
 
       - name: Run ty check (cli)
         working-directory: ./ieapp-cli
-        run: uv run ty check .
+        run: uvx ty check .
