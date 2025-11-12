@@ -18,4 +18,4 @@ COPY ./src src
 RUN uv sync --locked
 
 # Set the entrypoint for the backend application
-CMD ["uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

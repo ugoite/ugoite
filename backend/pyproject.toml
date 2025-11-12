@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.121.1",
     "ieapp-cli",
+    "uvicorn>=0.38.0",
 ]
 
 [build-system]
