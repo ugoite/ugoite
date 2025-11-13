@@ -12,6 +12,7 @@
     },
     "git.branchProtection": [
         "main"
-    ]
+    ],
+    "python.defaultInterpreterPath": "backend/.venv/bin/python"
 }
 
