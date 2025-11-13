@@ -5,7 +5,7 @@ app = FastAPI()
 
 # Allow CORS for frontend development
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware, #type: ignore
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
