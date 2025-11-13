@@ -117,6 +117,11 @@ name = "ieapp-cli"
 version = "0.1.0"
 source = { directory = "../ieapp-cli" }
 
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ty", specifier = ">=0.0.1a26" }]
+
 [[package]]
 name = "pydantic"
 version = "2.12.4"
