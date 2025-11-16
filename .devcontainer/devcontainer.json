@@ -1,0 +1,21 @@
+{
+	"name": "mise",
+	"image": "mcr.microsoft.com/devcontainers/base:alpine3.22",
+	"features": {
+		"ghcr.io/devcontainers-extra/features/mise:1": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"biomejs.biome",
+				"charliermarsh.ruff",
+				"astral-sh.ty",
+				"hverlin.mise-vscode"
+			]
+		}
+	},
+	"mounts": [],
+	"containerEnv": {},
+	"remoteEnv": {}
+}
