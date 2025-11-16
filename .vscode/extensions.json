@@ -3,6 +3,7 @@
 		"biomejs.biome",
 		"charliermarsh.ruff",
 		"astral-sh.ty",
-		"hverlin.mise-vscode"
+		"hverlin.mise-vscode",
+		"ms-python.python"
 	]
 }
