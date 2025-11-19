@@ -1,6 +1,6 @@
 {
 	"name": "mise",
-	"image": "mcr.microsoft.com/devcontainers/base:alpine3.22",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/mise:1": {}
 	},
@@ -17,5 +17,6 @@
 	},
 	"mounts": [],
 	"containerEnv": {},
-	"remoteEnv": {}
+	"remoteEnv": {},
+	"postCreateCommand": "mise install && echo 'eval \"$(mise activate bash)\"' >> ~/.bashrc"
 }
