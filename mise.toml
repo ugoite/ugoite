@@ -10,5 +10,8 @@ bun = "1.3.2"
 python = "3.14"
 uv = "0.9.8"
 
+[tasks.install]
+depends = ["//backend:install", "//frontend:install"]
+
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev"]
