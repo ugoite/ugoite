@@ -15,8 +15,14 @@
 			]
 		}
 	},
-	"mounts": [],
+	"workspaceFolder": "/workspace",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+	"mounts": [
+		"source=frontend_node_modules,target=/workspace/frontend/node_modules,type=volume",
+		"source=backend_venv,target=/workspace/backend/.venv,type=volume"
+	],
+	"remoteUser": "vscode",
 	"containerEnv": {},
-	"remoteEnv": {},
-	"postCreateCommand": "mise install && echo 'eval \"$(mise activate bash)\"' >> ~/.bashrc"
+	"remoteEnv": { "MISE_EXPERIMENTAL": "1" },
+	"postCreateCommand": "sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run install"
 }
