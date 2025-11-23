@@ -1,6 +1,9 @@
 FROM oven/bun:1 AS base
 WORKDIR /usr/src/app
 
+ARG VITE_BACKEND_URL
+ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
+
 # Install dependencies into temp directory
 FROM base AS install
 RUN mkdir -p /temp/dev

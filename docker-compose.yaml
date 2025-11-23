@@ -23,4 +23,14 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app/frontend
+    environment:
+      # DEV_BACKEND_URL is a mandatory path (e.g., "/api") indicating the frontend
+      # uses the same origin for API requests. DEV_BACKEND_PROXY_TARGET must be the
+      # hostname:port of the backend service reachable from the dev server (running
+      # inside the container). Vite's dev server will proxy requests from
+      # DEV_BACKEND_URL to DEV_BACKEND_PROXY_TARGET.
+      - DEV_BACKEND_URL=/api
+      - DEV_BACKEND_PROXY_TARGET=http://backend:8000
+      # Also set VITE_BACKEND_URL so frontend code reads /api at runtime in dev mode.
+      - VITE_BACKEND_URL=/api
     command: bun run dev
