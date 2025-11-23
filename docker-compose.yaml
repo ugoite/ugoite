@@ -1,3 +1,8 @@
+## NOTE: This docker-compose configuration is used to run the application in containers.
+## If you plan to use this file for production/staging, review the commands, ports,
+## volumes, and environment variables: replace `--reload` and `bun dev` with
+## production-ready servers and built frontend assets as needed.
+
 services:
   backend:
     build:
