@@ -23,7 +23,6 @@ ieapp-cli/
 docs/
 tests/
 README.md
-README.ja.md
 ```
 
 ---
