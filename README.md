@@ -41,8 +41,9 @@ Start development (frontend + backend):
 mise run dev
 ```
 
-Note: During development we expect `DEV_BACKEND_URL` to be set to a path such as `/api` and `DEV_BACKEND_PROXY_TARGET` to point to the backend host reachable from the dev server. The `VITE_BACKEND_URL` (exposed to client code) is set to `/api` in development to make frontend calls same-origin; in production builds set it to a public API URL if needed.
-When running with `docker-compose`, we set: `DEV_BACKEND_URL=/api` and `DEV_BACKEND_PROXY_TARGET=http://backend:8000`. Do not set `VITE_BACKEND_URL` to container-only hostnames (such as `http://backend:8000`) when creating client builds because those won't resolve for users outside the containerized network. For Codespaces use the `/api` proxy approach.
+Note: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
+When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
+
 Notes:
 
 Backend (dev) example:

@@ -1,22 +1,7 @@
 export const getBackendBase = (): string => {
-	// The frontend requires `VITE_BACKEND_URL` to be set during development and should
-	// be used to indicate how frontend code calls the backend:
-	// - For local/dev usage set `VITE_BACKEND_URL=/api` and the dev server proxy will
-	//   forward requests to the backend.
-	// - For production builds set a public absolute URL, e.g. `https://api.example.com`.
-	const env = import.meta.env as ImportMetaEnv;
-	const url = env.VITE_BACKEND_URL;
-	if (!url || url.length === 0) {
-		// In dev mode we enforce that `VITE_BACKEND_URL` is set; throw so misconfiguration
-		// is caught early. In production, fall back to '/api' for safety if needed.
-		if (import.meta.env.DEV) {
-			throw new Error(
-				"VITE_BACKEND_URL must be set during development. Example: VITE_BACKEND_URL=/api",
-			);
-		}
-		return "/api";
-	}
-	return url.replace(/\/$/, ""); // remove trailing slash
+	// Always use /api which is proxied to the backend in development
+	// and should be served by the backend or a reverse proxy in production.
+	return "/api";
 };
 
 export const joinUrl = (base: string, path = "/"): string => {
