@@ -1,0 +1,28 @@
+## NOTE: This docker-compose configuration is used to run the application in containers.
+## If you plan to use this file for production/staging, review the commands, ports,
+## volumes, and environment variables: replace `--reload` and `bun dev` with
+## production-ready servers and built frontend assets as needed.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      additional_contexts:
+        module: ./ieapp-cli
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/backend
+      - ./ieapp-cli:/ieapp-cli
+    working_dir: /backend
+    command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app/frontend
+    environment:
+      - BACKEND_URL=http://backend:8000
+    command: bun run dev

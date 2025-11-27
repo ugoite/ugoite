@@ -23,6 +23,20 @@ npm run dev
 npm run dev -- --open
 ```
 
+## Backend API configuration
+
+To keep dev/prod and Codespaces simple and consistent, we use `BACKEND_URL` to configure the backend connection during development.
+
+- `BACKEND_URL` (dev-only): Set this to the backend service reachable from the dev server (e.g., `http://localhost:8000` or `http://backend:8000` in a container environment).
+- The frontend dev server will automatically proxy requests starting with `/api` to the configured `BACKEND_URL`.
+- Client code always uses `/api` to access the backend.
+
+Examples:
+- Docker Compose (dev): set `BACKEND_URL=http://backend:8000` so the dev server proxies `/api` to the backend container.
+- Local dev (mise run dev): `npm run dev` will use `BACKEND_URL=http://localhost:8000` (see `frontend/mise.toml`).
+
+
+
 ## Building
 
 Solid apps are built with _presets_, which optimise your project for deployment to different environments.

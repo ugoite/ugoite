@@ -1,6 +1,22 @@
-def main():
-    print("Hello from backend!")
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import os
+
+app = FastAPI()
+
+# Allow CORS for frontend development
+app.add_middleware(
+    CORSMiddleware,  # type: ignore
+    # ALLOW_ORIGIN (comma-separated) or fallback to localhost:3000 in development
+    allow_origins=(os.environ.get("ALLOW_ORIGIN") or "http://localhost:3000").split(
+        ","
+    ),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+async def root():
+    return {"message": "Hello World!"}

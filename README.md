@@ -2,55 +2,120 @@
 
 ## Overview
 
-This repository is a sample project for building a small, home‑use knowledge‑management app. 
+This repository provides a sample knowledge-management web app (IE-app) as a demo project.
+
+Stack overview:
+- Frontend: Bun + SolidStart
+- Backend: Python (FastAPI) + fsspec
+
+---
 
 ## Directory structure
 
 ```
-├─ frontend/   # Frontend (Bun + SolidStart)
-│   ├─ src/
-│   ├─ public/
-│   └─ bun.lockb
-├─ backend/    # Backend (Python + FastAPI, storage: ffspec)
-│   ├─ src/
-│   ├─ requirements.txt
-└─ docker-compose.yml
-└─ README.md
+frontend/
+  ├─ src/
+  ├─ public/
+backend/
+  ├─ src/
+  ├─ requirements.txt
+ieapp-cli/
+docs/
+tests/
+README.md
 ```
 
-- **frontend**: UI layer. Built with **Bun** and **SolidStart**. It talks to the backend via HTTP.
-- **backend**: API layer. Implemented in **Python** using **FastAPI**. Data persistence is handled by **ffspec** (file‑system‑based storage). #TODO: decide on the exact storage schema and API endpoints.
-- **docker-compose.yml**: Orchestrates the two services. #TODO: fill in the service definitions.
+---
 
-## Development
+## Setup & Development (mise)
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/your-username/ieapp.git
-   cd ieapp
-   ```
+Install dependencies:
 
-2. **Docker Compose** (optional)
-   ```bash
-   docker compose up
-   ```
-   This will start both services according to the configuration in `docker-compose.yml`.
+```bash
+mise run install
+```
 
-## Deployment
+Start development (frontend + backend):
 
-- Frontend can be deployed to any static hosting (Vercel, Netlify, etc.).
-- Backend can be deployed to a container‑based platform (Heroku, Render, Railway, etc.) or run directly with `uvicorn`.
+```bash
+mise run dev
+```
 
-## Usage
+Note: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
+When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
 
-- Add pages/components under `frontend/src/pages` and update routing.
-- Add API endpoints under `backend/src/routes` and expose them via FastAPI.
+Notes:
 
-## Known Issues
+Backend (dev) example:
 
-- Authentication is not implemented yet. #TODO: add JWT/OAuth support.
-- Production‑ready database is not set up. #TODO: consider PostgreSQL or other DB.
+```bash
+cd backend
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend (dev) example:
+
+```bash
+cd frontend
+bun install
+bun dev
+```
+
+---
+
+## Dev Container (VS Code) vs Docker Compose (deployment)
+
+Important: this repo provides two distinct container-based workflows:
+
+- Dev Container (development):
+  - `.devcontainer/devcontainer.json` creates a reproducible environment for developers and runs `mise install` as part of the setup.
+  - Use Dev Container for onboarding, local development, and consistent dev tooling.
+
+- Docker Compose (deployment / CI):
+  - `docker-compose.yaml` is for containerized deployments or CI systems. If you use this for production, verify commands and configuration (e.g., remove `--reload` or `bun dev` and opt for production servers and built frontend assets).
+
+These two environments are separate and intended for different uses—use the Dev Container for development and Docker Compose for deployments.
+
+---
+
+## Docker Compose
+
+Start services with:
+
+```bash
+docker compose up --build
+```
+
+Run detached:
+
+```bash
+docker compose up -d --build
+```
+
+---
+
+## Tests
+
+Run backend tests:
+
+```bash
+cd backend
+pytest
+```
+
+Frontend tests: check `frontend/package.json`.
+
+---
+
+## Known issues & TODO
+
+- Authentication (JWT/OAuth) is not implemented yet.
+- Production-grade persistence (e.g. Postgres) is not configured.
+
+---
 
 ## Contributing
 
-Feel free to open issues or pull requests. Please create an issue first to discuss major changes.
+Contributions welcome. Open an issue to discuss larger changes before submitting a PR.
+
+---
