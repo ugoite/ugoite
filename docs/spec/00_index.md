@@ -30,8 +30,8 @@ This specification is broken down into the following documents:
 
 *   **Storage**: `fsspec` (Local, S3, etc.) with a JSON-based schema. No RDB.
 *   **AI Interface**: MCP Server with **Python Code Execution** capability.
-*   **Frontend**: SolidJS + Bun (Local-first, Optimistic UI).
-*   **Backend**: Python FastAPI (Stateless, acting as the MCP host).
+*   **Frontend**: SolidJS (Solid Start) + Bun (Local-first, Optimistic UI).
+*   **Backend**: Python 3.13+ FastAPI (Stateless, acting as the MCP host).
 *   **Search**: Local FAISS vector index + Inverted Index.
 *   **Testing**: Pytest (Backend) + Playwright (E2E).
 

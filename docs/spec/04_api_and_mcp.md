@@ -78,4 +78,4 @@ Since `run_python_script` is powerful, it must be sandboxed.
 *   **Network Access**: Blocked (except to `fsspec` storage if remote).
 *   **Filesystem Access**: Restricted to `/tmp` and the `fsspec` mount.
 *   **Timeouts**: Scripts must finish within 30 seconds.
-*   **Libraries**: Pre-installed set (`ieapp-cli`, `pandas`, `numpy`, `scikit-learn`).
+*   **Libraries**: Pre-installed set (`ieapp`, `pandas`, `numpy`, `scikit-learn`).

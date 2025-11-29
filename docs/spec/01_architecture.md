@@ -29,7 +29,7 @@ graph TD
 Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag`, `calculate_stats`), IEapp exposes a **Python Execution Sandbox** to the AI via MCP.
 
 *   **Concept**: The AI is a developer. It interacts with the knowledge base by writing and running Python scripts.
-*   **Mechanism**: The backend provides a pre-configured Python environment with `ieapp-cli` installed. The AI sends code; the backend runs it in a secure sandbox and returns the stdout/stderr/result.
+*   **Mechanism**: The backend provides a pre-configured Python environment with the `ieapp` library installed. The AI sends code; the backend runs it in a secure sandbox and returns the stdout/stderr/result.
 *   **Benefit**: Infinite flexibility. The AI can perform complex migrations, data analysis, or bulk refactoring without the app developer explicitly building those features.
 
 ## 3. The "Structure-from-Text" Engine
@@ -55,8 +55,8 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 ### Backend
 *   **Runtime**: Python 3.13+
 *   **Framework**: FastAPI (ASGI)
-*   **Protocol**: HTTP/2 (REST) + SSE (Server-Sent Events for MCP)
-*   **CLI Library**: Typer (for `ieapp-cli`)
+*   **Protocol**: HTTP (REST) + SSE (Server-Sent Events for MCP)
+*   **Library**: `ieapp` (Core storage and query logic)
 
 ### Data & Storage
 *   **Abstraction**: `fsspec` (Filesystem Spec)
@@ -65,7 +65,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 
 ## 4. Component Responsibilities
 
-### `ieapp-cli` (Library)
+### `ieapp` (Library)
 *   Core logic for `fsspec` interactions.
 *   Implements the "Universal File System" logic.
 *   Handles versioning, hashing, and conflict resolution.

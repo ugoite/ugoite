@@ -6,9 +6,8 @@ This document expands on the storage promises introduced in `01_architecture.md`
 *   **Filesystem = Database**: Every workspace is just a directory tree reachable through `fsspec` (local disk, S3, NAS). No hidden RDB or proprietary format.
 *   **Schema-on-Read, Schema-on-Assist**: Raw Markdown stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
 *   **Hybrid Metadata Surface**:
-    *   YAML Frontmatter captures high-level properties (owner, status) needed before parsing body content.
+    *   YAML Frontmatter captures high-level properties (type, status) needed before parsing body content.
     *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
-    *   Note: Inline `Key:: Value` pairs are not supported; structured fields should be expressed using YAML frontmatter or `##` section headers.
 *   **Append-Only Integrity**: Writes never mutate history—new revisions are appended, signed, and indexed. Time-travel (Story 5) is therefore guaranteed.
 
 ## 2. Directory & File Inventory
@@ -138,7 +137,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "default_storage": "file:///Users/alex/ieapp",
   "workspaces": ["ws-main", "ws-research"],
   "hmac_key_id": "key-2025-11-01",
-  "hmac_public": "base64",
+  "hmac_key": "base64-encoded-secret",
   "last_rotation": "2025-11-15T00:00:00Z"
 }
 ```
@@ -245,15 +244,15 @@ The revision log is never truncated. Optional garbage collection can pack old re
 
 Security expectations from `05_security_and_quality.md` surface directly in the data model:
 
-* **HMAC Signatures**: Every `meta.json`, `content.json`, and history file carries `integrity.signature`. The key material lives in `global.json` and can rotate (store `previous_keys` for validation during rotation).
+* **HMAC Signatures**: Every `meta.json`, `content.json`, and history file carries `integrity.signature`. The secret key lives in `global.json` (`hmac_key`) and can rotate (previous keys stored for validation during rotation).
 * **Checksums**: SHA-256 of the canonical JSON string ensures bit-rot detection even when signatures are skipped (read-only contexts).
-* **Audit Trail**: Optional `history/{revision_id}.json` can store `mcp_tool` metadata stating whether the change came from frontend, CLI, or `run_python_script`. This supports the “AI wrote this” transparency requirement.
+* **Audit Trail**: Optional `history/{revision_id}.json` can store `author` metadata stating whether the change came from frontend, API, or `run_python_script`. This supports the "AI wrote this" transparency requirement.
 * **Isolation**: Attachments reference hashed filenames to prevent path traversal when notes are moved between workspaces.
 
 ## 9. Consumption Patterns (API & MCP)
 
-* **REST** (`04_api_and_mcp.md`): `/workspaces/{ws}/notes` reads exclusively from `index/index.json` for sub-500 ms workspace load times. `/workspaces/{ws}/query` translates filters into index scans (structured) plus inverted-index lookups (keywords).
+* **REST** (`04_api_and_mcp.md`): `/workspaces/{ws}/notes` reads exclusively from `index/index.json` for sub-500 ms workspace load times. `/workspaces/{ws}/query` translates filters into index scans (structured) plus inverted-index lookups (keywords).
 * **MCP Resources**: `ieapp://{ws}/notes/list` streams the same NoteRecord objects. Agents rely on these lightweight summaries before deciding to fetch `content.json` or run custom Python.
-* **`run_python_script` Tool**: The `ieapp` Python SDK loads `index/index.json` lazily and exposes helper methods (e.g., `ieapp.query`) so AI agents rarely need to traverse the filesystem manually—aligning with the "Code Execution" paradigm.
+* **`run_python_script` Tool**: The `ieapp` library loads `index/index.json` lazily and exposes helper methods (e.g., `ieapp.query()`) so AI agents rarely need to traverse the filesystem manually—aligning with the "Code Execution" paradigm.
 
 These consumers, combined with the storage rules above, ensure that data written anywhere (UI, CLI, MCP) is immediately queryable, conflict-safe, and portable.

@@ -20,7 +20,7 @@ We follow a strict Test-Driven Development approach.
 
 ### Backend (Python/FastAPI)
 *   **Framework**: `pytest`
-*   **Unit Tests**: Test `ieapp-cli` logic, data models, and `fsspec` adapters.
+*   **Unit Tests**: Test `ieapp` library logic, data models, and `fsspec` adapters.
 *   **Integration Tests**: Test FastAPI endpoints using `TestClient`.
 *   **Contract Tests**: Use `schemathesis` to validate API against OpenAPI spec.
 *   **Sandbox Tests**: Verify that `run_python_script` cannot escape the sandbox or access unauthorized files.
@@ -31,10 +31,10 @@ We follow a strict Test-Driven Development approach.
 *   **E2E Tests**: Use Playwright to drive the full application, verifying the "Optimistic UI" behavior and Canvas interactions.
 
 ### CI/CD Pipeline
-1.  **Lint**: `ruff` (Python), `biome` (JS).
-2.  **Unit**: `pytest`, `bun test`.
-3.  **Integration**: `playwright` (headless).
-4.  **Build**: Produce Docker image and Python wheel.
+1.  **Lint**: `ruff` (Python), `biome` (TypeScript/JavaScript).
+2.  **Unit**: `pytest` (Backend), `bun test` (Frontend).
+3.  **E2E**: `playwright` (headless browser tests).
+4.  **Build**: Docker images for deployment, Python wheel for `ieapp` library.
 
 ## 3. Error Handling & Resilience
 
