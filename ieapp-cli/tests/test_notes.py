@@ -86,7 +86,9 @@ def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -
         assert "author" in data  # noqa: S101
 
 
-def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider) -> None:
+def test_update_note_revision_mismatch(
+    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+) -> None:
     """Verifies that updating a note requires the correct parent_revision_id."""
     note_id = "note-2"
     content = "# Note 2"
@@ -118,7 +120,7 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider) 
         data = json.load(f)
         new_rev = data["revision_id"]
 
-    assert new_rev != current_rev
+    assert new_rev != current_rev  # noqa: S101
 
     # Try to update with OLD revision (should fail)
     with pytest.raises(RevisionMismatchError):
