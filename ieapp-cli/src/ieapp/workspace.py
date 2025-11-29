@@ -32,7 +32,6 @@ class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
 
 
-
 def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
     """Writes JSON data with restrictive permissions from the start.
 
