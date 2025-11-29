@@ -1,1 +1,2 @@
-# init file for backend package
+"""Backend package."""
+
