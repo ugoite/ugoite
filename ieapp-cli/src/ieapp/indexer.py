@@ -275,7 +275,6 @@ def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
     """Return ``True`` when ``note`` satisfies ``filters``."""
     for key, expected in filters.items():
         note_value = note.get(key)
-        except Exception as exc:
         if note_value is None:
             note_value = note.get("properties", {}).get(key)
 
