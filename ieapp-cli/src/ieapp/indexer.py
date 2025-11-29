@@ -1,8 +1,11 @@
-import re
-import yaml
-import fsspec
 import json
-from typing import Any
+import re
+import time
+from collections import Counter
+from typing import Any, Callable
+
+import fsspec
+import yaml
 
 
 def extract_properties(content: str) -> dict[str, Any]:
@@ -91,28 +94,31 @@ def validate_properties(properties: dict, schema: dict) -> list[dict]:
     return warnings
 
 
-def aggregate_stats(index_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Aggregates statistics from the index data.
-    """
-    class_stats: dict[str, dict[str, int]] = {}
-    stats: dict[str, Any] = {"total_notes": len(index_data), "class_stats": class_stats}
+def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Build aggregate statistics for class and tag usage."""
 
+    class_stats: dict[str, dict[str, int]] = {}
+    tag_counts: Counter[str] = Counter()
     uncategorized_count = 0
 
-    for _, properties in index_data.items():
-        note_class = properties.get("class")
-
+    for record in notes.values():
+        note_class = record.get("class") or record.get("properties", {}).get("class")
         if note_class:
-            if note_class not in class_stats:
-                class_stats[note_class] = {"count": 0}
-            class_stats[note_class]["count"] += 1
+            class_entry = class_stats.setdefault(note_class, {"count": 0})
+            class_entry["count"] += 1
         else:
             uncategorized_count += 1
 
+        for tag in record.get("tags") or []:
+            tag_counts[tag] += 1
+
     class_stats["_uncategorized"] = {"count": uncategorized_count}
 
-    return stats
+    return {
+        "note_count": len(notes),
+        "class_stats": class_stats,
+        "tag_counts": dict(tag_counts),
+    }
 
 
 class Indexer:
@@ -128,6 +134,8 @@ class Indexer:
         stats_path = f"{self.workspace_path}/index/stats.json"
         schemas_path = f"{self.workspace_path}/schemas"
 
+        self.fs.makedirs(f"{self.workspace_path}/index", exist_ok=True)
+
         # Load Schemas
         schemas = {}
         if self.fs.exists(schemas_path):
@@ -141,7 +149,7 @@ class Indexer:
                     except json.JSONDecodeError:
                         pass
 
-        index_data = {}
+        index_notes: dict[str, dict[str, Any]] = {}
 
         # List notes
         if self.fs.exists(notes_path):
@@ -150,6 +158,7 @@ class Indexer:
             for note_dir in note_dirs:
                 note_id = note_dir.split("/")[-1]
                 content_path = f"{note_dir}/content.json"
+                meta_path = f"{note_dir}/meta.json"
 
                 if self.fs.exists(content_path):
                     with self.fs.open(content_path, "r") as f:
@@ -158,60 +167,142 @@ class Indexer:
                             markdown = content_json.get("markdown", "")
                             properties = extract_properties(markdown)
 
-                            # Validate
-                            note_class = properties.get("class")
+                            meta_json: dict[str, Any] = {}
+                            if self.fs.exists(meta_path):
+                                with self.fs.open(meta_path, "r") as meta_file:
+                                    try:
+                                        meta_json = json.load(meta_file)
+                                    except json.JSONDecodeError:
+                                        meta_json = {}
+
+                            note_class = (
+                                meta_json.get("class")
+                                or properties.get("class")
+                                or content_json.get("frontmatter", {}).get("class")
+                            )
+
+                            warnings: list[dict[str, Any]] = []
                             if note_class and note_class in schemas:
                                 warnings = validate_properties(
-                                    properties, schemas[note_class]
+                                    properties,
+                                    schemas[note_class],
                                 )
-                                if warnings:
-                                    properties["validation_warnings"] = warnings
 
-                            index_data[note_id] = properties
+                            record = {
+                                "id": note_id,
+                                "title": meta_json.get("title", note_id),
+                                "class": note_class,
+                                "updated_at": meta_json.get("updated_at"),
+                                "workspace_id": meta_json.get(
+                                    "workspace_id", self.workspace_path.split("/")[-1]
+                                ),
+                                "properties": properties,
+                                "tags": meta_json.get("tags", []),
+                                "links": meta_json.get("links", []),
+                                "canvas_position": meta_json.get(
+                                    "canvas_position", {}
+                                ),
+                                "checksum": (meta_json.get("integrity") or {}).get(
+                                    "checksum"
+                                ),
+                                "validation_warnings": warnings,
+                            }
+
+                            index_notes[note_id] = record
                         except (json.JSONDecodeError, KeyError):
                             pass
 
         # Aggregate Stats
-        stats_data = aggregate_stats(index_data)
+        stats_data = aggregate_stats(index_notes)
+
+        index_payload = {
+            "notes": index_notes,
+            "class_stats": stats_data["class_stats"],
+        }
 
         # Write Index
         with self.fs.open(index_path, "w") as f:
-            json.dump(index_data, f, indent=2)
+            json.dump(index_payload, f, indent=2)
 
         # Write Stats
+        stats_payload = {
+            **stats_data,
+            "last_indexed": time.time(),
+        }
         with self.fs.open(stats_path, "w") as f:
-            json.dump(stats_data, f, indent=2)
+            json.dump(stats_payload, f, indent=2)
+
+    def watch(
+        self,
+        wait_for_changes: Callable[[Callable[[], None]], None],
+        *,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        """Run the indexer whenever ``wait_for_changes`` signals updates.
+
+        The provided callable is responsible for blocking or polling the
+        filesystem. It receives a callback that should be invoked each time a
+        change is detected. Tests can inject a synchronous stub to deterministically
+        trigger the indexer without relying on timers or OS watchers.
+        """
+
+        def _run_once() -> None:
+            self.run_once()
+
+        try:
+            wait_for_changes(_run_once)
+        except Exception as exc:  # noqa: BLE001
+            if on_error:
+                on_error(exc)
+            else:
+                raise
+
+
+def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
+    for key, expected in filters.items():
+        note_value = note.get(key)
+        if note_value is None:
+            note_value = note.get("properties", {}).get(key)
+
+        if isinstance(expected, dict):
+            msg = (
+                "Structured operators (e.g., $gt) are not implemented for the "
+                "local query helper yet."
+            )
+            raise NotImplementedError(msg)
+
+        if note_value != expected:
+            return False
+
+    return True
 
 
 def query_index(
     workspace_path: str,
-    filter_dict: dict[str, Any],
+    filter_dict: dict[str, Any] | None,
     fs: fsspec.AbstractFileSystem | None = None,
-) -> dict[str, Any]:
-    """
-    Queries the index for notes matching the filter.
-    Returns a dictionary of note_id -> properties.
-    """
+) -> list[dict[str, Any]]:
+    """Return note records from the cached index that satisfy ``filter_dict``."""
+
     fs = fs or fsspec.filesystem("file")
     index_path = f"{workspace_path.rstrip('/')}/index/index.json"
 
     if not fs.exists(index_path):
-        return {}
+        return []
 
     with fs.open(index_path, "r") as f:
         try:
             index_data = json.load(f)
         except json.JSONDecodeError:
-            return {}
+            return []
 
-    results = {}
-    for note_id, properties in index_data.items():
-        match = True
-        for key, value in filter_dict.items():
-            if properties.get(key) != value:
-                match = False
-                break
-        if match:
-            results[note_id] = properties
+    notes = index_data.get("notes", {})
+    if not filter_dict:
+        return list(notes.values())
+
+    results = []
+    for note in notes.values():
+        if _matches_filters(note, filter_dict):
+            results.append(note)
 
     return results
