@@ -12,7 +12,9 @@ graph TD
     subgraph "IEapp Backend"
         API -->|Executes| Sandbox[Python Code Sandbox]
         API -->|Reads/Writes| VFS[Virtual File System (fsspec)]
+        API -->|Queries| Indexer[Live Indexer (Watch & Parse)]
         Sandbox -->|Access| VFS
+        Indexer -->|Updates| Cache[Structured Cache (JSON)]
     end
     
     subgraph "Storage Layer"
@@ -30,7 +32,19 @@ Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag
 *   **Mechanism**: The backend provides a pre-configured Python environment with `ieapp-cli` installed. The AI sends code; the backend runs it in a secure sandbox and returns the stdout/stderr/result.
 *   **Benefit**: Infinite flexibility. The AI can perform complex migrations, data analysis, or bulk refactoring without the app developer explicitly building those features.
 
-## 3. Technology Stack
+## 3. The "Structure-from-Text" Engine
+
+To bridge the gap between Markdown freedom and Database structure, IEapp implements a **Live Indexer**.
+
+*   **Input**: Standard Markdown files with H2 Headers (e.g., `## Date`).
+*   **Process**:
+    1.  **Watch**: Detects file changes via `fsspec` or polling.
+    2.  **Parse**: Scans for H2 headers (`## Key`) and extracts the following content as the value.
+    3.  **Validate**: Checks against the defined "Class Schema" (if any) for type safety.
+    4.  **Index**: Updates a lightweight `index.json` with the structured data.
+*   **Output**: A queryable dataset where "Meeting Notes" become objects with `Date`, `Attendees`, and `Agenda` properties.
+
+## 4. Technology Stack
 
 ### Frontend
 *   **Runtime**: Bun

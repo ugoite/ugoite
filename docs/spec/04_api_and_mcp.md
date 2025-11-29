@@ -16,6 +16,11 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_rev_id`).
 *   `DELETE /workspaces/{ws_id}/notes/{note_id}` - Tombstone note.
 
+### Query (Structured Data)
+*   `POST /workspaces/{ws_id}/query` - Execute a structured query against the index.
+    *   **Body**: `{ "filter": { "type": "meeting", "date": { "$gt": "2025-01-01" } } }`
+    *   **Returns**: List of note objects with extracted properties.
+
 ### Search
 *   `GET /workspaces/{ws_id}/search?q=query` - Hybrid search (Vector + Keyword).
 
@@ -27,6 +32,7 @@ The MCP interface is used by AI agents (Claude, Copilot, etc.).
 Expose notes as readable resources for the AI.
 *   `ieapp://{workspace_id}/notes/list` - JSON list of notes.
 *   `ieapp://{workspace_id}/notes/{note_id}` - Markdown content of a note.
+*   `ieapp://{workspace_id}/schema` - Available properties and values (e.g., all used tags, types).
 
 ### Tools
 The core power of IEapp v2 is the **Code Execution Tool**.
@@ -38,6 +44,7 @@ The core power of IEapp v2 is the **Code Execution Tool**.
     *   `workspace_id` (string): The target workspace.
 *   **Capabilities**:
     *   Read all notes: `ieapp.list_notes()`, `ieapp.get_note(id)`.
+    *   **Query Properties**: `ieapp.query(type="meeting", status="open")`.
     *   Analyze data: Use `pandas`, `numpy` (if available) to process note content.
     *   Batch update: `ieapp.update_note(id, content)`.
     *   **Example Usage**:
@@ -45,10 +52,13 @@ The core power of IEapp v2 is the **Code Execution Tool**.
         # AI generates this code to find all notes tagged 'todo' and compile a report
         import ieapp
         
-        notes = ieapp.list_notes(tags=["todo"])
-        report = "# TODO Report\n"
-        for note in notes:
-            report += f"- [ ] {note.title}\n"
+        # Query structured data extracted from Markdown
+        tasks = ieapp.query(type="task", status="pending")
+        
+        report = "# Pending Tasks Report\n"
+        for task in tasks:
+            # Access inline fields like 'due' directly
+            report += f"- [ ] {task.title} (Due: {task.properties.get('due')})\n"
             
         print(report)
         ```
@@ -60,6 +70,7 @@ The core power of IEapp v2 is the **Code Execution Tool**.
 ### Prompts
 Pre-defined prompts to help the AI understand the context.
 *   `summarize_workspace`: "Read the index of the workspace and provide a high-level summary of the topics covered."
+*   `analyze_meetings`: "Find all notes with type='meeting' and summarize the key decisions."
 
 ## 3. Code Sandbox Security
 Since `run_python_script` is powerful, it must be sandboxed.

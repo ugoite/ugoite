@@ -3,12 +3,14 @@
 **Version**: 2.0.0 (Draft)
 **Date**: 2025-11-29
 **Status**: Active Development
-**Concept**: "Your Data, Anywhere, AI-Programmable."
+**Concept**: "Your Data, Anywhere, AI-Programmable. Structured Freedom."
 
 ## Vision
 **"Low Cost, Easy, Freedom"**
 
 IEapp is a **Local-First, AI-Native Knowledge Space** designed for the post-SaaS era. It rejects the "walled garden" database model in favor of **absolute data ownership**, **portability**, and **direct programmability**.
+
+It solves the "Markdown vs. Database" paradox by treating **Markdown Sections as Fields**. You write standard Markdown headers (`## Date`, `## Attendees`), and the system automatically extracts them as structured data. You can define "Classes" (Schemas) to enforce structure and templates, giving you the power of a database with the simplicity of a text file.
 
 Unlike traditional apps that offer limited "tools" to AI, IEapp provides a **Code Execution Environment** via the Model Context Protocol (MCP). This allows your AI assistant to not just read your notes, but to *program* your knowledge base—analyzing data, generating charts, or refactoring content using Python.
 
