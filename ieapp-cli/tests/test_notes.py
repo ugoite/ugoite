@@ -1,16 +1,9 @@
-import hashlib
-import hmac
-import json
-
-import pytest
-from ieapp.notes import RevisionMismatchError, create_note, update_note
-from ieapp.workspace import create_workspace
-
 """Tests for notes management."""
 
 import hashlib
 import hmac
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -35,7 +28,7 @@ HISTORY_LENGTH = 2
 
 
 @pytest.fixture
-def workspace_root(tmp_path) -> Any:
+def workspace_root(tmp_path: Path) -> Path:
     """Create a temporary workspace for testing."""
     root = tmp_path / "ieapp_root"
     ws_id = "test-workspace"
@@ -44,7 +37,7 @@ def workspace_root(tmp_path) -> Any:
 
 
 @pytest.fixture
-def fake_integrity_provider() -> Any:
+def fake_integrity_provider() -> Any:  # noqa: ANN401
     """Create a fake integrity provider for testing."""
 
     class _FakeIntegrityProvider:
@@ -63,7 +56,7 @@ def fake_integrity_provider() -> Any:
     return _FakeIntegrityProvider()
 
 
-def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
+def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -> None:  # noqa: ANN401
     """Verifies that creating a note generates the required file structure."""
     note_id = "note-1"
     content = "# My Note\n\nHello World"
@@ -76,21 +69,21 @@ def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
     )
 
     note_path = workspace_root / "notes" / note_id
-    assert note_path.exists()
-    assert (note_path / "meta.json").exists()
-    assert (note_path / "content.json").exists()
-    assert (note_path / "history" / "index.json").exists()
+    assert note_path.exists()  # noqa: S101
+    assert (note_path / "meta.json").exists()  # noqa: S101
+    assert (note_path / "content.json").exists()  # noqa: S101
+    assert (note_path / "history" / "index.json").exists()  # noqa: S101
 
     # Check content.json
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["markdown"] == content
-        assert data["frontmatter"] == {}
-        assert data["sections"] == {}
-        assert "revision_id" in data
-        assert "parent_revision_id" in data
-        assert data["parent_revision_id"] is None
-        assert "author" in data
+        assert data["markdown"] == content  # noqa: S101
+        assert data["frontmatter"] == {}  # noqa: S101
+        assert data["sections"] == {}  # noqa: S101
+        assert "revision_id" in data  # noqa: S101
+        assert "parent_revision_id" in data  # noqa: S101
+        assert data["parent_revision_id"] is None  # noqa: S101
+        assert "author" in data  # noqa: S101
 
 
 def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider) -> None:
