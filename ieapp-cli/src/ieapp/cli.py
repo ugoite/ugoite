@@ -4,6 +4,8 @@ from ieapp.workspace import create_workspace, WorkspaceExistsError
 from ieapp.notes import create_note, NoteExistsError
 from ieapp.logging_utils import setup_logging
 
+DEFAULT_NOTE_CONTENT = "# New Note\n"
+
 
 def main() -> None:
     setup_logging()
@@ -29,7 +31,7 @@ def main() -> None:
     )
     nc_parser.add_argument("note_id", help="ID of the note to create")
     nc_parser.add_argument(
-        "--content", help="Content of the note", default="# New Note\n"
+        "--content", help="Content of the note", default=DEFAULT_NOTE_CONTENT
     )
 
     args = parser.parse_args()
