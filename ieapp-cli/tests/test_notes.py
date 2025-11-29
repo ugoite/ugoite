@@ -46,6 +46,7 @@ def workspace_root(tmp_path) -> Any:
 @pytest.fixture
 def fake_integrity_provider() -> Any:
     """Create a fake integrity provider for testing."""
+
     class _FakeIntegrityProvider:
         secret = b"unit-test-secret"
 
@@ -54,7 +55,9 @@ def fake_integrity_provider() -> Any:
 
         def signature(self, content: str) -> str:
             return hmac.new(
-                self.secret, content.encode("utf-8"), hashlib.sha256,
+                self.secret,
+                content.encode("utf-8"),
+                hashlib.sha256,
             ).hexdigest()
 
     return _FakeIntegrityProvider()
