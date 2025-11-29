@@ -40,7 +40,9 @@ def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
         mode: Permission bits applied at creation.
     """
 
-    path.mkdir(mode=mode, parents=False)
+    # Create parent directories if they don't exist and avoid silently
+    # succeeding if the path already exists and is a file (exist_ok=False).
+    path.mkdir(mode=mode, parents=True, exist_ok=False)
 
 
 def _write_json_secure(path: Path, payload: Dict[str, Any], mode: int = 0o600) -> None:
