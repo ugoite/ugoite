@@ -1,13 +1,11 @@
 import argparse
 import sys
-import logging
 from ieapp.workspace import create_workspace, WorkspaceExistsError
 from ieapp.logging_utils import setup_logging
 
 
 def main() -> None:
     setup_logging()
-    logger = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser(description="IEapp CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
