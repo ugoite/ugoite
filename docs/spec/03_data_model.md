@@ -4,7 +4,7 @@ This document expands on the storage promises introduced in `01_architecture.md`
 
 ## 1. Storage Principles
 *   **Filesystem = Database**: Every workspace is just a directory tree reachable through `fsspec` (local disk, S3, NAS). No hidden RDB or proprietary format.
-*   **Schema-on-Read, Schema-on-Assist**: Markdown content stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
+*   **Class-on-Read, Class-on-Assist**: Markdown content stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
 *   **Hybrid Metadata Surface**:
     *   YAML Frontmatter captures high-level properties (class, status) needed before parsing body content.
     *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
@@ -58,7 +58,7 @@ workspaces/
 
 | Layer | Where it lives | Example | Notes |
 |-------|----------------|---------|-------|
-| Frontmatter | YAML block at top of Markdown | `class: meeting` | Parsed before Markdown; overrides default schema values. |
+| Frontmatter | YAML block at top of Markdown | `class: meeting` | Parsed before Markdown; overrides default Class defaults. |
 | Section Properties | H2 headers (`## Due Date`) | `## Agenda` + body text | Treated as top-level fields keyed by header text. Order is preserved for deterministic diffs. |
 | Auto Properties | Computed | `word_count`, `embedding_id` | Populated by the indexer to support sorting and search. |
 
@@ -67,7 +67,7 @@ Conflicts between layers resolve with the following precedence: Section > Frontm
 ### 3.1 Parsing Lifecycle
 1. **Detect changes** via API writes (or internal filesystem watcher on `content.json`).
 2. **Load Markdown** (from `content.json`) and extract frontmatter + body.
-3. **Apply Schema** (if note has `class`):
+3. **Apply Class definition** (if note has `class`):
     * Validate required headers exist.
     * Cast value types (`date`, `number`, `list`).
     * Generate warnings surfaced in the frontend.
@@ -93,9 +93,9 @@ Classes formalize recurring note shapes (Meetings, Tasks, Research). They are pl
 }
 ```
 
-* **Validation Surface**: The frontend enforces schemas optimistically; the backend re-validates on write and exposes violations via `PUT /notes/{id}` responses (see `04_api_and_mcp.md`).
+* **Validation Surface**: The frontend enforces Class definitions optimistically; the backend re-validates on write and exposes violations via `PUT /notes/{id}` responses (see `04_api_and_mcp.md`).
 * **Template Insertion**: Creating a note with `class=Meeting` injects the template into the editor, satisfying Story 2.
-* **Schema Stats**: The indexer aggregates `schema_stats` (counts per class, field cardinalities) into `index/stats.json` for fast filter UIs.
+* **Class Stats**: The indexer aggregates `class_stats` (counts per class, field cardinalities) into `index/stats.json` for fast filter UIs.
 
 ## 5. Structured Cache & Search Indices
 
@@ -103,7 +103,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 | File | Shape | Used by |
 |------|-------|---------|
-| `index/index.json` | `{ "notes": {id: NoteRecord}, "schema_stats": {...} }` | REST `/workspaces/{id}/notes`, MCP resources, `ieapp.query()` |
+| `index/index.json` | `{ "notes": {id: NoteRecord}, "class_stats": {...} }` | REST `/workspaces/{id}/notes`, MCP resources, `ieapp.query()` |
 | `index/inverted_index.json` | `{ term: [note_id, ...] }` | Keyword search fallback, offline search |
 | `index/faiss.index` | Binary FAISS index referencing embeddings stored inside `NoteRecord.embedding_id` | Semantic search + MCP `search_notes` |
 | `index/stats.json` | Aggregates (per-tag counts, last indexed timestamp) | Health checks, UI badges |
@@ -132,7 +132,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 ### 6.1 `global.json`
 ```json
 {
-  "version": 2,
+  "version": 1,
   "default_storage": "file:///Users/alex/ieapp",
   "workspaces": ["ws-main", "ws-research"],
   "hmac_key_id": "key-2025-11-01",
@@ -178,8 +178,6 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 ### 6.4 Note Content `notes/{id}/content.json`
 ```json
-### 6.4 Note Content `notes/{id}/content.json`
-```json
 {
   "revision_id": "rev-0042",
   "author": "user-or-agent-id",
@@ -195,7 +193,9 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
     "word_count": 523
   }
 }
-``` 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`
+```
+
+### 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`
 ```json
 {
   "revision_id": "rev-0042",
@@ -224,8 +224,6 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 ## 7. Versioning & Conflict Resolution
 
-## 7. Versioning & Conflict Resolution
-
 The append-only strategy described in Story 5 and reiterated here underpins REST `PUT /notes/{id}` and MCP writes.
 
 1. **Client reads** `content.json` obtaining `revision_id` (as the current head).
@@ -235,7 +233,7 @@ The append-only strategy described in Story 5 and reiterated here underpins REST
     * Generate new `revision_id` and persist `history/{revision_id}.json`.
     * Update `content.json` and `meta.json` atomically (same filesystem transaction when supported by backend FS; otherwise best-effort with retry and checksum validation).
     * Emit change event to indexer so caches refresh.
-5. **On mismatch**: Return HTTP 409 with the server’s latest revision payload so the client (or MCP agent) can perform a 3-way merge.riggered by the user.
+5. **On mismatch**: Return HTTP 409 with the server’s latest revision payload so the client (or MCP agent) can perform a 3-way merge triggered by the user.
 
 ## 8. Integrity, Security & Auditing
 

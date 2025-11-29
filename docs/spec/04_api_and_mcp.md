@@ -60,7 +60,7 @@ Expose notes as readable resources for the AI.
 *   `ieapp://{workspace_id}/links` - Canvas graph edges (source, target, metadata).
 
 ### Tools
-The core power of IEapp v2 is the **Code Execution Tool**.
+The core power of IEapp is the **Code Execution Tool**.
 
 #### `run_python_script`
 *   **Description**: Executes a Python script in the context of the workspace. The script has access to the `ieapp` library to manipulate notes.

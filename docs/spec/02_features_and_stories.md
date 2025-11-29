@@ -21,10 +21,10 @@ _Related APIs_: MCP tools `run_python_script`, `search_notes`; REST `POST /works
 **So that** I can manage structured data with the ease of writing text, without complex forms.
 
 *   **Acceptance Criteria**:
-    *   System parses H2 headers as property keys.
-    *   Users can define "Classes" (Schemas) to enforce required headers and data types.
-    *   Frontend provides validation warnings if a note violates its Class schema.
-    *   Creating a note from a Class pre-fills the template.
+*   System parses H2 headers as property keys.
+*   Users can define Classes to enforce required headers and data types.
+*   Frontend provides validation warnings if a note violates its Class definition.
+*   Creating a note from a Class pre-fills the template.
 
 _Related APIs_: REST `POST /workspaces/{ws_id}/notes`, `PUT /workspaces/{ws_id}/notes/{note_id}`, `GET /workspaces/{ws_id}/schemas`; MCP resource `ieapp://{workspace_id}/schema`.
 

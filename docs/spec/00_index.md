@@ -1,6 +1,6 @@
 # IEapp Specification: Master Index
 
-**Version**: 2.0.0 (Draft)
+**Version**: 1.0.0 (Draft)
 **Date**: 2025-11-29
 **Status**: Active Development
 **Concept**: "Your Data, Anywhere, AI-Programmable. Structured Freedom."

@@ -24,7 +24,7 @@ graph TD
     end
 ```
 
-## 2. The "Code Execution" Paradigm (New for v2)
+## 2. The "Code Execution" Paradigm
 
 Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag`, `calculate_stats`), IEapp exposes a **Python Execution Sandbox** to the AI via MCP.
 
@@ -40,7 +40,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   **Process**:
     1.  **Watch**: Detects changes to note objects (`content.json`).
     2.  **Parse**: Scans for H2 headers (`## Key`) and extracts the following content as the value.
-    3.  **Validate**: Checks against the defined "Class Schema" (if any) for type safety.
+    3.  **Validate**: Checks against the defined Class (if any) for type safety.
     4.  **Index**: Updates a lightweight `index.json` with the structured data.
 *   **Output**: A queryable dataset where "Meeting Notes" become objects with `Date`, `Attendees`, and `Agenda` properties.
 
