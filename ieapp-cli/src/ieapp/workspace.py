@@ -118,6 +118,7 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     # Create meta.json
     meta = {
         "id": workspace_id,
+        "name": workspace_id,
         "created_at": time.time(),
         "storage": {"type": "local", "root": root_path_str},
     }
@@ -133,6 +134,20 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     with fs.open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)
     os.chmod(settings_path, 0o600)
+
+    # Create index/index.json
+    index_data = {"notes": {}, "class_stats": {}}
+    index_json_path = os.path.join(ws_path, "index", "index.json")
+    with fs.open(index_json_path, "w") as f:
+        json.dump(index_data, f, indent=2)
+    os.chmod(index_json_path, 0o600)
+
+    # Create index/stats.json
+    stats_data = {"last_indexed": time.time(), "note_count": 0, "tag_counts": {}}
+    stats_json_path = os.path.join(ws_path, "index", "stats.json")
+    with fs.open(stats_json_path, "w") as f:
+        json.dump(stats_data, f, indent=2)
+    os.chmod(stats_json_path, 0o600)
 
     # Update global.json (optional for now, but good practice)
     if fs.exists(global_json_path):

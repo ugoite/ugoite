@@ -1,7 +1,6 @@
 import json
 import hashlib
 import hmac
-import os
 
 import pytest
 
@@ -57,6 +56,8 @@ def test_create_note_basic(workspace_root, fake_integrity_provider):
         assert data["frontmatter"] == {}
         assert data["sections"] == {}
         assert "revision_id" in data
+        assert "parent_revision_id" in data
+        assert data["parent_revision_id"] is None
         assert "author" in data
 
 
@@ -162,6 +163,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         rev_data = json.load(f)
         assert rev_data["revision_id"] == rev_v2
         assert rev_data["parent_revision_id"] == rev_v1
+        assert "diff" in rev_data
         assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(
             content_v2
         )

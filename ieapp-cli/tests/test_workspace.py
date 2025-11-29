@@ -23,6 +23,8 @@ def test_create_workspace_scaffolding(tmp_path):
     assert (ws_path / "index").exists()
     assert (ws_path / "attachments").exists()
     assert (ws_path / "notes").exists()
+    assert (ws_path / "index" / "index.json").exists()
+    assert (ws_path / "index" / "stats.json").exists()
 
     # Verify global.json exists at root
     assert (root / "global.json").exists()
@@ -53,6 +55,7 @@ def test_create_workspace_scaffolding(tmp_path):
     with open(ws_path / "meta.json") as f:
         meta = json.load(f)
         assert meta["id"] == ws_id
+        assert meta["name"] == ws_id
         assert "created_at" in meta
         assert "storage" in meta
 

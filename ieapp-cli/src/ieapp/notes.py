@@ -108,6 +108,7 @@ def create_note(
     # Create content.json
     content_data = {
         "revision_id": rev_id,
+        "parent_revision_id": None,
         "author": author,
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
@@ -126,6 +127,7 @@ def create_note(
         "parent_revision_id": None,
         "timestamp": timestamp,
         "author": author,
+        "diff": "",
         "integrity": {"checksum": checksum, "signature": signature},
         "message": "Initial creation",
     }
@@ -245,6 +247,7 @@ def update_note(
     # Update content.json
     content_data = {
         "revision_id": rev_id,
+        "parent_revision_id": parent_revision_id,
         "author": author,
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
