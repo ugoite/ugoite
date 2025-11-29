@@ -26,8 +26,6 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `GET /workspaces/{ws_id}/notes/{note_id}/history` - List revisions for Time Travel UI.
 *   `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}` - Fetch a specific revision payload.
 *   `POST /workspaces/{ws_id}/notes/{note_id}/restore` - Restore a revision (creates a new head revision referencing the chosen ancestor).
-*   `POST /workspaces/{ws_id}/notes/{note_id}/attachments` - Upload attachments; response returns attachment ids/paths.
-*   `DELETE /workspaces/{ws_id}/notes/{note_id}/attachments/{attachment_id}` - Remove an attachment reference and schedule blob GC.
 *   `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` - Execute an embedded notebook/code block and persist the output artifact.
 
 ### Canvas Links
@@ -36,12 +34,14 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `DELETE /workspaces/{ws_id}/links/{link_id}` - Remove a link (UI automatically prunes both directions).
 
 ### Attachments
-*   `POST /workspaces/{ws_id}/attachments` - Upload a binary blob (voice memo, image) and receive an attachment id for later association.
+*   `POST /workspaces/{ws_id}/attachments` - Upload a binary blob (voice memo, image).
+    *   **Returns**: `{ "id": "hash...", "path": "attachments/hash..." }`.
+    *   **Note**: To link this attachment to a note, add the returned object to the `attachments` list in a subsequent `PUT /notes/{note_id}` call.
 *   `DELETE /workspaces/{ws_id}/attachments/{attachment_id}` - Permanently delete an unattached blob (garbage collection safety check enforced).
 
 ### Query (Structured Data)
 *   `POST /workspaces/{ws_id}/query` - Execute a structured query against the index.
-    *   **Body**: `{ "filter": { "type": "meeting", "date": { "$gt": "2025-01-01" } } }`
+    *   **Body**: `{ "filter": { "class": "meeting", "date": { "$gt": "2025-01-01" } } }`
     *   **Returns**: List of note objects with extracted properties.
 
 ### Search
@@ -69,7 +69,7 @@ The core power of IEapp v2 is the **Code Execution Tool**.
     *   `workspace_id` (string): The target workspace.
 *   **Capabilities**:
     *   Read all notes: `ieapp.list_notes()`, `ieapp.get_note(id)`.
-    *   **Query Properties**: `ieapp.query(type="meeting", status="open")`.
+    *   **Query Properties**: `ieapp.query(class="meeting", status="open")`.
     *   Analyze data: Use `pandas`, `numpy` (if available) to process note content.
     *   Batch update: `ieapp.update_note(id, content)`.
     *   **Example Usage**:
@@ -79,7 +79,7 @@ The core power of IEapp v2 is the **Code Execution Tool**.
         
         # Query structured data extracted from Markdown
         # Note: Properties are extracted from H2 headers (e.g., ## Date)
-        tasks = ieapp.query(type="task", status="pending")
+        tasks = ieapp.query(class="task", status="pending")
         
         report = "# Pending Tasks Report\n"
         for task in tasks:
@@ -132,7 +132,7 @@ The core power of IEapp v2 is the **Code Execution Tool**.
 ### Prompts
 Pre-defined prompts to help the AI understand the context.
 *   `summarize_workspace`: "Read the index of the workspace and provide a high-level summary of the topics covered."
-*   `analyze_meetings`: "Find all notes with type='meeting' and summarize the key decisions."
+*   `analyze_meetings`: "Find all notes with class='meeting' and summarize the key decisions."
 
 ## 3. Code Sandbox Security
 Since `run_python_script` is powerful, it must be sandboxed.

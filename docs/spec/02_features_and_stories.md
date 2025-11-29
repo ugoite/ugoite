@@ -10,7 +10,7 @@
 *   **Acceptance Criteria**:
     *   MCP Tool `run_python_script` is available.
     *   AI can import `ieapp` library in the sandbox.
-    *   AI can query structured properties (e.g., `ieapp.query(type="meeting")`).
+    *   AI can query structured properties (e.g., `ieapp.query(class="meeting")`).
     *   Output (text/charts) is returned to the AI context.
 
 _Related APIs_: MCP tools `run_python_script`, `search_notes`; REST `POST /workspaces/{ws_id}/query`.
@@ -74,7 +74,7 @@ _Related APIs_: REST `GET /workspaces/{ws_id}/notes/{note_id}/history`, `GET /wo
     *   User invokes their connected MCP Agent (e.g., "Format this voice note").
     *   Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers.
 
-_Related APIs_: REST `POST /workspaces/{ws_id}/attachments`, `POST /workspaces/{ws_id}/notes/{note_id}/attachments`, and MCP resources `ieapp://{workspace_id}/notes/{note_id}` for transcript access followed by `run_python_script` updates.
+_Related APIs_: REST `POST /workspaces/{ws_id}/attachments` (upload), `PUT /workspaces/{ws_id}/notes/{note_id}` (link attachment), and MCP resources `ieapp://{workspace_id}/notes/{note_id}` for transcript access followed by `run_python_script` updates.
 
 ### Story 7: "Computational Notebooks" (Live Code)
 **As a** data-driven user,

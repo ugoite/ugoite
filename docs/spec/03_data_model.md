@@ -6,7 +6,7 @@ This document expands on the storage promises introduced in `01_architecture.md`
 *   **Filesystem = Database**: Every workspace is just a directory tree reachable through `fsspec` (local disk, S3, NAS). No hidden RDB or proprietary format.
 *   **Schema-on-Read, Schema-on-Assist**: Markdown content stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
 *   **Hybrid Metadata Surface**:
-    *   YAML Frontmatter captures high-level properties (type, status) needed before parsing body content.
+    *   YAML Frontmatter captures high-level properties (class, status) needed before parsing body content.
     *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
 *   **Append-Only Integrity**: Writes never mutate history—new revisions are appended, signed, and indexed. Time-travel (Story 5) is therefore guaranteed.
 
@@ -58,7 +58,7 @@ workspaces/
 
 | Layer | Where it lives | Example | Notes |
 |-------|----------------|---------|-------|
-| Frontmatter | YAML block at top of Markdown | `type: meeting` | Parsed before Markdown; overrides default schema values. |
+| Frontmatter | YAML block at top of Markdown | `class: meeting` | Parsed before Markdown; overrides default schema values. |
 | Section Properties | H2 headers (`## Due Date`) | `## Agenda` + body text | Treated as top-level fields keyed by header text. Order is preserved for deterministic diffs. |
 | Auto Properties | Computed | `word_count`, `embedding_id` | Populated by the indexer to support sorting and search. |
 
@@ -169,8 +169,6 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "canvas_position": { "x": 120, "y": 480 },
   "created_at": "2025-11-20T09:00:00Z",
   "updated_at": "2025-11-29T10:00:00Z",
-  "latest_revision_id": "rev-0042",
-  "parent_revision_id": "rev-0041",
   "integrity": {
     "checksum": "sha256-...",
     "signature": "hmac-..."
@@ -180,24 +178,24 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 ### 6.4 Note Content `notes/{id}/content.json`
 ```json
+### 6.4 Note Content `notes/{id}/content.json`
+```json
 {
   "revision_id": "rev-0042",
   "author": "user-or-agent-id",
   "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n...",
   "frontmatter": {
-    "type": "meeting",
+    "class": "meeting",
     "status": "open"
   },
   "attachments": [
-    { "name": "audio.m4a", "path": "attachments/audio/audio.m4a" }
+    { "name": "audio.m4a", "path": "attachments/a1b2c3d4e5f6..." }
   ],
   "computed": {
     "word_count": 523
   }
 }
-```
-
-### 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`
+``` 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`
 ```json
 {
   "revision_id": "rev-0042",
@@ -226,18 +224,18 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 ## 7. Versioning & Conflict Resolution
 
+## 7. Versioning & Conflict Resolution
+
 The append-only strategy described in Story 5 and reiterated here underpins REST `PUT /notes/{id}` and MCP writes.
 
-1. **Client reads** `content.json` obtaining `latest_revision_id`.
-2. **Client writes** new content, providing `parent_revision_id`.
-3. **Backend verifies** `parent_revision_id == meta.latest_revision_id`.
+1. **Client reads** `content.json` obtaining `revision_id` (as the current head).
+2. **Client writes** new content, providing `parent_revision_id` (which matches the read `revision_id`).
+3. **Backend verifies** `parent_revision_id == content.revision_id`.
 4. **On success**:
     * Generate new `revision_id` and persist `history/{revision_id}.json`.
     * Update `content.json` and `meta.json` atomically (same filesystem transaction when supported by backend FS; otherwise best-effort with retry and checksum validation).
     * Emit change event to indexer so caches refresh.
-5. **On mismatch**: Return HTTP 409 with the server’s latest revision payload so the client (or MCP agent) can perform a 3-way merge.
-
-The revision log is never truncated. Optional garbage collection can pack old revisions into tar archives, but only when explicitly triggered by the user.
+5. **On mismatch**: Return HTTP 409 with the server’s latest revision payload so the client (or MCP agent) can perform a 3-way merge.riggered by the user.
 
 ## 8. Integrity, Security & Auditing
 
