@@ -168,7 +168,7 @@ def create_note(
 
     meta = {
         "id": note_id,
-        "workspace_id": os.path.basename(ws_path_str),  # Infer workspace_id
+        "workspace_id": Path(ws_path_str).name,  # Infer workspace_id
         "title": title,
         "class": parsed["frontmatter"].get("class"),
         "tags": parsed["frontmatter"].get("tags", []),
