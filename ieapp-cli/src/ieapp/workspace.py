@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import fsspec
+from fsspec.spec import AbstractFileSystem
 
 try:  # pragma: no cover - platform specific
     import fcntl
@@ -80,7 +81,7 @@ def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> Non
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def _ensure_global_json(fs: fsspec.AbstractFileSystem, root_path_str: str) -> str:
+def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
     """Ensures ``global.json`` exists and returns its path.
 
     Args:
