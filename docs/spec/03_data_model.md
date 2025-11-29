@@ -207,8 +207,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "parent_revision_id": "rev-0041",
   "timestamp": "2025-11-29T10:00:00Z",
   "author": "frontend" ,
-  "diff": "...optional patch...",
-  "content_snapshot_path": "../content.json",
+  "diff": "...unified diff string against parent...",
   "integrity": {
     "checksum": "sha256-...",
     "signature": "hmac-..."

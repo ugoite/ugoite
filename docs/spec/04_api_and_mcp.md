@@ -8,7 +8,8 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `GET /workspaces` - List workspaces.
 *   `POST /workspaces` - Create new workspace.
 *   `GET /workspaces/{id}` - Get metadata.
-*   `PATCH /workspaces/{id}` - Update workspace metadata (name, default class, storage connector URI/credentials).
+*   `PATCH /workspaces/{id}` - Update workspace metadata and settings.
+    *   **Payload**: `{ "name": "...", "storage_config": {...}, "settings": {...} }`.
 *   `POST /workspaces/{id}/test-connection` - Validate the configured `fsspec` connector before committing changes.
 
 ### Schemas
@@ -21,7 +22,9 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `GET /workspaces/{ws_id}/notes` - List notes (uses `index.json`).
 *   `POST /workspaces/{ws_id}/notes` - Create note.
 *   `GET /workspaces/{ws_id}/notes/{note_id}` - Get note content.
-*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_revision_id`; persists markdown, structured properties, and `canvas_position`).
+*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_revision_id`).
+    *   **Payload**: `{ "markdown": "...", "frontmatter": {...}, "canvas_position": {...} }`.
+    *   **Note**: Structured properties are NOT updated directly. To change a property (e.g., "Date"), the client must update the corresponding Markdown header (e.g., `## Date`) in the `markdown` field.
 *   `DELETE /workspaces/{ws_id}/notes/{note_id}` - Tombstone note.
 *   `GET /workspaces/{ws_id}/notes/{note_id}/history` - List revisions for Time Travel UI.
 *   `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}` - Fetch a specific revision payload.
@@ -121,7 +124,8 @@ The core power of IEapp is the **Code Execution Tool**.
     *   `workspace_id`
     *   `note_id`
     *   `parent_revision_id`
-    *   `markdown` / `frontmatter` / `properties` delta (at least one field)
+    *   `markdown` (string): The new markdown content. Properties are extracted from headers.
+    *   `frontmatter` (object, optional): Updates to YAML frontmatter.
     *   Optional `canvas_position`, `links`
 
 #### `notes.delete`
