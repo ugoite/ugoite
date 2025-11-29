@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from ieapp.integrity import IntegrityProvider
 from ieapp.workspace import create_workspace
 
@@ -19,8 +20,8 @@ def test_integrity_provider_for_workspace_success(tmp_path: Path) -> None:
     ws_path = root / "workspaces" / ws_id
 
     provider = IntegrityProvider.for_workspace(ws_path)
-    assert isinstance(provider, IntegrityProvider)  # noqa: S101
-    assert len(provider.secret) == HMAC_KEY_LENGTH  # noqa: S101
+    assert isinstance(provider, IntegrityProvider)
+    assert len(provider.secret) == HMAC_KEY_LENGTH
 
 
 def test_integrity_provider_missing_meta(tmp_path: Path) -> None:
