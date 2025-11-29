@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from ieapp-cli!")
+from .workspace import create_workspace, WorkspaceExistsError
+
+__all__ = ["create_workspace", "WorkspaceExistsError"]

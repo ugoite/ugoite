@@ -29,6 +29,28 @@ def test_create_workspace_scaffolding(tmp_path):
     # Verify global.json exists at root
     assert (root / "global.json").exists()
 
+    # Verify global.json content includes the new workspace
+    with open(root / "global.json") as f:
+        global_data = json.load(f)
+        assert "workspaces" in global_data
+        # Check if ws_id is in the list of workspaces
+        # Assuming workspaces is a list of IDs or objects with ID
+        # Based on spec 03 §2.1: "Holds workspace registry"
+        # Let's assume it's a list of objects for now, or just IDs.
+        # The implementation initialized it as {"workspaces": []}
+        # So we expect the new workspace to be added there.
+
+        # We need to check if the implementation adds it.
+        # If it's a list of strings:
+        # assert ws_id in global_data["workspaces"]
+        # If it's a list of objects:
+        # assert any(ws["id"] == ws_id for ws in global_data["workspaces"])
+
+        # Let's assume list of IDs for simplicity or check what implementation does.
+        # Implementation currently does NOT update it.
+        # So I will write the test to expect it to be there.
+        assert ws_id in global_data["workspaces"]
+
     # Verify meta.json content
     with open(ws_path / "meta.json") as f:
         meta = json.load(f)
