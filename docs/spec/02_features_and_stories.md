@@ -16,7 +16,7 @@
 ### Story 2: "Structured Freedom" (Data Model)
 **As a** user,
 **I want** to use standard Markdown headers to define data fields (e.g., `## Date`),
-**So that** my notes are readable by any tool, but still queryable as structured data.
+**So that** I can manage structured data with the ease of writing text, without complex forms.
 
 *   **Acceptance Criteria**:
     *   System parses H2 headers as property keys.

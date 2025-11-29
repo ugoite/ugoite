@@ -36,9 +36,9 @@ Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag
 
 To bridge the gap between Markdown freedom and Database structure, IEapp implements a **Live Indexer**.
 
-*   **Input**: Standard Markdown files with H2 Headers (e.g., `## Date`).
+*   **Input**: Markdown content stored within the system (via API/MCP).
 *   **Process**:
-    1.  **Watch**: Detects file changes via `fsspec` or polling.
+    1.  **Watch**: Detects changes to note objects (`content.json`).
     2.  **Parse**: Scans for H2 headers (`## Key`) and extracts the following content as the value.
     3.  **Validate**: Checks against the defined "Class Schema" (if any) for type safety.
     4.  **Index**: Updates a lightweight `index.json` with the structured data.

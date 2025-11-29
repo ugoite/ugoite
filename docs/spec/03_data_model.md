@@ -4,7 +4,7 @@ This document expands on the storage promises introduced in `01_architecture.md`
 
 ## 1. Storage Principles
 *   **Filesystem = Database**: Every workspace is just a directory tree reachable through `fsspec` (local disk, S3, NAS). No hidden RDB or proprietary format.
-*   **Schema-on-Read, Schema-on-Assist**: Raw Markdown stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
+*   **Schema-on-Read, Schema-on-Assist**: Markdown content stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
 *   **Hybrid Metadata Surface**:
     *   YAML Frontmatter captures high-level properties (type, status) needed before parsing body content.
     *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
@@ -33,7 +33,6 @@ workspaces/
       {note_id}/
         meta.json
         content.json
-        rendered.md            # Optional cached Markdown for editor hydration
         history/
           index.json           # Chronological list of revisions
           {revision_id}.json
@@ -66,8 +65,8 @@ workspaces/
 Conflicts between layers resolve with the following precedence: Section > Frontmatter > Auto default. The Live Indexer produces a single `properties` dict per note reflecting the merged view and stores it inside `index/index.json`.
 
 ### 3.1 Parsing Lifecycle
-1. **Detect changes** via filesystem watcher or polling loop (architecture section 3).
-2. **Load Markdown** (`content.json.markdown`) and extract frontmatter + body.
+1. **Detect changes** via API writes (or internal filesystem watcher on `content.json`).
+2. **Load Markdown** (from `content.json`) and extract frontmatter + body.
 3. **Apply Schema** (if note has `class`):
     * Validate required headers exist.
     * Cast value types (`date`, `number`, `list`).
