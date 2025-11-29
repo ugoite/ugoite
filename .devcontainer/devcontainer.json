@@ -14,7 +14,8 @@
 				"hverlin.mise-vscode",
 				"tombi-toml.tombi",
 				"MermaidChart.vscode-mermaid-chart",
-				"GitHub.vscode-pull-request-github"
+				"GitHub.vscode-pull-request-github",
+				"github.vscode-github-actions"
 			]
 		}
 	},
