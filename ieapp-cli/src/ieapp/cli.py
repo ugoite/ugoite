@@ -1,6 +1,8 @@
 """CLI entry point using Typer."""
 
-from typing import Annotated
+from collections.abc import Callable
+from functools import wraps
+from typing import Annotated, Any
 
 import typer
 
@@ -19,27 +21,38 @@ app.add_typer(index_app, name="index")
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 
 
+def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
+    """Handle common CLI errors."""
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> R:  # noqa: ANN401
+        try:
+            return func(*args, **kwargs)
+        except (WorkspaceExistsError, NoteExistsError) as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1) from e
+        except Exception as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1) from e
+
+    return wrapper
+
+
 @app.command("create-workspace")
+@handle_cli_errors
 def cmd_create_workspace(
     root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
     workspace_id: Annotated[str, typer.Argument(help="ID of the workspace to create")],
 ) -> None:
     """Create a new workspace."""
     setup_logging()
-    try:
-        create_workspace(root_path, workspace_id)
-        typer.echo(
-            f"Workspace '{workspace_id}' created successfully at '{root_path}'",
-        )
-    except WorkspaceExistsError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
+    create_workspace(root_path, workspace_id)
+    typer.echo(
+        f"Workspace '{workspace_id}' created successfully at '{root_path}'",
+    )
 
 
 @note_app.command("create")
+@handle_cli_errors
 def cmd_note_create(
     workspace_path: Annotated[
         str,
@@ -54,18 +67,12 @@ def cmd_note_create(
 ) -> None:
     """Create a new note in a workspace."""
     setup_logging()
-    try:
-        create_note(workspace_path, note_id, content, author=author)
-        typer.echo(f"Note '{note_id}' created successfully.")
-    except NoteExistsError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
+    create_note(workspace_path, note_id, content, author=author)
+    typer.echo(f"Note '{note_id}' created successfully.")
 
 
 @index_app.command("run")
+@handle_cli_errors
 def cmd_index_run(
     workspace_path: Annotated[
         str,
@@ -74,16 +81,13 @@ def cmd_index_run(
 ) -> None:
     """Run the indexer to rebuild caches."""
     setup_logging()
-    try:
-        indexer = Indexer(workspace_path)
-        indexer.run_once()
-        typer.echo(f"Indexer completed for workspace '{workspace_path}'.")
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
+    indexer = Indexer(workspace_path)
+    indexer.run_once()
+    typer.echo(f"Indexer completed for workspace '{workspace_path}'.")
 
 
 @app.command("query")
+@handle_cli_errors
 def cmd_query(
     workspace_path: Annotated[
         str,
@@ -100,23 +104,20 @@ def cmd_query(
 ) -> None:
     """Query the index for notes."""
     setup_logging()
-    try:
-        filter_dict: dict[str, str] = {}
-        if note_class:
-            filter_dict["class"] = note_class
-        if tag:
-            filter_dict["tag"] = tag
+    filter_dict: dict[str, str] = {}
+    if note_class:
+        filter_dict["class"] = note_class
+    if tag:
+        filter_dict["tag"] = tag
 
-        results = query_index(workspace_path, filter_dict or None)
+    results = query_index(workspace_path, filter_dict)
 
-        if not results:
-            typer.echo("No notes found.")
-        else:
-            for note in results:
-                typer.echo(f"- {note.get('id')}: {note.get('title')}")
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
+    if not results:
+        typer.echo("No notes found.")
+    else:
+        for note in results:
+            typer.echo(f"- {note.get('id')}: {note.get('title')}")
+
 
 
 def main() -> None:
