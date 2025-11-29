@@ -32,14 +32,15 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` - Execute an embedded notebook/code block and persist the output artifact.
 
 ### Canvas Links
-*   `GET /workspaces/{ws_id}/links` - List graph edges (bi-directional note relationships for the Canvas view).
-*   `POST /workspaces/{ws_id}/links` - Create a link between two notes (`source`, `target`, `kind`).
-*   `DELETE /workspaces/{ws_id}/links/{link_id}` - Remove a link (UI automatically prunes both directions).
+*   `GET /workspaces/{ws_id}/links` - List all graph edges across notes (aggregated from each note's `meta.json`).
+*   `POST /workspaces/{ws_id}/links` - Create a link between two notes. Updates both notes' `meta.json` files.
+    *   **Payload**: `{ "source": "note-id-1", "target": "note-id-2", "kind": "related" }`
+*   `DELETE /workspaces/{ws_id}/links/{link_id}` - Remove a link. Updates both notes' `meta.json` files.
 
 ### Attachments
 *   `POST /workspaces/{ws_id}/attachments` - Upload a binary blob (voice memo, image).
-    *   **Returns**: `{ "id": "hash...", "path": "attachments/hash..." }`.
-    *   **Note**: To link this attachment to a note, add the returned object to the `attachments` list in a subsequent `PUT /notes/{note_id}` call.
+    *   **Returns**: `{ "id": "hash...", "name": "original-filename.m4a", "path": "attachments/hash..." }`.
+    *   **Note**: To link this attachment to a note, add the returned object to the `attachments` array in a subsequent `PUT /notes/{note_id}` call.
 *   `DELETE /workspaces/{ws_id}/attachments/{attachment_id}` - Permanently delete an unattached blob (garbage collection safety check enforced).
 
 ### Query (Structured Data)
@@ -52,7 +53,7 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 
 ## 2. Model Context Protocol (MCP)
 
-The MCP interface is used by AI agents (Claude, Copilot, etc.). IEapp implements the official **Streamable HTTP** transport: every MCP request is an HTTP POST with JSON or optional SSE responses for long-running operations.
+The MCP interface is used by AI agents (Claude, Copilot, etc.). IEapp implements MCP over HTTP: MCP requests are sent as HTTP POST to the backend's MCP endpoint (`/mcp`).
 
 ### Resources
 Expose notes as readable resources for the AI.
@@ -119,14 +120,15 @@ The core power of IEapp is the **Code Execution Tool**.
     *   `tags` (optional array)
 
 #### `notes.update`
-*   **Description**: Updates an existing note. Mirrors REST `PUT` semantics, requiring optimistic concurrency via `parent_revision_id`.
+*   **Description**: Updates an existing note. Mirrors REST `PUT` semantics, requiring optimistic concurrency via `parent_revision_id`. Properties are extracted from Markdown headers (e.g., `## Date`), not updated directly.
 *   **Arguments**:
     *   `workspace_id`
     *   `note_id`
     *   `parent_revision_id`
-    *   `markdown` (string): The new markdown content. Properties are extracted from headers.
-    *   `frontmatter` (object, optional): Updates to YAML frontmatter.
-    *   Optional `canvas_position`, `links`
+    *   `markdown` (string): The new markdown content. To update properties, modify the corresponding headers.
+    *   `frontmatter` (object, optional): Updates to YAML frontmatter (e.g., `class`, `status`).
+    *   `canvas_position` (object, optional): Updates the note's position on the canvas.
+    *   `tags` (array, optional): Updates the note's tags.
 
 #### `notes.delete`
 *   **Description**: Tombstones a note (soft delete) so the UI can confirm before purging.

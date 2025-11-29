@@ -65,7 +65,7 @@ workspaces/
 Conflicts between layers resolve with the following precedence: Section > Frontmatter > Auto default. The Live Indexer produces a single `properties` dict per note reflecting the merged view and stores it inside `index/index.json`.
 
 ### 3.1 Parsing Lifecycle
-1. **Detect changes** via API writes (or internal filesystem watcher on `content.json`).
+1. **Detect changes** via API write operations.
 2. **Load Markdown** (from `content.json`) and extract frontmatter + body.
 3. **Apply Class definition** (if note has `class`):
     * Validate required headers exist.
@@ -124,6 +124,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "links": [
     { "id": "link-123", "target": "note-uuid-2", "kind": "related" }
   ],
+  "canvas_position": { "x": 120, "y": 480 },
   "embedding_id": "emb-123",
   "checksum": "sha256-..."
 }
@@ -142,6 +143,8 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "last_rotation": "2025-11-15T00:00:00Z"
 }
 ```
+
+**Note**: The `workspaces` array contains workspace IDs that correspond to directory names under `workspaces/`.
 
 ### 6.2 Workspace Metadata `workspaces/{id}/meta.json`
 ```json
@@ -191,7 +194,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
     "status": "open"
   },
   "attachments": [
-    { "name": "audio.m4a", "path": "attachments/a1b2c3d4e5f6..." }
+    { "id": "a1b2c3d4e5f6", "name": "audio.m4a", "path": "attachments/a1b2c3d4e5f6..." }
   ],
   "computed": {
     "word_count": 523

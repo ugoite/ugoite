@@ -38,7 +38,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 
 *   **Input**: Markdown content stored within the system (via API/MCP).
 *   **Process**:
-    1.  **Watch/Hook**: Detects changes via API write hooks (primary) or filesystem polling (secondary, where supported).
+    1.  **Detect**: Changes are detected via API write hooks.
     2.  **Parse**: Scans for H2 headers (`## Key`) and extracts the following content as the value.
     3.  **Validate**: Checks against the defined Class (if any) for type safety.
     4.  **Index**: Updates a lightweight `index.json` with the structured data.
@@ -53,9 +53,9 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   **State Management**: Local-first stores (using `solid-js/store` and local storage sync).
 
 ### Backend
-*   **Runtime**: Python 3.13+
+*   **Runtime**: Python 3.12+
 *   **Framework**: FastAPI (ASGI)
-*   **Protocol**: HTTP (REST) + MCP Streamable HTTP (POST responses with optional SSE streaming)
+*   **Protocol**: HTTP (REST) + MCP over HTTP
 *   **Library**: `ieapp` (Core storage and query logic)
 
 ### Data & Storage
