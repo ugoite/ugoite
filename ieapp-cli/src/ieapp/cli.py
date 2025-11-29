@@ -23,6 +23,7 @@ DEFAULT_NOTE_CONTENT = "# New Note\n"
 
 def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
     """Handle common CLI errors."""
+
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> R:  # noqa: ANN401
         try:
@@ -117,7 +118,6 @@ def cmd_query(
     else:
         for note in results:
             typer.echo(f"- {note.get('id')}: {note.get('title')}")
-
 
 
 def main() -> None:
