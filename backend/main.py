@@ -1,4 +1,7 @@
+"""Main application module."""
+
 import os
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +10,7 @@ app = FastAPI()
 
 # Allow CORS for frontend development
 app.add_middleware(
-    CORSMiddleware,  # type: ignore
+    CORSMiddleware,  # type: ignore[arg-type]
     # ALLOW_ORIGIN (comma-separated) or fallback to localhost:3000 in development
     allow_origins=(os.environ.get("ALLOW_ORIGIN") or "http://localhost:3000").split(
         ",",
@@ -19,5 +22,6 @@ app.add_middleware(
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
+    """Root endpoint."""
     return {"message": "Hello World!"}
