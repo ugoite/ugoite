@@ -267,7 +267,10 @@ def test_note_history_diff(
         assert "Line 2 Modified" in rev_data["diff"]  # noqa: S101
 
 
-def test_note_author_persistence(workspace_root, fake_integrity_provider) -> None:
+def test_note_author_persistence(
+    workspace_root: Path,
+    fake_integrity_provider: Any,  # noqa: ANN401
+) -> None:
     """Verifies that the author field is persisted correctly."""
     note_id = "note-author"
     content = "# Author Test"
@@ -284,12 +287,12 @@ def test_note_author_persistence(workspace_root, fake_integrity_provider) -> Non
     note_path = workspace_root / "notes" / note_id
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["author"] == author
+        assert data["author"] == author  # noqa: S101
         rev_id = data["revision_id"]
 
     with (note_path / "history" / f"{rev_id}.json").open() as f:
         data = json.load(f)
-        assert data["author"] == author
+        assert data["author"] == author  # noqa: S101
 
     # Update with different author
     new_author = "neo"
@@ -304,9 +307,9 @@ def test_note_author_persistence(workspace_root, fake_integrity_provider) -> Non
 
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["author"] == new_author
+        assert data["author"] == new_author  # noqa: S101
         rev_id_2 = data["revision_id"]
 
     with (note_path / "history" / f"{rev_id_2}.json").open() as f:
         data = json.load(f)
-        assert data["author"] == new_author
+        assert data["author"] == new_author  # noqa: S101
