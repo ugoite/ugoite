@@ -90,9 +90,9 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
         The string path to ``global.json``.
 
     """
-    global_json_path = os.path.join(root_path_str, "global.json")
-    if fs.exists(global_json_path):
-        return global_json_path
+    global_json_path = Path(root_path_str) / "global.json"
+    if fs.exists(str(global_json_path)):
+        return str(global_json_path)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     key_id = f"key-{uuid.uuid4().hex}"
@@ -100,7 +100,7 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
 
     payload = {
         "version": 1,
-        "default_storage": f"file://{os.path.abspath(root_path_str)}",
+        "default_storage": f"file://{Path(root_path_str).resolve()}",
         "workspaces": [],
         "hmac_key_id": key_id,
         "hmac_key": hmac_key,
@@ -114,7 +114,7 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
     except FileExistsError:
         # Another process created the file; that's fine
         pass
-    return global_json_path
+    return str(global_json_path)
 
 
 def create_workspace(root_path: str | Path, workspace_id: str) -> None:
@@ -128,7 +128,7 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         WorkspaceExistsError: If the workspace already exists.
 
     """
-    logger.info(f"Creating workspace {workspace_id} at {root_path}")
+    logger.info("Creating workspace %s at %s", workspace_id, root_path)
 
     # Use fsspec to handle filesystem operations
     # For now, we assume local filesystem if protocol is not specified
@@ -160,9 +160,9 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
 
     global_json_path = _ensure_global_json(fs, root_path_str)
 
-    ws_path = os.path.join(root_path_str, "workspaces", workspace_id)
+    ws_path = Path(root_path_str) / "workspaces" / workspace_id
 
-    if fs.exists(ws_path):
+    if fs.exists(str(ws_path)):
         raise WorkspaceExistsError(
             f"Workspace {workspace_id} already exists at {ws_path}",
         )
@@ -170,11 +170,11 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     # Create directories
     dirs = ["schemas", "index", "attachments", "notes"]
 
-    os.makedirs(ws_path, mode=0o700)
+    ws_path.mkdir(mode=0o700, parents=True)
 
     for d in dirs:
-        d_path = os.path.join(ws_path, d)
-        os.makedirs(d_path, mode=0o700)
+        d_path = ws_path / d
+        d_path.mkdir(mode=0o700)
 
     # Create meta.json
     meta = {
@@ -184,27 +184,27 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         "storage": {"type": "local", "root": root_path_str},
     }
 
-    meta_path = os.path.join(ws_path, "meta.json")
-    _write_json_secure(meta_path, meta)
+    meta_path = ws_path / "meta.json"
+    _write_json_secure(str(meta_path), meta)
 
     # Create settings.json
     settings = {"default_class": "Note"}
-    settings_path = os.path.join(ws_path, "settings.json")
-    _write_json_secure(settings_path, settings)
+    settings_path = ws_path / "settings.json"
+    _write_json_secure(str(settings_path), settings)
 
     # Create index/index.json
     index_data = copy.deepcopy(EMPTY_INDEX_SCHEMA)
-    index_json_path = os.path.join(ws_path, "index", "index.json")
-    _write_json_secure(index_json_path, index_data)
+    index_json_path = ws_path / "index" / "index.json"
+    _write_json_secure(str(index_json_path), index_data)
 
     # Create index/stats.json
     stats_data = copy.deepcopy(EMPTY_STATS_SCHEMA)
     stats_data["last_indexed"] = time.time()
-    stats_json_path = os.path.join(ws_path, "index", "stats.json")
-    _write_json_secure(stats_json_path, stats_data)
+    stats_json_path = ws_path / "index" / "stats.json"
+    _write_json_secure(str(stats_json_path), stats_data)
 
     # Update global.json (optional for now, but good practice)
     if fs.exists(global_json_path):
         _append_workspace_to_global(global_json_path, workspace_id)
 
-    logger.info(f"Workspace {workspace_id} created successfully")
+    logger.info("Workspace %s created successfully", workspace_id)
