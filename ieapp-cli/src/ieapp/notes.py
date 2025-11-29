@@ -1,12 +1,15 @@
 import json
 import os
 import time
-import hashlib
 import uuid
 import logging
 from pathlib import Path
-from typing import Union, Dict, Any
+from typing import Any, Dict, Optional, Union
+
 import fsspec
+import yaml
+
+from .integrity import IntegrityProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +23,13 @@ class RevisionMismatchError(Exception):
 
 
 def _parse_markdown(content: str) -> Dict[str, Any]:
-    """
-    Parses markdown content to extract frontmatter and sections.
+    """Parses markdown content to extract frontmatter and sections.
+
+    Args:
+        content: Raw markdown string from the editor.
+
+    Returns:
+        Dictionary containing ``frontmatter`` and ``sections`` entries.
     """
     frontmatter = {}
     sections = {}
@@ -32,19 +40,9 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
             parts = content.split("---\n", 2)
             if len(parts) >= 3:
                 fm_str = parts[1]
-                # Simple YAML parsing fallback since PyYAML might not be installed yet
-                # In a real scenario, we'd add PyYAML to dependencies
-                try:
-                    import yaml
-
-                    frontmatter = yaml.safe_load(fm_str) or {}
-                except ImportError:
-                    for line in fm_str.splitlines():
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            frontmatter[k.strip()] = v.strip()
-        except Exception as e:
-            logger.warning(f"Failed to parse frontmatter: {e}")
+                frontmatter = yaml.safe_load(fm_str) or {}
+        except yaml.YAMLError as exc:
+            logger.warning("Failed to parse frontmatter: %s", exc)
 
     # Extract H2 Sections
     lines = content.splitlines()
@@ -66,16 +64,23 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
     return {"frontmatter": frontmatter, "sections": sections}
 
 
-def _calculate_checksum(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+def create_note(
+    workspace_path: Union[str, Path],
+    note_id: str,
+    content: str,
+    integrity_provider: Optional[IntegrityProvider] = None,
+) -> None:
+    """Creates a note directory with meta, content, and history files.
 
+    Args:
+        workspace_path: Absolute path to the workspace directory.
+        note_id: Identifier for the note.
+        content: Markdown body to persist.
+        integrity_provider: Optional override for checksum/signature calculations.
 
-def _sign_revision(content: str) -> str:
-    # Mock signature for Milestone 1
-    return f"sig_{hashlib.md5(content.encode('utf-8')).hexdigest()}"
-
-
-def create_note(workspace_path: Union[str, Path], note_id: str, content: str) -> None:
+    Raises:
+        NoteExistsError: If the note directory already exists.
+    """
     ws_path_str = str(workspace_path)
     fs = fsspec.filesystem("file")
 
@@ -85,15 +90,17 @@ def create_note(workspace_path: Union[str, Path], note_id: str, content: str) ->
         raise NoteExistsError(f"Note {note_id} already exists")
 
     fs.makedirs(note_dir)
+    os.chmod(note_dir, 0o700)
 
     # Parse content
     parsed = _parse_markdown(content)
+    provider = integrity_provider or IntegrityProvider.for_workspace(workspace_path)
 
     # Create initial revision
     rev_id = str(uuid.uuid4())
     timestamp = time.time()
-    checksum = _calculate_checksum(content)
-    signature = _sign_revision(content)
+    checksum = provider.checksum(content)
+    signature = provider.signature(content)
 
     # Create content.json
     content_data = {
@@ -101,12 +108,15 @@ def create_note(workspace_path: Union[str, Path], note_id: str, content: str) ->
         "author": "user",  # Default author
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
+        "sections": parsed["sections"],
         "attachments": [],
         "computed": {},
     }
 
-    with fs.open(os.path.join(note_dir, "content.json"), "w") as f:
+    content_path = os.path.join(note_dir, "content.json")
+    with fs.open(content_path, "w") as f:
         json.dump(content_data, f, indent=2)
+    os.chmod(content_path, 0o600)
 
     revision = {
         "revision_id": rev_id,
@@ -119,17 +129,29 @@ def create_note(workspace_path: Union[str, Path], note_id: str, content: str) ->
 
     history_dir = os.path.join(note_dir, "history")
     fs.makedirs(history_dir)
+    os.chmod(history_dir, 0o700)
 
-    with fs.open(os.path.join(history_dir, f"{rev_id}.json"), "w") as f:
+    rev_path = os.path.join(history_dir, f"{rev_id}.json")
+    with fs.open(rev_path, "w") as f:
         json.dump(revision, f, indent=2)
+    os.chmod(rev_path, 0o600)
 
     # Update history index
     history_index = {
         "note_id": note_id,
-        "revisions": [{"revision_id": rev_id, "timestamp": timestamp}],
+        "revisions": [
+            {
+                "revision_id": rev_id,
+                "timestamp": timestamp,
+                "checksum": checksum,
+                "signature": signature,
+            }
+        ],
     }
-    with fs.open(os.path.join(history_dir, "index.json"), "w") as f:
+    index_path = os.path.join(history_dir, "index.json")
+    with fs.open(index_path, "w") as f:
         json.dump(history_index, f, indent=2)
+    os.chmod(index_path, 0o600)
 
     # Create meta.json
     # Extract title from first H1 or use note_id
@@ -152,8 +174,10 @@ def create_note(workspace_path: Union[str, Path], note_id: str, content: str) ->
         "integrity": {"checksum": checksum, "signature": signature},
     }
 
-    with fs.open(os.path.join(note_dir, "meta.json"), "w") as f:
+    meta_path = os.path.join(note_dir, "meta.json")
+    with fs.open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
+    os.chmod(meta_path, 0o600)
 
 
 def update_note(
@@ -161,7 +185,21 @@ def update_note(
     note_id: str,
     content: str,
     parent_revision_id: str,
+    integrity_provider: Optional[IntegrityProvider] = None,
 ) -> None:
+    """Appends a new revision to an existing note.
+
+    Args:
+        workspace_path: Absolute path to the workspace directory.
+        note_id: Identifier for the note to update.
+        content: Updated markdown body.
+        parent_revision_id: Revision expected by the caller.
+        integrity_provider: Optional override for checksum/signature calculations.
+
+    Raises:
+        FileNotFoundError: If the note directory is missing.
+        RevisionMismatchError: If ``parent_revision_id`` does not match head.
+    """
     ws_path_str = str(workspace_path)
     fs = fsspec.filesystem("file")
 
@@ -182,12 +220,13 @@ def update_note(
 
     # Parse content
     parsed = _parse_markdown(content)
+    provider = integrity_provider or IntegrityProvider.for_workspace(workspace_path)
 
     # Create new revision
     rev_id = str(uuid.uuid4())
     timestamp = time.time()
-    checksum = _calculate_checksum(content)
-    signature = _sign_revision(content)
+    checksum = provider.checksum(content)
+    signature = provider.signature(content)
 
     # Update content.json
     content_data = {
@@ -195,12 +234,14 @@ def update_note(
         "author": "user",
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
+        "sections": parsed["sections"],
         "attachments": current_content_data.get("attachments", []),
         "computed": current_content_data.get("computed", {}),
     }
 
     with fs.open(content_path, "w") as f:
         json.dump(content_data, f, indent=2)
+    os.chmod(content_path, 0o600)
 
     revision = {
         "revision_id": rev_id,
@@ -212,18 +253,28 @@ def update_note(
     }
 
     history_dir = os.path.join(note_dir, "history")
-    with fs.open(os.path.join(history_dir, f"{rev_id}.json"), "w") as f:
+    rev_path = os.path.join(history_dir, f"{rev_id}.json")
+    with fs.open(rev_path, "w") as f:
         json.dump(revision, f, indent=2)
+    os.chmod(rev_path, 0o600)
 
     # Update history index
     index_path = os.path.join(history_dir, "index.json")
     with fs.open(index_path, "r") as f:
         history_index = json.load(f)
 
-    history_index["revisions"].append({"revision_id": rev_id, "timestamp": timestamp})
+    history_index["revisions"].append(
+        {
+            "revision_id": rev_id,
+            "timestamp": timestamp,
+            "checksum": checksum,
+            "signature": signature,
+        }
+    )
 
     with fs.open(index_path, "w") as f:
         json.dump(history_index, f, indent=2)
+    os.chmod(index_path, 0o600)
 
     # Update meta.json
     meta_path = os.path.join(note_dir, "meta.json")
@@ -245,3 +296,4 @@ def update_note(
 
     with fs.open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
+    os.chmod(meta_path, 0o600)

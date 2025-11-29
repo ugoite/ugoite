@@ -1,7 +1,10 @@
+import base64
 import json
 import os
+import secrets
 import time
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
 import fsspec
@@ -13,6 +16,41 @@ class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
 
     pass
+
+
+def _ensure_global_json(fs, root_path_str: str) -> str:
+    """Ensures ``global.json`` exists and returns its path.
+
+    Args:
+        fs: File system adapter used to write files.
+        root_path_str: Absolute path to the IEapp root directory.
+
+    Returns:
+        The string path to ``global.json``.
+    """
+
+    global_json_path = os.path.join(root_path_str, "global.json")
+    if fs.exists(global_json_path):
+        return global_json_path
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    key_id = f"key-{int(time.time())}"
+    hmac_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+
+    payload = {
+        "version": 1,
+        "default_storage": f"file://{os.path.abspath(root_path_str)}",
+        "workspaces": [],
+        "hmac_key_id": key_id,
+        "hmac_key": hmac_key,
+        "last_rotation": now_iso,
+    }
+
+    with fs.open(global_json_path, "w") as handle:
+        json.dump(payload, handle, indent=2)
+
+    os.chmod(global_json_path, 0o600)
+    return global_json_path
 
 
 def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
@@ -55,13 +93,8 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     # Ensure root exists
     if not fs.exists(root_path_str):
         fs.makedirs(root_path_str)
-        # Create global.json if not exists
-        global_json_path = os.path.join(root_path_str, "global.json")
-        if not fs.exists(global_json_path):
-            with fs.open(global_json_path, "w") as f:
-                json.dump({"workspaces": [], "created_at": time.time()}, f, indent=2)
-            # Set permissions for global.json?
-            os.chmod(global_json_path, 0o600)
+
+    global_json_path = _ensure_global_json(fs, root_path_str)
 
     ws_path = os.path.join(root_path_str, "workspaces", workspace_id)
 
@@ -102,7 +135,6 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     os.chmod(settings_path, 0o600)
 
     # Update global.json (optional for now, but good practice)
-    global_json_path = os.path.join(root_path_str, "global.json")
     if fs.exists(global_json_path):
         # Read-modify-write (not atomic but fine for M0)
         with fs.open(global_json_path, "r") as f:
