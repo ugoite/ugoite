@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import fsspec
-from fsspec.spec import AbstractFileSystem
 
 try:  # pragma: no cover - platform specific
     import fcntl
@@ -68,11 +67,10 @@ def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> Non
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
+def _ensure_global_json(root_path_str: str) -> str:
     """Ensure ``global.json`` exists and returns its path.
 
     Args:
-        fs: File system adapter used to write files.
         root_path_str: Absolute path to the IEapp root directory.
 
     Returns:
@@ -149,7 +147,7 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     if not fs.exists(root_path_str):
         fs.makedirs(root_path_str)
 
-    global_json_path = _ensure_global_json(fs, root_path_str)
+    global_json_path = _ensure_global_json(root_path_str)
 
     ws_path = Path(root_path_str) / "workspaces" / workspace_id
 

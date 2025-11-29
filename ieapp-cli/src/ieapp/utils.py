@@ -19,7 +19,10 @@ def validate_id(identifier: str, name: str) -> None:
 
     """
     if not identifier or not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
-        msg = f"Invalid {name}: {identifier}. Must be alphanumeric, hyphens, or underscores."
+        msg = (
+            f"Invalid {name}: {identifier}. "
+            "Must be alphanumeric, hyphens, or underscores."
+        )
         raise ValueError(msg)
 
 
