@@ -1,5 +1,5 @@
 [project]
-name = "ieapp-cli"
+name = "ieapp"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,10 +7,12 @@ authors = [
     { name = "tohboeh5", email = "tohboeh5simsim7@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fsspec>=2025.10.0",
+]
 
 [project.scripts]
-ieapp-cli = "ieapp_backend:main"
+ieapp = "ieapp.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.9.4,<0.10.0"]
@@ -18,5 +20,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pytest>=9.0.1",
     "ty>=0.0.1a26",
 ]

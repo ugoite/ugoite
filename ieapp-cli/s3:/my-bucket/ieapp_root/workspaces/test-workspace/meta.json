@@ -1,0 +1,8 @@
+{
+  "id": "test-workspace",
+  "created_at": 1764411235.8885765,
+  "storage": {
+    "type": "local",
+    "root": "s3://my-bucket/ieapp_root"
+  }
+}
