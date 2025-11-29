@@ -1,3 +1,5 @@
+"""Tests for workspace management."""
+
 import json
 
 import pytest
@@ -44,7 +46,8 @@ def test_create_workspace_scaffolding(tmp_path) -> None:
         assert "created_at" in meta
         assert "storage" in meta
 
-    # Verify permissions (chmod 600 for files/dirs - strictly 700 for dirs, 600 for files)
+    # Verify permissions
+    # (chmod 600 for files/dirs - strictly 700 for dirs, 600 for files)
     # Spec 05 §1: "The app enforces chmod 600 on the data directory."
     # Usually dirs need +x (700) to be traversable by owner.
     # Let's check if it's private.
