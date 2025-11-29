@@ -1,7 +1,5 @@
 import pytest
 import json
-import os
-from pathlib import Path
 from ieapp.workspace import create_workspace, WorkspaceExistsError
 
 

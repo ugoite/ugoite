@@ -1,7 +1,6 @@
 import logging
 import json
 import sys
-from typing import Any, Dict
 
 
 class JSONFormatter(logging.Formatter):
