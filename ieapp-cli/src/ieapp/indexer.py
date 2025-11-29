@@ -7,11 +7,13 @@ import json
 import re
 import time
 from collections import Counter
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import fsspec
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 HEADER_PATTERN = re.compile(r"^##\s+(.+)$")
@@ -170,9 +172,14 @@ class Indexer:
 
         for schema_file in self.fs.glob(f"{schemas_path}/*.json"):
             class_name = schema_file.split("/")[-1].removesuffix(".json")
-            with self.fs.open(schema_file, "r") as handle:
-                with contextlib.suppress(json.JSONDecodeError):
-                    schemas[class_name] = json.load(handle)
+            with (
+                contextlib.suppress(json.JSONDecodeError),
+                self.fs.open(
+                    schema_file,
+                    "r",
+                ) as handle,
+            ):
+                schemas[class_name] = json.load(handle)
 
         return schemas
 
@@ -220,9 +227,14 @@ class Indexer:
 
         meta_json: dict[str, Any] = {}
         if self.fs.exists(meta_path):
-            with self.fs.open(meta_path, "r") as meta_handle:
-                with contextlib.suppress(json.JSONDecodeError):
-                    meta_json = json.load(meta_handle)
+            with (
+                contextlib.suppress(json.JSONDecodeError),
+                self.fs.open(
+                    meta_path,
+                    "r",
+                ) as meta_handle,
+            ):
+                meta_json = json.load(meta_handle)
 
         note_class = (
             meta_json.get("class")
