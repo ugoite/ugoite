@@ -95,9 +95,26 @@ The `index.json` is NOT just a list of files. It is a **Materialized View** of a
       "title": "Weekly Sync",
       "updated_at": "2025-11-29T10:00:00Z",
       "properties": {
-        "type": "meeting",
-        "status": "open",
-        "date": "2025-11-29",
+        "Date": "2025-11-29",
+        "Attendees": ["Alice", "Bob"],
+        "Agenda": "1. Review Q3 goals\n2. Plan Q4 roadmap",
+        "Action Items": "- [ ] Alice to update the slide deck"
+      }
+    }
+  },
+  "schema_stats": {
+    "type": ["meeting", "idea"],
+    "status": ["open", "closed"]
+  }
+}
+```
+
+## 5. JSON Schemas (Storage)
+
+### Workspace Metadata (`workspaces/{id}/meta.json`)
+```json
+{
+  "id": "uuid-string",
         "attendees": ["Alice", "Bob"],
         "project": "Apollo",
         "due": "2025-12-15",

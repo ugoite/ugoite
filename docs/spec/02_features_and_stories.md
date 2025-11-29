@@ -90,7 +90,7 @@
 *   **FR-01.1**: System MUST use `fsspec` for all I/O.
 *   **FR-01.2**: Data MUST be stored in the JSON schema defined in `03_data_model.md`.
 *   **FR-01.3**: System MUST support "Append-Only" versioning.
-*   **FR-01.4**: System MUST parse Markdown to extract Frontmatter and Inline Fields (`key:: value`) into a structured index.
+*   **FR-01.4**: System MUST parse Markdown to extract Frontmatter and H2 Headers (`## Key`) into a structured index.
 
 ### FR-02: AI & MCP
 *   **FR-02.1**: System MUST implement the Model Context Protocol (MCP).

@@ -53,12 +53,13 @@ The core power of IEapp v2 is the **Code Execution Tool**.
         import ieapp
         
         # Query structured data extracted from Markdown
+        # Note: Properties are extracted from H2 headers (e.g., ## Date)
         tasks = ieapp.query(type="task", status="pending")
         
         report = "# Pending Tasks Report\n"
         for task in tasks:
-            # Access inline fields like 'due' directly
-            report += f"- [ ] {task.title} (Due: {task.properties.get('due')})\n"
+            # Access extracted fields directly
+            report += f"- [ ] {task.title} (Due: {task.properties.get('Due')})\n"
             
         print(report)
         ```
