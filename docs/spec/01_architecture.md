@@ -38,7 +38,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 
 *   **Input**: Markdown content stored within the system (via API/MCP).
 *   **Process**:
-    1.  **Watch**: Detects changes to note objects (`content.json`).
+    1.  **Watch/Hook**: Detects changes via API write hooks (primary) or filesystem polling (secondary, where supported).
     2.  **Parse**: Scans for H2 headers (`## Key`) and extracts the following content as the value.
     3.  **Validate**: Checks against the defined Class (if any) for type safety.
     4.  **Index**: Updates a lightweight `index.json` with the structured data.

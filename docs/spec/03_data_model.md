@@ -121,7 +121,9 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
     "Action Items": ["Alice to update the slide deck"]
   },
   "tags": ["project"],
-  "links": ["note-uuid-2"],
+  "links": [
+    { "id": "link-123", "target": "note-uuid-2", "kind": "related" }
+  ],
   "embedding_id": "emb-123",
   "checksum": "sha256-..."
 }
@@ -165,7 +167,9 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
   "title": "Weekly Sync",
   "class": "meeting",
   "tags": ["project-alpha"],
-  "links": ["note-uuid-2"],
+  "links": [
+    { "id": "link-456", "target": "note-uuid-2", "kind": "related" }
+  ],
   "canvas_position": { "x": 120, "y": 480 },
   "created_at": "2025-11-20T09:00:00Z",
   "updated_at": "2025-11-29T10:00:00Z",
@@ -177,13 +181,13 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 ```
 
 ### 6.4 Note Content `notes/{id}/content.json`
-```json
-{
   "revision_id": "rev-0042",
   "author": "user-or-agent-id",
-  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n...",
+  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n\n```python {id=block-xyz}\nprint('Hello')\n```",
   "frontmatter": {
     "class": "meeting",
+    "status": "open"
+  },"class": "meeting",
     "status": "open"
   },
   "attachments": [
