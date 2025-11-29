@@ -18,6 +18,7 @@ __all__ = [
     "aggregate_stats",
     "create_workspace",
     "extract_properties",
-    "query",
+    "query",  # Alias for query_index
+    "query_index",
     "validate_properties",
 ]
