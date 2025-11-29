@@ -12,7 +12,8 @@
 				"charliermarsh.ruff",
 				"astral-sh.ty",
 				"hverlin.mise-vscode",
-				"tombi-toml.tombi"
+				"tombi-toml.tombi",
+				"MermaidChart.vscode-mermaid-chart"
 			]
 		}
 	},

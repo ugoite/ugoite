@@ -5,6 +5,7 @@
 		"astral-sh.ty",
 		"hverlin.mise-vscode",
 		"ms-python.python",
-		"tombi-toml.tombi"
+		"tombi-toml.tombi",
+		"mermaidchart.vscode-mermaid-chart"
 	]
 }
