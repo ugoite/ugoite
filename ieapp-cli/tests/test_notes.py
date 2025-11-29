@@ -144,7 +144,9 @@ def test_update_note_revision_mismatch(
         )
 
 
-def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
+def test_note_history_append(
+    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+) -> None:
     """Verifies that updating a note appends to history and updates index."""
     note_id = "note-history"
     content_v1 = "# Version 1"
@@ -175,12 +177,12 @@ def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
     # Check history index
     with (note_path / "history" / "index.json").open() as f:
         history_index = json.load(f)
-        assert history_index["note_id"] == note_id
+        assert history_index["note_id"] == note_id  # noqa: S101
         revisions = history_index["revisions"]
-        assert len(revisions) == HISTORY_LENGTH
-        assert revisions[0]["revision_id"] == rev_v1
-        assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
-        assert revisions[0]["signature"] == fake_integrity_provider.signature(
+        assert len(revisions) == HISTORY_LENGTH  # noqa: S101
+        assert revisions[0]["revision_id"] == rev_v1  # noqa: S101
+        assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)  # noqa: S101
+        assert revisions[0]["signature"] == fake_integrity_provider.signature(  # noqa: S101
             content_v1,
         )
 
@@ -191,13 +193,13 @@ def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
 
     with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
-        assert rev_data["revision_id"] == rev_v2
-        assert rev_data["parent_revision_id"] == rev_v1
-        assert "diff" in rev_data
-        assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(
+        assert rev_data["revision_id"] == rev_v2  # noqa: S101
+        assert rev_data["parent_revision_id"] == rev_v1  # noqa: S101
+        assert "diff" in rev_data  # noqa: S101
+        assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(  # noqa: S101
             content_v2,
         )
-        assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(
+        assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(  # noqa: S101
             content_v2,
         )
 
