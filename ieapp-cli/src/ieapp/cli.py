@@ -8,6 +8,7 @@ DEFAULT_NOTE_CONTENT = "# New Note\n"
 
 
 def main() -> None:
+    """Entry point for the IEapp CLI."""
     setup_logging()
 
     parser = argparse.ArgumentParser(description="IEapp CLI")
