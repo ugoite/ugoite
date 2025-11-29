@@ -68,7 +68,7 @@ Conflicts between layers resolve with the following precedence: Section > Frontm
 
 ### 3.1 Parsing Lifecycle
 1. **Detect changes** via filesystem watcher or polling loop (architecture section 3).
-2. **Load Markdown** (`content.json.content`) and extract frontmatter + body.
+2. **Load Markdown** (`content.json.markdown`) and extract frontmatter + body.
 3. **Apply Schema** (if note has `class`):
     * Validate required headers exist.
     * Cast value types (`date`, `number`, `list`).

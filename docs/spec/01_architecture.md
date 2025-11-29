@@ -60,7 +60,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 
 ### Data & Storage
 *   **Abstraction**: `fsspec` (Filesystem Spec)
-*   **Format**: JSON (Metadata & Content) + Parquet (Vector Indices)
+*   **Format**: JSON (Metadata & Content) + FAISS binary indices (Vector Search)
 *   **Search**: FAISS (Vector Search) + In-memory Inverted Index
 
 ## 4. Component Responsibilities

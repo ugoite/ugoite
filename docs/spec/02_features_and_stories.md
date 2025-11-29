@@ -8,7 +8,7 @@
 **So that** I can perform complex tasks like "Find all notes mentioning 'Project X', extract the dates, and plot a timeline."
 
 *   **Acceptance Criteria**:
-    *   MCP Tool `run_python` is available.
+    *   MCP Tool `run_python_script` is available.
     *   AI can import `ieapp` library in the sandbox.
     *   AI can query structured properties (e.g., `ieapp.query(type="meeting")`).
     *   Output (text/charts) is returned to the AI context.

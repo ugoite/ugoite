@@ -13,7 +13,7 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `GET /workspaces/{ws_id}/notes` - List notes (uses `index.json`).
 *   `POST /workspaces/{ws_id}/notes` - Create note.
 *   `GET /workspaces/{ws_id}/notes/{note_id}` - Get note content.
-*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_rev_id`).
+*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_revision_id`).
 *   `DELETE /workspaces/{ws_id}/notes/{note_id}` - Tombstone note.
 
 ### Query (Structured Data)
