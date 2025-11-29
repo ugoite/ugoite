@@ -2,8 +2,8 @@
 
 ## 1. Security Strategy
 
-### "No Auth" Context
-IEapp is designed for local/personal use. However, security is still critical.
+### Local-Only by Default, Optional Auth When Needed
+IEapp ships in a localhost-only mode with no auth prompts to keep the personal workflow frictionless. When the API is exposed beyond the loopback interface (e.g., remote MCP agent, shared lab machine), operators MUST enable authentication (API key, bearer token, or OAuth proxy) before binding to non-local addresses.
 
 ### Network Isolation
 *   **Localhost Binding**: By default, the API binds ONLY to `127.0.0.1`.

@@ -55,7 +55,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 ### Backend
 *   **Runtime**: Python 3.13+
 *   **Framework**: FastAPI (ASGI)
-*   **Protocol**: HTTP (REST) + SSE (Server-Sent Events for MCP)
+*   **Protocol**: HTTP (REST) + MCP Streamable HTTP (POST responses with optional SSE streaming)
 *   **Library**: `ieapp` (Core storage and query logic)
 
 ### Data & Storage
@@ -75,7 +75,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   Hosts the FastAPI server.
 *   Implements the MCP Server endpoints.
 *   Manages the Python Code Sandbox (security, timeouts).
-*   Handles Authentication (if enabled) and CORS.
+*   Handles optional authentication (API keys, bearer tokens) while defaulting to trusted localhost-only mode, and enforces CORS.
 
 ### `frontend` (UI)
 *   Optimistic UI: Renders changes immediately, syncs in background.

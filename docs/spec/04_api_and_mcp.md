@@ -8,13 +8,36 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 *   `GET /workspaces` - List workspaces.
 *   `POST /workspaces` - Create new workspace.
 *   `GET /workspaces/{id}` - Get metadata.
+*   `PATCH /workspaces/{id}` - Update workspace metadata (name, default class, storage connector URI/credentials).
+*   `POST /workspaces/{id}/test-connection` - Validate the configured `fsspec` connector before committing changes.
+
+### Schemas
+*   `GET /workspaces/{ws_id}/schemas` - List class definitions (used by Story 2 templates).
+*   `GET /workspaces/{ws_id}/schemas/{class}` - Fetch a specific schema.
+*   `PUT /workspaces/{ws_id}/schemas/{class}` - Create or update a schema definition.
+*   `DELETE /workspaces/{ws_id}/schemas/{class}` - Remove an unused schema (fails if notes still reference it).
 
 ### Notes
 *   `GET /workspaces/{ws_id}/notes` - List notes (uses `index.json`).
 *   `POST /workspaces/{ws_id}/notes` - Create note.
 *   `GET /workspaces/{ws_id}/notes/{note_id}` - Get note content.
-*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_revision_id`).
+*   `PUT /workspaces/{ws_id}/notes/{note_id}` - Update note (requires `parent_revision_id`; persists markdown, structured properties, and `canvas_position`).
 *   `DELETE /workspaces/{ws_id}/notes/{note_id}` - Tombstone note.
+*   `GET /workspaces/{ws_id}/notes/{note_id}/history` - List revisions for Time Travel UI.
+*   `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}` - Fetch a specific revision payload.
+*   `POST /workspaces/{ws_id}/notes/{note_id}/restore` - Restore a revision (creates a new head revision referencing the chosen ancestor).
+*   `POST /workspaces/{ws_id}/notes/{note_id}/attachments` - Upload attachments; response returns attachment ids/paths.
+*   `DELETE /workspaces/{ws_id}/notes/{note_id}/attachments/{attachment_id}` - Remove an attachment reference and schedule blob GC.
+*   `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` - Execute an embedded notebook/code block and persist the output artifact.
+
+### Canvas Links
+*   `GET /workspaces/{ws_id}/links` - List graph edges (bi-directional note relationships for the Canvas view).
+*   `POST /workspaces/{ws_id}/links` - Create a link between two notes (`source`, `target`, `kind`).
+*   `DELETE /workspaces/{ws_id}/links/{link_id}` - Remove a link (UI automatically prunes both directions).
+
+### Attachments
+*   `POST /workspaces/{ws_id}/attachments` - Upload a binary blob (voice memo, image) and receive an attachment id for later association.
+*   `DELETE /workspaces/{ws_id}/attachments/{attachment_id}` - Permanently delete an unattached blob (garbage collection safety check enforced).
 
 ### Query (Structured Data)
 *   `POST /workspaces/{ws_id}/query` - Execute a structured query against the index.
@@ -26,13 +49,15 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 
 ## 2. Model Context Protocol (MCP)
 
-The MCP interface is used by AI agents (Claude, Copilot, etc.).
+The MCP interface is used by AI agents (Claude, Copilot, etc.). IEapp implements the official **Streamable HTTP** transport from the November 2025 MCP spec: every MCP request is an HTTP POST, and responses may be either a single JSON payload (`Content-Type: application/json`) or a streamed reply over **optional** Server-Sent Events (`text/event-stream`). SSE is engaged only for long-running operations like `run_python_script`, so standard JSON clients remain compatible. Clients advertise both media types via `Accept` headers and must honor the MCP `MCP-Protocol-Version` negotiation plus Origin/CORS checks when invoking the backend outside localhost.
 
 ### Resources
 Expose notes as readable resources for the AI.
 *   `ieapp://{workspace_id}/notes/list` - JSON list of notes.
 *   `ieapp://{workspace_id}/notes/{note_id}` - Markdown content of a note.
+*   `ieapp://{workspace_id}/notes/{note_id}/history` - Revision summaries for Time Travel or restoration flows.
 *   `ieapp://{workspace_id}/schema` - Available properties and values (e.g., all used tags, types).
+*   `ieapp://{workspace_id}/links` - Canvas graph edges (source, target, metadata).
 
 ### Tools
 The core power of IEapp v2 is the **Code Execution Tool**.
@@ -67,6 +92,42 @@ The core power of IEapp v2 is the **Code Execution Tool**.
 #### `search_notes`
 *   **Description**: Semantic search for notes.
 *   **Arguments**: `query` (string).
+
+#### `notes.list`
+*   **Description**: Returns paginated note summaries (id, title, class, tags, canvas position) sourced from `index/index.json`.
+*   **Arguments**:
+    *   `workspace_id` (string): Target workspace.
+    *   `filter` (object, optional): Same shape as REST `/query` filters for type/tag/date constraints.
+
+#### `notes.read`
+*   **Description**: Fetches a full note payload (frontmatter, markdown, attachments, latest revision id).
+*   **Arguments**: `workspace_id`, `note_id`.
+
+#### `notes.create`
+*   **Description**: Creates a note from raw markdown or a schema template.
+*   **Arguments**:
+    *   `workspace_id`
+    *   `title`
+    *   `markdown`
+    *   `class` (optional)
+    *   `tags` (optional array)
+
+#### `notes.update`
+*   **Description**: Updates an existing note. Mirrors REST `PUT` semantics, requiring optimistic concurrency via `parent_revision_id`.
+*   **Arguments**:
+    *   `workspace_id`
+    *   `note_id`
+    *   `parent_revision_id`
+    *   `markdown` / `frontmatter` / `properties` delta (at least one field)
+    *   Optional `canvas_position`, `links`
+
+#### `notes.delete`
+*   **Description**: Tombstones a note (soft delete) so the UI can confirm before purging.
+*   **Arguments**: `workspace_id`, `note_id`.
+
+#### `notes.restore`
+*   **Description**: Restores a past revision, creating a new head revision for auditing. Supports the Time Travel UI and agent-driven undo flows.
+*   **Arguments**: `workspace_id`, `note_id`, `revision_id`.
 
 ### Prompts
 Pre-defined prompts to help the AI understand the context.

@@ -13,6 +13,8 @@
     *   AI can query structured properties (e.g., `ieapp.query(type="meeting")`).
     *   Output (text/charts) is returned to the AI context.
 
+_Related APIs_: MCP tools `run_python_script`, `search_notes`; REST `POST /workspaces/{ws_id}/query`.
+
 ### Story 2: "Structured Freedom" (Data Model)
 **As a** user,
 **I want** to use standard Markdown headers to define data fields (e.g., `## Date`),
@@ -24,6 +26,8 @@
     *   Frontend provides validation warnings if a note violates its Class schema.
     *   Creating a note from a Class pre-fills the template.
 
+_Related APIs_: REST `POST /workspaces/{ws_id}/notes`, `PUT /workspaces/{ws_id}/notes/{note_id}`, `GET /workspaces/{ws_id}/schemas`; MCP resource `ieapp://{workspace_id}/schema`.
+
 ### Story 3: "Bring Your Own Cloud" (Freedom)
 **As a** privacy-conscious user,
 **I want** to store my notes on my own S3 bucket or local NAS,
@@ -32,6 +36,8 @@
 *   **Acceptance Criteria**:
     *   Configurable storage backend via connection string (e.g., `s3://my-bucket/notes`).
     *   Seamless switching between local and remote storage.
+
+_Related APIs_: REST `PATCH /workspaces/{id}` for storage connectors and `POST /workspaces/{id}/test-connection` for validation.
 
 ### Story 4: "The Infinite Canvas" (UI/UX)
 **As a** visual thinker,
@@ -43,6 +49,8 @@
     *   Drag-and-drop notes.
     *   Visual connections are saved as bi-directional links.
 
+_Related APIs_: REST `PUT /workspaces/{ws_id}/notes/{note_id}` (persists `canvas_position`) and `POST /workspaces/{ws_id}/links` / `DELETE /workspaces/{ws_id}/links/{link_id}` for edges.
+
 ### Story 5: "Time Travel" (Versioning)
 **As a** user who made a mistake,
 **I want** to view and restore previous versions of a note,
@@ -51,6 +59,8 @@
 *   **Acceptance Criteria**:
     *   Every save creates a new immutable revision.
     *   UI allows browsing history and reverting.
+
+_Related APIs_: REST `GET /workspaces/{ws_id}/notes/{note_id}/history`, `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}`, and `POST /workspaces/{ws_id}/notes/{note_id}/restore`; MCP tool `notes.restore` for agent-driven reverts.
 
 ## 2. Advanced / Experimental Features (Trendy & Bold)
 
@@ -64,6 +74,8 @@
     *   User invokes their connected MCP Agent (e.g., "Format this voice note").
     *   Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers.
 
+_Related APIs_: REST `POST /workspaces/{ws_id}/attachments`, `POST /workspaces/{ws_id}/notes/{note_id}/attachments`, and MCP resources `ieapp://{workspace_id}/notes/{note_id}` for transcript access followed by `run_python_script` updates.
+
 ### Story 7: "Computational Notebooks" (Live Code)
 **As a** data-driven user,
 **I want** to embed Python code blocks in my notes that execute and render results,
@@ -74,6 +86,8 @@
     *   Code runs in the same sandbox as the MCP agent.
     *   Output (text, tables, charts) is rendered interactively below the code block.
 
+_Related APIs_: REST `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` (frontend trigger) and MCP tool `run_python_script` (shared sandbox runtime).
+
 ### Story 8: "Agentic Refactoring" (BYOAI)
 **As a** user with a messy workspace,
 **I want** to ask my AI agent to "clean up this folder",
@@ -83,6 +97,8 @@
     *   App exposes `list_notes`, `read_note`, and `update_note` tools via MCP.
     *   User asks Agent: "Find duplicates in Project X and merge them."
     *   Agent executes the logic (potentially using `run_python_script` for batch processing) and presents the result for confirmation.
+
+_Related APIs_: MCP tools `notes.list`, `notes.read`, `notes.update`, `notes.delete`, plus `run_python_script`; REST `GET/PUT /workspaces/{ws_id}/notes/{note_id}` for confirmation flows.
 
 ## 3. Functional Requirements
 
@@ -102,7 +118,7 @@
 *   **FR-03.2**: Editor MUST support Markdown with slash commands.
 *   **FR-03.3**: UI MUST support Dark Mode.
 
-## 3. Success Metrics
+## 4. Success Metrics
 *   **AI Utility**: The AI can successfully refactor 50 notes in under 30 seconds using code execution.
 *   **Performance**: Workspace loads in < 500ms (using cached index).
 *   **Reliability**: 99.9% data integrity (verified via HMAC/Checksums).
