@@ -1,15 +1,26 @@
 import base64
+import copy
 import json
 import os
 import secrets
 import time
+import uuid
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
+
 import fsspec
 
+try:  # pragma: no cover - platform specific
+    import fcntl
+except ImportError:  # pragma: no cover - platform specific
+    fcntl = None
+
 logger = logging.getLogger(__name__)
+
+EMPTY_INDEX_SCHEMA = {"notes": {}, "class_stats": {}}
+EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 
 
 class WorkspaceExistsError(Exception):
@@ -18,7 +29,53 @@ class WorkspaceExistsError(Exception):
     pass
 
 
-def _ensure_global_json(fs, root_path_str: str) -> str:
+def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
+    """Writes JSON data with restrictive permissions from the start.
+
+    Args:
+        path: Absolute file path to write.
+        payload: JSON-serializable dictionary.
+        mode: File permissions applied at creation time.
+    """
+
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+
+
+def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> None:
+    """Appends a workspace id to ``global.json`` with advisory locking.
+
+    Args:
+        global_json_path: Absolute path to ``global.json``.
+        workspace_id: Workspace identifier to append.
+    """
+
+    if not os.path.exists(global_json_path):
+        return
+
+    with open(global_json_path, "r+", encoding="utf-8") as handle:
+        if fcntl:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+
+        try:
+            try:
+                global_data = json.load(handle)
+            except json.JSONDecodeError:
+                global_data = {"workspaces": []}
+
+            workspaces = global_data.setdefault("workspaces", [])
+            if workspace_id not in workspaces:
+                workspaces.append(workspace_id)
+                handle.seek(0)
+                json.dump(global_data, handle, indent=2)
+                handle.truncate()
+        finally:
+            if fcntl:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _ensure_global_json(fs: fsspec.AbstractFileSystem, root_path_str: str) -> str:
     """Ensures ``global.json`` exists and returns its path.
 
     Args:
@@ -34,7 +91,7 @@ def _ensure_global_json(fs, root_path_str: str) -> str:
         return global_json_path
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    key_id = f"key-{int(time.time())}"
+    key_id = f"key-{uuid.uuid4().hex}"
     hmac_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
 
     payload = {
@@ -46,10 +103,9 @@ def _ensure_global_json(fs, root_path_str: str) -> str:
         "last_rotation": now_iso,
     }
 
-    with fs.open(global_json_path, "w") as handle:
+    fd = os.open(global_json_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
-
-    os.chmod(global_json_path, 0o600)
     return global_json_path
 
 
@@ -124,46 +180,26 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     }
 
     meta_path = os.path.join(ws_path, "meta.json")
-    with fs.open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2)
-    os.chmod(meta_path, 0o600)
+    _write_json_secure(meta_path, meta)
 
     # Create settings.json
     settings = {"default_class": "Note"}
     settings_path = os.path.join(ws_path, "settings.json")
-    with fs.open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
-    os.chmod(settings_path, 0o600)
+    _write_json_secure(settings_path, settings)
 
     # Create index/index.json
-    index_data = {"notes": {}, "class_stats": {}}
+    index_data = copy.deepcopy(EMPTY_INDEX_SCHEMA)
     index_json_path = os.path.join(ws_path, "index", "index.json")
-    with fs.open(index_json_path, "w") as f:
-        json.dump(index_data, f, indent=2)
-    os.chmod(index_json_path, 0o600)
+    _write_json_secure(index_json_path, index_data)
 
     # Create index/stats.json
-    stats_data = {"last_indexed": time.time(), "note_count": 0, "tag_counts": {}}
+    stats_data = copy.deepcopy(EMPTY_STATS_SCHEMA)
+    stats_data["last_indexed"] = time.time()
     stats_json_path = os.path.join(ws_path, "index", "stats.json")
-    with fs.open(stats_json_path, "w") as f:
-        json.dump(stats_data, f, indent=2)
-    os.chmod(stats_json_path, 0o600)
+    _write_json_secure(stats_json_path, stats_data)
 
     # Update global.json (optional for now, but good practice)
     if fs.exists(global_json_path):
-        # Read-modify-write (not atomic but fine for M0)
-        with fs.open(global_json_path, "r") as f:
-            try:
-                global_data = json.load(f)
-            except json.JSONDecodeError:
-                global_data = {"workspaces": []}
-
-        if workspace_id not in global_data.get("workspaces", []):
-            if "workspaces" not in global_data:
-                global_data["workspaces"] = []
-            global_data["workspaces"].append(workspace_id)
-
-            with fs.open(global_json_path, "w") as f:
-                json.dump(global_data, f, indent=2)
+        _append_workspace_to_global(global_json_path, workspace_id)
 
     logger.info(f"Workspace {workspace_id} created successfully")
