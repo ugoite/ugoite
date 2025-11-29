@@ -24,6 +24,8 @@ except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
     fcntl: Any | None = None
 
+from .utils import validate_id, write_json_secure
+
 logger = logging.getLogger(__name__)
 
 EMPTY_INDEX_SCHEMA = {"notes": {}, "class_stats": {}}
@@ -32,36 +34,6 @@ EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 
 class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
-
-
-def _validate_id(identifier: str, name: str) -> None:
-    """Validate that the identifier contains only safe characters.
-
-    Args:
-        identifier: The string to validate.
-        name: The name of the field (for error messages).
-
-    Raises:
-        ValueError: If the identifier contains invalid characters.
-
-    """
-    if not identifier or not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
-        msg = f"Invalid {name}: {identifier}. Must be alphanumeric, hyphens, or underscores."
-        raise ValueError(msg)
-
-
-def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
-    """Write JSON data with restrictive permissions from the start.
-
-    Args:
-        path: Absolute file path to write.
-        payload: JSON-serializable dictionary.
-        mode: File permissions applied at creation time.
-
-    """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
 
 
 def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> None:
@@ -146,7 +118,7 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         WorkspaceExistsError: If the workspace already exists.
 
     """
-    _validate_id(workspace_id, "workspace_id")
+    validate_id(workspace_id, "workspace_id")
     logger.info("Creating workspace %s at %s", workspace_id, root_path)
 
     # Use fsspec to handle filesystem operations
@@ -204,17 +176,17 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     }
 
     meta_path = ws_path / "meta.json"
-    _write_json_secure(str(meta_path), meta)
+    write_json_secure(str(meta_path), meta)
 
     # Create settings.json
     settings = {"default_class": "Note"}
     settings_path = ws_path / "settings.json"
-    _write_json_secure(str(settings_path), settings)
+    write_json_secure(str(settings_path), settings)
 
     # Create index/index.json
     index_data = {"notes": {}, "class_stats": {}}
     index_json_path = ws_path / "index" / "index.json"
-    _write_json_secure(str(index_json_path), index_data)
+    write_json_secure(str(index_json_path), index_data)
 
     # Create index/stats.json
     stats_data = {
@@ -223,7 +195,7 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         "tag_counts": {},
     }
     stats_json_path = ws_path / "index" / "stats.json"
-    _write_json_secure(str(stats_json_path), stats_data)
+    write_json_secure(str(stats_json_path), stats_data)
 
     # Update global.json (optional for now, but good practice)
     if fs.exists(global_json_path):

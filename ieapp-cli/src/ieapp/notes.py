@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover - platform specific
     fcntl: Any | None = None
 
 from .integrity import IntegrityProvider
+from .utils import validate_id, write_json_secure
 
 logger = logging.getLogger(__name__)
 
@@ -50,49 +51,6 @@ def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
 
     """
     path.mkdir(mode=mode)
-
-
-def _validate_id(identifier: str, name: str) -> None:
-    """Validate that the identifier contains only safe characters.
-
-    Args:
-        identifier: The string to validate.
-        name: The name of the field (for error messages).
-
-    Raises:
-        ValueError: If the identifier contains invalid characters.
-
-    """
-    if not identifier or not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
-        msg = f"Invalid {name}: {identifier}. Must be alphanumeric, hyphens, or underscores."
-        raise ValueError(msg)
-
-
-def _write_json_secure(
-    path: Path,
-    payload: dict[str, Any],
-    mode: int = 0o600,
-    *,
-    exclusive: bool = False,
-) -> None:
-    """Write JSON to ``path`` while applying permissions atomically.
-
-    Args:
-        path: Target file path.
-        payload: JSON-serializable dictionary.
-        mode: Permission bits applied at creation.
-        exclusive: When True, use ``O_EXCL`` to avoid clobbering existing files.
-
-    """
-    flags = os.O_WRONLY | os.O_CREAT
-    if exclusive:
-        flags |= os.O_EXCL
-    else:
-        flags |= os.O_TRUNC
-
-    fd = os.open(str(path), flags, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
 
 
 def _extract_title_from_markdown(content: str, fallback: str) -> str:
@@ -181,7 +139,7 @@ def create_note(
         NoteExistsError: If the note directory already exists.
 
     """
-    _validate_id(note_id, "note_id")
+    validate_id(note_id, "note_id")
 
     ws_path = Path(workspace_path)
     note_dir = ws_path / "notes" / note_id
@@ -215,7 +173,7 @@ def create_note(
     }
 
     content_path = note_dir / "content.json"
-    _write_json_secure(content_path, content_data, exclusive=True)
+    write_json_secure(content_path, content_data, exclusive=True)
 
     revision = {
         "revision_id": rev_id,
@@ -231,7 +189,7 @@ def create_note(
     _mkdir_secure(history_dir)
 
     rev_path = history_dir / f"{rev_id}.json"
-    _write_json_secure(rev_path, revision, exclusive=True)
+    write_json_secure(rev_path, revision, exclusive=True)
 
     # Update history index
     history_index = {
@@ -246,7 +204,7 @@ def create_note(
         ],
     }
     index_path = history_dir / "index.json"
-    _write_json_secure(index_path, history_index, exclusive=True)
+    write_json_secure(index_path, history_index, exclusive=True)
 
     # Create meta.json
     # Extract title from first H1 or use note_id
@@ -275,7 +233,7 @@ def create_note(
     }
 
     meta_path = note_dir / "meta.json"
-    _write_json_secure(meta_path, meta, exclusive=True)
+    write_json_secure(meta_path, meta, exclusive=True)
 
 
 def update_note(  # noqa: PLR0913
@@ -301,7 +259,7 @@ def update_note(  # noqa: PLR0913
         RevisionMismatchError: If ``parent_revision_id`` does not match head.
 
     """
-    _validate_id(note_id, "note_id")
+    validate_id(note_id, "note_id")
 
     ws_path = Path(workspace_path)
     note_dir = ws_path / "notes" / note_id
@@ -382,7 +340,7 @@ def update_note(  # noqa: PLR0913
 
     history_dir = note_dir / "history"
     rev_path = history_dir / f"{rev_id}.json"
-    _write_json_secure(rev_path, revision)
+    write_json_secure(rev_path, revision)
 
     # Update history index
     index_path = history_dir / "index.json"
@@ -398,7 +356,7 @@ def update_note(  # noqa: PLR0913
         },
     )
 
-    _write_json_secure(index_path, history_index)
+    write_json_secure(index_path, history_index)
 
     # Update meta.json
     meta_path = note_dir / "meta.json"
@@ -412,4 +370,4 @@ def update_note(  # noqa: PLR0913
     meta["tags"] = parsed["frontmatter"].get("tags", meta.get("tags", []))
     meta["integrity"] = {"checksum": checksum, "signature": signature}
 
-    _write_json_secure(meta_path, meta)
+    write_json_secure(meta_path, meta)
