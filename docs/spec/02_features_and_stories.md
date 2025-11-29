@@ -52,7 +52,39 @@
     *   Every save creates a new immutable revision.
     *   UI allows browsing history and reverting.
 
-## 2. Functional Requirements
+## 2. Advanced / Experimental Features (Trendy & Bold)
+
+### Story 6: "Voice-to-Schema" (BYOAI - Bring Your Own AI)
+**As a** mobile user,
+**I want** to record a voice memo and have my chosen AI assistant structure it,
+**So that** I can use the best AI model available (Claude, GPT-4, etc.) without being locked into the app's built-in model.
+
+*   **Acceptance Criteria**:
+    *   User records audio; app saves it as a note attachment.
+    *   User invokes their connected MCP Agent (e.g., "Format this voice note").
+    *   Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers.
+
+### Story 7: "Computational Notebooks" (Live Code)
+**As a** data-driven user,
+**I want** to embed Python code blocks in my notes that execute and render results,
+**So that** I can create live reports or analyze my own knowledge base within the app.
+
+*   **Acceptance Criteria**:
+    *   Markdown code blocks tagged `python` can be executed.
+    *   Code runs in the same sandbox as the MCP agent.
+    *   Output (text, tables, charts) is rendered interactively below the code block.
+
+### Story 8: "Agentic Refactoring" (BYOAI)
+**As a** user with a messy workspace,
+**I want** to ask my AI agent to "clean up this folder",
+**So that** I can leverage external intelligence to organize my knowledge base on demand.
+
+*   **Acceptance Criteria**:
+    *   App exposes `list_notes`, `read_note`, and `update_note` tools via MCP.
+    *   User asks Agent: "Find duplicates in Project X and merge them."
+    *   Agent executes the logic (potentially using `run_python_script` for batch processing) and presents the result for confirmation.
+
+## 3. Functional Requirements
 
 ### FR-01: Storage & Data
 *   **FR-01.1**: System MUST use `fsspec` for all I/O.

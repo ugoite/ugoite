@@ -81,3 +81,12 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   Optimistic UI: Renders changes immediately, syncs in background.
 *   Spatial Canvas: Renders the node-link graph.
 *   Markdown Editor: Block-based editing experience.
+*   **Notebook Renderer**: Renders and executes interactive Python code blocks.
+
+## 5. Future-Proofing (Experimental)
+
+### BYOAI (Bring Your Own AI) Architecture
+Instead of embedding specific AI models, IEapp relies on the **Model Context Protocol (MCP)** to let users bring their own agents.
+
+*   **Voice-to-Schema**: The app provides the raw data (audio/text). The *User's Agent* performs the structuring logic via MCP tools.
+*   **Agentic Maintenance**: No hidden background workers. Maintenance tasks (refactoring, tagging) are performed by external agents invoking MCP tools (`search_notes`, `update_note`) at the user's command.
