@@ -1,8 +1,9 @@
 import argparse
 import sys
-from ieapp.workspace import create_workspace, WorkspaceExistsError
-from ieapp.notes import create_note, NoteExistsError
+
 from ieapp.logging_utils import setup_logging
+from ieapp.notes import NoteExistsError, create_note
+from ieapp.workspace import WorkspaceExistsError, create_workspace
 
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 

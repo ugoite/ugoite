@@ -1,6 +1,7 @@
-import pytest
 import json
-from ieapp.workspace import create_workspace, WorkspaceExistsError
+
+import pytest
+from ieapp.workspace import WorkspaceExistsError, create_workspace
 
 
 def test_create_workspace_scaffolding(tmp_path):

@@ -7,9 +7,9 @@ provider while the production code derives its secret from ``global.json``.
 from __future__ import annotations
 
 import base64
-import json
-import hmac
 import hashlib
+import hmac
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
