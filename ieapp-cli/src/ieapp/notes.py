@@ -1,26 +1,77 @@
+import difflib
 import json
+import logging
 import os
 import time
 import uuid
-import logging
-import difflib
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-import fsspec
 import yaml
 
 from .integrity import IntegrityProvider
 
 logger = logging.getLogger(__name__)
 
+FRONTMATTER_DELIMITER = "---\n"
+H1_PREFIX = "# "
+H2_PREFIX = "## "
+DEFAULT_INITIAL_MESSAGE = "Initial creation"
+DEFAULT_UPDATE_MESSAGE = "Update"
+
 
 class NoteExistsError(Exception):
+    """Raised when attempting to create a note that already exists."""
+
     pass
 
 
 class RevisionMismatchError(Exception):
+    """Raised when the supplied parent revision does not match the head."""
+
     pass
+
+
+def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
+    """Creates a directory with restrictive permissions.
+
+    Args:
+        path: Directory to create.
+        mode: Permission bits applied at creation.
+    """
+
+    path.mkdir(mode=mode, parents=False)
+
+
+def _write_json_secure(path: Path, payload: Dict[str, Any], mode: int = 0o600) -> None:
+    """Writes JSON to ``path`` while setting permissions atomically.
+
+    Args:
+        path: Target file path.
+        payload: JSON-serializable dictionary.
+        mode: Permission bits applied at creation.
+    """
+
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+
+
+def _extract_title_from_markdown(content: str, fallback: str) -> str:
+    """Returns the first H1 heading or ``fallback`` if none is present.
+
+    Args:
+        content: Raw markdown being parsed.
+        fallback: Title to return if no heading is found.
+
+    Returns:
+        The extracted title string.
+    """
+
+    for line in content.splitlines():
+        if line.startswith(H1_PREFIX):
+            return line[len(H1_PREFIX) :].strip()
+    return fallback
 
 
 def _parse_markdown(content: str) -> Dict[str, Any]:
@@ -36,9 +87,9 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
     sections = {}
 
     # Extract Frontmatter
-    if content.startswith("---\n"):
+    if content.startswith(FRONTMATTER_DELIMITER):
         try:
-            parts = content.split("---\n", 2)
+            parts = content.split(FRONTMATTER_DELIMITER, 2)
             if len(parts) >= 3:
                 fm_str = parts[1]
                 frontmatter = yaml.safe_load(fm_str) or {}
@@ -51,10 +102,10 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
     section_content = []
 
     for line in lines:
-        if line.startswith("## "):
+        if line.startswith(H2_PREFIX):
             if current_section:
                 sections[current_section] = "\n".join(section_content).strip()
-            current_section = line[3:].strip()
+            current_section = line[len(H2_PREFIX) :].strip()
             section_content = []
         elif current_section:
             section_content.append(line)
@@ -84,20 +135,17 @@ def create_note(
     Raises:
         NoteExistsError: If the note directory already exists.
     """
-    ws_path_str = str(workspace_path)
-    fs = fsspec.filesystem("file")
+    ws_path = Path(workspace_path)
+    note_dir = ws_path / "notes" / note_id
 
-    note_dir = os.path.join(ws_path_str, "notes", note_id)
-
-    if fs.exists(note_dir):
+    if note_dir.exists():
         raise NoteExistsError(f"Note {note_id} already exists")
 
-    fs.makedirs(note_dir)
-    os.chmod(note_dir, 0o700)
+    _mkdir_secure(note_dir)
 
     # Parse content
     parsed = _parse_markdown(content)
-    provider = integrity_provider or IntegrityProvider.for_workspace(workspace_path)
+    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
 
     # Create initial revision
     rev_id = str(uuid.uuid4())
@@ -117,10 +165,8 @@ def create_note(
         "computed": {},
     }
 
-    content_path = os.path.join(note_dir, "content.json")
-    with fs.open(content_path, "w") as f:
-        json.dump(content_data, f, indent=2)
-    os.chmod(content_path, 0o600)
+    content_path = note_dir / "content.json"
+    _write_json_secure(content_path, content_data)
 
     revision = {
         "revision_id": rev_id,
@@ -129,17 +175,14 @@ def create_note(
         "author": author,
         "diff": "",
         "integrity": {"checksum": checksum, "signature": signature},
-        "message": "Initial creation",
+        "message": DEFAULT_INITIAL_MESSAGE,
     }
 
-    history_dir = os.path.join(note_dir, "history")
-    fs.makedirs(history_dir)
-    os.chmod(history_dir, 0o700)
+    history_dir = note_dir / "history"
+    _mkdir_secure(history_dir)
 
-    rev_path = os.path.join(history_dir, f"{rev_id}.json")
-    with fs.open(rev_path, "w") as f:
-        json.dump(revision, f, indent=2)
-    os.chmod(rev_path, 0o600)
+    rev_path = history_dir / f"{rev_id}.json"
+    _write_json_secure(rev_path, revision)
 
     # Update history index
     history_index = {
@@ -153,22 +196,16 @@ def create_note(
             }
         ],
     }
-    index_path = os.path.join(history_dir, "index.json")
-    with fs.open(index_path, "w") as f:
-        json.dump(history_index, f, indent=2)
-    os.chmod(index_path, 0o600)
+    index_path = history_dir / "index.json"
+    _write_json_secure(index_path, history_index)
 
     # Create meta.json
     # Extract title from first H1 or use note_id
-    title = note_id
-    for line in content.splitlines():
-        if line.startswith("# "):
-            title = line[2:].strip()
-            break
+    title = _extract_title_from_markdown(content, note_id)
 
     meta = {
         "id": note_id,
-        "workspace_id": Path(ws_path_str).name,  # Infer workspace_id
+        "workspace_id": ws_path.name,  # Infer workspace_id
         "title": title,
         "class": parsed["frontmatter"].get("class"),
         "tags": parsed["frontmatter"].get("tags", []),
@@ -179,10 +216,8 @@ def create_note(
         "integrity": {"checksum": checksum, "signature": signature},
     }
 
-    meta_path = os.path.join(note_dir, "meta.json")
-    with fs.open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2)
-    os.chmod(meta_path, 0o600)
+    meta_path = note_dir / "meta.json"
+    _write_json_secure(meta_path, meta)
 
 
 def update_note(
@@ -207,27 +242,27 @@ def update_note(
         FileNotFoundError: If the note directory is missing.
         RevisionMismatchError: If ``parent_revision_id`` does not match head.
     """
-    ws_path_str = str(workspace_path)
-    fs = fsspec.filesystem("file")
+    ws_path = Path(workspace_path)
+    note_dir = ws_path / "notes" / note_id
 
-    note_dir = os.path.join(ws_path_str, "notes", note_id)
-
-    if not fs.exists(note_dir):
+    if not note_dir.exists():
         raise FileNotFoundError(f"Note {note_id} not found")
 
     # Check parent revision from content.json (as per spec)
-    content_path = os.path.join(note_dir, "content.json")
-    with fs.open(content_path, "r") as f:
+    content_path = note_dir / "content.json"
+    with content_path.open("r", encoding="utf-8") as f:
         current_content_data = json.load(f)
 
     if current_content_data["revision_id"] != parent_revision_id:
         raise RevisionMismatchError(
-            f"Expected {current_content_data['revision_id']}, got {parent_revision_id}"
+            "Revision conflict: the note has been modified. "
+            f"Current revision: {current_content_data['revision_id']}, "
+            f"provided revision: {parent_revision_id}"
         )
 
     # Parse content
     parsed = _parse_markdown(content)
-    provider = integrity_provider or IntegrityProvider.for_workspace(workspace_path)
+    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
 
     # Create new revision
     rev_id = str(uuid.uuid4())
@@ -256,9 +291,7 @@ def update_note(
         "computed": current_content_data.get("computed", {}),
     }
 
-    with fs.open(content_path, "w") as f:
-        json.dump(content_data, f, indent=2)
-    os.chmod(content_path, 0o600)
+    _write_json_secure(content_path, content_data)
 
     revision = {
         "revision_id": rev_id,
@@ -267,18 +300,16 @@ def update_note(
         "author": author,
         "diff": diff_text,
         "integrity": {"checksum": checksum, "signature": signature},
-        "message": "Update",
+        "message": DEFAULT_UPDATE_MESSAGE,
     }
 
-    history_dir = os.path.join(note_dir, "history")
-    rev_path = os.path.join(history_dir, f"{rev_id}.json")
-    with fs.open(rev_path, "w") as f:
-        json.dump(revision, f, indent=2)
-    os.chmod(rev_path, 0o600)
+    history_dir = note_dir / "history"
+    rev_path = history_dir / f"{rev_id}.json"
+    _write_json_secure(rev_path, revision)
 
     # Update history index
-    index_path = os.path.join(history_dir, "index.json")
-    with fs.open(index_path, "r") as f:
+    index_path = history_dir / "index.json"
+    with index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
     history_index["revisions"].append(
@@ -290,28 +321,18 @@ def update_note(
         }
     )
 
-    with fs.open(index_path, "w") as f:
-        json.dump(history_index, f, indent=2)
-    os.chmod(index_path, 0o600)
+    _write_json_secure(index_path, history_index)
 
     # Update meta.json
-    meta_path = os.path.join(note_dir, "meta.json")
-    with fs.open(meta_path, "r") as f:
+    meta_path = note_dir / "meta.json"
+    with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 
     # Update title if changed
-    title = meta["title"]
-    for line in content.splitlines():
-        if line.startswith("# "):
-            title = line[2:].strip()
-            break
-
-    meta["title"] = title
+    meta["title"] = _extract_title_from_markdown(content, meta["title"])
     meta["updated_at"] = timestamp
     meta["class"] = parsed["frontmatter"].get("class", meta.get("class"))
     meta["tags"] = parsed["frontmatter"].get("tags", meta.get("tags", []))
     meta["integrity"] = {"checksum": checksum, "signature": signature}
 
-    with fs.open(meta_path, "w") as f:
-        json.dump(meta, f, indent=2)
-    os.chmod(meta_path, 0o600)
+    _write_json_secure(meta_path, meta)
