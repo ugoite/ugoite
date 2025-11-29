@@ -219,6 +219,7 @@ class Indexer:
         notes_path = f"{self.workspace_path}/notes"
         index_path = f"{self.workspace_path}/index/index.json"
         stats_path = f"{self.workspace_path}/index/stats.json"
+        inverted_index_path = f"{self.workspace_path}/index/inverted_index.json"
         schemas_path = f"{self.workspace_path}/schemas"
 
         self.fs.makedirs(f"{self.workspace_path}/index", exist_ok=True)
@@ -235,12 +236,74 @@ class Indexer:
         with self.fs.open(index_path, "w") as f:
             json.dump(index_payload, f, indent=2)
 
+        # Build and persist inverted index for keyword search
+        inverted_index = self._build_inverted_index(index_notes)
+        with self.fs.open(inverted_index_path, "w") as f:
+            json.dump(inverted_index, f, indent=2)
+
         stats_payload = {
             **stats_data,
             "last_indexed": time.time(),
         }
         with self.fs.open(stats_path, "w") as f:
             json.dump(stats_payload, f, indent=2)
+
+    def _build_inverted_index(
+        self,
+        notes: dict[str, dict[str, Any]],
+    ) -> dict[str, list[str]]:
+        """Build an inverted index mapping terms to note IDs.
+
+        Tokenizes text content (title, properties, tags) from each note and
+        creates posting lists for keyword search support.
+        """
+        inverted: dict[str, list[str]] = {}
+
+        for note_id, record in notes.items():
+            tokens = self._tokenize_record(record)
+            for token in tokens:
+                if token not in inverted:
+                    inverted[token] = []
+                if note_id not in inverted[token]:
+                    inverted[token].append(note_id)
+
+        return inverted
+
+    def _tokenize_record(self, record: dict[str, Any]) -> set[str]:
+        """Extract lowercase tokens from a note record for indexing."""
+        tokens: set[str] = set()
+
+        # Tokenize title
+        title = record.get("title", "")
+        tokens.update(self._tokenize_text(title))
+
+        # Tokenize tags
+        for tag in record.get("tags") or []:
+            tokens.update(self._tokenize_text(tag))
+
+        # Tokenize class
+        note_class = record.get("class")
+        if note_class:
+            tokens.update(self._tokenize_text(note_class))
+
+        # Tokenize properties (both keys and string values)
+        properties = record.get("properties") or {}
+        for key, value in properties.items():
+            tokens.update(self._tokenize_text(key))
+            if isinstance(value, str):
+                tokens.update(self._tokenize_text(value))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        tokens.update(self._tokenize_text(item))
+
+        return tokens
+
+    @staticmethod
+    def _tokenize_text(text: str) -> set[str]:
+        """Split text into lowercase alphabetic tokens."""
+        # Simple word tokenization: extract alphanumeric sequences
+        return {word.lower() for word in re.findall(r"\w+", text) if len(word) > 1}
 
     def _load_schemas(self, schemas_path: str) -> dict[str, dict[str, Any]]:
         """Load schema definitions from the workspace."""
@@ -379,7 +442,16 @@ def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
             )
             raise NotImplementedError(msg)
 
-        if note_value != expected:
+        # Handle list membership (e.g., tags)
+        if key == "tag" and "tags" in note:
+            if expected not in (note.get("tags") or []):
+                return False
+            continue
+
+        if isinstance(note_value, list):
+            if expected not in note_value:
+                return False
+        elif note_value != expected:
             return False
 
     return True

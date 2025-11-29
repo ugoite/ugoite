@@ -274,6 +274,49 @@ def test_query_index() -> None:
     assert results[0]["id"] == "note3"
 
 
+def test_query_index_by_tag() -> None:
+    """Filter cached index by tag membership."""
+    fs = fsspec.filesystem("memory")
+    workspace_path = "/test_workspace"
+    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+
+    index_data = {
+        "notes": {
+            "note1": {
+                "id": "note1",
+                "class": "meeting",
+                "tags": ["project-alpha", "urgent"],
+                "properties": {},
+            },
+            "note2": {
+                "id": "note2",
+                "class": "meeting",
+                "tags": ["project-beta"],
+                "properties": {},
+            },
+            "note3": {
+                "id": "note3",
+                "class": "task",
+                "tags": ["project-alpha"],
+                "properties": {},
+            },
+        },
+    }
+
+    with fs.open(f"{workspace_path}/index/index.json", "w") as f:
+        json.dump(index_data, f)
+
+    # Filter by tag
+    results = query_index(workspace_path, {"tag": "project-alpha"}, fs=fs)
+    assert len(results) == EXPECTED_MEETING_RESULTS
+    ids = {note["id"] for note in results}
+    assert ids == {"note1", "note3"}
+
+    results = query_index(workspace_path, {"tag": "urgent"}, fs=fs)
+    assert len(results) == EXPECTED_SINGLE_RESULT
+    assert results[0]["id"] == "note1"
+
+
 def test_indexer_watch_loop_triggers_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure watch loop invokes run_once for each file-system event."""
     fs = fsspec.filesystem("memory")
@@ -352,3 +395,68 @@ def test_aggregate_stats_includes_field_usage() -> None:
     # Check field usage for 'task'
     task_stats = stats["class_stats"]["task"]
     assert task_stats["fields"]["status"] == EXPECTED_SINGLE_RESULT
+
+
+def test_indexer_generates_inverted_index() -> None:
+    """Ensure run_once creates inverted_index.json with term-to-note mappings."""
+    fs = fsspec.filesystem("memory")
+    workspace_path = "/test_workspace"
+    fs.makedirs(f"{workspace_path}/notes/note1", exist_ok=True)
+    fs.makedirs(f"{workspace_path}/notes/note2", exist_ok=True)
+    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+
+    # Create Note 1
+    note1_content = {"markdown": "# Meeting Notes\n\n## Agenda\nDiscuss project alpha."}
+    with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
+        json.dump(note1_content, f)
+    note1_meta = {
+        "id": "note1",
+        "title": "Meeting Notes",
+        "class": "meeting",
+        "tags": ["project", "alpha"],
+    }
+    with fs.open(f"{workspace_path}/notes/note1/meta.json", "w") as f:
+        json.dump(note1_meta, f)
+
+    # Create Note 2
+    note2_content = {"markdown": "# Task List\n\n## Priority\nHigh priority task."}
+    with fs.open(f"{workspace_path}/notes/note2/content.json", "w") as f:
+        json.dump(note2_content, f)
+    note2_meta = {
+        "id": "note2",
+        "title": "Task List",
+        "class": "task",
+        "tags": ["priority"],
+    }
+    with fs.open(f"{workspace_path}/notes/note2/meta.json", "w") as f:
+        json.dump(note2_meta, f)
+
+    indexer = Indexer(workspace_path, fs=fs)
+    indexer.run_once()
+
+    # Verify inverted_index.json exists
+    assert fs.exists(f"{workspace_path}/index/inverted_index.json")
+
+    with fs.open(f"{workspace_path}/index/inverted_index.json", "r") as f:
+        inverted_index = json.load(f)
+
+    # Check that terms map to the correct notes
+    assert "meeting" in inverted_index
+    assert "note1" in inverted_index["meeting"]
+    assert "note2" not in inverted_index["meeting"]
+
+    assert "task" in inverted_index
+    assert "note2" in inverted_index["task"]
+
+    assert "project" in inverted_index
+    assert "note1" in inverted_index["project"]
+
+    assert "alpha" in inverted_index
+    assert "note1" in inverted_index["alpha"]
+
+    assert "priority" in inverted_index
+    assert "note2" in inverted_index["priority"]
+
+    # Verify terms from properties
+    assert "agenda" in inverted_index
+    assert "note1" in inverted_index["agenda"]
