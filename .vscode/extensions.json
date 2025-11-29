@@ -6,6 +6,7 @@
 		"hverlin.mise-vscode",
 		"ms-python.python",
 		"tombi-toml.tombi",
-		"mermaidchart.vscode-mermaid-chart"
+		"mermaidchart.vscode-mermaid-chart",
+		"github.vscode-pull-request-github"
 	]
 }

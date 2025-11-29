@@ -13,7 +13,8 @@
 				"astral-sh.ty",
 				"hverlin.mise-vscode",
 				"tombi-toml.tombi",
-				"MermaidChart.vscode-mermaid-chart"
+				"MermaidChart.vscode-mermaid-chart",
+				"GitHub.vscode-pull-request-github"
 			]
 		}
 	},
