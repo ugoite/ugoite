@@ -34,9 +34,7 @@ def main() -> None:
     nc_parser.add_argument(
         "--content", help="Content of the note", default=DEFAULT_NOTE_CONTENT
     )
-    nc_parser.add_argument(
-        "--author", help="Author of the note", default="user"
-    )
+    nc_parser.add_argument("--author", help="Author of the note", default="user")
 
     args = parser.parse_args()
 

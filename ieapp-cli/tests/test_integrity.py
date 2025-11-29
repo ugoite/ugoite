@@ -31,7 +31,7 @@ def test_integrity_provider_missing_storage_root(tmp_path):
     """Verifies error when storage.root is missing in meta.json."""
     ws_path = tmp_path / "fake-workspace"
     ws_path.mkdir()
-    
+
     meta_path = ws_path / "meta.json"
     with open(meta_path, "w") as f:
         json.dump({"id": "fake"}, f)
@@ -44,10 +44,10 @@ def test_integrity_provider_missing_global_json(tmp_path):
     """Verifies error when global.json is missing at storage root."""
     ws_path = tmp_path / "fake-workspace"
     ws_path.mkdir()
-    
+
     # Point to a non-existent root
     root_path = tmp_path / "non-existent-root"
-    
+
     meta_path = ws_path / "meta.json"
     with open(meta_path, "w") as f:
         json.dump({"storage": {"root": str(root_path)}}, f)
@@ -62,11 +62,11 @@ def test_integrity_provider_missing_hmac_key(tmp_path):
     root.mkdir()
     ws_path = root / "workspaces" / "test-workspace"
     ws_path.mkdir(parents=True)
-    
+
     meta_path = ws_path / "meta.json"
     with open(meta_path, "w") as f:
         json.dump({"storage": {"root": str(root)}}, f)
-        
+
     global_json = root / "global.json"
     with open(global_json, "w") as f:
         json.dump({"version": 1}, f)
@@ -81,11 +81,11 @@ def test_integrity_provider_invalid_hmac_key(tmp_path):
     root.mkdir()
     ws_path = root / "workspaces" / "test-workspace"
     ws_path.mkdir(parents=True)
-    
+
     meta_path = ws_path / "meta.json"
     with open(meta_path, "w") as f:
         json.dump({"storage": {"root": str(root)}}, f)
-        
+
     global_json = root / "global.json"
     with open(global_json, "w") as f:
         json.dump({"hmac_key": "not-base64!"}, f)
