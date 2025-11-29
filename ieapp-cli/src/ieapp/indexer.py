@@ -7,10 +7,12 @@ import json
 import re
 import time
 from collections import Counter
-from typing import TYPE_CHECKING, Any, cast
+from datetime import date
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import fsspec
 import yaml
+from pydantic import BeforeValidator, TypeAdapter, ValidationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -77,16 +79,44 @@ def extract_properties(content: str) -> dict[str, Any]:
     return merged
 
 
-def validate_properties(properties: dict, schema: dict) -> list[dict]:
-    """Validate extracted properties against a schema definition."""
+def parse_markdown_list(v: Any) -> Any:  # noqa: ANN401
+    """Parse markdown list syntax into a python list."""
+    if isinstance(v, str):
+        items = []
+        for raw_line in v.splitlines():
+            line = raw_line.strip()
+            if line.startswith(("- ", "* ")):
+                items.append(line[2:])
+            elif line:
+                items.append(line)
+        return items
+    return v
+
+
+MarkdownList = Annotated[list[str], BeforeValidator(parse_markdown_list)]
+
+
+def validate_properties(
+    properties: dict[str, Any],
+    schema: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Validate and cast extracted properties against a schema definition.
+
+    Returns:
+        A tuple of (casted_properties, warnings).
+
+    """
     warnings = []
     fields = schema.get("fields", {})
+    casted = properties.copy()
 
     for field_name, field_def in fields.items():
-        if (
-            field_def.get("required", False)
-            and not properties.get(field_name, "").strip()
-        ):
+        value = properties.get(field_name)
+        field_type_str = field_def.get("type", "string")
+        is_required = field_def.get("required", False)
+
+        # Check required
+        if is_required and (value is None or str(value).strip() == ""):
             warnings.append(
                 {
                     "code": "missing_field",
@@ -94,8 +124,43 @@ def validate_properties(properties: dict, schema: dict) -> list[dict]:
                     "message": f"Missing required field: {field_name}",
                 },
             )
+            continue
 
-    return warnings
+        if value is None:
+            continue
+
+        # Determine Pydantic type
+        target_type: Any = str
+        if field_type_str == "number":
+            target_type = int | float
+        elif field_type_str == "date":
+            target_type = date
+        elif field_type_str == "list":
+            target_type = MarkdownList
+
+        # Validate
+        try:
+            adapter = TypeAdapter(target_type)
+            validated_value = adapter.validate_python(value)
+
+            if field_type_str == "date" and isinstance(validated_value, date):
+                validated_value = validated_value.isoformat()
+
+            casted[field_name] = validated_value
+
+        except ValidationError as e:
+            # Extract a nice message
+            err = e.errors()[0]
+            msg = err["msg"]
+            warnings.append(
+                {
+                    "code": "invalid_type",
+                    "field": field_name,
+                    "message": f"Field '{field_name}' {msg}",
+                },
+            )
+
+    return casted, warnings
 
 
 def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -257,7 +322,7 @@ class Indexer:
 
         warnings: list[dict[str, Any]] = []
         if note_class and note_class in schemas:
-            warnings = validate_properties(properties, schemas[note_class])
+            properties, warnings = validate_properties(properties, schemas[note_class])
 
         # Calculate word count (simple whitespace split)
         word_count = len(markdown.split())

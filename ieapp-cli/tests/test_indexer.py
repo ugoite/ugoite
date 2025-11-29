@@ -85,7 +85,7 @@ def test_validate_properties_missing_required() -> None:
     # Missing Date
     properties = {"Attendees": "- Alice"}
 
-    warnings = validate_properties(properties, schema)
+    _, warnings = validate_properties(properties, schema)
     assert len(warnings) == EXPECTED_TASK_COUNT
     assert warnings[0]["code"] == "missing_field"
     assert warnings[0]["field"] == "Date"
@@ -95,8 +95,41 @@ def test_validate_properties_valid() -> None:
     """Return zero warnings when required data is present."""
     schema = {"fields": {"Date": {"type": "date", "required": True}}}
     properties = {"Date": "2025-10-27"}
-    warnings = validate_properties(properties, schema)
+    _, warnings = validate_properties(properties, schema)
     assert len(warnings) == 0
+
+
+def test_validate_properties_casting() -> None:
+    """Ensure properties are cast to their schema types."""
+    schema = {
+        "fields": {
+            "Count": {"type": "number"},
+            "Attendees": {"type": "list"},
+            "Date": {"type": "date"},
+        },
+    }
+    properties = {
+        "Count": "42",
+        "Attendees": "- Alice\n- Bob",
+        "Date": "2025-10-27",
+    }
+
+    casted, warnings = validate_properties(properties, schema)
+    assert len(warnings) == 0
+    expected_count = 42
+    assert casted["Count"] == expected_count
+    assert casted["Attendees"] == ["Alice", "Bob"]
+    assert casted["Date"] == "2025-10-27"
+
+
+def test_validate_properties_invalid_type() -> None:
+    """Emit invalid_type warning when casting fails."""
+    schema = {"fields": {"Count": {"type": "number"}}}
+    properties = {"Count": "not-a-number"}
+
+    _, warnings = validate_properties(properties, schema)
+    assert len(warnings) == 1
+    assert warnings[0]["code"] == "invalid_type"
 
 
 def test_aggregate_stats() -> None:
