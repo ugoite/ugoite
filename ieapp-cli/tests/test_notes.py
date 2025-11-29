@@ -45,9 +45,8 @@ def fake_integrity_provider():
     return _FakeIntegrityProvider()
 
 
-def test_create_note_basic(workspace_root, fake_integrity_provider):
-    """Verifies that creating a note generates the required file structure.
-    """
+def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
+    """Verifies that creating a note generates the required file structure."""
     note_id = "note-1"
     content = "# My Note\n\nHello World"
 
@@ -62,7 +61,7 @@ def test_create_note_basic(workspace_root, fake_integrity_provider):
     assert (note_path / "history" / "index.json").exists()
 
     # Check content.json
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         assert data["markdown"] == content
         assert data["frontmatter"] == {}
@@ -73,9 +72,8 @@ def test_create_note_basic(workspace_root, fake_integrity_provider):
         assert "author" in data
 
 
-def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
-    """Verifies that updating a note requires the correct parent_revision_id.
-    """
+def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider) -> None:
+    """Verifies that updating a note requires the correct parent_revision_id."""
     note_id = "note-2"
     content = "# Note 2"
     create_note(
@@ -84,7 +82,7 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
 
     # Get current revision from content.json
     note_path = workspace_root / "notes" / note_id
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         current_rev = data["revision_id"]
 
@@ -99,7 +97,7 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
     )
 
     # Get new revision
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         new_rev = data["revision_id"]
 
@@ -126,9 +124,8 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
         )
 
 
-def test_note_history_append(workspace_root, fake_integrity_provider):
-    """Verifies that updating a note appends to history and updates index.
-    """
+def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
+    """Verifies that updating a note appends to history and updates index."""
     note_id = "note-history"
     content_v1 = "# Version 1"
     create_note(
@@ -138,7 +135,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
     note_path = workspace_root / "notes" / note_id
 
     # Get v1 revision
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         rev_v1 = data["revision_id"]
 
@@ -153,7 +150,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
     )
 
     # Check history index
-    with open(note_path / "history" / "index.json") as f:
+    with (note_path / "history" / "index.json").open() as f:
         history_index = json.load(f)
         assert history_index["note_id"] == note_id
         revisions = history_index["revisions"]
@@ -165,11 +162,11 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         )
 
     # Check latest revision file
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         rev_v2 = data["revision_id"]
 
-    with open(note_path / "history" / f"{rev_v2}.json") as f:
+    with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
         assert rev_data["revision_id"] == rev_v2
         assert rev_data["parent_revision_id"] == rev_v1
@@ -182,7 +179,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         )
 
 
-def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
+def test_markdown_sections_persist(workspace_root, fake_integrity_provider) -> None:
     """Verifies that frontmatter and sections persist to storage."""
     note_id = "note-structured"
     content = STRUCTURED_NOTE_CONTENT
@@ -192,7 +189,7 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
     )
 
     note_path = workspace_root / "notes" / note_id
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
 
     assert data["frontmatter"]["class"] == "meeting"
@@ -200,9 +197,8 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
     assert data["sections"]["Summary"] == "Wrap up"
 
 
-def test_note_history_diff(workspace_root, fake_integrity_provider):
-    """Verifies that updating a note stores the diff in the history file.
-    """
+def test_note_history_diff(workspace_root, fake_integrity_provider) -> None:
+    """Verifies that updating a note stores the diff in the history file."""
     note_id = "note-diff"
     content_v1 = "Line 1\nLine 2"
     create_note(
@@ -210,7 +206,7 @@ def test_note_history_diff(workspace_root, fake_integrity_provider):
     )
 
     note_path = workspace_root / "notes" / note_id
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         rev_v1 = data["revision_id"]
 
@@ -223,19 +219,18 @@ def test_note_history_diff(workspace_root, fake_integrity_provider):
         integrity_provider=fake_integrity_provider,
     )
 
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         rev_v2 = data["revision_id"]
 
-    with open(note_path / "history" / f"{rev_v2}.json") as f:
+    with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
         assert "diff" in rev_data
         assert "Line 2 Modified" in rev_data["diff"]
 
 
-def test_note_author_persistence(workspace_root, fake_integrity_provider):
-    """Verifies that the author field is persisted correctly.
-    """
+def test_note_author_persistence(workspace_root, fake_integrity_provider) -> None:
+    """Verifies that the author field is persisted correctly."""
     note_id = "note-author"
     content = "# Author Test"
     author = "agent-smith"
@@ -249,12 +244,12 @@ def test_note_author_persistence(workspace_root, fake_integrity_provider):
     )
 
     note_path = workspace_root / "notes" / note_id
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         assert data["author"] == author
         rev_id = data["revision_id"]
 
-    with open(note_path / "history" / f"{rev_id}.json") as f:
+    with (note_path / "history" / f"{rev_id}.json").open() as f:
         data = json.load(f)
         assert data["author"] == author
 
@@ -269,11 +264,11 @@ def test_note_author_persistence(workspace_root, fake_integrity_provider):
         author=new_author,
     )
 
-    with open(note_path / "content.json") as f:
+    with (note_path / "content.json").open() as f:
         data = json.load(f)
         assert data["author"] == new_author
         rev_id_2 = data["revision_id"]
 
-    with open(note_path / "history" / f"{rev_id_2}.json") as f:
+    with (note_path / "history" / f"{rev_id_2}.json").open() as f:
         data = json.load(f)
         assert data["author"] == new_author

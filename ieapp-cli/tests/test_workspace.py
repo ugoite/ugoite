@@ -4,9 +4,10 @@ import pytest
 from ieapp.workspace import WorkspaceExistsError, create_workspace
 
 
-def test_create_workspace_scaffolding(tmp_path):
-    """Verifies that create_workspace generates the required file structure
-    and metadata files as per Spec 03 §2.
+def test_create_workspace_scaffolding(tmp_path) -> None:
+    """Verifies that create_workspace generates the required file structure.
+
+    It also verifies metadata files as per Spec 03 §2.
     """
     root = tmp_path / "ieapp_root"
     ws_id = "test-workspace"
@@ -30,29 +31,13 @@ def test_create_workspace_scaffolding(tmp_path):
     assert (root / "global.json").exists()
 
     # Verify global.json content includes the new workspace
-    with open(root / "global.json") as f:
+    with (root / "global.json").open() as f:
         global_data = json.load(f)
         assert "workspaces" in global_data
-        # Check if ws_id is in the list of workspaces
-        # Assuming workspaces is a list of IDs or objects with ID
-        # Based on spec 03 §2.1: "Holds workspace registry"
-        # Let's assume it's a list of objects for now, or just IDs.
-        # The implementation initialized it as {"workspaces": []}
-        # So we expect the new workspace to be added there.
-
-        # We need to check if the implementation adds it.
-        # If it's a list of strings:
-        # assert ws_id in global_data["workspaces"]
-        # If it's a list of objects:
-        # assert any(ws["id"] == ws_id for ws in global_data["workspaces"])
-
-        # Let's assume list of IDs for simplicity or check what implementation does.
-        # Implementation currently does NOT update it.
-        # So I will write the test to expect it to be there.
         assert ws_id in global_data["workspaces"]
 
     # Verify meta.json content
-    with open(ws_path / "meta.json") as f:
+    with (ws_path / "meta.json").open() as f:
         meta = json.load(f)
         assert meta["id"] == ws_id
         assert meta["name"] == ws_id
@@ -68,7 +53,7 @@ def test_create_workspace_scaffolding(tmp_path):
     assert (mode & 0o077) == 0
 
 
-def test_create_workspace_idempotency(tmp_path):
+def test_create_workspace_idempotency(tmp_path) -> None:
     """Verifies that creating an existing workspace raises WorkspaceExistsError."""
     root = tmp_path / "ieapp_root"
     ws_id = "test-workspace"
@@ -81,9 +66,10 @@ def test_create_workspace_idempotency(tmp_path):
         create_workspace(root, ws_id)
 
 
-def test_create_workspace_s3_unimplemented():
-    """Verifies that providing a non-local URI (e.g. s3://) raises NotImplementedError
-    or similar for Milestone 0.
+def test_create_workspace_s3_unimplemented() -> None:
+    """Verifies that providing a non-local URI (e.g. s3://) raises NotImplementedError.
+
+    This is for Milestone 0.
     """
     root = "s3://my-bucket/ieapp_root"
     ws_id = "test-workspace"
