@@ -87,7 +87,8 @@ def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -
 
 
 def test_update_note_revision_mismatch(
-    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+    workspace_root: Path,
+    fake_integrity_provider: Any,  # noqa: ANN401
 ) -> None:
     """Verifies that updating a note requires the correct parent_revision_id."""
     note_id = "note-2"
