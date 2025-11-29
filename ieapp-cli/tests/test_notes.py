@@ -185,3 +185,84 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
     assert data["frontmatter"]["class"] == "meeting"
     assert data["sections"]["Date"] == "2025-11-29"
     assert data["sections"]["Summary"] == "Wrap up"
+
+
+def test_note_history_diff(workspace_root, fake_integrity_provider):
+    """
+    Verifies that updating a note stores the diff in the history file.
+    """
+    note_id = "note-diff"
+    content_v1 = "Line 1\nLine 2"
+    create_note(
+        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider
+    )
+
+    note_path = workspace_root / "notes" / note_id
+    with open(note_path / "content.json") as f:
+        data = json.load(f)
+        rev_v1 = data["revision_id"]
+
+    content_v2 = "Line 1\nLine 2 Modified"
+    update_note(
+        workspace_root,
+        note_id,
+        content_v2,
+        parent_revision_id=rev_v1,
+        integrity_provider=fake_integrity_provider,
+    )
+
+    with open(note_path / "content.json") as f:
+        data = json.load(f)
+        rev_v2 = data["revision_id"]
+
+    with open(note_path / "history" / f"{rev_v2}.json") as f:
+        rev_data = json.load(f)
+        assert "diff" in rev_data
+        assert "Line 2 Modified" in rev_data["diff"]
+
+
+def test_note_author_persistence(workspace_root, fake_integrity_provider):
+    """
+    Verifies that the author field is persisted correctly.
+    """
+    note_id = "note-author"
+    content = "# Author Test"
+    author = "agent-smith"
+
+    create_note(
+        workspace_root,
+        note_id,
+        content,
+        integrity_provider=fake_integrity_provider,
+        author=author,
+    )
+
+    note_path = workspace_root / "notes" / note_id
+    with open(note_path / "content.json") as f:
+        data = json.load(f)
+        assert data["author"] == author
+        rev_id = data["revision_id"]
+
+    with open(note_path / "history" / f"{rev_id}.json") as f:
+        data = json.load(f)
+        assert data["author"] == author
+
+    # Update with different author
+    new_author = "neo"
+    update_note(
+        workspace_root,
+        note_id,
+        "# Author Test Updated",
+        parent_revision_id=rev_id,
+        integrity_provider=fake_integrity_provider,
+        author=new_author,
+    )
+
+    with open(note_path / "content.json") as f:
+        data = json.load(f)
+        assert data["author"] == new_author
+        rev_id_2 = data["revision_id"]
+
+    with open(note_path / "history" / f"{rev_id_2}.json") as f:
+        data = json.load(f)
+        assert data["author"] == new_author

@@ -3,6 +3,7 @@ import os
 import time
 import uuid
 import logging
+import difflib
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -69,6 +70,7 @@ def create_note(
     note_id: str,
     content: str,
     integrity_provider: Optional[IntegrityProvider] = None,
+    author: str = "user",
 ) -> None:
     """Creates a note directory with meta, content, and history files.
 
@@ -77,6 +79,7 @@ def create_note(
         note_id: Identifier for the note.
         content: Markdown body to persist.
         integrity_provider: Optional override for checksum/signature calculations.
+        author: The author of the note (default: "user").
 
     Raises:
         NoteExistsError: If the note directory already exists.
@@ -105,7 +108,7 @@ def create_note(
     # Create content.json
     content_data = {
         "revision_id": rev_id,
-        "author": "user",  # Default author
+        "author": author,
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
         "sections": parsed["sections"],
@@ -122,7 +125,7 @@ def create_note(
         "revision_id": rev_id,
         "parent_revision_id": None,
         "timestamp": timestamp,
-        "author": "user",
+        "author": author,
         "integrity": {"checksum": checksum, "signature": signature},
         "message": "Initial creation",
     }
@@ -186,6 +189,7 @@ def update_note(
     content: str,
     parent_revision_id: str,
     integrity_provider: Optional[IntegrityProvider] = None,
+    author: str = "user",
 ) -> None:
     """Appends a new revision to an existing note.
 
@@ -195,6 +199,7 @@ def update_note(
         content: Updated markdown body.
         parent_revision_id: Revision expected by the caller.
         integrity_provider: Optional override for checksum/signature calculations.
+        author: The author of the update (default: "user").
 
     Raises:
         FileNotFoundError: If the note directory is missing.
@@ -228,10 +233,19 @@ def update_note(
     checksum = provider.checksum(content)
     signature = provider.signature(content)
 
+    # Calculate diff
+    diff = difflib.unified_diff(
+        current_content_data["markdown"].splitlines(keepends=True),
+        content.splitlines(keepends=True),
+        fromfile=f"revision/{current_content_data['revision_id']}",
+        tofile=f"revision/{rev_id}",
+    )
+    diff_text = "".join(diff)
+
     # Update content.json
     content_data = {
         "revision_id": rev_id,
-        "author": "user",
+        "author": author,
         "markdown": content,
         "frontmatter": parsed["frontmatter"],
         "sections": parsed["sections"],
@@ -247,7 +261,8 @@ def update_note(
         "revision_id": rev_id,
         "parent_revision_id": parent_revision_id,
         "timestamp": timestamp,
-        "author": "user",
+        "author": author,
+        "diff": diff_text,
         "integrity": {"checksum": checksum, "signature": signature},
         "message": "Update",
     }
