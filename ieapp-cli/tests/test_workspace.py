@@ -69,6 +69,7 @@ def test_create_workspace_scaffolding(tmp_path):
 
 
 def test_create_workspace_idempotency(tmp_path):
+    """Verifies that creating an existing workspace raises WorkspaceExistsError."""
     root = tmp_path / "ieapp_root"
     ws_id = "test-workspace"
     create_workspace(root, ws_id)
