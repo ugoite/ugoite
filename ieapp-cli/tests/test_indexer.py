@@ -5,7 +5,6 @@ from collections.abc import Callable
 
 import fsspec
 import pytest
-
 from ieapp.indexer import (
     Indexer,
     aggregate_stats,

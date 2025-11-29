@@ -5,7 +5,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from ieapp.integrity import IntegrityProvider
 from ieapp.workspace import create_workspace
 
