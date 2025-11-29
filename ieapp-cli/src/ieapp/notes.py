@@ -33,28 +33,35 @@ class RevisionMismatchError(Exception):
 
 
 def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
-    """Creates a directory with restrictive permissions.
+    """Creates ``path`` with restrictive permissions from the outset.
 
     Args:
         path: Directory to create.
-        mode: Permission bits applied at creation.
+        mode: Permission bits applied during creation.
     """
 
-    # Create parent directories if they don't exist and avoid silently
-    # succeeding if the path already exists and is a file (exist_ok=False).
-    path.mkdir(mode=mode, parents=True, exist_ok=False)
+    os.mkdir(path, mode)
 
 
-def _write_json_secure(path: Path, payload: Dict[str, Any], mode: int = 0o600) -> None:
-    """Writes JSON to ``path`` while setting permissions atomically.
+def _write_json_secure(
+    path: Path, payload: Dict[str, Any], mode: int = 0o600, *, exclusive: bool = False
+) -> None:
+    """Writes JSON to ``path`` while applying permissions atomically.
 
     Args:
         path: Target file path.
         payload: JSON-serializable dictionary.
         mode: Permission bits applied at creation.
+        exclusive: When True, use ``O_EXCL`` to avoid clobbering existing files.
     """
 
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    flags = os.O_WRONLY | os.O_CREAT
+    if exclusive:
+        flags |= os.O_EXCL
+    else:
+        flags |= os.O_TRUNC
+
+    fd = os.open(str(path), flags, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
 
@@ -171,7 +178,7 @@ def create_note(
     }
 
     content_path = note_dir / "content.json"
-    _write_json_secure(content_path, content_data)
+    _write_json_secure(content_path, content_data, exclusive=True)
 
     revision = {
         "revision_id": rev_id,
@@ -187,7 +194,7 @@ def create_note(
     _mkdir_secure(history_dir)
 
     rev_path = history_dir / f"{rev_id}.json"
-    _write_json_secure(rev_path, revision)
+    _write_json_secure(rev_path, revision, exclusive=True)
 
     # Update history index
     history_index = {
@@ -202,7 +209,7 @@ def create_note(
         ],
     }
     index_path = history_dir / "index.json"
-    _write_json_secure(index_path, history_index)
+    _write_json_secure(index_path, history_index, exclusive=True)
 
     # Create meta.json
     # Extract title from first H1 or use note_id
@@ -222,7 +229,7 @@ def create_note(
     }
 
     meta_path = note_dir / "meta.json"
-    _write_json_secure(meta_path, meta)
+    _write_json_secure(meta_path, meta, exclusive=True)
 
 
 def update_note(
