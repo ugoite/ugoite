@@ -230,7 +230,8 @@ def test_markdown_sections_persist(
 
 
 def test_note_history_diff(
-    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+    workspace_root: Path,
+    fake_integrity_provider: Any,  # noqa: ANN401
 ) -> None:
     """Verifies that updating a note stores the diff in the history file."""
     note_id = "note-diff"
