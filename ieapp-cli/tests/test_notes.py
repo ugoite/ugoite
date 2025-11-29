@@ -145,7 +145,8 @@ def test_update_note_revision_mismatch(
 
 
 def test_note_history_append(
-    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+    workspace_root: Path,
+    fake_integrity_provider: Any,  # noqa: ANN401
 ) -> None:
     """Verifies that updating a note appends to history and updates index."""
     note_id = "note-history"
@@ -204,7 +205,10 @@ def test_note_history_append(
         )
 
 
-def test_markdown_sections_persist(workspace_root, fake_integrity_provider) -> None:
+def test_markdown_sections_persist(
+    workspace_root: Path,
+    fake_integrity_provider: Any,  # noqa: ANN401
+) -> None:
     """Verifies that frontmatter and sections persist to storage."""
     note_id = "note-structured"
     content = STRUCTURED_NOTE_CONTENT
@@ -220,9 +224,9 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider) -> N
     with (note_path / "content.json").open() as f:
         data = json.load(f)
 
-    assert data["frontmatter"]["class"] == "meeting"
-    assert data["sections"]["Date"] == "2025-11-29"
-    assert data["sections"]["Summary"] == "Wrap up"
+    assert data["frontmatter"]["class"] == "meeting"  # noqa: S101
+    assert data["sections"]["Date"] == "2025-11-29"  # noqa: S101
+    assert data["sections"]["Summary"] == "Wrap up"  # noqa: S101
 
 
 def test_note_history_diff(workspace_root, fake_integrity_provider) -> None:
