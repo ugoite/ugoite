@@ -1,10 +1,10 @@
 """Workspace management module."""
 
 import base64
-import copy
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import uuid
@@ -32,6 +32,22 @@ EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 
 class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
+
+
+def _validate_id(identifier: str, name: str) -> None:
+    """Validate that the identifier contains only safe characters.
+
+    Args:
+        identifier: The string to validate.
+        name: The name of the field (for error messages).
+
+    Raises:
+        ValueError: If the identifier contains invalid characters.
+
+    """
+    if not identifier or not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
+        msg = f"Invalid {name}: {identifier}. Must be alphanumeric, hyphens, or underscores."
+        raise ValueError(msg)
 
 
 def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
@@ -93,7 +109,7 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
 
     """
     global_json_path = Path(root_path_str) / "global.json"
-    if fs.exists(str(global_json_path)):
+    if global_json_path.exists():
         return str(global_json_path)
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -130,6 +146,7 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         WorkspaceExistsError: If the workspace already exists.
 
     """
+    _validate_id(workspace_id, "workspace_id")
     logger.info("Creating workspace %s at %s", workspace_id, root_path)
 
     # Use fsspec to handle filesystem operations
@@ -195,13 +212,16 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     _write_json_secure(str(settings_path), settings)
 
     # Create index/index.json
-    index_data = copy.deepcopy(EMPTY_INDEX_SCHEMA)
+    index_data = {"notes": {}, "class_stats": {}}
     index_json_path = ws_path / "index" / "index.json"
     _write_json_secure(str(index_json_path), index_data)
 
     # Create index/stats.json
-    stats_data = copy.deepcopy(EMPTY_STATS_SCHEMA)
-    stats_data["last_indexed"] = time.time()
+    stats_data = {
+        "last_indexed": time.time(),
+        "note_count": 0,
+        "tag_counts": {},
+    }
     stats_json_path = ws_path / "index" / "stats.json"
     _write_json_secure(str(stats_json_path), stats_data)
 
