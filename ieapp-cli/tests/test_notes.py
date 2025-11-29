@@ -7,6 +7,20 @@ import pytest
 from ieapp.workspace import create_workspace
 from ieapp.notes import create_note, update_note, RevisionMismatchError
 
+STRUCTURED_NOTE_CONTENT = """---
+class: meeting
+tags:
+    - kickoff
+---
+# Kickoff
+
+## Date
+2025-11-29
+
+## Summary
+Wrap up
+"""
+
 
 @pytest.fixture
 def workspace_root(tmp_path):
@@ -173,8 +187,10 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
 
 
 def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
+    """Verifies that frontmatter and sections persist to storage."""
+
     note_id = "note-structured"
-    content = """---\nclass: meeting\ntags:\n  - kickoff\n---\n# Kickoff\n\n## Date\n2025-11-29\n\n## Summary\nWrap up"""
+    content = STRUCTURED_NOTE_CONTENT
 
     create_note(
         workspace_root, note_id, content, integrity_provider=fake_integrity_provider
