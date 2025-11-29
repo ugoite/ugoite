@@ -23,6 +23,8 @@ EXPECTED_INDEXED_NOTES = 2
 EXPECTED_MEETING_RESULTS = 2
 EXPECTED_SINGLE_RESULT = 1
 EXPECTED_WATCH_CALLBACKS = 2
+EXPECTED_WORD_COUNT = 11
+EXPECTED_FIELD_COUNT_2 = 2
 
 
 def test_extract_properties_h2_sections() -> None:
@@ -258,3 +260,62 @@ def test_indexer_watch_loop_triggers_run(monkeypatch: pytest.MonkeyPatch) -> Non
     indexer.watch(wait_for_changes)
 
     assert len(calls) == EXPECTED_WATCH_CALLBACKS
+
+
+def test_indexer_computes_word_count() -> None:
+    """Ensure word_count is computed for indexed notes."""
+    fs = fsspec.filesystem("memory")
+    workspace_path = "/test_workspace"
+    fs.makedirs(f"{workspace_path}/notes/note1", exist_ok=True)
+    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+
+    # Create Note with some content
+    note1_content = {
+        "markdown": "# Hello World\n\nThis is a test note with some words.",
+    }
+    with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
+        json.dump(note1_content, f)
+
+    with fs.open(f"{workspace_path}/notes/note1/meta.json", "w") as f:
+        json.dump({"id": "note1"}, f)
+
+    indexer = Indexer(workspace_path, fs=fs)
+    indexer.run_once()
+
+    with fs.open(f"{workspace_path}/index/index.json", "r") as f:
+        index_data = json.load(f)
+
+    note1 = index_data["notes"]["note1"]
+    # "Hello World" (2) + "This is a test note with some words." (8) = 10 words
+    # Note: split() counts '#' as a word, so 11.
+    assert note1.get("word_count") == EXPECTED_WORD_COUNT
+
+
+def test_aggregate_stats_includes_field_usage() -> None:
+    """Ensure stats include field usage frequencies per class."""
+    index_data = {
+        "note1": {
+            "class": "meeting",
+            "properties": {"Date": "2025-10-27", "Attendees": "Alice"},
+        },
+        "note2": {
+            "class": "meeting",
+            "properties": {"Date": "2025-10-28"},  # Missing Attendees
+        },
+        "note3": {
+            "class": "task",
+            "properties": {"status": "todo"},
+        },
+    }
+
+    stats = aggregate_stats(index_data)
+
+    # Check field usage for 'meeting'
+    meeting_stats = stats["class_stats"]["meeting"]
+    assert "fields" in meeting_stats
+    assert meeting_stats["fields"]["Date"] == EXPECTED_FIELD_COUNT_2
+    assert meeting_stats["fields"]["Attendees"] == EXPECTED_SINGLE_RESULT
+
+    # Check field usage for 'task'
+    task_stats = stats["class_stats"]["task"]
+    assert task_stats["fields"]["status"] == EXPECTED_SINGLE_RESULT

@@ -7,7 +7,7 @@ import json
 import re
 import time
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import fsspec
 import yaml
@@ -100,20 +100,33 @@ def validate_properties(properties: dict, schema: dict) -> list[dict]:
 
 def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Build aggregate statistics for class and tag usage."""
-    class_stats: dict[str, dict[str, int]] = {}
+    class_stats: dict[str, dict[str, Any]] = {}
     tag_counts: Counter[str] = Counter()
     uncategorized_count = 0
 
     for record in notes.values():
         note_class = record.get("class") or record.get("properties", {}).get("class")
         if note_class:
-            class_entry = class_stats.setdefault(note_class, {"count": 0})
+            class_entry = class_stats.setdefault(
+                note_class,
+                {"count": 0, "fields": Counter()},
+            )
             class_entry["count"] += 1
+
+            # Count field usage
+            properties = record.get("properties", {})
+            for key in properties:
+                cast("Counter", class_entry["fields"])[key] += 1
         else:
             uncategorized_count += 1
 
         for tag in record.get("tags") or []:
             tag_counts[tag] += 1
+
+    # Convert Counters to dicts for JSON serialization
+    for entry in class_stats.values():
+        if "fields" in entry and isinstance(entry["fields"], Counter):
+            entry["fields"] = dict(entry["fields"])
 
     class_stats["_uncategorized"] = {"count": uncategorized_count}
 
@@ -246,6 +259,9 @@ class Indexer:
         if note_class and note_class in schemas:
             warnings = validate_properties(properties, schemas[note_class])
 
+        # Calculate word count (simple whitespace split)
+        word_count = len(markdown.split())
+
         return {
             "id": note_id,
             "title": meta_json.get("title", note_id),
@@ -256,6 +272,7 @@ class Indexer:
                 self.workspace_path.split("/")[-1],
             ),
             "properties": properties,
+            "word_count": word_count,
             "tags": meta_json.get("tags", []),
             "links": meta_json.get("links", []),
             "canvas_position": meta_json.get("canvas_position", {}),
