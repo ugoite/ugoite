@@ -43,7 +43,11 @@ def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
 
 
 def _write_json_secure(
-    path: Path, payload: dict[str, Any], mode: int = 0o600, *, exclusive: bool = False,
+    path: Path,
+    payload: dict[str, Any],
+    mode: int = 0o600,
+    *,
+    exclusive: bool = False,
 ) -> None:
     """Write JSON to ``path`` while applying permissions atomically.
 

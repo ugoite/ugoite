@@ -42,7 +42,8 @@ def test_integrity_provider_missing_storage_root(tmp_path: Path) -> None:
         json.dump({"id": "fake"}, f)
 
     with pytest.raises(
-        ValueError, match=re.escape("Workspace metadata missing storage.root"),
+        ValueError,
+        match=re.escape("Workspace metadata missing storage.root"),
     ):
         IntegrityProvider.for_workspace(ws_path)
 

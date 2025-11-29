@@ -25,17 +25,21 @@ def main() -> None:
     # note command
     note_parser = subparsers.add_parser("note", help="Note management")
     note_subparsers = note_parser.add_subparsers(
-        dest="note_command", help="Note commands",
+        dest="note_command",
+        help="Note commands",
     )
 
     # note create command
     nc_parser = note_subparsers.add_parser("create", help="Create a new note")
     nc_parser.add_argument(
-        "workspace_path", help="Full path to the workspace directory",
+        "workspace_path",
+        help="Full path to the workspace directory",
     )
     nc_parser.add_argument("note_id", help="ID of the note to create")
     nc_parser.add_argument(
-        "--content", help="Content of the note", default=DEFAULT_NOTE_CONTENT,
+        "--content",
+        help="Content of the note",
+        default=DEFAULT_NOTE_CONTENT,
     )
     nc_parser.add_argument("--author", help="Author of the note", default="user")
 
