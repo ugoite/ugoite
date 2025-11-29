@@ -1,7 +1,7 @@
 """Tests for the ieapp indexer utilities."""
 
 import json
-from typing import Callable
+from collections.abc import Callable
 
 import fsspec
 import pytest
