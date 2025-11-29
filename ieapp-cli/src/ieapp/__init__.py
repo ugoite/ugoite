@@ -2,4 +2,4 @@
 
 from .workspace import WorkspaceExistsError, create_workspace
 
-__all__ = ["create_workspace", "WorkspaceExistsError"]
+__all__ = ["WorkspaceExistsError", "create_workspace"]

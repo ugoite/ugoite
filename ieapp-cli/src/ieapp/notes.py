@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import yaml
 
@@ -23,13 +23,11 @@ DEFAULT_UPDATE_MESSAGE = "Update"
 class NoteExistsError(Exception):
     """Raised when attempting to create a note that already exists."""
 
-    pass
 
 
 class RevisionMismatchError(Exception):
     """Raised when the supplied parent revision does not match the head."""
 
-    pass
 
 
 def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
@@ -38,13 +36,13 @@ def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
     Args:
         path: Directory to create.
         mode: Permission bits applied during creation.
-    """
 
+    """
     os.mkdir(path, mode)
 
 
 def _write_json_secure(
-    path: Path, payload: Dict[str, Any], mode: int = 0o600, *, exclusive: bool = False
+    path: Path, payload: dict[str, Any], mode: int = 0o600, *, exclusive: bool = False,
 ) -> None:
     """Writes JSON to ``path`` while applying permissions atomically.
 
@@ -53,8 +51,8 @@ def _write_json_secure(
         payload: JSON-serializable dictionary.
         mode: Permission bits applied at creation.
         exclusive: When True, use ``O_EXCL`` to avoid clobbering existing files.
-    """
 
+    """
     flags = os.O_WRONLY | os.O_CREAT
     if exclusive:
         flags |= os.O_EXCL
@@ -75,15 +73,15 @@ def _extract_title_from_markdown(content: str, fallback: str) -> str:
 
     Returns:
         The extracted title string.
-    """
 
+    """
     for line in content.splitlines():
         if line.startswith(H1_PREFIX):
             return line[len(H1_PREFIX) :].strip()
     return fallback
 
 
-def _parse_markdown(content: str) -> Dict[str, Any]:
+def _parse_markdown(content: str) -> dict[str, Any]:
     """Parses markdown content to extract frontmatter and sections.
 
     If frontmatter is missing or malformed, it defaults to an empty dictionary.
@@ -94,6 +92,7 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
 
     Returns:
         Dictionary containing ``frontmatter`` and ``sections`` entries.
+
     """
     frontmatter = {}
     sections = {}
@@ -129,10 +128,10 @@ def _parse_markdown(content: str) -> Dict[str, Any]:
 
 
 def create_note(
-    workspace_path: Union[str, Path],
+    workspace_path: str | Path,
     note_id: str,
     content: str,
-    integrity_provider: Optional[IntegrityProvider] = None,
+    integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
 ) -> None:
     """Creates a note directory with meta, content, and history files.
@@ -146,6 +145,7 @@ def create_note(
 
     Raises:
         NoteExistsError: If the note directory already exists.
+
     """
     ws_path = Path(workspace_path)
     note_dir = ws_path / "notes" / note_id
@@ -205,7 +205,7 @@ def create_note(
                 "timestamp": timestamp,
                 "checksum": checksum,
                 "signature": signature,
-            }
+            },
         ],
     }
     index_path = history_dir / "index.json"
@@ -233,11 +233,11 @@ def create_note(
 
 
 def update_note(
-    workspace_path: Union[str, Path],
+    workspace_path: str | Path,
     note_id: str,
     content: str,
     parent_revision_id: str,
-    integrity_provider: Optional[IntegrityProvider] = None,
+    integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
 ) -> None:
     """Appends a new revision to an existing note.
@@ -253,6 +253,7 @@ def update_note(
     Raises:
         FileNotFoundError: If the note directory is missing.
         RevisionMismatchError: If ``parent_revision_id`` does not match head.
+
     """
     ws_path = Path(workspace_path)
     note_dir = ws_path / "notes" / note_id
@@ -269,7 +270,7 @@ def update_note(
         raise RevisionMismatchError(
             "Revision conflict: the note has been modified. "
             f"Current revision: {current_content_data['revision_id']}, "
-            f"provided revision: {parent_revision_id}"
+            f"provided revision: {parent_revision_id}",
         )
 
     # Parse content
@@ -330,7 +331,7 @@ def update_note(
             "timestamp": timestamp,
             "checksum": checksum,
             "signature": signature,
-        }
+        },
     )
 
     _write_json_secure(index_path, history_index)

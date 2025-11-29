@@ -1,7 +1,7 @@
 import json
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
@@ -15,8 +15,9 @@ class JSONFormatter(logging.Formatter):
 
         Returns:
             A JSON string representation of the log record.
+
         """
-        log_record: Dict[str, Any] = {
+        log_record: dict[str, Any] = {
             "timestamp": self.formatTime(record),
             "level": record.levelname,
             "message": record.getMessage(),

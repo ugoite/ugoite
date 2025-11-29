@@ -8,7 +8,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import fsspec
 from fsspec.spec import AbstractFileSystem
@@ -20,7 +20,7 @@ try:  # pragma: no cover - platform specific
     fcntl: Any
 except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
-    fcntl: Optional[Any] = None
+    fcntl: Any | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
 
-    pass
 
 
 def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
@@ -41,8 +40,8 @@ def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
         path: Absolute file path to write.
         payload: JSON-serializable dictionary.
         mode: File permissions applied at creation time.
-    """
 
+    """
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
@@ -54,8 +53,8 @@ def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> Non
     Args:
         global_json_path: Absolute path to ``global.json``.
         workspace_id: Workspace identifier to append.
-    """
 
+    """
     if not os.path.exists(global_json_path):
         return
 
@@ -89,8 +88,8 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
 
     Returns:
         The string path to ``global.json``.
-    """
 
+    """
     global_json_path = os.path.join(root_path_str, "global.json")
     if fs.exists(global_json_path):
         return global_json_path
@@ -118,9 +117,8 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
     return global_json_path
 
 
-def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
-    """
-    Creates a new workspace with the required directory structure and metadata.
+def create_workspace(root_path: str | Path, workspace_id: str) -> None:
+    """Creates a new workspace with the required directory structure and metadata.
 
     Args:
         root_path: The root directory where workspaces are stored.
@@ -128,6 +126,7 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
 
     Raises:
         WorkspaceExistsError: If the workspace already exists.
+
     """
     logger.info(f"Creating workspace {workspace_id} at {root_path}")
 
@@ -165,7 +164,7 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
 
     if fs.exists(ws_path):
         raise WorkspaceExistsError(
-            f"Workspace {workspace_id} already exists at {ws_path}"
+            f"Workspace {workspace_id} already exists at {ws_path}",
         )
 
     # Create directories

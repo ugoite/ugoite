@@ -5,8 +5,7 @@ from ieapp.workspace import WorkspaceExistsError, create_workspace
 
 
 def test_create_workspace_scaffolding(tmp_path):
-    """
-    Verifies that create_workspace generates the required file structure
+    """Verifies that create_workspace generates the required file structure
     and metadata files as per Spec 03 §2.
     """
     root = tmp_path / "ieapp_root"
@@ -83,8 +82,7 @@ def test_create_workspace_idempotency(tmp_path):
 
 
 def test_create_workspace_s3_unimplemented():
-    """
-    Verifies that providing a non-local URI (e.g. s3://) raises NotImplementedError
+    """Verifies that providing a non-local URI (e.g. s3://) raises NotImplementedError
     or similar for Milestone 0.
     """
     root = "s3://my-bucket/ieapp_root"

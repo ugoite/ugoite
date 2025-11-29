@@ -39,21 +39,20 @@ def fake_integrity_provider():
 
         def signature(self, content: str) -> str:
             return hmac.new(
-                self.secret, content.encode("utf-8"), hashlib.sha256
+                self.secret, content.encode("utf-8"), hashlib.sha256,
             ).hexdigest()
 
     return _FakeIntegrityProvider()
 
 
 def test_create_note_basic(workspace_root, fake_integrity_provider):
-    """
-    Verifies that creating a note generates the required file structure.
+    """Verifies that creating a note generates the required file structure.
     """
     note_id = "note-1"
     content = "# My Note\n\nHello World"
 
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -75,13 +74,12 @@ def test_create_note_basic(workspace_root, fake_integrity_provider):
 
 
 def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
-    """
-    Verifies that updating a note requires the correct parent_revision_id.
+    """Verifies that updating a note requires the correct parent_revision_id.
     """
     note_id = "note-2"
     content = "# Note 2"
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
     )
 
     # Get current revision from content.json
@@ -129,13 +127,12 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
 
 
 def test_note_history_append(workspace_root, fake_integrity_provider):
-    """
-    Verifies that updating a note appends to history and updates index.
+    """Verifies that updating a note appends to history and updates index.
     """
     note_id = "note-history"
     content_v1 = "# Version 1"
     create_note(
-        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider
+        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -164,7 +161,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         assert revisions[0]["revision_id"] == rev_v1
         assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
         assert revisions[0]["signature"] == fake_integrity_provider.signature(
-            content_v1
+            content_v1,
         )
 
     # Check latest revision file
@@ -178,21 +175,20 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         assert rev_data["parent_revision_id"] == rev_v1
         assert "diff" in rev_data
         assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(
-            content_v2
+            content_v2,
         )
         assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(
-            content_v2
+            content_v2,
         )
 
 
 def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
     """Verifies that frontmatter and sections persist to storage."""
-
     note_id = "note-structured"
     content = STRUCTURED_NOTE_CONTENT
 
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -205,13 +201,12 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
 
 
 def test_note_history_diff(workspace_root, fake_integrity_provider):
-    """
-    Verifies that updating a note stores the diff in the history file.
+    """Verifies that updating a note stores the diff in the history file.
     """
     note_id = "note-diff"
     content_v1 = "Line 1\nLine 2"
     create_note(
-        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider
+        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -239,8 +234,7 @@ def test_note_history_diff(workspace_root, fake_integrity_provider):
 
 
 def test_note_author_persistence(workspace_root, fake_integrity_provider):
-    """
-    Verifies that the author field is persisted correctly.
+    """Verifies that the author field is persisted correctly.
     """
     note_id = "note-author"
     content = "# Author Test"
