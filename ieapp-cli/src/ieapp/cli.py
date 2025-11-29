@@ -1,3 +1,5 @@
+"""CLI entry point."""
+
 import argparse
 import sys
 
@@ -42,14 +44,15 @@ def main() -> None:
     if args.command == "create-workspace":
         try:
             create_workspace(args.root_path, args.workspace_id)
-            print(
-                f"Workspace '{args.workspace_id}' created successfully at '{args.root_path}'",
+            sys.stdout.write(
+                f"Workspace '{args.workspace_id}' created successfully at "
+                f"'{args.root_path}'\n",
             )
         except WorkspaceExistsError as e:
-            print(f"Error: {e}", file=sys.stderr)
+            sys.stderr.write(f"Error: {e}\n")
             sys.exit(1)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"Error: {e}\n")
             sys.exit(1)
 
     elif args.command == "note":
@@ -61,12 +64,12 @@ def main() -> None:
                     args.content,
                     author=args.author,
                 )
-                print(f"Note '{args.note_id}' created successfully.")
+                sys.stdout.write(f"Note '{args.note_id}' created successfully.\n")
             except NoteExistsError as e:
-                print(f"Error: {e}", file=sys.stderr)
+                sys.stderr.write(f"Error: {e}\n")
                 sys.exit(1)
-            except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"Error: {e}\n")
                 sys.exit(1)
         else:
             note_parser.print_help()

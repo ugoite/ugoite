@@ -1,3 +1,5 @@
+"""Notes management module."""
+
 import difflib
 import json
 import logging
@@ -18,33 +20,32 @@ H1_PREFIX = "# "
 H2_PREFIX = "## "
 DEFAULT_INITIAL_MESSAGE = "Initial creation"
 DEFAULT_UPDATE_MESSAGE = "Update"
+MIN_FRONTMATTER_PARTS = 3
 
 
 class NoteExistsError(Exception):
     """Raised when attempting to create a note that already exists."""
 
 
-
 class RevisionMismatchError(Exception):
     """Raised when the supplied parent revision does not match the head."""
 
 
-
 def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
-    """Creates ``path`` with restrictive permissions from the outset.
+    """Create ``path`` with restrictive permissions from the outset.
 
     Args:
         path: Directory to create.
         mode: Permission bits applied during creation.
 
     """
-    os.mkdir(path, mode)
+    path.mkdir(mode=mode)
 
 
 def _write_json_secure(
     path: Path, payload: dict[str, Any], mode: int = 0o600, *, exclusive: bool = False,
 ) -> None:
-    """Writes JSON to ``path`` while applying permissions atomically.
+    """Write JSON to ``path`` while applying permissions atomically.
 
     Args:
         path: Target file path.
@@ -65,7 +66,7 @@ def _write_json_secure(
 
 
 def _extract_title_from_markdown(content: str, fallback: str) -> str:
-    """Returns the first H1 heading or ``fallback`` if none is present.
+    """Return the first H1 heading or ``fallback`` if none is present.
 
     Args:
         content: Raw markdown being parsed.
@@ -82,7 +83,7 @@ def _extract_title_from_markdown(content: str, fallback: str) -> str:
 
 
 def _parse_markdown(content: str) -> dict[str, Any]:
-    """Parses markdown content to extract frontmatter and sections.
+    """Parse markdown content to extract frontmatter and sections.
 
     If frontmatter is missing or malformed, it defaults to an empty dictionary.
     If YAML parsing fails, a warning is logged and an empty dictionary is used.
@@ -101,7 +102,7 @@ def _parse_markdown(content: str) -> dict[str, Any]:
     if content.startswith(FRONTMATTER_DELIMITER):
         try:
             parts = content.split(FRONTMATTER_DELIMITER, 2)
-            if len(parts) >= 3:
+            if len(parts) >= MIN_FRONTMATTER_PARTS:
                 fm_str = parts[1]
                 frontmatter = yaml.safe_load(fm_str) or {}
         except yaml.YAMLError as exc:
@@ -127,14 +128,14 @@ def _parse_markdown(content: str) -> dict[str, Any]:
     return {"frontmatter": frontmatter, "sections": sections}
 
 
-def create_note(
+def create_note(  # noqa: PLR0913
     workspace_path: str | Path,
     note_id: str,
     content: str,
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
 ) -> None:
-    """Creates a note directory with meta, content, and history files.
+    """Create a note directory with meta, content, and history files.
 
     Args:
         workspace_path: Absolute path to the workspace directory.
@@ -151,7 +152,8 @@ def create_note(
     note_dir = ws_path / "notes" / note_id
 
     if note_dir.exists():
-        raise NoteExistsError(f"Note {note_id} already exists")
+        msg = f"Note {note_id} already exists"
+        raise NoteExistsError(msg)
 
     _mkdir_secure(note_dir)
 
@@ -232,7 +234,7 @@ def create_note(
     _write_json_secure(meta_path, meta, exclusive=True)
 
 
-def update_note(
+def update_note(  # noqa: PLR0913
     workspace_path: str | Path,
     note_id: str,
     content: str,
@@ -240,7 +242,7 @@ def update_note(
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
 ) -> None:
-    """Appends a new revision to an existing note.
+    """Append a new revision to an existing note.
 
     Args:
         workspace_path: Absolute path to the workspace directory.
@@ -259,7 +261,8 @@ def update_note(
     note_dir = ws_path / "notes" / note_id
 
     if not note_dir.exists():
-        raise FileNotFoundError(f"Note {note_id} not found")
+        msg = f"Note {note_id} not found"
+        raise FileNotFoundError(msg)
 
     # Check parent revision from content.json (as per spec)
     content_path = note_dir / "content.json"
@@ -267,11 +270,12 @@ def update_note(
         current_content_data = json.load(f)
 
     if current_content_data["revision_id"] != parent_revision_id:
-        raise RevisionMismatchError(
+        msg = (
             "Revision conflict: the note has been modified. "
             f"Current revision: {current_content_data['revision_id']}, "
-            f"provided revision: {parent_revision_id}",
+            f"provided revision: {parent_revision_id}"
         )
+        raise RevisionMismatchError(msg)
 
     # Parse content
     parsed = _parse_markdown(content)

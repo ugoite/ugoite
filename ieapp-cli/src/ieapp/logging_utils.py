@@ -1,3 +1,5 @@
+"""Logging utilities."""
+
 import json
 import logging
 import sys
@@ -8,7 +10,7 @@ class JSONFormatter(logging.Formatter):
     """Formatter that outputs JSON strings."""
 
     def format(self, record: logging.LogRecord) -> str:
-        """Formats a log record as a JSON string.
+        """Format a log record as a JSON string.
 
         Args:
             record: The log record to format.
@@ -31,7 +33,7 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging() -> None:
-    """Configures the root logger with a JSON formatter on stdout."""
+    """Configure the root logger with a JSON formatter on stdout."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JSONFormatter())
     root = logging.getLogger()

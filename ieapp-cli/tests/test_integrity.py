@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 from ieapp.integrity import IntegrityProvider
@@ -10,7 +11,7 @@ from ieapp.workspace import create_workspace
 HMAC_KEY_LENGTH = 32
 
 
-def test_integrity_provider_for_workspace_success(tmp_path) -> None:
+def test_integrity_provider_for_workspace_success(tmp_path: Path) -> None:
     """Verifies that IntegrityProvider loads correctly from a valid workspace."""
     root = tmp_path / "ieapp_root"
     ws_id = "test-workspace"
@@ -18,11 +19,11 @@ def test_integrity_provider_for_workspace_success(tmp_path) -> None:
     ws_path = root / "workspaces" / ws_id
 
     provider = IntegrityProvider.for_workspace(ws_path)
-    assert isinstance(provider, IntegrityProvider)
-    assert len(provider.secret) == HMAC_KEY_LENGTH  # 32 bytes for SHA-256 HMAC key
+    assert isinstance(provider, IntegrityProvider)  # noqa: S101
+    assert len(provider.secret) == HMAC_KEY_LENGTH  # noqa: S101
 
 
-def test_integrity_provider_missing_meta(tmp_path) -> None:
+def test_integrity_provider_missing_meta(tmp_path: Path) -> None:
     """Verifies error when meta.json is missing."""
     ws_path = tmp_path / "fake-workspace"
     ws_path.mkdir()
@@ -31,7 +32,7 @@ def test_integrity_provider_missing_meta(tmp_path) -> None:
         IntegrityProvider.for_workspace(ws_path)
 
 
-def test_integrity_provider_missing_storage_root(tmp_path) -> None:
+def test_integrity_provider_missing_storage_root(tmp_path: Path) -> None:
     """Verifies error when storage.root is missing in meta.json."""
     ws_path = tmp_path / "fake-workspace"
     ws_path.mkdir()
@@ -41,12 +42,12 @@ def test_integrity_provider_missing_storage_root(tmp_path) -> None:
         json.dump({"id": "fake"}, f)
 
     with pytest.raises(
-        ValueError, match=re.escape("Workspace metadata missing storage.root")
+        ValueError, match=re.escape("Workspace metadata missing storage.root"),
     ):
         IntegrityProvider.for_workspace(ws_path)
 
 
-def test_integrity_provider_missing_global_json(tmp_path) -> None:
+def test_integrity_provider_missing_global_json(tmp_path: Path) -> None:
     """Verifies error when global.json is missing at storage root."""
     ws_path = tmp_path / "fake-workspace"
     ws_path.mkdir()
@@ -62,7 +63,7 @@ def test_integrity_provider_missing_global_json(tmp_path) -> None:
         IntegrityProvider.for_workspace(ws_path)
 
 
-def test_integrity_provider_missing_hmac_key(tmp_path) -> None:
+def test_integrity_provider_missing_hmac_key(tmp_path: Path) -> None:
     """Verifies error when hmac_key is missing in global.json."""
     root = tmp_path / "ieapp_root"
     root.mkdir()
@@ -81,7 +82,7 @@ def test_integrity_provider_missing_hmac_key(tmp_path) -> None:
         IntegrityProvider.for_workspace(ws_path)
 
 
-def test_integrity_provider_invalid_hmac_key(tmp_path) -> None:
+def test_integrity_provider_invalid_hmac_key(tmp_path: Path) -> None:
     """Verifies error when hmac_key is not valid base64."""
     root = tmp_path / "ieapp_root"
     root.mkdir()

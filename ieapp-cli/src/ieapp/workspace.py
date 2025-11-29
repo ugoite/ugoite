@@ -117,7 +117,7 @@ def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
 
 
 def create_workspace(root_path: str | Path, workspace_id: str) -> None:
-    """Creates a new workspace with the required directory structure and metadata.
+    """Create a new workspace with the required directory structure and metadata.
 
     Args:
         root_path: The root directory where workspaces are stored.
@@ -149,7 +149,8 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     ):
         # Simple check, fsspec has better tools but this suffices for M0
         # If it's a windows path it might have :, but usually not ://
-        raise NotImplementedError(f"Protocol {protocol} not supported in Milestone 0")
+        msg = f"Protocol {protocol} not supported in Milestone 0"
+        raise NotImplementedError(msg)
 
     fs = fsspec.filesystem("file")
 
@@ -162,9 +163,8 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
     ws_path = Path(root_path_str) / "workspaces" / workspace_id
 
     if fs.exists(str(ws_path)):
-        raise WorkspaceExistsError(
-            f"Workspace {workspace_id} already exists at {ws_path}",
-        )
+        msg = f"Workspace {workspace_id} already exists at {ws_path}"
+        raise WorkspaceExistsError(msg)
 
     # Create directories
     dirs = ["schemas", "index", "attachments", "notes"]
