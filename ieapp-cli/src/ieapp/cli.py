@@ -34,6 +34,9 @@ def main() -> None:
     nc_parser.add_argument(
         "--content", help="Content of the note", default=DEFAULT_NOTE_CONTENT
     )
+    nc_parser.add_argument(
+        "--author", help="Author of the note", default="user"
+    )
 
     args = parser.parse_args()
 
@@ -53,7 +56,12 @@ def main() -> None:
     elif args.command == "note":
         if args.note_command == "create":
             try:
-                create_note(args.workspace_path, args.note_id, args.content)
+                create_note(
+                    args.workspace_path,
+                    args.note_id,
+                    args.content,
+                    author=args.author,
+                )
                 print(f"Note '{args.note_id}' created successfully.")
             except NoteExistsError as e:
                 print(f"Error: {e}", file=sys.stderr)

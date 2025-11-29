@@ -79,6 +79,9 @@ def _extract_title_from_markdown(content: str, fallback: str) -> str:
 def _parse_markdown(content: str) -> Dict[str, Any]:
     """Parses markdown content to extract frontmatter and sections.
 
+    If frontmatter is missing or malformed, it defaults to an empty dictionary.
+    If YAML parsing fails, a warning is logged and an empty dictionary is used.
+
     Args:
         content: Raw markdown string from the editor.
 

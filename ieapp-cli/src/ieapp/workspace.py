@@ -108,9 +108,13 @@ def _ensure_global_json(fs: fsspec.AbstractFileSystem, root_path_str: str) -> st
         "last_rotation": now_iso,
     }
 
-    fd = os.open(global_json_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
+    try:
+        fd = os.open(global_json_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+    except FileExistsError:
+        # Another process created the file; that's fine
+        pass
     return global_json_path
 
 
@@ -167,14 +171,11 @@ def create_workspace(root_path: Union[str, Path], workspace_id: str) -> None:
     # Create directories
     dirs = ["schemas", "index", "attachments", "notes"]
 
-    fs.makedirs(ws_path)
-    # Set permissions for workspace dir
-    os.chmod(ws_path, 0o700)
+    os.makedirs(ws_path, mode=0o700)
 
     for d in dirs:
         d_path = os.path.join(ws_path, d)
-        fs.makedirs(d_path)
-        os.chmod(d_path, 0o700)
+        os.makedirs(d_path, mode=0o700)
 
     # Create meta.json
     meta = {
