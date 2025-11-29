@@ -7,15 +7,20 @@ import time
 import uuid
 import logging
 from datetime import datetime, timezone
+from typing import Any
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import fsspec
 
 try:  # pragma: no cover - platform specific
     import fcntl
+
+    # declaring a local annotation to make the type checker happy
+    fcntl: Any
 except ImportError:  # pragma: no cover - platform specific
-    fcntl = None
+    # fcntl is not available on Windows/python distributions such as pypy
+    fcntl: Optional[Any] = None
 
 logger = logging.getLogger(__name__)
 
