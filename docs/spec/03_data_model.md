@@ -1,195 +1,260 @@
 # 03. Data Model & Storage
 
-## 1. Storage Philosophy
-*   **No Database**: The file system is the database.
-*   **Schema-on-Read**: Structure is defined by the content, not a rigid schema.
-*   **Hybrid Data**: 
-    *   **Explicit Metadata**: YAML Frontmatter (Page-level properties).
-    *   **Inline Metadata**: `Key:: Value` syntax within the text (Block-level properties).
-*   **Immutable History**: Files are never overwritten; new revisions are appended.
+This document expands on the storage promises introduced in `01_architecture.md` and the functional requirements in `02_features_and_stories.md`. It explains how a Local-First, AI-programmable workspace is represented on disk, how Markdown becomes structured data, and how APIs/MCP consume the resulting materialized views.
 
-## 2. Directory Structure
-The storage layout is designed for `fsspec` compatibility and efficient partial reads.
+## 1. Storage Principles
+*   **Filesystem = Database**: Every workspace is just a directory tree reachable through `fsspec` (local disk, S3, NAS). No hidden RDB or proprietary format.
+*   **Schema-on-Read, Schema-on-Assist**: Raw Markdown stays flexible, but the Live Indexer (see `01_architecture.md`) projects it into typed objects whenever the frontend or an MCP agent needs structure.
+*   **Hybrid Metadata Surface**:
+    *   YAML Frontmatter captures high-level properties (owner, status) needed before parsing body content.
+    *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
+    *   `Key:: Value` inline pairs allow block-level overrides (e.g., tasks inside an agenda).
+*   **Append-Only Integrity**: Writes never mutate history—new revisions are appended, signed, and indexed. Time-travel (Story 5) is therefore guaranteed.
+
+## 2. Directory & File Inventory
+
+The layout below is optimized for partial reads, cloud sync, and background indexing. Paths are relative to the configured storage root.
 
 ```
-{root}/
-├── global.json                     # Global config, HMAC keys (protected)
-├── workspaces/
-│   ├── {workspace_id}/
-│   │   ├── meta.json               # Workspace metadata (name, created_at)
-│   │   ├── index.json              # Structured Cache (All properties extracted)
-│   │   ├── faiss.index             # Vector index for semantic search
-│   │   ├── inverted_index.json     # Keyword search index
-│   │   ├── notes/
-│   │   │   ├── {note_id}/
-│   │   │   │   ├── meta.json       # Note metadata (tags, canvas_pos)
-│   │   │   │   ├── content.json    # Current content snapshot
-│   │   │   │   └── history/
-│   │   │   │       ├── {rev_id}.json  # Full snapshot of past revision
-│   │   │   │       └── index.json     # List of revisions
+global.json
+workspaces/
+  {workspace_id}/
+    meta.json
+    settings.json              # Editor + workspace-level preferences
+    schemas/
+      {class}.json             # Class definitions (Meeting, Task, etc.)
+    index/
+      index.json               # Structured cache (materialized view)
+      inverted_index.json      # Keyword posting lists
+      faiss.index              # Vector store for semantic search
+      stats.json               # Aggregates (counts, schema usage)
+    attachments/
+      ...                      # Binary large objects referenced from notes
+    notes/
+      {note_id}/
+        meta.json
+        content.json
+        rendered.md            # Optional cached Markdown for editor hydration
+        history/
+          index.json           # Chronological list of revisions
+          {revision_id}.json
 ```
 
-## 3. Structured Markdown Syntax
+### 2.1 Root-Level Artifacts
+| File | Purpose |
+|------|---------|
+| `global.json` | Holds workspace registry, cryptographic seeds (HMAC), and default storage connectors. |
+| `workspaces/` | Each subdirectory is fully portable; copying it elsewhere preserves the workspace. |
 
-IEapp parses Markdown headers to extract structured data.
+### 2.2 Workspace Artifacts
+| File | Purpose |
+|------|---------|
+| `meta.json` | Canonical metadata (id, name, created_at, storage config, merge rules). |
+| `settings.json` | Feature flags such as local-first sync intervals or default Class. |
+| `schemas/*.json` | User-defined Classes that power template creation and validation. |
+| `index/*` | Materialized views consumed by REST `/query`, `/search`, and MCP resources. |
+| `notes/*` | Source of truth for all note content and history. |
+| `attachments/*` | Binary payloads (audio, images) referenced by `content.json`. Stored outside note folders to simplify dedupe and large-file lifecycle. |
 
-### 3.1. Section-Based Properties
-Instead of proprietary inline syntax, IEapp treats **H2 Headers** as property keys and their content as values. This is standard Markdown, readable by any tool.
+## 3. Metadata Layers & Extraction Rules
 
-**Example Note:**
-```markdown
-# Weekly Sync
+| Layer | Where it lives | Example | Notes |
+|-------|----------------|---------|-------|
+| Frontmatter | YAML block at top of Markdown | `type: meeting` | Parsed before Markdown; overrides default schema values. |
+| Section Properties | H2 headers (`## Due Date`) | `## Agenda` + body text | Treated as top-level fields keyed by header text. Order is preserved for deterministic diffs. |
+| Inline Key-Value | `Key:: Value` inside any block | `Status:: In Progress` | Attached to the closest parent section; allows fine-grained properties (tasks, bullets). |
+| Auto Properties | Computed | `word_count`, `embedding_id` | Populated by the indexer to support sorting and search. |
 
-## Date
-2025-11-29
+Conflicts between layers resolve with the following precedence: Inline > Section > Frontmatter > Auto default. The Live Indexer produces a single `properties` dict per note reflecting the merged view and stores it inside `index/index.json`.
 
-## Attendees
-- Alice
-- Bob
+### 3.1 Parsing Lifecycle
+1. **Detect changes** via filesystem watcher or polling loop (architecture section 3).
+2. **Load Markdown** (`content.json.content`) and extract frontmatter + body.
+3. **Apply Schema** (if note has `class`):
+    * Validate required headers exist.
+    * Cast value types (`date`, `number`, `list`).
+    * Generate warnings surfaced in the frontend.
+4. **Emit structured record** into `index/index.json` and refresh secondary indices (`faiss.index`, `inverted_index.json`).
 
-## Agenda
-1. Review Q3 goals
-2. Plan Q4 roadmap
+## 4. Class Definitions & Templates
 
-## Action Items
-- [ ] Alice to update the slide deck
-```
+Classes formalize recurring note shapes (Meetings, Tasks, Research). They are plain JSON stored at `workspaces/{id}/schemas/{class}.json` and interpreted both by the editor (to render templates) and the MCP layer (to expose typed querying).
 
-**Extracted Data:**
-```json
-{
-  "Date": "2025-11-29",
-  "Attendees": ["Alice", "Bob"],
-  "Agenda": "1. Review Q3 goals\n2. Plan Q4 roadmap",
-  "Action Items": "- [ ] Alice to update the slide deck"
-}
-```
-
-### 3.2. Class & Schema Definition
-Users can define "Classes" (e.g., Meeting, Report) to enforce structure.
-
-**Schema Definition (`workspaces/{id}/schemas/meeting.json`):**
 ```json
 {
   "name": "Meeting",
-  "template": "# New Meeting\n\n## Date\n\n## Attendees\n",
+  "version": 1,
+  "template": "# Meeting\n\n## Date\n## Attendees\n## Decisions\n",
   "fields": {
     "Date": { "type": "date", "required": true },
-    "Attendees": { "type": "list", "required": false }
-  }
-}
-```
-
-*   **Validation**: The Frontend checks if the note content matches the schema (e.g., "Date" section exists and is a valid date).
-*   **Templates**: Creating a new "Meeting" note pre-fills the editor with the H2 headers defined in the schema.
-
-## 4. The Structured Cache (`index.json`)
-
-The `index.json` is NOT just a list of files. It is a **Materialized View** of all structured data extracted from the notes. This allows O(1) querying without parsing files.
-
-```json
-{
-  "notes": {
-    "note-uuid-1": {
-      "id": "note-uuid-1",
-      "title": "Weekly Sync",
-      "updated_at": "2025-11-29T10:00:00Z",
-      "properties": {
-        "Date": "2025-11-29",
-        "Attendees": ["Alice", "Bob"],
-        "Agenda": "1. Review Q3 goals\n2. Plan Q4 roadmap",
-        "Action Items": "- [ ] Alice to update the slide deck"
-      }
-    }
+    "Attendees": { "type": "list", "required": false },
+    "Decisions": { "type": "markdown", "required": false }
   },
-  "schema_stats": {
-    "type": ["meeting", "idea"],
-    "status": ["open", "closed"]
+  "defaults": {
+    "timezone": "UTC"
   }
 }
 ```
 
-## 5. JSON Schemas (Storage)
+* **Validation Surface**: The frontend enforces schemas optimistically; the backend re-validates on write and exposes violations via `PUT /notes/{id}` responses (see `04_api_and_mcp.md`).
+* **Template Insertion**: Creating a note with `class=Meeting` injects the template into the editor, satisfying Story 2.
+* **Schema Stats**: The indexer aggregates `schema_stats` (counts per class, field cardinalities) into `index/stats.json` for fast filter UIs.
 
-### Workspace Metadata (`workspaces/{id}/meta.json`)
+## 5. Structured Cache & Search Indices
+
+The cache is a materialized view updated every time a `content.json` or `meta.json` changes. It feeds UI filters, REST `/query`, MCP `search_notes`, and AI code execution. The cache is split to keep hot paths light:
+
+| File | Shape | Used by |
+|------|-------|---------|
+| `index/index.json` | `{ "notes": {id: NoteRecord}, "schema_stats": {...} }` | REST `/workspaces/{id}/notes`, MCP resources, `ieapp.query()` |
+| `index/inverted_index.json` | `{ term: [note_id, ...] }` | Keyword search fallback, offline search |
+| `index/faiss.index` | Binary FAISS index referencing embeddings stored inside `NoteRecord.embedding_id` | Semantic search + MCP `search_notes` |
+| `index/stats.json` | Aggregates (per-tag counts, last indexed timestamp) | Health checks, UI badges |
+
+**NoteRecord shape**
 ```json
 {
-  "id": "uuid-string",
-        "attendees": ["Alice", "Bob"],
-        "project": "Apollo",
-        "due": "2025-12-15",
-        "budget": "$5000"
-      }
-    }
+  "id": "note-uuid",
+  "title": "Weekly Sync",
+  "class": "meeting",
+  "updated_at": "2025-11-29T10:00:00Z",
+  "properties": {
+    "Date": "2025-11-29",
+    "Attendees": ["Alice", "Bob"],
+    "Action Items": ["Alice to update the slide deck"]
   },
-  "schema_stats": {
-    "type": ["meeting", "idea"],
-    "status": ["open", "closed"]
+  "tags": ["project"],
+  "links": ["note-uuid-2"],
+  "embedding_id": "emb-123",
+  "checksum": "sha256-..."
+}
+```
+
+## 6. File Schemas
+
+### 6.1 `global.json`
+```json
+{
+  "version": 2,
+  "default_storage": "file:///Users/alex/ieapp",
+  "workspaces": ["ws-main", "ws-research"],
+  "hmac_key_id": "key-2025-11-01",
+  "hmac_public": "base64",
+  "last_rotation": "2025-11-15T00:00:00Z"
+}
+```
+
+### 6.2 Workspace Metadata `workspaces/{id}/meta.json`
+```json
+{
+  "id": "ws-main",
+  "name": "Personal Knowledge",
+  "created_at": "2025-08-12T12:00:00Z",
+  "storage_config": {
+    "uri": "s3://my-bucket/ieapp/ws-main",
+    "credentials_profile": "default"
+  },
+  "merge_strategy": "manual",
+  "default_class": "meeting",
+  "encryption": { "mode": "none" }
+}
+```
+
+### 6.3 Note Metadata `notes/{id}/meta.json`
+```json
+{
+  "id": "note-uuid",
+  "workspace_id": "ws-main",
+  "title": "Weekly Sync",
+  "class": "meeting",
+  "tags": ["project-alpha"],
+  "links": ["note-uuid-2"],
+  "canvas_position": { "x": 120, "y": 480 },
+  "created_at": "2025-11-20T09:00:00Z",
+  "updated_at": "2025-11-29T10:00:00Z",
+  "latest_revision_id": "rev-0042",
+  "parent_revision_id": "rev-0041",
+  "integrity": {
+    "checksum": "sha256-...",
+    "signature": "hmac-..."
   }
 }
 ```
 
-## 5. JSON Schemas (Storage)
-
-### Workspace Metadata (`workspaces/{id}/meta.json`)
+### 6.4 Note Content `notes/{id}/content.json`
 ```json
 {
-  "id": "uuid-string",
-  "name": "My Knowledge Base",
-  "created_at": "ISO-8601",
-  "storage_config": { ... },
-  "merge_strategy": "ours|theirs|manual"
-}
-```
-
-### Note Content (`notes/{id}/content.json` & History)
-```json
-{
-  "id": "uuid-string",
-  "workspace_id": "uuid-string",
-  "revision_id": "uuid-string",
-  "parent_revision_id": "uuid-string",
-  "title": "Project Alpha",
-  "content": "# Markdown Content...",
-  "tags": ["project", "urgent"],
-  "links": ["other-note-id"],
-  "canvas_position": { "x": 100, "y": 200 },
-  "created_at": "ISO-8601",
+  "revision_id": "rev-0042",
   "author": "user-or-agent-id",
-  "checksum": "sha256-hash"
+  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n...",
+  "frontmatter": {
+    "type": "meeting",
+    "status": "open"
+  },
+  "attachments": [
+    { "name": "audio.m4a", "path": "attachments/audio/audio.m4a" }
+  ],
+  "computed": {
+    "word_count": 523
+  }
 }
 ```
 
-### Note Index (`workspaces/{id}/index.json`)
-*Optimized for listing without opening every note file.*
+### 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`
 ```json
-[
-  {
-    "id": "uuid-string",
-    "title": "Project Alpha",
-    "updated_at": "ISO-8601",
-    "latest_revision_id": "uuid-string",
-    "tags": ["project"]
-  },
-  ...
-]
+{
+  "revision_id": "rev-0042",
+  "parent_revision_id": "rev-0041",
+  "timestamp": "2025-11-29T10:00:00Z",
+  "author": "frontend" ,
+  "diff": "...optional patch...",
+  "content_snapshot_path": "../content.json",
+  "integrity": {
+    "checksum": "sha256-...",
+    "signature": "hmac-..."
+  }
+}
 ```
 
-## 4. Versioning & Conflict Resolution
+### 6.6 Revision Index `notes/{id}/history/index.json`
+```json
+{
+  "note_id": "note-uuid",
+  "revisions": [
+    { "revision_id": "rev-0001", "timestamp": "2025-10-01T12:00:00Z" },
+    { "revision_id": "rev-0042", "timestamp": "2025-11-29T10:00:00Z" }
+  ]
+}
+```
 
-### Append-Only Strategy
-1.  **Read**: Client reads `content.json` (which is a copy of the latest revision).
-2.  **Write**:
-    *   Client sends new content + `parent_revision_id`.
-    *   Backend checks if `parent_revision_id` matches current latest.
-    *   **If Match**:
-        *   Generate new `revision_id`.
-        *   Write `history/{new_rev}.json`.
-        *   Atomically update `content.json` and `meta.json`.
-    *   **If Mismatch** (Conflict):
-        *   Backend rejects write (409 Conflict).
-        *   Client must fetch latest, merge (3-way), and retry.
+## 7. Versioning & Conflict Resolution
 
-### Integrity
-*   **HMAC**: All revision files are signed with a key stored in `global.json`.
-*   **Checksums**: `content` hash is stored in metadata to detect bit rot.
+The append-only strategy described in Story 5 and reiterated here underpins REST `PUT /notes/{id}` and MCP writes.
+
+1. **Client reads** `content.json` obtaining `latest_revision_id`.
+2. **Client writes** new content, providing `parent_revision_id`.
+3. **Backend verifies** `parent_revision_id == meta.latest_revision_id`.
+4. **On success**:
+    * Generate new `revision_id` and persist `history/{revision_id}.json`.
+    * Update `content.json` and `meta.json` atomically (same filesystem transaction when supported by backend FS; otherwise best-effort with retry and checksum validation).
+    * Emit change event to indexer so caches refresh.
+5. **On mismatch**: Return HTTP 409 with the server’s latest revision payload so the client (or MCP agent) can perform a 3-way merge.
+
+The revision log is never truncated. Optional garbage collection can pack old revisions into tar archives, but only when explicitly triggered by the user.
+
+## 8. Integrity, Security & Auditing
+
+Security expectations from `05_security_and_quality.md` surface directly in the data model:
+
+* **HMAC Signatures**: Every `meta.json`, `content.json`, and history file carries `integrity.signature`. The key material lives in `global.json` and can rotate (store `previous_keys` for validation during rotation).
+* **Checksums**: SHA-256 of the canonical JSON string ensures bit-rot detection even when signatures are skipped (read-only contexts).
+* **Audit Trail**: Optional `history/{revision_id}.json` can store `mcp_tool` metadata stating whether the change came from frontend, CLI, or `run_python_script`. This supports the “AI wrote this” transparency requirement.
+* **Isolation**: Attachments reference hashed filenames to prevent path traversal when notes are moved between workspaces.
+
+## 9. Consumption Patterns (API & MCP)
+
+* **REST** (`04_api_and_mcp.md`): `/workspaces/{ws}/notes` reads exclusively from `index/index.json` for sub-500 ms workspace load times. `/workspaces/{ws}/query` translates filters into index scans (structured) plus inverted-index lookups (keywords).
+* **MCP Resources**: `ieapp://{ws}/notes/list` streams the same NoteRecord objects. Agents rely on these lightweight summaries before deciding to fetch `content.json` or run custom Python.
+* **`run_python_script` Tool**: The `ieapp` Python SDK loads `index/index.json` lazily and exposes helper methods (e.g., `ieapp.query`) so AI agents rarely need to traverse the filesystem manually—aligning with the "Code Execution" paradigm.
+
+These consumers, combined with the storage rules above, ensure that data written anywhere (UI, CLI, MCP) is immediately queryable, conflict-safe, and portable.
