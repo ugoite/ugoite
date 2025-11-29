@@ -111,8 +111,7 @@ def test_aggregate_stats() -> None:
     assert stats["class_stats"]["meeting"]["count"] == EXPECTED_MEETING_COUNT
     assert stats["class_stats"]["task"]["count"] == EXPECTED_TASK_COUNT
     assert (
-        stats["class_stats"]["_uncategorized"]["count"]
-        == EXPECTED_UNCATEGORIZED_COUNT
+        stats["class_stats"]["_uncategorized"]["count"] == EXPECTED_UNCATEGORIZED_COUNT
     )
     assert stats["tag_counts"]["alpha"] == EXPECTED_TAG_ALPHA_COUNT
     assert stats["note_count"] == EXPECTED_TOTAL_NOTES
