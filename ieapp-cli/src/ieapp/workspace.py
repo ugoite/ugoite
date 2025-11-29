@@ -1,3 +1,5 @@
+"""Workspace management module."""
+
 import base64
 import copy
 import json
@@ -33,7 +35,7 @@ class WorkspaceExistsError(Exception):
 
 
 def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
-    """Writes JSON data with restrictive permissions from the start.
+    """Write JSON data with restrictive permissions from the start.
 
     Args:
         path: Absolute file path to write.
@@ -47,17 +49,18 @@ def _write_json_secure(path: str, payload: dict, mode: int = 0o600) -> None:
 
 
 def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> None:
-    """Appends a workspace id to ``global.json`` with advisory locking.
+    """Append a workspace id to ``global.json`` with advisory locking.
 
     Args:
         global_json_path: Absolute path to ``global.json``.
         workspace_id: Workspace identifier to append.
 
     """
-    if not os.path.exists(global_json_path):
+    path = Path(global_json_path)
+    if not path.exists():
         return
 
-    with open(global_json_path, "r+", encoding="utf-8") as handle:
+    with path.open("r+", encoding="utf-8") as handle:
         if fcntl:
             fcntl.flock(handle, fcntl.LOCK_EX)
 
@@ -79,7 +82,7 @@ def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> Non
 
 
 def _ensure_global_json(fs: AbstractFileSystem, root_path_str: str) -> str:
-    """Ensures ``global.json`` exists and returns its path.
+    """Ensure ``global.json`` exists and returns its path.
 
     Args:
         fs: File system adapter used to write files.

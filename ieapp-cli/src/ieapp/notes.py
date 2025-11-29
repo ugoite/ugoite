@@ -132,7 +132,7 @@ def _parse_markdown(content: str) -> dict[str, Any]:
     return {"frontmatter": frontmatter, "sections": sections}
 
 
-def create_note(  # noqa: PLR0913
+def create_note(
     workspace_path: str | Path,
     note_id: str,
     content: str,

@@ -22,7 +22,7 @@ class IntegrityProvider:
 
     @classmethod
     def for_workspace(cls, workspace_path: str | Path) -> IntegrityProvider:
-        """Builds a provider using the workspace's root ``global.json``.
+        """Build a provider using the workspace's root ``global.json``.
 
         Args:
             workspace_path: Absolute path to the workspace directory.
@@ -39,40 +39,41 @@ class IntegrityProvider:
         meta_path = ws_path / "meta.json"
 
         if not meta_path.exists():
-            raise FileNotFoundError(
-                f"meta.json not found for workspace at {workspace_path}",
-            )
+            msg = f"meta.json not found for workspace at {workspace_path}"
+            raise FileNotFoundError(msg)
 
         with meta_path.open("r", encoding="utf-8") as meta_handle:
             meta = json.load(meta_handle)
 
         storage_root = meta.get("storage", {}).get("root")
         if not storage_root:
-            raise ValueError("Workspace metadata missing storage.root")
+            msg = "Workspace metadata missing storage.root"
+            raise ValueError(msg)
 
         global_json = Path(storage_root) / "global.json"
 
         if not global_json.exists():
-            raise FileNotFoundError(
-                f"global.json not found for workspace at {storage_root}",
-            )
+            msg = f"global.json not found for workspace at {storage_root}"
+            raise FileNotFoundError(msg)
 
         with global_json.open("r", encoding="utf-8") as handle:
             global_data = json.load(handle)
 
         key_b64 = global_data.get("hmac_key")
         if not key_b64:
-            raise ValueError("Missing hmac_key in global.json")
+            msg = "Missing hmac_key in global.json"
+            raise ValueError(msg)
 
         try:
             secret = base64.b64decode(key_b64)
         except Exception as exc:  # pragma: no cover - defensive
-            raise ValueError("Failed to decode hmac_key") from exc
+            msg = "Failed to decode hmac_key"
+            raise ValueError(msg) from exc
 
         return cls(secret=secret)
 
     def checksum(self, payload: str) -> str:
-        """Computes the SHA-256 checksum.
+        """Compute the SHA-256 checksum.
 
         Args:
             payload: Raw string to hash.
@@ -84,7 +85,7 @@ class IntegrityProvider:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def signature(self, payload: str) -> str:
-        """Computes the HMAC signature for ``payload``.
+        """Compute the HMAC signature for ``payload``.
 
         Args:
             payload: Raw string to sign.
@@ -94,5 +95,7 @@ class IntegrityProvider:
 
         """
         return hmac.new(
-            self.secret, payload.encode("utf-8"), hashlib.sha256,
+            self.secret,
+            payload.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
