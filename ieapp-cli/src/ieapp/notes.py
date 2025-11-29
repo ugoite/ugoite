@@ -3,8 +3,6 @@
 import difflib
 import json
 import logging
-import os
-import re
 import time
 import uuid
 from pathlib import Path
@@ -270,13 +268,13 @@ def update_note(  # noqa: PLR0913
 
     # Check parent revision from content.json (as per spec)
     content_path = note_dir / "content.json"
-    
+
     # Use advisory locking to prevent race conditions
     # We open in r+ mode to read and then write
     with content_path.open("r+", encoding="utf-8") as f:
         if fcntl:
             fcntl.flock(f, fcntl.LOCK_EX)
-        
+
         try:
             current_content_data = json.load(f)
 
@@ -323,7 +321,7 @@ def update_note(  # noqa: PLR0913
             f.seek(0)
             json.dump(content_data, f, indent=2)
             f.truncate()
-            
+
         finally:
             if fcntl:
                 fcntl.flock(f, fcntl.LOCK_UN)
