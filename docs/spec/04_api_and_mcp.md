@@ -79,11 +79,13 @@ The core power of IEapp v2 is the **Code Execution Tool**.
         
         # Query structured data extracted from Markdown
         # Note: Properties are extracted from H2 headers (e.g., ## Date)
+        # Returns NoteRecord objects as defined in 03_data_model.md
         tasks = ieapp.query(class="task", status="pending")
         
         report = "# Pending Tasks Report\n"
         for task in tasks:
-            # Access extracted fields directly
+            # task is a NoteRecord with id, title, class, properties, etc.
+            # Access extracted fields directly from the properties dict
             report += f"- [ ] {task.title} (Due: {task.properties.get('Due')})\n"
             
         print(report)
