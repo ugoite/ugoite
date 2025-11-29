@@ -229,7 +229,9 @@ def test_markdown_sections_persist(
     assert data["sections"]["Summary"] == "Wrap up"  # noqa: S101
 
 
-def test_note_history_diff(workspace_root, fake_integrity_provider) -> None:
+def test_note_history_diff(
+    workspace_root: Path, fake_integrity_provider: Any,  # noqa: ANN401
+) -> None:
     """Verifies that updating a note stores the diff in the history file."""
     note_id = "note-diff"
     content_v1 = "Line 1\nLine 2"
@@ -260,8 +262,8 @@ def test_note_history_diff(workspace_root, fake_integrity_provider) -> None:
 
     with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
-        assert "diff" in rev_data
-        assert "Line 2 Modified" in rev_data["diff"]
+        assert "diff" in rev_data  # noqa: S101
+        assert "Line 2 Modified" in rev_data["diff"]  # noqa: S101
 
 
 def test_note_author_persistence(workspace_root, fake_integrity_provider) -> None:
