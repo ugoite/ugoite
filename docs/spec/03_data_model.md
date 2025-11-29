@@ -181,13 +181,13 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 ```
 
 ### 6.4 Note Content `notes/{id}/content.json`
+```json
+{
   "revision_id": "rev-0042",
-  "author": "user-or-agent-id",
+  "author": "frontend",
   "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n\n```python {id=block-xyz}\nprint('Hello')\n```",
   "frontmatter": {
     "class": "meeting",
-    "status": "open"
-  },"class": "meeting",
     "status": "open"
   },
   "attachments": [
@@ -197,6 +197,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
     "word_count": 523
   }
 }
+```
 ```
 
 ### 6.5 Revision Entry `notes/{id}/history/{revision_id}.json`

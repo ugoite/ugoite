@@ -14,6 +14,14 @@ IEapp ships in a localhost-only mode with no auth prompts to keep the personal w
 *   **HMAC Signing**: All data revisions are signed with a locally generated key to prevent tampering.
 *   **Sanitization**: All inputs (especially in the Code Sandbox) are strictly validated.
 
+### Code Sandbox Security
+The `run_python_script` MCP tool (defined in `04_api_and_mcp.md`) executes arbitrary Python code, requiring strict isolation:
+*   **Network Access**: Blocked (except to `fsspec` storage if remote).
+*   **Filesystem Access**: Restricted to `/tmp` and the `fsspec` mount.
+*   **Timeouts**: Scripts must finish within 30 seconds.
+*   **Libraries**: Pre-installed set (`ieapp`, `pandas`, `numpy`, `scikit-learn`).
+*   **Process Isolation**: Runs in a separate process with resource limits (memory, CPU).
+
 ## 2. Testing Strategy (TDD)
 
 We follow a strict Test-Driven Development approach.

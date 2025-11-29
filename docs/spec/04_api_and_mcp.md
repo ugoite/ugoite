@@ -49,7 +49,7 @@ The REST API is used by the SolidJS frontend for interactive UI operations.
 
 ## 2. Model Context Protocol (MCP)
 
-The MCP interface is used by AI agents (Claude, Copilot, etc.). IEapp implements the official **Streamable HTTP** transport from the November 2025 MCP spec: every MCP request is an HTTP POST, and responses may be either a single JSON payload (`Content-Type: application/json`) or a streamed reply over **optional** Server-Sent Events (`text/event-stream`). SSE is engaged only for long-running operations like `run_python_script`, so standard JSON clients remain compatible. Clients advertise both media types via `Accept` headers and must honor the MCP `MCP-Protocol-Version` negotiation plus Origin/CORS checks when invoking the backend outside localhost.
+The MCP interface is used by AI agents (Claude, Copilot, etc.). IEapp implements the official **Streamable HTTP** transport: every MCP request is an HTTP POST with JSON or optional SSE responses for long-running operations.
 
 ### Resources
 Expose notes as readable resources for the AI.
@@ -85,8 +85,9 @@ The core power of IEapp is the **Code Execution Tool**.
         report = "# Pending Tasks Report\n"
         for task in tasks:
             # task is a NoteRecord with id, title, class, properties, etc.
-            # Access extracted fields directly from the properties dict
-            report += f"- [ ] {task.title} (Due: {task.properties.get('Due')})\n"
+            # Access extracted fields from the properties dict
+            due_date = task.properties.get('Due', 'N/A')
+            report += f"- [ ] {task.title} (Due: {due_date})\n"
             
         print(report)
         ```
@@ -135,10 +136,3 @@ The core power of IEapp is the **Code Execution Tool**.
 Pre-defined prompts to help the AI understand the context.
 *   `summarize_workspace`: "Read the index of the workspace and provide a high-level summary of the topics covered."
 *   `analyze_meetings`: "Find all notes with class='meeting' and summarize the key decisions."
-
-## 3. Code Sandbox Security
-Since `run_python_script` is powerful, it must be sandboxed.
-*   **Network Access**: Blocked (except to `fsspec` storage if remote).
-*   **Filesystem Access**: Restricted to `/tmp` and the `fsspec` mount.
-*   **Timeouts**: Scripts must finish within 30 seconds.
-*   **Libraries**: Pre-installed set (`ieapp`, `pandas`, `numpy`, `scikit-learn`).
