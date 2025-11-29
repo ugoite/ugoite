@@ -81,4 +81,6 @@ class IntegrityProvider:
             Hex-encoded HMAC digest derived from the provider secret.
         """
 
-        return hmac.new(self.secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.new(
+            self.secret, payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()

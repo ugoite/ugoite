@@ -26,7 +26,9 @@ def fake_integrity_provider():
             return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
         def signature(self, content: str) -> str:
-            return hmac.new(self.secret, content.encode("utf-8"), hashlib.sha256).hexdigest()
+            return hmac.new(
+                self.secret, content.encode("utf-8"), hashlib.sha256
+            ).hexdigest()
 
     return _FakeIntegrityProvider()
 
@@ -38,7 +40,9 @@ def test_create_note_basic(workspace_root, fake_integrity_provider):
     note_id = "note-1"
     content = "# My Note\n\nHello World"
 
-    create_note(workspace_root, note_id, content, integrity_provider=fake_integrity_provider)
+    create_note(
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+    )
 
     note_path = workspace_root / "notes" / note_id
     assert note_path.exists()
@@ -62,7 +66,9 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider):
     """
     note_id = "note-2"
     content = "# Note 2"
-    create_note(workspace_root, note_id, content, integrity_provider=fake_integrity_provider)
+    create_note(
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+    )
 
     # Get current revision from content.json
     note_path = workspace_root / "notes" / note_id
@@ -114,7 +120,9 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
     """
     note_id = "note-history"
     content_v1 = "# Version 1"
-    create_note(workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider)
+    create_note(
+        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider
+    )
 
     note_path = workspace_root / "notes" / note_id
 
@@ -141,7 +149,9 @@ def test_note_history_append(workspace_root, fake_integrity_provider):
         assert len(revisions) == 2
         assert revisions[0]["revision_id"] == rev_v1
         assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
-        assert revisions[0]["signature"] == fake_integrity_provider.signature(content_v1)
+        assert revisions[0]["signature"] == fake_integrity_provider.signature(
+            content_v1
+        )
 
     # Check latest revision file
     with open(note_path / "content.json") as f:
@@ -164,7 +174,9 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider):
     note_id = "note-structured"
     content = """---\nclass: meeting\ntags:\n  - kickoff\n---\n# Kickoff\n\n## Date\n2025-11-29\n\n## Summary\nWrap up"""
 
-    create_note(workspace_root, note_id, content, integrity_provider=fake_integrity_provider)
+    create_note(
+        workspace_root, note_id, content, integrity_provider=fake_integrity_provider
+    )
 
     note_path = workspace_root / "notes" / note_id
     with open(note_path / "content.json") as f:
