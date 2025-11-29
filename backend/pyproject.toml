@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.121.1",
-    "ieapp-cli",
+    "ieapp",
     "uvicorn>=0.38.0",
 ]
 
@@ -15,7 +15,7 @@ requires = ["uv_build>=0.9.4,<0.10.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-ieapp-cli = { path = "../ieapp-cli" }
+ieapp = { path = "../ieapp-cli" }
 
 [dependency-groups]
 dev = [
