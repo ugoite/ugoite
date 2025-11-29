@@ -39,7 +39,9 @@ def fake_integrity_provider():
 
         def signature(self, content: str) -> str:
             return hmac.new(
-                self.secret, content.encode("utf-8"), hashlib.sha256,
+                self.secret,
+                content.encode("utf-8"),
+                hashlib.sha256,
             ).hexdigest()
 
     return _FakeIntegrityProvider()
@@ -51,7 +53,10 @@ def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
     content = "# My Note\n\nHello World"
 
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
+        workspace_root,
+        note_id,
+        content,
+        integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -77,7 +82,10 @@ def test_update_note_revision_mismatch(workspace_root, fake_integrity_provider) 
     note_id = "note-2"
     content = "# Note 2"
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
+        workspace_root,
+        note_id,
+        content,
+        integrity_provider=fake_integrity_provider,
     )
 
     # Get current revision from content.json
@@ -129,7 +137,10 @@ def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
     note_id = "note-history"
     content_v1 = "# Version 1"
     create_note(
-        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider,
+        workspace_root,
+        note_id,
+        content_v1,
+        integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -185,7 +196,10 @@ def test_markdown_sections_persist(workspace_root, fake_integrity_provider) -> N
     content = STRUCTURED_NOTE_CONTENT
 
     create_note(
-        workspace_root, note_id, content, integrity_provider=fake_integrity_provider,
+        workspace_root,
+        note_id,
+        content,
+        integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
@@ -202,7 +216,10 @@ def test_note_history_diff(workspace_root, fake_integrity_provider) -> None:
     note_id = "note-diff"
     content_v1 = "Line 1\nLine 2"
     create_note(
-        workspace_root, note_id, content_v1, integrity_provider=fake_integrity_provider,
+        workspace_root,
+        note_id,
+        content_v1,
+        integrity_provider=fake_integrity_provider,
     )
 
     note_path = workspace_root / "notes" / note_id
