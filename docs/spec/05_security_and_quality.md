@@ -48,7 +48,7 @@ We follow a strict Test-Driven Development approach.
 
 ### Principles
 *   **Graceful Degradation**: If S3 is down, the app should still allow viewing cached notes.
-*   **Idempotency**: All API operations (except `run_python_script`) should be idempotent.
+*   **Idempotency**: Read/update/delete endpoints (GET/PUT/PATCH/DELETE) MUST remain idempotent, while create endpoints (POST) require either a client-supplied ID or an `Idempotency-Key` header to deduplicate retries. If neither is provided, the server is allowed to reject the request with 409 to prevent accidental duplicates.
 *   **Structured Logging**: All errors are logged as JSON with trace IDs.
 
 ### Common Error Scenarios
