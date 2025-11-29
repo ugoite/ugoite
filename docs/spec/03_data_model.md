@@ -8,7 +8,7 @@ This document expands on the storage promises introduced in `01_architecture.md`
 *   **Hybrid Metadata Surface**:
     *   YAML Frontmatter captures high-level properties (owner, status) needed before parsing body content.
     *   `## Section` blocks define strongly-typed fields (the "Structured Freedom" story from `02_features_and_stories.md`).
-    *   `Key:: Value` inline pairs allow block-level overrides (e.g., tasks inside an agenda).
+    *   Note: Inline `Key:: Value` pairs are not supported; structured fields should be expressed using YAML frontmatter or `##` section headers.
 *   **Append-Only Integrity**: Writes never mutate history—new revisions are appended, signed, and indexed. Time-travel (Story 5) is therefore guaranteed.
 
 ## 2. Directory & File Inventory
@@ -62,10 +62,9 @@ workspaces/
 |-------|----------------|---------|-------|
 | Frontmatter | YAML block at top of Markdown | `type: meeting` | Parsed before Markdown; overrides default schema values. |
 | Section Properties | H2 headers (`## Due Date`) | `## Agenda` + body text | Treated as top-level fields keyed by header text. Order is preserved for deterministic diffs. |
-| Inline Key-Value | `Key:: Value` inside any block | `Status:: In Progress` | Attached to the closest parent section; allows fine-grained properties (tasks, bullets). |
 | Auto Properties | Computed | `word_count`, `embedding_id` | Populated by the indexer to support sorting and search. |
 
-Conflicts between layers resolve with the following precedence: Inline > Section > Frontmatter > Auto default. The Live Indexer produces a single `properties` dict per note reflecting the merged view and stores it inside `index/index.json`.
+Conflicts between layers resolve with the following precedence: Section > Frontmatter > Auto default. The Live Indexer produces a single `properties` dict per note reflecting the merged view and stores it inside `index/index.json`.
 
 ### 3.1 Parsing Lifecycle
 1. **Detect changes** via filesystem watcher or polling loop (architecture section 3).
