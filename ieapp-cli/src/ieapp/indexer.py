@@ -1,102 +1,100 @@
+"""Live indexer utilities for projecting Markdown into structured caches."""
+
+from __future__ import annotations
+
+import contextlib
 import json
 import re
 import time
 from collections import Counter
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import fsspec
 import yaml
 
+FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+HEADER_PATTERN = re.compile(r"^##\s+(.+)$")
+
+
+def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
+    """Return parsed frontmatter and the remainder of the Markdown body."""
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        return {}, content
+
+    frontmatter_text = match.group(1)
+    try:
+        parsed = yaml.safe_load(frontmatter_text) or {}
+    except yaml.YAMLError:
+        parsed = {}
+
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    return parsed, content[match.end() :]
+
+
+def _extract_sections(body: str) -> dict[str, str]:
+    """Extract H2 sections as properties while respecting header boundaries."""
+    sections: dict[str, str] = {}
+    current_key: str | None = None
+    buffer: list[str] = []
+
+    for line in body.splitlines():
+        header_match = HEADER_PATTERN.match(line)
+        if header_match:
+            if current_key is not None:
+                sections[current_key] = "\n".join(buffer).strip()
+            current_key = header_match.group(1).strip()
+            buffer = []
+            continue
+
+        if line.startswith("#"):
+            if current_key is not None:
+                sections[current_key] = "\n".join(buffer).strip()
+                current_key = None
+                buffer = []
+            continue
+
+        if current_key is not None:
+            buffer.append(line)
+
+    if current_key is not None:
+        sections[current_key] = "\n".join(buffer).strip()
+
+    return sections
+
 
 def extract_properties(content: str) -> dict[str, Any]:
-    """
-    Extracts properties from Markdown content, merging Frontmatter and H2 sections.
-
-    Precedence: Section > Frontmatter
-    """
-    properties: dict[str, Any] = {}
-
-    # 1. Extract Frontmatter
-    frontmatter_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
-    body_start_index = 0
-
-    if frontmatter_match:
-        frontmatter_text = frontmatter_match.group(1)
-        try:
-            frontmatter_data = yaml.safe_load(frontmatter_text)
-            if isinstance(frontmatter_data, dict):
-                properties.update(frontmatter_data)
-        except yaml.YAMLError:
-            pass  # Ignore invalid YAML for now
-        body_start_index = frontmatter_match.end()
-
-    body = content[body_start_index:]
-
-    # 2. Extract H2 Sections
-    # Regex to find ## Header and the following content
-    # We look for lines starting with ## followed by space and the key
-    # Then capture everything until the next line starting with # or end of string
-
-    # Split by lines to process line by line for robustness
-    lines = body.split("\n")
-    current_key = None
-    current_value_lines = []
-
-    for line in lines:
-        header_match = re.match(r"^##\s+(.+)$", line)
-        if header_match:
-            # Save previous section if exists
-            if current_key:
-                properties[current_key] = "\n".join(current_value_lines).strip()
-
-            current_key = header_match.group(1).strip()
-            current_value_lines = []
-        elif line.startswith("# "):
-            # H1 or other headers might reset context, but spec says "H2 headers"
-            # If we encounter H1, we probably should stop the previous H2 context?
-            # Spec says "System parses H2 headers as property keys."
-            # It doesn't explicitly say H1 stops it, but usually headers delineate sections.
-            # Let's assume any header stops the previous section, but only H2 are properties.
-            if current_key:
-                properties[current_key] = "\n".join(current_value_lines).strip()
-                current_key = None
-                current_value_lines = []
-        else:
-            if current_key is not None:
-                current_value_lines.append(line)
-
-    # Save the last section
-    if current_key:
-        properties[current_key] = "\n".join(current_value_lines).strip()
-
-    return properties
+    """Extract properties from Markdown frontmatter and H2 sections."""
+    frontmatter, body = _extract_frontmatter(content)
+    sections = _extract_sections(body)
+    merged = dict(frontmatter)
+    merged.update({key: value for key, value in sections.items() if value})
+    return merged
 
 
 def validate_properties(properties: dict, schema: dict) -> list[dict]:
-    """
-    Validates extracted properties against a Class schema.
-    Returns a list of warning dictionaries.
-    """
+    """Validate extracted properties against a schema definition."""
     warnings = []
     fields = schema.get("fields", {})
 
     for field_name, field_def in fields.items():
-        if field_def.get("required", False):
-            if field_name not in properties or not properties[field_name].strip():
-                warnings.append(
-                    {
-                        "code": "missing_field",
-                        "field": field_name,
-                        "message": f"Missing required field: {field_name}",
-                    }
-                )
+        if field_def.get("required", False) and not properties.get(field_name, "").strip():
+            warnings.append(
+                {
+                    "code": "missing_field",
+                    "field": field_name,
+                    "message": f"Missing required field: {field_name}",
+                },
+            )
 
     return warnings
 
 
 def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Build aggregate statistics for class and tag usage."""
-
     class_stats: dict[str, dict[str, int]] = {}
     tag_counts: Counter[str] = Counter()
     uncategorized_count = 0
@@ -122,13 +120,19 @@ def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 
 class Indexer:
+    """Live indexer that projects Markdown notes into cached JSON views."""
+
     def __init__(
-        self, workspace_path: str, fs: fsspec.AbstractFileSystem | None = None
-    ):
+        self,
+        workspace_path: str,
+        fs: fsspec.AbstractFileSystem | None = None,
+    ) -> None:
+        """Initialize the indexer with the workspace root and filesystem."""
         self.workspace_path = workspace_path.rstrip("/")
         self.fs = fs or fsspec.filesystem("file")
 
-    def run_once(self):
+    def run_once(self) -> None:
+        """Build the structured cache and stats once."""
         notes_path = f"{self.workspace_path}/notes"
         index_path = f"{self.workspace_path}/index/index.json"
         stats_path = f"{self.workspace_path}/index/stats.json"
@@ -136,81 +140,8 @@ class Indexer:
 
         self.fs.makedirs(f"{self.workspace_path}/index", exist_ok=True)
 
-        # Load Schemas
-        schemas = {}
-        if self.fs.exists(schemas_path):
-            schema_files = self.fs.glob(f"{schemas_path}/*.json")
-            for schema_file in schema_files:
-                # schema_file is full path
-                class_name = schema_file.split("/")[-1].replace(".json", "")
-                with self.fs.open(schema_file, "r") as f:
-                    try:
-                        schemas[class_name] = json.load(f)
-                    except json.JSONDecodeError:
-                        pass
-
-        index_notes: dict[str, dict[str, Any]] = {}
-
-        # List notes
-        if self.fs.exists(notes_path):
-            note_dirs = self.fs.ls(notes_path, detail=False)
-
-            for note_dir in note_dirs:
-                note_id = note_dir.split("/")[-1]
-                content_path = f"{note_dir}/content.json"
-                meta_path = f"{note_dir}/meta.json"
-
-                if self.fs.exists(content_path):
-                    with self.fs.open(content_path, "r") as f:
-                        try:
-                            content_json = json.load(f)
-                            markdown = content_json.get("markdown", "")
-                            properties = extract_properties(markdown)
-
-                            meta_json: dict[str, Any] = {}
-                            if self.fs.exists(meta_path):
-                                with self.fs.open(meta_path, "r") as meta_file:
-                                    try:
-                                        meta_json = json.load(meta_file)
-                                    except json.JSONDecodeError:
-                                        meta_json = {}
-
-                            note_class = (
-                                meta_json.get("class")
-                                or properties.get("class")
-                                or content_json.get("frontmatter", {}).get("class")
-                            )
-
-                            warnings: list[dict[str, Any]] = []
-                            if note_class and note_class in schemas:
-                                warnings = validate_properties(
-                                    properties,
-                                    schemas[note_class],
-                                )
-
-                            record = {
-                                "id": note_id,
-                                "title": meta_json.get("title", note_id),
-                                "class": note_class,
-                                "updated_at": meta_json.get("updated_at"),
-                                "workspace_id": meta_json.get(
-                                    "workspace_id", self.workspace_path.split("/")[-1]
-                                ),
-                                "properties": properties,
-                                "tags": meta_json.get("tags", []),
-                                "links": meta_json.get("links", []),
-                                "canvas_position": meta_json.get("canvas_position", {}),
-                                "checksum": (meta_json.get("integrity") or {}).get(
-                                    "checksum"
-                                ),
-                                "validation_warnings": warnings,
-                            }
-
-                            index_notes[note_id] = record
-                        except (json.JSONDecodeError, KeyError):
-                            pass
-
-        # Aggregate Stats
+        schemas = self._load_schemas(schemas_path)
+        index_notes = self._collect_notes(notes_path, schemas)
         stats_data = aggregate_stats(index_notes)
 
         index_payload = {
@@ -218,11 +149,9 @@ class Indexer:
             "class_stats": stats_data["class_stats"],
         }
 
-        # Write Index
         with self.fs.open(index_path, "w") as f:
             json.dump(index_payload, f, indent=2)
 
-        # Write Stats
         stats_payload = {
             **stats_data,
             "last_indexed": time.time(),
@@ -230,26 +159,109 @@ class Indexer:
         with self.fs.open(stats_path, "w") as f:
             json.dump(stats_payload, f, indent=2)
 
+    def _load_schemas(self, schemas_path: str) -> dict[str, dict[str, Any]]:
+        """Load schema definitions from the workspace."""
+        schemas: dict[str, dict[str, Any]] = {}
+        if not self.fs.exists(schemas_path):
+            return schemas
+
+        for schema_file in self.fs.glob(f"{schemas_path}/*.json"):
+            class_name = schema_file.split("/")[-1].removesuffix(".json")
+            with self.fs.open(schema_file, "r") as handle:
+                with contextlib.suppress(json.JSONDecodeError):
+                    schemas[class_name] = json.load(handle)
+
+        return schemas
+
+    def _collect_notes(
+        self,
+        notes_path: str,
+        schemas: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Collect structured records for every note directory."""
+        if not self.fs.exists(notes_path):
+            return {}
+
+        note_dirs = self.fs.ls(notes_path, detail=False)
+        records: dict[str, dict[str, Any]] = {}
+
+        for note_dir in note_dirs:
+            note_id = note_dir.split("/")[-1]
+            record = self._build_record(note_dir, note_id, schemas)
+            if record is not None:
+                records[note_id] = record
+
+        return records
+
+    def _build_record(
+        self,
+        note_dir: str,
+        note_id: str,
+        schemas: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Build a single index record, returning ``None`` on decode errors."""
+        content_path = f"{note_dir}/content.json"
+        meta_path = f"{note_dir}/meta.json"
+
+        if not self.fs.exists(content_path):
+            return None
+
+        with self.fs.open(content_path, "r") as handle:
+            try:
+                content_json = json.load(handle)
+            except json.JSONDecodeError:
+                return None
+
+        markdown = content_json.get("markdown", "")
+        properties = extract_properties(markdown)
+
+        meta_json: dict[str, Any] = {}
+        if self.fs.exists(meta_path):
+            with self.fs.open(meta_path, "r") as meta_handle:
+                with contextlib.suppress(json.JSONDecodeError):
+                    meta_json = json.load(meta_handle)
+
+        note_class = (
+            meta_json.get("class")
+            or properties.get("class")
+            or content_json.get("frontmatter", {}).get("class")
+        )
+
+        warnings: list[dict[str, Any]] = []
+        if note_class and note_class in schemas:
+            warnings = validate_properties(properties, schemas[note_class])
+
+        return {
+            "id": note_id,
+            "title": meta_json.get("title", note_id),
+            "class": note_class,
+            "updated_at": meta_json.get("updated_at"),
+            "workspace_id": meta_json.get(
+                "workspace_id",
+                self.workspace_path.split("/")[-1],
+            ),
+            "properties": properties,
+            "tags": meta_json.get("tags", []),
+            "links": meta_json.get("links", []),
+            "canvas_position": meta_json.get("canvas_position", {}),
+            "checksum": (meta_json.get("integrity") or {}).get("checksum"),
+            "validation_warnings": warnings,
+        }
+
     def watch(
         self,
         wait_for_changes: Callable[[Callable[[], None]], None],
         *,
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
-        """Run the indexer whenever ``wait_for_changes`` signals updates.
-
-        The provided callable is responsible for blocking or polling the
-        filesystem. It receives a callback that should be invoked each time a
-        change is detected. Tests can inject a synchronous stub to deterministically
-        trigger the indexer without relying on timers or OS watchers.
-        """
+        """Run the indexer whenever ``wait_for_changes`` signals updates."""
 
         def _run_once() -> None:
             self.run_once()
 
         try:
             wait_for_changes(_run_once)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if on_error:
                 on_error(exc)
             else:
@@ -257,6 +269,7 @@ class Indexer:
 
 
 def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
+    """Return ``True`` when ``note`` satisfies ``filters``."""
     for key, expected in filters.items():
         note_value = note.get(key)
         if note_value is None:
@@ -281,16 +294,15 @@ def query_index(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
     """Return note records from the cached index that satisfy ``filter_dict``."""
-
     fs = fs or fsspec.filesystem("file")
     index_path = f"{workspace_path.rstrip('/')}/index/index.json"
 
     if not fs.exists(index_path):
         return []
 
-    with fs.open(index_path, "r") as f:
+    with fs.open(index_path, "r") as handle:
         try:
-            index_data = json.load(f)
+            index_data = json.load(handle)
         except json.JSONDecodeError:
             return []
 
@@ -298,9 +310,4 @@ def query_index(
     if not filter_dict:
         return list(notes.values())
 
-    results = []
-    for note in notes.values():
-        if _matches_filters(note, filter_dict):
-            results.append(note)
-
-    return results
+    return [note for note in notes.values() if _matches_filters(note, filter_dict)]

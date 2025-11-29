@@ -1,11 +1,13 @@
 import json
+
 import fsspec
+
 from ieapp.indexer import (
-    extract_properties,
-    validate_properties,
-    aggregate_stats,
     Indexer,
+    aggregate_stats,
+    extract_properties,
     query_index,
+    validate_properties,
 )
 
 
@@ -58,7 +60,7 @@ def test_validate_properties_missing_required():
         "fields": {
             "Date": {"type": "date", "required": True},
             "Attendees": {"type": "list", "required": False},
-        }
+        },
     }
 
     # Missing Date
@@ -109,7 +111,7 @@ def test_indexer_run_once():
 
     # Create Note 1 (Valid Meeting)
     note1_content = {
-        "markdown": "---\nclass: meeting\n---\n# Sync\n\n## Date\n2025-10-27"
+        "markdown": "---\nclass: meeting\n---\n# Sync\n\n## Date\n2025-10-27",
     }
     with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
         json.dump(note1_content, f)
@@ -193,7 +195,7 @@ def test_query_index():
                 "class": "task",
                 "properties": {"status": "todo"},
             },
-        }
+        },
     }
 
     with fs.open(f"{workspace_path}/index/index.json", "w") as f:

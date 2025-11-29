@@ -7,7 +7,7 @@ import os
 import secrets
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +81,7 @@ def _ensure_global_json(root_path_str: str) -> str:
     if global_json_path.exists():
         return str(global_json_path)
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     key_id = f"key-{uuid.uuid4().hex}"
     hmac_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
 

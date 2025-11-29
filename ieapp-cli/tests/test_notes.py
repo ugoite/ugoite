@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from ieapp.notes import RevisionMismatchError, create_note, update_note
 from ieapp.workspace import create_workspace
 
