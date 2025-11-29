@@ -111,7 +111,7 @@ def cmd_query(
     if tag:
         filter_dict["tag"] = tag
 
-    results = query_index(workspace_path, filter_dict)
+    results = query_index(workspace_path, filter_dict if filter_dict else None)
 
     if not results:
         typer.echo("No notes found.")
