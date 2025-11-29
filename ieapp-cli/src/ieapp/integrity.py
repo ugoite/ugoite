@@ -37,12 +37,25 @@ class IntegrityProvider:
         """
 
         ws_path = Path(workspace_path)
-        root_path = ws_path.parent.parent
-        global_json = root_path / "global.json"
+        meta_path = ws_path / "meta.json"
+
+        if not meta_path.exists():
+            raise FileNotFoundError(
+                f"meta.json not found for workspace at {workspace_path}"
+            )
+
+        with meta_path.open("r", encoding="utf-8") as meta_handle:
+            meta = json.load(meta_handle)
+
+        storage_root = meta.get("storage", {}).get("root")
+        if not storage_root:
+            raise ValueError("Workspace metadata missing storage.root")
+
+        global_json = Path(storage_root) / "global.json"
 
         if not global_json.exists():
             raise FileNotFoundError(
-                f"global.json not found for workspace at {workspace_path}"
+                f"global.json not found for workspace at {storage_root}"
             )
 
         with global_json.open("r", encoding="utf-8") as handle:
