@@ -1,7 +1,5 @@
 import json
-import base64
 import pytest
-from pathlib import Path
 from ieapp.integrity import IntegrityProvider
 from ieapp.workspace import create_workspace
 
