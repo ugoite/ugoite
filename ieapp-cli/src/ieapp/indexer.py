@@ -81,7 +81,10 @@ def validate_properties(properties: dict, schema: dict) -> list[dict]:
     fields = schema.get("fields", {})
 
     for field_name, field_def in fields.items():
-        if field_def.get("required", False) and not properties.get(field_name, "").strip():
+        if (
+            field_def.get("required", False)
+            and not properties.get(field_name, "").strip()
+        ):
             warnings.append(
                 {
                     "code": "missing_field",
@@ -272,6 +275,7 @@ def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
     """Return ``True`` when ``note`` satisfies ``filters``."""
     for key, expected in filters.items():
         note_value = note.get(key)
+        except Exception as exc:
         if note_value is None:
             note_value = note.get("properties", {}).get(key)
 
