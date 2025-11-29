@@ -61,35 +61,6 @@ def fake_integrity_provider() -> Any:
 
 
 def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
-
-
-@pytest.fixture
-def workspace_root(tmp_path):
-    root = tmp_path / "ieapp_root"
-    ws_id = "test-workspace"
-    create_workspace(root, ws_id)
-    return root / "workspaces" / ws_id
-
-
-@pytest.fixture
-def fake_integrity_provider():
-    class _FakeIntegrityProvider:
-        secret = b"unit-test-secret"
-
-        def checksum(self, content: str) -> str:
-            return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-        def signature(self, content: str) -> str:
-            return hmac.new(
-                self.secret,
-                content.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-
-    return _FakeIntegrityProvider()
-
-
-def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
     """Verifies that creating a note generates the required file structure."""
     note_id = "note-1"
     content = "# My Note\n\nHello World"
