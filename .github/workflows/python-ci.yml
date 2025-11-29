@@ -16,7 +16,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run ruff check
-        run: uvx ruff check .
+        run: uvx ruff check --select ALL .
 
       - name: Run ruff format check
         run: uvx ruff format --check .
