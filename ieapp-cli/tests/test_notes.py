@@ -6,6 +6,17 @@ import pytest
 from ieapp.notes import RevisionMismatchError, create_note, update_note
 from ieapp.workspace import create_workspace
 
+"""Tests for notes management."""
+
+import hashlib
+import hmac
+import json
+from typing import Any
+
+import pytest
+from ieapp.notes import RevisionMismatchError, create_note, update_note
+from ieapp.workspace import create_workspace
+
 STRUCTURED_NOTE_CONTENT = """---
 class: meeting
 tags:
@@ -19,6 +30,37 @@ tags:
 ## Summary
 Wrap up
 """
+
+HISTORY_LENGTH = 2
+
+
+@pytest.fixture
+def workspace_root(tmp_path) -> Any:
+    """Create a temporary workspace for testing."""
+    root = tmp_path / "ieapp_root"
+    ws_id = "test-workspace"
+    create_workspace(root, ws_id)
+    return root / "workspaces" / ws_id
+
+
+@pytest.fixture
+def fake_integrity_provider() -> Any:
+    """Create a fake integrity provider for testing."""
+    class _FakeIntegrityProvider:
+        secret = b"unit-test-secret"
+
+        def checksum(self, content: str) -> str:
+            return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        def signature(self, content: str) -> str:
+            return hmac.new(
+                self.secret, content.encode("utf-8"), hashlib.sha256,
+            ).hexdigest()
+
+    return _FakeIntegrityProvider()
+
+
+def test_create_note_basic(workspace_root, fake_integrity_provider) -> None:
 
 
 @pytest.fixture
@@ -165,7 +207,7 @@ def test_note_history_append(workspace_root, fake_integrity_provider) -> None:
         history_index = json.load(f)
         assert history_index["note_id"] == note_id
         revisions = history_index["revisions"]
-        assert len(revisions) == 2
+        assert len(revisions) == HISTORY_LENGTH
         assert revisions[0]["revision_id"] == rev_v1
         assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
         assert revisions[0]["signature"] == fake_integrity_provider.signature(
