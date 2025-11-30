@@ -6,7 +6,6 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -100,20 +99,12 @@ def _write_default_global(path: Path) -> None:
         "last_rotation": now_iso,
     }
 
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    try:
-        fd = os.open(path, flags, 0o600)
-    except FileExistsError:
-        # Another process already created the file between the exists() check
-        # and this call. That's fine; the next read will pick it up.
-        return
-
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
 
 
 def build_response_signature(body: bytes, root_path: Path) -> tuple[str, str]:
-    """Return the key id + signature for ``body`` relative to ``root_path``."""
-    key_id, secret = _load_hmac_material(str(root_path.resolve()))
-    digest = hmac.new(secret, body, hashlib.sha256).hexdigest()
-    return key_id, digest
+    """Compute the HMAC signature for the response body."""
+    key_id, secret = _load_hmac_material(str(root_path))
+    signature = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return key_id, signature

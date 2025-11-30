@@ -18,4 +18,5 @@ ENV UV_LINK_MODE=copy
 RUN uv sync --locked
 
 # Set the entrypoint for the backend application
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONPATH=/app/src
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
