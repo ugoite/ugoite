@@ -10,8 +10,24 @@ from typing import Any
 import ieapp
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from ieapp.notes import NoteExistsError, create_note
-from ieapp.workspace import WorkspaceExistsError, create_workspace
+from ieapp.notes import (
+    NoteExistsError,
+    RevisionMismatchError,
+    create_note,
+    delete_note,
+    get_note,
+    get_note_history,
+    get_note_revision,
+    list_notes,
+    restore_note,
+    update_note,
+)
+from ieapp.workspace import (
+    WorkspaceExistsError,
+    create_workspace,
+    get_workspace,
+    list_workspaces,
+)
 from pydantic import BaseModel
 
 # Configure logging
@@ -71,6 +87,21 @@ class NoteCreate(BaseModel):
     content: str
 
 
+class NoteUpdate(BaseModel):
+    """Note update payload."""
+
+    markdown: str
+    parent_revision_id: str
+    frontmatter: dict[str, Any] | None = None
+    canvas_position: dict[str, Any] | None = None
+
+
+class NoteRestore(BaseModel):
+    """Note restore payload."""
+
+    revision_id: str
+
+
 class QueryRequest(BaseModel):
     """Query request payload."""
 
@@ -86,6 +117,26 @@ def get_root_path() -> Path:
 async def root() -> dict[str, str]:
     """Root endpoint."""
     return {"message": "Hello World!"}
+
+
+# ==============================================================================
+# Workspace Endpoints
+# ==============================================================================
+
+
+@app.get("/workspaces")
+async def list_workspaces_endpoint() -> list[dict[str, Any]]:
+    """List all workspaces."""
+    root_path = get_root_path()
+
+    try:
+        return list_workspaces(root_path)
+    except Exception as e:
+        logger.exception("Failed to list workspaces")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @app.post("/workspaces", status_code=status.HTTP_201_CREATED)
@@ -147,6 +198,264 @@ async def create_note_endpoint(
         ) from e
 
     return {"id": note_id}
+
+
+# ==============================================================================
+# Notes Endpoints (continued)
+# ==============================================================================
+
+
+@app.get("/workspaces/{workspace_id}")
+async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
+    """Get workspace metadata."""
+    root_path = get_root_path()
+
+    try:
+        return get_workspace(root_path, workspace_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to get workspace")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.get("/workspaces/{workspace_id}/notes")
+async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
+    """List all notes in a workspace."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        return list_notes(ws_path)
+    except Exception as e:
+        logger.exception("Failed to list notes")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.get("/workspaces/{workspace_id}/notes/{note_id}")
+async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
+    """Get a note by ID."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        return get_note(ws_path, note_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to get note")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.put("/workspaces/{workspace_id}/notes/{note_id}")
+async def update_note_endpoint(
+    workspace_id: str,
+    note_id: str,
+    payload: NoteUpdate,
+) -> dict[str, Any]:
+    """Update an existing note.
+
+    Requires parent_revision_id for optimistic concurrency control.
+    Returns 409 Conflict if the revision has changed.
+    """
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        update_note(ws_path, note_id, payload.markdown, payload.parent_revision_id)
+        # Return the updated note
+        return get_note(ws_path, note_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except RevisionMismatchError as e:
+        # Return 409 with the current server version for client merge
+        try:
+            current_note = get_note(ws_path, note_id)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": str(e),
+                    "current_revision": current_note,
+                },
+            ) from e
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e),
+            ) from e
+    except Exception as e:
+        logger.exception("Failed to update note")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.delete("/workspaces/{workspace_id}/notes/{note_id}")
+async def delete_note_endpoint(workspace_id: str, note_id: str) -> dict[str, str]:
+    """Tombstone (soft delete) a note."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        delete_note(ws_path, note_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to delete note")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+    else:
+        return {"id": note_id, "status": "deleted"}
+
+
+# ==============================================================================
+# History Endpoints
+# ==============================================================================
+
+
+@app.get("/workspaces/{workspace_id}/notes/{note_id}/history")
+async def get_note_history_endpoint(
+    workspace_id: str,
+    note_id: str,
+) -> dict[str, Any]:
+    """Get the revision history for a note."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        return get_note_history(ws_path, note_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to get note history")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.get("/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}")
+async def get_note_revision_endpoint(
+    workspace_id: str,
+    note_id: str,
+    revision_id: str,
+) -> dict[str, Any]:
+    """Get a specific revision of a note."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        return get_note_revision(ws_path, note_id, revision_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to get note revision")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@app.post("/workspaces/{workspace_id}/notes/{note_id}/restore")
+async def restore_note_endpoint(
+    workspace_id: str,
+    note_id: str,
+    payload: NoteRestore,
+) -> dict[str, Any]:
+    """Restore a note to a previous revision."""
+    root_path = get_root_path()
+    ws_path = root_path / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    try:
+        return restore_note(ws_path, note_id, payload.revision_id)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to restore note")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+# ==============================================================================
+# Query Endpoint
+# ==============================================================================
 
 
 @app.post("/workspaces/{workspace_id}/query")

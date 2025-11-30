@@ -199,3 +199,62 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         _append_workspace_to_global(global_json_path, workspace_id)
 
     logger.info("Workspace %s created successfully", workspace_id)
+
+
+def get_workspace(root_path: str | Path, workspace_id: str) -> dict[str, Any]:
+    """Get workspace metadata.
+
+    Args:
+        root_path: The root directory where workspaces are stored.
+        workspace_id: The unique identifier for the workspace.
+
+    Returns:
+        Dictionary containing workspace metadata.
+
+    Raises:
+        FileNotFoundError: If the workspace does not exist.
+
+    """
+    validate_id(workspace_id, "workspace_id")
+
+    root_path_str = str(root_path)
+    ws_path = Path(root_path_str) / "workspaces" / workspace_id
+
+    if not ws_path.exists():
+        msg = f"Workspace {workspace_id} not found"
+        raise FileNotFoundError(msg)
+
+    meta_path = ws_path / "meta.json"
+    if not meta_path.exists():
+        msg = f"Workspace {workspace_id} metadata not found"
+        raise FileNotFoundError(msg)
+
+    with meta_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def list_workspaces(root_path: str | Path) -> list[dict[str, Any]]:
+    """List all workspaces.
+
+    Args:
+        root_path: The root directory where workspaces are stored.
+
+    Returns:
+        List of workspace metadata dictionaries.
+
+    """
+    root_path_str = str(root_path)
+    workspaces_dir = Path(root_path_str) / "workspaces"
+
+    if not workspaces_dir.exists():
+        return []
+
+    workspaces = []
+    for ws_dir in workspaces_dir.iterdir():
+        if ws_dir.is_dir():
+            meta_path = ws_dir / "meta.json"
+            if meta_path.exists():
+                with meta_path.open("r", encoding="utf-8") as f:
+                    workspaces.append(json.load(f))
+
+    return workspaces
