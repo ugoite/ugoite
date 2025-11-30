@@ -15,7 +15,10 @@ from ieapp.sandbox import (
 )
 from ieapp.workspace import create_workspace
 
+from .conftest import requires_nsjail
 
+
+@requires_nsjail
 class TestSandboxSecurity:
     """Test sandbox security restrictions."""
 
@@ -53,6 +56,7 @@ print(content)
         assert "hello from workspace" in result.stdout
 
 
+@requires_nsjail
 class TestSandboxTimeout:
     """Test sandbox timeout behavior."""
 
@@ -66,6 +70,7 @@ time.sleep(100)
             run_python_script(code, temp_workspace, timeout_seconds=0.5)
 
 
+@requires_nsjail
 class TestSandboxExecution:
     """Test sandbox execution capabilities."""
 
@@ -119,6 +124,7 @@ raise ValueError("Test error message")
         assert d["success"] is True
 
 
+@requires_nsjail
 class TestSandboxIeappIntegration:
     """Test ieapp library integration in sandbox.
 

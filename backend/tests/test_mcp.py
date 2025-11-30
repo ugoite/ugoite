@@ -9,6 +9,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from .conftest import requires_nsjail
+
 
 class TestMCPResources:
     """Test MCP resource endpoints."""
@@ -219,6 +221,7 @@ class TestMCPTools:
         assert result["status"] == "deleted"
 
 
+@requires_nsjail
 class TestRunPythonScriptTool:
     """Test run_python_script MCP tool (TDD Step 2)."""
 
@@ -362,6 +365,7 @@ class TestMCPContractSerialization:
         assert isinstance(result["markdown"], str)
         assert isinstance(result["revision_id"], str)
 
+    @requires_nsjail
     def test_run_python_script_result_schema(
         self,
         test_client: TestClient,

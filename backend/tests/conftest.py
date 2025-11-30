@@ -1,6 +1,7 @@
 """Test configuration."""
 
 import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -15,6 +16,14 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from app.main import app  # noqa: E402
+
+# Check if nsjail is available
+NSJAIL_AVAILABLE = shutil.which("nsjail") is not None
+
+requires_nsjail = pytest.mark.skipif(
+    not NSJAIL_AVAILABLE,
+    reason="nsjail is not installed",
+)
 
 
 @pytest.fixture

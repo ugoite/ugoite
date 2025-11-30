@@ -42,3 +42,11 @@ jobs:
       - name: Run ty check (cli)
         working-directory: ./ieapp-cli
         run: uv run ty check .
+
+      - name: Run pytest (backend)
+        working-directory: ./backend
+        run: uv run pytest
+
+      - name: Run pytest (cli)
+        working-directory: ./ieapp-cli
+        run: uv run pytest
