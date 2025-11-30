@@ -254,7 +254,15 @@ def list_workspaces(root_path: str | Path) -> list[dict[str, Any]]:
         if ws_dir.is_dir():
             meta_path = ws_dir / "meta.json"
             if meta_path.exists():
-                with meta_path.open("r", encoding="utf-8") as f:
-                    workspaces.append(json.load(f))
+                try:
+                    with meta_path.open("r", encoding="utf-8") as f:
+                        workspaces.append(json.load(f))
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.warning(
+                        "Failed to read workspace meta %s: %s",
+                        meta_path,
+                        exc,
+                    )
+                    continue
 
     return workspaces
