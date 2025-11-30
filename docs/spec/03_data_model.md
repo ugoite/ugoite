@@ -103,7 +103,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 
 | File | Shape | Used by |
 |------|-------|---------|
-| `index/index.json` | `{ "notes": {id: NoteRecord}, "class_stats": {...} }` | REST `/workspaces/{id}/notes`, MCP resources, `ieapp.query()` |
+| `index/index.json` | `{ "notes": {id: NoteRecord}, "class_stats": {...} }` | REST `/workspaces/{id}/notes`, MCP resources, `run_script` via `host.call` |
 | `index/inverted_index.json` | `{ term: [note_id, ...] }` | Keyword search fallback, offline search |
 | `index/faiss.index` | Binary FAISS index referencing embeddings stored inside `NoteRecord.embedding_id` | Semantic search + MCP `search_notes` |
 | `index/stats.json` | Aggregates (per-tag counts, last indexed timestamp) | Health checks, UI badges |

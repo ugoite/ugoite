@@ -47,14 +47,17 @@
   - Wire dependency injection so API uses `ieapp` services; avoid duplicating logic.
   - Document OpenAPI examples for canvas fields even if not yet editable (preparing Story 4).
 
-## Milestone 4 — MCP Resources & Python Sandbox (Specs: 01 §Code Execution, 02 Story 1 & 8, 04 §MCP, 05 §Sandbox)
-- **Goal**: MCP endpoint exposing `notes.list/read/update`, `run_python_script` with sandbox guardrails.
+## Milestone 4 — MCP Resources & Wasm Sandbox (Specs: 01 §Code Execution, 02 Story 1 & 8, 04 §MCP, 05 §Sandbox)
+- **Goal**: MCP endpoint exposing `run_script` tool with Wasm/JavaScript sandbox guardrails.
 - **TDD Steps**:
-  1. Pytest: sandbox denies filesystem access outside workspace/tmp (use temp file attempt to assert failure).
-  2. Pytest/integration: `run_python_script` can import `ieapp`, query data, and update a note (mocked workspace + deterministic script).
+  1. Pytest: sandbox denies direct filesystem/network access (verify Wasm isolation).
+  2. Pytest/integration: `run_script` can execute JavaScript that calls `host.call` to query and update notes (mocked workspace + deterministic script).
   3. Contract test: MCP resource serialization matches spec (snapshot expected JSON).
+  4. Pytest: verify fuel limits prevent infinite loops (script exceeding fuel budget returns error).
 - **Implementation Notes**:
-  - Build sandbox wrapper using subprocess + seccomp/rlimits; expose error types for timeout vs security violation.
+  - Use `wasmtime` Python bindings with a pre-compiled JavaScript engine (e.g., QuickJS via Javy).
+  - Implement `host.call` as a Wasm import that proxies to internal REST API handlers.
+  - Dynamically expose available API operations based on OpenAPI spec.
   - Reuse REST auth toggles for MCP (shared dependency config).
 
 ## Milestone 5 — Frontend Thin Slice (Specs: 02 Story 2 & 4, 04 REST usage)

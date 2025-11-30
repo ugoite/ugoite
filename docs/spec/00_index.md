@@ -12,7 +12,7 @@ IEapp is a **Local-First, AI-Native Knowledge Space** designed for the post-SaaS
 
 It solves the "Markdown vs. Database" paradox by treating **Markdown Sections as Fields**. You write standard Markdown headers (`## Date`, `## Attendees`), and the system automatically extracts them as structured data. You can define "Classes" (Schemas) to enforce structure and templates, giving you the power of a database with the simplicity of a text file.
 
-Unlike traditional apps that offer limited "tools" to AI, IEapp provides a **Code Execution Environment** via the Model Context Protocol (MCP). This allows your AI assistant to not just read your notes, but to *program* your knowledge base—analyzing data, generating charts, or refactoring content using Python.
+Unlike traditional apps that offer limited "tools" to AI, IEapp provides a **Code Execution Environment** via the Model Context Protocol (MCP). This allows your AI assistant to not just read your notes, but to *program* your knowledge base—analyzing data, generating charts, or refactoring content using JavaScript in a secure WebAssembly sandbox.
 
 ## Specification Documents
 
@@ -29,7 +29,7 @@ This specification is broken down into the following documents:
 ## Quick Summary of Key Decisions
 
 *   **Storage**: `fsspec` (Local, S3, etc.) with a JSON-based schema. No RDB.
-*   **AI Interface**: MCP Server with **Python Code Execution** capability.
+*   **AI Interface**: MCP Server with **Wasm/JavaScript Code Execution** capability (`run_script` tool).
 *   **Frontend**: SolidJS (Solid Start) + Bun (Local-first, Optimistic UI).
 *   **Backend**: Python 3.12+ FastAPI (Stateless, acting as the MCP host).
 *   **Search**: Local FAISS vector index + Inverted Index.
