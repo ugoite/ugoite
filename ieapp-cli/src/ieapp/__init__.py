@@ -28,18 +28,20 @@ from .workspace import (
 import os
 from typing import Any
 
+
 def query(workspace_path: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
     """Query the index using keyword arguments as filters.
-    
+
     If workspace_path is not provided, it falls back to IEAPP_WORKSPACE_ROOT env var.
     """
     if workspace_path is None:
         workspace_path = os.environ.get("IEAPP_WORKSPACE_ROOT")
-    
+
     if not workspace_path:
         raise ValueError("workspace_path must be provided or IEAPP_WORKSPACE_ROOT set")
-        
+
     return query_index(workspace_path, filter_dict=kwargs)
+
 
 __all__ = [
     "Indexer",

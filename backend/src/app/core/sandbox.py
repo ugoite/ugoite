@@ -5,27 +5,30 @@ import sys
 import resource
 from dataclasses import dataclass
 
+
 @dataclass
 class SandboxResult:
     stdout: str
     stderr: str
     returncode: int
 
+
 def set_limits():
     # Limit CPU time to 5 seconds
     try:
         resource.setrlimit(resource.RLIMIT_CPU, (5, 5))
     except ValueError:
-        pass # Ignore if we can't set limits
-    
+        pass  # Ignore if we can't set limits
+
     # Limit memory to 512MB
     try:
         resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
     except ValueError:
         pass
 
+
 def run_in_sandbox(code: str, env: dict[str, str] | None = None) -> SandboxResult:
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(code)
         script_path = f.name
 
@@ -41,13 +44,11 @@ def run_in_sandbox(code: str, env: dict[str, str] | None = None) -> SandboxResul
             text=True,
             preexec_fn=set_limits,
             timeout=10,
-            cwd="/tmp", # Run in tmp
-            env=run_env
+            cwd="/tmp",  # Run in tmp
+            env=run_env,
         )
         return SandboxResult(
-            stdout=result.stdout,
-            stderr=result.stderr,
-            returncode=result.returncode
+            stdout=result.stdout, stderr=result.stderr, returncode=result.returncode
         )
     except subprocess.TimeoutExpired:
         return SandboxResult(stdout="", stderr="Timeout", returncode=124)
