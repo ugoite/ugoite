@@ -592,7 +592,11 @@ def restore_note(
 ) -> dict[str, Any]:
     """Restore a note to a previous revision.
 
-    This creates a new revision based on the content of the specified revision.
+    Creates a new revision that records the intent to restore to the specified
+    revision. Note that this implementation creates a "restore marker" revision
+    only; the actual note content is NOT replaced with the target revision's
+    content. Full time travel requires storing the complete markdown in each
+    revision file (planned for a future milestone).
 
     Args:
         workspace_path: Absolute path to the workspace directory.
