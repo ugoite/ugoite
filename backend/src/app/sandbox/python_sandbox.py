@@ -8,9 +8,8 @@ import struct
 import tempfile
 import threading
 from collections.abc import Callable
-from io import BufferedReader, BufferedWriter
 from pathlib import Path
-from typing import IO
+from typing import BinaryIO
 
 from wasmtime import Config, Engine, Func, Linker, Module, Store, WasiConfig
 
@@ -39,7 +38,7 @@ class SandboxExecutionError(SandboxError):
 HostCallHandler = Callable[[str, str, dict | None], object]
 
 
-def _read_exact(f: IO[bytes], size: int) -> bytes | None:
+def _read_exact(f: BinaryIO, size: int) -> bytes | None:
     """Read exact number of bytes from a file, returning None on EOF."""
     data = f.read(size)
     if not data:
@@ -53,8 +52,8 @@ def _read_exact(f: IO[bytes], size: int) -> bytes | None:
 
 
 def _handle_host_call(
-    f_out: BufferedReader,
-    f_in: BufferedWriter,
+    f_out: BinaryIO,
+    f_in: BinaryIO,
     host_call_handler: HostCallHandler,
 ) -> bool:
     """Handle a host call from the sandbox, returning True if successful."""
@@ -86,7 +85,7 @@ def _handle_host_call(
     return True
 
 
-def _handle_result(f_out: BufferedReader) -> object | None:
+def _handle_result(f_out: BinaryIO) -> object | None:
     """Handle a result message from the sandbox."""
     len_bytes = _read_exact(f_out, _LENGTH_SIZE)
     if len_bytes is None:
@@ -100,7 +99,7 @@ def _handle_result(f_out: BufferedReader) -> object | None:
     return json.loads(res_bytes.decode("utf-8"))
 
 
-def _handle_error(f_out: BufferedReader) -> SandboxExecutionError | None:
+def _handle_error(f_out: BinaryIO) -> SandboxExecutionError | None:
     """Handle an error message from the sandbox."""
     len_bytes = _read_exact(f_out, _LENGTH_SIZE)
     if len_bytes is None:
@@ -115,8 +114,8 @@ def _handle_error(f_out: BufferedReader) -> SandboxExecutionError | None:
 
 
 def _process_output(
-    f_out: BufferedReader,
-    f_in: BufferedWriter,
+    f_out: BinaryIO,
+    f_in: BinaryIO,
     host_call_handler: HostCallHandler,
     result_container: dict[str, object],
 ) -> bool:
@@ -239,7 +238,7 @@ def run_script(  # noqa: PLR0915
         shutil.rmtree(tmp_dir)
 
 
-def _send_code(f_in: BufferedWriter, code: str) -> None:
+def _send_code(f_in: BinaryIO, code: str) -> None:
     """Send JavaScript code to the sandbox."""
     code_bytes = code.encode("utf-8")
     f_in.write(struct.pack(">I", len(code_bytes)))
@@ -248,9 +247,9 @@ def _send_code(f_in: BufferedWriter, code: str) -> None:
 
 
 def _process_loop(  # noqa: PLR0913
-    f_out: BufferedReader,
-    f_err: BufferedReader,
-    f_in: BufferedWriter,
+    f_out: BinaryIO,
+    f_err: BinaryIO,
+    f_in: BinaryIO,
     wasm_thread: threading.Thread,
     host_call_handler: HostCallHandler,
     result_container: dict[str, object],
