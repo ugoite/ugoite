@@ -21,10 +21,11 @@ jobs:
 
       - name: Build and install nsjail
         run: |
-          git clone https://github.com/google/nsjail.git
-          cd nsjail
+          git clone https://github.com/google/nsjail.git /tmp/nsjail
+          cd /tmp/nsjail
           make
           sudo cp nsjail /usr/local/bin/
+          rm -rf /tmp/nsjail
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
