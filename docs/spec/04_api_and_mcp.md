@@ -64,79 +64,49 @@ Expose notes as readable resources for the AI.
 *   `ieapp://{workspace_id}/links` - Canvas graph edges (source, target, metadata).
 
 ### Tools
-The core power of IEapp is the **Code Execution Tool**.
+The core power of IEapp is the **Universal Code Execution Tool**. To simplify the interface and maximize flexibility, IEapp exposes a **single** MCP tool that allows the AI to interact with the system by writing and executing scripts.
 
-#### `run_python_script`
-*   **Description**: Executes a Python script in the context of the workspace. The script has access to the `ieapp` library to manipulate notes.
+#### `run_script`
+*   **Description**: Executes a JavaScript script in a secure WebAssembly (Wasm) sandbox. The script has access to the host application's REST API via a host function, allowing it to perform any action (CRUD notes, search, query, etc.) that the frontend can perform.
 *   **Arguments**:
-    *   `code` (string): The Python code to execute.
+    *   `code` (string): The JavaScript code to execute.
     *   `workspace_id` (string): The target workspace.
+*   **Environment**:
+    *   **Runtime**: WebAssembly (wasmtime) running a JavaScript engine (e.g., QuickJS).
+    *   **Security**: Strictly sandboxed. No network/filesystem access except via the provided host function.
+*   **Host Interface**:
+    *   The global object `host` is available.
+    *   `host.call(method, path, body)`: Calls an internal API endpoint.
+        *   `method`: HTTP verb ("GET", "POST", "PUT", "DELETE", "PATCH").
+        *   `path`: The API path (e.g., `/workspaces/{id}/notes`).
+        *   `body`: JSON object (optional).
+    *   **Returns**: The JSON response from the API.
 *   **Capabilities**:
-    *   Read all notes: `ieapp.list_notes()`, `ieapp.get_note(id)`.
-    *   **Query Properties**: `ieapp.query(class="meeting", status="open")`.
-    *   Analyze data: Use `pandas`, `numpy` (if available) to process note content.
-    *   Batch update: `ieapp.update_note(id, content)`.
-    *   **Example Usage**:
-        ```python
-        # AI generates this code to find all notes tagged 'todo' and compile a report
-        import ieapp
+    *   **Dynamic API Discovery**: The available operations are dynamically derived from the application's REST API definition (OpenAPI).
+    *   **Complex Workflows**: The script can make multiple API calls, process data, and return a synthesized result.
+*   **Example Usage**:
+    ```javascript
+    // AI generates this code to find all notes tagged 'todo' and compile a report
+    
+    // 1. Search/Query for notes
+    // Corresponds to POST /workspaces/{ws_id}/query
+    const tasks = host.call("POST", `/workspaces/${workspace_id}/query`, {
+        filter: { class: "task", status: "pending" }
+    });
+
+    let report = "# Pending Tasks Report\n";
+    
+    for (const task of tasks) {
+        // 2. Fetch full content if needed (or just use metadata)
+        // const fullNote = host.call("GET", `/workspaces/${workspace_id}/notes/${task.id}`);
         
-        # Query structured data extracted from Markdown
-        # Note: Properties are extracted from H2 headers (e.g., ## Date)
-        # Returns NoteRecord objects as defined in 03_data_model.md
-        tasks = ieapp.query(class="task", status="pending")
-        
-        report = "# Pending Tasks Report\n"
-        for task in tasks:
-            # task is a NoteRecord with id, title, class, properties, etc.
-            # Access extracted fields from the properties dict
-            due_date = task.properties.get('Due', 'N/A')
-            report += f"- [ ] {task.title} (Due: {due_date})\n"
-            
-        print(report)
-        ```
-
-#### `search_notes`
-*   **Description**: Semantic search for notes.
-*   **Arguments**: `query` (string).
-
-#### `notes.list`
-*   **Description**: Returns paginated note summaries (id, title, class, tags, canvas position) sourced from `index/index.json`.
-*   **Arguments**:
-    *   `workspace_id` (string): Target workspace.
-    *   `filter` (object, optional): Same shape as REST `/query` filters for type/tag/date constraints.
-
-#### `notes.read`
-*   **Description**: Fetches a full note payload (frontmatter, markdown, attachments, latest revision id).
-*   **Arguments**: `workspace_id`, `note_id`.
-
-#### `notes.create`
-*   **Description**: Creates a note from raw markdown or a schema template.
-*   **Arguments**:
-    *   `workspace_id`
-    *   `title`
-    *   `markdown`
-    *   `class` (optional)
-    *   `tags` (optional array)
-
-#### `notes.update`
-*   **Description**: Updates an existing note. Mirrors REST `PUT` semantics, requiring optimistic concurrency via `parent_revision_id`. Properties are extracted from Markdown headers (e.g., `## Date`), not updated directly.
-*   **Arguments**:
-    *   `workspace_id`
-    *   `note_id`
-    *   `parent_revision_id`
-    *   `markdown` (string): The new markdown content. To update properties, modify the corresponding headers.
-    *   `frontmatter` (object, optional): Updates to YAML frontmatter (e.g., `class`, `status`).
-    *   `canvas_position` (object, optional): Updates the note's position on the canvas.
-    *   `tags` (array, optional): Updates the note's tags.
-
-#### `notes.delete`
-*   **Description**: Tombstones a note (soft delete) so the UI can confirm before purging.
-*   **Arguments**: `workspace_id`, `note_id`.
-
-#### `notes.restore`
-*   **Description**: Restores a past revision, creating a new head revision for auditing. Supports the Time Travel UI and agent-driven undo flows.
-*   **Arguments**: `workspace_id`, `note_id`, `revision_id`.
+        const dueDate = task.properties.Due || 'N/A';
+        report += `- [ ] ${task.title} (Due: ${dueDate})\n`;
+    }
+    
+    // The return value of the script is returned to the AI
+    report; 
+    ```
 
 ### Prompts
 Pre-defined prompts to help the AI understand the context.

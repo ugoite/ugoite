@@ -7,7 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.121.1",
     "ieapp",
+    "mcp>=1.0.0",
     "uvicorn>=0.38.0",
+    "wasmtime>=26.0.0",
 ]
 
 [build-system]
@@ -21,6 +23,7 @@ ieapp = { path = "../ieapp-cli" }
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.1",
+    "ruff>=0.14.7",
     "ty>=0.0.1a26",
 ]
 

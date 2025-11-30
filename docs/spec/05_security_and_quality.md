@@ -15,12 +15,14 @@ IEapp ships in a localhost-only mode with no auth prompts to keep the personal w
 *   **Sanitization**: All inputs (especially in the Code Sandbox) are strictly validated.
 
 ### Code Sandbox Security
-The `run_python_script` MCP tool (defined in `04_api_and_mcp.md`) executes arbitrary Python code, requiring strict isolation:
-*   **Network Access**: Blocked (except to `fsspec` storage if remote).
-*   **Filesystem Access**: Restricted to `/tmp` and the `fsspec` mount.
-*   **Timeouts**: Scripts must finish within 30 seconds.
-*   **Libraries**: Pre-installed set (`ieapp`, `pandas`, `numpy`, `scikit-learn`).
-*   **Process Isolation**: Runs in a separate process with resource limits (memory, CPU).
+The `run_script` MCP tool (defined in `04_api_and_mcp.md`) executes arbitrary JavaScript code, requiring strict isolation:
+*   **Runtime**: WebAssembly (wasmtime) with a JavaScript engine.
+*   **Network Access**: Blocked. All interactions must go through the `host.call` function, which proxies to the internal API.
+*   **Filesystem Access**: Blocked. No access to the host filesystem.
+*   **Resource Limits**:
+    *   **Fuel**: Execution is limited by "fuel" (CPU cycles) to prevent infinite loops.
+    *   **Memory**: The Wasm instance has a strict memory limit (e.g., 128MB).
+*   **Process Isolation**: Wasmtime runs within the backend process but provides strong memory isolation.
 
 ## 2. Testing Strategy (TDD)
 
@@ -31,7 +33,7 @@ We follow a strict Test-Driven Development approach.
 *   **Unit Tests**: Test `ieapp` library logic, data models, and `fsspec` adapters.
 *   **Integration Tests**: Test FastAPI endpoints using `TestClient`.
 *   **Contract Tests**: Use `schemathesis` to validate API against OpenAPI spec.
-*   **Sandbox Tests**: Verify that `run_python_script` cannot escape the sandbox or access unauthorized files.
+*   **Sandbox Tests**: Verify that `run_script` cannot escape the sandbox or access unauthorized files.
 
 ### Frontend (SolidJS)
 *   **Framework**: `bun test` + `Playwright`

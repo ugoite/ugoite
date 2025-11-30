@@ -1,5 +1,12 @@
 [tasks.install]
 run = "uv sync"
 
+[tasks.build-sandbox]
+run = "./build_sandbox.sh"
+sources = ["src/app/sandbox/runner.js"]
+outputs = ["src/app/sandbox/sandbox.wasm"]
+
 [tasks.dev]
-run = "uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+depends = ["build-sandbox"]
+run = "uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload"
+

@@ -4,16 +4,16 @@
 
 ### Story 1: "The Programmable Knowledge Base" (AI Native)
 **As a** power user or AI agent,
-**I want** to execute Python code against my notes,
+**I want** to execute JavaScript code against my notes,
 **So that** I can perform complex tasks like "Find all notes mentioning 'Project X', extract the dates, and plot a timeline."
 
 *   **Acceptance Criteria**:
-    *   MCP Tool `run_python_script` is available.
-    *   AI can import `ieapp` library in the sandbox.
-    *   AI can query structured properties (e.g., `ieapp.query(class="meeting")`).
+    *   MCP Tool `run_script` is available.
+    *   AI can call host functions (e.g., `host.call(...)`) to access the API.
+    *   AI can query structured properties via the API.
     *   Output (text/charts) is returned to the AI context.
 
-_Related APIs_: MCP tools `run_python_script`, `search_notes`; REST `POST /workspaces/{ws_id}/query`.
+_Related APIs_: MCP tool `run_script`; REST `POST /workspaces/{ws_id}/query`.
 
 ### Story 2: "Structured Freedom" (Data Model)
 **As a** user,
@@ -60,7 +60,7 @@ _Related APIs_: REST `PUT /workspaces/{ws_id}/notes/{note_id}` (persists `canvas
     *   Every save creates a new immutable revision.
     *   UI allows browsing history and reverting.
 
-_Related APIs_: REST `GET /workspaces/{ws_id}/notes/{note_id}/history`, `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}`, and `POST /workspaces/{ws_id}/notes/{note_id}/restore`; MCP tool `notes.restore` for agent-driven reverts.
+_Related APIs_: REST `GET /workspaces/{ws_id}/notes/{note_id}/history`, `GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}`, and `POST /workspaces/{ws_id}/notes/{note_id}/restore`; MCP `run_script` can also restore revisions via `host.call`.
 
 ## 2. Advanced / Experimental Features (Trendy & Bold)
 
@@ -74,19 +74,19 @@ _Related APIs_: REST `GET /workspaces/{ws_id}/notes/{note_id}/history`, `GET /wo
     *   User invokes their connected MCP Agent (e.g., "Format this voice note").
     *   Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers.
 
-_Related APIs_: REST `POST /workspaces/{ws_id}/attachments` (upload), `PUT /workspaces/{ws_id}/notes/{note_id}` (link attachment), and MCP resources `ieapp://{workspace_id}/notes/{note_id}` for transcript access followed by `run_python_script` updates.
+_Related APIs_: REST `POST /workspaces/{ws_id}/attachments` (upload), `PUT /workspaces/{ws_id}/notes/{note_id}` (link attachment), and MCP resources `ieapp://{workspace_id}/notes/{note_id}` for transcript access followed by `run_script` updates.
 
 ### Story 7: "Computational Notebooks" (Live Code)
 **As a** data-driven user,
-**I want** to embed Python code blocks in my notes that execute and render results,
+**I want** to embed JavaScript code blocks in my notes that execute and render results,
 **So that** I can create live reports or analyze my own knowledge base within the app.
 
 *   **Acceptance Criteria**:
-    *   Markdown code blocks tagged `python` can be executed.
-    *   Code runs in the same sandbox as the MCP agent.
+    *   Markdown code blocks tagged `javascript` can be executed.
+    *   Code runs in the same Wasm sandbox as the MCP agent.
     *   Output (text, tables, charts) is rendered interactively below the code block.
 
-_Related APIs_: REST `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` (frontend trigger) and MCP tool `run_python_script` (shared sandbox runtime).
+_Related APIs_: REST `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute` (frontend trigger) and MCP tool `run_script` (shared sandbox runtime).
 
 ### Story 8: "Agentic Refactoring" (BYOAI)
 **As a** user with a messy workspace,
@@ -94,11 +94,11 @@ _Related APIs_: REST `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}
 **So that** I can leverage external intelligence to organize my knowledge base on demand.
 
 *   **Acceptance Criteria**:
-    *   App exposes `list_notes`, `read_note`, and `update_note` tools via MCP.
+    *   App exposes `run_script` tool via MCP.
     *   User asks Agent: "Find duplicates in Project X and merge them."
-    *   Agent executes the logic (potentially using `run_python_script` for batch processing) and presents the result for confirmation.
+    *   Agent executes the logic (using `run_script` for batch processing) and presents the result for confirmation.
 
-_Related APIs_: MCP tools `notes.list`, `notes.read`, `notes.update`, `notes.delete`, plus `run_python_script`; REST `GET/PUT /workspaces/{ws_id}/notes/{note_id}` for confirmation flows.
+_Related APIs_: MCP tool `run_script` (which calls REST APIs internally via `host.call`); REST `GET/PUT /workspaces/{ws_id}/notes/{note_id}` for confirmation flows.
 
 ## 3. Functional Requirements
 
@@ -110,7 +110,7 @@ _Related APIs_: MCP tools `notes.list`, `notes.read`, `notes.update`, `notes.del
 
 ### FR-02: AI & MCP
 *   **FR-02.1**: System MUST implement the Model Context Protocol (MCP).
-*   **FR-02.2**: System MUST provide a `run_python_script` tool with a timeout and restricted access (sandbox).
+*   **FR-02.2**: System MUST provide a `run_script` tool that executes JavaScript in a Wasm sandbox with fuel limits and restricted access.
 *   **FR-02.3**: System MUST allow the AI to search notes via vector embeddings (FAISS) and structured queries.
 
 ### FR-03: Frontend Experience
