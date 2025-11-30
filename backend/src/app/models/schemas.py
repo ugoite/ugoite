@@ -19,7 +19,12 @@ class NoteCreate(BaseModel):
 
 
 class NoteUpdate(BaseModel):
-    """Note update payload."""
+    """Note update payload.
+
+    Note: frontmatter and canvas_position fields are accepted but not yet
+    processed. Properties should be updated via markdown headers (e.g., ## Date).
+    Full support for these fields is planned for future milestones.
+    """
 
     markdown: str
     parent_revision_id: str
