@@ -45,12 +45,12 @@ async def list_workspaces_endpoint() -> list[dict[str, Any]]:
 
     try:
         return list_workspaces(root_path)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to list workspaces")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to list workspaces",
+        ) from None
 
 
 @router.post("/workspaces", status_code=status.HTTP_201_CREATED)
@@ -66,12 +66,12 @@ async def create_workspace_endpoint(payload: WorkspaceCreate) -> dict[str, str]:
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
         ) from e
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to create workspace")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to create workspace",
+        ) from None
 
     return {
         "id": workspace_id,
@@ -87,17 +87,17 @@ async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
 
     try:
         return get_workspace(root_path, workspace_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Workspace not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to get workspace")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to get workspace",
+        ) from None
 
 
 @router.post("/workspaces/{workspace_id}/notes", status_code=status.HTTP_201_CREATED)
@@ -124,12 +124,12 @@ async def create_note_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
         ) from e
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to create note")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to create note",
+        ) from None
 
     return {"id": note_id}
 
@@ -148,12 +148,12 @@ async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
 
     try:
         return list_notes(ws_path)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to list notes")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to list notes",
+        ) from None
 
 
 @router.get("/workspaces/{workspace_id}/notes/{note_id}")
@@ -170,17 +170,17 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
 
     try:
         return get_note(ws_path, note_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Note not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to get note")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to get note",
+        ) from None
 
 
 @router.put("/workspaces/{workspace_id}/notes/{note_id}")
@@ -207,11 +207,11 @@ async def update_note_endpoint(
         update_note(ws_path, note_id, payload.markdown, payload.parent_revision_id)
         # Return the updated note
         return get_note(ws_path, note_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
+            detail="Note not found",
+        ) from None
     except RevisionMismatchError as e:
         # Return 409 with the current server version for client merge.
         # FastAPI supports dict as detail value, which serializes to JSON.
@@ -221,21 +221,21 @@ async def update_note_endpoint(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "message": str(e),
+                    "message": "Revision conflict: the note has been modified",
                     "current_revision": current_note,
                 },
             ) from e
         except FileNotFoundError:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=str(e),
+                detail="Revision conflict: the note has been modified",
             ) from e
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to update note")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to update note",
+        ) from None
 
 
 @router.delete("/workspaces/{workspace_id}/notes/{note_id}")
@@ -252,17 +252,17 @@ async def delete_note_endpoint(workspace_id: str, note_id: str) -> dict[str, str
 
     try:
         delete_note(ws_path, note_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Note not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to delete note")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to delete note",
+        ) from None
     else:
         return {"id": note_id, "status": "deleted"}
 
@@ -284,17 +284,17 @@ async def get_note_history_endpoint(
 
     try:
         return get_note_history(ws_path, note_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Note not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to get note history")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to get note history",
+        ) from None
 
 
 @router.get("/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}")
@@ -315,17 +315,17 @@ async def get_note_revision_endpoint(
 
     try:
         return get_note_revision(ws_path, note_id, revision_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Revision not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to get note revision")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to get note revision",
+        ) from None
 
 
 @router.post("/workspaces/{workspace_id}/notes/{note_id}/restore")
@@ -346,17 +346,17 @@ async def restore_note_endpoint(
 
     try:
         return restore_note(ws_path, note_id, payload.revision_id)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        ) from e
-    except Exception as e:
+            detail="Note or revision not found",
+        ) from None
+    except Exception:
         logger.exception("Failed to restore note")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Failed to restore note",
+        ) from None
 
 
 @router.post("/workspaces/{workspace_id}/query")
@@ -377,9 +377,9 @@ async def query_endpoint(
     try:
         # ieapp.query expects workspace_path as string or Path
         return ieapp.query(str(ws_path), payload.filter)
-    except Exception as e:
+    except Exception:
         logger.exception("Query failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+            detail="Query failed",
+        ) from None

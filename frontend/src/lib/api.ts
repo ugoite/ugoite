@@ -20,6 +20,5 @@ export const apiFetch = async (path = "/", options?: RequestInit) => {
 		// relative path; base probably like '/api'
 		url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 	}
-	console.log(`apiFetch: ${url}`);
 	return fetch(url, options);
 };
