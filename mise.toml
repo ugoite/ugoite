@@ -11,7 +11,7 @@ python = "3.14"
 uv = "0.9.8"
 
 [tasks.install]
-depends = ["//backend:install", "//frontend:install"]
+depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install"]
 
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev"]
