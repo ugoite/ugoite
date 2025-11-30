@@ -128,7 +128,9 @@ def safe_path(base: Path, *parts: str) -> Path:
 
 **重要度**: 🟠 Medium
 
-**現状** (`backend/src/app/api/endpoints/workspaces.py`):
+**状態**: ✅ 修正済み
+
+**修正前** (`backend/src/app/api/endpoints/workspaces.py`):
 ```python
 except Exception as e:
     logger.exception("Failed to create workspace")
@@ -138,18 +140,20 @@ except Exception as e:
     ) from e
 ```
 
-**問題点**:
-- `str(e)` がクライアントに返され、内部のファイルパスやシステム情報が漏洩する可能性
-
-**推奨対応**:
+**修正後**:
 ```python
-except Exception as e:
+except Exception:
     logger.exception("Failed to create workspace")
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Internal server error",  # 一般的なメッセージ
-    ) from e
+        detail="Failed to create workspace",  # 一般的なメッセージ
+    ) from None
 ```
+
+**変更点**:
+- すべてのAPIエンドポイントで内部例外メッセージを汎用メッセージに置換
+- `from None` で例外チェーンを切断し、内部情報の漏洩を防止
+- エラー詳細はサーバーログに記録される
 
 ---
 
@@ -256,7 +260,9 @@ def resolve_client_host(headers, client_host, request_ip):
 
 **重要度**: 🟡 Low
 
-**現状** (`frontend/src/lib/api.ts:23`):
+**状態**: ✅ 修正済み
+
+**修正前** (`frontend/src/lib/api.ts`):
 ```typescript
 console.log(`apiFetch: ${url}`);
 ```
@@ -265,12 +271,7 @@ console.log(`apiFetch: ${url}`);
 - 本番環境でのデバッグ情報の出力
 - URL情報がブラウザコンソールに残る
 
-**推奨対応**:
-```typescript
-if (import.meta.env.DEV) {
-  console.log(`apiFetch: ${url}`);
-}
-```
+**対応**: console.logを削除済み
 
 ---
 
