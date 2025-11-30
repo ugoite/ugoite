@@ -8,8 +8,8 @@ import typer
 
 from ieapp.indexer import Indexer, query_index
 from ieapp.logging_utils import setup_logging
-from ieapp.notes import NoteExistsError, create_note
-from ieapp.workspace import WorkspaceExistsError, create_workspace
+from ieapp.notes import create_note
+from ieapp.workspace import create_workspace
 
 app = typer.Typer(help="IEapp CLI - Knowledge base management")
 note_app = typer.Typer(help="Note management commands")
@@ -22,15 +22,22 @@ DEFAULT_NOTE_CONTENT = "# New Note\n"
 
 
 def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
-    """Handle common CLI errors."""
+    """Handle common CLI errors.
+
+    Wraps CLI commands to catch known exceptions and print user-friendly error messages.
+
+    Args:
+        func: The CLI command function to wrap.
+
+    Returns:
+        The wrapped function with error handling.
+
+    """
 
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> R:  # noqa: ANN401
         try:
             return func(*args, **kwargs)
-        except (WorkspaceExistsError, NoteExistsError) as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(code=1) from e
         except Exception as e:
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(code=1) from e
@@ -105,13 +112,15 @@ def cmd_query(
 ) -> None:
     """Query the index for notes."""
     setup_logging()
-    filter_dict: dict[str, str] = {}
-    if note_class:
-        filter_dict["class"] = note_class
-    if tag:
-        filter_dict["tag"] = tag
+    filter_dict: dict[str, Any] | None = None
+    if note_class or tag:
+        filter_dict = {}
+        if note_class:
+            filter_dict["class"] = note_class
+        if tag:
+            filter_dict["tag"] = tag
 
-    results = query_index(workspace_path, filter_dict if filter_dict else None)
+    results = query_index(workspace_path, filter_dict)
 
     if not results:
         typer.echo("No notes found.")
