@@ -98,12 +98,14 @@ async def create_workspace_endpoint(payload: WorkspaceCreate) -> dict[str, str]:
         create_workspace(root_path, workspace_id)
     except WorkspaceExistsError as e:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(e),
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
         ) from e
     except Exception as e:
         logger.exception("Failed to create workspace")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         ) from e
 
     return {
@@ -115,7 +117,8 @@ async def create_workspace_endpoint(payload: WorkspaceCreate) -> dict[str, str]:
 
 @app.post("/workspaces/{workspace_id}/notes", status_code=status.HTTP_201_CREATED)
 async def create_note_endpoint(
-    workspace_id: str, payload: NoteCreate,
+    workspace_id: str,
+    payload: NoteCreate,
 ) -> dict[str, str]:
     """Create a new note."""
     root_path = get_root_path()
@@ -123,7 +126,8 @@ async def create_note_endpoint(
 
     if not ws_path.exists():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
         )
 
     note_id = payload.id or str(uuid.uuid4())
@@ -132,12 +136,14 @@ async def create_note_endpoint(
         create_note(ws_path, note_id, payload.content)
     except NoteExistsError as e:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(e),
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
         ) from e
     except Exception as e:
         logger.exception("Failed to create note")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         ) from e
 
     return {"id": note_id}
@@ -145,7 +151,8 @@ async def create_note_endpoint(
 
 @app.post("/workspaces/{workspace_id}/query")
 async def query_endpoint(
-    workspace_id: str, payload: QueryRequest,
+    workspace_id: str,
+    payload: QueryRequest,
 ) -> list[dict[str, Any]]:
     """Query the workspace index."""
     root_path = get_root_path()
@@ -153,7 +160,8 @@ async def query_endpoint(
 
     if not ws_path.exists():
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
         )
 
     try:
@@ -162,5 +170,6 @@ async def query_endpoint(
     except Exception as e:
         logger.exception("Query failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         ) from e
