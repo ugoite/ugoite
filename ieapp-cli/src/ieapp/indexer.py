@@ -22,7 +22,16 @@ HEADER_PATTERN = re.compile(r"^##\s+(.+)$")
 
 
 def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
-    """Return parsed frontmatter and the remainder of the Markdown body."""
+    """Return parsed frontmatter and the remainder of the Markdown body.
+
+    Args:
+        content: The full Markdown content including potential frontmatter.
+
+    Returns:
+        A tuple of (frontmatter_dict, remaining_body). If no frontmatter is found,
+        returns an empty dict and the original content.
+
+    """
     match = FRONTMATTER_PATTERN.match(content)
     if not match:
         return {}, content
@@ -40,7 +49,15 @@ def _extract_frontmatter(content: str) -> tuple[dict[str, Any], str]:
 
 
 def _extract_sections(body: str) -> dict[str, str]:
-    """Extract H2 sections as properties while respecting header boundaries."""
+    """Extract H2 sections as properties while respecting header boundaries.
+
+    Args:
+        body: The Markdown body text (without frontmatter).
+
+    Returns:
+        A dictionary mapping H2 section headers to their content.
+
+    """
     sections: dict[str, str] = {}
     current_key: str | None = None
     buffer: list[str] = []
@@ -71,7 +88,16 @@ def _extract_sections(body: str) -> dict[str, str]:
 
 
 def extract_properties(content: str) -> dict[str, Any]:
-    """Extract properties from Markdown frontmatter and H2 sections."""
+    """Extract properties from Markdown frontmatter and H2 sections.
+
+    Args:
+        content: The Markdown content to extract properties from.
+
+    Returns:
+        A dictionary of extracted properties with H2 sections overriding
+        frontmatter values.
+
+    """
     frontmatter, body = _extract_frontmatter(content)
     sections = _extract_sections(body)
     merged = dict(frontmatter)
@@ -80,7 +106,16 @@ def extract_properties(content: str) -> dict[str, Any]:
 
 
 def parse_markdown_list(v: Any) -> Any:  # noqa: ANN401
-    """Parse markdown list syntax into a python list."""
+    """Parse markdown list syntax into a python list.
+
+    Args:
+        v: The value to parse, typically a string with markdown list syntax.
+
+    Returns:
+        A list of items if v is a string with markdown list syntax, otherwise
+        v unchanged.
+
+    """
     if isinstance(v, str):
         items = []
         for raw_line in v.splitlines():
@@ -164,7 +199,15 @@ def validate_properties(
 
 
 def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Build aggregate statistics for class and tag usage."""
+    """Build aggregate statistics for class and tag usage.
+
+    Args:
+        notes: Dictionary mapping note IDs to their record dictionaries.
+
+    Returns:
+        A dictionary containing note_count, class_stats, and tag_counts.
+
+    """
     class_stats: dict[str, dict[str, Any]] = {}
     tag_counts: Counter[str] = Counter()
     uncategorized_count = 0
@@ -210,12 +253,22 @@ class Indexer:
         workspace_path: str,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> None:
-        """Initialize the indexer with the workspace root and filesystem."""
+        """Initialize the indexer with the workspace root and filesystem.
+
+        Args:
+            workspace_path: Path to the workspace directory.
+            fs: Optional filesystem implementation. Defaults to local filesystem.
+
+        """
         self.workspace_path = workspace_path.rstrip("/")
         self.fs = fs or fsspec.filesystem("file")
 
     def run_once(self) -> None:
-        """Build the structured cache and stats once."""
+        """Build the structured cache and stats once.
+
+        Loads schemas, collects note data, generates an inverted index for search,
+        and persists index.json, inverted_index.json, and stats.json to the workspace.
+        """
         notes_path = f"{self.workspace_path}/notes"
         index_path = f"{self.workspace_path}/index/index.json"
         stats_path = f"{self.workspace_path}/index/stats.json"
@@ -256,9 +309,16 @@ class Indexer:
 
         Tokenizes text content (title, properties, tags) from each note and
         creates posting lists for keyword search support.
+
+        Args:
+            notes: Dictionary mapping note IDs to their record dictionaries.
+
+        Returns:
+            An inverted index mapping each token to a list of note IDs containing
+            that token.
+
         """
         inverted: dict[str, list[str]] = {}
-
         for note_id, record in notes.items():
             tokens = self._tokenize_record(record)
             for token in tokens:
@@ -270,7 +330,16 @@ class Indexer:
         return inverted
 
     def _tokenize_record(self, record: dict[str, Any]) -> set[str]:
-        """Extract lowercase tokens from a note record for indexing."""
+        """Extract lowercase tokens from a note record for indexing.
+
+        Args:
+            record: The note record dictionary containing title, tags, class,
+                and properties.
+
+        Returns:
+            A set of unique lowercase tokens extracted from the record.
+
+        """
         tokens: set[str] = set()
 
         # Tokenize title
@@ -301,12 +370,33 @@ class Indexer:
 
     @staticmethod
     def _tokenize_text(text: str) -> set[str]:
-        """Split text into lowercase alphabetic tokens."""
+        """Split text into lowercase alphabetic tokens.
+
+        Args:
+            text: The text to tokenize.
+
+        Returns:
+            A set of unique lowercase tokens (alphanumeric sequences longer than
+            1 character).
+
+        """
         # Simple word tokenization: extract alphanumeric sequences
-        return {word.lower() for word in re.findall(r"\w+", text) if len(word) > 1}
+        return {
+            word.lower()
+            for word in re.findall(r"\w+", text)
+            if len(word) > 1 and not word.isnumeric()
+        }
 
     def _load_schemas(self, schemas_path: str) -> dict[str, dict[str, Any]]:
-        """Load schema definitions from the workspace."""
+        """Load schema definitions from the workspace.
+
+        Args:
+            schemas_path: Path to the schemas directory.
+
+        Returns:
+            A dictionary mapping class names to their schema definitions.
+
+        """
         schemas: dict[str, dict[str, Any]] = {}
         if not self.fs.exists(schemas_path):
             return schemas
@@ -329,7 +419,16 @@ class Indexer:
         notes_path: str,
         schemas: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        """Collect structured records for every note directory."""
+        """Collect structured records for every note directory.
+
+        Args:
+            notes_path: Path to the notes directory.
+            schemas: Dictionary of schema definitions keyed by class name.
+
+        Returns:
+            A dictionary mapping note IDs to their structured records.
+
+        """
         if not self.fs.exists(notes_path):
             return {}
 
@@ -350,7 +449,18 @@ class Indexer:
         note_id: str,
         schemas: dict[str, dict[str, Any]],
     ) -> dict[str, Any] | None:
-        """Build a single index record, returning ``None`` on decode errors."""
+        """Build a single index record, returning ``None`` on decode errors.
+
+        Args:
+            note_dir: Path to the note directory.
+            note_id: The note's unique identifier.
+            schemas: Dictionary of schema definitions keyed by class name.
+
+        Returns:
+            A structured record dictionary, or None if the note cannot be read
+            or parsed.
+
+        """
         content_path = f"{note_dir}/content.json"
         meta_path = f"{note_dir}/meta.json"
 
@@ -414,22 +524,41 @@ class Indexer:
         *,
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
-        """Run the indexer whenever ``wait_for_changes`` signals updates."""
+        """Run the indexer whenever ``wait_for_changes`` signals updates.
+
+        Args:
+            wait_for_changes: A callable that invokes the provided callback when
+                changes occur.
+            on_error: Optional error handler callback. If not provided, exceptions
+                are re-raised.
+
+        """
 
         def _run_once() -> None:
-            self.run_once()
+            try:
+                self.run_once()
+            except Exception as exc:
+                if on_error:
+                    on_error(exc)
+                else:
+                    raise
 
-        try:
-            wait_for_changes(_run_once)
-        except Exception as exc:
-            if on_error:
-                on_error(exc)
-            else:
-                raise
+        # Watch loop
+        wait_for_changes(_run_once)
 
 
 def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
-    """Return ``True`` when ``note`` satisfies ``filters``."""
+    """Return ``True`` when ``note`` satisfies ``filters``.
+
+    Args:
+        note: The note record dictionary to check.
+        filters: Dictionary of filter criteria where keys are field names and
+            values are expected values.
+
+    Returns:
+        True if the note satisfies all filter criteria, False otherwise.
+
+    """
     for key, expected in filters.items():
         note_value = note.get(key)
         if note_value is None:
@@ -462,7 +591,17 @@ def query_index(
     filter_dict: dict[str, Any] | None,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
-    """Return note records from the cached index that satisfy ``filter_dict``."""
+    """Return note records from the cached index that satisfy ``filter_dict``.
+
+    Args:
+        workspace_path: Path to the workspace directory.
+        filter_dict: Dictionary of filter criteria, or None to return all notes.
+        fs: Optional filesystem implementation. Defaults to local filesystem.
+
+    Returns:
+        A list of note records that match the filter criteria.
+
+    """
     fs = fs or fsspec.filesystem("file")
     index_path = f"{workspace_path.rstrip('/')}/index/index.json"
 
