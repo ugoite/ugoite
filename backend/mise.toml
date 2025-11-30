@@ -10,3 +10,12 @@ outputs = ["src/app/sandbox/sandbox.wasm"]
 depends = ["build-sandbox"]
 run = "uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+[tasks.format]
+run = "uvx ruff format ."
+
+[tasks.lint]
+run = ["uvx ruff check --select ALL .", "uv run ty check ."]
+
+[tasks.test]
+run = "uv run pytest"
+

@@ -7,18 +7,17 @@ For project structure, architecture, and detailed specifications, please refer t
 
 ## Code Quality & CI Verification
 
-**Code Formatting, Linting, and Type Checking are MANDATORY.**
+**ALWAYS** run the following mise commands before finishing a task:
+```bash
+mise run format
+mise run lint
+mise run test
+```
 
-You must ensure that your changes pass all CI checks.
-**ALWAYS** check `.github/workflows/` and run the corresponding commands locally to verify your code before finishing a task.
+These commands will format, lint, and test both frontend and backend code.
 
-### Key Checks (See Workflows for exact commands)
 - **Python**: `ruff` (format & lint), `ty` (type check)
 - **Frontend**: `biome`
 
-**Ensure the GitHub Actions commands run successfully on your local machine.**
-
-<!-- MANUAL ADDITIONS START -->
 ## WEB SEARCH RECOMMENDATION
 You should search on web for best practices and guidelines in nowadays (2025) anytime you start a new feature or technology or research tasks.
-<!-- MANUAL ADDITIONS END -->
