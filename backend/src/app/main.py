@@ -8,12 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api import router as api_router
 from app.core.middleware import security_middleware
+from app.mcp.server import mcp
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Mount MCP Server (SSE)
+app.mount("/mcp", mcp.sse_app())
 
 # Allow CORS for frontend development
 app.add_middleware(

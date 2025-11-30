@@ -8,3 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Runtime files
+*.log
+*.pid
+*.bin
+src/app/sandbox/sandbox.wasm
+javy
+javy.gz
