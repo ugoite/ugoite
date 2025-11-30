@@ -23,5 +23,5 @@ RUN git clone --depth 1 https://github.com/google/nsjail.git /tmp/nsjail \
     && cp nsjail /usr/local/bin/ \
     && rm -rf /tmp/nsjail
 
-# Verify installation
-RUN nsjail --version
+# Verify installation (nsjail doesn't support --version, so just check if binary exists)
+RUN which nsjail && nsjail --help | head -1
