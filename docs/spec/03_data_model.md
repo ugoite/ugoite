@@ -188,7 +188,7 @@ The cache is a materialized view updated every time a `content.json` or `meta.js
 {
   "revision_id": "rev-0042",
   "author": "frontend",
-  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n\n```python {id=block-xyz}\nprint('Hello')\n```",
+  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n\n```javascript {id=block-xyz}\nconsole.log('Hello')\n```",
   "frontmatter": {
     "class": "meeting",
     "status": "open"
