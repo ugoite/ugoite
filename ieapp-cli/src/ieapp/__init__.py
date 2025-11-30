@@ -1,5 +1,8 @@
 """IEapp CLI package."""
 
+import os
+from typing import Any
+
 from .indexer import (
     Indexer,
     aggregate_stats,
@@ -25,11 +28,16 @@ from .workspace import (
     get_workspace,
     list_workspaces,
 )
-import os
-from typing import Any
 
 
-def query(workspace_path: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
+class WorkspacePathError(ValueError):
+    """Raised when workspace path is not provided and not set in environment."""
+
+
+def query(
+    workspace_path: str | None = None,
+    **kwargs: object,
+) -> list[dict[str, Any]]:
     """Query the index using keyword arguments as filters.
 
     If workspace_path is not provided, it falls back to IEAPP_WORKSPACE_ROOT env var.
@@ -38,9 +46,10 @@ def query(workspace_path: str | None = None, **kwargs: Any) -> list[dict[str, An
         workspace_path = os.environ.get("IEAPP_WORKSPACE_ROOT")
 
     if not workspace_path:
-        raise ValueError("workspace_path must be provided or IEAPP_WORKSPACE_ROOT set")
+        msg = "workspace_path must be provided or IEAPP_WORKSPACE_ROOT set"
+        raise WorkspacePathError(msg)
 
-    return query_index(workspace_path, filter_dict=kwargs)
+    return query_index(workspace_path, filter_dict=dict(kwargs))
 
 
 __all__ = [
@@ -48,6 +57,7 @@ __all__ = [
     "NoteExistsError",
     "RevisionMismatchError",
     "WorkspaceExistsError",
+    "WorkspacePathError",
     "aggregate_stats",
     "create_note",
     "create_workspace",

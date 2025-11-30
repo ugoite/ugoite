@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.api import router as api_router
-from app.core.middleware import security_middleware
 from app.api.mcp import mcp
+from app.core.middleware import security_middleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
