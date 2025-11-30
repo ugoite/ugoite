@@ -248,13 +248,13 @@ Security expectations from `05_security_and_quality.md` surface directly in the 
 
 * **HMAC Signatures**: Every `meta.json`, `content.json`, and history file carries `integrity.signature`. The secret key lives in `global.json` (`hmac_key`) and can rotate (previous keys stored for validation during rotation).
 * **Checksums**: SHA-256 of the canonical JSON string ensures bit-rot detection even when signatures are skipped (read-only contexts).
-* **Audit Trail**: Optional `history/{revision_id}.json` can store `author` metadata stating whether the change came from frontend, API, or `run_python_script`. This supports the "AI wrote this" transparency requirement.
+* **Audit Trail**: Optional `history/{revision_id}.json` can store `author` metadata stating whether the change came from frontend, API, or an MCP `run_script` execution. This supports the "AI wrote this" transparency requirement.
 * **Isolation**: Attachments reference hashed filenames to prevent path traversal when notes are moved between workspaces.
 
 ## 9. Consumption Patterns (API & MCP)
 
 * **REST** (`04_api_and_mcp.md`): `/workspaces/{ws}/notes` reads exclusively from `index/index.json` for sub-500 ms workspace load times. `/workspaces/{ws}/query` translates filters into index scans (structured) plus inverted-index lookups (keywords).
-* **MCP Resources**: `ieapp://{ws}/notes/list` streams the same NoteRecord objects. Agents rely on these lightweight summaries before deciding to fetch `content.json` or run custom Python.
-* **`run_python_script` Tool**: The `ieapp` library loads `index/index.json` lazily and exposes helper methods (e.g., `ieapp.query()`) so AI agents rarely need to traverse the filesystem manually—aligning with the "Code Execution" paradigm.
+* **MCP Resources**: `ieapp://{ws}/notes/list` streams the same NoteRecord objects. Agents rely on these lightweight summaries before deciding to fetch `content.json` or run custom JavaScript via `run_script`.
+* **`run_script` Tool**: JavaScript runs inside the Wasm sandbox and calls `host.call(method, path, body)` to reuse the backend's REST services. This indirection keeps scripts from touching the filesystem directly while still giving them full access to the indexed data surface defined above.
 
 These consumers, combined with the storage rules above, ensure that data written anywhere (UI, CLI, MCP) is immediately queryable, conflict-safe, and portable.
