@@ -375,7 +375,10 @@ def test_query_notes(
     assert isinstance(response.json(), list)
 
 
-def test_middleware_headers(test_client: TestClient) -> None:
+def test_middleware_headers(
+    test_client: TestClient,
+    temp_workspace_root: Path,  # noqa: ARG001
+) -> None:
     """Test that security headers are present."""
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
