@@ -376,7 +376,7 @@ async def query_endpoint(
 
     try:
         # ieapp.query expects workspace_path as string or Path
-        return ieapp.query(str(ws_path), payload.filter)
+        return ieapp.query_index(str(ws_path), payload.filter)
     except Exception as e:
         logger.exception("Query failed")
         raise HTTPException(
