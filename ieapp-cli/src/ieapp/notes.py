@@ -444,22 +444,30 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
         if note_dir.is_dir():
             meta_path = note_dir / "meta.json"
             if meta_path.exists():
-                with meta_path.open("r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                    # Skip tombstoned notes
-                    if meta.get("deleted"):
-                        continue
-                    notes.append(
-                        {
-                            "id": meta.get("id"),
-                            "title": meta.get("title"),
-                            "class": meta.get("class"),
-                            "tags": meta.get("tags", []),
-                            "canvas_position": meta.get("canvas_position", {}),
-                            "created_at": meta.get("created_at"),
-                            "updated_at": meta.get("updated_at"),
-                        },
+                try:
+                    with meta_path.open("r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.warning(
+                        "Could not read metadata for note at %s: %s",
+                        meta_path,
+                        e,
                     )
+                    continue
+                # Skip tombstoned notes
+                if meta.get("deleted"):
+                    continue
+                notes.append(
+                    {
+                        "id": meta.get("id"),
+                        "title": meta.get("title"),
+                        "class": meta.get("class"),
+                        "tags": meta.get("tags", []),
+                        "canvas_position": meta.get("canvas_position", {}),
+                        "created_at": meta.get("created_at"),
+                        "updated_at": meta.get("updated_at"),
+                    },
+                )
 
     return notes
 
