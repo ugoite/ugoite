@@ -46,6 +46,10 @@ async def security_middleware(
         body = bytes(response.body or b"")
         return _apply_security_headers(response, body, root_path)
 
+    # Skip body capture/signing for MCP SSE endpoints as they are streaming
+    if request.url.path.startswith("/mcp"):
+        return await call_next(request)
+
     response = await call_next(request)
     body = await _capture_response_body(response)
     return _apply_security_headers(response, body, root_path)

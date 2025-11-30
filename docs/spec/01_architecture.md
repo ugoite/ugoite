@@ -10,10 +10,10 @@ graph TD
     AI[AI Agent / Claude] -->|MCP Protocol| API
     
     subgraph "IEapp Backend"
-        API -->|Executes| Sandbox[Python Code Sandbox]
+        API -->|Executes| Sandbox[Wasm Sandbox - wasmtime]
         API -->|Reads/Writes| VFS[Virtual File System (fsspec)]
         API -->|Queries| Indexer[Live Indexer (Watch & Parse)]
-        Sandbox -->|Access| VFS
+        Sandbox -->|host.call| API
         Indexer -->|Updates| Cache[Structured Cache (JSON)]
     end
     
@@ -26,10 +26,10 @@ graph TD
 
 ## 2. The "Code Execution" Paradigm
 
-Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag`, `calculate_stats`), IEapp exposes a **Python Execution Sandbox** to the AI via MCP.
+Instead of building hundreds of specific tools (e.g., `create_note`, `update_tag`, `calculate_stats`), IEapp exposes a **Wasm Execution Sandbox** to the AI via MCP.
 
-*   **Concept**: The AI is a developer. It interacts with the knowledge base by writing and running Python scripts.
-*   **Mechanism**: The backend provides a pre-configured Python environment with the `ieapp` library installed. The AI sends code; the backend runs it in a secure sandbox and returns the stdout/stderr/result.
+*   **Concept**: The AI is a developer. It interacts with the knowledge base by writing and running JavaScript scripts.
+*   **Mechanism**: The backend provides a secure WebAssembly (Wasm) environment (using `wasmtime`) running a JavaScript engine. The AI sends code; the backend runs it in the sandbox. The script can call host functions to interact with the application's REST API.
 *   **Benefit**: Infinite flexibility. The AI can perform complex migrations, data analysis, or bulk refactoring without the app developer explicitly building those features.
 
 ## 3. The "Structure-from-Text" Engine
@@ -69,24 +69,24 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   Core logic for `fsspec` interactions.
 *   Implements the "Universal File System" logic.
 *   Handles versioning, hashing, and conflict resolution.
-*   Exposes the Python API that the AI will use within the sandbox.
+*   Provides internal services consumed by the REST API (which the Wasm sandbox accesses via `host.call`).
 
 ### `backend` (Service)
 *   Hosts the FastAPI server.
 *   Implements the MCP Server endpoints.
-*   Manages the Python Code Sandbox (security, timeouts).
+*   Manages the Wasm Sandbox (security, fuel limits).
 *   Handles optional authentication (API keys, bearer tokens) while defaulting to trusted localhost-only mode, and enforces CORS.
 
 ### `frontend` (UI)
 *   Optimistic UI: Renders changes immediately, syncs in background.
 *   Spatial Canvas: Renders the node-link graph.
 *   Markdown Editor: Block-based editing experience.
-*   **Notebook Renderer**: Renders and executes interactive Python code blocks.
+*   **Notebook Renderer**: Renders and executes interactive JavaScript code blocks (via the shared Wasm sandbox).
 
 ## 5. Future-Proofing (Experimental)
 
 ### BYOAI (Bring Your Own AI) Architecture
 Instead of embedding specific AI models, IEapp relies on the **Model Context Protocol (MCP)** to let users bring their own agents.
 
-*   **Voice-to-Schema**: The app provides the raw data (audio/text). The *User's Agent* performs the structuring logic via MCP tools.
-*   **Agentic Maintenance**: No hidden background workers. Maintenance tasks (refactoring, tagging) are performed by external agents invoking MCP tools (`search_notes`, `update_note`) at the user's command.
+*   **Voice-to-Schema**: The app provides the raw data (audio/text). The *User's Agent* performs the structuring logic via the MCP `run_script` tool.
+*   **Agentic Maintenance**: No hidden background workers. Maintenance tasks (refactoring, tagging) are performed by external agents invoking the MCP `run_script` tool at the user's command.
