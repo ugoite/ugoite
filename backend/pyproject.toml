@@ -1,5 +1,5 @@
 [project]
-name = "backend"
+name = "app"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -19,5 +19,10 @@ ieapp = { path = "../ieapp-cli" }
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.1",
     "ty>=0.0.1a26",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_*.py" = ["S101"]

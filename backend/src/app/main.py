@@ -1,9 +1,17 @@
 """Main application module."""
 
+import logging
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.api import router as api_router
+from app.core.middleware import security_middleware
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -19,8 +27,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.middleware("http")(security_middleware)
+
 
 @app.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint."""
     return {"message": "Hello World!"}
+
+
+app.include_router(api_router)
