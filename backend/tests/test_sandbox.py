@@ -1,15 +1,26 @@
+"""Tests for the WebAssembly sandbox."""
+
 import pytest
-from app.sandbox.python_sandbox import run_script, SandboxExecutionError
+
+from app.sandbox.python_sandbox import SandboxExecutionError, run_script
 
 
-def test_simple_execution():
+def _noop_handler(_method: str, _path: str, _body: dict | None) -> None:
+    """No-op host call handler for tests."""
+
+
+def test_simple_execution() -> None:
+    """Test basic script execution returns correct result."""
     code = "return 1 + 1;"
-    result = run_script(code, lambda m, p, b: None)
-    assert result == 2
+    expected_result = 2
+    result = run_script(code, _noop_handler)
+    assert result == expected_result
 
 
-def test_host_call():
-    def handler(method, path, body):
+def test_host_call() -> None:
+    """Test host call functionality works correctly."""
+
+    def handler(method: str, path: str, _body: dict | None) -> dict[str, bool]:
         if method == "GET" and path == "/test":
             return {"ok": True}
         return {"ok": False}
@@ -22,16 +33,18 @@ def test_host_call():
     assert result is True
 
 
-def test_execution_error():
+def test_execution_error() -> None:
+    """Test that script errors are properly raised as SandboxExecutionError."""
     code = "throw new Error('boom');"
     with pytest.raises(SandboxExecutionError) as exc:
-        run_script(code, lambda m, p, b: None)
+        run_script(code, _noop_handler)
     assert "boom" in str(exc.value)
 
 
-def test_infinite_loop_fuel():
+def test_infinite_loop_fuel() -> None:
+    """Test that infinite loops are stopped by fuel exhaustion."""
     code = "while(true) {}"
-    with pytest.raises(Exception) as exc:
-        run_script(code, lambda m, p, b: None, fuel_limit=100000)
-    # The error message from wasmtime usually contains "all fuel consumed"
+    fuel_limit = 100000
+    with pytest.raises(Exception, match="fuel") as exc:
+        run_script(code, _noop_handler, fuel_limit=fuel_limit)
     assert "fuel" in str(exc.value).lower()
