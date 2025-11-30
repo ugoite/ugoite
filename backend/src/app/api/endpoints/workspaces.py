@@ -213,7 +213,9 @@ async def update_note_endpoint(
             detail=str(e),
         ) from e
     except RevisionMismatchError as e:
-        # Return 409 with the current server version for client merge
+        # Return 409 with the current server version for client merge.
+        # FastAPI supports dict as detail value, which serializes to JSON.
+        # This allows clients to perform OCC merge with the current_revision.
         try:
             current_note = get_note(ws_path, note_id)
             raise HTTPException(
