@@ -8,9 +8,23 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies for nsjail
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf bison flex gcc g++ git libprotobuf-dev libnl-route-3-dev \
+            libtool make pkg-config protobuf-compiler
+
+      - name: Build and install nsjail
+        run: |
+          git clone https://github.com/google/nsjail.git
+          cd nsjail
+          make
+          sudo cp nsjail /usr/local/bin/
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6

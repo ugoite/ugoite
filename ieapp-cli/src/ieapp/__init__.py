@@ -19,6 +19,13 @@ from .notes import (
     restore_note,
     update_note,
 )
+from .sandbox import (
+    SandboxError,
+    SandboxResult,
+    SandboxSecurityError,
+    SandboxTimeoutError,
+    run_python_script,
+)
 from .workspace import (
     WorkspaceExistsError,
     create_workspace,
@@ -33,6 +40,10 @@ __all__ = [
     "Indexer",
     "NoteExistsError",
     "RevisionMismatchError",
+    "SandboxError",
+    "SandboxResult",
+    "SandboxSecurityError",
+    "SandboxTimeoutError",
     "WorkspaceExistsError",
     "aggregate_stats",
     "create_note",
@@ -48,6 +59,7 @@ __all__ = [
     "query",  # Alias for query_index
     "query_index",
     "restore_note",
+    "run_python_script",
     "update_note",
     "validate_properties",
 ]

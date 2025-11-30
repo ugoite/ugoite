@@ -28,5 +28,12 @@
 	"remoteUser": "vscode",
 	"containerEnv": {},
 	"remoteEnv": { "MISE_EXPERIMENTAL": "1" },
-	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run install"
+	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run install",
+	"runArgs": [
+		"--cap-add=SYS_ADMIN",
+		"--security-opt",
+		"apparmor=unconfined",
+		"--security-opt",
+		"seccomp=unconfined"
+	]
 }

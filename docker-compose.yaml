@@ -16,6 +16,11 @@ services:
       - ./ieapp-cli:/ieapp-cli
     working_dir: /backend
     command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+      - seccomp:unconfined
 
   frontend:
     build: ./frontend
