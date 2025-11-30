@@ -102,6 +102,9 @@ def _write_default_global(path: Path) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
 
+    # Restrict permissions: owner read/write only (chmod 600)
+    path.chmod(0o600)
+
 
 def build_response_signature(body: bytes, root_path: Path) -> tuple[str, str]:
     """Compute the HMAC signature for the response body."""
