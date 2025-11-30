@@ -618,35 +618,11 @@ def restore_note(
         msg = f"Note {note_id} not found"
         raise FileNotFoundError(msg)
 
-    # Get the target revision
+    # Verify target revision exists
     target_revision_path = note_dir / "history" / f"{revision_id}.json"
     if not target_revision_path.exists():
         msg = f"Revision {revision_id} not found for note {note_id}"
         raise FileNotFoundError(msg)
-
-    # To restore, we need the content at that revision.
-    # We'll need to reconstruct the content by applying diffs or storing full content.
-    # For simplicity, we'll read from current content and apply diffs backward,
-    # or we can store full content in each revision (which is better for Time Travel).
-
-    # Actually, looking at the spec, content.json stores the current full content,
-    # and history stores diffs. For a proper restore, we need to either:
-    # 1. Store full content in each revision (space expensive)
-    # 2. Apply diffs backward (complex)
-
-    # For Milestone 3, let's enhance: store the full markdown in each revision
-    # or we use a simpler approach: assume the revision stores enough info.
-
-    # Looking at the current implementation, the revision stores a diff.
-    # Let's check if we have a way to reconstruct...
-
-    # For now, let's implement a simple approach:
-    # The restore endpoint will require the caller to provide the content
-    # or we reconstruct from diffs.
-
-    # Actually, let's enhance the revision to store full content for Time Travel.
-    # But that's a bigger change. For now, let's just create a placeholder that
-    # would work if we had full content in revisions.
 
     # Read current content to get parent_revision_id for the new revision
     content_path = note_dir / "content.json"
@@ -655,58 +631,25 @@ def restore_note(
 
     current_revision_id = current_content_data["revision_id"]
 
-    # For true Time Travel, we need to reconstruct content.
-    # Let's implement a helper that walks back through revisions applying diffs.
-    # For Milestone 3, we'll do a simplified version that looks for stored content.
-
-    # Actually, the easiest approach: store full markdown in each revision file.
-    # But since we don't have that yet, let's just note that restore requires
-    # enhancements and implement the API structure.
-
-    # For now, we'll implement restore assuming we can get the content.
-    # We'll need to walk back through diffs to reconstruct.
-
-    # Let's implement a simple reconstruction:
+    # Verify revision is in history index
     history_index_path = note_dir / "history" / "index.json"
     with history_index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
-    # Find the position of the target revision
     revision_order = [r["revision_id"] for r in history_index["revisions"]]
     if revision_id not in revision_order:
         msg = f"Revision {revision_id} not found in history index"
         raise FileNotFoundError(msg)
 
-    # We need to apply diffs from current back to target
-    # This is complex, so for now let's store full content in revisions
-    # and update the create/update functions to include it.
-
-    # For Milestone 3, let's just fail gracefully if we can't restore
-    # and document that full Time Travel requires enhancement.
-
-    # Actually, let's take a different approach:
-    # Read the target revision's diff and try to apply it backward,
-    # or just store a reference that the note was "restored" from that revision.
-
-    # Simplest MVP: The restore creates a new revision with a message
-    # indicating it was restored, and the client must provide the content
-    # they want to restore to (which they get from /history/{revision_id}).
-
-    # Let's implement this by requiring the frontend to first fetch the
-    # old revision content and then call update_note with that content.
-
-    # For the API, we'll create a "restore marker" revision.
-    # This is what the spec implies: "creates a new head revision referencing
-    # the chosen ancestor".
-
-    # Let's implement it as a special update that references the restore source.
+    # Note: Full time travel (restoring arbitrary revision content) requires
+    # storing full markdown in revision files. Current implementation creates
+    # a "restore marker" revision referencing the chosen ancestor.
     provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
 
-    # Create a new revision that marks this as a restore operation
     new_rev_id = str(uuid.uuid4())
     timestamp = time.time()
 
-    # For now, keep the current content but mark the restore in metadata
+    # Keep current content and mark the restore operation in revision metadata
     content = current_content_data["markdown"]
     checksum = provider.checksum(content)
     signature = provider.signature(content)
