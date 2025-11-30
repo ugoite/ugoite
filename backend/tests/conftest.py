@@ -1,23 +1,29 @@
 """Test configuration."""
 
 import os
+import sys
 import tempfile
-from collections.abc import Generator
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from main import app
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from main import app  # noqa: E402
 
 
 @pytest.fixture
-def test_client() -> TestClient:
-    """Create a test client."""
+def test_client(temp_workspace_root: Path) -> TestClient:  # noqa: ARG001
+    """Create a test client bound to the temporary workspace root."""
     return TestClient(app)
 
 
 @pytest.fixture
-def temp_workspace_root() -> Generator[Path, None, None]:
+def temp_workspace_root() -> Iterator[Path]:
     """Create a temporary workspace root."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)

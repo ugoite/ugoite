@@ -10,6 +10,7 @@ from typing import Any
 import ieapp
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from ieapp.notes import (
     NoteExistsError,
     RevisionMismatchError,
@@ -29,6 +30,9 @@ from ieapp.workspace import (
     list_workspaces,
 )
 from pydantic import BaseModel
+from starlette.concurrency import iterate_in_threadpool
+
+from security import build_response_signature, is_local_host, resolve_client_host
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,22 +59,59 @@ async def security_middleware(
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     """Enforce security policies."""
+    root_path = get_root_path()
     # 1. Localhost Binding Check (unless disabled via env var)
     allow_remote = os.environ.get("IEAPP_ALLOW_REMOTE", "false").lower() == "true"
-    if not allow_remote:
-        client_host = request.client.host if request.client else "unknown"
-        # Allow localhost/127.0.0.1/::1
-        if client_host not in ("127.0.0.1", "localhost", "::1"):
-            pass
+    client_host = resolve_client_host(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    if not allow_remote and not is_local_host(client_host):
+        logger.warning("Blocking remote request from %s", client_host)
+        response = JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={
+                "detail": (
+                    "Remote access is disabled. Set IEAPP_ALLOW_REMOTE=true only on"
+                    " trusted networks."
+                ),
+            },
+        )
+        body = bytes(response.body or b"")
+        return _apply_security_headers(response, body, root_path)
 
     response = await call_next(request)
+    body = await _capture_response_body(response)
+    return _apply_security_headers(response, body, root_path)
 
-    # 2. Security Headers
+
+async def _capture_response_body(response: Response) -> bytes:
+    """Consume the response iterator so it can be signed and replayed."""
+    body = b""
+    body_iterator = getattr(response, "body_iterator", None)
+
+    if body_iterator is None:
+        return bytes(response.body or b"")
+
+    async for chunk in body_iterator:
+        body += chunk
+
+    response.body_iterator = iterate_in_threadpool(iter([body]))  # type: ignore[attr-defined]
+    return body
+
+
+def _apply_security_headers(
+    response: Response,
+    body: bytes,
+    root_path: Path,
+) -> Response:
+    """Attach security-related headers including the HMAC signature."""
+    key_id, signature = build_response_signature(body, root_path)
     response.headers["X-Content-Type-Options"] = "nosniff"
-
-    # 3. HMAC Signature (Mocked)
-    response.headers["X-IEApp-Signature"] = "mock-signature"
-
+    response.headers["X-IEApp-Key-Id"] = key_id
+    response.headers["X-IEApp-Signature"] = signature
+    response.headers["Content-Length"] = str(len(body))
     return response
 
 

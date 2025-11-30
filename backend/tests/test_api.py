@@ -1,5 +1,9 @@
 """API tests."""
 
+import base64
+import hashlib
+import hmac
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -378,7 +382,28 @@ def test_middleware_headers(test_client: TestClient) -> None:
     assert response.headers["X-Content-Type-Options"] == "nosniff"  # noqa: S101
 
 
-def test_middleware_hmac_signature(test_client: TestClient) -> None:
-    """Test that HMAC signature header is present on responses."""
+def test_middleware_hmac_signature(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Test that HMAC signature header matches the response body."""
     response = test_client.get("/")
+
+    global_data = json.loads((temp_workspace_root / "global.json").read_text())
+    secret = base64.b64decode(global_data["hmac_key"])
+    expected_signature = hmac.new(
+        secret,
+        response.content,
+        hashlib.sha256,
+    ).hexdigest()
+
+    assert response.headers["X-IEApp-Key-Id"] == global_data["hmac_key_id"]  # noqa: S101
+    assert response.headers["X-IEApp-Signature"] == expected_signature  # noqa: S101
+
+
+def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
+    """Ensure remote clients are rejected unless explicitly allowed."""
+    response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
+    assert response.status_code == 403  # noqa: S101, PLR2004
+    assert "Remote access is disabled" in response.json()["detail"]  # noqa: S101
     assert "X-IEApp-Signature" in response.headers  # noqa: S101
