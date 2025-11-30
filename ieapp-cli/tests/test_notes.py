@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from ieapp.notes import RevisionMismatchError, create_note, update_note
 from ieapp.workspace import create_workspace
 
@@ -69,21 +70,21 @@ def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -
     )
 
     note_path = workspace_root / "notes" / note_id
-    assert note_path.exists()  # noqa: S101
-    assert (note_path / "meta.json").exists()  # noqa: S101
-    assert (note_path / "content.json").exists()  # noqa: S101
-    assert (note_path / "history" / "index.json").exists()  # noqa: S101
+    assert note_path.exists()
+    assert (note_path / "meta.json").exists()
+    assert (note_path / "content.json").exists()
+    assert (note_path / "history" / "index.json").exists()
 
     # Check content.json
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["markdown"] == content  # noqa: S101
-        assert data["frontmatter"] == {}  # noqa: S101
-        assert data["sections"] == {}  # noqa: S101
-        assert "revision_id" in data  # noqa: S101
-        assert "parent_revision_id" in data  # noqa: S101
-        assert data["parent_revision_id"] is None  # noqa: S101
-        assert "author" in data  # noqa: S101
+        assert data["markdown"] == content
+        assert data["frontmatter"] == {}
+        assert data["sections"] == {}
+        assert "revision_id" in data
+        assert "parent_revision_id" in data
+        assert data["parent_revision_id"] is None
+        assert "author" in data
 
 
 def test_update_note_revision_mismatch(
@@ -121,7 +122,7 @@ def test_update_note_revision_mismatch(
         data = json.load(f)
         new_rev = data["revision_id"]
 
-    assert new_rev != current_rev  # noqa: S101
+    assert new_rev != current_rev
 
     # Try to update with OLD revision (should fail)
     with pytest.raises(RevisionMismatchError):
@@ -178,12 +179,12 @@ def test_note_history_append(
     # Check history index
     with (note_path / "history" / "index.json").open() as f:
         history_index = json.load(f)
-        assert history_index["note_id"] == note_id  # noqa: S101
+        assert history_index["note_id"] == note_id
         revisions = history_index["revisions"]
-        assert len(revisions) == HISTORY_LENGTH  # noqa: S101
-        assert revisions[0]["revision_id"] == rev_v1  # noqa: S101
-        assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)  # noqa: S101
-        assert revisions[0]["signature"] == fake_integrity_provider.signature(  # noqa: S101
+        assert len(revisions) == HISTORY_LENGTH
+        assert revisions[0]["revision_id"] == rev_v1
+        assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
+        assert revisions[0]["signature"] == fake_integrity_provider.signature(
             content_v1,
         )
 
@@ -194,13 +195,13 @@ def test_note_history_append(
 
     with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
-        assert rev_data["revision_id"] == rev_v2  # noqa: S101
-        assert rev_data["parent_revision_id"] == rev_v1  # noqa: S101
-        assert "diff" in rev_data  # noqa: S101
-        assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(  # noqa: S101
+        assert rev_data["revision_id"] == rev_v2
+        assert rev_data["parent_revision_id"] == rev_v1
+        assert "diff" in rev_data
+        assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(
             content_v2,
         )
-        assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(  # noqa: S101
+        assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(
             content_v2,
         )
 
@@ -224,9 +225,9 @@ def test_markdown_sections_persist(
     with (note_path / "content.json").open() as f:
         data = json.load(f)
 
-    assert data["frontmatter"]["class"] == "meeting"  # noqa: S101
-    assert data["sections"]["Date"] == "2025-11-29"  # noqa: S101
-    assert data["sections"]["Summary"] == "Wrap up"  # noqa: S101
+    assert data["frontmatter"]["class"] == "meeting"
+    assert data["sections"]["Date"] == "2025-11-29"
+    assert data["sections"]["Summary"] == "Wrap up"
 
 
 def test_note_history_diff(
@@ -263,8 +264,8 @@ def test_note_history_diff(
 
     with (note_path / "history" / f"{rev_v2}.json").open() as f:
         rev_data = json.load(f)
-        assert "diff" in rev_data  # noqa: S101
-        assert "Line 2 Modified" in rev_data["diff"]  # noqa: S101
+        assert "diff" in rev_data
+        assert "Line 2 Modified" in rev_data["diff"]
 
 
 def test_note_author_persistence(
@@ -287,12 +288,12 @@ def test_note_author_persistence(
     note_path = workspace_root / "notes" / note_id
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["author"] == author  # noqa: S101
+        assert data["author"] == author
         rev_id = data["revision_id"]
 
     with (note_path / "history" / f"{rev_id}.json").open() as f:
         data = json.load(f)
-        assert data["author"] == author  # noqa: S101
+        assert data["author"] == author
 
     # Update with different author
     new_author = "neo"
@@ -307,9 +308,9 @@ def test_note_author_persistence(
 
     with (note_path / "content.json").open() as f:
         data = json.load(f)
-        assert data["author"] == new_author  # noqa: S101
+        assert data["author"] == new_author
         rev_id_2 = data["revision_id"]
 
     with (note_path / "history" / f"{rev_id_2}.json").open() as f:
         data = json.load(f)
-        assert data["author"] == new_author  # noqa: S101
+        assert data["author"] == new_author

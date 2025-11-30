@@ -1,85 +1,137 @@
-"""CLI entry point."""
+"""CLI entry point using Typer."""
 
-import argparse
-import sys
+from collections.abc import Callable
+from functools import wraps
+from typing import Annotated, Any
 
+import typer
+
+from ieapp.indexer import Indexer, query_index
 from ieapp.logging_utils import setup_logging
-from ieapp.notes import NoteExistsError, create_note
-from ieapp.workspace import WorkspaceExistsError, create_workspace
+from ieapp.notes import create_note
+from ieapp.workspace import create_workspace
+
+app = typer.Typer(help="IEapp CLI - Knowledge base management")
+note_app = typer.Typer(help="Note management commands")
+index_app = typer.Typer(help="Indexer operations")
+
+app.add_typer(note_app, name="note")
+app.add_typer(index_app, name="index")
 
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 
 
+def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
+    """Handle common CLI errors.
+
+    Wraps CLI commands to catch known exceptions and print user-friendly error messages.
+
+    Args:
+        func: The CLI command function to wrap.
+
+    Returns:
+        The wrapped function with error handling.
+
+    """
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> R:  # noqa: ANN401
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1) from e
+
+    return wrapper
+
+
+@app.command("create-workspace")
+@handle_cli_errors
+def cmd_create_workspace(
+    root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
+    workspace_id: Annotated[str, typer.Argument(help="ID of the workspace to create")],
+) -> None:
+    """Create a new workspace."""
+    setup_logging()
+    create_workspace(root_path, workspace_id)
+    typer.echo(
+        f"Workspace '{workspace_id}' created successfully at '{root_path}'",
+    )
+
+
+@note_app.command("create")
+@handle_cli_errors
+def cmd_note_create(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    note_id: Annotated[str, typer.Argument(help="ID of the note to create")],
+    content: Annotated[
+        str,
+        typer.Option(help="Content of the note"),
+    ] = DEFAULT_NOTE_CONTENT,
+    author: Annotated[str, typer.Option(help="Author of the note")] = "user",
+) -> None:
+    """Create a new note in a workspace."""
+    setup_logging()
+    create_note(workspace_path, note_id, content, author=author)
+    typer.echo(f"Note '{note_id}' created successfully.")
+
+
+@index_app.command("run")
+@handle_cli_errors
+def cmd_index_run(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+) -> None:
+    """Run the indexer to rebuild caches."""
+    setup_logging()
+    indexer = Indexer(workspace_path)
+    indexer.run_once()
+    typer.echo(f"Indexer completed for workspace '{workspace_path}'.")
+
+
+@app.command("query")
+@handle_cli_errors
+def cmd_query(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    note_class: Annotated[
+        str | None,
+        typer.Option("--class", help="Filter by class"),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        typer.Option(help="Filter by tag"),
+    ] = None,
+) -> None:
+    """Query the index for notes."""
+    setup_logging()
+    filter_dict: dict[str, Any] | None = None
+    if note_class or tag:
+        filter_dict = {}
+        if note_class:
+            filter_dict["class"] = note_class
+        if tag:
+            filter_dict["tag"] = tag
+
+    results = query_index(workspace_path, filter_dict)
+
+    if not results:
+        typer.echo("No notes found.")
+    else:
+        for note in results:
+            typer.echo(f"- {note.get('id')}: {note.get('title')}")
+
+
 def main() -> None:
     """Entry point for the IEapp CLI."""
-    setup_logging()
-
-    parser = argparse.ArgumentParser(description="IEapp CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # create-workspace command
-    cw_parser = subparsers.add_parser("create-workspace", help="Create a new workspace")
-    cw_parser.add_argument("root_path", help="Root path for workspaces")
-    cw_parser.add_argument("workspace_id", help="ID of the workspace to create")
-
-    # note command
-    note_parser = subparsers.add_parser("note", help="Note management")
-    note_subparsers = note_parser.add_subparsers(
-        dest="note_command",
-        help="Note commands",
-    )
-
-    # note create command
-    nc_parser = note_subparsers.add_parser("create", help="Create a new note")
-    nc_parser.add_argument(
-        "workspace_path",
-        help="Full path to the workspace directory",
-    )
-    nc_parser.add_argument("note_id", help="ID of the note to create")
-    nc_parser.add_argument(
-        "--content",
-        help="Content of the note",
-        default=DEFAULT_NOTE_CONTENT,
-    )
-    nc_parser.add_argument("--author", help="Author of the note", default="user")
-
-    args = parser.parse_args()
-
-    if args.command == "create-workspace":
-        try:
-            create_workspace(args.root_path, args.workspace_id)
-            sys.stdout.write(
-                f"Workspace '{args.workspace_id}' created successfully at "
-                f"'{args.root_path}'\n",
-            )
-        except WorkspaceExistsError as e:
-            sys.stderr.write(f"Error: {e}\n")
-            sys.exit(1)
-        except Exception as e:  # noqa: BLE001
-            sys.stderr.write(f"Error: {e}\n")
-            sys.exit(1)
-
-    elif args.command == "note":
-        if args.note_command == "create":
-            try:
-                create_note(
-                    args.workspace_path,
-                    args.note_id,
-                    args.content,
-                    author=args.author,
-                )
-                sys.stdout.write(f"Note '{args.note_id}' created successfully.\n")
-            except NoteExistsError as e:
-                sys.stderr.write(f"Error: {e}\n")
-                sys.exit(1)
-            except Exception as e:  # noqa: BLE001
-                sys.stderr.write(f"Error: {e}\n")
-                sys.exit(1)
-        else:
-            note_parser.print_help()
-
-    else:
-        parser.print_help()
+    app()
 
 
 if __name__ == "__main__":
