@@ -3,7 +3,7 @@
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from pathlib import Path  # Added import
+from pathlib import Path
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -69,7 +69,7 @@ async def _capture_response_body(response: Response) -> bytes:
 def _apply_security_headers(
     response: Response,
     body: bytes,
-    root_path: Path,  # type: ignore[name-defined]
+    root_path: Path,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
     key_id, signature = build_response_signature(body, root_path)
