@@ -29,3 +29,5 @@ dev = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/test_*.py" = ["S101"]
+"src/**/*.py" = ["INP001"]
+

@@ -1,34 +1,39 @@
-import os
+"""Python Sandbox implementation using Wasmtime."""
+
 import json
-import struct
-from wasmtime import Store, Module, Linker, WasiConfig, Engine, Config, Func
-from pathlib import Path
-from typing import Any, Dict, Callable, Optional
-import tempfile
-import shutil
-import threading
+import os
 import select
+import shutil
+import struct
+import tempfile
+import threading
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from wasmtime import Config, Engine, Func, Linker, Module, Store, WasiConfig
 
 SANDBOX_WASM_PATH = Path(__file__).parent / "sandbox.wasm"
 
 
 class SandboxError(Exception):
-    pass
+    """Base exception for sandbox errors."""
 
 
-class SandboxTimeout(SandboxError):
-    pass
+class SandboxTimeoutError(SandboxError):
+    """Raised when sandbox execution times out."""
 
 
 class SandboxExecutionError(SandboxError):
-    pass
+    """Raised when sandbox execution fails."""
 
 
-def run_script(
+def run_script(  # noqa: C901, PLR0912, PLR0915
     code: str,
-    host_call_handler: Callable[[str, str, Optional[Dict]], Any],
+    host_call_handler: Callable[[str, str, dict | None], Any],
     fuel_limit: int = 100_000_000,
-) -> Any:
+) -> Any:  # noqa: ANN401
+    """Run a script in the sandbox."""
     # Configure Engine
     config = Config()
     config.consume_fuel = True
@@ -39,11 +44,11 @@ def run_script(
     linker = Linker(engine)
     linker.define_wasi()
 
-    tmp_dir = tempfile.mkdtemp()
+    tmp_dir = Path(tempfile.mkdtemp())
     try:
-        stdin_path = os.path.join(tmp_dir, "stdin.fifo")
-        stdout_path = os.path.join(tmp_dir, "stdout.fifo")
-        stderr_path = os.path.join(tmp_dir, "stderr.fifo")
+        stdin_path = tmp_dir / "stdin.fifo"
+        stdout_path = tmp_dir / "stdout.fifo"
+        stderr_path = tmp_dir / "stderr.fifo"
 
         os.mkfifo(stdin_path)
         os.mkfifo(stdout_path)
@@ -60,9 +65,9 @@ def run_script(
         f_err = os.fdopen(fd_err, "rb", buffering=0)
 
         wasi = WasiConfig()
-        wasi.stdin_file = stdin_path
-        wasi.stdout_file = stdout_path
-        wasi.stderr_file = stderr_path
+        wasi.stdin_file = str(stdin_path)
+        wasi.stdout_file = str(stdout_path)
+        wasi.stderr_file = str(stderr_path)
 
         store.set_wasi(wasi)
 
@@ -70,7 +75,7 @@ def run_script(
 
         result_container = {}
 
-        def run_wasm():
+        def run_wasm() -> None:
             try:
                 # Instantiate in the thread
                 instance = linker.instantiate(store, module)
@@ -79,8 +84,9 @@ def run_script(
                 if isinstance(start_func, Func):
                     start_func(store)
                 else:
-                    raise SandboxError("_start is not a function")
-            except Exception as e:
+                    msg = "_start is not a function"
+                    raise SandboxError(msg)  # noqa: TRY301
+            except Exception as e:  # noqa: BLE001
                 result_container["runtime_error"] = e
 
         wasm_thread = threading.Thread(target=run_wasm)
@@ -109,7 +115,6 @@ def run_script(
                 if f_err in rlist:
                     err_data = f_err.read(1024)
                     if err_data:
-                        # print(f"SANDBOX STDERR: {err_data.decode(errors='replace')}", file=sys.__stderr__)
                         pass
 
                 if f_out in rlist:
@@ -119,25 +124,25 @@ def run_script(
                         # EOF on stdout
                         break
 
-                    while len(magic) < 6:
+                    while len(magic) < 6:  # noqa: PLR2004
                         chunk = f_out.read(6 - len(magic))
                         if not chunk:
                             break
                         magic += chunk
 
-                    if len(magic) < 6:
+                    if len(magic) < 6:  # noqa: PLR2004
                         break  # Unexpected EOF
 
                     if magic == b"\0HOST\0":
                         # Host Call
                         len_bytes = f_out.read(4)
-                        while len(len_bytes) < 4:
+                        while len(len_bytes) < 4:  # noqa: PLR2004
                             chunk = f_out.read(4 - len(len_bytes))
                             if not chunk:
                                 break
                             len_bytes += chunk
 
-                        if len(len_bytes) < 4:
+                        if len(len_bytes) < 4:  # noqa: PLR2004
                             break
 
                         length = struct.unpack(">I", len_bytes)[0]
@@ -153,10 +158,12 @@ def run_script(
                         # Execute Host Call
                         try:
                             resp = host_call_handler(
-                                payload["method"], payload["path"], payload.get("body")
+                                payload["method"],
+                                payload["path"],
+                                payload.get("body"),
                             )
                             resp_str = json.dumps(resp)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             resp_str = json.dumps({"error": str(e)})
 
                         resp_bytes = resp_str.encode("utf-8")
@@ -167,7 +174,7 @@ def run_script(
                     elif magic == b"\0RSLT\0":
                         # Result
                         len_bytes = f_out.read(4)
-                        while len(len_bytes) < 4:
+                        while len(len_bytes) < 4:  # noqa: PLR2004
                             chunk = f_out.read(4 - len(len_bytes))
                             if not chunk:
                                 break
@@ -182,14 +189,14 @@ def run_script(
                             res_bytes += chunk
 
                         result_container["result"] = json.loads(
-                            res_bytes.decode("utf-8")
+                            res_bytes.decode("utf-8"),
                         )
                         break
 
                     elif magic == b"\0ERRR\0":
                         # Error
                         len_bytes = f_out.read(4)
-                        while len(len_bytes) < 4:
+                        while len(len_bytes) < 4:  # noqa: PLR2004
                             chunk = f_out.read(4 - len(len_bytes))
                             if not chunk:
                                 break
@@ -204,13 +211,13 @@ def run_script(
                             err_bytes += chunk
 
                         result_container["error"] = SandboxExecutionError(
-                            err_bytes.decode("utf-8")
+                            err_bytes.decode("utf-8"),
                         )
                         break
                     else:
                         # Unknown magic
-                        # print(f"Unknown magic: {magic}")
-                        raise SandboxError(f"Invalid magic: {magic}")
+                        msg = f"Invalid magic: {magic!r}"
+                        raise SandboxError(msg)
         finally:
             f_in.close()
             f_out.close()
