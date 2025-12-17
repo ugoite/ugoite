@@ -159,6 +159,19 @@ def run_script(  # noqa: PLR0915
         SandboxExecutionError: If the script throws an error.
 
     """
+    # Require the real Wasm-based sandbox artifact to be present.
+    # Previously we fell back to a minimal runner when `sandbox.wasm`
+    # didn't exist to make unit tests runnable without building the
+    # Wasm artifact. Change the behavior to *require* the Wasm
+    # artifact so tests and runtime use the real sandbox.
+    if not SANDBOX_WASM_PATH.exists():
+        msg = (
+            "sandbox.wasm is missing. Build the Wasm artifact before running "
+            "(e.g. `mise run sandbox:build` or run "
+            "`bash backend/src/app/sandbox/build_sandbox_wasm.sh`)."
+        )
+        raise SandboxError(msg)
+
     config = Config()
     config.consume_fuel = True
     engine = Engine(config)
@@ -236,6 +249,11 @@ def run_script(  # noqa: PLR0915
         return result_container.get("result")
     finally:
         shutil.rmtree(tmp_dir)
+
+
+# Note: the minimal JS fallback runner previously present here was removed.
+# The sandbox now strictly requires the real WebAssembly artifact to be
+# available; attempting to run without `sandbox.wasm` raises `SandboxError`.
 
 
 def _send_code(f_in: BinaryIO, code: str) -> None:

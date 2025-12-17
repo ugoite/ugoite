@@ -1,8 +1,23 @@
 #!/bin/bash
 set -e
 
-JAVY_VERSION="v3.0.1"
-JAVY_URL="https://github.com/bytecodealliance/javy/releases/download/${JAVY_VERSION}/javy-arm-linux-${JAVY_VERSION}.gz"
+JAVY_VERSION="${JAVY_VERSION:-v3.0.1}"
+
+arch="$(uname -m)"
+case "$arch" in
+    x86_64|amd64)
+        asset_arch="x86_64"
+        ;;
+    aarch64|arm64)
+        asset_arch="arm"
+        ;;
+    *)
+        echo "Unsupported architecture: $arch" >&2
+        exit 1
+        ;;
+esac
+
+JAVY_URL="https://github.com/bytecodealliance/javy/releases/download/${JAVY_VERSION}/javy-${asset_arch}-linux-${JAVY_VERSION}.gz"
 INSTALL_DIR="/usr/local/bin"
 
 if [ ! -w "$INSTALL_DIR" ]; then

@@ -1,8 +1,14 @@
 """Tests for the WebAssembly sandbox."""
 
+from pathlib import Path
+
 import pytest
 
-from app.sandbox.python_sandbox import SandboxExecutionError, run_script
+from app.sandbox.python_sandbox import (
+    SandboxError,
+    SandboxExecutionError,
+    run_script,
+)
 
 
 def _noop_handler(_method: str, _path: str, _body: dict | None) -> None:
@@ -48,3 +54,20 @@ def test_infinite_loop_fuel() -> None:
     with pytest.raises(Exception, match="fuel") as exc:
         run_script(code, _noop_handler, fuel_limit=fuel_limit)
     assert "fuel" in str(exc.value).lower()
+
+
+def test_missing_wasm_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """If the Wasm artifact is missing, running scripts should raise SandboxError.
+
+    This test avoids mutating the real repository artifact by monkeypatching
+    `SANDBOX_WASM_PATH` to a non-existent path under `tmp_path` so tests are
+    safe to run in parallel.
+    """
+    missing = tmp_path / "missing.wasm"
+    monkeypatch.setattr(
+        "app.sandbox.python_sandbox.SANDBOX_WASM_PATH",
+        missing,
+    )
+
+    with pytest.raises(SandboxError):
+        run_script("return 1;", _noop_handler)
