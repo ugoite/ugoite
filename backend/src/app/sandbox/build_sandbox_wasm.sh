@@ -5,7 +5,8 @@ set -euo pipefail
 # Output: `backend/src/app/sandbox/sandbox.wasm`
 
 SANDBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SANDBOX_DIR/../../../../.." && pwd)"
+# The script lives at backend/src/app/sandbox; four levels up is the repo root.
+ROOT_DIR="$(cd "$SANDBOX_DIR/../../../.." && pwd)"
 
 JAVY_BIN="${JAVY_BIN:-javy}"
 

@@ -17,8 +17,8 @@ depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install"]
 depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks.sandbox:install-javy]
-run = "bash /workspace/scripts/setup_javy.sh"
+run = "bash scripts/setup_javy.sh"
 
 [tasks.sandbox:build]
 depends = ["sandbox:install-javy"]
-run = "bash /workspace/backend/src/app/sandbox/build_sandbox_wasm.sh"
+run = "bash backend/src/app/sandbox/build_sandbox_wasm.sh"

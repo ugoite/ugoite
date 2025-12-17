@@ -9,7 +9,7 @@ import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import BinaryIO
 
 from wasmtime import Config, Engine, Func, Linker, Module, Store, WasiConfig
 
@@ -251,117 +251,9 @@ def run_script(  # noqa: PLR0915
         shutil.rmtree(tmp_dir)
 
 
-def _run_script_fallback(
-    code: str,
-    host_call_handler: HostCallHandler,
-    fuel_limit: int,
-) -> object:
-    """Fallback runner used when `sandbox.wasm` is unavailable.
-
-    This is not a general-purpose JS engine. It's a narrow evaluator that supports
-    the unit-test surface area:
-    - `return <expr>;`
-    - `throw new Error('msg');`
-    - `while(true) {}` fuel exhaustion simulation
-    - `const res = host.call("METHOD", "/path"); return res.ok;`
-
-    It intentionally does not provide filesystem/network access.
-    """
-    stripped = code.strip()
-
-    if _looks_like_infinite_loop(stripped):
-        msg = f"fuel exhausted (limit={fuel_limit})"
-        raise SandboxError(msg)
-
-    err = _extract_thrown_error_message(stripped)
-    if err is not None:
-        raise SandboxExecutionError(err)
-
-    if "host.call" in stripped:
-        method, path = _parse_host_call_args(stripped)
-        resp = host_call_handler(method, path, None)
-        if _returns_res_ok(stripped):
-            return _dict_ok(resp)
-        return resp
-
-    if stripped.startswith("return"):
-        return _eval_simple_return_expression(stripped)
-
-    msg = "Unsupported script"
-    raise SandboxExecutionError(msg)
-
-
-def _looks_like_infinite_loop(code: str) -> bool:
-    compact = code.replace(" ", "")
-    return "while(true" in compact
-
-
-def _extract_thrown_error_message(code: str) -> str | None:
-    if "throw" not in code or "Error" not in code:
-        return None
-
-    msg = "Script error"
-
-    start_at = code.find("Error(")
-    if start_at == -1:
-        return msg
-    start_at += len("Error(")
-
-    end_at = code.find(")", start_at)
-    if end_at == -1:
-        return msg
-
-    raw = code[start_at:end_at].strip()
-    if (raw.startswith('"') and raw.endswith('"')) or (
-        raw.startswith("'") and raw.endswith("'")
-    ):
-        return raw[1:-1]
-    return raw
-
-
-def _parse_host_call_args(code: str) -> tuple[str, str]:
-    try:
-        call_start = code.index("host.call")
-        paren_start = code.index("(", call_start) + 1
-        paren_end = code.index(")", paren_start)
-        args = code[paren_start:paren_end]
-        parts = [p.strip() for p in args.split(",", maxsplit=2)]
-        method = parts[0].strip().strip('"').strip("'")
-        path = parts[1].strip().strip('"').strip("'")
-    except Exception as e:
-        msg = f"Invalid host.call: {e}"
-        raise SandboxExecutionError(msg) from e
-
-    return method, path
-
-
-def _returns_res_ok(code: str) -> bool:
-    return "return" in code and ".ok" in code
-
-
-def _dict_ok(resp: object) -> bool:
-    if not isinstance(resp, dict):
-        return False
-
-    resp_dict = cast("dict[str, object]", resp)
-    value = resp_dict.get("ok")
-    return bool(value)
-
-
-def _eval_simple_return_expression(code: str) -> object:
-    expr = code[len("return") :].strip()
-    if expr.endswith(";"):
-        expr = expr[:-1].strip()
-
-    allowed = set("0123456789+-*/() \t\n\r")
-    if not expr or any(ch not in allowed for ch in expr):
-        msg = "Unsupported expression"
-        raise SandboxExecutionError(msg)
-
-    try:
-        return eval(expr, {"__builtins__": {}}, {})  # noqa: S307
-    except Exception as e:
-        raise SandboxExecutionError(str(e)) from e
+# Note: the minimal JS fallback runner previously present here was removed.
+# The sandbox now strictly requires the real WebAssembly artifact to be
+# available; attempting to run without `sandbox.wasm` raises `SandboxError`.
 
 
 def _send_code(f_in: BinaryIO, code: str) -> None:

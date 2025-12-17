@@ -1,9 +1,10 @@
 """Tests for the WebAssembly sandbox."""
 
+from pathlib import Path
+
 import pytest
 
 from app.sandbox.python_sandbox import (
-    SANDBOX_WASM_PATH,
     SandboxError,
     SandboxExecutionError,
     run_script,
@@ -55,19 +56,17 @@ def test_infinite_loop_fuel() -> None:
     assert "fuel" in str(exc.value).lower()
 
 
-def test_missing_wasm_raises() -> None:
-    """If the Wasm artifact is missing, running scripts should raise SandboxError."""
-    wasm_path = SANDBOX_WASM_PATH
-    # If the artifact exists, temporarily move it away to simulate "missing".
-    backup = None
-    try:
-        if wasm_path.exists():
-            backup = wasm_path.with_suffix(".bak")
-            wasm_path.rename(backup)
+def test_missing_wasm_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """If the Wasm artifact is missing, running scripts should raise SandboxError.
 
-        with pytest.raises(SandboxError):
-            run_script("return 1;", _noop_handler)
-    finally:
-        # Restore the artifact if we moved it.
-        if backup is not None and backup.exists():
-            backup.rename(wasm_path)
+    This test avoids mutating the real repository artifact by monkeypatching
+    `SANDBOX_WASM_PATH` to a non-existent path under `tmp_path` so tests are
+    safe to run in parallel.
+    """
+    missing = tmp_path / "missing.wasm"
+    monkeypatch.setattr(
+        "app.sandbox.python_sandbox.SANDBOX_WASM_PATH", missing,
+    )
+
+    with pytest.raises(SandboxError):
+        run_script("return 1;", _noop_handler)

@@ -114,7 +114,6 @@ uv run pytest
 The backend includes a WebAssembly-based JavaScript sandbox (`backend/src/app/sandbox/python_sandbox.py`).
 
 - **Tests require the Wasm artifact**: `pytest` now requires `backend/src/app/sandbox/sandbox.wasm` to be present; build the artifact before running tests (see below).
-- For full sandbox execution (real Wasmtime + Javy): build `backend/src/app/sandbox/sandbox.wasm`.
 
 Build the Wasm artifact:
 
