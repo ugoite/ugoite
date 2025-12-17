@@ -159,11 +159,17 @@ def run_script(  # noqa: PLR0915
         SandboxExecutionError: If the script throws an error.
 
     """
-    # Prefer the real Wasm-based sandbox when the artifact exists.
-    # In dev/test environments where the wasm build hasn't run yet,
-    # fall back to a minimal, safe runner sufficient for unit tests.
+    # Require the real Wasm-based sandbox artifact to be present.
+    # Previously we fell back to a minimal runner when `sandbox.wasm`
+    # didn't exist to make unit tests runnable without building the
+    # Wasm artifact. Change the behavior to *require* the Wasm
+    # artifact so tests and runtime use the real sandbox.
     if not SANDBOX_WASM_PATH.exists():
-        return _run_script_fallback(code, host_call_handler, fuel_limit=fuel_limit)
+        msg = (
+            "sandbox.wasm is missing. Build the Wasm artifact before running "
+            "(e.g. `mise run sandbox:build` or run `bash backend/src/app/sandbox/build_sandbox_wasm.sh`)."
+        )
+        raise SandboxError(msg)
 
     config = Config()
     config.consume_fuel = True

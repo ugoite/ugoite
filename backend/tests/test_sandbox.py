@@ -48,3 +48,23 @@ def test_infinite_loop_fuel() -> None:
     with pytest.raises(Exception, match="fuel") as exc:
         run_script(code, _noop_handler, fuel_limit=fuel_limit)
     assert "fuel" in str(exc.value).lower()
+
+
+def test_missing_wasm_raises() -> None:
+    """If the Wasm artifact is missing, running scripts should raise SandboxError."""
+    from app.sandbox import python_sandbox
+
+    wasm_path = python_sandbox.SANDBOX_WASM_PATH
+    # If the artifact exists, temporarily move it away to simulate "missing".
+    backup = None
+    try:
+        if wasm_path.exists():
+            backup = wasm_path.with_suffix(".bak")
+            wasm_path.rename(backup)
+
+        with pytest.raises(python_sandbox.SandboxError):
+            run_script("return 1;", _noop_handler)
+    finally:
+        # Restore the artifact if we moved it.
+        if backup is not None and backup.exists():
+            backup.rename(wasm_path)
