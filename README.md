@@ -100,8 +100,38 @@ Run backend tests:
 
 ```bash
 cd backend
-pytest
+uv run pytest
 ```
+
+Run all Python tests from repo root:
+
+```bash
+uv run pytest
+```
+
+### Sandbox (Wasm) prerequisites
+
+The backend includes a WebAssembly-based JavaScript sandbox (`backend/src/app/sandbox/python_sandbox.py`).
+
+- For unit tests: `pytest` works without building the Wasm artifact (it uses a minimal fallback runner when `sandbox.wasm` is missing).
+- For full sandbox execution (real Wasmtime + Javy): build `backend/src/app/sandbox/sandbox.wasm`.
+
+Build the Wasm artifact:
+
+```bash
+# Option A: via mise (recommended)
+mise run sandbox:build
+
+# Option B: direct script
+bash scripts/setup_javy.sh
+bash backend/src/app/sandbox/build_sandbox_wasm.sh
+```
+
+Where you can run this:
+
+- Dev Container: everything needed to run tests is available; run `uv run pytest`.
+- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ieapp-cli/`.
+- Local (non-container): install `uv`, then run the commands above. If you want the real Wasm sandbox, build `sandbox.wasm` and place it at `backend/src/app/sandbox/sandbox.wasm`.
 
 Frontend tests: check `frontend/package.json`.
 
