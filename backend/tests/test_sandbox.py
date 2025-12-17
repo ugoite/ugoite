@@ -65,7 +65,8 @@ def test_missing_wasm_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     """
     missing = tmp_path / "missing.wasm"
     monkeypatch.setattr(
-        "app.sandbox.python_sandbox.SANDBOX_WASM_PATH", missing,
+        "app.sandbox.python_sandbox.SANDBOX_WASM_PATH",
+        missing,
     )
 
     with pytest.raises(SandboxError):
