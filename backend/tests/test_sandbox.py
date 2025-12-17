@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.sandbox.python_sandbox import SandboxExecutionError, run_script
+from app.sandbox.python_sandbox import (
+    SANDBOX_WASM_PATH,
+    SandboxError,
+    SandboxExecutionError,
+    run_script,
+)
 
 
 def _noop_handler(_method: str, _path: str, _body: dict | None) -> None:
@@ -52,9 +57,7 @@ def test_infinite_loop_fuel() -> None:
 
 def test_missing_wasm_raises() -> None:
     """If the Wasm artifact is missing, running scripts should raise SandboxError."""
-    from app.sandbox import python_sandbox
-
-    wasm_path = python_sandbox.SANDBOX_WASM_PATH
+    wasm_path = SANDBOX_WASM_PATH
     # If the artifact exists, temporarily move it away to simulate "missing".
     backup = None
     try:
@@ -62,7 +65,7 @@ def test_missing_wasm_raises() -> None:
             backup = wasm_path.with_suffix(".bak")
             wasm_path.rename(backup)
 
-        with pytest.raises(python_sandbox.SandboxError):
+        with pytest.raises(SandboxError):
             run_script("return 1;", _noop_handler)
     finally:
         # Restore the artifact if we moved it.

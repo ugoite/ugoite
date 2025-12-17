@@ -167,7 +167,8 @@ def run_script(  # noqa: PLR0915
     if not SANDBOX_WASM_PATH.exists():
         msg = (
             "sandbox.wasm is missing. Build the Wasm artifact before running "
-            "(e.g. `mise run sandbox:build` or run `bash backend/src/app/sandbox/build_sandbox_wasm.sh`)."
+            "(e.g. `mise run sandbox:build` or run "
+            "`bash backend/src/app/sandbox/build_sandbox_wasm.sh`)."
         )
         raise SandboxError(msg)
 
