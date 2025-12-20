@@ -28,4 +28,5 @@ dev = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/test_*.py" = ["S101"]
+"tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
+"src/app/mcp/server.py" = ["TD003", "FIX002", "BLE001"]

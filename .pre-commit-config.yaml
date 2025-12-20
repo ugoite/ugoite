@@ -6,9 +6,10 @@ repos:
       - id: ruff
         # Run ruff checks in pre-commit and select all error codes to match
         # the GitHub Actions configuration (`ruff check --select ALL .`).
-        # Also apply auto-fixes during pre-commit so fixable issues are
-        # corrected before committing.
-        args: ["--select", "ALL", "--fix"]
+        # Ignore any in-source `# noqa` directives so they cannot bypass
+        # the linter; apply auto-fixes during pre-commit to correct fixable
+        # issues before committing.
+        args: ["--select", "ALL", "--ignore-noqa", "--fix"]
 
       - id: ruff-format
         # Use ruff's format hook to apply auto-formatting on commit

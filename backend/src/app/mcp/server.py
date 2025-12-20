@@ -26,7 +26,7 @@ async def run_script_tool(code: str, workspace_id: str) -> str:
     logger.info("Executing script for workspace %s", workspace_id)
 
     def host_call_handler(method: str, path: str, body: dict | None) -> dict[str, str]:
-        # TODO(ieapp): Implement actual API call dispatch  # noqa: TD003, FIX002
+        # TODO(ieapp): Implement actual API call dispatch
         logger.info("Host call: %s %s", method, path)
         del body  # Unused for now
         return {"status": "mock_response", "method": method, "path": path}
@@ -34,7 +34,7 @@ async def run_script_tool(code: str, workspace_id: str) -> str:
     try:
         result = run_script(code, host_call_handler)
         return json.dumps(result, indent=2)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return f"Error: {e}"
 
 

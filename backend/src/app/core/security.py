@@ -26,7 +26,7 @@ LOCAL_CLIENT_SENTINELS: Final[set[str]] = {
 
 
 def resolve_client_host(
-    headers: "Mapping[str, str]",  # noqa: UP037
+    headers: Mapping[str, str],
     client_host: str | None,
 ) -> str | None:
     """Resolve the client host honoring proxy headers when present.

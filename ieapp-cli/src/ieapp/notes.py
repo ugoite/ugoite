@@ -235,7 +235,7 @@ def create_note(
     write_json_secure(meta_path, meta, exclusive=True)
 
 
-def update_note(  # noqa: PLR0913
+def update_note(
     workspace_path: str | Path,
     note_id: str,
     content: str,

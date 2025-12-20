@@ -16,7 +16,9 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run ruff check
-        run: uvx ruff check --select ALL .
+        # Ignore in-source `# noqa` comments to ensure they cannot silence
+        # linting failures in CI. This mirrors the pre-commit behavior.
+        run: uvx ruff check --select ALL --ignore-noqa .
 
       - name: Run ruff format check
         run: uvx ruff format --check .

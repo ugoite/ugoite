@@ -36,4 +36,12 @@ target-version = "py313"
 select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/test_*.py" = ["S101"]
+# Test files commonly use `typing.Any`, magic numbers, and unused-fixture
+# patterns that we intentionally allow. Centralize those exceptions here
+# instead of using inline `# noqa` comments.
+"tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
+"src/ieapp/cli.py" = ["ANN401"]
+"src/ieapp/indexer.py" = ["ANN401"]
+"src/ieapp/notes.py" = ["PLR0913"]
+"src/ieapp/sandbox/execution.py" = ["PLR0915", "PLR0913", "TRY301", "BLE001"]
+"scripts/build_sandbox.py" = ["S603"]

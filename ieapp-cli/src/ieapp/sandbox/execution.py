@@ -138,7 +138,7 @@ def _process_output(
     raise SandboxError(msg)
 
 
-def run_script(  # noqa: PLR0915
+def run_script(
     code: str,
     host_call_handler: HostCallHandler,
     fuel_limit: int = 100_000_000,
@@ -222,10 +222,10 @@ def run_script(  # noqa: PLR0915
                         start_func(store)
                     else:
                         msg = "_start is not a function"
-                        raise SandboxError(msg)  # noqa: TRY301
+                        raise SandboxError(msg)
                 except SandboxError:
                     raise
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     result_container["runtime_error"] = e
 
             wasm_thread = threading.Thread(target=run_wasm)
@@ -262,7 +262,7 @@ def _send_code(f_in: BinaryIO, code: str) -> None:
     f_in.flush()
 
 
-def _process_loop(  # noqa: PLR0913
+def _process_loop(
     f_out: BinaryIO,
     f_err: BinaryIO,
     f_in: BinaryIO,

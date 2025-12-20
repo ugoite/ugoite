@@ -14,11 +14,11 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from app.main import app  # noqa: E402
+from app.main import app
 
 
 @pytest.fixture
-def test_client(temp_workspace_root: Path) -> TestClient:  # noqa: ARG001
+def test_client(temp_workspace_root: Path) -> TestClient:
     """Create a test client bound to the temporary workspace root."""
     return TestClient(app)
 

@@ -105,7 +105,7 @@ def extract_properties(content: str) -> dict[str, Any]:
     return merged
 
 
-def parse_markdown_list(v: Any) -> Any:  # noqa: ANN401
+def parse_markdown_list(v: Any) -> Any:
     """Parse markdown list syntax into a python list.
 
     Args:

@@ -146,7 +146,7 @@ def build_sandbox() -> None:
                 msg = f"Javy binary is not executable: {javy_bin}"
                 _raise(PermissionError(msg))
 
-            subprocess.run(  # noqa: S603 - binary verified above
+            subprocess.run(
                 [
                     str(javy_bin),
                     "compile",
