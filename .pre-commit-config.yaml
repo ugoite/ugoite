@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    # Pin to a stable release tag to avoid mutable references; updated with `pre-commit autoupdate`
+    rev: v0.14.10
+    hooks:
+      - id: ruff-format
+        # Use ruff's format hook to apply auto-formatting on commit
+        # (this replaces the legacy `ruff` alias)
+
+  - repo: local
+    hooks:
+      - id: ty-backend
+        name: "ty: backend type check"
+        entry: bash -c "cd backend && uv run ty check ."
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ty-cli
+        name: "ty: ieapp-cli type check"
+        entry: bash -c "cd ieapp-cli && uv run ty check ."
+        language: system
+        pass_filenames: false
+        always_run: true

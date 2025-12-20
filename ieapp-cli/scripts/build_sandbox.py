@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""
-Build script for the WebAssembly sandbox.
-This script downloads a temporary Javy binary to compile runner.js into sandbox.wasm.
-It avoids requiring the user to install Javy manually.
+"""Build script for the WebAssembly sandbox.
+
+This script downloads a temporary Javy binary to compile ``runner.js`` into
+``sandbox.wasm``. It avoids requiring the user to install Javy manually.
 """
 
+from __future__ import annotations
+
 import gzip
+import logging
 import os
 import platform
 import shutil
@@ -15,14 +18,27 @@ import sys
 import tempfile
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Configuration
 JAVY_VERSION = "v3.0.1"  # Keep consistent with previous version for stability
 JAVY_REPO = "bytecodealliance/javy"
 
+logger = logging.getLogger(__name__)
 
-def get_javy_url():
-    """Determine the correct Javy download URL for the current platform."""
+
+def _raise(exc: BaseException) -> None:
+    """Raise exceptions from expressions for linting."""
+    raise exc
+
+
+def get_javy_url() -> str:
+    """Determine the correct Javy download URL for the current platform.
+
+    Returns:
+        The download URL for the appropriate Javy release.
+
+    """
     system = platform.system().lower()
     machine = platform.machine().lower()
 
@@ -30,40 +46,60 @@ def get_javy_url():
         # For now, we only support Linux as per the original script,
         # but we can easily add Mac/Windows support if needed.
         # The dev container is Linux.
-        print(f"Warning: This build script is optimized for Linux. Detected: {system}")
+        logger.warning(
+            "This build script is optimized for Linux. Detected: %s",
+            system,
+        )
 
     if machine in ("x86_64", "amd64"):
         arch = "x86_64"
     elif machine in ("aarch64", "arm64"):
         arch = "arm"
     else:
-        raise RuntimeError(f"Unsupported architecture: {machine}")
+        msg = f"Unsupported architecture: {machine}"
+        raise RuntimeError(msg)
 
     # Javy release naming convention: javy-{arch}-{os}-{version}.gz
     # e.g. javy-x86_64-linux-v3.0.1.gz
     filename = f"javy-{arch}-linux-{JAVY_VERSION}.gz"
-    url = f"https://github.com/{JAVY_REPO}/releases/download/{JAVY_VERSION}/{filename}"
-    return url
+    return f"https://github.com/{JAVY_REPO}/releases/download/{JAVY_VERSION}/{filename}"
 
 
-def download_and_extract_javy(dest_path):
-    """Download Javy and extract it to the destination path."""
+def download_and_extract_javy(dest_path: Path) -> None:
+    """Download Javy and extract it to the destination path.
+
+    Args:
+        dest_path: The destination path where the Javy binary will be written.
+
+    """
     url = get_javy_url()
-    print(f"Downloading Javy from {url}...")
+    logger.info("Downloading Javy from %s", url)
 
-    with urllib.request.urlopen(url) as response:
-        with gzip.GzipFile(fileobj=response) as uncompressed:
-            with open(dest_path, "wb") as f_out:
-                shutil.copyfileobj(uncompressed, f_out)
+    # Validate URL scheme before opening (avoid unexpected schemes like file:)
+    parsed = urlparse(url)
+    allowed_schemes = ("https",)
+    if parsed.scheme not in allowed_schemes:
+        msg = "Unsupported URL scheme for Javy download"
+        raise ValueError(msg)
 
-    # Make executable
-    st = os.stat(dest_path)
-    os.chmod(dest_path, st.st_mode | stat.S_IEXEC)
-    print(f"Javy downloaded to {dest_path}")
+    # Use a single with-statement for multiple context managers and Path.open
+    with (
+        urllib.request.urlopen(url) as response,
+        gzip.GzipFile(  # noqa: S310 - scheme validated above
+            fileobj=response,
+        ) as uncompressed,
+        dest_path.open("wb") as f_out,
+    ):
+        shutil.copyfileobj(uncompressed, f_out)
+
+    # Make executable using Path API
+    mode = dest_path.stat().st_mode | stat.S_IEXEC
+    dest_path.chmod(mode)
+    logger.info("Javy downloaded to %s", dest_path)
 
 
-def build_sandbox():
-    """Compile runner.js to sandbox.wasm using a temporary Javy binary."""
+def build_sandbox() -> None:
+    """Compile ``runner.js`` to ``sandbox.wasm`` using a temporary Javy binary."""
     # Paths
     script_dir = Path(__file__).parent
     # ieapp-cli/scripts -> ieapp-cli/src/ieapp/sandbox
@@ -72,7 +108,8 @@ def build_sandbox():
     output_wasm = sandbox_dir / "sandbox.wasm"
 
     if not runner_js.exists():
-        raise FileNotFoundError(f"runner.js not found at {runner_js}")
+        msg = f"runner.js not found at {runner_js}"
+        raise FileNotFoundError(msg)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         javy_bin = Path(tmp_dir) / "javy"
@@ -80,17 +117,36 @@ def build_sandbox():
         try:
             download_and_extract_javy(javy_bin)
 
-            print(f"Compiling {runner_js} to {output_wasm}...")
-            subprocess.run(
-                [str(javy_bin), "compile", str(runner_js), "-o", str(output_wasm)],
+            logger.info(
+                "Compiling %s to %s...",
+                runner_js,
+                output_wasm,
+            )
+            # Ensure the downloaded Javy binary exists and is executable
+            if not javy_bin.exists():
+                msg = f"Javy binary not found at {javy_bin}"
+                _raise(FileNotFoundError(msg))
+            if not os.access(javy_bin, os.X_OK):
+                msg = f"Javy binary is not executable: {javy_bin}"
+                _raise(PermissionError(msg))
+
+            subprocess.run(  # noqa: S603 - binary verified above
+                [
+                    str(javy_bin),
+                    "compile",
+                    str(runner_js),
+                    "-o",
+                    str(output_wasm),
+                ],
                 check=True,
             )
-            print("Build successful.")
+            logger.info("Build successful.")
 
-        except Exception as e:
-            print(f"Error during build: {e}")
+        except Exception:
+            logger.exception("Error during build")
             sys.exit(1)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     build_sandbox()

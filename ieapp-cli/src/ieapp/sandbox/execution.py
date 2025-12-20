@@ -158,19 +158,19 @@ def run_script(  # noqa: PLR0915
         SandboxExecutionError: If the script throws an error.
 
     """
-    # Use importlib.resources to find the WASM file
-    # This works even if the package is zipped or installed in site-packages
+    # Use importlib.resources to find the WASM file; this works when the package is
+    # installed (including zip installs).
     try:
         ref = importlib.resources.files("ieapp.sandbox") / "sandbox.wasm"
     except (ImportError, TypeError):
-        # Fallback for older python or if package not found (e.g. during dev without install)
-        # But we expect ieapp to be installed or in pythonpath
+        # Fallback for older Python or when the package is not installed.
         ref = Path(__file__).parent / "sandbox.wasm"
 
     with importlib.resources.as_file(ref) as wasm_path:
         if not wasm_path.exists():
             msg = (
-                f"sandbox.wasm is missing at {wasm_path}. Build the Wasm artifact before running "
+                "sandbox.wasm is missing at "
+                f"{wasm_path}. Build the Wasm artifact before running "
                 "(e.g. `mise run sandbox:build`)."
             )
             raise SandboxError(msg)

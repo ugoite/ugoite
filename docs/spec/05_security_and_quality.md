@@ -46,6 +46,26 @@ We follow a strict Test-Driven Development approach.
 3.  **E2E**: `playwright` (headless browser tests).
 4.  **Build**: Docker images for deployment, Python wheel for `ieapp` library.
 
+### Local checks / pre-commit hooks
+
+To keep the repository consistent and to catch issues early, we provide a set of `pre-commit` hooks that run locally before commits:
+
+- **Ruff**: auto-formats and lints Python files. The hook attempts to apply fixes automatically on commit.
+- **Ty**: runs the `ty` type checks for the Python projects in the repository (currently `./backend` and `./ieapp-cli`). These run as full-project checks to catch type regressions early.
+
+Install and enable the hooks locally with:
+
+```bash
+# Enable the git hook
+uvx pre-commit install
+
+# Run all hooks across the repository (recommended before opening a PR)
+uvx pre-commit run --all-files
+```
+
+Hooks are configured in the repository root file: `.pre-commit-config.yaml`. The CI continues to run `ruff` and `ty` checks on push and PRs; the pre-commit hooks are intended to provide fast local feedback and automatic fixes where applicable.
+
+
 ## 3. Error Handling & Resilience
 
 ### Principles
