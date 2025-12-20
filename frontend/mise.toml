@@ -5,3 +5,7 @@ run = "bun install"
 # Ensure development has the frontend configured to use the same domain sub-path for
 # backend calls and that the dev-server proxy forwards the path to the local backend.
 run = "BACKEND_URL=http://localhost:8000 bun run dev"
+
+[tasks.test]
+run = "bash -lc 'if [ -d tests ] && [ \"$(find tests -type f | wc -l)\" -gt 0 ]; then bun test; else echo \"No frontend tests found\"; fi'"
+description = "Run frontend unit tests (no-op if no tests present)"

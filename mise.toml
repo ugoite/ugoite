@@ -18,3 +18,7 @@ depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks."sandbox:build"]
 run = "uv run /workspace/ieapp-cli/scripts/build_sandbox.py"
+
+[tasks.test]
+depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test"]
+description = "Run tests for all packages (backend, frontend, ieapp-cli)"
