@@ -1,5 +1,6 @@
 """WebAssembly sandbox for executing JavaScript code securely."""
 
+import importlib.resources
 import json
 import os
 import select
@@ -12,8 +13,6 @@ from pathlib import Path
 from typing import BinaryIO
 
 from wasmtime import Config, Engine, Func, Linker, Module, Store, WasiConfig
-
-SANDBOX_WASM_PATH = Path(__file__).parent / "sandbox.wasm"
 
 # Protocol magic bytes
 _MAGIC_HOST = b"\0HOST\0"
@@ -159,101 +158,100 @@ def run_script(  # noqa: PLR0915
         SandboxExecutionError: If the script throws an error.
 
     """
-    # Require the real Wasm-based sandbox artifact to be present.
-    # Previously we fell back to a minimal runner when `sandbox.wasm`
-    # didn't exist to make unit tests runnable without building the
-    # Wasm artifact. Change the behavior to *require* the Wasm
-    # artifact so tests and runtime use the real sandbox.
-    if not SANDBOX_WASM_PATH.exists():
-        msg = (
-            "sandbox.wasm is missing. Build the Wasm artifact before running "
-            "(e.g. `mise run sandbox:build` or run "
-            "`bash backend/src/app/sandbox/build_sandbox_wasm.sh`)."
-        )
-        raise SandboxError(msg)
-
-    config = Config()
-    config.consume_fuel = True
-    engine = Engine(config)
-    store = Store(engine)
-    store.set_fuel(fuel_limit)
-
-    linker = Linker(engine)
-    linker.define_wasi()
-
-    tmp_dir = tempfile.mkdtemp()
+    # Use importlib.resources to find the WASM file
+    # This works even if the package is zipped or installed in site-packages
     try:
-        tmp_path = Path(tmp_dir)
-        stdin_path = tmp_path / "stdin.fifo"
-        stdout_path = tmp_path / "stdout.fifo"
-        stderr_path = tmp_path / "stderr.fifo"
+        ref = importlib.resources.files("ieapp.sandbox") / "sandbox.wasm"
+    except (ImportError, TypeError):
+        # Fallback for older python or if package not found (e.g. during dev without install)
+        # But we expect ieapp to be installed or in pythonpath
+        ref = Path(__file__).parent / "sandbox.wasm"
 
-        os.mkfifo(stdin_path)
-        os.mkfifo(stdout_path)
-        os.mkfifo(stderr_path)
-
-        # Open pipes (Host side) BEFORE configuring WASI
-        fd_in = os.open(stdin_path, os.O_RDWR)
-        fd_out = os.open(stdout_path, os.O_RDWR)
-        fd_err = os.open(stderr_path, os.O_RDWR)
-
-        f_in = os.fdopen(fd_in, "wb", buffering=0)
-        f_out = os.fdopen(fd_out, "rb", buffering=0)
-        f_err = os.fdopen(fd_err, "rb", buffering=0)
-
-        wasi = WasiConfig()
-        wasi.stdin_file = str(stdin_path)
-        wasi.stdout_file = str(stdout_path)
-        wasi.stderr_file = str(stderr_path)
-
-        store.set_wasi(wasi)
-        module = Module.from_file(engine, str(SANDBOX_WASM_PATH))
-        result_container: dict[str, object] = {}
-
-        def run_wasm() -> None:
-            try:
-                instance = linker.instantiate(store, module)
-                exports = instance.exports(store)
-                start_func = exports["_start"]
-                if isinstance(start_func, Func):
-                    start_func(store)
-                else:
-                    msg = "_start is not a function"
-                    raise SandboxError(msg)  # noqa: TRY301
-            except SandboxError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                result_container["runtime_error"] = e
-
-        wasm_thread = threading.Thread(target=run_wasm)
-        wasm_thread.start()
-
-        try:
-            _send_code(f_in, code)
-            _process_loop(
-                f_out,
-                f_err,
-                f_in,
-                wasm_thread,
-                host_call_handler,
-                result_container,
+    with importlib.resources.as_file(ref) as wasm_path:
+        if not wasm_path.exists():
+            msg = (
+                f"sandbox.wasm is missing at {wasm_path}. Build the Wasm artifact before running "
+                "(e.g. `mise run sandbox:build`)."
             )
+            raise SandboxError(msg)
+
+        config = Config()
+        config.consume_fuel = True
+        engine = Engine(config)
+        store = Store(engine)
+        store.set_fuel(fuel_limit)
+
+        linker = Linker(engine)
+        linker.define_wasi()
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            tmp_path = Path(tmp_dir)
+            stdin_path = tmp_path / "stdin.fifo"
+            stdout_path = tmp_path / "stdout.fifo"
+            stderr_path = tmp_path / "stderr.fifo"
+
+            os.mkfifo(stdin_path)
+            os.mkfifo(stdout_path)
+            os.mkfifo(stderr_path)
+
+            # Open pipes (Host side) BEFORE configuring WASI
+            fd_in = os.open(stdin_path, os.O_RDWR)
+            fd_out = os.open(stdout_path, os.O_RDWR)
+            fd_err = os.open(stderr_path, os.O_RDWR)
+
+            f_in = os.fdopen(fd_in, "wb", buffering=0)
+            f_out = os.fdopen(fd_out, "rb", buffering=0)
+            f_err = os.fdopen(fd_err, "rb", buffering=0)
+
+            wasi = WasiConfig()
+            wasi.stdin_file = str(stdin_path)
+            wasi.stdout_file = str(stdout_path)
+            wasi.stderr_file = str(stderr_path)
+
+            store.set_wasi(wasi)
+            module = Module.from_file(engine, str(wasm_path))
+            result_container: dict[str, object] = {}
+
+            def run_wasm() -> None:
+                try:
+                    instance = linker.instantiate(store, module)
+                    exports = instance.exports(store)
+                    start_func = exports["_start"]
+                    if isinstance(start_func, Func):
+                        start_func(store)
+                    else:
+                        msg = "_start is not a function"
+                        raise SandboxError(msg)  # noqa: TRY301
+                except SandboxError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    result_container["runtime_error"] = e
+
+            wasm_thread = threading.Thread(target=run_wasm)
+            wasm_thread.start()
+
+            try:
+                _send_code(f_in, code)
+                _process_loop(
+                    f_out,
+                    f_err,
+                    f_in,
+                    wasm_thread,
+                    host_call_handler,
+                    result_container,
+                )
+            finally:
+                f_in.close()
+                f_out.close()
+                f_err.close()
+
+            wasm_thread.join(timeout=1)
+            _check_errors(result_container)
+
+            return result_container.get("result")
         finally:
-            f_in.close()
-            f_out.close()
-            f_err.close()
-
-        wasm_thread.join(timeout=1)
-        _check_errors(result_container)
-
-        return result_container.get("result")
-    finally:
-        shutil.rmtree(tmp_dir)
-
-
-# Note: the minimal JS fallback runner previously present here was removed.
-# The sandbox now strictly requires the real WebAssembly artifact to be
-# available; attempting to run without `sandbox.wasm` raises `SandboxError`.
+            shutil.rmtree(tmp_dir)
 
 
 def _send_code(f_in: BinaryIO, code: str) -> None:

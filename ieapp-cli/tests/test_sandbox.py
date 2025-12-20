@@ -1,6 +1,7 @@
 """Tests for the WebAssembly sandbox."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -54,9 +55,6 @@ def test_infinite_loop_fuel() -> None:
     with pytest.raises(Exception, match="fuel") as exc:
         run_script(code, _noop_handler, fuel_limit=fuel_limit)
     assert "fuel" in str(exc.value).lower()
-
-
-from unittest.mock import patch
 
 
 def test_missing_wasm_raises(tmp_path: Path) -> None:

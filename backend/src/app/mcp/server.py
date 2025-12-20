@@ -5,7 +5,7 @@ import logging
 
 from mcp.server.fastmcp import FastMCP
 
-from app.sandbox.python_sandbox import run_script
+from ieapp.sandbox import run_script
 
 logger = logging.getLogger(__name__)
 
