@@ -1,15 +1,14 @@
 """Tests for the WebAssembly sandbox."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-
 from ieapp.sandbox import (
     SandboxError,
     SandboxExecutionError,
     run_script,
 )
-from unittest.mock import patch
 
 
 def _noop_handler(_method: str, _path: str, _body: dict | None) -> None:

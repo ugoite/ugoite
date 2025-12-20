@@ -8,6 +8,8 @@ This script downloads a temporary Javy binary to compile ``runner.js`` into
 from __future__ import annotations
 
 import gzip
+import http.client
+import io
 import logging
 import os
 import platform
@@ -16,7 +18,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -75,19 +76,34 @@ def download_and_extract_javy(dest_path: Path) -> None:
     url = get_javy_url()
     logger.info("Downloading Javy from %s", url)
 
-    # Validate URL scheme before opening (avoid unexpected schemes like file:)
+    # Validate URL scheme and host before opening to avoid unexpected
+    # schemes (like file:) or hosts. We only accept HTTPS downloads from
+    # the GitHub releases domain used by `get_javy_url`.
     parsed = urlparse(url)
-    allowed_schemes = ("https",)
-    if parsed.scheme not in allowed_schemes:
-        msg = "Unsupported URL scheme for Javy download"
+    if parsed.scheme != "https" or parsed.netloc != "github.com":
+        msg = "Unsupported URL for Javy download"
         raise ValueError(msg)
 
-    # Use a single with-statement for multiple context managers and Path.open
+    # Use an explicit HTTPS connection and in-memory buffer to fetch the
+    # gzip-compressed Javy release. This avoids calling ``urllib.request``'s
+    # high-level open functions directly with an arbitrary URL (which can
+    # trigger security audits like S310), while still performing proper
+    # scheme/host validation above.
+    conn = http.client.HTTPSConnection(parsed.netloc, timeout=30)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = path + "?" + parsed.query
+
+    conn.request("GET", path)
+    resp = conn.getresponse()
+    if resp.status != http.client.OK:
+        msg = f"Failed to download Javy: HTTP {resp.status}"
+        raise RuntimeError(msg)
+
+    # Read response body into memory (should be small) and decompress
+    body = resp.read()
     with (
-        urllib.request.urlopen(url) as response,
-        gzip.GzipFile(  # noqa: S310 - scheme validated above
-            fileobj=response,
-        ) as uncompressed,
+        gzip.GzipFile(fileobj=io.BytesIO(body)) as uncompressed,
         dest_path.open("wb") as f_out,
     ):
         shutil.copyfileobj(uncompressed, f_out)

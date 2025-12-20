@@ -3,9 +3,8 @@
 import json
 import logging
 
-from mcp.server.fastmcp import FastMCP
-
 from ieapp.sandbox import run_script
+from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 

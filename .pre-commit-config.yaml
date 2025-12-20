@@ -3,6 +3,13 @@ repos:
     # Pin to a stable release tag to avoid mutable references; updated with `pre-commit autoupdate`
     rev: v0.14.10
     hooks:
+      - id: ruff
+        # Run ruff checks in pre-commit and select all error codes to match
+        # the GitHub Actions configuration (`ruff check --select ALL .`).
+        # Also apply auto-fixes during pre-commit so fixable issues are
+        # corrected before committing.
+        args: ["--select", "ALL", "--fix"]
+
       - id: ruff-format
         # Use ruff's format hook to apply auto-formatting on commit
         # (this replaces the legacy `ruff` alias)
