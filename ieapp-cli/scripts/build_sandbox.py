@@ -43,14 +43,15 @@ def get_javy_url() -> str:
     system = platform.system().lower()
     machine = platform.machine().lower()
 
+    # We only support Linux releases at the moment. Fail fast to avoid
+    # constructing an incorrect Linux-specific download URL on other
+    # platforms (which would otherwise lead to confusing errors).
     if system != "linux":
-        # For now, we only support Linux as per the original script,
-        # but we can easily add Mac/Windows support if needed.
-        # The dev container is Linux.
-        logger.warning(
-            "This build script is optimized for Linux. Detected: %s",
-            system,
+        msg = (
+            f"Unsupported operating system for Javy download: {system}. "
+            "This script supports Linux only."
         )
+        raise RuntimeError(msg)
 
     if machine in ("x86_64", "amd64"):
         arch = "x86_64"
@@ -84,48 +85,10 @@ def download_and_extract_javy(dest_path: Path) -> None:
         msg = "Only HTTPS URLs are supported for Javy download"
         raise ValueError(msg)
 
-    # Fetch the gzip-compressed Javy release following up to a few
-    # redirects. GitHub releases can return 302/303 redirects to
-    # storage hosts (e.g. github-releases.githubusercontent.com), so we
-    # must follow those explicitly when using a low-level HTTP client.
-    max_redirects = 5
-    current_url = url
-    resp = None
-    for _ in range(max_redirects):
-        parsed = urlparse(current_url)
-        conn = http.client.HTTPSConnection(parsed.netloc, timeout=30)
-        path = parsed.path or "/"
-        if parsed.query:
-            path = path + "?" + parsed.query
-
-        conn.request("GET", path)
-        resp = conn.getresponse()
-
-        # Successful response
-        if resp.status == http.client.OK:
-            break
-
-        # Handle redirects (301, 302, 303, 307, 308)
-        if resp.status in (301, 302, 303, 307, 308):
-            loc = resp.getheader("location")
-            if not loc:
-                msg = f"Failed to download Javy: HTTP {resp.status} (no Location)"
-                raise RuntimeError(msg)
-            # Build absolute URL for the redirect and continue
-            current_url = urljoin(current_url, loc)
-            logger.info("Redirecting Javy download to %s", current_url)
-            continue
-
-        # Any other error
-        msg = f"Failed to download Javy: HTTP {resp.status}"
-        raise RuntimeError(msg)
-
-    if resp is None or resp.status != http.client.OK:
-        msg = "Failed to download Javy: too many redirects or no successful response"
-        raise RuntimeError(msg)
+    # Download the release and write it to `dest_path`.
+    body = _fetch_url_body(url)
 
     # Read response body into memory (should be small) and decompress
-    body = resp.read()
     with (
         gzip.GzipFile(fileobj=io.BytesIO(body)) as uncompressed,
         dest_path.open("wb") as f_out,
@@ -136,6 +99,58 @@ def download_and_extract_javy(dest_path: Path) -> None:
     mode = dest_path.stat().st_mode | stat.S_IEXEC
     dest_path.chmod(mode)
     logger.info("Javy downloaded to %s", dest_path)
+
+
+def _fetch_url_body(url: str, max_redirects: int = 5) -> bytes:
+    """Fetch a URL and follow redirects, returning the response body.
+
+    This helper keeps redirect logic isolated so the public function can
+    remain small and easy to test.
+    """
+    current_url = url
+    for _ in range(max_redirects):
+        parsed = urlparse(current_url)
+        if parsed.scheme != "https":
+            msg = "Only HTTPS URLs are supported for Javy download"
+            raise ValueError(msg)
+
+        conn = http.client.HTTPSConnection(parsed.netloc, timeout=30)
+        path = parsed.path or "/"
+        if parsed.query:
+            path = path + "?" + parsed.query
+
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+
+            # Successful response; read and return the body.
+            if resp.status == http.client.OK:
+                return resp.read()
+
+            # Handle redirects (301, 302, 303, 307, 308)
+            if resp.status in (301, 302, 303, 307, 308):
+                loc = resp.getheader("location")
+                if not loc:
+                    msg = f"Failed to download Javy: HTTP {resp.status} (no Location)"
+                    raise RuntimeError(msg)
+                current_url = urljoin(current_url, loc)
+                logger.info("Redirecting Javy download to %s", current_url)
+                continue
+
+            # Any other error
+            msg = f"Failed to download Javy: HTTP {resp.status}"
+            raise RuntimeError(msg)
+
+        finally:
+            close = getattr(conn, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except OSError:
+                    logger.debug("Closing connection failed", exc_info=True)
+
+    msg = "Failed to download Javy: too many redirects or no successful response"
+    raise RuntimeError(msg)
 
 
 def build_sandbox() -> None:
