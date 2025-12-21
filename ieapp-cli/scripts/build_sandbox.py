@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 # Configuration
-JAVY_VERSION = "v3.0.1"  # Keep consistent with previous version for stability
+JAVY_VERSION = "v8.0.0"  # Keep consistent with previous version for stability
 JAVY_REPO = "bytecodealliance/javy"
 
 logger = logging.getLogger(__name__)
@@ -185,10 +185,39 @@ def build_sandbox() -> None:
                 msg = f"Javy binary is not executable: {javy_bin}"
                 _raise(PermissionError(msg))
 
+            # Determine the appropriate subcommand to use. Newer Javy
+            # releases (v8+) expose a `build` subcommand; older releases
+            # used `compile`. Probe the binary's help output to decide.
+            try:
+                proc = subprocess.run(
+                    [str(javy_bin), "--help"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                help_out = (proc.stdout or "") + (proc.stderr or "")
+                help_lower = help_out.lower()
+                if "compile" in help_lower:
+                    subcmd = "compile"
+                elif "build" in help_lower:
+                    subcmd = "build"
+                else:
+                    # Prefer newer `build` command as a sensible default.
+                    subcmd = "build"
+            except (
+                subprocess.SubprocessError,
+                OSError,
+            ) as exc:
+                # If probing fails, default to `build` and allow the
+                # subsequent subprocess.run to report a more helpful error
+                # if the subcommand is unsupported.
+                logger.debug("Failed to probe javy help: %s", exc)
+                subcmd = "build"
+
             subprocess.run(
                 [
                     str(javy_bin),
-                    "compile",
+                    subcmd,
                     str(runner_js),
                     "-o",
                     str(output_wasm),
