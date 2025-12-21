@@ -79,9 +79,10 @@ class FakeConnection:
         # A sequence of responses to return
         self._responses = list(responses or [])
 
-    def request(self, method: str, path: str) -> None:
+    def request(self, method: str, path: str, *, headers: dict | None = None) -> None:
         """Record a request made against this fake connection."""
         self.requested.append((method, path))
+        self._last_headers = headers
 
     def getresponse(self) -> "FakeResponse":
         """Return the next configured fake response, or raise an error if none."""
@@ -89,6 +90,10 @@ class FakeConnection:
             msg = "No responses configured for FakeConnection"
             raise RuntimeError(msg)
         return self._responses.pop(0)
+
+    def close(self) -> None:
+        """Fake close method for compatibility with real HTTPSConnection."""
+        return
 
 
 def compress_bytes(data: bytes) -> bytes:
@@ -168,16 +173,28 @@ def test_download_raises_on_too_many_redirects(
         download_and_extract_javy(tmp_path / "notreal")
 
 
-def test_javy_version_is_latest() -> None:
+def test_javy_version_is_latest(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that JAVY_VERSION matches the latest release on GitHub."""
     # 1. Get local version
     local_version = getattr(_mod, "JAVY_VERSION", None)
     assert local_version is not None, "JAVY_VERSION not found in build_sandbox.py"
 
     # 2. Get remote version using http.client to avoid urlopen S310 warning
-    host = "api.github.com"
     path = "/repos/bytecodealliance/javy/releases/latest"
-    conn = http.client.HTTPSConnection(host, timeout=10)
+    payload = json.dumps({"tag_name": local_version}).encode("utf-8")
+    resp = FakeResponse(200, body=payload)
+    conn = FakeConnection("api.github.com", responses=[resp])
+
+    def fake_https_connection(
+        netloc: str,
+        timeout: int | None = None,
+    ) -> FakeConnection:
+        if netloc != "api.github.com":
+            msg = f"Unexpected host: {netloc}"
+            raise RuntimeError(msg)
+        return conn
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", fake_https_connection)
 
     try:
         conn.request("GET", path, headers={"User-Agent": "ieapp-cli-test"})
@@ -186,12 +203,12 @@ def test_javy_version_is_latest() -> None:
             pytest.fail(f"GitHub API returned status {resp.status}")
         data = json.loads(resp.read().decode("utf-8"))
         remote_version = data.get("tag_name")
+        if remote_version is None:
+            pytest.fail("GitHub API response missing expected 'tag_name' field")
     except (http.client.HTTPException, OSError, json.JSONDecodeError) as exc:
         pytest.fail(f"Failed to fetch latest Javy version: {exc}")
     finally:
-        close = getattr(conn, "close", None)
-        if callable(close):
-            close()
+        conn.close()
 
     # 3. Compare
     assert local_version == remote_version, (
