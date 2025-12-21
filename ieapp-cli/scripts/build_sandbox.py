@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 # Configuration
 JAVY_VERSION = "v3.0.1"  # Keep consistent with previous version for stability
@@ -80,24 +80,48 @@ def download_and_extract_javy(dest_path: Path) -> None:
     # schemes (like file:) or hosts. We only accept HTTPS downloads from
     # the GitHub releases domain used by `get_javy_url`.
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc != "github.com":
-        msg = "Unsupported URL for Javy download"
+    if parsed.scheme != "https":
+        msg = "Only HTTPS URLs are supported for Javy download"
         raise ValueError(msg)
 
-    # Use an explicit HTTPS connection and in-memory buffer to fetch the
-    # gzip-compressed Javy release. This avoids calling ``urllib.request``'s
-    # high-level open functions directly with an arbitrary URL (which can
-    # trigger security audits like S310), while still performing proper
-    # scheme/host validation above.
-    conn = http.client.HTTPSConnection(parsed.netloc, timeout=30)
-    path = parsed.path or "/"
-    if parsed.query:
-        path = path + "?" + parsed.query
+    # Fetch the gzip-compressed Javy release following up to a few
+    # redirects. GitHub releases can return 302/303 redirects to
+    # storage hosts (e.g. github-releases.githubusercontent.com), so we
+    # must follow those explicitly when using a low-level HTTP client.
+    max_redirects = 5
+    current_url = url
+    resp = None
+    for _ in range(max_redirects):
+        parsed = urlparse(current_url)
+        conn = http.client.HTTPSConnection(parsed.netloc, timeout=30)
+        path = parsed.path or "/"
+        if parsed.query:
+            path = path + "?" + parsed.query
 
-    conn.request("GET", path)
-    resp = conn.getresponse()
-    if resp.status != http.client.OK:
+        conn.request("GET", path)
+        resp = conn.getresponse()
+
+        # Successful response
+        if resp.status == http.client.OK:
+            break
+
+        # Handle redirects (301, 302, 303, 307, 308)
+        if resp.status in (301, 302, 303, 307, 308):
+            loc = resp.getheader("location")
+            if not loc:
+                msg = f"Failed to download Javy: HTTP {resp.status} (no Location)"
+                raise RuntimeError(msg)
+            # Build absolute URL for the redirect and continue
+            current_url = urljoin(current_url, loc)
+            logger.info("Redirecting Javy download to %s", current_url)
+            continue
+
+        # Any other error
         msg = f"Failed to download Javy: HTTP {resp.status}"
+        raise RuntimeError(msg)
+
+    if resp is None or resp.status != http.client.OK:
+        msg = "Failed to download Javy: too many redirects or no successful response"
         raise RuntimeError(msg)
 
     # Read response body into memory (should be small) and decompress
