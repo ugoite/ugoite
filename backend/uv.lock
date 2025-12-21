@@ -297,6 +297,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "typer" },
+    { name = "wasmtime" },
 ]
 
 [package.metadata]
@@ -305,6 +306,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "typer", specifier = ">=0.15.0" },
+    { name = "wasmtime", specifier = ">=26.0.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -16,7 +16,9 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Run ruff check
-        run: uvx ruff check --select ALL .
+        # Ignore in-source `# noqa` comments to ensure they cannot silence
+        # linting failures in CI. This mirrors the pre-commit behavior.
+        run: uvx ruff check --select ALL --ignore-noqa .
 
       - name: Run ruff format check
         run: uvx ruff format --check .
@@ -29,11 +31,8 @@ jobs:
         working-directory: ./ieapp-cli
         run: uv run ty check .
 
-      - name: Install Javy (for wasm sandbox)
-        run: bash scripts/setup_javy.sh
-
       - name: Build sandbox.wasm
-        run: bash backend/src/app/sandbox/build_sandbox_wasm.sh
+        run: uv run ieapp-cli/scripts/build_sandbox.py
 
       - name: Run pytest (backend)
         working-directory: ./backend

@@ -1,0 +1,32 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pin to a stable release tag to avoid mutable references; updated with `pre-commit autoupdate`
+    rev: v0.14.10
+    hooks:
+      - id: ruff
+        # Run ruff checks in pre-commit and select all error codes to match
+        # the GitHub Actions configuration (`ruff check --select ALL .`).
+        # Ignore any in-source `# noqa` directives so they cannot bypass
+        # the linter; apply auto-fixes during pre-commit to correct fixable
+        # issues before committing.
+        args: ["--select", "ALL", "--ignore-noqa", "--fix"]
+
+      - id: ruff-format
+        # Use ruff's format hook to apply auto-formatting on commit
+        # (this replaces the legacy `ruff` alias)
+
+  - repo: local
+    hooks:
+      - id: ty-backend
+        name: "ty: backend type check"
+        entry: bash -c "cd backend && uv run ty check ."
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ty-cli
+        name: "ty: ieapp-cli type check"
+        entry: bash -c "cd ieapp-cli && uv run ty check ."
+        language: system
+        pass_filenames: false
+        always_run: true

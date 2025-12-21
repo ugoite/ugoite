@@ -38,7 +38,7 @@ def workspace_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def fake_integrity_provider() -> Any:  # noqa: ANN401
+def fake_integrity_provider() -> Any:
     """Create a fake integrity provider for testing."""
 
     class _FakeIntegrityProvider:
@@ -57,7 +57,7 @@ def fake_integrity_provider() -> Any:  # noqa: ANN401
     return _FakeIntegrityProvider()
 
 
-def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -> None:  # noqa: ANN401
+def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -> None:
     """Verifies that creating a note generates the required file structure."""
     note_id = "note-1"
     content = "# My Note\n\nHello World"
@@ -89,7 +89,7 @@ def test_create_note_basic(workspace_root: Path, fake_integrity_provider: Any) -
 
 def test_update_note_revision_mismatch(
     workspace_root: Path,
-    fake_integrity_provider: Any,  # noqa: ANN401
+    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that updating a note requires the correct parent_revision_id."""
     note_id = "note-2"
@@ -147,7 +147,7 @@ def test_update_note_revision_mismatch(
 
 def test_note_history_append(
     workspace_root: Path,
-    fake_integrity_provider: Any,  # noqa: ANN401
+    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that updating a note appends to history and updates index."""
     note_id = "note-history"
@@ -208,7 +208,7 @@ def test_note_history_append(
 
 def test_markdown_sections_persist(
     workspace_root: Path,
-    fake_integrity_provider: Any,  # noqa: ANN401
+    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that frontmatter and sections persist to storage."""
     note_id = "note-structured"
@@ -232,7 +232,7 @@ def test_markdown_sections_persist(
 
 def test_note_history_diff(
     workspace_root: Path,
-    fake_integrity_provider: Any,  # noqa: ANN401
+    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that updating a note stores the diff in the history file."""
     note_id = "note-diff"
@@ -270,7 +270,7 @@ def test_note_history_diff(
 
 def test_note_author_persistence(
     workspace_root: Path,
-    fake_integrity_provider: Any,  # noqa: ANN401
+    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that the author field is persisted correctly."""
     note_id = "note-author"

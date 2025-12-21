@@ -10,3 +10,7 @@ outputs = ["src/app/sandbox/sandbox.wasm"]
 depends = ["build-sandbox"]
 run = "uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+[tasks.test]
+run = "uv run pytest"
+description = "Run backend pytest suite"
+

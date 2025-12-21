@@ -35,7 +35,7 @@ def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
     """
 
     @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> R:  # noqa: ANN401
+    def wrapper(*args: Any, **kwargs: Any) -> R:
         try:
             return func(*args, **kwargs)
         except Exception as e:

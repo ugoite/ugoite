@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 def test_create_workspace(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a new workspace."""
     response = test_client.post("/workspaces", json={"name": "test-ws"})
-    assert response.status_code == 201  # noqa: PLR2004
+    assert response.status_code == 201
     data = response.json()
     assert data["id"] == "test-ws"
     assert data["name"] == "test-ws"
@@ -25,7 +25,7 @@ def test_create_workspace(test_client: TestClient, temp_workspace_root: Path) ->
 
 def test_create_workspace_conflict(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test creating a workspace that already exists."""
     # Create first time
@@ -33,13 +33,13 @@ def test_create_workspace_conflict(
 
     # Create second time
     response = test_client.post("/workspaces", json={"name": "test-ws"})
-    assert response.status_code == 409  # noqa: PLR2004
+    assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
 
 
 def test_list_workspaces(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test listing workspaces."""
     # Create some workspaces
@@ -47,32 +47,32 @@ def test_list_workspaces(
     test_client.post("/workspaces", json={"name": "ws2"})
 
     response = test_client.get("/workspaces")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 2  # noqa: PLR2004
+    assert len(data) == 2
 
 
 def test_get_workspace(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific workspace."""
     test_client.post("/workspaces", json={"name": "test-ws"})
 
     response = test_client.get("/workspaces/test-ws")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert data["id"] == "test-ws"
 
 
 def test_get_workspace_not_found(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting a non-existent workspace."""
     response = test_client.get("/workspaces/nonexistent")
-    assert response.status_code == 404  # noqa: PLR2004
+    assert response.status_code == 404
 
 
 def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None:
@@ -85,7 +85,7 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
     }
 
     response = test_client.post("/workspaces/test-ws/notes", json=note_payload)
-    assert response.status_code == 201  # noqa: PLR2004
+    assert response.status_code == 201
     data = response.json()
     assert "id" in data
     note_id = data["id"]
@@ -98,7 +98,7 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
 
 def test_create_note_conflict(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test creating a note with an existing ID (if ID is provided)."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -114,12 +114,12 @@ def test_create_note_conflict(
 
     # Try again
     response = test_client.post("/workspaces/test-ws/notes", json=note_payload)
-    assert response.status_code == 409  # noqa: PLR2004
+    assert response.status_code == 409
 
 
 def test_list_notes(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test listing notes in a workspace."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -133,15 +133,15 @@ def test_list_notes(
     )
 
     response = test_client.get("/workspaces/test-ws/notes")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 2  # noqa: PLR2004
+    assert len(data) == 2
 
 
 def test_get_note(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -151,7 +151,7 @@ def test_get_note(
     )
 
     response = test_client.get("/workspaces/test-ws/notes/test-note")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert data["id"] == "test-note"
     assert data["title"] == "Test Note"
@@ -160,18 +160,18 @@ def test_get_note(
 
 def test_get_note_not_found(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting a non-existent note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
 
     response = test_client.get("/workspaces/test-ws/notes/nonexistent")
-    assert response.status_code == 404  # noqa: PLR2004
+    assert response.status_code == 404
 
 
 def test_update_note(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test updating a note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -194,7 +194,7 @@ def test_update_note(
         "/workspaces/test-ws/notes/test-note",
         json=update_payload,
     )
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Updated Title"
     assert "New content" in data["markdown"]
@@ -202,7 +202,7 @@ def test_update_note(
 
 def test_update_note_conflict(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test updating a note with a stale parent_revision_id returns 409."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -232,7 +232,7 @@ def test_update_note_conflict(
             "parent_revision_id": original_revision_id,  # Stale!
         },
     )
-    assert response.status_code == 409  # noqa: PLR2004
+    assert response.status_code == 409
     # Should include the current revision for client merge
     detail = response.json()["detail"]
     assert "conflict" in str(detail).lower() or "current_revision" in str(detail)
@@ -240,7 +240,7 @@ def test_update_note_conflict(
 
 def test_delete_note(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test deleting (tombstoning) a note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -250,7 +250,7 @@ def test_delete_note(
     )
 
     response = test_client.delete("/workspaces/test-ws/notes/test-note")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert data["status"] == "deleted"
 
@@ -263,7 +263,7 @@ def test_delete_note(
 
 def test_get_note_history(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting note history."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -287,15 +287,15 @@ def test_get_note_history(
 
     # Get history
     response = test_client.get("/workspaces/test-ws/notes/test-note/history")
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert "revisions" in data
-    assert len(data["revisions"]) == 2  # noqa: PLR2004
+    assert len(data["revisions"]) == 2
 
 
 def test_get_note_revision(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific revision."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -312,14 +312,14 @@ def test_get_note_revision(
     response = test_client.get(
         f"/workspaces/test-ws/notes/test-note/history/{revision_id}",
     )
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert data["revision_id"] == revision_id
 
 
 def test_restore_note(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test restoring a note to a previous revision."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -346,7 +346,7 @@ def test_restore_note(
         "/workspaces/test-ws/notes/test-note/restore",
         json={"revision_id": original_revision_id},
     )
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     data = response.json()
     assert "revision_id" in data
     assert data["restored_from"] == original_revision_id
@@ -354,7 +354,7 @@ def test_restore_note(
 
 def test_query_notes(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test structured query endpoint."""
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -371,13 +371,13 @@ def test_query_notes(
     # Or, we just test that the endpoint exists and returns empty list for now.
 
     response = test_client.post("/workspaces/test-ws/query", json={"filter": {}})
-    assert response.status_code == 200  # noqa: PLR2004
+    assert response.status_code == 200
     assert isinstance(response.json(), list)
 
 
 def test_middleware_headers(
     test_client: TestClient,
-    temp_workspace_root: Path,  # noqa: ARG001
+    temp_workspace_root: Path,
 ) -> None:
     """Test that security headers are present."""
     response = test_client.get("/")
@@ -407,6 +407,6 @@ def test_middleware_hmac_signature(
 def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
     """Ensure remote clients are rejected unless explicitly allowed."""
     response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
-    assert response.status_code == 403  # noqa: PLR2004
+    assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
     assert "X-IEApp-Signature" in response.headers
