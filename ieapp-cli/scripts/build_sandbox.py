@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 # Configuration
-JAVY_VERSION = "v3.0.1"  # Keep consistent with previous version for stability
+JAVY_VERSION = "v8.0.0"  # Keep consistent with previous version for stability
 JAVY_REPO = "bytecodealliance/javy"
 
 logger = logging.getLogger(__name__)

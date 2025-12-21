@@ -3,6 +3,7 @@
 import gzip
 import http.client
 import importlib.util
+import json
 import os
 from pathlib import Path
 from types import ModuleType
@@ -165,3 +166,35 @@ def test_download_raises_on_too_many_redirects(
     with pytest.raises(RuntimeError):
         # Use a tmp_path to avoid hard-coded /tmp usage
         download_and_extract_javy(tmp_path / "notreal")
+
+
+def test_javy_version_is_latest() -> None:
+    """Verify that JAVY_VERSION matches the latest release on GitHub."""
+    # 1. Get local version
+    local_version = getattr(_mod, "JAVY_VERSION", None)
+    assert local_version is not None, "JAVY_VERSION not found in build_sandbox.py"
+
+    # 2. Get remote version using http.client to avoid urlopen S310 warning
+    host = "api.github.com"
+    path = "/repos/bytecodealliance/javy/releases/latest"
+    conn = http.client.HTTPSConnection(host, timeout=10)
+
+    try:
+        conn.request("GET", path, headers={"User-Agent": "ieapp-cli-test"})
+        resp = conn.getresponse()
+        if resp.status != http.client.OK:
+            pytest.fail(f"GitHub API returned status {resp.status}")
+        data = json.loads(resp.read().decode("utf-8"))
+        remote_version = data.get("tag_name")
+    except (http.client.HTTPException, OSError, json.JSONDecodeError) as exc:
+        pytest.fail(f"Failed to fetch latest Javy version: {exc}")
+    finally:
+        close = getattr(conn, "close", None)
+        if callable(close):
+            close()
+
+    # 3. Compare
+    assert local_version == remote_version, (
+        f"Local JAVY_VERSION ({local_version}) is outdated. "
+        f"Latest release is {remote_version}."
+    )
