@@ -198,3 +198,65 @@ def test_javy_version_is_latest() -> None:
         f"Local JAVY_VERSION ({local_version}) is outdated. "
         f"Latest release is {remote_version}."
     )
+
+
+def test_build_sandbox_uses_build_when_compile_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ensure build_sandbox falls back to `build` when `compile` is not available.
+
+    This test replaces `download_and_extract_javy` with a stub that writes a
+    small fake `javy` executable which advertises `build` in its help and
+    implements the `build` subcommand by creating the output file.
+    """
+    # Prepare a fake javy script that only supports `build`
+    fake_javy = tmp_path / "javy"
+    fake_javy.write_text(
+        """#!/bin/sh
+if [ "$1" = "--help" ]; then
+    echo "Usage: javy build <input> -o <output>"
+    exit 0
+fi
+if [ "$1" = "build" ]; then
+    # find -o and write a pretend wasm file
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "-o" ]; then
+            shift
+            echo "FAKE-WASM" > "$1"
+            exit 0
+        fi
+        shift
+    done
+    exit 1
+fi
+exit 1
+""",
+    )
+    fake_javy.chmod(0o755)
+
+    # Monkeypatch the download function to write our fake javy to the
+    # destination path and make it executable.
+    def _fake_download(dest_path: Path) -> None:
+        dest_path.write_bytes(fake_javy.read_bytes())
+        dest_path.chmod(0o755)
+
+    monkeypatch.setattr(_mod, "download_and_extract_javy", _fake_download)
+
+    # Ensure runner.js exists at the expected location and remove any
+    # pre-existing output file so the test is deterministic.
+    script_dir = Path(__file__).parent.parent / "scripts"
+    sandbox_dir = script_dir.parent / "src" / "ieapp" / "sandbox"
+    runner_js = sandbox_dir / "runner.js"
+    output_wasm = sandbox_dir / "sandbox.wasm"
+
+    if not runner_js.exists():
+        runner_js.write_text("// dummy runner")
+    if output_wasm.exists():
+        output_wasm.unlink()
+
+    # Run build_sandbox which should call our fake javy and create the file
+    _mod.build_sandbox()
+
+    assert output_wasm.exists()
+    assert output_wasm.read_text().strip() == "FAKE-WASM"
