@@ -218,6 +218,7 @@ if [ "$1" = "--help" ]; then
     echo "Usage: javy build <input> -o <output>"
     exit 0
 fi
+
 if [ "$1" = "build" ]; then
     # find -o and write a pretend wasm file
     while [ "$#" -gt 0 ]; do
@@ -252,11 +253,16 @@ exit 1
 
     if not runner_js.exists():
         runner_js.write_text("// dummy runner")
-    if output_wasm.exists():
-        output_wasm.unlink()
 
-    # Run build_sandbox which should call our fake javy and create the file
-    _mod.build_sandbox()
+    original_bytes = output_wasm.read_bytes() if output_wasm.exists() else None
+    try:
+        # Run build_sandbox which should call our fake javy and create the file
+        _mod.build_sandbox()
 
-    assert output_wasm.exists()
-    assert output_wasm.read_text().strip() == "FAKE-WASM"
+        assert output_wasm.exists()
+        assert output_wasm.read_text().strip() == "FAKE-WASM"
+    finally:
+        if original_bytes is None:
+            output_wasm.unlink(missing_ok=True)
+        else:
+            output_wasm.write_bytes(original_bytes)
