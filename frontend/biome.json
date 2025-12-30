@@ -7,7 +7,15 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"ignore": ["node_modules", "dist", ".solid", ".vinxi", "playwright-report", "test-results", "coverage"]
+		"ignore": [
+			"node_modules",
+			"dist",
+			".solid",
+			".vinxi",
+			"playwright-report",
+			"test-results",
+			"coverage"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -34,7 +42,12 @@
 	},
 	"overrides": [
 		{
-			"include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test/**"],
+			"include": [
+				"**/*.test.ts",
+				"**/*.test.tsx",
+				"**/*.spec.ts",
+				"**/test/**"
+			],
 			"linter": {
 				"rules": {
 					"suspicious": {

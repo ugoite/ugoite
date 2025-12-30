@@ -33,7 +33,9 @@ export function NoteList(props: NoteListProps) {
 				</div>
 			</Show>
 
-			<Show when={!store.loading() && store.notes().length === 0 && !store.error()}>
+			<Show
+				when={!store.loading() && store.notes().length === 0 && !store.error()}
+			>
 				<div class="empty-state p-8 text-center text-gray-500">
 					<p>No notes yet</p>
 					<p class="text-sm mt-2">Create your first note to get started</p>
@@ -64,7 +66,8 @@ interface NoteListItemProps {
 }
 
 function NoteListItem(props: NoteListItemProps) {
-	const propertyEntries = () => Object.entries(props.note.properties).slice(0, 3);
+	const propertyEntries = () =>
+		Object.entries(props.note.properties).slice(0, 3);
 
 	const formatDate = (dateStr: string) => {
 		try {
@@ -86,31 +89,31 @@ function NoteListItem(props: NoteListItemProps) {
 				onClick={props.onClick}
 				aria-pressed={props.isSelected}
 			>
-			<div class="flex justify-between items-start">
-				<h3 class="font-semibold text-gray-900 truncate">
-					{props.note.title || "Untitled"}
-				</h3>
-				<Show when={props.note.class}>
-					<span class="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
-						{props.note.class}
-					</span>
-				</Show>
-			</div>
-
-			<Show when={propertyEntries().length > 0}>
-				<div class="mt-2 text-sm text-gray-600 space-y-1">
-					<For each={propertyEntries()}>
-						{([key, value]) => (
-							<div class="flex">
-								<span class="font-medium text-gray-500 mr-2">{key}:</span>
-								<span class="truncate">
-									{typeof value === "string" ? value : JSON.stringify(value)}
-								</span>
-							</div>
-						)}
-					</For>
+				<div class="flex justify-between items-start">
+					<h3 class="font-semibold text-gray-900 truncate">
+						{props.note.title || "Untitled"}
+					</h3>
+					<Show when={props.note.class}>
+						<span class="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
+							{props.note.class}
+						</span>
+					</Show>
 				</div>
-			</Show>
+
+				<Show when={propertyEntries().length > 0}>
+					<div class="mt-2 text-sm text-gray-600 space-y-1">
+						<For each={propertyEntries()}>
+							{([key, value]) => (
+								<div class="flex">
+									<span class="font-medium text-gray-500 mr-2">{key}:</span>
+									<span class="truncate">
+										{typeof value === "string" ? value : JSON.stringify(value)}
+									</span>
+								</div>
+							)}
+						</For>
+					</div>
+				</Show>
 
 				<div class="mt-2 text-xs text-gray-400">
 					Updated: {formatDate(props.note.updated_at)}

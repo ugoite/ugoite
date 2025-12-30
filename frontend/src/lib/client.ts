@@ -29,7 +29,9 @@ export const workspaceApi = {
 		});
 		if (!res.ok) {
 			const error = (await res.json()) as { detail?: string };
-			throw new Error(error.detail || `Failed to create workspace: ${res.statusText}`);
+			throw new Error(
+				error.detail || `Failed to create workspace: ${res.statusText}`,
+			);
 		}
 		return (await res.json()) as { id: string; name: string };
 	},
@@ -78,7 +80,9 @@ export const noteApi = {
 		});
 		if (!res.ok) {
 			const error = (await res.json()) as { detail?: string };
-			throw new Error(error.detail || `Failed to create note: ${res.statusText}`);
+			throw new Error(
+				error.detail || `Failed to create note: ${res.statusText}`,
+			);
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
@@ -100,9 +104,14 @@ export const noteApi = {
 				current_revision_id?: string;
 			};
 			if (res.status === 409) {
-				throw new RevisionConflictError(error.detail || "Revision mismatch", error.current_revision_id);
+				throw new RevisionConflictError(
+					error.detail || "Revision mismatch",
+					error.current_revision_id,
+				);
 			}
-			throw new Error(error.detail || `Failed to update note: ${res.statusText}`);
+			throw new Error(
+				error.detail || `Failed to update note: ${res.statusText}`,
+			);
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
