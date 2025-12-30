@@ -6,7 +6,8 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"ignoreUnknown": false
+		"ignoreUnknown": false,
+		"ignore": ["node_modules", "dist", ".solid", ".vinxi", "playwright-report", "test-results", "coverage"]
 	},
 	"formatter": {
 		"enabled": true,
@@ -30,5 +31,17 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		}
+	]
 }

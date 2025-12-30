@@ -63,7 +63,7 @@
 ## Milestone 5 — Frontend Thin Slice (Specs: 02 Story 2 & 4, 04 REST usage)
 - **Goal**: Solid Start app with login-less local mode, list view, markdown editor pushing to REST.
 - **TDD Steps**:
-  1. Component tests (bun test) for note list store interacting with REST mocks.
+  1. Component tests (vitest) for note list store interacting with REST mocks.
   2. Playwright smoke: create note → see header extracted (uses index query stub).
   3. Visual regression baseline for canvas placeholder (even if static positions for now).
 - **Implementation Notes**:
