@@ -1,4 +1,4 @@
-# IEapp AI Agent Development Guide
+# IE-app AI Agent Development Guide
 
 ## 🎯 Project Context
 
