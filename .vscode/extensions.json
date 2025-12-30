@@ -8,6 +8,7 @@
 		"tombi-toml.tombi",
 		"mermaidchart.vscode-mermaid-chart",
 		"github.vscode-pull-request-github",
-		"github.vscode-github-actions"
+		"github.vscode-github-actions",
+		"ms-vscode.vscode-websearchforcopilot"
 	]
 }
