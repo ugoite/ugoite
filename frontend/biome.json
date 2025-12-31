@@ -20,30 +20,30 @@
 			"recommended": true,
 			"correctness": {
 				"recommended": true,
-				"noNodejsModules": "off",
-				"noUndeclaredDependencies": "off",
+				"noNodejsModules": "error",
+				"noUndeclaredDependencies": "error",
 				"useHookAtTopLevel": "error"
 			},
 			"style": {
 				"recommended": true,
-				"noDefaultExport": "off",
-				"useFilenamingConvention": "off",
-				"useNamingConvention": "off"
+				"noDefaultExport": "error",
+				"useFilenamingConvention": "error",
+				"useNamingConvention": "error"
 			},
 			"suspicious": {
 				"recommended": true,
-				"noConsole": "warn",
-				"noReactSpecificProps": "off",
+				"noConsole": "error",
+				"noReactSpecificProps": "error",
 				"noArrayIndexKey": "error",
 				"noAssignInExpressions": "error",
 				"noDoubleEquals": "error",
-				"noExplicitAny": "warn",
+				"noExplicitAny": "error",
 				"noImplicitAnyLet": "error"
 			},
 			"complexity": {
 				"recommended": true,
-				"noExcessiveCognitiveComplexity": "off",
-				"noForEach": "warn",
+				"noExcessiveCognitiveComplexity": "error",
+				"noForEach": "error",
 				"noUselessFragments": "error"
 			},
 			"a11y": {
@@ -95,7 +95,7 @@
 			}
 		},
 		{
-			"includes": ["**/routes/**/*.tsx"],
+			"includes": ["**/routes/**/*.tsx", "app.config.ts", "src/entry-client.tsx", "src/entry-server.tsx"],
 			"linter": {
 				"rules": {
 					"style": {
