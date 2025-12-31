@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { CanvasPlaceholder } from "./CanvasPlaceholder";
@@ -60,9 +61,7 @@ describe("CanvasPlaceholder", () => {
 	});
 
 	it("should highlight selected note", () => {
-		render(() => (
-			<CanvasPlaceholder notes={mockNotes} selectedNoteId="note-1" />
-		));
+		render(() => <CanvasPlaceholder notes={mockNotes} selectedNoteId="note-1" />);
 
 		const cards = screen.getAllByTestId("canvas-note-card");
 		expect(cards[0]).toHaveClass("border-blue-500");

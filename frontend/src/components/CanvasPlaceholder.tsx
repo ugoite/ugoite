@@ -62,8 +62,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 				<div
 					class="absolute inset-0 pointer-events-none"
 					style={{
-						"background-image":
-							"radial-gradient(circle, #ddd 1px, transparent 1px)",
+						"background-image": "radial-gradient(circle, #ddd 1px, transparent 1px)",
 						"background-size": "20px 20px",
 					}}
 				/>
@@ -95,13 +94,13 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 				>
 					<For each={props.notes}>
 						{(note, index) => {
-							const pos = () =>
-								note.canvas_position || getPosition(index());
+							const pos = () => note.canvas_position || getPosition(index());
 							const isSelected = () => props.selectedNoteId === note.id;
 
 							return (
-								<div
+								<button
 									data-testid="canvas-note-card"
+									type="button"
 									class={`absolute w-[280px] bg-white rounded-lg shadow-md border-2 transition-all cursor-pointer hover:shadow-lg ${
 										isSelected()
 											? "border-blue-500 ring-2 ring-blue-200"
@@ -112,22 +111,13 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										top: `${pos().y + 60}px`, // Account for banner
 									}}
 									onClick={() => props.onSelect?.(note.id)}
-									onKeyDown={(e) =>
-										e.key === "Enter" && props.onSelect?.(note.id)
-									}
-									tabIndex={0}
-									role="button"
 									aria-pressed={isSelected()}
 								>
 									{/* Card Header */}
 									<div class="p-3 border-b bg-gray-50 rounded-t-lg">
-										<h3 class="font-medium text-gray-900 truncate">
-											{note.title || "Untitled"}
-										</h3>
+										<h3 class="font-medium text-gray-900 truncate">{note.title || "Untitled"}</h3>
 										<Show when={note.class}>
-											<span class="text-xs text-gray-500">
-												{note.class}
-											</span>
+											<span class="text-xs text-gray-500">{note.class}</span>
 										</Show>
 									</div>
 
@@ -136,40 +126,22 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										{/* Properties preview */}
 										<Show
 											when={Object.keys(note.properties).length > 0}
-											fallback={
-												<p class="text-sm text-gray-400 italic">
-													No properties
-												</p>
-											}
+											fallback={<p class="text-sm text-gray-400 italic">No properties</p>}
 										>
 											<div class="space-y-1 text-sm">
-												<For
-													each={Object.entries(note.properties).slice(
-														0,
-														3,
-													)}
-												>
+												<For each={Object.entries(note.properties).slice(0, 3)}>
 													{([key, value]) => (
 														<div class="flex">
-															<span class="text-gray-500 font-medium mr-1">
-																{key}:
-															</span>
+															<span class="text-gray-500 font-medium mr-1">{key}:</span>
 															<span class="text-gray-700 truncate">
-																{typeof value === "string"
-																	? value
-																	: JSON.stringify(value)}
+																{typeof value === "string" ? value : JSON.stringify(value)}
 															</span>
 														</div>
 													)}
 												</For>
-												<Show
-													when={
-														Object.keys(note.properties).length > 3
-													}
-												>
+												<Show when={Object.keys(note.properties).length > 3}>
 													<span class="text-xs text-gray-400">
-														+{Object.keys(note.properties).length - 3}{" "}
-														more
+														+{Object.keys(note.properties).length - 3} more
 													</span>
 												</Show>
 											</div>
@@ -178,12 +150,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										{/* Links indicator */}
 										<Show when={note.links.length > 0}>
 											<div class="mt-2 flex items-center gap-1 text-xs text-blue-500">
-												<svg
-													class="w-3 h-3"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
+												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
@@ -195,7 +162,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 											</div>
 										</Show>
 									</div>
-								</div>
+								</button>
 							);
 						}}
 					</For>

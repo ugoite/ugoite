@@ -52,9 +52,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 						<button
 							type="button"
 							class={`px-3 py-1 rounded text-sm ${
-								isPreviewMode()
-									? "bg-blue-500 text-white"
-									: "bg-white border hover:bg-gray-100"
+								isPreviewMode() ? "bg-blue-500 text-white" : "bg-white border hover:bg-gray-100"
 							}`}
 							onClick={() => setIsPreviewMode(!isPreviewMode())}
 							aria-label={isPreviewMode() ? "Edit" : "Preview"}
@@ -90,11 +88,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 			<Show when={props.conflictMessage}>
 				<div class="conflict-message bg-red-50 border-l-4 border-red-500 p-3 text-red-700">
 					<div class="flex items-center gap-2">
-						<svg
-							class="w-5 h-5"
-							fill="currentColor"
-							viewBox="0 0 20 20"
-						>
+						<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
 							<path
 								fill-rule="evenodd"
 								d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
@@ -124,7 +118,6 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 				>
 					<div
 						class="preview p-4 prose prose-sm max-w-none overflow-auto h-full"
-						// biome-ignore lint/security/noDangerouslySetInnerHtml: Simple markdown preview
 						innerHTML={renderMarkdown(props.content)}
 					/>
 				</Show>

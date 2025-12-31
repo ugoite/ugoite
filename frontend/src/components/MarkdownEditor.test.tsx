@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -21,13 +22,7 @@ describe("MarkdownEditor", () => {
 	});
 
 	it("should render markdown preview when preview mode is enabled", async () => {
-		render(() => (
-			<MarkdownEditor
-				content="# Preview Test"
-				onChange={() => {}}
-				showPreview
-			/>
-		));
+		render(() => <MarkdownEditor content="# Preview Test" onChange={() => {}} showPreview />);
 
 		// Should show preview toggle
 		const previewButton = screen.getByRole("button", { name: /preview/i });
@@ -49,14 +44,7 @@ describe("MarkdownEditor", () => {
 
 	it("should call onSave when save button is clicked", async () => {
 		const onSave = vi.fn();
-		render(() => (
-			<MarkdownEditor
-				content="# Test"
-				onChange={() => {}}
-				isDirty
-				onSave={onSave}
-			/>
-		));
+		render(() => <MarkdownEditor content="# Test" onChange={() => {}} isDirty onSave={onSave} />);
 
 		const saveButton = screen.getByRole("button", { name: /save/i });
 		fireEvent.click(saveButton);
@@ -66,14 +54,7 @@ describe("MarkdownEditor", () => {
 
 	it("should support keyboard shortcut for save", async () => {
 		const onSave = vi.fn();
-		render(() => (
-			<MarkdownEditor
-				content="# Test"
-				onChange={() => {}}
-				isDirty
-				onSave={onSave}
-			/>
-		));
+		render(() => <MarkdownEditor content="# Test" onChange={() => {}} isDirty onSave={onSave} />);
 
 		const textarea = screen.getByRole("textbox");
 		fireEvent.keyDown(textarea, { key: "s", metaKey: true });

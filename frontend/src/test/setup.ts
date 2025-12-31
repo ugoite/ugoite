@@ -1,4 +1,4 @@
-import "@testing-library/dom";
+import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 
 // Import MSW server - will be created when mocks are available

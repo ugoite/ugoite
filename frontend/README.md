@@ -2,6 +2,75 @@
 
 A SolidJS-based frontend for IEapp - your AI-native, programmable knowledge base.
 
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SolidStart App                        │
+├─────────────────────────────────────────────────────────┤
+│  routes/                                                 │
+│  ├── index.tsx       Landing page                        │
+│  └── notes.tsx       Main app (orchestrates components)  │
+├─────────────────────────────────────────────────────────┤
+│  components/         (Pure UI - no business logic)       │
+│  ├── NoteList.tsx    Display notes, emit selection       │
+│  ├── MarkdownEditor  Edit content, emit changes          │
+│  ├── CanvasPlaceholder  Visual canvas preview            │
+│  └── Nav.tsx         Navigation bar                      │
+├─────────────────────────────────────────────────────────┤
+│  lib/                (Business logic & state)            │
+│  ├── store.ts        Reactive state management           │
+│  ├── client.ts       Typed API client                    │
+│  ├── api.ts          Low-level fetch utilities           │
+│  └── types.ts        TypeScript interfaces               │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Component Responsibility Boundaries
+
+### 🎯 Design Principle: Single Responsibility
+
+Each component has ONE clear responsibility:
+
+| Component | Responsibility | Accepts | Emits |
+|-----------|---------------|---------|-------|
+| `NoteList` | Display notes | `notes`, `loading`, `error` (Accessors) | `onSelect(noteId)` |
+| `MarkdownEditor` | Edit markdown | `content`, `isDirty` | `onChange(content)`, `onSave()` |
+| `CanvasPlaceholder` | Canvas preview | `notes[]` | `onSelect(noteId)` |
+| `notes.tsx` | Orchestration | - | Coordinates all components |
+
+### 📐 State Management Rules
+
+```typescript
+// ✅ CORRECT: Route owns state, passes to components
+// routes/notes.tsx
+const store = createNoteStore(workspaceId);
+<NoteList
+  notes={store.notes}        // Accessor
+  loading={store.loading}    // Accessor
+  error={store.error}        // Accessor
+  onSelect={handleSelect}
+/>
+
+// ❌ WRONG: Component creates its own store
+// components/NoteList.tsx
+const store = createNoteStore(...);  // NO! Violates responsibility
+```
+
+### Controlled vs Standalone Mode
+
+`NoteList` supports two modes:
+1. **Controlled**: Receives state from parent (recommended for routes)
+2. **Standalone**: Creates internal store (for isolated usage/testing)
+
+```typescript
+// Controlled mode (used in routes)
+<NoteList notes={store.notes} loading={store.loading} error={store.error} />
+
+// Standalone mode (self-contained)
+<NoteList workspaceId="my-workspace" />
+```
+
 ## Features (Milestone 5)
 
 - **Note List View**: Browse and manage notes in a sidebar

@@ -1,10 +1,4 @@
-import type {
-	Note,
-	NoteCreatePayload,
-	NoteRecord,
-	NoteUpdatePayload,
-	Workspace,
-} from "./types";
+import type { Note, NoteCreatePayload, NoteRecord, NoteUpdatePayload, Workspace } from "./types";
 import { apiFetch } from "./api";
 
 /**
@@ -29,9 +23,7 @@ export const workspaceApi = {
 		});
 		if (!res.ok) {
 			const error = (await res.json()) as { detail?: string };
-			throw new Error(
-				error.detail || `Failed to create workspace: ${res.statusText}`,
-			);
+			throw new Error(error.detail || `Failed to create workspace: ${res.statusText}`);
 		}
 		return (await res.json()) as { id: string; name: string };
 	},
@@ -80,9 +72,7 @@ export const noteApi = {
 		});
 		if (!res.ok) {
 			const error = (await res.json()) as { detail?: string };
-			throw new Error(
-				error.detail || `Failed to create note: ${res.statusText}`,
-			);
+			throw new Error(error.detail || `Failed to create note: ${res.statusText}`);
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
@@ -109,9 +99,7 @@ export const noteApi = {
 					error.current_revision_id,
 				);
 			}
-			throw new Error(
-				error.detail || `Failed to update note: ${res.statusText}`,
-			);
+			throw new Error(error.detail || `Failed to update note: ${res.statusText}`);
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
@@ -127,10 +115,7 @@ export const noteApi = {
 	},
 
 	/** Query notes with filters */
-	async query(
-		workspaceId: string,
-		filter: Record<string, unknown>,
-	): Promise<NoteRecord[]> {
+	async query(workspaceId: string, filter: Record<string, unknown>): Promise<NoteRecord[]> {
 		const res = await apiFetch(`/workspaces/${workspaceId}/query`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },

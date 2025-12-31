@@ -1,4 +1,3 @@
 /// <reference types="@solidjs/start/env" />
 /// <reference types="vitest/globals" />
-
-import "@testing-library/jest-dom";
+/// <reference types="@testing-library/jest-dom" />

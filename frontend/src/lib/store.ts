@@ -99,9 +99,7 @@ export function createNoteStore(workspaceId: () => string) {
 		pendingUpdates.set(noteId, { original: originalNote, optimistic: optimisticNote });
 
 		// Apply optimistic update
-		setNotes((prev) =>
-			prev.map((n) => (n.id === noteId ? optimisticNote : n)),
-		);
+		setNotes((prev) => prev.map((n) => (n.id === noteId ? optimisticNote : n)));
 
 		try {
 			const result = await noteApi.update(workspaceId(), noteId, payload);
@@ -119,9 +117,7 @@ export function createNoteStore(workspaceId: () => string) {
 			// Rollback on failure
 			const pending = pendingUpdates.get(noteId);
 			if (pending) {
-				setNotes((prev) =>
-					prev.map((n) => (n.id === noteId ? pending.original : n)),
-				);
+				setNotes((prev) => prev.map((n) => (n.id === noteId ? pending.original : n)));
 				pendingUpdates.delete(noteId);
 			}
 

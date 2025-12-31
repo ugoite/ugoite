@@ -7,51 +7,99 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"ignore": [
-			"node_modules",
-			"dist",
-			".solid",
-			".vinxi",
-			"playwright-report",
-			"test-results",
-			"coverage"
-		]
+		"includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css"]
 	},
 	"formatter": {
 		"enabled": true,
-		"indentStyle": "tab"
+		"indentStyle": "tab",
+		"lineWidth": 100
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"correctness": {
+				"recommended": true,
+				"noNodejsModules": "off",
+				"noUndeclaredDependencies": "off",
+				"useHookAtTopLevel": "error"
+			},
+			"style": {
+				"recommended": true,
+				"noDefaultExport": "off",
+				"useFilenamingConvention": "off",
+				"useNamingConvention": "off"
+			},
+			"suspicious": {
+				"recommended": true,
+				"noConsole": "warn",
+				"noReactSpecificProps": "off",
+				"noArrayIndexKey": "error",
+				"noAssignInExpressions": "error",
+				"noDoubleEquals": "error",
+				"noExplicitAny": "warn",
+				"noImplicitAnyLet": "error"
+			},
+			"complexity": {
+				"recommended": true,
+				"noExcessiveCognitiveComplexity": "off",
+				"noForEach": "warn",
+				"noUselessFragments": "error"
+			},
+			"a11y": {
+				"recommended": true,
+				"noSvgWithoutTitle": "off",
+				"useSemanticElements": "warn",
+				"useButtonType": "error",
+				"useAltText": "error"
+			},
+			"performance": {
+				"recommended": true,
+				"noBarrelFile": "off",
+				"noReExportAll": "off",
+				"noAccumulatingSpread": "error"
+			},
+			"security": {
+				"recommended": true,
+				"noDangerouslySetInnerHtml": "error"
+			}
 		}
 	},
 	"javascript": {
 		"formatter": {
-			"quoteStyle": "double"
+			"quoteStyle": "double",
+			"semicolons": "always"
 		}
 	},
 	"assist": {
 		"enabled": true,
 		"actions": {
 			"source": {
-				"organizeImports": "on"
+				"organizeImports": "off"
 			}
 		}
 	},
 	"overrides": [
 		{
-			"include": [
-				"**/*.test.ts",
-				"**/*.test.tsx",
-				"**/*.spec.ts",
-				"**/test/**"
-			],
+			"includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test/**"],
 			"linter": {
 				"rules": {
 					"suspicious": {
-						"noExplicitAny": "off"
+						"noExplicitAny": "off",
+						"noConsole": "off"
+					},
+					"complexity": {
+						"noExcessiveCognitiveComplexity": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/routes/**/*.tsx"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noDefaultExport": "off"
 					}
 				}
 			}

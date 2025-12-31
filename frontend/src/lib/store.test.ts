@@ -84,10 +84,14 @@ describe("createNoteStore", () => {
 			const note = store.selectedNote();
 			expect(note).not.toBeNull();
 
+			if (!note) {
+				throw new Error("Note should be loaded");
+			}
+
 			// Update with optimistic behavior
 			const updatePromise = store.updateNote(noteId, {
 				markdown: "# Updated Title",
-				parent_revision_id: note!.revision_id,
+				parent_revision_id: note.revision_id,
 			});
 
 			// Check optimistic state immediately

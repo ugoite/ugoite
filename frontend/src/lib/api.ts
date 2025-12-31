@@ -1,4 +1,8 @@
 export const getBackendBase = (): string => {
+	// In test environment, use absolute URL for MSW to intercept
+	if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
+		return "http://localhost:3000/api";
+	}
 	// Always use /api which is proxied to the backend in development
 	// and should be served by the backend or a reverse proxy in production.
 	return "/api";
@@ -20,6 +24,5 @@ export const apiFetch = async (path = "/", options?: RequestInit) => {
 		// relative path; base probably like '/api'
 		url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 	}
-	console.log(`apiFetch: ${url}`);
 	return fetch(url, options);
 };
