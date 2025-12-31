@@ -16,7 +16,8 @@
 				"MermaidChart.vscode-mermaid-chart",
 				"GitHub.vscode-pull-request-github",
 				"github.vscode-github-actions",
-				"ms-vscode.vscode-websearchforcopilot"
+				"ms-vscode.vscode-websearchforcopilot",
+				"GitHub.vscode-codeql"
 			]
 		}
 	},
