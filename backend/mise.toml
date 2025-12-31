@@ -2,9 +2,9 @@
 run = "uv sync"
 
 [tasks.build-sandbox]
-run = "./build_sandbox.sh"
-sources = ["src/app/sandbox/runner.js"]
-outputs = ["src/app/sandbox/sandbox.wasm"]
+run = "uv run ../ieapp-cli/scripts/build_sandbox.py"
+sources = ["../ieapp-cli/src/ieapp/sandbox/runner.js"]
+outputs = ["../ieapp-cli/src/ieapp/sandbox/sandbox.wasm"]
 
 [tasks.dev]
 depends = ["build-sandbox"]
