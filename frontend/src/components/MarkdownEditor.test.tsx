@@ -73,4 +73,48 @@ describe("MarkdownEditor", () => {
 
 		expect(screen.getByText(/revision mismatch/i)).toBeInTheDocument();
 	});
+
+	it("should handle undefined content gracefully", () => {
+		// @ts-expect-error Testing undefined content handling
+		render(() => <MarkdownEditor content={undefined} onChange={() => {}} />);
+
+		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+		// Should not show "undefined" as text, should be empty
+		expect(textarea.value).toBe("");
+		expect(textarea.value).not.toBe("undefined");
+	});
+
+	it("should handle null content gracefully", () => {
+		// @ts-expect-error Testing null content handling
+		render(() => <MarkdownEditor content={null} onChange={() => {}} />);
+
+		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+		// Should not show "null" as text, should be empty
+		expect(textarea.value).toBe("");
+		expect(textarea.value).not.toBe("null");
+	});
+
+	it("should render preview with undefined content without crashing", async () => {
+		// @ts-expect-error Testing undefined content handling in preview
+		render(() => <MarkdownEditor content={undefined} onChange={() => {}} showPreview />);
+
+		const previewButton = screen.getByRole("button", { name: /preview/i });
+		fireEvent.click(previewButton);
+
+		// Should toggle to preview mode without crashing
+		expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+	});
+
+	it("should display placeholder when content is empty", () => {
+		render(() => (
+			<MarkdownEditor
+				content=""
+				onChange={() => {}}
+				placeholder="Start typing..."
+			/>
+		));
+
+		const textarea = screen.getByPlaceholderText("Start typing...");
+		expect(textarea).toBeInTheDocument();
+	});
 });

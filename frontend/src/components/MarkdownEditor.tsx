@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 
 export interface MarkdownEditorProps {
-	content: string;
+	content: string | undefined;
 	onChange: (content: string) => void;
 	onSave?: () => void;
 	disabled?: boolean;
@@ -30,10 +30,11 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 		}
 	};
 
-	const renderMarkdown = (content: string) => {
+	const renderMarkdown = (content: string | undefined | null) => {
 		// Simple markdown rendering for preview
 		// In production, use a proper markdown parser
-		return content
+		const safeContent = content ?? "";
+		return safeContent
 			.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mb-2">$1</h1>')
 			.replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mb-2 mt-4">$1</h2>')
 			.replace(/^### (.+)$/gm, '<h3 class="text-lg font-medium mb-1 mt-3">$1</h3>')
@@ -107,7 +108,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 					fallback={
 						<textarea
 							class="w-full h-full p-4 resize-none font-mono text-sm border-0 focus:outline-none focus:ring-0"
-							value={props.content}
+						value={props.content ?? ""}
 							onInput={handleInput}
 							onKeyDown={handleKeyDown}
 							disabled={props.disabled}
@@ -118,7 +119,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 				>
 					<div
 						class="preview p-4 prose prose-sm max-w-none overflow-auto h-full"
-						innerHTML={renderMarkdown(props.content)}
+						innerHTML={renderMarkdown(props.content ?? "")}
 					/>
 				</Show>
 			</div>

@@ -484,6 +484,22 @@ Editor with Markdown editing, preview, and save functionality.
 
 ---
 
+### REQ-FE-005a: Editor Content Graceful Handling
+**Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §1 Data Binding
+
+Editor MUST handle undefined/null content gracefully, displaying empty string instead of "undefined" text.
+New note creation MUST display initial content immediately without waiting for resource load.
+Preview mode MUST NOT crash when content is undefined.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/MarkdownEditor.test.tsx` | `should handle undefined content gracefully` |
+| vitest | `frontend/src/components/MarkdownEditor.test.tsx` | `should handle null content gracefully` |
+| vitest | `frontend/src/components/MarkdownEditor.test.tsx` | `should render preview with undefined content without crashing` |
+| vitest | `frontend/src/components/MarkdownEditor.test.tsx` | `should display placeholder when content is empty` |
+
+---
+
 ### REQ-FE-006: Optimistic Updates
 **Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §1 Optimistic Updates
 
@@ -528,6 +544,100 @@ Notify user on 409 Conflict error.
 | Test Type | File | Test Name |
 |-----------|------|-----------|
 | vitest | `frontend/src/components/MarkdownEditor.test.tsx` | `should show conflict message when there is a conflict` |
+
+---
+
+### REQ-FE-010: Editor Content Persistence During Save
+**Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Interaction Patterns
+
+Editor content MUST NOT be overwritten during or after save operation.
+Save operation MUST NOT trigger content reload from server.
+Consecutive saves MUST work correctly by tracking revision_id locally after each save.
+
+**Critical Implementation Requirements:**
+1. `store.updateNote()` MUST NOT call `refetchSelectedNote()` after successful save
+2. `handleSave()` MUST update local `currentRevisionId` with server response's `revision_id`
+3. `createEffect` for content sync MUST only run when note ID changes, not on every resource update
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/lib/store.test.ts` | `should not refetch after successful update` |
+| vitest | `frontend/src/lib/store.test.ts` | `should preserve editor content during save` |
+| e2e | `e2e/notes.test.ts` | `saved content should persist after reload (REQ-FE-010)` |
+
+---
+
+### REQ-FE-011: Editor Content Sync on Note Switch Only
+**Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Interaction Patterns
+
+Editor content synchronization with server MUST only occur when:
+1. User explicitly selects a different note
+2. User explicitly clicks refresh button
+3. Workspace is changed
+
+Editor content MUST NOT be overwritten when:
+1. Save operation completes
+2. Selected note resource is refetched
+3. Note list is reloaded
+
+**Critical Implementation Requirements:**
+1. Track `lastLoadedNoteId` to detect note switches vs resource updates
+2. Only update `editorContent` when `note.id !== lastLoadedNoteId`
+3. Reset `lastLoadedNoteId` when workspace changes
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/lib/store.test.ts` | `should only sync content on note switch` |
+| vitest | `frontend/src/lib/store.test.ts` | `should not overwrite content on refetch` |
+
+---
+
+### REQ-FE-012: Consecutive Save Support
+**Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Interaction Patterns
+
+Multiple consecutive saves on the same note MUST work correctly.
+After each successful save, the local revision_id MUST be updated to enable the next save.
+Failing to update revision_id would cause 409 Conflict on subsequent saves.
+
+**Critical Implementation Requirements:**
+1. Store `currentRevisionId` as local signal, updated after each successful save
+2. Use `currentRevisionId` (not `selectedNote().revision_id`) as `parent_revision_id` for updates
+3. After note creation, immediately set `currentRevisionId` from API response
+4. Fall back to `selectedNote()?.revision_id` if `currentRevisionId` is not set
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/lib/store.test.ts` | `should support consecutive saves with updated revision_id` |
+| e2e | `e2e/notes.test.ts` | `consecutive PUT should succeed with updated revision_id` |
+| e2e | `e2e/notes.test.ts` | `PUT with stale revision_id should return 409 conflict` |
+
+---
+
+### REQ-FE-013: Save Must Actually Persist to Server
+**Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Data Flow
+
+Save operation MUST send the actual edited content to the server.
+Server MUST persist the content to the file system.
+Reloading the page MUST show the previously saved content.
+
+**Critical Implementation Requirements:**
+1. `handleSave()` MUST pass `editorContent()` to `store.updateNote()`
+2. `store.updateNote()` MUST call `noteApi.update()` with correct `markdown` field
+3. Backend MUST write content to `content.json` file
+4. Backend MUST return success only after content is persisted
+5. GET request after save MUST return the updated content
+
+**Failure modes to prevent:**
+- Silent early return in `handleSave()` due to missing `revisionId`
+- `editorContent()` returning stale/empty value
+- API request not including actual content
+- Backend not writing to file system
+- Backend returning success before write completes
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_update_note` |
+| e2e | `e2e/notes.test.ts` | `saved content should persist after reload (REQ-FE-010)` |
 
 ---
 
@@ -602,9 +712,9 @@ mise run e2e
 | Security | 2 | ✅ | - | - |
 | Sandbox | 5 | ✅ | - | - |
 | REST API | 3 | ✅ | ✅ | ✅ |
-| Frontend | 9 | - | ✅ | ✅ |
+| Frontend | 13 | - | ✅ | ✅ |
 | E2E | 2 | - | - | ✅ |
-| **Total** | **42** | **30** | **22** | **10** |
+| **Total** | **46** | **30** | **25** | **13** |
 
 ---
 
@@ -612,4 +722,6 @@ mise run e2e
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2025-12-31 | 1.2.0 | Added REQ-FE-013 for save persistence verification; Enhanced REQ-FE-010/011/012 with critical implementation requirements |
+| 2025-12-31 | 1.1.0 | Added REQ-FE-010, REQ-FE-011, REQ-FE-012 for editor content persistence |
 | 2025-12-31 | 1.0.0 | Initial version created |

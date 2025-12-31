@@ -167,7 +167,8 @@ def test_get_note(
     data = response.json()
     assert data["id"] == "test-note"
     assert data["title"] == "Test Note"
-    assert "# Test Note" in data["markdown"]
+    # Note: get_note returns "content" field (not "markdown")
+    assert "# Test Note" in data["content"]
 
 
 def test_get_note_not_found(
@@ -216,7 +217,8 @@ def test_update_note(
     get_response = test_client.get("/workspaces/test-ws/notes/test-note")
     updated_note = get_response.json()
     assert updated_note["title"] == "Updated Title"
-    assert "New content" in updated_note["markdown"]
+    # Note: get_note returns "content" field (not "markdown")
+    assert "New content" in updated_note["content"]
 
 
 def test_update_note_conflict(

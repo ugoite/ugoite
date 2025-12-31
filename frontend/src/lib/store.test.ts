@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { createRoot, createEffect } from "solid-js";
 import { createNoteStore } from "./store";
 import { resetMockData, seedWorkspace, seedNote } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "./types";
@@ -147,7 +147,8 @@ describe("createNoteStore", () => {
 			await store.loadNotes();
 
 			expect(store.selectedNoteId()).toBeNull();
-			expect(store.selectedNote()).toBeNull();
+			// createResource returns undefined when source is null (no note selected)
+			expect(store.selectedNote()).toBeUndefined();
 
 			store.selectNote("select-note");
 			expect(store.selectedNoteId()).toBe("select-note");
@@ -186,6 +187,99 @@ describe("createNoteStore", () => {
 			await store.loadNotes();
 
 			expect(store.error()).not.toBeNull();
+
+			dispose();
+		});
+	});
+
+	it("should not refetch after successful update", async () => {
+		// REQ-FE-010: Editor content MUST NOT be overwritten during or after save operation
+		await createRoot(async (dispose) => {
+			const store = createNoteStore(() => "store-test-ws");
+
+			// Create a note
+			const createResult = await store.createNote("# Original");
+			const noteId = createResult.id;
+
+			// Select and load the note
+			store.selectNote(noteId);
+			await new Promise((resolve) => setTimeout(resolve, 50));
+
+			const note = store.selectedNote();
+			expect(note).not.toBeNull();
+			if (!note) throw new Error("Note should be loaded");
+
+			// Count how many times selectedNote changes
+			let loadCount = 0;
+			const unsubscribe = createRoot(() => {
+				createEffect(() => {
+					store.selectedNote();
+					loadCount++;
+				});
+			});
+
+			const initialLoadCount = loadCount;
+
+			// Update the note
+			await store.updateNote(noteId, {
+				markdown: "# Updated",
+				parent_revision_id: note.revision_id,
+			});
+
+			// Wait a bit to ensure no async refetch happens
+			await new Promise((resolve) => setTimeout(resolve, 100));
+
+			// selectedNote should NOT have been refetched (loadCount should not increase significantly)
+			// The initial load is 1, and we expect no additional loads from refetch
+			expect(loadCount).toBeLessThanOrEqual(initialLoadCount + 1);
+
+			dispose();
+		});
+	});
+
+	it("should support consecutive saves with updated revision_id", async () => {
+		// REQ-FE-012: Multiple consecutive saves must work correctly
+		await createRoot(async (dispose) => {
+			const store = createNoteStore(() => "store-test-ws");
+
+			// Create a note
+			const createResult = await store.createNote("# First Version");
+			const noteId = createResult.id;
+
+			// Select and load the note
+			store.selectNote(noteId);
+			await new Promise((resolve) => setTimeout(resolve, 50));
+
+			let note = store.selectedNote();
+			expect(note).not.toBeNull();
+			if (!note) throw new Error("Note should be loaded");
+
+			// First update
+			const firstResult = await store.updateNote(noteId, {
+				markdown: "# Second Version",
+				parent_revision_id: note.revision_id,
+			});
+
+			expect(firstResult.revision_id).toBeDefined();
+			expect(firstResult.revision_id).not.toBe(note.revision_id);
+
+			// Second update using the new revision_id
+			const secondResult = await store.updateNote(noteId, {
+				markdown: "# Third Version",
+				parent_revision_id: firstResult.revision_id,
+			});
+
+			expect(secondResult.revision_id).toBeDefined();
+			expect(secondResult.revision_id).not.toBe(firstResult.revision_id);
+
+			// Third update to confirm it keeps working
+			const thirdResult = await store.updateNote(noteId, {
+				markdown: "# Fourth Version",
+				parent_revision_id: secondResult.revision_id,
+			});
+
+			expect(thirdResult.revision_id).toBeDefined();
+			expect(thirdResult.revision_id).not.toBe(secondResult.revision_id);
 
 			dispose();
 		});

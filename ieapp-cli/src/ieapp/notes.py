@@ -383,7 +383,7 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
         Dictionary containing note content and metadata.
 
     Raises:
-        FileNotFoundError: If the note does not exist.
+        FileNotFoundError: If the note does not exist or is deleted.
 
     """
     validate_id(note_id, "note_id")
@@ -404,10 +404,15 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 
+    # Check if note is soft-deleted (tombstoned)
+    if meta.get("deleted"):
+        msg = f"Note {note_id} not found"
+        raise FileNotFoundError(msg)
+
     return {
         "id": note_id,
         "revision_id": content_data.get("revision_id"),
-        "markdown": content_data.get("markdown"),
+        "content": content_data.get("markdown"),  # API uses "content" for frontend
         "frontmatter": content_data.get("frontmatter", {}),
         "sections": content_data.get("sections", {}),
         "attachments": content_data.get("attachments", []),

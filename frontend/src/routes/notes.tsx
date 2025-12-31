@@ -26,6 +26,9 @@ export default function NotesPage() {
 	const [isDirty, setIsDirty] = createSignal(false);
 	const [isSaving, setIsSaving] = createSignal(false);
 	const [conflictMessage, setConflictMessage] = createSignal<string | null>(null);
+	// Track the current revision ID locally to support consecutive saves
+	// This is updated after each successful save to avoid using stale revision_id
+	const [currentRevisionId, setCurrentRevisionId] = createSignal<string | null>(null);
 
 	// Load notes on mount
 	onMount(() => {
@@ -41,16 +44,24 @@ export default function NotesPage() {
 			setShowEditor(false);
 			setEditorContent("");
 			setIsDirty(false);
+			setCurrentRevisionId(null);
+			setLastLoadedNoteId(null); // Reset to allow loading first note in new workspace
 			store.selectNote(null);
 			store.loadNotes();
 		}
 	});
 
-	// Sync editor content when selected note changes
+	// Sync editor content when selected note changes (only on initial load or note switch)
+	// Track the last loaded note ID to avoid re-syncing when resource refetches
+	const [lastLoadedNoteId, setLastLoadedNoteId] = createSignal<string | null>(null);
 	createEffect(() => {
 		const note = store.selectedNote();
-		if (note) {
-			setEditorContent(note.content);
+		if (note && note.id !== lastLoadedNoteId()) {
+			// Only update editor content when switching to a different note
+			// This prevents overwriting user's edits after save or refetch
+			setLastLoadedNoteId(note.id);
+			setCurrentRevisionId(note.revision_id);
+			setEditorContent(note.content ?? "");
 			setIsDirty(false);
 			setConflictMessage(null);
 			setShowEditor(true);
@@ -74,17 +85,26 @@ export default function NotesPage() {
 	};
 
 	const handleSave = async () => {
-		const note = store.selectedNote();
-		if (!note) return;
+		const noteId = store.selectedNoteId();
+		// Use local revision ID if available, fall back to server's version
+		const revisionId = currentRevisionId() || store.selectedNote()?.revision_id;
+		
+		if (!noteId || !revisionId) {
+			console.error("Cannot save: missing noteId or revisionId", { noteId, revisionId });
+			setConflictMessage("Cannot save: note not properly loaded. Please try refreshing.");
+			return;
+		}
 
 		setIsSaving(true);
 		setConflictMessage(null);
 
 		try {
-			await store.updateNote(note.id, {
+			const result = await store.updateNote(noteId, {
 				markdown: editorContent(),
-				parent_revision_id: note.revision_id,
+				parent_revision_id: revisionId,
 			});
+			// Update local revision ID to support consecutive saves
+			setCurrentRevisionId(result.revision_id);
 			setIsDirty(false);
 		} catch (e) {
 			if (e instanceof RevisionConflictError) {
@@ -103,8 +123,17 @@ export default function NotesPage() {
 		const title = prompt("Enter note title:");
 		if (!title) return;
 
+		const initialContent = `# ${title}\n\nStart writing here...`;
 		try {
-			const result = await store.createNote(`# ${title}\n\nStart writing here...`);
+			const result = await store.createNote(initialContent);
+			// Set editor state immediately with the new revision_id
+			// This is critical for enabling saves immediately after creation
+			setCurrentRevisionId(result.revision_id);
+			setLastLoadedNoteId(result.id);
+			setEditorContent(initialContent);
+			setShowEditor(true);
+			setIsDirty(false);
+			setConflictMessage(null);
 			store.selectNote(result.id);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create note");

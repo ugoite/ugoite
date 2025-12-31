@@ -101,16 +101,23 @@ export function createNoteStore(workspaceId: () => string) {
 		// Apply optimistic update
 		setNotes((prev) => prev.map((n) => (n.id === noteId ? optimisticNote : n)));
 
+		const wsId = workspaceId();
+		if (!wsId) {
+			const error = new Error("Cannot update note: workspace ID is missing");
+			setError(error.message);
+			throw error;
+		}
+
 		try {
-			const result = await noteApi.update(workspaceId(), noteId, payload);
+			const result = await noteApi.update(wsId, noteId, payload);
 
 			// Clear pending update on success
 			pendingUpdates.delete(noteId);
 
-			// Refetch the note to ensure we have latest server state
-			if (selectedNoteId() === noteId) {
-				refetchSelectedNote();
-			}
+			// Note: Do NOT refetch after save - this would cause the editor to lose
+			// the user's current content and replace it with server content.
+			// The caller (notes.tsx) maintains the editor state and should only
+			// refetch when explicitly requested (e.g., on conflict resolution).
 
 			return result;
 		} catch (e) {
