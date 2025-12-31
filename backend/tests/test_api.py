@@ -9,9 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 
-def test_create_workspace(
-    test_client: TestClient, temp_workspace_root: Path
-) -> None:
+def test_create_workspace(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a new workspace."""
     response = test_client.post("/workspaces", json={"name": "test-ws"})
     assert response.status_code == 201
@@ -77,9 +75,7 @@ def test_get_workspace_not_found(
     assert response.status_code == 404
 
 
-def test_create_note(
-    test_client: TestClient, temp_workspace_root: Path
-) -> None:
+def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a note in a workspace."""
     # Create workspace first
     test_client.post("/workspaces", json={"name": "test-ws"})
@@ -96,9 +92,7 @@ def test_create_note(
     note_id = data["id"]
 
     # Verify file system
-    note_path = (
-        temp_workspace_root / "workspaces" / "test-ws" / "notes" / note_id
-    )
+    note_path = temp_workspace_root / "workspaces" / "test-ws" / "notes" / note_id
     assert note_path.exists()
     assert (note_path / "content.json").exists()
 
@@ -149,7 +143,9 @@ def test_list_notes(
     for note in data:
         assert "id" in note
         assert "title" in note
-        assert "properties" in note, "properties field must be present in note list response"
+        assert "properties" in note, (
+            "properties field must be present in note list response"
+        )
         assert "links" in note, "links field must be present in note list response"
         assert isinstance(note["properties"], dict)
         assert isinstance(note["links"], list)
@@ -258,8 +254,8 @@ def test_update_note_conflict(
     assert response.status_code == 409
     # Should include the current revision for client merge
     detail = response.json()["detail"]
-    conflict_check = (
-        "conflict" in str(detail).lower() or "current_revision" in str(detail)
+    conflict_check = "conflict" in str(detail).lower() or "current_revision" in str(
+        detail
     )
     assert conflict_check
 
@@ -396,9 +392,7 @@ def test_query_notes(
     # trigger indexing (unlikely per spec).
     # Or, we just test that the endpoint exists and returns empty list for now.
 
-    response = test_client.post(
-        "/workspaces/test-ws/query", json={"filter": {}}
-    )
+    response = test_client.post("/workspaces/test-ws/query", json={"filter": {}})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
@@ -434,9 +428,7 @@ def test_middleware_hmac_signature(
 
 def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
     """Ensure remote clients are rejected unless explicitly allowed."""
-    response = test_client.get(
-        "/", headers={"x-forwarded-for": "203.0.113.10"}
-    )
+    response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
     assert "X-IEApp-Signature" in response.headers

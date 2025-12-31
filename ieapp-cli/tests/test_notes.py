@@ -338,7 +338,9 @@ def test_list_notes_returns_properties_and_links(
 
     note = notes[0]
     assert note["id"] == note_id
-    assert "properties" in note, "properties field must be present in list_notes response"
+    assert "properties" in note, (
+        "properties field must be present in list_notes response"
+    )
     assert "links" in note, "links field must be present in list_notes response"
     assert isinstance(note["properties"], dict)
     assert isinstance(note["links"], list)
