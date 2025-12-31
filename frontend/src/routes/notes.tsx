@@ -1,16 +1,21 @@
 import { createSignal, Show, createEffect, onMount } from "solid-js";
 import { createNoteStore } from "~/lib/store";
+import { createWorkspaceStore } from "~/lib/workspace-store";
 import { NoteList } from "~/components/NoteList";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { CanvasPlaceholder } from "~/components/CanvasPlaceholder";
+import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { RevisionConflictError } from "~/lib/client";
 
 type ViewMode = "list" | "canvas";
 
 export default function NotesPage() {
-	// For now, use a default workspace ID.
-	// In production, this would come from route params or a workspace selector.
-	const [workspaceId] = createSignal("default");
+	// Workspace store manages workspace selection
+	const workspaceStore = createWorkspaceStore();
+
+	// Reactive workspace ID that drives note loading
+	const workspaceId = () => workspaceStore.selectedWorkspaceId() || "";
+
 	const [viewMode, setViewMode] = createSignal<ViewMode>("list");
 	const [showEditor, setShowEditor] = createSignal(false);
 
@@ -24,7 +29,21 @@ export default function NotesPage() {
 
 	// Load notes on mount
 	onMount(() => {
-		store.loadNotes();
+		// Initialize workspace store first, which loads/creates default workspace
+		workspaceStore.loadWorkspaces().catch(console.error);
+	});
+
+	// Load notes when workspace changes
+	createEffect(() => {
+		const wsId = workspaceId();
+		if (wsId && workspaceStore.initialized()) {
+			// Reset editor state when switching workspaces
+			setShowEditor(false);
+			setEditorContent("");
+			setIsDirty(false);
+			store.selectNote(null);
+			store.loadNotes();
+		}
 	});
 
 	// Sync editor content when selected note changes
@@ -116,10 +135,33 @@ export default function NotesPage() {
 		}
 	};
 
+	const handleWorkspaceSelect = (wsId: string) => {
+		workspaceStore.selectWorkspace(wsId);
+	};
+
+	const handleWorkspaceCreate = async (name: string) => {
+		try {
+			const ws = await workspaceStore.createWorkspace(name);
+			workspaceStore.selectWorkspace(ws.id);
+		} catch (e) {
+			alert(e instanceof Error ? e.message : "Failed to create workspace");
+		}
+	};
+
 	return (
 		<main class="flex h-screen overflow-hidden bg-gray-100">
 			{/* Sidebar */}
 			<aside class="w-80 flex-shrink-0 bg-white border-r flex flex-col">
+				{/* Workspace Selector */}
+				<WorkspaceSelector
+					workspaces={workspaceStore.workspaces()}
+					selectedWorkspaceId={workspaceStore.selectedWorkspaceId()}
+					loading={workspaceStore.loading()}
+					error={workspaceStore.error()}
+					onSelect={handleWorkspaceSelect}
+					onCreate={handleWorkspaceCreate}
+				/>
+
 				{/* Header */}
 				<div class="p-4 border-b">
 					<div class="flex items-center justify-between mb-4">

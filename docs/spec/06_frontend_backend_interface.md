@@ -65,6 +65,24 @@ To ensure a responsive UI, the frontend implements optimistic updates for note m
 | **422 Validation** | Highlight invalid fields. | Field-specific error messages. |
 | **5xx Server Error** | Retry (exponential backoff) or show offline mode. | "Server error, retrying...". |
 
+## Workspace Management
+
+### Initialization Flow
+On application startup, the frontend performs workspace initialization:
+
+1. **Load workspaces**: Fetch list of existing workspaces from backend.
+2. **Restore selection**: Check localStorage for previously selected workspace.
+3. **Default workspace**: If no workspaces exist, automatically create a "default" workspace.
+4. **Persist selection**: Store selected workspace ID in localStorage for session continuity.
+
+### Workspace Selector
+- **UI Location**: Top of the sidebar, above the note list.
+- **Features**:
+  - Dropdown for quick workspace switching.
+  - "+" button to create new workspaces.
+  - Persisted selection across sessions.
+- **State reset**: When switching workspaces, clear editor state and reload notes.
+
 ## Linting & Code Quality
 - **Frontend**: Strict `Biome` configuration ensures no leaked backend logic (e.g., direct DB access, loose typing).
 - **Backend**: `Ruff` and `Mypy` ensure type safety and schema compliance.
