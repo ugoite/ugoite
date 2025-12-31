@@ -54,7 +54,9 @@ async def list_workspaces_endpoint() -> list[dict[str, Any]]:
 
 
 @router.post("/workspaces", status_code=status.HTTP_201_CREATED)
-async def create_workspace_endpoint(payload: WorkspaceCreate) -> dict[str, str]:
+async def create_workspace_endpoint(
+    payload: WorkspaceCreate,
+) -> dict[str, str]:
     """Create a new workspace."""
     root_path = get_root_path()
     workspace_id = payload.name  # Using name as ID for now per simple spec
@@ -100,7 +102,10 @@ async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/notes", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/workspaces/{workspace_id}/notes",
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_note_endpoint(
     workspace_id: str,
     payload: NoteCreate,
@@ -119,6 +124,8 @@ async def create_note_endpoint(
 
     try:
         create_note(ws_path, note_id, payload.content)
+        # Get the created note to retrieve revision_id
+        note_data = get_note(ws_path, note_id)
     except NoteExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -131,7 +138,7 @@ async def create_note_endpoint(
             detail=str(e),
         ) from e
 
-    return {"id": note_id}
+    return {"id": note_id, "revision_id": note_data.get("revision_id", "")}
 
 
 @router.get("/workspaces/{workspace_id}/notes")
@@ -204,9 +211,15 @@ async def update_note_endpoint(
         )
 
     try:
-        update_note(ws_path, note_id, payload.markdown, payload.parent_revision_id)
-        # Return the updated note
-        return get_note(ws_path, note_id)
+        update_note(
+            ws_path, note_id, payload.markdown, payload.parent_revision_id
+        )
+        # Return the updated note with id and revision_id
+        updated_note = get_note(ws_path, note_id)
+        return {
+            "id": note_id,
+            "revision_id": updated_note.get("revision_id", ""),
+        }
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -239,7 +252,10 @@ async def update_note_endpoint(
 
 
 @router.delete("/workspaces/{workspace_id}/notes/{note_id}")
-async def delete_note_endpoint(workspace_id: str, note_id: str) -> dict[str, str]:
+async def delete_note_endpoint(
+    workspace_id: str,
+    note_id: str,
+) -> dict[str, str]:
     """Tombstone (soft delete) a note."""
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
