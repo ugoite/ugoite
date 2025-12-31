@@ -57,6 +57,11 @@ jobs:
       - name: Build sandbox.wasm
         run: uv run ieapp-cli/scripts/build_sandbox.py
 
+      - name: Create default workspace for E2E tests
+        working-directory: ./backend
+        run: |
+          uv run python -c "from ieapp.workspace import create_workspace; create_workspace('.', 'default')"
+
       - name: Start backend server
         working-directory: ./backend
         run: |
