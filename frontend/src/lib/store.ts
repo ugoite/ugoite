@@ -84,8 +84,9 @@ export function createNoteStore(workspaceId: () => string) {
 		const originalNote = currentNotes[noteIndex];
 
 		// Extract title from markdown for optimistic update
-		const titleMatch = payload.markdown.match(/^#\s+(.+)$/m);
-		const title = titleMatch ? titleMatch[1] : originalNote.title;
+		// Use atomic regex to prevent ReDoS: match '#' + space + non-empty rest of line
+		const titleMatch = payload.markdown.match(/^#[ \t]+([^\n\r]+)$/m);
+		const title = titleMatch ? titleMatch[1].trim() : originalNote.title;
 
 		// Create optimistic record
 		const optimisticNote: NoteRecord = {
