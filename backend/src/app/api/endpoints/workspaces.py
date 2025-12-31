@@ -3,6 +3,7 @@
 import logging
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 import ieapp
@@ -58,6 +59,43 @@ def _validate_path_id(identifier: str, name: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid {name}: must be alphanumeric, hyphens, or underscores",
         )
+
+
+def _get_workspace_path(workspace_id: str) -> Path:
+    """Get a safe workspace path after validation.
+
+    Args:
+        workspace_id: The workspace identifier (must be pre-validated).
+
+    Returns:
+        Path to the workspace directory.
+
+    Raises:
+        HTTPException: If path resolution fails due to traversal attempt.
+
+    """
+    root_path = Path(get_root_path()).resolve()
+    # Validate path component
+    if (
+        not workspace_id
+        or workspace_id == ".."
+        or workspace_id.startswith(("/", "\\"))
+        or ".." in workspace_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid workspace_id: {workspace_id}",
+        )
+    # Build and verify path stays within root
+    target = (root_path / "workspaces" / workspace_id).resolve()
+    try:
+        target.relative_to(root_path)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path traversal detected",
+        ) from e
+    return target
 
 
 @router.get("/workspaces")
@@ -135,8 +173,7 @@ async def create_note_endpoint(
 ) -> dict[str, str]:
     """Create a new note."""
     _validate_path_id(workspace_id, "workspace_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -169,8 +206,7 @@ async def create_note_endpoint(
 async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all notes in a workspace."""
     _validate_path_id(workspace_id, "workspace_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -193,8 +229,7 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     """Get a note by ID."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -230,8 +265,7 @@ async def update_note_endpoint(
     """
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -291,8 +325,7 @@ async def delete_note_endpoint(
     """Tombstone (soft delete) a note."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -325,8 +358,7 @@ async def get_note_history_endpoint(
     """Get the revision history for a note."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -359,8 +391,7 @@ async def get_note_revision_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
     _validate_path_id(revision_id, "revision_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -392,8 +423,7 @@ async def restore_note_endpoint(
     """Restore a note to a previous revision."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(
@@ -423,8 +453,7 @@ async def query_endpoint(
 ) -> list[dict[str, Any]]:
     """Query the workspace index."""
     _validate_path_id(workspace_id, "workspace_id")
-    root_path = get_root_path()
-    ws_path = root_path / "workspaces" / workspace_id
+    ws_path = _get_workspace_path(workspace_id)
 
     if not ws_path.exists():
         raise HTTPException(

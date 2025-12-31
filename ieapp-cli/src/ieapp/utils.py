@@ -10,6 +10,9 @@ from typing import Any
 def safe_resolve_path(base: Path, *parts: str) -> Path:
     """Safely resolve a path ensuring it stays within the base directory.
 
+    This function acts as a security sanitizer for path traversal attacks.
+    All path components are validated before being joined.
+
     Args:
         base: The base directory that the resolved path must be within.
         *parts: Path components to join to the base.
@@ -18,11 +21,33 @@ def safe_resolve_path(base: Path, *parts: str) -> Path:
         The resolved absolute path.
 
     Raises:
-        ValueError: If the resolved path would escape the base directory.
+        ValueError: If the resolved path would escape the base directory
+                    or if any path component is invalid.
 
     """
+    # Validate each path component to ensure no traversal sequences
+    for part in parts:
+        # Reject path traversal patterns: .., absolute paths, etc.
+        if (
+            not part
+            or part == ".."
+            or part.startswith(("/", "\\"))
+            or ".." in part.split("/")
+            or ".." in part.split("\\")
+        ):
+            msg = f"Invalid path component: {part}"
+            raise ValueError(msg)
+
+    # Construct path using validated components
     base_resolved = base.resolve()
-    target = (base / Path(*parts)).resolve()
+    # Build path step by step with validated components
+    # lgtm[py/path-injection] - parts are validated above
+    safe_path = base_resolved
+    for part in parts:
+        safe_path = safe_path / part
+    target = safe_path.resolve()
+
+    # Final containment check as defense in depth
     try:
         target.relative_to(base_resolved)
     except ValueError as e:

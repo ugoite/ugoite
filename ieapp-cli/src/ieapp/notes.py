@@ -260,8 +260,9 @@ def update_note(
     """
     validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", note_id)
 
     if not note_dir.exists():
         msg = f"Note {note_id} not found"
@@ -388,8 +389,9 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
     """
     validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", note_id)
 
     if not note_dir.exists():
         msg = f"Note {note_id} not found"
