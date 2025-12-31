@@ -84,9 +84,18 @@ export function createNoteStore(workspaceId: () => string) {
 		const originalNote = currentNotes[noteIndex];
 
 		// Extract title from markdown for optimistic update
-		// Use atomic regex to prevent ReDoS: match '#' + space + non-empty rest of line
-		const titleMatch = payload.markdown.match(/^#[ \t]+([^\n\r]+)$/m);
-		const title = titleMatch ? titleMatch[1].trim() : originalNote.title;
+		// Use indexOf-based extraction to prevent ReDoS vulnerability
+		let title = originalNote.title;
+		const lines = payload.markdown.split(/\r?\n/);
+		for (const line of lines) {
+			if (line.startsWith("# ") || line.startsWith("#\t")) {
+				const spaceIdx = line.indexOf(" ");
+				const tabIdx = line.indexOf("\t");
+				const idx = spaceIdx !== -1 ? spaceIdx : tabIdx;
+				title = line.slice(idx + 1).trim();
+				break;
+			}
+		}
 
 		// Create optimistic record
 		const optimisticNote: NoteRecord = {

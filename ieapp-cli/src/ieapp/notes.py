@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - platform specific
     fcntl: Any | None = None
 
 from .integrity import IntegrityProvider
-from .utils import validate_id, write_json_secure
+from .utils import safe_resolve_path, validate_id, write_json_secure
 
 logger = logging.getLogger(__name__)
 
@@ -498,8 +498,9 @@ def delete_note(
     """
     validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", note_id)
 
     if not note_dir.exists():
         msg = f"Note {note_id} not found"

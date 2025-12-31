@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
     fcntl: Any | None = None
 
-from .utils import validate_id, write_json_secure
+from .utils import safe_resolve_path, validate_id, write_json_secure
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,9 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
 
     global_json_path = _ensure_global_json(root_path_str)
 
-    ws_path = Path(root_path_str) / "workspaces" / workspace_id
+    # Use safe path resolution to prevent path traversal
+    base_path = Path(root_path_str).resolve()
+    ws_path = safe_resolve_path(base_path, "workspaces", workspace_id)
 
     if fs.exists(str(ws_path)):
         msg = f"Workspace {workspace_id} already exists at {ws_path}"
@@ -218,7 +220,9 @@ def get_workspace(root_path: str | Path, workspace_id: str) -> dict[str, Any]:
     validate_id(workspace_id, "workspace_id")
 
     root_path_str = str(root_path)
-    ws_path = Path(root_path_str) / "workspaces" / workspace_id
+    # Use safe path resolution to prevent path traversal
+    base_path = Path(root_path_str).resolve()
+    ws_path = safe_resolve_path(base_path, "workspaces", workspace_id)
 
     if not ws_path.exists():
         msg = f"Workspace {workspace_id} not found"

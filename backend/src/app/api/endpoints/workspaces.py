@@ -1,6 +1,7 @@
 """Workspace endpoints."""
 
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -36,6 +37,27 @@ from app.models.schemas import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Pattern for valid IDs: alphanumeric, hyphens, underscores
+_SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_path_id(identifier: str, name: str) -> None:
+    """Validate identifier to prevent path traversal attacks.
+
+    Args:
+        identifier: The ID to validate.
+        name: Name of the parameter (for error messages).
+
+    Raises:
+        HTTPException: If the identifier is invalid.
+
+    """
+    if not identifier or not _SAFE_ID_PATTERN.match(identifier):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {name}: must be alphanumeric, hyphens, or underscores",
+        )
 
 
 @router.get("/workspaces")
@@ -85,6 +107,7 @@ async def create_workspace_endpoint(
 @router.get("/workspaces/{workspace_id}")
 async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
     """Get workspace metadata."""
+    _validate_path_id(workspace_id, "workspace_id")
     root_path = get_root_path()
 
     try:
@@ -111,6 +134,7 @@ async def create_note_endpoint(
     payload: NoteCreate,
 ) -> dict[str, str]:
     """Create a new note."""
+    _validate_path_id(workspace_id, "workspace_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -144,6 +168,7 @@ async def create_note_endpoint(
 @router.get("/workspaces/{workspace_id}/notes")
 async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all notes in a workspace."""
+    _validate_path_id(workspace_id, "workspace_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -166,6 +191,8 @@ async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
 @router.get("/workspaces/{workspace_id}/notes/{note_id}")
 async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     """Get a note by ID."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -201,6 +228,8 @@ async def update_note_endpoint(
     Requires parent_revision_id for optimistic concurrency control.
     Returns 409 Conflict if the revision has changed.
     """
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -260,6 +289,8 @@ async def delete_note_endpoint(
     note_id: str,
 ) -> dict[str, str]:
     """Tombstone (soft delete) a note."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -292,6 +323,8 @@ async def get_note_history_endpoint(
     note_id: str,
 ) -> dict[str, Any]:
     """Get the revision history for a note."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -323,6 +356,9 @@ async def get_note_revision_endpoint(
     revision_id: str,
 ) -> dict[str, Any]:
     """Get a specific revision of a note."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
+    _validate_path_id(revision_id, "revision_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -354,6 +390,8 @@ async def restore_note_endpoint(
     payload: NoteRestore,
 ) -> dict[str, Any]:
     """Restore a note to a previous revision."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(note_id, "note_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
@@ -384,6 +422,7 @@ async def query_endpoint(
     payload: QueryRequest,
 ) -> list[dict[str, Any]]:
     """Query the workspace index."""
+    _validate_path_id(workspace_id, "workspace_id")
     root_path = get_root_path()
     ws_path = root_path / "workspaces" / workspace_id
 
