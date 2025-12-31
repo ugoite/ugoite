@@ -8,7 +8,8 @@ outputs = ["../ieapp-cli/src/ieapp/sandbox/sandbox.wasm"]
 
 [tasks.dev]
 depends = ["build-sandbox"]
-run = "uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload"
+# IEAPP_ALLOW_REMOTE=true allows remote connections in dev containers / Codespaces
+run = "IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 [tasks.test]
 run = "uv run pytest"
