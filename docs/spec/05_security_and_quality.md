@@ -7,6 +7,7 @@ IEapp ships in a localhost-only mode with no auth prompts to keep the personal w
 
 ### Network Isolation
 *   **Localhost Binding**: By default, the API binds ONLY to `127.0.0.1`.
+*   **Remote Access**: Blocked by default. Set `IEAPP_ALLOW_REMOTE=true` environment variable to allow remote connections (e.g., in dev containers or Codespaces). This is automatically configured for `mise run dev`.
 *   **CORS**: Restricted to the specific frontend origin.
 
 ### Data Protection
