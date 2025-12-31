@@ -1,1 +1,5 @@
 ieapp-cli/src/ieapp/sandbox/sandbox.wasm
+
+# IEapp runtime data (created by ieapp during dev)
+global.json
+workspaces/
