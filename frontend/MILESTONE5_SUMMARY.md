@@ -4,7 +4,7 @@
 
 ### テストインフラストラクチャ
 - **vitest**: ユニット・コンポーネントテスト
-- **playwright**: E2Eテスト
+- **bun test**: E2Eテスト（/e2eディレクトリ）
 - **MSW**: API モック（テスト用）
 
 ### APIレイヤー
@@ -55,12 +55,9 @@
   - 競合ハンドリング
 
 ### E2Eテスト
-- `e2e/notes.spec.ts`: 11 の包括的なテストシナリオ
-  - ノート作成・編集・削除
-  - H2抽出の検証
-  - ビュー切替
-  - プレビューモード
-  - キーボードショートカット
+- `/e2e/smoke.test.ts`: 基本的な動作確認テスト
+- `/e2e/notes.test.ts`: ノートCRUD機能テスト
+- Bun のネイティブテストランナーを使用
 
 ### その他の更新
 - `src/routes/index.tsx`: ホームページのリニューアル
@@ -101,7 +98,7 @@ npm install
 npm run test:run
 
 # E2Eテスト（バックエンド起動が必要）
-npm run test:e2e
+cd /workspace/e2e && bun test
 ```
 
 ### 開発サーバー起動
@@ -112,7 +109,7 @@ npm run dev
 
 ### コミット案
 以下の順でコミットすることを推奨：
-1. `feat: テストインフラ構築 (vitest, playwright, MSW)`
+1. `feat: テストインフラ構築 (vitest, bun test, MSW)`
 2. `feat: APIクライアントとテスト実装`
 3. `feat: リアクティブストアと楽観的更新`
 4. `feat: ノート一覧・エディタ・キャンバスコンポーネント`

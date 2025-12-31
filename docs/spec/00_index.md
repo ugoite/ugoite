@@ -33,5 +33,5 @@ This specification is broken down into the following documents:
 *   **Frontend**: SolidJS (Solid Start) + Bun (Local-first, Optimistic UI).
 *   **Backend**: Python 3.12+ FastAPI (Stateless, acting as the MCP host).
 *   **Search**: Local FAISS vector index + Inverted Index.
-*   **Testing**: Pytest (Backend) + Playwright (E2E).
+*   **Testing**: Pytest (Backend) + Bun Test (E2E, TypeScript-based HTTP tests).
 

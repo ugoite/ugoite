@@ -108,10 +108,9 @@ npm test
 
 # Run tests once
 npm run test:run
-
-# Run E2E tests (requires dev server)
-npm run test:e2e
 ```
+
+Note: E2E tests are located in the root `/e2e` directory and use Bun's native test runner. See the main project README for details.
 
 ### Linting & Formatting
 
@@ -137,11 +136,12 @@ src/
 ├── routes/          # Page components
 │   ├── index.tsx         # Landing page
 │   └── notes.tsx         # Main notes view
-├── test/            # Test utilities
-│   ├── setup.ts          # Vitest setup
-│   └── mocks/            # MSW handlers
-└── e2e/             # Playwright E2E tests
+└── test/            # Test utilities
+    ├── setup.ts          # Vitest setup
+    └── mocks/            # MSW handlers
 ```
+
+E2E tests are located in the root `/e2e` directory using Bun's native test runner.
 
 ## API Integration
 
@@ -160,7 +160,7 @@ See [docs/spec/04_api_and_mcp.md](../docs/spec/04_api_and_mcp.md) for full API s
 
 Following Milestone 5 TDD steps:
 1. ✅ Component tests for note list store with REST mocks
-2. ✅ Playwright smoke tests for note creation/editing
+2. ✅ E2E smoke tests for note creation/editing (in /e2e directory)
 3. ✅ Canvas placeholder with visual baseline
 
 ## Building for Production
@@ -176,5 +176,5 @@ npm start
 - [Solid Start](https://start.solidjs.com) - Meta-framework
 - [TailwindCSS](https://tailwindcss.com) - Styling
 - [Vitest](https://vitest.dev) - Unit testing
-- [Playwright](https://playwright.dev) - E2E testing
+- [Bun Test](https://bun.sh/docs/cli/test) - E2E testing (in /e2e directory)
 - [MSW](https://mswjs.io) - API mocking

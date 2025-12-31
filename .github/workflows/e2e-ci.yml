@@ -1,0 +1,92 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup Python
+        run: uv python install 3.13
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: uv sync
+
+      - name: Install CLI dependencies
+        working-directory: ./ieapp-cli
+        run: uv sync
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: bun install
+
+      - name: Install E2E test dependencies
+        working-directory: ./e2e
+        run: bun install
+
+      - name: Build sandbox.wasm
+        run: uv run ieapp-cli/scripts/build_sandbox.py
+
+      - name: Start backend server
+        working-directory: ./backend
+        run: |
+          IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Backend is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Start frontend server
+        working-directory: ./frontend
+        run: |
+          BACKEND_URL=http://localhost:8000 bun run dev &
+          echo "Waiting for frontend to be ready..."
+          for i in {1..60}; do
+            if curl -s http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run E2E smoke tests
+        working-directory: ./e2e
+        run: bun test smoke.test.ts
+
+      - name: Run E2E notes tests
+        working-directory: ./e2e
+        run: bun test notes.test.ts

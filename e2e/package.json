@@ -1,0 +1,16 @@
+{
+	"name": "ieapp-e2e",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"test": "bun test",
+		"test:smoke": "bun test smoke.test.ts",
+		"test:notes": "bun test notes.test.ts"
+	},
+	"devDependencies": {
+		"@types/bun": "latest"
+	},
+	"engines": {
+		"bun": ">=1.3.0"
+	}
+}
