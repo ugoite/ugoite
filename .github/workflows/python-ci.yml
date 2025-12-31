@@ -34,6 +34,10 @@ jobs:
       - name: Build sandbox.wasm
         run: uv run ieapp-cli/scripts/build_sandbox.py
 
+      - name: Sync backend dependencies (include rebuilt sandbox.wasm)
+        working-directory: ./backend
+        run: uv sync --reinstall-package ieapp
+
       - name: Run pytest (backend)
         working-directory: ./backend
         run: uv run pytest
