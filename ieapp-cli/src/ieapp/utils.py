@@ -56,14 +56,6 @@ def safe_resolve_path(base: Path, *parts: str) -> Path:
         raise ValueError(msg) from e
     return target
 
-    # Final containment check as defense in depth
-    try:
-        target.relative_to(base_resolved)
-    except ValueError as e:
-        msg = f"Path traversal detected: {target} is not within {base_resolved}"
-        raise ValueError(msg) from e
-    return target
-
 
 def validate_id(identifier: str, name: str) -> str:
     """Validate that an identifier contains only safe characters.
