@@ -73,8 +73,40 @@ describe("NoteList", () => {
 			render(() => <NoteList notes={notes} loading={loading} error={error} />);
 
 			expect(screen.getByText("Meeting")).toBeInTheDocument();
-			expect(screen.getByText(/Date/i)).toBeInTheDocument();
-			expect(screen.getByText(/2025-01-15/i)).toBeInTheDocument();
+			// Check for the property key (Date:) and value (2025-01-15)
+			expect(screen.getByText("Date:")).toBeInTheDocument();
+			expect(screen.getByText("2025-01-15")).toBeInTheDocument();
+		});
+
+		it("should handle notes with null or undefined properties gracefully", async () => {
+			// Simulate API response where properties may be null/undefined
+			const recordWithNullProperties = {
+				id: "null-prop-note",
+				title: "Note without properties",
+				updated_at: "2025-01-01T00:00:00Z",
+				properties: null as unknown as Record<string, unknown>,
+				tags: [],
+				links: [],
+			} as NoteRecord;
+
+			const recordWithUndefinedProperties = {
+				id: "undefined-prop-note",
+				title: "Note with undefined properties",
+				updated_at: "2025-01-02T00:00:00Z",
+				tags: [],
+				links: [],
+			} as NoteRecord;
+
+			const { notes, loading, error } = createControlledProps([
+				recordWithNullProperties,
+				recordWithUndefinedProperties,
+			]);
+
+			// Should not throw an error
+			render(() => <NoteList notes={notes} loading={loading} error={error} />);
+
+			expect(screen.getByText("Note without properties")).toBeInTheDocument();
+			expect(screen.getByText("Note with undefined properties")).toBeInTheDocument();
 		});
 
 		it("should call onSelect when a note is clicked", async () => {

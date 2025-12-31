@@ -314,3 +314,31 @@ def test_note_author_persistence(
     with (note_path / "history" / f"{rev_id_2}.json").open() as f:
         data = json.load(f)
         assert data["author"] == new_author
+
+
+def test_list_notes_returns_properties_and_links(
+    workspace_root: Path,
+    fake_integrity_provider: Any,
+) -> None:
+    """Verifies that list_notes returns properties and links fields."""
+    from ieapp.notes import list_notes
+
+    note_id = "note-with-props"
+    content = "# Test Note\n\nSome content"
+
+    create_note(
+        workspace_root,
+        note_id,
+        content,
+        integrity_provider=fake_integrity_provider,
+    )
+
+    notes = list_notes(workspace_root)
+    assert len(notes) == 1
+
+    note = notes[0]
+    assert note["id"] == note_id
+    assert "properties" in note, "properties field must be present in list_notes response"
+    assert "links" in note, "links field must be present in list_notes response"
+    assert isinstance(note["properties"], dict)
+    assert isinstance(note["links"], list)

@@ -463,6 +463,8 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
                         "title": meta.get("title"),
                         "class": meta.get("class"),
                         "tags": meta.get("tags", []),
+                        "properties": meta.get("properties", {}),
+                        "links": meta.get("links", []),
                         "canvas_position": meta.get("canvas_position", {}),
                         "created_at": meta.get("created_at"),
                         "updated_at": meta.get("updated_at"),

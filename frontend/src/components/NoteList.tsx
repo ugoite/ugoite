@@ -99,7 +99,7 @@ interface NoteListItemProps {
 }
 
 function NoteListItem(props: NoteListItemProps) {
-	const propertyEntries = () => Object.entries(props.note.properties).slice(0, 3);
+	const propertyEntries = () => Object.entries(props.note.properties ?? {}).slice(0, 3);
 
 	const formatDate = (dateStr: string) => {
 		try {

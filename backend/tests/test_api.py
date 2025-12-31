@@ -145,6 +145,15 @@ def test_list_notes(
     assert isinstance(data, list)
     assert len(data) == 2
 
+    # Verify NoteRecord structure includes properties and links
+    for note in data:
+        assert "id" in note
+        assert "title" in note
+        assert "properties" in note, "properties field must be present in note list response"
+        assert "links" in note, "links field must be present in note list response"
+        assert isinstance(note["properties"], dict)
+        assert isinstance(note["links"], list)
+
 
 def test_get_note(
     test_client: TestClient,
