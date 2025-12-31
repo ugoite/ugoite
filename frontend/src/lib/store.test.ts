@@ -211,7 +211,7 @@ describe("createNoteStore", () => {
 
 			// Count how many times selectedNote changes
 			let loadCount = 0;
-			const unsubscribe = createRoot(() => {
+			const _unsubscribe = createRoot(() => {
 				createEffect(() => {
 					store.selectedNote();
 					loadCount++;
@@ -250,7 +250,7 @@ describe("createNoteStore", () => {
 			store.selectNote(noteId);
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			let note = store.selectedNote();
+			const note = store.selectedNote();
 			expect(note).not.toBeNull();
 			if (!note) throw new Error("Note should be loaded");
 

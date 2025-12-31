@@ -95,11 +95,43 @@
 			}
 		},
 		{
-			"includes": ["**/routes/**/*.tsx", "app.config.ts", "src/entry-client.tsx", "src/entry-server.tsx"],
+			"includes": [
+				"**/routes/**/*.tsx",
+				"app.config.ts",
+				"src/entry-client.tsx",
+				"src/entry-server.tsx",
+				"vitest.config.ts",
+				"src/app.tsx",
+				"src/components/**/*.tsx"
+			],
 			"linter": {
 				"rules": {
 					"style": {
-						"noDefaultExport": "off"
+						"noDefaultExport": "off",
+						"useNamingConvention": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"src/lib/types.ts",
+				"src/lib/api.ts",
+				"src/lib/store.ts",
+				"src/lib/client.ts",
+				"src/lib/workspace-store.ts",
+				"**/test/mocks/**",
+				"**/*.test.ts",
+				"**/*.test.tsx"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"useNamingConvention": "off",
+						"useFilenamingConvention": "off"
+					},
+					"complexity": {
+						"noExcessiveCognitiveComplexity": "off"
 					}
 				}
 			}

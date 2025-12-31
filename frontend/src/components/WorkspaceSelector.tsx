@@ -49,7 +49,9 @@ export function WorkspaceSelector(props: WorkspaceSelectorProps) {
 						onChange={(e) => props.onSelect(e.currentTarget.value)}
 					>
 						<For each={props.workspaces}>
-							{(workspace) => <option value={workspace.id}>{workspace.name || workspace.id}</option>}
+							{(workspace) => (
+								<option value={workspace.id}>{workspace.name || workspace.id}</option>
+							)}
 						</For>
 					</select>
 					<button

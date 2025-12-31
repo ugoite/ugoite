@@ -33,7 +33,9 @@ export default function NotesPage() {
 	// Load notes on mount
 	onMount(() => {
 		// Initialize workspace store first, which loads/creates default workspace
-		workspaceStore.loadWorkspaces().catch(console.error);
+		workspaceStore.loadWorkspaces().catch(() => {
+			// Silently ignore workspace load errors - the UI will show appropriate state
+		});
 	});
 
 	// Load notes when workspace changes
@@ -88,9 +90,8 @@ export default function NotesPage() {
 		const noteId = store.selectedNoteId();
 		// Use local revision ID if available, fall back to server's version
 		const revisionId = currentRevisionId() || store.selectedNote()?.revision_id;
-		
+
 		if (!noteId || !revisionId) {
-			console.error("Cannot save: missing noteId or revisionId", { noteId, revisionId });
 			setConflictMessage("Cannot save: note not properly loaded. Please try refreshing.");
 			return;
 		}

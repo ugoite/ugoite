@@ -257,7 +257,7 @@ def test_update_note_conflict(
     # Should include the current revision for client merge
     detail = response.json()["detail"]
     conflict_check = "conflict" in str(detail).lower() or "current_revision" in str(
-        detail
+        detail,
     )
     assert conflict_check
 

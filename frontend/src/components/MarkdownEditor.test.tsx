@@ -106,13 +106,7 @@ describe("MarkdownEditor", () => {
 	});
 
 	it("should display placeholder when content is empty", () => {
-		render(() => (
-			<MarkdownEditor
-				content=""
-				onChange={() => {}}
-				placeholder="Start typing..."
-			/>
-		));
+		render(() => <MarkdownEditor content="" onChange={() => {}} placeholder="Start typing..." />);
 
 		const textarea = screen.getByPlaceholderText("Start typing...");
 		expect(textarea).toBeInTheDocument();

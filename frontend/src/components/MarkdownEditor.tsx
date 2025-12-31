@@ -108,7 +108,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 					fallback={
 						<textarea
 							class="w-full h-full p-4 resize-none font-mono text-sm border-0 focus:outline-none focus:ring-0"
-						value={props.content ?? ""}
+							value={props.content ?? ""}
 							onInput={handleInput}
 							onKeyDown={handleKeyDown}
 							disabled={props.disabled}

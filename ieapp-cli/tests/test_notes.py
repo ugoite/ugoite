@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from ieapp.notes import RevisionMismatchError, create_note, update_note
+from ieapp.notes import RevisionMismatchError, create_note, list_notes, update_note
 from ieapp.workspace import create_workspace
 
 STRUCTURED_NOTE_CONTENT = """---
@@ -321,8 +321,6 @@ def test_list_notes_returns_properties_and_links(
     fake_integrity_provider: Any,
 ) -> None:
     """Verifies that list_notes returns properties and links fields."""
-    from ieapp.notes import list_notes
-
     note_id = "note-with-props"
     content = "# Test Note\n\nSome content"
 

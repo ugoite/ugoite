@@ -212,7 +212,7 @@ async def update_note_endpoint(
 
     try:
         update_note(
-            ws_path, note_id, payload.markdown, payload.parent_revision_id
+            ws_path, note_id, payload.markdown, payload.parent_revision_id,
         )
         # Return the updated note with id and revision_id
         updated_note = get_note(ws_path, note_id)
