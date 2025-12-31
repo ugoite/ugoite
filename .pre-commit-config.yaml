@@ -15,13 +15,15 @@ repos:
         # Use ruff's format hook to apply auto-formatting on commit
         # (this replaces the legacy `ruff` alias)
 
-  - repo: https://github.com/biomejs/pre-commit
-    rev: v2.3.5
+  - repo: local
     hooks:
       - id: biome-ci
+        name: biome ci
         # Run biome in CI mode for linting and formatting checks on frontend code
         # This matches the GitHub Actions configuration
-        additional_dependencies: ["@biomejs/biome@2.3.5"]
+        entry: bash -c "cd frontend && bunx @biomejs/biome@2.3.5 ci ."
+        language: system
+        pass_filenames: false
         files: ^frontend/
 
   - repo: local
