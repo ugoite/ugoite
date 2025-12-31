@@ -10,7 +10,6 @@
 import { describe, expect, test, beforeAll } from "bun:test";
 import {
 	E2EClient,
-	assertions,
 	waitForServers,
 } from "./lib/client";
 
