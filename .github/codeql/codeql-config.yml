@@ -1,0 +1,11 @@
+name: "Custom CodeQL Configuration"
+
+# This configuration customizes CodeQL analysis for this repository
+
+# Define paths to exclude from analysis
+paths-ignore:
+  - '**/test/**'
+  - '**/tests/**'
+  - '**/__pycache__/**'
+  - '**/node_modules/**'
+  - '**/e2e/**'

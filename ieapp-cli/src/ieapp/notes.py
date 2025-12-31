@@ -138,13 +138,15 @@ def create_note(
         NoteExistsError: If the note directory already exists.
 
     """
-    validate_id(note_id, "note_id")
+    # Validate and sanitize note_id
+    safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if note_dir.exists():
-        msg = f"Note {note_id} already exists"
+        msg = f"Note {safe_note_id} already exists"
         raise NoteExistsError(msg)
 
     _mkdir_secure(note_dir)
@@ -258,14 +260,15 @@ def update_note(
         RevisionMismatchError: If ``parent_revision_id`` does not match head.
 
     """
-    validate_id(note_id, "note_id")
+    # Validate and sanitize note_id
+    safe_note_id = validate_id(note_id, "note_id")
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", note_id)
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if not note_dir.exists():
-        msg = f"Note {note_id} not found"
+        msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
     # Check parent revision from content.json (as per spec)
@@ -387,14 +390,15 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
         FileNotFoundError: If the note does not exist or is deleted.
 
     """
-    validate_id(note_id, "note_id")
+    # Validate and sanitize note_id
+    safe_note_id = validate_id(note_id, "note_id")
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", note_id)
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if not note_dir.exists():
-        msg = f"Note {note_id} not found"
+        msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
     content_path = note_dir / "content.json"
@@ -536,19 +540,21 @@ def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]
         FileNotFoundError: If the note does not exist.
 
     """
-    validate_id(note_id, "note_id")
+    # Validate and sanitize note_id
+    safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if not note_dir.exists():
-        msg = f"Note {note_id} not found"
+        msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
     history_index_path = note_dir / "history" / "index.json"
 
     if not history_index_path.exists():
-        return {"note_id": note_id, "revisions": []}
+        return {"note_id": safe_note_id, "revisions": []}
 
     with history_index_path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -573,20 +579,23 @@ def get_note_revision(
         FileNotFoundError: If the note or revision does not exist.
 
     """
-    validate_id(note_id, "note_id")
-    validate_id(revision_id, "revision_id")
+    # Validate and sanitize IDs
+    safe_note_id = validate_id(note_id, "note_id")
+    safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if not note_dir.exists():
-        msg = f"Note {note_id} not found"
+        msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
-    revision_path = note_dir / "history" / f"{revision_id}.json"
+    # revision_id is validated above, safe to use in path
+    revision_path = note_dir / "history" / f"{safe_revision_id}.json"
 
     if not revision_path.exists():
-        msg = f"Revision {revision_id} not found for note {note_id}"
+        msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
         raise FileNotFoundError(msg)
 
     with revision_path.open("r", encoding="utf-8") as f:
@@ -622,20 +631,22 @@ def restore_note(
         FileNotFoundError: If the note or revision does not exist.
 
     """
-    validate_id(note_id, "note_id")
-    validate_id(revision_id, "revision_id")
+    # Validate and sanitize IDs
+    safe_note_id = validate_id(note_id, "note_id")
+    safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = Path(workspace_path)
-    note_dir = ws_path / "notes" / note_id
+    ws_path = Path(workspace_path).resolve()
+    # Use safe path resolution to prevent path traversal
+    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
     if not note_dir.exists():
-        msg = f"Note {note_id} not found"
+        msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
-    # Verify target revision exists
-    target_revision_path = note_dir / "history" / f"{revision_id}.json"
+    # Verify target revision exists (revision_id is validated above)
+    target_revision_path = note_dir / "history" / f"{safe_revision_id}.json"
     if not target_revision_path.exists():
-        msg = f"Revision {revision_id} not found for note {note_id}"
+        msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
         raise FileNotFoundError(msg)
 
     # Read current content to get parent_revision_id for the new revision
