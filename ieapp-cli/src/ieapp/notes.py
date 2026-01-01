@@ -21,7 +21,12 @@ except ImportError:  # pragma: no cover - platform specific
     fcntl: Any | None = None
 
 from .integrity import IntegrityProvider
-from .utils import safe_resolve_path, validate_id, write_json_secure
+from .utils import (
+    join_secure_path,
+    resolve_existing_path,
+    validate_id,
+    write_json_secure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,12 +147,21 @@ def create_note(
     safe_note_id = validate_id(note_id, "note_id")
 
     ws_path = Path(workspace_path).resolve()
-    # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
 
-    if note_dir.exists():
+    # Check if note exists using secure lookup
+    try:
+        resolve_existing_path(ws_path, "notes", safe_note_id)
         msg = f"Note {safe_note_id} already exists"
         raise NoteExistsError(msg)
+    except FileNotFoundError:
+        # This is expected for creation
+        pass
+
+    # Resolve parent directory securely
+    notes_dir = resolve_existing_path(ws_path, "notes")
+
+    # Construct new note path securely
+    note_dir = join_secure_path(notes_dir, safe_note_id)
 
     _mkdir_secure(note_dir)
 
@@ -173,7 +187,7 @@ def create_note(
         "computed": {},
     }
 
-    content_path = safe_resolve_path(note_dir, "content.json")
+    content_path = join_secure_path(note_dir, "content.json")
     write_json_secure(content_path, content_data, exclusive=True)
 
     revision = {
@@ -186,10 +200,10 @@ def create_note(
         "message": DEFAULT_INITIAL_MESSAGE,
     }
 
-    history_dir = safe_resolve_path(note_dir, "history")
+    history_dir = join_secure_path(note_dir, "history")
     _mkdir_secure(history_dir)
 
-    rev_path = safe_resolve_path(history_dir, f"{rev_id}.json")
+    rev_path = join_secure_path(history_dir, f"{rev_id}.json")
     write_json_secure(rev_path, revision, exclusive=True)
 
     # Update history index
@@ -204,7 +218,7 @@ def create_note(
             },
         ],
     }
-    index_path = safe_resolve_path(history_dir, "index.json")
+    index_path = join_secure_path(history_dir, "index.json")
     write_json_secure(index_path, history_index, exclusive=True)
 
     # Create meta.json
@@ -233,7 +247,7 @@ def create_note(
         "integrity": {"checksum": checksum, "signature": signature},
     }
 
-    meta_path = safe_resolve_path(note_dir, "meta.json")
+    meta_path = join_secure_path(note_dir, "meta.json")
     write_json_secure(meta_path, meta, exclusive=True)
 
 
@@ -265,14 +279,14 @@ def update_note(
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
+    except FileNotFoundError:
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     # Check parent revision from content.json (as per spec)
-    content_path = safe_resolve_path(note_dir, "content.json")
+    content_path = resolve_existing_path(note_dir, "content.json")
 
     # Use advisory locking to prevent race conditions
     # We open in r+ mode to read and then write
@@ -331,6 +345,34 @@ def update_note(
             if fcntl:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
+    # Finalize and record the new revision (extracted to helper to reduce function size)
+    _finalize_revision(
+        note_dir,
+        rev_id,
+        parent_revision_id,
+        timestamp,
+        author,
+        diff_text,
+        checksum,
+        signature,
+        content,
+        parsed,
+    )
+
+
+def _finalize_revision(
+    note_dir: Path,
+    rev_id: str,
+    parent_revision_id: str,
+    timestamp: float,
+    author: str,
+    diff_text: str,
+    checksum: str,
+    signature: str,
+    content: str,
+    parsed: dict[str, Any],
+) -> None:
+    """Write the revision file, update the history index, and update meta.json."""
     revision = {
         "revision_id": rev_id,
         "parent_revision_id": parent_revision_id,
@@ -341,12 +383,12 @@ def update_note(
         "message": DEFAULT_UPDATE_MESSAGE,
     }
 
-    history_dir = safe_resolve_path(note_dir, "history")
-    rev_path = safe_resolve_path(history_dir, f"{rev_id}.json")
+    history_dir = resolve_existing_path(note_dir, "history")
+    rev_path = join_secure_path(history_dir, f"{rev_id}.json")
     write_json_secure(rev_path, revision)
 
     # Update history index
-    index_path = safe_resolve_path(history_dir, "index.json")
+    index_path = resolve_existing_path(history_dir, "index.json")
     with index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
@@ -362,7 +404,7 @@ def update_note(
     write_json_secure(index_path, history_index)
 
     # Update meta.json
-    meta_path = safe_resolve_path(note_dir, "meta.json")
+    meta_path = resolve_existing_path(note_dir, "meta.json")
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 
@@ -395,14 +437,14 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
+    except FileNotFoundError:
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
-    content_path = safe_resolve_path(note_dir, "content.json")
-    meta_path = safe_resolve_path(note_dir, "meta.json")
+    content_path = resolve_existing_path(note_dir, "content.json")
+    meta_path = resolve_existing_path(note_dir, "meta.json")
 
     with content_path.open("r", encoding="utf-8") as f:
         content_data = json.load(f)
@@ -453,7 +495,11 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
     notes = []
     for note_dir in notes_dir.iterdir():
         if note_dir.is_dir():
-            meta_path = safe_resolve_path(note_dir, "meta.json")
+            try:
+                meta_path = resolve_existing_path(note_dir, "meta.json")
+            except FileNotFoundError:
+                continue
+
             if meta_path.exists():
                 try:
                     with meta_path.open("r", encoding="utf-8") as f:
@@ -506,17 +552,17 @@ def delete_note(
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", note_id)
+    except FileNotFoundError:
         msg = f"Note {note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     if hard_delete:
         shutil.rmtree(note_dir)
     else:
         # Soft delete - mark as deleted in meta.json
-        meta_path = safe_resolve_path(note_dir, "meta.json")
+        meta_path = resolve_existing_path(note_dir, "meta.json")
         with meta_path.open("r", encoding="utf-8") as f:
             meta = json.load(f)
 
@@ -545,15 +591,15 @@ def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
+    except FileNotFoundError:
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
-    history_index_path = safe_resolve_path(note_dir, "history", "index.json")
-
-    if not history_index_path.exists():
+    try:
+        history_index_path = resolve_existing_path(note_dir, "history", "index.json")
+    except FileNotFoundError:
         return {"note_id": safe_note_id, "revisions": []}
 
     with history_index_path.open("r", encoding="utf-8") as f:
@@ -585,21 +631,22 @@ def get_note_revision(
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
+    except FileNotFoundError:
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     # revision_id is validated above, safe to use in path
-    revision_path = safe_resolve_path(
-        note_dir / "history",
-        f"{safe_revision_id}.json",
-    )
-
-    if not revision_path.exists():
+    try:
+        revision_path = resolve_existing_path(
+            note_dir,
+            "history",
+            f"{safe_revision_id}.json",
+        )
+    except FileNotFoundError:
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     with revision_path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -640,30 +687,32 @@ def restore_note(
 
     ws_path = Path(workspace_path).resolve()
     # Use safe path resolution to prevent path traversal
-    note_dir = safe_resolve_path(ws_path, "notes", safe_note_id)
-
-    if not note_dir.exists():
+    try:
+        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
+    except FileNotFoundError:
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     # Verify target revision exists (revision_id is validated above)
-    target_revision_path = safe_resolve_path(
-        note_dir / "history",
-        f"{safe_revision_id}.json",
-    )
-    if not target_revision_path.exists():
+    try:
+        resolve_existing_path(
+            note_dir,
+            "history",
+            f"{safe_revision_id}.json",
+        )
+    except FileNotFoundError:
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(msg) from None
 
     # Read current content to get parent_revision_id for the new revision
-    content_path = safe_resolve_path(note_dir, "content.json")
+    content_path = resolve_existing_path(note_dir, "content.json")
     with content_path.open("r", encoding="utf-8") as f:
         current_content_data = json.load(f)
 
     current_revision_id = current_content_data["revision_id"]
 
     # Verify revision is in history index
-    history_index_path = safe_resolve_path(note_dir, "history", "index.json")
+    history_index_path = resolve_existing_path(note_dir, "history", "index.json")
     with history_index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
@@ -697,8 +746,8 @@ def restore_note(
     }
 
     # Write the revision
-    history_dir = safe_resolve_path(note_dir, "history")
-    rev_path = safe_resolve_path(history_dir, f"{new_rev_id}.json")
+    history_dir = resolve_existing_path(note_dir, "history")
+    rev_path = join_secure_path(history_dir, f"{new_rev_id}.json")
     write_json_secure(rev_path, revision)
 
     # Update history index
@@ -720,7 +769,7 @@ def restore_note(
     write_json_secure(content_path, content_data)
 
     # Update meta.json
-    meta_path = safe_resolve_path(note_dir, "meta.json")
+    meta_path = resolve_existing_path(note_dir, "meta.json")
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 

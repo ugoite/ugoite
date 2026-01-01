@@ -20,7 +20,7 @@ from ieapp.notes import (
     restore_note,
     update_note,
 )
-from ieapp.utils import safe_resolve_path
+from ieapp.utils import resolve_existing_path
 from ieapp.workspace import (
     WorkspaceExistsError,
     create_workspace,
@@ -77,8 +77,8 @@ def _get_workspace_path(workspace_id: str) -> Path:
     """
     root_path = get_root_path()
     try:
-        return safe_resolve_path(root_path, "workspaces", workspace_id)
-    except ValueError as e:
+        return resolve_existing_path(root_path, "workspaces", workspace_id)
+    except (ValueError, FileNotFoundError) as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid workspace_id: {workspace_id}",
@@ -125,7 +125,7 @@ async def create_workspace_endpoint(
     return {
         "id": workspace_id,
         "name": payload.name,
-        "path": str(safe_resolve_path(root_path, "workspaces", workspace_id)),
+        "path": str(resolve_existing_path(root_path, "workspaces", workspace_id)),
     }
 
 
