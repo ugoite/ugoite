@@ -84,11 +84,6 @@ def join_secure_path(base: Path, name: str) -> Path:
     return base / name
 
 
-# Deprecated alias for backward compatibility during refactor,
-# but we should move away from it.
-safe_resolve_path = resolve_existing_path
-
-
 def validate_id(identifier: str, name: str) -> str:
     """Validate that an identifier contains only safe characters.
 
