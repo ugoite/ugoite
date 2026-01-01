@@ -151,6 +151,19 @@ def test_list_notes(
         assert isinstance(note["links"], list)
 
 
+def test_list_notes_workspace_not_found_returns_404(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """GET /workspaces/{id}/notes should return 404 when workspace root.
+
+    lacks workspaces dir.
+    """
+    # temp_workspace_root fixture sets IEAPP_ROOT to an empty temporary directory
+    response = test_client.get("/workspaces/Stay/notes")
+    assert response.status_code == 404
+
+
 def test_get_note(
     test_client: TestClient,
     temp_workspace_root: Path,

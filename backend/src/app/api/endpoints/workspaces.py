@@ -20,6 +20,7 @@ from ieapp.notes import (
     restore_note,
     update_note,
 )
+from ieapp.utils import resolve_existing_path
 from ieapp.workspace import (
     WorkspaceExistsError,
     create_workspace,
@@ -74,33 +75,21 @@ def _get_workspace_path(workspace_id: str) -> Path:
         HTTPException: If path resolution fails due to traversal attempt.
 
     """
-    root_path = Path(get_root_path()).resolve()
-    # Validate path component - reject any path traversal patterns
-    if (
-        not workspace_id
-        or workspace_id == ".."
-        or workspace_id.startswith(("/", "\\"))
-        or ".." in workspace_id
-    ):
+    root_path = get_root_path()
+    try:
+        return resolve_existing_path(root_path, "workspaces", workspace_id)
+    except ValueError as e:
+        # Input validation error -> 400 Bad Request
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid workspace_id: {workspace_id}",
-        )
-    # After validation, create a sanitized copy of the identifier
-    # This breaks the taint tracking chain for CodeQL
-    sanitized_id = str(workspace_id)[:256]  # Length limit as additional safety
-    # Build path using validated and sanitized identifier
-    workspaces_dir = root_path / "workspaces"
-    target = workspaces_dir.joinpath(sanitized_id).resolve()
-    # Final containment check - verify path stays within root
-    try:
-        target.relative_to(root_path)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Path traversal detected",
         ) from e
-    return target
+    except (FileNotFoundError, NotADirectoryError) as e:
+        # Missing workspace or path components -> 404 Not Found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workspace not found: {workspace_id}",
+        ) from e
 
 
 @router.get("/workspaces")
@@ -143,7 +132,7 @@ async def create_workspace_endpoint(
     return {
         "id": workspace_id,
         "name": payload.name,
-        "path": str(root_path / "workspaces" / workspace_id),
+        "path": str(resolve_existing_path(root_path, "workspaces", workspace_id)),
     }
 
 

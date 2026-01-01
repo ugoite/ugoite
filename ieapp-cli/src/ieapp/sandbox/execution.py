@@ -246,8 +246,13 @@ def run_script(
                 f_out.close()
                 f_err.close()
 
-            wasm_thread.join(timeout=1)
+            wasm_thread.join(timeout=5)
             _check_errors(result_container)
+
+            # If we finished without a result or an explicit error, raise
+            if "result" not in result_container:
+                msg = "Sandbox finished without producing a result"
+                raise SandboxExecutionError(msg)
 
             return result_container.get("result")
         finally:
@@ -275,24 +280,26 @@ def _process_loop(
     stderr_buffer_size = 1024
 
     while True:
-        if not wasm_thread.is_alive():
-            if "runtime_error" in result_container:
-                err = result_container["runtime_error"]
-                if isinstance(err, BaseException):
-                    raise err
-            break
-
         rlist, _, _ = select.select([f_out, f_err], [], [], select_timeout)
 
         if f_err in rlist:
             _ = f_err.read(stderr_buffer_size)
 
-        if f_out in rlist and not _process_output(
-            f_out,
-            f_in,
-            host_call_handler,
-            result_container,
-        ):
+        if f_out in rlist:
+            if not _process_output(
+                f_out,
+                f_in,
+                host_call_handler,
+                result_container,
+            ):
+                break
+            continue
+
+        if not wasm_thread.is_alive():
+            if "runtime_error" in result_container:
+                err = result_container["runtime_error"]
+                if isinstance(err, BaseException):
+                    raise err
             break
 
 

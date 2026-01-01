@@ -7,54 +7,81 @@ from pathlib import Path
 from typing import Any
 
 
-def safe_resolve_path(base: Path, *parts: str) -> Path:
-    """Safely resolve a path ensuring it stays within the base directory.
+def resolve_existing_path(base: Path, *parts: str) -> Path:
+    """Securely resolve a path to an EXISTING file or directory.
 
-    This function acts as a security sanitizer for path traversal attacks.
-    All path components are validated before being joined.
+    This function avoids constructing paths from user input by iterating
+    directory contents to find matches. This breaks the taint chain for
+    static analysis tools like CodeQL.
 
     Args:
-        base: The base directory that the resolved path must be within.
-        *parts: Path components to join to the base.
+        base: The base directory to start from.
+        *parts: Path components to traverse.
 
     Returns:
-        The resolved absolute path.
+        The resolved Path object found in the filesystem.
 
     Raises:
-        ValueError: If the resolved path would escape the base directory
-                    or if any path component is invalid.
+        FileNotFoundError: If any component does not exist.
+        NotADirectoryError: If a component is not a directory when it should be.
 
     """
-    # Validate each path component to ensure no traversal sequences
+    current = base.resolve()
+    if not current.exists():
+        msg = f"Base path {current} does not exist"
+        raise FileNotFoundError(msg)
+
     for part in parts:
-        # Reject path traversal patterns: .., absolute paths, etc.
-        if (
-            not part
-            or part == ".."
-            or part.startswith(("/", "\\"))
-            or ".." in part.split("/")
-            or ".." in part.split("\\")
-        ):
-            msg = f"Invalid path component: {part}"
-            raise ValueError(msg)
+        if not current.is_dir():
+            msg = f"{current} is not a directory"
+            raise NotADirectoryError(msg)
 
-    # Construct path using validated components
-    base_resolved = base.resolve()
-    # Build path step by step with validated components
-    # After validation, components are safe - create sanitized copies
-    safe_parts = [str(p)[:256] for p in parts]  # Length limit and copy
-    # Build path using Path.joinpath with sanitized parts
-    safe_path = base_resolved.joinpath(*safe_parts)
-    # Create new Path from string to break taint chain for CodeQL
-    target = Path(str(safe_path)).resolve()
+        # Iterate over directory contents to find the matching child.
+        # This ensures the returned path comes from the OS, not user input.
+        found = False
+        for child in current.iterdir():
+            if child.name == part:
+                current = child
+                found = True
+                break
 
-    # Final containment check as defense in depth
-    try:
-        target.relative_to(base_resolved)
-    except ValueError as e:
-        msg = f"Path traversal detected: {target} is not within {base_resolved}"
-        raise ValueError(msg) from e
-    return target
+        if not found:
+            msg = f"Component {part} not found in {current}"
+            raise FileNotFoundError(msg)
+
+    return current
+
+
+def join_secure_path(base: Path, name: str) -> Path:
+    """Securely construct a path for a NEW file or directory.
+
+    This function strictly validates the name component to ensure it
+    contains only safe characters, preventing path traversal.
+
+    Args:
+        base: The base directory (must be trusted/resolved).
+        name: The name of the new file or directory.
+
+    Returns:
+        The constructed Path object.
+
+    Raises:
+        ValueError: If the name contains invalid characters.
+
+    """
+    # Strict allowlist for new filenames
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
+        msg = (
+            f"Invalid filename: {name}. Allowed: alphanumeric, dot, hyphen, underscore."
+        )
+        raise ValueError(msg)
+
+    # Explicitly reject traversal indicators even if regex somehow missed them
+    if ".." in name or "/" in name or "\\" in name:
+        msg = f"Invalid filename: {name}"
+        raise ValueError(msg)
+
+    return base / name
 
 
 def validate_id(identifier: str, name: str) -> str:
