@@ -15,7 +15,8 @@ def safe_resolve_path(base: Path, *parts: str) -> Path:
 
     Args:
         base: The base directory that the resolved path must be within.
-        *parts: Path components to join to the base.
+        *parts: Path components to join to the base. Each component must be a
+            single path segment (no path separators).
 
     Returns:
         The resolved absolute path.
@@ -45,25 +46,17 @@ def safe_resolve_path(base: Path, *parts: str) -> Path:
             raise ValueError(msg)
 
         # Use Path(...).name to obtain the final path component (filename).
-        # This is more idiomatic with pathlib and avoids os.path.
+       # This is more idiomatic with pathlib and avoids os.path.
         safe_part = Path(part).name
 
         # If 'part' contained separators the name will differ (or it may be empty).
         # Enforce that 'part' is a single path component.
-        if safe_part != part:
-            # Allow forward slashes if they are just separators for subdirectories?
-            # The current usage implies we might pass "history" or IDs.
-            # If we pass "subdir/file", basename("subdir/file") is "file".
-            # If we want to allow subdirectories, we should split them.
-            # But for now, let's assume parts are single components.
-            # If we need to join multiple, we should pass them as separate args.
-            # However, let's be slightly lenient if it's just a clean join,
-            # but strict for CodeQL.
-            # Actually, let's just use the validated part but ensure we join safely.
-            pass
+        if safe_part != part or not safe_part:
+            msg = f"Invalid path component (must be a single segment): {part}"
+            raise ValueError(msg)
 
-        # Join safely
-        current_path = current_path / part
+        # Join safely using the sanitized component
+        current_path = current_path / safe_part
 
     # Final resolution
     target = current_path.resolve()
