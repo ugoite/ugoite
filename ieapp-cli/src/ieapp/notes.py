@@ -173,7 +173,7 @@ def create_note(
         "computed": {},
     }
 
-    content_path = note_dir / "content.json"
+    content_path = safe_resolve_path(note_dir, "content.json")
     write_json_secure(content_path, content_data, exclusive=True)
 
     revision = {
@@ -186,10 +186,10 @@ def create_note(
         "message": DEFAULT_INITIAL_MESSAGE,
     }
 
-    history_dir = note_dir / "history"
+    history_dir = safe_resolve_path(note_dir, "history")
     _mkdir_secure(history_dir)
 
-    rev_path = history_dir / f"{rev_id}.json"
+    rev_path = safe_resolve_path(history_dir, f"{rev_id}.json")
     write_json_secure(rev_path, revision, exclusive=True)
 
     # Update history index
@@ -204,7 +204,7 @@ def create_note(
             },
         ],
     }
-    index_path = history_dir / "index.json"
+    index_path = safe_resolve_path(history_dir, "index.json")
     write_json_secure(index_path, history_index, exclusive=True)
 
     # Create meta.json
@@ -233,7 +233,7 @@ def create_note(
         "integrity": {"checksum": checksum, "signature": signature},
     }
 
-    meta_path = note_dir / "meta.json"
+    meta_path = safe_resolve_path(note_dir, "meta.json")
     write_json_secure(meta_path, meta, exclusive=True)
 
 
@@ -272,7 +272,7 @@ def update_note(
         raise FileNotFoundError(msg)
 
     # Check parent revision from content.json (as per spec)
-    content_path = note_dir / "content.json"
+    content_path = safe_resolve_path(note_dir, "content.json")
 
     # Use advisory locking to prevent race conditions
     # We open in r+ mode to read and then write
@@ -341,12 +341,12 @@ def update_note(
         "message": DEFAULT_UPDATE_MESSAGE,
     }
 
-    history_dir = note_dir / "history"
-    rev_path = history_dir / f"{rev_id}.json"
+    history_dir = safe_resolve_path(note_dir, "history")
+    rev_path = safe_resolve_path(history_dir, f"{rev_id}.json")
     write_json_secure(rev_path, revision)
 
     # Update history index
-    index_path = history_dir / "index.json"
+    index_path = safe_resolve_path(history_dir, "index.json")
     with index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
@@ -362,7 +362,7 @@ def update_note(
     write_json_secure(index_path, history_index)
 
     # Update meta.json
-    meta_path = note_dir / "meta.json"
+    meta_path = safe_resolve_path(note_dir, "meta.json")
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 
@@ -401,8 +401,8 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
         msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
-    content_path = note_dir / "content.json"
-    meta_path = note_dir / "meta.json"
+    content_path = safe_resolve_path(note_dir, "content.json")
+    meta_path = safe_resolve_path(note_dir, "meta.json")
 
     with content_path.open("r", encoding="utf-8") as f:
         content_data = json.load(f)
@@ -453,7 +453,7 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
     notes = []
     for note_dir in notes_dir.iterdir():
         if note_dir.is_dir():
-            meta_path = note_dir / "meta.json"
+            meta_path = safe_resolve_path(note_dir, "meta.json")
             if meta_path.exists():
                 try:
                     with meta_path.open("r", encoding="utf-8") as f:
@@ -516,7 +516,7 @@ def delete_note(
         shutil.rmtree(note_dir)
     else:
         # Soft delete - mark as deleted in meta.json
-        meta_path = note_dir / "meta.json"
+        meta_path = safe_resolve_path(note_dir, "meta.json")
         with meta_path.open("r", encoding="utf-8") as f:
             meta = json.load(f)
 
@@ -551,7 +551,7 @@ def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]
         msg = f"Note {safe_note_id} not found"
         raise FileNotFoundError(msg)
 
-    history_index_path = note_dir / "history" / "index.json"
+    history_index_path = safe_resolve_path(note_dir, "history", "index.json")
 
     if not history_index_path.exists():
         return {"note_id": safe_note_id, "revisions": []}
@@ -592,7 +592,10 @@ def get_note_revision(
         raise FileNotFoundError(msg)
 
     # revision_id is validated above, safe to use in path
-    revision_path = note_dir / "history" / f"{safe_revision_id}.json"
+    revision_path = safe_resolve_path(
+        note_dir / "history",
+        f"{safe_revision_id}.json",
+    )
 
     if not revision_path.exists():
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
@@ -644,20 +647,23 @@ def restore_note(
         raise FileNotFoundError(msg)
 
     # Verify target revision exists (revision_id is validated above)
-    target_revision_path = note_dir / "history" / f"{safe_revision_id}.json"
+    target_revision_path = safe_resolve_path(
+        note_dir / "history",
+        f"{safe_revision_id}.json",
+    )
     if not target_revision_path.exists():
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
         raise FileNotFoundError(msg)
 
     # Read current content to get parent_revision_id for the new revision
-    content_path = note_dir / "content.json"
+    content_path = safe_resolve_path(note_dir, "content.json")
     with content_path.open("r", encoding="utf-8") as f:
         current_content_data = json.load(f)
 
     current_revision_id = current_content_data["revision_id"]
 
     # Verify revision is in history index
-    history_index_path = note_dir / "history" / "index.json"
+    history_index_path = safe_resolve_path(note_dir, "history", "index.json")
     with history_index_path.open("r", encoding="utf-8") as f:
         history_index = json.load(f)
 
@@ -691,8 +697,8 @@ def restore_note(
     }
 
     # Write the revision
-    history_dir = note_dir / "history"
-    rev_path = history_dir / f"{new_rev_id}.json"
+    history_dir = safe_resolve_path(note_dir, "history")
+    rev_path = safe_resolve_path(history_dir, f"{new_rev_id}.json")
     write_json_secure(rev_path, revision)
 
     # Update history index
@@ -714,7 +720,7 @@ def restore_note(
     write_json_secure(content_path, content_data)
 
     # Update meta.json
-    meta_path = note_dir / "meta.json"
+    meta_path = safe_resolve_path(note_dir, "meta.json")
     with meta_path.open("r", encoding="utf-8") as f:
         meta = json.load(f)
 
