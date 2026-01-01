@@ -38,6 +38,30 @@ DEFAULT_UPDATE_MESSAGE = "Update"
 MIN_FRONTMATTER_PARTS = 3
 
 
+def _resolve_workspace_root(workspace_path: str | Path) -> Path:
+    """Resolve a workspace directory via trusted components.
+
+    This re-traverses the filesystem from the parent ``workspaces`` directory
+    so that path components come from the OS (not user input), satisfying
+    CodeQL's path-injection checks.
+    """
+    base = Path(workspace_path).resolve()
+    workspaces_dir = base.parent
+
+    if workspaces_dir.name != "workspaces":
+        msg = f"Workspace path must reside under a 'workspaces' directory: {base}"
+        raise FileNotFoundError(msg)
+
+    root_dir = workspaces_dir.parent
+    safe_workspace_id = validate_id(base.name, "workspace_id")
+
+    try:
+        return resolve_existing_path(root_dir, "workspaces", safe_workspace_id)
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
+        msg = f"Workspace {safe_workspace_id} not found under {root_dir}"
+        raise FileNotFoundError(msg) from exc
+
+
 class NoteExistsError(Exception):
     """Raised when attempting to create a note that already exists."""
 
@@ -146,7 +170,7 @@ def create_note(
     # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
 
     # Check if note exists using secure lookup
     try:
@@ -277,7 +301,7 @@ def update_note(
     # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
@@ -435,7 +459,7 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
     # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
@@ -486,10 +510,10 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
         List of note summaries (id, title, class, tags, etc.).
 
     """
-    ws_path = Path(workspace_path)
-    notes_dir = ws_path / "notes"
-
-    if not notes_dir.exists():
+    ws_path = _resolve_workspace_root(workspace_path)
+    try:
+        notes_dir = resolve_existing_path(ws_path, "notes")
+    except FileNotFoundError:
         return []
 
     notes = []
@@ -550,7 +574,7 @@ def delete_note(
     """
     validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", note_id)
@@ -589,7 +613,7 @@ def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]
     # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
@@ -629,7 +653,7 @@ def get_note_revision(
     safe_note_id = validate_id(note_id, "note_id")
     safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
@@ -685,7 +709,7 @@ def restore_note(
     safe_note_id = validate_id(note_id, "note_id")
     safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = Path(workspace_path).resolve()
+    ws_path = _resolve_workspace_root(workspace_path)
     # Use safe path resolution to prevent path traversal
     try:
         note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
