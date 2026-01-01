@@ -78,10 +78,17 @@ def _get_workspace_path(workspace_id: str) -> Path:
     root_path = get_root_path()
     try:
         return resolve_existing_path(root_path, "workspaces", workspace_id)
-    except (ValueError, FileNotFoundError) as e:
+    except ValueError as e:
+        # Input validation error -> 400 Bad Request
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid workspace_id: {workspace_id}",
+        ) from e
+    except (FileNotFoundError, NotADirectoryError) as e:
+        # Missing workspace or path components -> 404 Not Found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workspace not found: {workspace_id}",
         ) from e
 
 
