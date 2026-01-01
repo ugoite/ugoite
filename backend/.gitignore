@@ -16,3 +16,7 @@ wheels/
 src/app/sandbox/sandbox.wasm
 javy
 javy.gz
+
+# IEapp runtime data (created during dev)
+global.json
+workspaces/

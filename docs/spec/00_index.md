@@ -25,6 +25,8 @@ This specification is broken down into the following documents:
 | [03_data_model.md](./03_data_model.md) | The `fsspec` file layout, JSON schemas, and versioning strategy. |
 | [04_api_and_mcp.md](./04_api_and_mcp.md) | REST API endpoints and the MCP (Model Context Protocol) definition. |
 | [05_security_and_quality.md](./05_security_and_quality.md) | Security measures, testing strategy (TDD), and error handling. |
+| [06_frontend_backend_interface.md](./06_frontend_backend_interface.md) | Behavioral contracts and responsibility separation between Frontend and Backend. |
+| [07_requirements.md](./07_requirements.md) | **Requirements & Test Mapping** - Comprehensive list of requirements with test coverage. |
 
 ## Quick Summary of Key Decisions
 
@@ -33,5 +35,5 @@ This specification is broken down into the following documents:
 *   **Frontend**: SolidJS (Solid Start) + Bun (Local-first, Optimistic UI).
 *   **Backend**: Python 3.12+ FastAPI (Stateless, acting as the MCP host).
 *   **Search**: Local FAISS vector index + Inverted Index.
-*   **Testing**: Pytest (Backend) + Playwright (E2E).
+*   **Testing**: Pytest (Backend) + Bun Test (E2E, TypeScript-based HTTP tests).
 

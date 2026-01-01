@@ -88,6 +88,7 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
+    assert "revision_id" in data  # Required for optimistic concurrency
     note_id = data["id"]
 
     # Verify file system
@@ -138,6 +139,17 @@ def test_list_notes(
     assert isinstance(data, list)
     assert len(data) == 2
 
+    # Verify NoteRecord structure includes properties and links
+    for note in data:
+        assert "id" in note
+        assert "title" in note
+        assert "properties" in note, (
+            "properties field must be present in note list response"
+        )
+        assert "links" in note, "links field must be present in note list response"
+        assert isinstance(note["properties"], dict)
+        assert isinstance(note["links"], list)
+
 
 def test_get_note(
     test_client: TestClient,
@@ -155,7 +167,8 @@ def test_get_note(
     data = response.json()
     assert data["id"] == "test-note"
     assert data["title"] == "Test Note"
-    assert "# Test Note" in data["markdown"]
+    # Note: get_note returns "content" field (not "markdown")
+    assert "# Test Note" in data["content"]
 
 
 def test_get_note_not_found(
@@ -196,8 +209,16 @@ def test_update_note(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["title"] == "Updated Title"
-    assert "New content" in data["markdown"]
+    assert "id" in data
+    assert "revision_id" in data
+    assert data["revision_id"] != revision_id  # New revision
+
+    # Verify the note was updated by fetching it
+    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    updated_note = get_response.json()
+    assert updated_note["title"] == "Updated Title"
+    # Note: get_note returns "content" field (not "markdown")
+    assert "New content" in updated_note["content"]
 
 
 def test_update_note_conflict(
@@ -235,7 +256,10 @@ def test_update_note_conflict(
     assert response.status_code == 409
     # Should include the current revision for client merge
     detail = response.json()["detail"]
-    assert "conflict" in str(detail).lower() or "current_revision" in str(detail)
+    conflict_check = "conflict" in str(detail).lower() or "current_revision" in str(
+        detail,
+    )
+    assert conflict_check
 
 
 def test_delete_note(

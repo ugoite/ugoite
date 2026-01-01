@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
     fcntl: Any | None = None
 
-from .utils import validate_id, write_json_secure
+from .utils import safe_resolve_path, validate_id, write_json_secure
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +115,9 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
         WorkspaceExistsError: If the workspace already exists.
 
     """
-    validate_id(workspace_id, "workspace_id")
-    logger.info("Creating workspace %s at %s", workspace_id, root_path)
+    # Validate and sanitize workspace_id
+    safe_workspace_id = validate_id(workspace_id, "workspace_id")
+    logger.info("Creating workspace %s at %s", safe_workspace_id, root_path)
 
     # Use fsspec to handle filesystem operations
     # For now, we assume local filesystem if protocol is not specified
@@ -149,10 +150,12 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
 
     global_json_path = _ensure_global_json(root_path_str)
 
-    ws_path = Path(root_path_str) / "workspaces" / workspace_id
+    # Use safe path resolution to prevent path traversal
+    base_path = Path(root_path_str).resolve()
+    ws_path = safe_resolve_path(base_path, "workspaces", safe_workspace_id)
 
     if fs.exists(str(ws_path)):
-        msg = f"Workspace {workspace_id} already exists at {ws_path}"
+        msg = f"Workspace {safe_workspace_id} already exists at {ws_path}"
         raise WorkspaceExistsError(msg)
 
     # Create directories
@@ -166,8 +169,8 @@ def create_workspace(root_path: str | Path, workspace_id: str) -> None:
 
     # Create meta.json
     meta = {
-        "id": workspace_id,
-        "name": workspace_id,
+        "id": safe_workspace_id,
+        "name": safe_workspace_id,
         "created_at": time.time(),
         "storage": {"type": "local", "root": root_path_str},
     }
@@ -215,18 +218,21 @@ def get_workspace(root_path: str | Path, workspace_id: str) -> dict[str, Any]:
         FileNotFoundError: If the workspace does not exist.
 
     """
-    validate_id(workspace_id, "workspace_id")
+    # Validate and sanitize workspace_id
+    safe_workspace_id = validate_id(workspace_id, "workspace_id")
 
     root_path_str = str(root_path)
-    ws_path = Path(root_path_str) / "workspaces" / workspace_id
+    # Use safe path resolution to prevent path traversal
+    base_path = Path(root_path_str).resolve()
+    ws_path = safe_resolve_path(base_path, "workspaces", safe_workspace_id)
 
     if not ws_path.exists():
-        msg = f"Workspace {workspace_id} not found"
+        msg = f"Workspace {safe_workspace_id} not found"
         raise FileNotFoundError(msg)
 
     meta_path = ws_path / "meta.json"
     if not meta_path.exists():
-        msg = f"Workspace {workspace_id} metadata not found"
+        msg = f"Workspace {safe_workspace_id} metadata not found"
         raise FileNotFoundError(msg)
 
     with meta_path.open("r", encoding="utf-8") as f:

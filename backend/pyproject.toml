@@ -12,13 +12,6 @@ dependencies = [
     "wasmtime>=26.0.0",
 ]
 
-[build-system]
-requires = ["uv_build>=0.9.4,<0.10.0"]
-build-backend = "uv_build"
-
-[tool.uv.sources]
-ieapp = { path = "../ieapp-cli" }
-
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
@@ -26,6 +19,19 @@ dev = [
     "ruff>=0.14.7",
     "ty>=0.0.1a26",
 ]
+
+[build-system]
+requires = ["uv_build>=0.9.4,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+
+[tool.uv.sources]
+ieapp = { path = "../ieapp-cli" }
+
+[tool.ruff]
+
+[tool.ruff.lint]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]

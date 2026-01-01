@@ -16,7 +16,8 @@
 				"MermaidChart.vscode-mermaid-chart",
 				"GitHub.vscode-pull-request-github",
 				"github.vscode-github-actions",
-				"ms-vscode.vscode-websearchforcopilot"
+				"ms-vscode.vscode-websearchforcopilot",
+				"GitHub.vscode-codeql"
 			]
 		}
 	},
@@ -29,5 +30,5 @@
 	"remoteUser": "vscode",
 	"containerEnv": {},
 	"remoteEnv": { "MISE_EXPERIMENTAL": "1" },
-	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run install"
+	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run install && uvx pre-commit install",
 }

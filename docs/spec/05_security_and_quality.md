@@ -7,6 +7,7 @@ IEapp ships in a localhost-only mode with no auth prompts to keep the personal w
 
 ### Network Isolation
 *   **Localhost Binding**: By default, the API binds ONLY to `127.0.0.1`.
+*   **Remote Access**: Blocked by default. Set `IEAPP_ALLOW_REMOTE=true` environment variable to allow remote connections (e.g., in dev containers or Codespaces). This is automatically configured for `mise run dev`.
 *   **CORS**: Restricted to the specific frontend origin.
 
 ### Data Protection
@@ -36,15 +37,72 @@ We follow a strict Test-Driven Development approach.
 *   **Sandbox Tests**: Verify that `run_script` cannot escape the sandbox or access unauthorized files.
 
 ### Frontend (SolidJS)
-*   **Framework**: `bun test` + `Playwright`
-*   **Unit Tests**: Test components and stores.
-*   **E2E Tests**: Use Playwright to drive the full application, verifying the "Optimistic UI" behavior and Canvas interactions.
+*   **Framework**: `bun test` (Vitest for unit tests, Bun's native test runner for E2E)
+*   **Unit Tests**: Test components and stores using Vitest.
+*   **E2E Tests**: TypeScript-based HTTP tests using Bun's native fetch and test runner. Tests verify API endpoints and frontend responses without browser automation.
+
+### Running Tests Locally
+
+#### Unit Tests
+Run all unit tests across all packages:
+```bash
+mise run test
+```
+
+Or run tests for individual packages:
+```bash
+mise run //backend:test    # Backend pytest
+mise run //frontend:test   # Frontend vitest
+mise run //ieapp-cli:test  # CLI pytest
+```
+
+#### E2E Tests
+Run full end-to-end tests using Bun's native test runner against a live backend and frontend:
+```bash
+mise run e2e
+```
+
+This command will:
+1. Build the sandbox.wasm if needed
+2. Start the backend server on port 8000
+3. Start the frontend dev server on port 3000
+4. Wait for both servers to be ready
+5. Execute E2E tests using Bun's test runner
+6. Automatically shut down servers when tests complete
+
+For faster iteration during E2E test development, you can run the servers manually in separate terminals:
+```bash
+# Terminal 1: Backend
+mise run //backend:dev
+
+# Terminal 2: Frontend
+mise run //frontend:dev
+
+# Terminal 3: Run E2E tests (servers already running)
+cd e2e && bun test
+```
 
 ### CI/CD Pipeline
 1.  **Lint**: `ruff` (Python), `biome` (TypeScript/JavaScript).
 2.  **Unit**: `pytest` (Backend), `bun test` (Frontend).
-3.  **E2E**: `playwright` (headless browser tests).
+3.  **E2E**: `bun test` (TypeScript HTTP tests against live servers in `/e2e` directory).
 4.  **Build**: Docker images for deployment, Python wheel for `ieapp` library.
+
+### GitHub Actions Workflows
+
+The repository includes the following CI workflows:
+
+| Workflow | File | Triggers | Purpose |
+|----------|------|----------|---------|
+| Python CI | `.github/workflows/python-ci.yml` | Push, PR to main | Lint (ruff), type check (ty), unit tests (pytest) |
+| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR to main | Lint (biome) |
+| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR to main | Full E2E tests with Bun test runner |
+
+The E2E workflow:
+- Starts both backend and frontend servers
+- Runs TypeScript HTTP tests using Bun's native test runner
+- Tests verify API endpoints and frontend responses
+- Has a 30-minute timeout to prevent runaway tests
 
 ### Local checks / pre-commit hooks
 

@@ -7,5 +7,5 @@ run = "bun install"
 run = "BACKEND_URL=http://localhost:8000 bun run dev"
 
 [tasks.test]
-run = "bash -lc 'if [ -d tests ] && [ \"$(find tests -type f | wc -l)\" -gt 0 ]; then bun test; else echo \"No frontend tests found\"; fi'"
-description = "Run frontend unit tests (no-op if no tests present)"
+run = "bun run test:run"
+description = "Run frontend unit/component tests with Vitest"

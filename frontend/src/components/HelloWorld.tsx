@@ -9,8 +9,7 @@ export default function HelloWorld() {
 			const res = await apiFetch("/");
 			const data = await res.json();
 			setMessage(data.message ?? "No message");
-		} catch (e) {
-			console.error(e);
+		} catch (_e) {
 			setMessage("Error fetching");
 		}
 	});

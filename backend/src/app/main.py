@@ -40,4 +40,10 @@ async def root() -> dict[str, str]:
     return {"message": "Hello World!"}
 
 
+@app.get("/health")
+async def health() -> dict[str, str]:
+    """Health check endpoint for CI/CD and monitoring."""
+    return {"status": "healthy"}
+
+
 app.include_router(api_router)

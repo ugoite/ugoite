@@ -1,0 +1,101 @@
+/**
+ * Smoke Tests for IEapp
+ *
+ * These tests verify that the basic infrastructure is working:
+ * - Backend health check
+ * - Frontend serves pages
+ * - API endpoints respond correctly
+ */
+
+import { describe, expect, test, beforeAll } from "bun:test";
+import {
+	E2EClient,
+	waitForServers,
+} from "./lib/client";
+
+const client = new E2EClient();
+
+describe("Smoke Tests", () => {
+	beforeAll(async () => {
+		// Wait for servers to be ready with a longer timeout
+		await waitForServers(client, { timeout: 60000 });
+	});
+
+	describe("Backend Health", () => {
+		test("GET /health returns OK", async () => {
+			const res = await client.getApi("/health");
+			expect(res.ok).toBe(true);
+
+			const json = await res.json();
+			expect(json).toHaveProperty("status", "healthy");
+		});
+	});
+
+	describe("Frontend Accessibility", () => {
+		test("GET / returns HTML with DOCTYPE", async () => {
+			const res = await client.getFrontend("/");
+			expect(res.ok).toBe(true);
+
+			const body = await res.text();
+			expect(body.toLowerCase()).toContain("<!doctype html>");
+		});
+
+		test("GET / has correct content-type", async () => {
+			const res = await client.getFrontend("/");
+			expect(res.headers.get("content-type")).toContain("text/html");
+		});
+
+		test("GET /notes returns HTML", async () => {
+			const res = await client.getFrontend("/notes");
+			expect(res.ok).toBe(true);
+
+			const body = await res.text();
+			expect(body.toLowerCase()).toContain("<!doctype html>");
+		});
+
+		test("GET /about returns HTML", async () => {
+			const res = await client.getFrontend("/about");
+			expect(res.ok).toBe(true);
+
+			const body = await res.text();
+			expect(body.toLowerCase()).toContain("<!doctype html>");
+		});
+	});
+
+	describe("API Workspaces", () => {
+		test("GET /workspaces returns list", async () => {
+			const res = await client.getApi("/workspaces");
+			expect(res.ok).toBe(true);
+
+			const json = await res.json();
+			expect(Array.isArray(json)).toBe(true);
+		});
+
+		test("GET /workspaces includes default workspace", async () => {
+			const res = await client.getApi("/workspaces");
+			const workspaces = await res.json();
+
+			const defaultWs = workspaces.find(
+				(ws: { name: string }) => ws.name === "default",
+			);
+			expect(defaultWs).toBeDefined();
+		});
+	});
+
+	describe("API Notes", () => {
+		test("GET /workspaces/default/notes returns list", async () => {
+			const res = await client.getApi("/workspaces/default/notes");
+			expect(res.ok).toBe(true);
+
+			const json = await res.json();
+			expect(Array.isArray(json)).toBe(true);
+		});
+	});
+
+	describe("Error Handling", () => {
+		test("GET /nonexistent-api returns 404", async () => {
+			const res = await client.getApi("/nonexistent-endpoint-xyz");
+			expect(res.status).toBe(404);
+		});
+	});
+});

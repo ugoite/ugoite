@@ -17,6 +17,17 @@ repos:
 
   - repo: local
     hooks:
+      - id: biome-ci
+        name: biome ci
+        # Run biome in CI mode for linting and formatting checks on frontend code
+        # This matches the GitHub Actions configuration
+        entry: bash -c "cd frontend && bunx @biomejs/biome@2.3.5 ci ."
+        language: system
+        pass_filenames: false
+        files: ^frontend/
+
+  - repo: local
+    hooks:
       - id: ty-backend
         name: "ty: backend type check"
         entry: bash -c "cd backend && uv run ty check ."

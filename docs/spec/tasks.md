@@ -3,8 +3,8 @@
 ## Guiding Principles
 - **Small Start**: Each milestone is a thin vertical slice that unlocks an immediately usable capability before layering on extras.
 - **Spec Mapping**: Every task references the relevant spec sections (00-05) to ensure alignment.
-- **Strict TDD**: Write failing tests first (pytest/bun/playwright) and keep the green cycle tight before adding new behavior.
-- **Automation First**: Ruff/Biome formatters and CI commands (`pytest`, `bun test`, `playwright test`) must run in each milestone before it is declared complete.
+- **Strict TDD**: Write failing tests first (pytest/bun test) and keep the green cycle tight before adding new behavior.
+- **Automation First**: Ruff/Biome formatters and CI commands (`pytest`, `bun test`) must run in each milestone before it is declared complete.
 
 ## Milestone 0 — Workspace Skeleton & Local FS (Specs: 01 §Architecture, 03 §Storage, 05 §Testing)
 - **Goal**: Single-workspace lifecycle on local disk using `fsspec`; verifies `global.json` + `{workspace}/meta.json` scaffolding.
@@ -63,8 +63,8 @@
 ## Milestone 5 — Frontend Thin Slice (Specs: 02 Story 2 & 4, 04 REST usage)
 - **Goal**: Solid Start app with login-less local mode, list view, markdown editor pushing to REST.
 - **TDD Steps**:
-  1. Component tests (bun test) for note list store interacting with REST mocks.
-  2. Playwright smoke: create note → see header extracted (uses index query stub).
+  1. Component tests (vitest) for note list store interacting with REST mocks.
+  2. E2E smoke tests: create note → see header extracted (uses index query stub).
   3. Visual regression baseline for canvas placeholder (even if static positions for now).
 - **Implementation Notes**:
   - Use optimistic updates but reconcile with server revision_id (Story 2 acceptance).
@@ -75,7 +75,7 @@
 - **TDD Steps**:
   1. Pytest: FAISS + inverted index integration (use tiny embedding fixture).
   2. API tests: attachments upload + garbage collection guard.
-  3. Frontend Playwright: drag-drop link creation persists via REST.
+  3. Frontend E2E: drag-drop link creation persists via REST.
 - **Implementation Notes**:
   - Introduce background worker for embedding generation (mock in tests).
   - Provide storage connector validation route tests for S3 + local (Story 3).
@@ -87,10 +87,11 @@
   2. Pytest: simulate storage outage returning 503 with retry headers.
   3. Security tests: ensure auth required when binding to non-loopback.
 - **Implementation Notes**:
-  - Wire Ruff/Biome/Playwright commands into CI pipeline.
+  - Wire Ruff/Biome/E2E commands into CI pipeline.
   - Document incident playbooks in README + `docs/spec/05_security_and_quality.md` cross-reference.
 
 ## Ongoing TDD Rhythm
 - Start each work item by writing/adjusting tests in the layer closest to the spec requirement.
 - Keep fixtures focused: prefer factory helpers in `tests/factories.py` for notes/workspaces.
 - When adding a new feature, extend docs/spec with decisions before coding to keep spec as the source of truth.
+- E2E tests live in the `/e2e` directory and use Bun's native test runner with TypeScript HTTP testing.

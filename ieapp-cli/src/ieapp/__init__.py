@@ -19,6 +19,7 @@ from .notes import (
     restore_note,
     update_note,
 )
+from .utils import safe_resolve_path
 from .workspace import (
     WorkspaceExistsError,
     create_workspace,
@@ -48,6 +49,7 @@ __all__ = [
     "query",  # Alias for query_index
     "query_index",
     "restore_note",
+    "safe_resolve_path",
     "update_note",
     "validate_properties",
 ]

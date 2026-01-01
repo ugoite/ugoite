@@ -6,29 +6,135 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"ignoreUnknown": false
+		"ignoreUnknown": false,
+		"includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css"]
 	},
 	"formatter": {
 		"enabled": true,
-		"indentStyle": "tab"
+		"indentStyle": "tab",
+		"lineWidth": 100
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"correctness": {
+				"recommended": true,
+				"noNodejsModules": "error",
+				"noUndeclaredDependencies": "error",
+				"useHookAtTopLevel": "error"
+			},
+			"style": {
+				"recommended": true,
+				"noDefaultExport": "error",
+				"useFilenamingConvention": "error",
+				"useNamingConvention": "error"
+			},
+			"suspicious": {
+				"recommended": true,
+				"noConsole": "error",
+				"noReactSpecificProps": "error",
+				"noArrayIndexKey": "error",
+				"noAssignInExpressions": "error",
+				"noDoubleEquals": "error",
+				"noExplicitAny": "error",
+				"noImplicitAnyLet": "error"
+			},
+			"complexity": {
+				"recommended": true,
+				"noExcessiveCognitiveComplexity": "error",
+				"noForEach": "error",
+				"noUselessFragments": "error"
+			},
+			"a11y": {
+				"recommended": true,
+				"noSvgWithoutTitle": "off",
+				"useSemanticElements": "warn",
+				"useButtonType": "error",
+				"useAltText": "error"
+			},
+			"performance": {
+				"recommended": true,
+				"noBarrelFile": "off",
+				"noReExportAll": "off",
+				"noAccumulatingSpread": "error"
+			},
+			"security": {
+				"recommended": true,
+				"noDangerouslySetInnerHtml": "error"
+			}
 		}
 	},
 	"javascript": {
 		"formatter": {
-			"quoteStyle": "double"
+			"quoteStyle": "double",
+			"semicolons": "always"
 		}
 	},
 	"assist": {
 		"enabled": true,
 		"actions": {
 			"source": {
-				"organizeImports": "on"
+				"organizeImports": "off"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off",
+						"noConsole": "off"
+					},
+					"complexity": {
+						"noExcessiveCognitiveComplexity": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"**/routes/**/*.tsx",
+				"app.config.ts",
+				"src/entry-client.tsx",
+				"src/entry-server.tsx",
+				"vitest.config.ts",
+				"src/app.tsx",
+				"src/components/**/*.tsx"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"noDefaultExport": "off",
+						"useNamingConvention": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"src/lib/types.ts",
+				"src/lib/api.ts",
+				"src/lib/store.ts",
+				"src/lib/client.ts",
+				"src/lib/workspace-store.ts",
+				"**/test/mocks/**",
+				"**/*.test.ts",
+				"**/*.test.tsx"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"useNamingConvention": "off",
+						"useFilenamingConvention": "off"
+					},
+					"complexity": {
+						"noExcessiveCognitiveComplexity": "off"
+					}
+				}
+			}
+		}
+	]
 }
