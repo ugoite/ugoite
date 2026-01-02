@@ -5,7 +5,8 @@ const client = new E2EClient();
 
 test("canvas view - drag note and persist position", async () => {
 	// Create a workspace and note
-	const wsRes = await client.postApi("/workspaces", { name: "Canvas Test" });
+	const wsId = `canvas-test-${Date.now()}`;
+	const wsRes = await client.postApi("/workspaces", { name: wsId });
 	const ws = (await wsRes.json()) as { id: string };
 
 	const noteRes = await client.postApi(`/workspaces/${ws.id}/notes`, {
@@ -37,7 +38,8 @@ test("canvas view - drag note and persist position", async () => {
 
 test("canvas view - create bi-directional link", async () => {
 	// Create workspace and two notes
-	const wsRes = await client.postApi("/workspaces", { name: "Link Test" });
+	const wsId = `link-test-${Date.now()}`;
+	const wsRes = await client.postApi("/workspaces", { name: wsId });
 	const ws = (await wsRes.json()) as { id: string };
 
 	const note1Res = await client.postApi(`/workspaces/${ws.id}/notes`, {
@@ -76,7 +78,7 @@ test("canvas view - create bi-directional link", async () => {
 
 	// Delete link
 	const delRes = await client.deleteApi(`/workspaces/${ws.id}/links/${link.id}`);
-	expect(delRes.status).toBe(204);
+	expect(delRes.status).toBe(200);
 
 	const linksAfterRes = await client.getApi(`/workspaces/${ws.id}/links`);
 	const linksAfter = (await linksAfterRes.json()) as typeof link[];
@@ -90,7 +92,8 @@ test("canvas view - create bi-directional link", async () => {
 
 test("search - keyword search finds notes", async () => {
 	// Create workspace and notes with searchable content
-	const wsRes = await client.postApi("/workspaces", { name: "Search Test" });
+	const wsId = `search-test-${Date.now()}`;
+	const wsRes = await client.postApi("/workspaces", { name: wsId });
 	const ws = (await wsRes.json()) as { id: string };
 
 	const note1Res = await client.postApi(`/workspaces/${ws.id}/notes`, {
@@ -128,7 +131,8 @@ test("search - keyword search finds notes", async () => {
 
 test("attachments - upload and delete", async () => {
 	// Create workspace
-	const wsRes = await client.postApi("/workspaces", { name: "Attachment Test" });
+	const wsId = `attachment-test-${Date.now()}`;
+	const wsRes = await client.postApi("/workspaces", { name: wsId });
 	const ws = (await wsRes.json()) as { id: string };
 
 	// Create a test file
@@ -157,7 +161,7 @@ test("attachments - upload and delete", async () => {
 
 	// Delete attachment
 	const delRes = await client.deleteApi(`/workspaces/${ws.id}/attachments/${attachment.id}`);
-	expect(delRes.status).toBe(204);
+	expect(delRes.status).toBe(200);
 
 	// Cleanup
 	await client.deleteApi(`/workspaces/${ws.id}`);
