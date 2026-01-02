@@ -6,10 +6,8 @@ import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { SearchBar } from "~/components/SearchBar";
 import { AttachmentUploader } from "~/components/AttachmentUploader";
-import { RevisionConflictError, noteApi, attachmentApi, linksApi } from "~/lib/client";
-import type { SearchResult, Attachment, WorkspaceLink } from "~/lib/types";
-
-type ViewMode = "list" | "canvas";
+import { RevisionConflictError, noteApi, attachmentApi } from "~/lib/client";
+import type { SearchResult, Attachment } from "~/lib/types";
 
 export default function NotesPage() {
 	// Workspace store manages workspace selection
@@ -18,7 +16,6 @@ export default function NotesPage() {
 	// Reactive workspace ID that drives note loading
 	const workspaceId = () => workspaceStore.selectedWorkspaceId() || "";
 
-	const [viewMode, setViewMode] = createSignal<ViewMode>("list");
 	const [showEditor, setShowEditor] = createSignal(false);
 
 	const store = createNoteStore(workspaceId);
@@ -27,11 +24,11 @@ export default function NotesPage() {
 	const [searchResults, setSearchResults] = createSignal<SearchResult[]>([]);
 	const [isSearching, setIsSearching] = createSignal(false);
 
+	// Scroll position preservation
+	let noteListContainerRef: HTMLDivElement | undefined;
+
 	// Attachments state
 	const [attachments, setAttachments] = createSignal<Attachment[]>([]);
-
-	// Canvas state
-	const [canvasLinks, setCanvasLinks] = createSignal<WorkspaceLink[]>([]);
 
 	// Local editor state
 	const [editorContent, setEditorContent] = createSignal("");
@@ -89,7 +86,17 @@ export default function NotesPage() {
 				return;
 			}
 		}
+
+		// Preserve scroll position before selecting note
+		const scrollTop = noteListContainerRef?.scrollTop || 0;
 		store.selectNote(noteId);
+
+		// Restore scroll position after DOM updates
+		requestAnimationFrame(() => {
+			if (noteListContainerRef) {
+				noteListContainerRef.scrollTop = scrollTop;
+			}
+		});
 	};
 
 	const handleContentChange = (content: string) => {
@@ -214,41 +221,6 @@ export default function NotesPage() {
 		return attachment;
 	};
 
-	// Link create handler
-	const handleLinkCreate = async (link: { source: string; target: string; kind: string }) => {
-		try {
-			const newLink = await linksApi.create(workspaceId(), link);
-			setCanvasLinks([...canvasLinks(), newLink]);
-			store.loadNotes(); // Reload to get updated links
-		} catch (_e) {
-			// Link creation failed - silently ignore
-		}
-	};
-
-	// Link delete handler
-	const handleLinkDelete = async (linkId: string) => {
-		try {
-			await linksApi.delete(workspaceId(), linkId);
-			setCanvasLinks(canvasLinks().filter((l) => l.id !== linkId));
-			store.loadNotes(); // Reload to get updated links
-		} catch (_e) {
-			// Link deletion failed - silently ignore
-		}
-	};
-
-	// Load canvas links
-	createEffect(() => {
-		const wsId = workspaceId();
-		if (wsId && viewMode() === "canvas") {
-			linksApi
-				.list(wsId)
-				.then(setCanvasLinks)
-				.catch(() => {
-					// Failed to load links - silently ignore
-				});
-		}
-	});
-
 	return (
 		<main class="flex h-screen overflow-hidden bg-gray-100">
 			{/* Sidebar */}
@@ -289,32 +261,6 @@ export default function NotesPage() {
 							</svg>
 						</button>
 					</div>
-
-					{/* View Toggle */}
-					<div class="flex gap-1 p-1 bg-gray-100 rounded-lg">
-						<button
-							type="button"
-							class={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-								viewMode() === "list"
-									? "bg-white shadow text-gray-900"
-									: "text-gray-600 hover:text-gray-900"
-							}`}
-							onClick={() => setViewMode("list")}
-						>
-							List
-						</button>
-						<button
-							type="button"
-							class={`flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-								viewMode() === "canvas"
-									? "bg-white shadow text-gray-900"
-									: "text-gray-600 hover:text-gray-900"
-							}`}
-							onClick={() => setViewMode("canvas")}
-						>
-							Canvas
-						</button>
-					</div>
 				</div>
 
 				{/* Create Note Button */}
@@ -352,7 +298,7 @@ export default function NotesPage() {
 				</div>
 
 				{/* Note List (or Search Results) */}
-				<div class="flex-1 overflow-auto p-4">
+				<div ref={noteListContainerRef} class="flex-1 overflow-auto p-4">
 					<Show
 						when={searchResults().length === 0}
 						fallback={
@@ -377,92 +323,86 @@ export default function NotesPage() {
 			</aside>{" "}
 			{/* Main Content */}
 			<div class="flex-1 flex flex-col overflow-hidden">
-				<Show when={viewMode() === "list"}>
-					<Show
-						when={showEditor() && store.selectedNote()}
-						fallback={
-							<div class="flex-1 flex items-center justify-center text-gray-400">
-								<div class="text-center">
-									<svg
-										class="w-16 h-16 mx-auto mb-4 opacity-50"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-										aria-hidden="true"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="1"
-											d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-										/>
-									</svg>
-									<p>Select a note to edit</p>
-									<p class="text-sm mt-1">or create a new one</p>
-								</div>
-							</div>
-						}
-					>
-						<div class="flex-1 flex flex-col overflow-hidden">
-							{/* Note Header */}
-							<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
-								<div>
-									<h2 class="font-semibold text-gray-800">
-										{store.notes().find((n) => n.id === store.selectedNoteId())?.title ||
-											"Untitled"}
-									</h2>
-									<Show when={store.notes().find((n) => n.id === store.selectedNoteId())?.class}>
-										<span class="text-sm text-gray-500">
-											Class: {store.notes().find((n) => n.id === store.selectedNoteId())?.class}
-										</span>
-									</Show>
-								</div>
-								<button
-									type="button"
-									onClick={handleDeleteNote}
-									class="p-2 text-red-500 hover:bg-red-50 rounded"
-									aria-label="Delete note"
+				<Show
+					when={showEditor() && store.selectedNote()}
+					fallback={
+						<div class="flex-1 flex items-center justify-center text-gray-400">
+							<div class="text-center">
+								<svg
+									class="w-16 h-16 mx-auto mb-4 opacity-50"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+									aria-hidden="true"
 								>
-									<svg
-										class="w-5 h-5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-										aria-hidden="true"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-										/>
-									</svg>
-								</button>
-							</div>
-
-							{/* Editor */}
-							<div class="flex-1 bg-white overflow-hidden flex flex-col">
-								<MarkdownEditor
-									content={editorContent()}
-									onChange={handleContentChange}
-									onSave={handleSave}
-									isDirty={isDirty()}
-									isSaving={isSaving()}
-									conflictMessage={conflictMessage() || undefined}
-									showPreview
-									placeholder="Start writing in Markdown..."
-								/>
-
-								{/* Attachments Section */}
-								<div class="border-t p-4">
-									<AttachmentUploader
-										onUpload={handleAttachmentUpload}
-										attachments={attachments()}
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="1"
+										d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
 									/>
-								</div>
+								</svg>
+								<p>Select a note to edit</p>
+								<p class="text-sm mt-1">or create a new one</p>
 							</div>
 						</div>
-					</Show>
+					}
+				>
+					<div class="flex-1 flex flex-col overflow-hidden">
+						{/* Note Header */}
+						<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
+							<div>
+								<h2 class="font-semibold text-gray-800">
+									{store.notes().find((n) => n.id === store.selectedNoteId())?.title || "Untitled"}
+								</h2>
+								<Show when={store.notes().find((n) => n.id === store.selectedNoteId())?.class}>
+									<span class="text-sm text-gray-500">
+										Class: {store.notes().find((n) => n.id === store.selectedNoteId())?.class}
+									</span>
+								</Show>
+							</div>
+							<button
+								type="button"
+								onClick={handleDeleteNote}
+								class="p-2 text-red-500 hover:bg-red-50 rounded"
+								aria-label="Delete note"
+							>
+								<svg
+									class="w-5 h-5"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+									aria-hidden="true"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						{/* Editor */}
+						<div class="flex-1 bg-white overflow-hidden flex flex-col">
+							<MarkdownEditor
+								content={editorContent()}
+								onChange={handleContentChange}
+								onSave={handleSave}
+								isDirty={isDirty()}
+								isSaving={isSaving()}
+								conflictMessage={conflictMessage() || undefined}
+								showPreview
+								placeholder="Start writing in Markdown..."
+							/>
+
+							{/* Attachments Section */}
+							<div class="border-t p-4">
+								<AttachmentUploader onUpload={handleAttachmentUpload} attachments={attachments()} />
+							</div>
+						</div>
+					</div>
 				</Show>
 			</div>
 		</main>
