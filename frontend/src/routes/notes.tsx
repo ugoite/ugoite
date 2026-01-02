@@ -215,22 +215,6 @@ export default function NotesPage() {
 		return attachment;
 	};
 
-	// Canvas position change handler
-	const handlePositionChange = async (noteId: string, position: { x: number; y: number }) => {
-		try {
-			const note = store.notes().find((n) => n.id === noteId);
-			if (note) {
-				await store.updateNote(noteId, {
-					markdown: note.content || "",
-					parent_revision_id: note.revision_id,
-					canvas_position: position,
-				});
-			}
-		} catch (_e) {
-			// Position update failed - silently ignore
-		}
-	};
-
 	// Link create handler
 	const handleLinkCreate = async (link: { source: string; target: string; kind: string }) => {
 		try {
@@ -488,7 +472,6 @@ export default function NotesPage() {
 						links={canvasLinks()}
 						selectedNoteId={store.selectedNoteId()}
 						onSelect={handleNoteSelect}
-						onPositionChange={handlePositionChange}
 						onLinkCreate={handleLinkCreate}
 						onLinkDelete={handleLinkDelete}
 					/>

@@ -1,4 +1,4 @@
-import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { createSignal, For, Show, createEffect } from "solid-js";
 import type { NoteRecord, WorkspaceLink } from "~/lib/types";
 
 export interface CanvasProps {
@@ -6,17 +6,13 @@ export interface CanvasProps {
 	links: WorkspaceLink[];
 	selectedNoteId?: string | null;
 	onSelect?: (noteId: string) => void;
-	onPositionChange?: (noteId: string, position: { x: number; y: number }) => void;
 	onLinkCreate?: (link: { source: string; target: string; kind: string }) => void;
 	onLinkDelete?: (linkId: string) => void;
 }
 
-interface DragState {
-	noteId: string;
-	startX: number;
-	startY: number;
-	offsetX: number;
-	offsetY: number;
+interface NodePosition {
+	x: number;
+	y: number;
 }
 
 interface LinkingState {
@@ -24,100 +20,42 @@ interface LinkingState {
 }
 
 /**
- * Interactive Canvas component for organizing notes spatially with drag-drop and linking.
- * Implements Story 4: "The Infinite Canvas"
+ * Simple Graph view for visualizing note connections.
+ * Uses automatic layout instead of drag-and-drop for cross-device compatibility.
+ * Implements Story 4: "The Connection Map"
  */
 export function Canvas(props: CanvasProps) {
-	const [dragState, setDragState] = createSignal<DragState | null>(null);
+	const [nodePositions, setNodePositions] = createSignal<Map<string, NodePosition>>(new Map());
 	const [linkingState, setLinkingState] = createSignal<LinkingState>({ sourceNoteId: null });
-	const [panOffset, setPanOffset] = createSignal({ x: 0, y: 0 });
-	const [isPanning, setIsPanning] = createSignal(false);
-	const [panStart, setPanStart] = createSignal({ x: 0, y: 0 });
 
-	// Get note position (use canvas_position or generate default)
-	const getNotePosition = (note: NoteRecord, index: number) => {
-		if (note.canvas_position) {
-			return note.canvas_position;
-		}
-		// Default grid layout
-		const col = index % 3;
-		const row = Math.floor(index / 3);
-		return {
-			x: 100 + col * 350,
-			y: 100 + row * 250,
-		};
-	};
+	// Simple auto-layout: circular arrangement
+	createEffect(() => {
+		const notes = props.notes;
+		if (notes.length === 0) return;
 
-	// Mouse down on note card - start dragging
-	const handleNoteMouseDown = (
-		e: MouseEvent,
-		noteId: string,
-		position: { x: number; y: number },
-	) => {
-		if (e.button !== 0) return; // Only left click
+		const positions = new Map<string, NodePosition>();
+		const centerX = 400;
+		const centerY = 300;
+		const radius = Math.min(300, 100 + notes.length * 20);
 
-		e.stopPropagation();
-		e.preventDefault();
-
-		setDragState({
-			noteId,
-			startX: e.clientX,
-			startY: e.clientY,
-			offsetX: position.x,
-			offsetY: position.y,
-		});
-	};
-
-	// Mouse move - update drag position
-	const handleMouseMove = (e: MouseEvent) => {
-		const drag = dragState();
-		if (drag) {
-			const dx = e.clientX - drag.startX;
-			const dy = e.clientY - drag.startY;
-
-			// Update position dynamically during drag
-			const newPos = {
-				x: drag.offsetX + dx,
-				y: drag.offsetY + dy,
-			};
-
-			// Update the note's position in the DOM
-			const noteEl = document.querySelector(`[data-note-id="${drag.noteId}"]`) as HTMLElement;
-			if (noteEl) {
-				noteEl.style.left = `${newPos.x}px`;
-				noteEl.style.top = `${newPos.y}px`;
-			}
-		}
-
-		// Handle panning
-		if (isPanning()) {
-			const start = panStart();
-			setPanOffset({
-				x: e.clientX - start.x,
-				y: e.clientY - start.y,
+		notes.forEach((note, index) => {
+			const angle = (index / notes.length) * 2 * Math.PI - Math.PI / 2;
+			positions.set(note.id, {
+				x: centerX + radius * Math.cos(angle),
+				y: centerY + radius * Math.sin(angle),
 			});
-		}
-	};
+		});
 
-	// Mouse up - finalize drag
-	const handleMouseUp = () => {
-		const drag = dragState();
-		if (drag && props.onPositionChange) {
-			const noteEl = document.querySelector(`[data-note-id="${drag.noteId}"]`) as HTMLElement;
-			if (noteEl) {
-				const finalX = Number.parseInt(noteEl.style.left, 10);
-				const finalY = Number.parseInt(noteEl.style.top, 10);
-				props.onPositionChange(drag.noteId, { x: finalX, y: finalY });
-			}
-		}
-		setDragState(null);
-		setIsPanning(false);
+		setNodePositions(positions);
+	});
+
+	// Get node position with fallback
+	const getNodePosition = (noteId: string): NodePosition => {
+		return nodePositions().get(noteId) || { x: 400, y: 300 };
 	};
 
 	// Note click handler
-	const handleNoteClick = (_e: MouseEvent, noteId: string) => {
-		if (dragState()) return; // Ignore clicks during drag
-
+	const handleNoteClick = (noteId: string) => {
 		const linking = linkingState();
 		if (linking.sourceNoteId) {
 			// Complete link creation
@@ -141,80 +79,47 @@ export function Canvas(props: CanvasProps) {
 	};
 
 	// Cancel linking
-	const handleCancelLinking = (e: MouseEvent) => {
-		e.stopPropagation();
+	const handleCancelLinking = () => {
 		setLinkingState({ sourceNoteId: null });
 	};
 
-	// Pan canvas (middle mouse button)
-	const handleCanvasMouseDown = (e: MouseEvent) => {
-		if (e.button === 1) {
-			// Middle mouse button
-			e.preventDefault();
-			setIsPanning(true);
-			setPanStart({ x: e.clientX, y: e.clientY });
-		}
-	};
-
-	// Setup global mouse event listeners
-	onMount(() => {
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
-	});
-
-	onCleanup(() => {
-		document.removeEventListener("mousemove", handleMouseMove);
-		document.removeEventListener("mouseup", handleMouseUp);
-	});
-
-	// Render SVG lines for links
-	const renderLinks = () => {
-		return (
-			<svg
-				class="absolute inset-0 pointer-events-none"
-				style={{ "z-index": "0" }}
-				data-testid="canvas-links"
-			>
+	return (
+		<div
+			role="application"
+			class="canvas relative w-full h-full bg-gray-50 overflow-hidden"
+			data-testid="canvas-area"
+		>
+			{/* SVG Layer for links */}
+			<svg class="absolute inset-0" style={{ "z-index": "0" }} data-testid="canvas-links">
 				<For each={props.links}>
 					{(link) => {
-						const sourceNote = props.notes.find((n) => n.id === link.source);
-						const targetNote = props.notes.find((n) => n.id === link.target);
-
-						if (!sourceNote || !targetNote) return null;
-
-						const sourcePos = getNotePosition(sourceNote, props.notes.indexOf(sourceNote));
-						const targetPos = getNotePosition(targetNote, props.notes.indexOf(targetNote));
-
-						// Center of note cards (approximate)
-						const x1 = sourcePos.x + 140;
-						const y1 = sourcePos.y + 100;
-						const x2 = targetPos.x + 140;
-						const y2 = targetPos.y + 100;
+						const sourcePos = getNodePosition(link.source);
+						const targetPos = getNodePosition(link.target);
 
 						return (
 							<g>
 								<line
-									x1={x1}
-									y1={y1}
-									x2={x2}
-									y2={y2}
+									x1={sourcePos.x}
+									y1={sourcePos.y}
+									x2={targetPos.x}
+									y2={targetPos.y}
 									stroke="#3b82f6"
 									stroke-width="2"
-									marker-end="url(#arrowhead)"
+									opacity="0.6"
 								/>
 								{/* Link delete button */}
 								<foreignObject
-									x={(x1 + x2) / 2 - 10}
-									y={(y1 + y2) / 2 - 10}
-									width="20"
-									height="20"
+									x={(sourcePos.x + targetPos.x) / 2 - 12}
+									y={(sourcePos.y + targetPos.y) / 2 - 12}
+									width="24"
+									height="24"
 									class="pointer-events-auto"
 								>
 									<button
 										type="button"
 										onClick={() => props.onLinkDelete?.(link.id)}
 										aria-label="Delete link"
-										class="w-5 h-5 bg-red-500 text-white rounded-full hover:bg-red-600 flex items-center justify-center text-xs"
+										class="w-6 h-6 bg-red-500 text-white rounded-full hover:bg-red-600 flex items-center justify-center text-sm font-bold shadow-md"
 									>
 										×
 									</button>
@@ -223,117 +128,85 @@ export function Canvas(props: CanvasProps) {
 						);
 					}}
 				</For>
-				{/* Arrow marker definition */}
-				<defs>
-					<marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-						<polygon points="0 0, 10 3, 0 6" fill="#3b82f6" />
-					</marker>
-				</defs>
 			</svg>
-		);
-	};
-
-	return (
-		<div
-			role="application"
-			class="canvas relative w-full h-full bg-gray-50 overflow-hidden"
-			onMouseDown={handleCanvasMouseDown}
-			data-testid="canvas-area"
-			style={{ cursor: isPanning() ? "grabbing" : "default" }}
-		>
-			{/* Grid Background */}
-			<div
-				class="absolute inset-0 pointer-events-none"
-				style={{
-					"background-image": "radial-gradient(circle, #ddd 1px, transparent 1px)",
-					"background-size": "20px 20px",
-					transform: `translate(${panOffset().x}px, ${panOffset().y}px)`,
-				}}
-			/>
-
-			{/* Links Layer */}
-			{renderLinks()}
 
 			{/* Linking Mode Banner */}
 			<Show when={linkingState().sourceNoteId}>
-				<div class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+				<div class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-3">
 					<span>Click another note to create a link</span>
-					<button
-						type="button"
-						onClick={handleCancelLinking}
-						class="ml-4 underline hover:no-underline"
-					>
+					<button type="button" onClick={handleCancelLinking} class="underline hover:no-underline">
 						Cancel
 					</button>
 				</div>
 			</Show>
 
-			{/* Notes Layer */}
-			<div class="absolute inset-0" style={{ "z-index": "1" }}>
-				<Show
-					when={props.notes.length > 0}
-					fallback={
-						<div class="flex items-center justify-center h-full">
-							<div class="text-center text-gray-400">
-								<svg
-									class="w-16 h-16 mx-auto mb-4 opacity-50"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="1"
-										d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
-									/>
-								</svg>
-								<p>No notes to display</p>
-							</div>
+			{/* Empty State */}
+			<Show
+				when={props.notes.length > 0}
+				fallback={
+					<div class="flex items-center justify-center h-full">
+						<div class="text-center text-gray-400">
+							<svg
+								class="w-16 h-16 mx-auto mb-4 opacity-50"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1"
+									d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+								/>
+							</svg>
+							<p class="text-lg">No notes to display</p>
+							<p class="text-sm mt-2">Create some notes and links to see the graph</p>
 						</div>
-					}
-				>
-					<For each={props.notes}>
-						{(note, index) => {
-							const pos = () => getNotePosition(note, index());
-							const isSelected = () => props.selectedNoteId === note.id;
-							const isLinking = () => linkingState().sourceNoteId === note.id;
+					</div>
+				}
+			>
+				{/* Nodes Layer */}
+				<For each={props.notes}>
+					{(note) => {
+						const pos = () => getNodePosition(note.id);
+						const isSelected = () => props.selectedNoteId === note.id;
+						const isLinking = () => linkingState().sourceNoteId === note.id;
 
-							return (
-								<div
-									role="button"
-									tabIndex={0}
-									data-note-id={note.id}
-									class="absolute bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-move"
-									classList={{
-										"ring-2 ring-blue-500": isSelected(),
-										"ring-2 ring-green-500": isLinking(),
-									}}
-									style={{
-										left: `${pos().x}px`,
-										top: `${pos().y}px`,
-										width: "280px",
-										"min-height": "160px",
-									}}
-									onMouseDown={(e) => handleNoteMouseDown(e, note.id, pos())}
-									onClick={(e) => handleNoteClick(e, note.id)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter" || e.key === " ") {
-											e.preventDefault();
-											handleNoteClick(e as unknown as MouseEvent, note.id);
-										}
-									}}
-								>
-									{/* Card Header */}
-									<div class="p-4 border-b flex items-center justify-between">
-										<h3 class="font-semibold text-gray-900 truncate flex-1">
+						return (
+							<div
+								role="button"
+								tabIndex={0}
+								data-note-id={note.id}
+								class="absolute bg-white rounded-lg shadow-md hover:shadow-xl transition-all cursor-pointer transform -translate-x-1/2 -translate-y-1/2"
+								classList={{
+									"ring-4 ring-blue-500 scale-105": isSelected(),
+									"ring-4 ring-green-500": isLinking(),
+								}}
+								style={{
+									left: `${pos().x}px`,
+									top: `${pos().y}px`,
+									width: "220px",
+									"z-index": isSelected() ? "20" : "10",
+								}}
+								onClick={() => handleNoteClick(note.id)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault();
+										handleNoteClick(note.id);
+									}
+								}}
+							>
+								{/* Card Content */}
+								<div class="p-3">
+									<div class="flex items-start justify-between mb-2">
+										<h3 class="font-semibold text-gray-900 text-sm flex-1 line-clamp-2">
 											{note.title || "Untitled"}
 										</h3>
 										<button
 											type="button"
 											onClick={(e) => handleStartLinking(e, note.id)}
 											aria-label="Create link"
-											class="ml-2 p-1 hover:bg-gray-100 rounded"
+											class="ml-2 p-1 hover:bg-gray-100 rounded flex-shrink-0"
 										>
 											<svg
 												class="w-4 h-4 text-gray-600"
@@ -351,63 +224,42 @@ export function Canvas(props: CanvasProps) {
 										</button>
 									</div>
 
-									{/* Card Body */}
-									<div class="p-4">
-										{/* Properties */}
-										<Show when={Object.keys(note.properties).length > 0}>
-											<div class="mb-2 space-y-1">
-												<For each={Object.entries(note.properties).slice(0, 3)}>
-													{([key, value]) => {
-														// Properly serialize property values
-														const displayValue =
-															typeof value === "object" && value !== null
-																? JSON.stringify(value)
-																: String(value);
-														return (
-															<div class="text-xs">
-																<span class="font-medium text-gray-600">{key}:</span>
-																<span class="text-gray-800 ml-1">{displayValue}</span>
-															</div>
-														);
-													}}
-												</For>
-											</div>
-										</Show>{" "}
-										{/* Tags */}
-										<Show when={note.tags.length > 0}>
-											<div class="flex flex-wrap gap-1 mb-2">
-												<For each={note.tags.slice(0, 3)}>
-													{(tag) => (
-														<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-															{tag}
-														</span>
-													)}
-												</For>
-											</div>
-										</Show>
-										{/* Links indicator */}
-										<Show when={note.links.length > 0}>
-											<div class="flex items-center gap-1 text-xs text-gray-500 mt-2">
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-													/>
-												</svg>
-												<span>
-													{note.links.length} {note.links.length === 1 ? "link" : "links"}
-												</span>
-											</div>
-										</Show>
-									</div>
+									{/* Tags */}
+									<Show when={note.tags.length > 0}>
+										<div class="flex flex-wrap gap-1 mb-2">
+											<For each={note.tags.slice(0, 2)}>
+												{(tag) => (
+													<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+														{tag}
+													</span>
+												)}
+											</For>
+											<Show when={note.tags.length > 2}>
+												<span class="text-xs text-gray-500">+{note.tags.length - 2}</span>
+											</Show>
+										</div>
+									</Show>
+
+									{/* Link count */}
+									<Show when={note.links.length > 0}>
+										<div class="flex items-center gap-1 text-xs text-gray-500">
+											<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+												/>
+											</svg>
+											<span>{note.links.length}</span>
+										</div>
+									</Show>
 								</div>
-							);
-						}}
-					</For>
-				</Show>
-			</div>
+							</div>
+						);
+					}}
+				</For>
+			</Show>
 		</div>
 	);
 }
