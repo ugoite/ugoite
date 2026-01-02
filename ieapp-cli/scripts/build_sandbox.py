@@ -28,6 +28,7 @@ from urllib.parse import urljoin, urlparse
 # for x86_64 where it functions properly.
 JAVY_VERSION_X86 = "v8.0.0"
 JAVY_VERSION_ARM = "v7.0.1"
+JAVY_VERSION = JAVY_VERSION_X86  # For backwards compatibility with tests
 JAVY_REPO = "bytecodealliance/javy"
 
 logger = logging.getLogger(__name__)
