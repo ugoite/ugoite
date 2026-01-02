@@ -39,17 +39,22 @@ _Related APIs_: REST `POST /workspaces/{ws_id}/notes`, `PUT /workspaces/{ws_id}/
 
 _Related APIs_: REST `PATCH /workspaces/{id}` for storage connectors and `POST /workspaces/{id}/test-connection` for validation.
 
-### Story 4: "The Infinite Canvas" (UI/UX)
+### Story 4: "The Connection Map" (UI/UX)
 **As a** visual thinker,
-**I want** to organize my notes on a 2D infinite canvas,
-**So that** I can map out complex ideas spatially.
+**I want** to see how my notes relate to each other through a simple network visualization,
+**So that** I can discover patterns and connections in my knowledge base at a glance.
 
 *   **Acceptance Criteria**:
-    *   Switch between List and Canvas views.
-    *   Drag-and-drop notes.
-    *   Visual connections are saved as bi-directional links.
+    *   Switch between List and Graph views.
+    *   Graph view displays notes as nodes with automatic layout (force-directed or hierarchical).
+    *   Click on a node to view/edit that note.
+    *   Visual connections represent bi-directional links.
+    *   Simple "Link to..." action in note editor to connect notes.
+    *   No manual positioning required - graph auto-arranges for readability.
 
-_Related APIs_: REST `PUT /workspaces/{ws_id}/notes/{note_id}` (persists `canvas_position`) and `POST /workspaces/{ws_id}/links` / `DELETE /workspaces/{ws_id}/links/{link_id}` for edges.
+_Related APIs_: REST `GET /workspaces/{ws_id}/notes` (retrieve notes with links), `POST /workspaces/{ws_id}/links` / `DELETE /workspaces/{ws_id}/links/{link_id}` for managing connections.
+
+**Design Philosophy**: Focus on **connections over positioning**. The value is in seeing relationships, not micromanaging coordinates. Auto-layout makes it work seamlessly across desktop, tablet, and mobile.
 
 ### Story 5: "Time Travel" (Versioning)
 **As a** user who made a mistake,

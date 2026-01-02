@@ -728,18 +728,26 @@ Editor MUST provide file upload capability with drag-drop support and display at
 
 ---
 
-### REQ-FE-016: Canvas View with Note Links
+### REQ-FE-016: Graph View with Auto-Layout
 **Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
 
-Canvas view MUST display notes and their bi-directional links visually, allowing users to create and delete connections between related notes.
+Graph view MUST display notes as nodes with automatic layout (no manual positioning), showing bi-directional links as visual connections. Users can click nodes to view notes and create/delete links through a simple interface.
+
+**Key Requirements**:
+- Auto-layout algorithm positions nodes for readability
+- No drag-and-drop positioning (works seamlessly on all devices)
+- Click node to select/view note
+- Simple "Link to..." action to connect notes
+- Visual distinction for selected node
 
 | Test Type | File | Test Name |
 |-----------|------|-----------|
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should render notes in canvas` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should render notes with auto-layout` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should select note on click` |
 | vitest | `frontend/src/components/Canvas.test.tsx` | `should create link between notes` |
 | vitest | `frontend/src/components/Canvas.test.tsx` | `should render links as visual connections` |
 | vitest | `frontend/src/components/Canvas.test.tsx` | `should delete link` |
-| e2e | `e2e/canvas.test.ts` | `canvas view - create bi-directional link` |
+| e2e | `e2e/canvas.test.ts` | `graph view - create bi-directional link` |
 
 ---
 
