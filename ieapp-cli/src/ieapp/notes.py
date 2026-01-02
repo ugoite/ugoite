@@ -280,6 +280,7 @@ def update_note(
     note_id: str,
     content: str,
     parent_revision_id: str,
+    attachments: list[dict[str, Any]] | None = None,
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
 ) -> None:
@@ -290,6 +291,7 @@ def update_note(
         note_id: Identifier for the note to update.
         content: Updated markdown body.
         parent_revision_id: Revision expected by the caller.
+        attachments: Optional list of attachment metadata to persist.
         integrity_provider: Optional override for checksum/signature calculations.
         author: The author of the update (default: "user").
 
@@ -356,7 +358,9 @@ def update_note(
                 "markdown": content,
                 "frontmatter": parsed["frontmatter"],
                 "sections": parsed["sections"],
-                "attachments": current_content_data.get("attachments", []),
+                "attachments": attachments
+                if attachments is not None
+                else current_content_data.get("attachments", []),
                 "computed": current_content_data.get("computed", {}),
             }
 

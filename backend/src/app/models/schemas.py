@@ -30,6 +30,7 @@ class NoteUpdate(BaseModel):
     parent_revision_id: str
     frontmatter: dict[str, Any] | None = None
     canvas_position: dict[str, Any] | None = None
+    attachments: list[dict[str, Any]] | None = None
 
 
 class NoteRestore(BaseModel):
@@ -42,3 +43,25 @@ class QueryRequest(BaseModel):
     """Query request payload."""
 
     filter: dict[str, Any]
+
+
+class WorkspacePatch(BaseModel):
+    """Workspace patch payload for storage connectors/settings."""
+
+    name: str | None = None
+    storage_config: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
+
+
+class TestConnectionRequest(BaseModel):
+    """Workspace connection validation payload."""
+
+    storage_config: dict[str, Any]
+
+
+class LinkCreate(BaseModel):
+    """Link creation payload."""
+
+    source: str
+    target: str
+    kind: str = "related"

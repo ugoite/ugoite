@@ -103,6 +103,7 @@ export function createNoteStore(workspaceId: () => string) {
 			title,
 			updated_at: new Date().toISOString(),
 			canvas_position: payload.canvas_position || originalNote.canvas_position,
+			attachments: payload.attachments ?? originalNote.attachments,
 		};
 
 		// Store for potential rollback
@@ -197,6 +198,16 @@ export function createNoteStore(workspaceId: () => string) {
 		deleteNote,
 		selectNote,
 		refetchSelectedNote,
+
+		/** Perform a keyword search without mutating store state */
+		async searchNotes(query: string) {
+			try {
+				return await noteApi.search(workspaceId(), query);
+			} catch (e) {
+				setError(e instanceof Error ? e.message : "Failed to search notes");
+				throw e;
+			}
+		},
 	};
 }
 

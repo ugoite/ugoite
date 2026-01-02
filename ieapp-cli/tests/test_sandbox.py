@@ -1,5 +1,6 @@
 """Tests for the WebAssembly sandbox."""
 
+import importlib.resources
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +10,21 @@ from ieapp.sandbox import (
     SandboxError,
     SandboxExecutionError,
     run_script,
+)
+
+
+def _sandbox_available() -> bool:
+    try:
+        ref = importlib.resources.files("ieapp.sandbox") / "sandbox.wasm"
+        with importlib.resources.as_file(ref) as wasm_path:
+            return Path(wasm_path).exists()
+    except (FileNotFoundError, OSError, RuntimeError):
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _sandbox_available(),
+    reason="sandbox.wasm missing; run build_sandbox.py to enable sandbox tests",
 )
 
 

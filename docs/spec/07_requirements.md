@@ -79,6 +79,18 @@ Returns 409 error when attempting to create a workspace with an existing ID.
 
 ---
 
+### REQ-STO-006: Storage Connector Validation
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Workspaces
+
+Workspaces MUST accept storage connector updates and provide a validation endpoint before committing changes.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_update_workspace_storage_connector` |
+| pytest | `backend/tests/test_api.py` | `test_test_connection_endpoint` |
+
+---
+
 ## 2. Note Management Requirements
 
 ### REQ-NOTE-001: Note Creation
@@ -181,6 +193,40 @@ Include `properties` and `links` fields when retrieving note list.
 
 ---
 
+### REQ-NOTE-008: Attachments Upload & Linking
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 6, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Attachments
+
+Upload binary attachments, return a generated attachment ID, and allow notes to reference attachments in `content.json`.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_upload_attachment_and_link_to_note` |
+
+---
+
+### REQ-NOTE-009: Attachment Garbage Collection Guard
+**Related Spec**: [03_data_model.md](03_data_model.md) §2 attachments
+
+Prevent deleting attachments that are still referenced by any note.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_delete_attachment_referenced_fails` |
+
+---
+
+### REQ-NOTE-010: Canvas Links CRUD
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
+
+Create and delete bi-directional links between notes; list links across workspace.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_create_and_list_links` |
+| pytest | `backend/tests/test_api.py` | `test_delete_link_updates_notes` |
+
+---
+
 ## 3. Indexer Requirements
 
 ### REQ-IDX-001: Structured Cache via Live Indexer
@@ -253,6 +299,17 @@ Trigger indexer in response to filesystem events.
 | Test Type | File | Test Name |
 |-----------|------|-----------|
 | pytest | `ieapp-cli/tests/test_indexer.py` | `test_indexer_watch_loop_triggers_run` |
+
+---
+
+### REQ-IDX-007: Hybrid Search Endpoint
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Search
+
+Expose `GET /workspaces/{ws_id}/search` using the inverted index (keyword) and falling back to a simple scan when the index is absent.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_search_returns_matches` |
 
 ---
 

@@ -1,4 +1,15 @@
-import type { Note, NoteCreatePayload, NoteRecord, NoteUpdatePayload, Workspace } from "./types";
+import type {
+	Attachment,
+	Note,
+	NoteCreatePayload,
+	NoteRecord,
+	NoteUpdatePayload,
+	SearchResult,
+	Workspace,
+	WorkspaceLink,
+	WorkspacePatchPayload,
+	TestConnectionPayload,
+} from "./types";
 import { apiFetch } from "./api";
 
 /**
@@ -35,6 +46,34 @@ export const workspaceApi = {
 			throw new Error(`Failed to get workspace: ${res.statusText}`);
 		}
 		return (await res.json()) as Workspace;
+	},
+
+	/** Patch workspace metadata/settings */
+	async patch(id: string, payload: WorkspacePatchPayload): Promise<Workspace> {
+		const res = await apiFetch(`/workspaces/${id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to patch workspace: ${res.statusText}`);
+		}
+		return (await res.json()) as Workspace;
+	},
+
+	/** Test storage connection */
+	async testConnection(id: string, payload: TestConnectionPayload): Promise<{ status: string }> {
+		const res = await apiFetch(`/workspaces/${id}/test-connection`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to test connection: ${res.statusText}`);
+		}
+		return (await res.json()) as { status: string };
 	},
 };
 
@@ -125,6 +164,81 @@ export const noteApi = {
 			throw new Error(`Failed to query notes: ${res.statusText}`);
 		}
 		return (await res.json()) as NoteRecord[];
+	},
+
+	/** Search notes by keyword */
+	async search(workspaceId: string, query: string): Promise<SearchResult[]> {
+		const params = new URLSearchParams({ q: query });
+		const res = await apiFetch(`/workspaces/${workspaceId}/search?${params.toString()}`);
+		if (!res.ok) {
+			throw new Error(`Failed to search notes: ${res.statusText}`);
+		}
+		return (await res.json()) as SearchResult[];
+	},
+};
+
+/** Attachment API client */
+export const attachmentApi = {
+	/** Upload an attachment */
+	async upload(workspaceId: string, file: File | Blob, filename?: string): Promise<Attachment> {
+		const formData = new FormData();
+		formData.append("file", file, filename);
+		const res = await apiFetch(`/workspaces/${workspaceId}/attachments`, {
+			method: "POST",
+			body: formData,
+		});
+		if (!res.ok) {
+			throw new Error(`Failed to upload attachment: ${res.statusText}`);
+		}
+		return (await res.json()) as Attachment;
+	},
+
+	/** Delete an attachment (fails if referenced) */
+	async delete(workspaceId: string, attachmentId: string): Promise<{ status: string; id: string }> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/attachments/${attachmentId}`, {
+			method: "DELETE",
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to delete attachment: ${res.statusText}`);
+		}
+		return (await res.json()) as { status: string; id: string };
+	},
+};
+
+/** Links API client */
+export const linksApi = {
+	async create(
+		workspaceId: string,
+		payload: { source: string; target: string; kind: string },
+	): Promise<WorkspaceLink> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/links`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to create link: ${res.statusText}`);
+		}
+		return (await res.json()) as WorkspaceLink;
+	},
+
+	async list(workspaceId: string): Promise<WorkspaceLink[]> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/links`);
+		if (!res.ok) {
+			throw new Error(`Failed to list links: ${res.statusText}`);
+		}
+		return (await res.json()) as WorkspaceLink[];
+	},
+
+	async delete(workspaceId: string, linkId: string): Promise<{ status: string; id: string }> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/links/${linkId}`, { method: "DELETE" });
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to delete link: ${res.statusText}`);
+		}
+		return (await res.json()) as { status: string; id: string };
 	},
 };
 

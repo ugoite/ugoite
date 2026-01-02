@@ -9,6 +9,26 @@ export interface Workspace {
 	name: string;
 	created_at: string;
 	storage_config?: Record<string, unknown>;
+	settings?: Record<string, unknown>;
+}
+
+/** Workspace patch payload */
+export interface WorkspacePatchPayload {
+	name?: string;
+	storage_config?: Record<string, unknown>;
+	settings?: Record<string, unknown>;
+}
+
+/** Test connection payload */
+export interface TestConnectionPayload {
+	storage_config: Record<string, unknown>;
+}
+
+/** Attachment metadata */
+export interface Attachment {
+	id: string;
+	name: string;
+	path: string;
 }
 
 /** Note record (from index) */
@@ -22,11 +42,13 @@ export interface NoteRecord {
 	links: NoteLink[];
 	canvas_position?: CanvasPosition;
 	checksum?: string;
+	attachments?: Attachment[];
 }
 
 /** Note link */
 export interface NoteLink {
 	id: string;
+	source?: string;
 	target: string;
 	kind: string;
 }
@@ -40,6 +62,14 @@ export interface CanvasPosition {
 /** Full note content */
 export interface Note {
 	id: string;
+	title?: string;
+	frontmatter?: Record<string, unknown>;
+	sections?: Record<string, string>;
+	attachments?: Attachment[];
+	links?: NoteLink[];
+	class?: string;
+	tags?: string[];
+	canvas_position?: CanvasPosition;
 	content: string;
 	revision_id: string;
 	created_at: string;
@@ -65,6 +95,7 @@ export interface NoteUpdatePayload {
 	parent_revision_id: string;
 	frontmatter?: Record<string, unknown>;
 	canvas_position?: CanvasPosition;
+	attachments?: Attachment[];
 }
 
 /** Query request */
@@ -76,3 +107,14 @@ export interface QueryRequest {
 export interface ApiError {
 	detail: string;
 }
+
+/** Link resource */
+export interface WorkspaceLink {
+	id: string;
+	source: string;
+	target: string;
+	kind: string;
+}
+
+/** Search result entry */
+export type SearchResult = NoteRecord;

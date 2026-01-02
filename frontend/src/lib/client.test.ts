@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { noteApi, workspaceApi, RevisionConflictError } from "./client";
+import { noteApi, workspaceApi, RevisionConflictError, attachmentApi, linksApi } from "./client";
 import { resetMockData, seedWorkspace, seedNote } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "./types";
 
@@ -41,6 +41,27 @@ describe("workspaceApi", () => {
 		it("should throw error for duplicate workspace", async () => {
 			await workspaceApi.create("my-workspace");
 			await expect(workspaceApi.create("my-workspace")).rejects.toThrow("already exists");
+		});
+	});
+
+	describe("patch and test connection", () => {
+		it("patches workspace metadata and settings", async () => {
+			await workspaceApi.create("patched");
+			const updated = await workspaceApi.patch("patched", {
+				storage_config: { uri: "file:///tmp/data" },
+				settings: { default_class: "Meeting" },
+			});
+
+			expect(updated.storage_config?.uri).toBe("file:///tmp/data");
+			expect(updated.settings?.default_class).toBe("Meeting");
+		});
+
+		it("tests storage connection", async () => {
+			await workspaceApi.create("patched");
+			const result = await workspaceApi.testConnection("patched", {
+				storage_config: { uri: "file:///tmp/data" },
+			});
+			expect(result.status).toBe("ok");
 		});
 	});
 });
@@ -200,6 +221,51 @@ describe("noteApi", () => {
 
 			notes = await noteApi.list("test-ws");
 			expect(notes).toHaveLength(0);
+		});
+	});
+
+	describe("search, attachments, and links", () => {
+		it("searches notes by keyword", async () => {
+			const created = await noteApi.create("test-ws", {
+				content: "# Rocket Project\nNotes about propulsion",
+			});
+
+			const matches = await noteApi.search("test-ws", "rocket");
+			expect(matches.find((m) => m.id === created.id)).toBeDefined();
+		});
+
+		it("uploads attachment and blocks deletion when referenced", async () => {
+			const { id, revision_id } = await noteApi.create("test-ws", {
+				content: "# Audio Note",
+			});
+
+			const file = new File(["data"], "voice.m4a", { type: "audio/m4a" });
+			const attachment = await attachmentApi.upload("test-ws", file);
+
+			await noteApi.update("test-ws", id, {
+				markdown: "# Audio Note\nupdated",
+				parent_revision_id: revision_id,
+				attachments: [attachment],
+			});
+
+			await expect(attachmentApi.delete("test-ws", attachment.id)).rejects.toThrow();
+		});
+
+		it("creates, lists, and deletes links", async () => {
+			const noteA = await noteApi.create("test-ws", { content: "# A" });
+			const noteB = await noteApi.create("test-ws", { content: "# B" });
+
+			const link = await linksApi.create("test-ws", {
+				source: noteA.id,
+				target: noteB.id,
+				kind: "related",
+			});
+
+			const links = await linksApi.list("test-ws");
+			expect(links.map((l) => l.id)).toContain(link.id);
+
+			const deleted = await linksApi.delete("test-ws", link.id);
+			expect(deleted.status).toBe("deleted");
 		});
 	});
 });
