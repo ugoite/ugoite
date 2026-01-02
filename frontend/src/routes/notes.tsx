@@ -3,7 +3,6 @@ import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
 import { NoteList } from "~/components/NoteList";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
-import { Canvas } from "~/components/Canvas";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { SearchBar } from "~/components/SearchBar";
 import { AttachmentUploader } from "~/components/AttachmentUploader";
@@ -464,17 +463,6 @@ export default function NotesPage() {
 							</div>
 						</div>
 					</Show>
-				</Show>
-
-				<Show when={viewMode() === "canvas"}>
-					<Canvas
-						notes={store.notes()}
-						links={canvasLinks()}
-						selectedNoteId={store.selectedNoteId()}
-						onSelect={handleNoteSelect}
-						onLinkCreate={handleLinkCreate}
-						onLinkDelete={handleLinkDelete}
-					/>
 				</Show>
 			</div>
 		</main>
