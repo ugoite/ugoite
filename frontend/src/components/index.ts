@@ -4,3 +4,4 @@ export { MarkdownEditor } from "./MarkdownEditor";
 export { CanvasPlaceholder } from "./CanvasPlaceholder";
 export { WorkspaceSelector } from "./WorkspaceSelector";
 export { SearchBar } from "./SearchBar";
+export { AttachmentUploader } from "./AttachmentUploader";
