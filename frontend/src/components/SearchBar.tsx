@@ -38,11 +38,15 @@ export function SearchBar(props: SearchBarProps) {
 	};
 
 	onMount(() => {
-		document.addEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.addEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	onCleanup(() => {
-		document.removeEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.removeEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	return (
