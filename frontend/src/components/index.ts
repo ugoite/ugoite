@@ -5,3 +5,4 @@ export { CanvasPlaceholder } from "./CanvasPlaceholder";
 export { WorkspaceSelector } from "./WorkspaceSelector";
 export { SearchBar } from "./SearchBar";
 export { AttachmentUploader } from "./AttachmentUploader";
+export { Canvas } from "./Canvas";
