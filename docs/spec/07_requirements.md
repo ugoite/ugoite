@@ -215,15 +215,15 @@ Prevent deleting attachments that are still referenced by any note.
 
 ---
 
-### REQ-NOTE-010: Canvas Links CRUD
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
+### REQ-NOTE-010: ~~Canvas Links CRUD~~ [DEPRECATED]
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated), [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
 
-Create and delete bi-directional links between notes; list links across workspace.
+**Status**: DEPRECATED - Links API was planned but never implemented. Removed along with Canvas/Graph view functionality.
 
-| Test Type | File | Test Name |
-|-----------|------|-----------|
-| pytest | `backend/tests/test_api.py` | `test_create_and_list_links` |
-| pytest | `backend/tests/test_api.py` | `test_delete_link_updates_notes` |
+**Note**: If note relationships are needed in the future, consider simpler alternatives:
+- Wiki-style `[[note]]` links in markdown
+- Tag-based relationships
+- Automatic content similarity detection
 
 ---
 
@@ -569,14 +569,10 @@ UI reflects changes immediately and syncs in background.
 
 ---
 
-### REQ-FE-007: Canvas Placeholder
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4
+### REQ-FE-007: ~~Canvas Placeholder~~ [REMOVED]
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated)
 
-Placeholder for 2D canvas view (full implementation planned for Milestone 6).
-
-| Test Type | File | Test Name |
-|-----------|------|-----------|
-| vitest | `frontend/src/components/CanvasPlaceholder.test.tsx` | 全テスト |
+**Status**: REMOVED - Canvas view has been removed. CanvasPlaceholder component still exists in tests but is no longer used in the application.
 
 ---
 
@@ -728,26 +724,18 @@ Editor MUST provide file upload capability with drag-drop support and display at
 
 ---
 
-### REQ-FE-016: Graph View with Auto-Layout
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
+### REQ-FE-016: ~~Graph View with Auto-Layout~~ [REMOVED]
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated)
 
-Graph view MUST display notes as nodes with automatic layout (no manual positioning), showing bi-directional links as visual connections. Users can click nodes to view notes and create/delete links through a simple interface.
+**Status**: REMOVED - Graph/Canvas view functionality has been removed in favor of focusing on the core List view experience. Visual note connections and graph functionality may be reconsidered in future iterations if user feedback demonstrates clear value.
 
-**Key Requirements**:
-- Auto-layout algorithm positions nodes for readability
-- No drag-and-drop positioning (works seamlessly on all devices)
-- Click node to select/view note
-- Simple "Link to..." action to connect notes
-- Visual distinction for selected node
+**Reason for Removal**:
+- Added UI complexity without clear user benefit
+- List view with search provides sufficient navigation
+- Canvas view cluttered interface when many notes present
+- Maintenance burden for feature with uncertain value
 
-| Test Type | File | Test Name |
-|-----------|------|-----------|
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should render notes with auto-layout` |
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should select note on click` |
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should create link between notes` |
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should render links as visual connections` |
-| vitest | `frontend/src/components/Canvas.test.tsx` | `should delete link` |
-| e2e | `e2e/canvas.test.ts` | `graph view - create bi-directional link` |
+**Alternative**: Users can navigate note relationships through search, tags, and the improved List view UI.
 
 ---
 
