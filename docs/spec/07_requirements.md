@@ -758,20 +758,93 @@ mise run e2e
 
 ---
 
+## 10. Milestone 6 Requirements (Search, Attachments, Canvas Links)
+
+### REQ-M6-001: Search UI Component
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Search
+
+Frontend MUST provide a search input that calls the `/search` endpoint and displays results.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should render search input` |
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should call onSearch when form is submitted` |
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should display search results` |
+| e2e | `e2e/notes.test.ts` | `Search functionality E2E test` |
+
+---
+
+### REQ-M6-002: Attachment Upload UI
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 6, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Attachments
+
+Editor MUST provide file upload capability and link attachments to notes.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should render file input` |
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should upload file and return attachment` |
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should display uploaded attachments` |
+| e2e | `e2e/notes.test.ts` | `Attachment upload E2E test` |
+
+---
+
+### REQ-M6-003: Interactive Canvas with Drag-Drop
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
+
+Canvas view MUST support dragging notes and persisting positions via `canvas_position` in note metadata.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should render notes at canvas positions` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should allow dragging notes` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should persist position after drag` |
+| e2e | `e2e/canvas.test.ts` | `Canvas drag-drop E2E test` |
+
+---
+
+### REQ-M6-004: Link Creation UI
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
+
+Canvas MUST allow users to create bi-directional links between notes.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should create link between notes` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should render links as edges` |
+| vitest | `frontend/src/components/Canvas.test.tsx` | `should delete link` |
+| e2e | `e2e/canvas.test.ts` | `Link creation E2E test` |
+
+---
+
+### REQ-M6-005: Storage Connector UI
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Workspaces
+
+Workspace settings MUST allow configuring storage backends (local, S3) with validation.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should display storage config` |
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should test connection` |
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should save storage config` |
+| e2e | `e2e/workspace.test.ts` | `Storage connector E2E test` |
+
+---
+
 ## 11. Requirements Coverage Summary
 
 | Category | Requirements | pytest | vitest | e2e |
 |----------|--------------|--------|--------|-----|
-| Storage & Data Model | 5 | ✅ | ✅ | - |
-| Note Management | 7 | ✅ | ✅ | ✅ |
-| Indexer | 6 | ✅ | - | - |
+| Storage & Data Model | 6 | ✅ | ✅ | - |
+| Note Management | 10 | ✅ | ✅ | ✅ |
+| Indexer | 7 | ✅ | - | ✅ |
 | Integrity | 3 | ✅ | - | - |
 | Security | 2 | ✅ | - | - |
 | Sandbox | 5 | ✅ | - | - |
 | REST API | 3 | ✅ | ✅ | ✅ |
 | Frontend | 13 | - | ✅ | ✅ |
 | E2E | 2 | - | - | ✅ |
-| **Total** | **46** | **30** | **25** | **13** |
+| **Milestone 6** | **5** | - | ✅ | ✅ |
+| **Total** | **56** | **35** | **30** | **18** |
 
 ---
 
@@ -779,6 +852,7 @@ mise run e2e
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-02 | 1.3.0 | Added Milestone 6 requirements (REQ-M6-001 through REQ-M6-005) |
 | 2025-12-31 | 1.2.0 | Added REQ-FE-013 for save persistence verification; Enhanced REQ-FE-010/011/012 with critical implementation requirements |
 | 2025-12-31 | 1.1.0 | Added REQ-FE-010, REQ-FE-011, REQ-FE-012 for editor content persistence |
 | 2025-12-31 | 1.0.0 | Initial version created |
