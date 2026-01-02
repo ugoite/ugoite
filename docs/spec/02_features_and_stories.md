@@ -39,29 +39,9 @@ _Related APIs_: REST `POST /workspaces/{ws_id}/notes`, `PUT /workspaces/{ws_id}/
 
 _Related APIs_: REST `PATCH /workspaces/{id}` for storage connectors and `POST /workspaces/{id}/test-connection` for validation.
 
-### ~~Story 4: "The Connection Map"~~ [DEPRECATED]
-**Status**: DEPRECATED - Removed in favor of focusing on core List view and search functionality.
-
-**Original Intent**:
-**As a** visual thinker,
-**I want** to see how my notes relate to each other through a simple network visualization,
-**So that** I can discover patterns and connections in my knowledge base at a glance.
-
-**Why Deprecated**:
-- Added significant UI complexity without clear user value
-- Cluttered interface when displaying many notes
-- List view with enhanced search provides sufficient navigation
-- Graph/Canvas functionality may be reconsidered based on future user feedback
-
-**Alternative Solution**: Users can navigate relationships through:
-- Full-text search for finding connected topics
-- Tags and metadata for categorization
-- Improved List view UI with quick filters
-- Future: Consider simpler "related notes" feature based on content similarity
-
 ---
 
-### Story 5: "Time Travel" (Versioning)
+### Story 4: "Time Travel" (Versioning)
 **As a** user who made a mistake,
 **I want** to view and restore previous versions of a note,
 **So that** I never lose important information.

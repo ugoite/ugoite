@@ -215,18 +215,6 @@ Prevent deleting attachments that are still referenced by any note.
 
 ---
 
-### REQ-NOTE-010: ~~Canvas Links CRUD~~ [DEPRECATED]
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated), [04_api_and_mcp.md](04_api_and_mcp.md) §1 Canvas Links
-
-**Status**: DEPRECATED - Links API was planned but never implemented. Removed along with Canvas/Graph view functionality.
-
-**Note**: If note relationships are needed in the future, consider simpler alternatives:
-- Wiki-style `[[note]]` links in markdown
-- Tag-based relationships
-- Automatic content similarity detection
-
----
-
 ## 3. Indexer Requirements
 
 ### REQ-IDX-001: Structured Cache via Live Indexer
@@ -569,22 +557,14 @@ UI reflects changes immediately and syncs in background.
 
 ---
 
-### REQ-FE-007: ~~Canvas Placeholder~~ [REMOVED]
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated)
-
-**Status**: REMOVED - Canvas view has been removed. CanvasPlaceholder component still exists in tests but is no longer used in the application.
-
----
-
 ### REQ-FE-008: Note Selection and Highlight
 **Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Feature Matrix
 
 Highlight selected note and load details.
 
 | Test Type | File | Test Name |
-|-----------|------|-----------|
+|-----------|------|-----------|---|
 | vitest | `frontend/src/components/NoteList.test.tsx` | `should highlight selected note` |
-| vitest | `frontend/src/components/CanvasPlaceholder.test.tsx` | `should highlight selected note` |
 | vitest | `frontend/src/lib/store.test.ts` | `should handle note selection` |
 
 ---
@@ -721,21 +701,6 @@ Editor MUST provide file upload capability with drag-drop support and display at
 | vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should display uploaded attachments with icons` |
 | vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should delete attachment` |
 | e2e | `e2e/canvas.test.ts` | `attachments - upload and delete` |
-
----
-
-### REQ-FE-016: ~~Graph View with Auto-Layout~~ [REMOVED]
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4 (deprecated)
-
-**Status**: REMOVED - Graph/Canvas view functionality has been removed in favor of focusing on the core List view experience. Visual note connections and graph functionality may be reconsidered in future iterations if user feedback demonstrates clear value.
-
-**Reason for Removal**:
-- Added UI complexity without clear user benefit
-- List view with search provides sufficient navigation
-- Canvas view cluttered interface when many notes present
-- Maintenance burden for feature with uncertain value
-
-**Alternative**: Users can navigate note relationships through search, tags, and the improved List view UI.
 
 ---
 
