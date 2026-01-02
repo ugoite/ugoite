@@ -357,16 +357,22 @@ export function Canvas(props: CanvasProps) {
 										<Show when={Object.keys(note.properties).length > 0}>
 											<div class="mb-2 space-y-1">
 												<For each={Object.entries(note.properties).slice(0, 3)}>
-													{([key, value]) => (
-														<div class="text-xs">
-															<span class="font-medium text-gray-600">{key}:</span>
-															<span class="text-gray-800 ml-1">{String(value)}</span>
-														</div>
-													)}
+													{([key, value]) => {
+														// Properly serialize property values
+														const displayValue =
+															typeof value === "object" && value !== null
+																? JSON.stringify(value)
+																: String(value);
+														return (
+															<div class="text-xs">
+																<span class="font-medium text-gray-600">{key}:</span>
+																<span class="text-gray-800 ml-1">{displayValue}</span>
+															</div>
+														);
+													}}
 												</For>
 											</div>
-										</Show>
-
+										</Show>{" "}
 										{/* Tags */}
 										<Show when={note.tags.length > 0}>
 											<div class="flex flex-wrap gap-1 mb-2">
@@ -379,7 +385,6 @@ export function Canvas(props: CanvasProps) {
 												</For>
 											</div>
 										</Show>
-
 										{/* Links indicator */}
 										<Show when={note.links.length > 0}>
 											<div class="flex items-center gap-1 text-xs text-gray-500 mt-2">

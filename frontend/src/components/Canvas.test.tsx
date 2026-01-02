@@ -150,4 +150,36 @@ describe("Canvas", () => {
 		// This test verifies the gesture is captured
 		expect(canvas).toBeInTheDocument();
 	});
+
+	it("should properly display object properties without [object Object]", () => {
+		const notesWithObjectProps: NoteRecord[] = [
+			{
+				id: "note-with-obj",
+				title: "Note with Object Property",
+				class: null,
+				updated_at: "2025-01-01T00:00:00Z",
+				properties: {
+					simpleString: "text value",
+					objectValue: { nested: "data", count: 42 },
+					arrayValue: [1, 2, 3],
+				},
+				tags: [],
+				links: [],
+				canvas_position: { x: 100, y: 100 },
+			},
+		];
+
+		render(() => <Canvas notes={notesWithObjectProps} links={[]} />);
+
+		// Check that string is displayed as-is
+		expect(screen.getByText(/text value/)).toBeInTheDocument();
+
+		// Check that object is serialized (not [object Object])
+		const content = screen.getByText(/Note with Object Property/).closest("div[data-note-id]");
+		expect(content?.textContent).toContain('{"nested":"data","count":42}');
+		expect(content?.textContent).not.toContain("[object Object]");
+
+		// Check that array is serialized
+		expect(content?.textContent).toContain("[1,2,3]");
+	});
 });
