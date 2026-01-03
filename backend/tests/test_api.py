@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import io
 import json
 from pathlib import Path
 
@@ -410,6 +411,198 @@ def test_query_notes(
     response = test_client.post("/workspaces/test-ws/query", json={"filter": {}})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_upload_attachment_and_link_to_note(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Attachments can be uploaded, returned with id, and linked to a note."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    note_res = test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-1", "content": "# Attach Note"},
+    )
+    assert note_res.status_code == 201
+
+    file_bytes = b"hello attachment"
+    response = test_client.post(
+        "/workspaces/test-ws/attachments",
+        files={"file": ("voice.m4a", io.BytesIO(file_bytes), "audio/m4a")},
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+    assert attachment["id"]
+    assert attachment["path"].startswith("attachments/")
+
+    update_res = test_client.put(
+        "/workspaces/test-ws/notes/note-1",
+        json={
+            "markdown": "# Attach Note\ncontent",
+            "parent_revision_id": note_res.json()["revision_id"],
+            "attachments": [attachment],
+        },
+    )
+    assert update_res.status_code == 200
+
+    # Ensure GET reflects the attachment reference
+    get_res = test_client.get("/workspaces/test-ws/notes/note-1")
+    assert get_res.status_code == 200
+    content = get_res.json()
+    assert any(a["id"] == attachment["id"] for a in content.get("attachments", []))
+
+
+def test_delete_attachment_referenced_fails(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Deleting an attachment referenced by a note should fail."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    note_res = test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-1", "content": "# Attach Note"},
+    )
+
+    response = test_client.post(
+        "/workspaces/test-ws/attachments",
+        files={"file": ("voice.m4a", io.BytesIO(b"data"), "audio/m4a")},
+    )
+    attachment = response.json()
+
+    test_client.put(
+        "/workspaces/test-ws/notes/note-1",
+        json={
+            "markdown": "# Attach Note\nupdated",
+            "parent_revision_id": note_res.json()["revision_id"],
+            "attachments": [attachment],
+        },
+    )
+
+    delete_res = test_client.delete(
+        f"/workspaces/test-ws/attachments/{attachment['id']}",
+    )
+    assert delete_res.status_code == 409
+    assert "referenced" in delete_res.json()["detail"].lower()
+
+
+def test_create_and_list_links(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Links are created bi-directionally and listed at workspace level."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-a", "content": "# A"},
+    )
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-b", "content": "# B"},
+    )
+
+    create_res = test_client.post(
+        "/workspaces/test-ws/links",
+        json={"source": "note-a", "target": "note-b", "kind": "related"},
+    )
+    assert create_res.status_code == 201
+    link = create_res.json()
+    assert link["id"]
+
+    list_res = test_client.get("/workspaces/test-ws/links")
+    assert list_res.status_code == 200
+    links = list_res.json()
+    assert any(link_item["id"] == link["id"] for link_item in links)
+
+    # Note meta files should contain the link
+    note_a = test_client.get("/workspaces/test-ws/notes/note-a").json()
+    note_b = test_client.get("/workspaces/test-ws/notes/note-b").json()
+    assert any(item["target"] == "note-b" for item in note_a.get("links", []))
+    assert any(item["target"] == "note-a" for item in note_b.get("links", []))
+
+
+def test_delete_link_updates_notes(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Deleting a link should remove it from both notes."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-a", "content": "# A"},
+    )
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-b", "content": "# B"},
+    )
+
+    create_res = test_client.post(
+        "/workspaces/test-ws/links",
+        json={"source": "note-a", "target": "note-b", "kind": "related"},
+    )
+    link_id = create_res.json()["id"]
+
+    delete_res = test_client.delete(f"/workspaces/test-ws/links/{link_id}")
+    assert delete_res.status_code == 200
+
+    note_a = test_client.get("/workspaces/test-ws/notes/note-a").json()
+    note_b = test_client.get("/workspaces/test-ws/notes/note-b").json()
+    assert all(item["id"] != link_id for item in note_a.get("links", []))
+    assert all(item["id"] != link_id for item in note_b.get("links", []))
+
+
+def test_search_returns_matches(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Hybrid search returns notes containing the keyword via inverted index."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "alpha", "content": "# Alpha\nProject rocket"},
+    )
+
+    search_res = test_client.get("/workspaces/test-ws/search", params={"q": "rocket"})
+    assert search_res.status_code == 200
+    ids = [n["id"] for n in search_res.json()]
+    assert "alpha" in ids
+
+
+def test_update_workspace_storage_connector(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """PATCH workspace should persist storage connector details."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+
+    patch_res = test_client.patch(
+        "/workspaces/test-ws",
+        json={
+            "storage_config": {
+                "uri": "s3://bucket/path",
+                "credentials_profile": "default",
+            },
+            "settings": {"default_class": "Meeting"},
+        },
+    )
+    assert patch_res.status_code == 200
+    data = patch_res.json()
+    assert data["storage_config"]["uri"] == "s3://bucket/path"
+    assert data["settings"]["default_class"] == "Meeting"
+
+
+def test_test_connection_endpoint(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """POST /test-connection returns success for local connector stub."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    res = test_client.post(
+        "/workspaces/test-ws/test-connection",
+        json={"storage_config": {"uri": "file:///tmp"}},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "ok"
 
 
 def test_middleware_headers(

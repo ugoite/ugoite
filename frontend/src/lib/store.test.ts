@@ -284,4 +284,34 @@ describe("createNoteStore", () => {
 			dispose();
 		});
 	});
+
+	it("should search notes by keyword via store helper", async () => {
+		await createRoot(async (dispose) => {
+			const store = createNoteStore(() => "store-test-ws");
+			await store.createNote("# Searchable Note\nDetails here");
+			const results = await store.searchNotes("Searchable");
+			expect(results.length).toBeGreaterThan(0);
+			dispose();
+		});
+	});
+
+	it("propagates attachments in optimistic update", async () => {
+		await createRoot(async (dispose) => {
+			const store = createNoteStore(() => "store-test-ws");
+
+			const createResult = await store.createNote("# Attachment Note");
+			const attachment = { id: "att-1", name: "voice.m4a", path: "attachments/att-1_voice.m4a" };
+
+			await store.updateNote(createResult.id, {
+				markdown: "# Attachment Note\nupdated",
+				parent_revision_id: createResult.revision_id,
+				attachments: [attachment],
+			});
+
+			const updated = store.notes().find((n) => n.id === createResult.id);
+			expect(updated?.attachments?.[0]?.id).toBe("att-1");
+
+			dispose();
+		});
+	});
 });

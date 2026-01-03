@@ -79,6 +79,18 @@ Returns 409 error when attempting to create a workspace with an existing ID.
 
 ---
 
+### REQ-STO-006: Storage Connector Validation
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Workspaces
+
+Workspaces MUST accept storage connector updates and provide a validation endpoint before committing changes.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_update_workspace_storage_connector` |
+| pytest | `backend/tests/test_api.py` | `test_test_connection_endpoint` |
+
+---
+
 ## 2. Note Management Requirements
 
 ### REQ-NOTE-001: Note Creation
@@ -181,6 +193,28 @@ Include `properties` and `links` fields when retrieving note list.
 
 ---
 
+### REQ-NOTE-008: Attachments Upload & Linking
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 6, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Attachments
+
+Upload binary attachments, return a generated attachment ID, and allow notes to reference attachments in `content.json`.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_upload_attachment_and_link_to_note` |
+
+---
+
+### REQ-NOTE-009: Attachment Garbage Collection Guard
+**Related Spec**: [03_data_model.md](03_data_model.md) §2 attachments
+
+Prevent deleting attachments that are still referenced by any note.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_delete_attachment_referenced_fails` |
+
+---
+
 ## 3. Indexer Requirements
 
 ### REQ-IDX-001: Structured Cache via Live Indexer
@@ -253,6 +287,17 @@ Trigger indexer in response to filesystem events.
 | Test Type | File | Test Name |
 |-----------|------|-----------|
 | pytest | `ieapp-cli/tests/test_indexer.py` | `test_indexer_watch_loop_triggers_run` |
+
+---
+
+### REQ-IDX-007: Hybrid Search Endpoint
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Search
+
+Expose `GET /workspaces/{ws_id}/search` using the inverted index (keyword) and falling back to a simple scan when the index is absent.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api.py` | `test_search_returns_matches` |
 
 ---
 
@@ -512,17 +557,6 @@ UI reflects changes immediately and syncs in background.
 
 ---
 
-### REQ-FE-007: Canvas Placeholder
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 4
-
-Placeholder for 2D canvas view (full implementation planned for Milestone 6).
-
-| Test Type | File | Test Name |
-|-----------|------|-----------|
-| vitest | `frontend/src/components/CanvasPlaceholder.test.tsx` | 全テスト |
-
----
-
 ### REQ-FE-008: Note Selection and Highlight
 **Related Spec**: [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Feature Matrix
 
@@ -531,7 +565,6 @@ Highlight selected note and load details.
 | Test Type | File | Test Name |
 |-----------|------|-----------|
 | vitest | `frontend/src/components/NoteList.test.tsx` | `should highlight selected note` |
-| vitest | `frontend/src/components/CanvasPlaceholder.test.tsx` | `should highlight selected note` |
 | vitest | `frontend/src/lib/store.test.ts` | `should handle note selection` |
 
 ---
@@ -641,6 +674,49 @@ Reloading the page MUST show the previously saved content.
 
 ---
 
+### REQ-FE-014: Search UI Component
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Search
+
+Frontend MUST provide a search input that calls the `/search` endpoint and displays results with keyboard shortcuts (Cmd/Ctrl+K).
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should render search input` |
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should call onSearch when form is submitted` |
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should show loading state` |
+| vitest | `frontend/src/components/SearchBar.test.tsx` | `should display results count` |
+| e2e | `e2e/canvas.test.ts` | `search - keyword search finds notes` |
+
+---
+
+### REQ-FE-015: Attachment Upload UI
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 6, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Attachments
+
+Editor MUST provide file upload capability with drag-drop support and display attached files with type icons.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should render upload button` |
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should upload file on selection` |
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should display uploaded attachments with icons` |
+| vitest | `frontend/src/components/AttachmentUploader.test.tsx` | `should delete attachment` |
+| e2e | `e2e/canvas.test.ts` | `attachments - upload and delete` |
+
+---
+
+### REQ-FE-017: Workspace Storage Configuration
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3, [04_api_and_mcp.md](04_api_and_mcp.md) §1 Workspaces
+
+Workspace settings MUST allow configuring storage backends (local, S3, remote) with connection validation before saving.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should render storage config form` |
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should test connection before save` |
+| vitest | `frontend/src/components/WorkspaceSettings.test.tsx` | `should save valid configuration` |
+
+---
+
 ## 9. E2E (End-to-End) Requirements
 
 ### REQ-E2E-001: Frontend Accessibility
@@ -701,27 +777,28 @@ mise run e2e
 
 ---
 
-## 11. Requirements Coverage Summary
+## 10. Requirements Coverage Summary
 
 | Category | Requirements | pytest | vitest | e2e |
 |----------|--------------|--------|--------|-----|
-| Storage & Data Model | 5 | ✅ | ✅ | - |
-| Note Management | 7 | ✅ | ✅ | ✅ |
-| Indexer | 6 | ✅ | - | - |
+| Storage & Data Model | 6 | ✅ | ✅ | - |
+| Note Management | 10 | ✅ | ✅ | ✅ |
+| Indexer | 7 | ✅ | - | ✅ |
 | Integrity | 3 | ✅ | - | - |
 | Security | 2 | ✅ | - | - |
 | Sandbox | 5 | ✅ | - | - |
 | REST API | 3 | ✅ | ✅ | ✅ |
-| Frontend | 13 | - | ✅ | ✅ |
+| Frontend | 17 | - | ✅ | ✅ |
 | E2E | 2 | - | - | ✅ |
-| **Total** | **46** | **30** | **25** | **13** |
+| **Total** | **55** | **35** | **34** | **22** |
 
 ---
 
-## Change History
+## 11. Change History
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-02 | 1.3.0 | Integrated Milestone 6 features as REQ-FE-014 through REQ-FE-017; Updated total from 46 to 55 requirements |
 | 2025-12-31 | 1.2.0 | Added REQ-FE-013 for save persistence verification; Enhanced REQ-FE-010/011/012 with critical implementation requirements |
 | 2025-12-31 | 1.1.0 | Added REQ-FE-010, REQ-FE-011, REQ-FE-012 for editor content persistence |
 | 2025-12-31 | 1.0.0 | Initial version created |

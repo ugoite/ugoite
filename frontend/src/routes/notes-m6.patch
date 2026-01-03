@@ -1,0 +1,10 @@
+This patch adds M6 features (Search, Attachments, Canvas, Settings) to notes.tsx
+
+Changes:
+1. Import M6 components (SearchBar, AttachmentUploader, Canvas)
+2. Import APIs (noteApi, attachmentApi, linksApi) and types
+3. Add M6 state signals
+4. Add M6 handlers
+5. Add SearchBar to sidebar
+6. Add AttachmentUploader to editor
+7. Replace CanvasPlaceholder with Canvas

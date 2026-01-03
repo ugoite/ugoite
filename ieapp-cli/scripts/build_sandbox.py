@@ -22,7 +22,13 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 # Configuration
-JAVY_VERSION = "v8.0.0"  # Keep consistent with previous version for stability
+# Note: Javy v8.0.0 has a known issue on ARM64 (aarch64) where it fails
+# with "[parse exception: bad tag index]" when compiling runner.js.
+# We use v7.0.1 for ARM64 which works correctly, while keeping v8.0.0
+# for x86_64 where it functions properly.
+JAVY_VERSION_X86 = "v8.0.0"
+JAVY_VERSION_ARM = "v7.0.1"
+JAVY_VERSION = JAVY_VERSION_X86  # For backwards compatibility with tests
 JAVY_REPO = "bytecodealliance/javy"
 
 logger = logging.getLogger(__name__)
@@ -55,16 +61,18 @@ def get_javy_url() -> str:
 
     if machine in ("x86_64", "amd64"):
         arch = "x86_64"
+        version = JAVY_VERSION_X86
     elif machine in ("aarch64", "arm64"):
         arch = "arm"
+        version = JAVY_VERSION_ARM
     else:
         msg = f"Unsupported architecture: {machine}"
         raise RuntimeError(msg)
 
     # Javy release naming convention: javy-{arch}-{os}-{version}.gz
-    # e.g. javy-x86_64-linux-v3.0.1.gz
-    filename = f"javy-{arch}-linux-{JAVY_VERSION}.gz"
-    return f"https://github.com/{JAVY_REPO}/releases/download/{JAVY_VERSION}/{filename}"
+    # e.g. javy-x86_64-linux-v8.0.0.gz, javy-arm-linux-v7.0.1.gz
+    filename = f"javy-{arch}-linux-{version}.gz"
+    return f"https://github.com/{JAVY_REPO}/releases/download/{version}/{filename}"
 
 
 def download_and_extract_javy(dest_path: Path) -> None:

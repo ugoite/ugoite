@@ -1,16 +1,20 @@
 import { http, HttpResponse } from "msw";
 import type {
+	Attachment,
 	Note,
 	NoteCreatePayload,
 	NoteRecord,
 	NoteUpdatePayload,
 	Workspace,
+	WorkspaceLink,
 } from "~/lib/types";
 
 // In-memory mock data store
 let mockWorkspaces: Map<string, Workspace> = new Map();
 let mockNotes: Map<string, Map<string, Note>> = new Map();
 let mockNoteIndex: Map<string, Map<string, NoteRecord>> = new Map();
+let mockAttachments: Map<string, Map<string, Attachment>> = new Map();
+let mockLinks: Map<string, Map<string, WorkspaceLink>> = new Map();
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
@@ -20,6 +24,8 @@ export const resetMockData = () => {
 	mockWorkspaces = new Map();
 	mockNotes = new Map();
 	mockNoteIndex = new Map();
+	mockAttachments = new Map();
+	mockLinks = new Map();
 	revisionCounter = 0;
 };
 
@@ -28,6 +34,8 @@ export const seedWorkspace = (workspace: Workspace) => {
 	mockWorkspaces.set(workspace.id, workspace);
 	mockNotes.set(workspace.id, new Map());
 	mockNoteIndex.set(workspace.id, new Map());
+	mockAttachments.set(workspace.id, new Map());
+	mockLinks.set(workspace.id, new Map());
 };
 
 export const seedNote = (workspaceId: string, note: Note, record: NoteRecord) => {
@@ -59,6 +67,8 @@ export const handlers = [
 		mockWorkspaces.set(id, workspace);
 		mockNotes.set(id, new Map());
 		mockNoteIndex.set(id, new Map());
+		mockAttachments.set(id, new Map());
+		mockLinks.set(id, new Map());
 
 		return HttpResponse.json({ id, name: body.name }, { status: 201 });
 	}),
@@ -71,6 +81,40 @@ export const handlers = [
 		}
 		return HttpResponse.json(workspace);
 	}),
+
+	// Patch workspace
+	http.patch("http://localhost:3000/api/workspaces/:workspaceId", async ({ params, request }) => {
+		const workspaceId = params.workspaceId as string;
+		const workspace = mockWorkspaces.get(workspaceId);
+		if (!workspace) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		const body = (await request.json()) as Partial<Workspace>;
+		const updated: Workspace = {
+			...workspace,
+			...body,
+			storage_config: body.storage_config ?? workspace.storage_config,
+			settings: body.settings ?? workspace.settings,
+		};
+		mockWorkspaces.set(workspaceId, updated);
+		return HttpResponse.json(updated);
+	}),
+
+	// Test connection
+	http.post(
+		"http://localhost:3000/api/workspaces/:workspaceId/test-connection",
+		async ({ params, request }) => {
+			const workspaceId = params.workspaceId as string;
+			if (!mockWorkspaces.has(workspaceId)) {
+				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+			}
+			const body = (await request.json()) as { storage_config?: { uri?: string } };
+			if (!body.storage_config?.uri) {
+				return HttpResponse.json({ detail: "Missing uri" }, { status: 400 });
+			}
+			return HttpResponse.json({ status: "ok" });
+		},
+	),
 
 	// List notes in workspace
 	http.get("http://localhost:3000/api/workspaces/:workspaceId/notes", ({ params }) => {
@@ -115,6 +159,8 @@ export const handlers = [
 				revision_id: revisionId,
 				created_at: now,
 				updated_at: now,
+				attachments: [],
+				links: [],
 			};
 
 			const record: NoteRecord = {
@@ -124,6 +170,7 @@ export const handlers = [
 				properties,
 				tags: [],
 				links: [],
+				attachments: [],
 			};
 
 			mockNotes.get(workspaceId)?.set(noteId, note);
@@ -190,6 +237,7 @@ export const handlers = [
 			note.content = body.markdown;
 			note.revision_id = newRevisionId;
 			note.updated_at = now;
+			note.attachments = body.attachments ?? note.attachments ?? [];
 
 			// Update index
 			const record = mockNoteIndex.get(workspaceId)?.get(noteId);
@@ -199,6 +247,9 @@ export const handlers = [
 				record.properties = properties;
 				if (body.canvas_position) {
 					record.canvas_position = body.canvas_position;
+				}
+				if (body.attachments) {
+					record.attachments = body.attachments;
 				}
 			}
 
@@ -248,4 +299,148 @@ export const handlers = [
 			return HttpResponse.json(filtered);
 		},
 	),
+
+	// Search notes
+	http.get("http://localhost:3000/api/workspaces/:workspaceId/search", ({ params, request }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		const url = new URL(request.url);
+		const q = url.searchParams.get("q")?.toLowerCase() ?? "";
+		const notes = Array.from(mockNotes.get(workspaceId)?.values() || []);
+		const index = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
+		const matches = index.filter((record) => {
+			const noteContent = notes.find((n) => n.id === record.id)?.content ?? "";
+			const haystack =
+				`${record.title}\n${JSON.stringify(record.properties)}\n${noteContent}`.toLowerCase();
+			return haystack.includes(q);
+		});
+		return HttpResponse.json(matches);
+	}),
+
+	// Upload attachment
+	http.post(
+		"http://localhost:3000/api/workspaces/:workspaceId/attachments",
+		async ({ params, request }) => {
+			const workspaceId = params.workspaceId as string;
+			if (!mockWorkspaces.has(workspaceId)) {
+				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+			}
+			let name = "upload.bin";
+			try {
+				const formData = await request.formData();
+				const file = formData.get("file");
+				if (file && typeof file === "object" && "name" in file) {
+					name = (file as File).name || name;
+				}
+			} catch {
+				// Fallback to default name when form parsing is unavailable
+			}
+			const id = crypto.randomUUID();
+			const attachment: Attachment = { id, name, path: `attachments/${id}_${name}` };
+			const store = mockAttachments.get(workspaceId);
+			store?.set(id, attachment);
+			return HttpResponse.json(attachment, { status: 201 });
+		},
+	),
+
+	// Delete attachment
+	http.delete(
+		"http://localhost:3000/api/workspaces/:workspaceId/attachments/:attachmentId",
+		({ params }) => {
+			const workspaceId = params.workspaceId as string;
+			const attachmentId = params.attachmentId as string;
+			const store = mockAttachments.get(workspaceId);
+			if (!store || !store.has(attachmentId)) {
+				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+			}
+
+			// Check references
+			const notes = mockNotes.get(workspaceId) || new Map();
+			for (const note of notes.values()) {
+				if ((note.attachments || []).some((a) => a.id === attachmentId)) {
+					return HttpResponse.json(
+						{ detail: "Attachment is referenced by a note" },
+						{ status: 409 },
+					);
+				}
+			}
+
+			store.delete(attachmentId);
+			return HttpResponse.json({ status: "deleted", id: attachmentId });
+		},
+	),
+
+	// Create link
+	http.post(
+		"http://localhost:3000/api/workspaces/:workspaceId/links",
+		async ({ params, request }) => {
+			const workspaceId = params.workspaceId as string;
+			const { source, target, kind } = (await request.json()) as WorkspaceLink;
+			const notesStore = mockNotes.get(workspaceId);
+			if (!notesStore?.has(source) || !notesStore?.has(target)) {
+				return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+			}
+			const id = crypto.randomUUID();
+			const link: WorkspaceLink = { id, source, target, kind };
+			mockLinks.get(workspaceId)?.set(id, link);
+
+			const updateLinks = (noteId: string, linkEntry: WorkspaceLink) => {
+				const note = notesStore.get(noteId);
+				if (note) {
+					note.links = [...(note.links || []), linkEntry];
+				}
+				const record = mockNoteIndex.get(workspaceId)?.get(noteId);
+				if (record) {
+					record.links = [
+						...record.links,
+						{
+							id: linkEntry.id,
+							target: linkEntry.target,
+							kind: linkEntry.kind,
+							source: linkEntry.source,
+						},
+					];
+				}
+			};
+
+			updateLinks(source, link);
+			updateLinks(target, { ...link, source: target, target: source });
+
+			return HttpResponse.json(link, { status: 201 });
+		},
+	),
+
+	// List links
+	http.get("http://localhost:3000/api/workspaces/:workspaceId/links", ({ params }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		const links = Array.from(mockLinks.get(workspaceId)?.values() || []);
+		return HttpResponse.json(links);
+	}),
+
+	// Delete link
+	http.delete("http://localhost:3000/api/workspaces/:workspaceId/links/:linkId", ({ params }) => {
+		const workspaceId = params.workspaceId as string;
+		const linkId = params.linkId as string;
+		const linksStore = mockLinks.get(workspaceId);
+		if (!linksStore?.has(linkId)) {
+			return HttpResponse.json({ detail: "Link not found" }, { status: 404 });
+		}
+		linksStore.delete(linkId);
+
+		const notesStore = mockNotes.get(workspaceId) || new Map();
+		for (const note of notesStore.values()) {
+			note.links = (note.links || []).filter((l) => l.id !== linkId);
+		}
+		const indexStore = mockNoteIndex.get(workspaceId) || new Map();
+		for (const record of indexStore.values()) {
+			record.links = record.links.filter((l) => l.id !== linkId);
+		}
+
+		return HttpResponse.json({ status: "deleted", id: linkId });
+	}),
 ];

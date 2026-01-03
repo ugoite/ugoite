@@ -39,19 +39,9 @@ _Related APIs_: REST `POST /workspaces/{ws_id}/notes`, `PUT /workspaces/{ws_id}/
 
 _Related APIs_: REST `PATCH /workspaces/{id}` for storage connectors and `POST /workspaces/{id}/test-connection` for validation.
 
-### Story 4: "The Infinite Canvas" (UI/UX)
-**As a** visual thinker,
-**I want** to organize my notes on a 2D infinite canvas,
-**So that** I can map out complex ideas spatially.
+---
 
-*   **Acceptance Criteria**:
-    *   Switch between List and Canvas views.
-    *   Drag-and-drop notes.
-    *   Visual connections are saved as bi-directional links.
-
-_Related APIs_: REST `PUT /workspaces/{ws_id}/notes/{note_id}` (persists `canvas_position`) and `POST /workspaces/{ws_id}/links` / `DELETE /workspaces/{ws_id}/links/{link_id}` for edges.
-
-### Story 5: "Time Travel" (Versioning)
+### Story 4: "Time Travel" (Versioning)
 **As a** user who made a mistake,
 **I want** to view and restore previous versions of a note,
 **So that** I never lose important information.
