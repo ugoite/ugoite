@@ -406,6 +406,37 @@ async def upload_attachment_endpoint(
     return {"id": attachment_id, "name": filename, "path": relative_path}
 
 
+@router.get("/workspaces/{workspace_id}/attachments")
+async def list_attachments_endpoint(
+    workspace_id: str,
+) -> list[dict[str, str]]:
+    """List all attachments in the workspace."""
+    _validate_path_id(workspace_id, "workspace_id")
+    ws_path = _get_workspace_path(workspace_id)
+
+    attachments_dir = ws_path / "attachments"
+    if not attachments_dir.exists():
+        return []
+
+    attachments = []
+    for file_path in attachments_dir.iterdir():
+        if file_path.is_file():
+            # Parse filename: {attachment_id}_{original_filename}
+            filename = file_path.name
+            if "_" in filename:
+                attachment_id, name = filename.split("_", 1)
+                relative_path = f"attachments/{filename}"
+                attachments.append(
+                    {
+                        "id": attachment_id,
+                        "name": name,
+                        "path": relative_path,
+                    },
+                )
+
+    return attachments
+
+
 @router.delete("/workspaces/{workspace_id}/attachments/{attachment_id}")
 async def delete_attachment_endpoint(
     workspace_id: str,

@@ -55,14 +55,27 @@ export default function NotesPage() {
 			// Reset editor state when switching workspaces
 			setShowEditor(false);
 			setEditorContent("");
-			setAttachments([]);
 			setIsDirty(false);
 			setCurrentRevisionId(null);
 			setLastLoadedNoteId(null); // Reset to allow loading first note in new workspace
 			store.selectNote(null);
 			store.loadNotes();
+
+			// Load attachments for the workspace
+			loadAttachments(wsId);
 		}
 	});
+
+	// Load attachments from the workspace
+	const loadAttachments = async (wsId: string) => {
+		try {
+			const attachmentList = await attachmentApi.list(wsId);
+			setAttachments(attachmentList);
+		} catch (_e) {
+			// Silently ignore attachment load errors
+			setAttachments([]);
+		}
+	};
 
 	// Sync editor content when selected note changes (only on initial load or note switch)
 	// Track the last loaded note ID to avoid re-syncing when resource refetches
@@ -75,8 +88,6 @@ export default function NotesPage() {
 			setLastLoadedNoteId(note.id);
 			setCurrentRevisionId(note.revision_id);
 			setEditorContent(note.content ?? "");
-			// Load attachments from note's attachments field
-			setAttachments(note.attachments || []);
 			setIsDirty(false);
 			setConflictMessage(null);
 			setShowEditor(true);
@@ -144,7 +155,6 @@ export default function NotesPage() {
 			const result = await store.updateNote(noteId, {
 				markdown: editorContent(),
 				parent_revision_id: revisionId,
-				attachments: attachments(),
 			});
 			// Update local revision ID to support consecutive saves
 			setCurrentRevisionId(result.revision_id);
@@ -255,7 +265,8 @@ export default function NotesPage() {
 	// Attachment upload handler
 	const handleAttachmentUpload = async (file: File): Promise<Attachment> => {
 		const attachment = await attachmentApi.upload(workspaceId(), file);
-		setAttachments([...attachments(), attachment]);
+		// Reload attachments after upload to ensure list is up to date
+		await loadAttachments(workspaceId());
 		return attachment;
 	};
 

@@ -1,4 +1,11 @@
-import { createSignal, Show, onMount, onCleanup } from "solid-js";
+import {
+	createSignal,
+	Show,
+	onMount,
+	onCleanup,
+	createEffect,
+	onCleanup as onEffectCleanup,
+} from "solid-js";
 
 export interface SearchBarProps {
 	onSearch: (query: string) => void;
@@ -10,33 +17,27 @@ export interface SearchBarProps {
 /**
  * SearchBar component for searching notes in workspace.
  * Supports keyboard shortcut (Cmd/Ctrl+K) to focus search.
- * Triggers debounced search as user types to prevent UI blocking.
+ * Triggers real-time search as user types with debouncing to avoid blocking input.
  */
 export function SearchBar(props: SearchBarProps) {
 	const [query, setQuery] = createSignal("");
 	let inputRef: HTMLInputElement | undefined;
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Handle input changes with debouncing
-	const handleInput = (value: string) => {
-		setQuery(value);
+	// Trigger search in real-time as user types, with debouncing to avoid blocking
+	createEffect(() => {
+		const searchQuery = query().trim();
 
-		// Clear previous timer
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-		}
+		// Use setTimeout to debounce and avoid blocking input
+		const timeoutId = setTimeout(() => {
+			// Run search asynchronously without blocking
+			queueMicrotask(() => {
+				props.onSearch(searchQuery);
+			});
+		}, 150); // 150ms debounce
 
-		// If empty, trigger immediately
-		if (!value.trim()) {
-			props.onSearch("");
-			return;
-		}
-
-		// Debounce the search call
-		debounceTimer = setTimeout(() => {
-			props.onSearch(value.trim());
-		}, 300);
-	};
+		// Cleanup timeout on next effect run
+		onEffectCleanup(() => clearTimeout(timeoutId));
+	});
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
@@ -67,9 +68,6 @@ export function SearchBar(props: SearchBarProps) {
 		if (typeof document !== "undefined") {
 			document.removeEventListener("keydown", handleKeyDown);
 		}
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-		}
 	});
 
 	return (
@@ -90,16 +88,18 @@ export function SearchBar(props: SearchBarProps) {
 							d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
 						/>
 					</svg>
+
 					{/* Input Field */}
 					<input
 						ref={inputRef}
 						type="text"
 						value={query()}
-						onInput={(e) => handleInput(e.currentTarget.value)}
+						onInput={(e) => setQuery(e.currentTarget.value)}
 						placeholder={props.placeholder || "Search notes... (⌘K)"}
 						class="w-full pl-10 pr-20 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
 						disabled={props.loading}
 					/>
+
 					{/* Clear Button */}
 					<Show when={query()}>
 						<button

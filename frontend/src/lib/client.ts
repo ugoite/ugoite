@@ -193,6 +193,15 @@ export const attachmentApi = {
 		return (await res.json()) as Attachment;
 	},
 
+	/** List all attachments in workspace */
+	async list(workspaceId: string): Promise<Attachment[]> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/attachments`);
+		if (!res.ok) {
+			throw new Error(`Failed to list attachments: ${res.statusText}`);
+		}
+		return (await res.json()) as Attachment[];
+	},
+
 	/** Delete an attachment (fails if referenced) */
 	async delete(workspaceId: string, attachmentId: string): Promise<{ status: string; id: string }> {
 		const res = await apiFetch(`/workspaces/${workspaceId}/attachments/${attachmentId}`, {
