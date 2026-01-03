@@ -29,10 +29,10 @@ export function SearchBar(props: SearchBarProps) {
 
 		// Use setTimeout to debounce and avoid blocking input
 		const timeoutId = setTimeout(() => {
-			// Run search asynchronously without blocking
-			queueMicrotask(() => {
+			// Run search in next event loop to never block input
+			setTimeout(() => {
 				props.onSearch(searchQuery);
-			});
+			}, 0);
 		}, 150); // 150ms debounce
 
 		// Cleanup timeout on next effect run

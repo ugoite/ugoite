@@ -230,12 +230,38 @@ export default function NotesPage() {
 		}
 	};
 
-	// Search handler with async debouncing
+	// Execute search without blocking UI
+	const executeSearch = async (query: string, controller: AbortController) => {
+		try {
+			const results = await noteApi.search(workspaceId(), query);
+			// Only update if this search wasn't aborted
+			if (!controller.signal.aborted) {
+				setSearchResults(results);
+			}
+		} catch (_e) {
+			// Ignore aborted searches or other errors
+			if (!controller.signal.aborted) {
+				setSearchResults([]);
+			}
+		} finally {
+			if (!controller.signal.aborted) {
+				setIsSearching(false);
+			}
+		}
+	};
+
+	// Search handler with async debouncing and AbortController to prevent blocking
 	let searchTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	let searchAbortController: AbortController | null = null;
 	const handleSearch = (query: string) => {
 		// Clear previous timeout
 		if (searchTimeoutId) {
 			clearTimeout(searchTimeoutId);
+		}
+
+		// Abort any ongoing search request
+		if (searchAbortController) {
+			searchAbortController.abort();
 		}
 
 		// If query is empty, clear results immediately
@@ -249,16 +275,13 @@ export default function NotesPage() {
 		setIsSearching(true);
 
 		// Debounce the actual search call
-		searchTimeoutId = setTimeout(async () => {
-			try {
-				const results = await noteApi.search(workspaceId(), query);
-				setSearchResults(results);
-			} catch (_e) {
-				// Search failed - silently ignore but clear loading state
-				setSearchResults([]);
-			} finally {
-				setIsSearching(false);
-			}
+		searchTimeoutId = setTimeout(() => {
+			// Create new abort controller for this search
+			searchAbortController = new AbortController();
+			const currentController = searchAbortController;
+
+			// Execute search in a completely non-blocking way
+			Promise.resolve().then(() => executeSearch(query, currentController));
 		}, 300); // 300ms debounce delay
 	};
 
