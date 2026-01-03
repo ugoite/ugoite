@@ -97,24 +97,6 @@ def _get_workspace_path(workspace_id: str) -> Path:
         ) from e
 
 
-def _ensure_within_workspace(workspace_path: Path, target_path: Path) -> Path:
-    """Resolve and ensure target_path stays within workspace_path.
-
-    This defends against path traversal via symlinks or unexpected path
-    components before performing filesystem operations.
-    """
-    workspace_resolved = workspace_path.resolve(strict=False)
-    target_resolved = target_path.resolve(strict=False)
-    try:
-        target_resolved.relative_to(workspace_resolved)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Resolved path escapes workspace directory",
-        ) from e
-    return target_resolved
-
-
 @router.get("/workspaces")
 async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     """List all workspaces."""
@@ -355,8 +337,18 @@ async def update_note_endpoint(
             payload.parent_revision_id,
         )
         if payload.attachments is not None:
-            raw_content_path = ws_path / "notes" / note_id / "content.json"
-            content_path = _ensure_within_workspace(ws_path, raw_content_path)
+            try:
+                content_path = resolve_existing_path(
+                    ws_path,
+                    "notes",
+                    note_id,
+                    "content.json",
+                )
+            except (FileNotFoundError, NotADirectoryError) as e:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Note content not found: {note_id}",
+                ) from e
             content_data = json.loads(content_path.read_text())
             content_data["attachments"] = payload.attachments
             content_path.write_text(json.dumps(content_data, indent=2))
@@ -413,10 +405,9 @@ async def upload_attachment_endpoint(
     attachments_dir.mkdir(exist_ok=True)
 
     attachment_id = uuid.uuid4().hex
-    filename = Path(file.filename).name if file.filename else attachment_id
+    filename = file.filename or attachment_id
     relative_path = f"attachments/{attachment_id}_{filename}"
-    raw_destination = attachments_dir / f"{attachment_id}_{filename}"
-    destination = _ensure_within_workspace(ws_path, raw_destination)
+    destination = attachments_dir / f"{attachment_id}_{filename}"
 
     contents = await file.read()
     destination.write_bytes(contents)
@@ -650,13 +641,18 @@ async def create_link_endpoint(
     }
 
     for note_id in (payload.source, payload.target):
-        raw_note_meta_path = ws_path / "notes" / note_id / "meta.json"
-        note_meta_path = _ensure_within_workspace(ws_path, raw_note_meta_path)
-        if not note_meta_path.exists():
+        try:
+            note_meta_path = resolve_existing_path(
+                ws_path,
+                "notes",
+                note_id,
+                "meta.json",
+            )
+        except (FileNotFoundError, NotADirectoryError) as e:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Note not found: {note_id}",
-            )
+            ) from e
         meta = json.loads(note_meta_path.read_text())
         links = meta.get("links", [])
         # Avoid duplicate links by id or target
