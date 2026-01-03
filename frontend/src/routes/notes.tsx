@@ -55,6 +55,7 @@ export default function NotesPage() {
 			// Reset editor state when switching workspaces
 			setShowEditor(false);
 			setEditorContent("");
+			setAttachments([]);
 			setIsDirty(false);
 			setCurrentRevisionId(null);
 			setLastLoadedNoteId(null); // Reset to allow loading first note in new workspace
@@ -74,6 +75,8 @@ export default function NotesPage() {
 			setLastLoadedNoteId(note.id);
 			setCurrentRevisionId(note.revision_id);
 			setEditorContent(note.content ?? "");
+			// Load attachments from note's attachments field
+			setAttachments(note.attachments || []);
 			setIsDirty(false);
 			setConflictMessage(null);
 			setShowEditor(true);
@@ -141,6 +144,7 @@ export default function NotesPage() {
 			const result = await store.updateNote(noteId, {
 				markdown: editorContent(),
 				parent_revision_id: revisionId,
+				attachments: attachments(),
 			});
 			// Update local revision ID to support consecutive saves
 			setCurrentRevisionId(result.revision_id);
