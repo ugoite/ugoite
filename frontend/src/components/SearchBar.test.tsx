@@ -13,29 +13,25 @@ describe("SearchBar", () => {
 		render(() => <SearchBar onSearch={onSearch} />);
 
 		const input = screen.getByPlaceholderText(/search/i);
-		const searchEl = screen.queryByRole("search") || document.querySelector("search");
 
+		// Trigger input change to set query signal
 		fireEvent.input(input, { target: { value: "test query" } });
-		if (searchEl) {
-			fireEvent.submit(searchEl as HTMLFormElement);
-		}
+
+		// Wait for debounce (150ms) + effect execution (0ms setTimeout)
+		await new Promise((resolve) => setTimeout(resolve, 200));
 
 		expect(onSearch).toHaveBeenCalledWith("test query");
 	});
 
-	it("should submit empty search as empty string on form submit", () => {
+	it("should submit empty search as empty string on form submit", async () => {
 		const onSearch = vi.fn();
 		render(() => <SearchBar onSearch={onSearch} />);
 
-		const searchEl = screen.queryByRole("search") || document.querySelector("search");
-		if (searchEl) {
-			fireEvent.submit(searchEl as HTMLFormElement);
-		}
+		// The createEffect triggers on empty input initialization
+		// Wait for debounce and effect
+		await new Promise((resolve) => setTimeout(resolve, 200));
 
-		// The createEffect triggers on empty input
-		vi.waitFor(() => {
-			expect(onSearch).toHaveBeenCalledWith("");
-		});
+		expect(onSearch).toHaveBeenCalledWith("");
 	});
 
 	it("should clear search when clear button is clicked", () => {
