@@ -67,42 +67,6 @@ def _validate_path_id(identifier: str, name: str) -> None:
         )
 
 
-def _ensure_within_workspace(base: Path, target: Path) -> Path:
-    """Ensure that ``target`` is within the ``base`` workspace directory.
-
-    Both paths are resolved to their absolute form before the containment check
-    to prevent path traversal via symlinks or ``..`` segments.
-
-    Raises:
-        HTTPException: If the resolved target is outside the workspace.
-
-    """
-    try:
-        base_resolved = base.resolve()
-        target_resolved = target.resolve()
-    except FileNotFoundError:
-        # ``resolve()`` may fail if intermediate components do not exist.
-        # In that case, resolve as far as possible without requiring existence.
-        base_resolved = base.resolve()
-        try:
-            target_resolved = (base_resolved / target.relative_to(base)).resolve()
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Resolved path escapes workspace directory",
-            ) from e
-
-    try:
-        target_resolved.relative_to(base_resolved)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Resolved path escapes workspace directory",
-        ) from e
-
-    return target_resolved
-
-
 def _get_workspace_path(workspace_id: str) -> Path:
     """Get a safe workspace path after validation.
 
@@ -131,6 +95,24 @@ def _get_workspace_path(workspace_id: str) -> Path:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workspace not found: {workspace_id}",
         ) from e
+
+
+def _ensure_within_workspace(workspace_path: Path, target_path: Path) -> Path:
+    """Resolve and ensure target_path stays within workspace_path.
+
+    This defends against path traversal via symlinks or unexpected path
+    components before performing filesystem operations.
+    """
+    workspace_resolved = workspace_path.resolve(strict=False)
+    target_resolved = target_path.resolve(strict=False)
+    try:
+        target_resolved.relative_to(workspace_resolved)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resolved path escapes workspace directory",
+        ) from e
+    return target_resolved
 
 
 @router.get("/workspaces")
@@ -431,9 +413,10 @@ async def upload_attachment_endpoint(
     attachments_dir.mkdir(exist_ok=True)
 
     attachment_id = uuid.uuid4().hex
-    filename = file.filename or attachment_id
+    filename = Path(file.filename).name if file.filename else attachment_id
     relative_path = f"attachments/{attachment_id}_{filename}"
-    destination = attachments_dir / f"{attachment_id}_{filename}"
+    raw_destination = attachments_dir / f"{attachment_id}_{filename}"
+    destination = _ensure_within_workspace(ws_path, raw_destination)
 
     contents = await file.read()
     destination.write_bytes(contents)
