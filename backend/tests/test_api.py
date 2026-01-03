@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import io
 import json
+import shutil
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -452,6 +453,28 @@ def test_upload_attachment_and_link_to_note(
     assert any(a["id"] == attachment["id"] for a in content.get("attachments", []))
 
 
+def test_upload_attachment_strips_path_components_from_filename(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Attachment upload should not allow path components in filenames."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+
+    response = test_client.post(
+        "/workspaces/test-ws/attachments",
+        files={"file": ("../evil.txt", io.BytesIO(b"data"), "text/plain")},
+    )
+    assert response.status_code == 201
+    attachment = response.json()
+
+    assert attachment["name"] == "evil.txt"
+    assert ".." not in attachment["path"]
+
+    stored = temp_workspace_root / "workspaces" / "test-ws" / attachment["path"]
+    assert stored.exists()
+    assert stored.is_file()
+
+
 def test_delete_attachment_referenced_fails(
     test_client: TestClient,
     temp_workspace_root: Path,
@@ -518,6 +541,40 @@ def test_create_and_list_links(
     note_b = test_client.get("/workspaces/test-ws/notes/note-b").json()
     assert any(item["target"] == "note-b" for item in note_a.get("links", []))
     assert any(item["target"] == "note-a" for item in note_b.get("links", []))
+
+
+def test_create_link_rejects_note_symlink_escape(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Creating a link should reject note paths escaping workspace via symlink."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-a", "content": "# A"},
+    )
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "note-b", "content": "# B"},
+    )
+
+    ws_path = temp_workspace_root / "workspaces" / "test-ws"
+    notes_path = ws_path / "notes"
+    note_a_path = notes_path / "note-a"
+
+    outside = temp_workspace_root / "outside"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "meta.json").write_text("{}")
+
+    # Replace the real note directory with a symlink pointing outside.
+    shutil.rmtree(note_a_path)
+    note_a_path.symlink_to(outside, target_is_directory=True)
+
+    create_res = test_client.post(
+        "/workspaces/test-ws/links",
+        json={"source": "note-a", "target": "note-b", "kind": "related"},
+    )
+    assert create_res.status_code == 400
 
 
 def test_delete_link_updates_notes(
