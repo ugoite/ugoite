@@ -205,6 +205,12 @@ async def test_connection_endpoint(
 ) -> dict[str, str]:
     """Validate the provided storage connector (stubbed for Milestone 6)."""
     _validate_path_id(workspace_id, "workspace_id")
+    ws_path = _get_workspace_path(workspace_id)
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
     uri = payload.storage_config.get("uri", "")
 
     if uri.startswith(("file://", "/")):
@@ -691,7 +697,16 @@ async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
             except json.JSONDecodeError:
                 continue
             for link in meta.get("links", []):
-                links_by_id.setdefault(link.get("id", uuid.uuid4().hex), link)
+                link_id = link.get("id")
+                if link_id:
+                    link_key = link_id
+                else:
+                    # Use deterministic representation for links without explicit ID
+                    try:
+                        link_key = json.dumps(link, sort_keys=True)
+                    except TypeError:
+                        link_key = str(link)
+                links_by_id.setdefault(link_key, link)
 
     return list(links_by_id.values())
 

@@ -44,12 +44,6 @@ export function AttachmentUploader(props: AttachmentUploaderProps) {
 		}
 	};
 
-	const _formatFileSize = (bytes: number): string => {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	};
-
 	const getFileIcon = (filename: string): string => {
 		const ext = filename.split(".").pop()?.toLowerCase();
 		switch (ext) {

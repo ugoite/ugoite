@@ -1,11 +1,4 @@
-import {
-	createSignal,
-	Show,
-	onMount,
-	onCleanup,
-	createEffect,
-	onCleanup as onEffectCleanup,
-} from "solid-js";
+import { createSignal, Show, onMount, onCleanup, createEffect } from "solid-js";
 
 export interface SearchBarProps {
 	onSearch: (query: string) => void;
@@ -36,7 +29,7 @@ export function SearchBar(props: SearchBarProps) {
 		}, 150); // 150ms debounce
 
 		// Cleanup timeout on next effect run
-		onEffectCleanup(() => clearTimeout(timeoutId));
+		onCleanup(() => clearTimeout(timeoutId));
 	});
 
 	const handleSubmit = (e: Event) => {
@@ -72,7 +65,7 @@ export function SearchBar(props: SearchBarProps) {
 
 	return (
 		<div class="search-bar">
-			<form role="search" onSubmit={handleSubmit} class="relative">
+			<search class="relative" onSubmit={handleSubmit}>
 				<div class="relative flex items-center">
 					{/* Search Icon */}
 					<svg
@@ -123,7 +116,7 @@ export function SearchBar(props: SearchBarProps) {
 						</button>
 					</Show>
 				</div>
-			</form>
+			</search>
 
 			{/* Status Messages */}
 			<div class="mt-2 text-sm">

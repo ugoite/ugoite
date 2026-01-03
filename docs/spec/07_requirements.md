@@ -563,7 +563,7 @@ UI reflects changes immediately and syncs in background.
 Highlight selected note and load details.
 
 | Test Type | File | Test Name |
-|-----------|------|-----------|---|
+|-----------|------|-----------|
 | vitest | `frontend/src/components/NoteList.test.tsx` | `should highlight selected note` |
 | vitest | `frontend/src/lib/store.test.ts` | `should handle note selection` |
 

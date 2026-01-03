@@ -103,9 +103,7 @@ export default function NotesPage() {
 		}
 
 		// Save current scroll position before state change
-		if (noteListContainerRef) {
-			setScrollPosition(noteListContainerRef.scrollTop);
-		}
+		setScrollPosition(noteListContainerRef?.scrollTop ?? 0);
 
 		store.selectNote(noteId);
 	};
@@ -396,7 +394,7 @@ export default function NotesPage() {
 						/>
 					</Show>
 				</div>
-			</aside>{" "}
+			</aside>
 			{/* Main Content */}
 			<div class="flex-1 flex flex-col overflow-hidden">
 				<Show
