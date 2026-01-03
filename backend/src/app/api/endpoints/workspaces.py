@@ -67,6 +67,42 @@ def _validate_path_id(identifier: str, name: str) -> None:
         )
 
 
+def _ensure_within_workspace(base: Path, target: Path) -> Path:
+    """Ensure that ``target`` is within the ``base`` workspace directory.
+
+    Both paths are resolved to their absolute form before the containment check
+    to prevent path traversal via symlinks or ``..`` segments.
+
+    Raises:
+        HTTPException: If the resolved target is outside the workspace.
+
+    """
+    try:
+        base_resolved = base.resolve()
+        target_resolved = target.resolve()
+    except FileNotFoundError:
+        # ``resolve()`` may fail if intermediate components do not exist.
+        # In that case, resolve as far as possible without requiring existence.
+        base_resolved = base.resolve()
+        try:
+            target_resolved = (base_resolved / target.relative_to(base)).resolve()
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Resolved path escapes workspace directory",
+            ) from e
+
+    try:
+        target_resolved.relative_to(base_resolved)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resolved path escapes workspace directory",
+        ) from e
+
+    return target_resolved
+
+
 def _get_workspace_path(workspace_id: str) -> Path:
     """Get a safe workspace path after validation.
 
@@ -337,9 +373,8 @@ async def update_note_endpoint(
             payload.parent_revision_id,
         )
         if payload.attachments is not None:
-            content_path = (
-                _get_workspace_path(workspace_id) / "notes" / note_id / "content.json"
-            )
+            raw_content_path = ws_path / "notes" / note_id / "content.json"
+            content_path = _ensure_within_workspace(ws_path, raw_content_path)
             content_data = json.loads(content_path.read_text())
             content_data["attachments"] = payload.attachments
             content_path.write_text(json.dumps(content_data, indent=2))
@@ -632,7 +667,8 @@ async def create_link_endpoint(
     }
 
     for note_id in (payload.source, payload.target):
-        note_meta_path = ws_path / "notes" / note_id / "meta.json"
+        raw_note_meta_path = ws_path / "notes" / note_id / "meta.json"
+        note_meta_path = _ensure_within_workspace(ws_path, raw_note_meta_path)
         if not note_meta_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
