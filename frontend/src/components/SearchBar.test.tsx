@@ -13,7 +13,8 @@ describe("SearchBar", () => {
 		render(() => <SearchBar onSearch={onSearch} />);
 
 		const input = screen.getByPlaceholderText(/search/i);
-		const form = screen.getByRole("search");
+		const form = input.closest("form");
+		if (!form) throw new Error("form not found");
 
 		fireEvent.input(input, { target: { value: "test query" } });
 		fireEvent.submit(form);
@@ -24,8 +25,9 @@ describe("SearchBar", () => {
 	it("should not submit empty search", () => {
 		const onSearch = vi.fn();
 		render(() => <SearchBar onSearch={onSearch} />);
-
-		const form = screen.getByRole("search");
+		const input = screen.getByPlaceholderText(/search/i);
+		const form = input.closest("form");
+		if (!form) throw new Error("form not found");
 		fireEvent.submit(form);
 
 		expect(onSearch).not.toHaveBeenCalled();
