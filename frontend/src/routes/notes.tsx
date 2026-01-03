@@ -1,4 +1,4 @@
-import { createSignal, Show, createEffect, onMount } from "solid-js";
+import { createSignal, Show, createEffect, onMount, untrack } from "solid-js";
 import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
 import { NoteList } from "~/components/NoteList";
@@ -24,7 +24,8 @@ export default function NotesPage() {
 	const [searchResults, setSearchResults] = createSignal<SearchResult[]>([]);
 	const [isSearching, setIsSearching] = createSignal(false);
 
-	// Scroll position preservation
+	// Scroll position state - store it reactively
+	const [scrollPosition, setScrollPosition] = createSignal(0);
 	let noteListContainerRef: HTMLDivElement | undefined;
 
 	// Attachments state
@@ -87,17 +88,35 @@ export default function NotesPage() {
 			}
 		}
 
-		// Preserve scroll position before selecting note
-		const scrollTop = noteListContainerRef?.scrollTop || 0;
-		store.selectNote(noteId);
+		// Save current scroll position before state change
+		if (noteListContainerRef) {
+			setScrollPosition(noteListContainerRef.scrollTop);
+		}
 
-		// Restore scroll position after DOM updates
-		requestAnimationFrame(() => {
-			if (noteListContainerRef) {
-				noteListContainerRef.scrollTop = scrollTop;
+		store.selectNote(noteId);
+	};
+
+	// Restore scroll position after render (but untrack to avoid infinite loops)
+	createEffect(() => {
+		// Track selected note to know when selection changes
+		store.selectedNoteId();
+
+		// Untrack the scroll restoration to prevent infinite loops
+		untrack(() => {
+			const savedScroll = scrollPosition();
+			if (noteListContainerRef && savedScroll > 0) {
+				// Use multiple strategies to ensure scroll is restored
+				noteListContainerRef.scrollTop = savedScroll;
+
+				// Also try after next frame in case layout is still pending
+				requestAnimationFrame(() => {
+					if (noteListContainerRef) {
+						noteListContainerRef.scrollTop = savedScroll;
+					}
+				});
 			}
 		});
-	};
+	});
 
 	const handleContentChange = (content: string) => {
 		setEditorContent(content);
@@ -197,21 +216,36 @@ export default function NotesPage() {
 		}
 	};
 
-	// Search handler
-	const handleSearch = async (query: string) => {
+	// Search handler with async debouncing
+	let searchTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	const handleSearch = (query: string) => {
+		// Clear previous timeout
+		if (searchTimeoutId) {
+			clearTimeout(searchTimeoutId);
+		}
+
+		// If query is empty, clear results immediately
 		if (!query.trim()) {
 			setSearchResults([]);
+			setIsSearching(false);
 			return;
 		}
+
+		// Set loading state immediately for UI feedback
 		setIsSearching(true);
-		try {
-			const results = await noteApi.search(workspaceId(), query);
-			setSearchResults(results);
-		} catch (_e) {
-			// Search failed - silently ignore
-		} finally {
-			setIsSearching(false);
-		}
+
+		// Debounce the actual search call
+		searchTimeoutId = setTimeout(async () => {
+			try {
+				const results = await noteApi.search(workspaceId(), query);
+				setSearchResults(results);
+			} catch (_e) {
+				// Search failed - silently ignore but clear loading state
+				setSearchResults([]);
+			} finally {
+				setIsSearching(false);
+			}
+		}, 300); // 300ms debounce delay
 	};
 
 	// Attachment upload handler
@@ -298,7 +332,11 @@ export default function NotesPage() {
 				</div>
 
 				{/* Note List (or Search Results) */}
-				<div ref={noteListContainerRef} class="flex-1 overflow-auto p-4">
+				<div
+					ref={noteListContainerRef}
+					class="flex-1 overflow-auto p-4"
+					onScroll={(e) => setScrollPosition(e.currentTarget.scrollTop)}
+				>
 					<Show
 						when={searchResults().length === 0}
 						fallback={

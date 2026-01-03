@@ -1,4 +1,4 @@
-import { createSignal, Show, onMount, onCleanup } from "solid-js";
+import { createSignal, Show, onMount, onCleanup, createEffect } from "solid-js";
 
 export interface SearchBarProps {
 	onSearch: (query: string) => void;
@@ -10,17 +10,21 @@ export interface SearchBarProps {
 /**
  * SearchBar component for searching notes in workspace.
  * Supports keyboard shortcut (Cmd/Ctrl+K) to focus search.
+ * Triggers real-time search as user types.
  */
 export function SearchBar(props: SearchBarProps) {
 	const [query, setQuery] = createSignal("");
 	let inputRef: HTMLInputElement | undefined;
 
+	// Trigger search in real-time as user types
+	createEffect(() => {
+		const searchQuery = query().trim();
+		props.onSearch(searchQuery);
+	});
+
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		const searchQuery = query().trim();
-		if (searchQuery) {
-			props.onSearch(searchQuery);
-		}
+		// Search is already triggered by createEffect, but we can keep this for explicit enter key
 	};
 
 	const handleClear = () => {

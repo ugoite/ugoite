@@ -137,7 +137,6 @@ export function NoteList(props: NoteListProps) {
 		</div>
 	);
 }
-
 interface NoteListItemProps {
 	note: NoteRecord;
 	isSelected: boolean;
