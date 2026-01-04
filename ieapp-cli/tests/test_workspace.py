@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import fsspec
 import pytest
 
 from ieapp.workspace import WorkspaceExistsError, create_workspace
@@ -84,3 +85,26 @@ def test_create_workspace_s3_unimplemented() -> None:
     # But the requirement is to "raise unimplemented error".
     with pytest.raises(NotImplementedError):
         create_workspace(root, ws_id)
+
+
+def test_create_workspace_with_memory_fs() -> None:
+    """Create workspace using an in-memory fsspec filesystem."""
+    fs = fsspec.filesystem("memory", skip_instance_cache=True)
+    root = "/ieapp"
+    ws_id = "mem-ws"
+
+    create_workspace(root, ws_id, fs=fs)
+
+    ws_path = f"{root}/workspaces/{ws_id}"
+    assert fs.exists(ws_path)
+    assert fs.exists(f"{ws_path}/meta.json")
+    assert fs.exists(f"{ws_path}/settings.json")
+    assert fs.exists(f"{ws_path}/schemas")
+    assert fs.exists(f"{ws_path}/index/index.json")
+    assert fs.exists(f"{ws_path}/index/stats.json")
+    assert fs.exists(f"{ws_path}/attachments")
+    assert fs.exists(f"{ws_path}/notes")
+
+    with fs.open(f"{root}/global.json", "r") as handle:
+        global_data = json.load(handle)
+    assert ws_id in global_data.get("workspaces", [])

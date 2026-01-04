@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import fsspec
 import pytest
 
 from ieapp.notes import RevisionMismatchError, create_note, list_notes, update_note
@@ -266,6 +267,46 @@ def test_note_history_diff(
         rev_data = json.load(f)
         assert "diff" in rev_data
         assert "Line 2 Modified" in rev_data["diff"]
+
+
+def test_note_lifecycle_with_memory_fs(fake_integrity_provider: Any) -> None:
+    """Ensure note CRUD works when using a non-file fsspec filesystem."""
+    fs = fsspec.filesystem("memory", skip_instance_cache=True)
+    root = "/ieapp"
+    ws_id = "mem-ws"
+
+    create_workspace(root, ws_id, fs=fs)
+    ws_path = f"{root}/workspaces/{ws_id}"
+
+    create_note(
+        ws_path,
+        "note-1",
+        "# Title\n\ncontent",
+        integrity_provider=fake_integrity_provider,
+        fs=fs,
+    )
+
+    with fs.open(f"{ws_path}/notes/note-1/content.json", "r") as handle:
+        content_json = json.load(handle)
+    initial_rev = content_json["revision_id"]
+
+    update_note(
+        ws_path,
+        "note-1",
+        "# Title\n\nupdated",
+        parent_revision_id=initial_rev,
+        integrity_provider=fake_integrity_provider,
+        fs=fs,
+        attachments=[{"id": "a1", "name": "file", "path": "attachments/a1"}],
+    )
+
+    with fs.open(f"{ws_path}/notes/note-1/content.json", "r") as handle:
+        updated_json = json.load(handle)
+
+    assert updated_json["revision_id"] != initial_rev
+    assert updated_json.get("attachments") == [
+        {"id": "a1", "name": "file", "path": "attachments/a1"},
+    ]
 
 
 def test_note_author_persistence(

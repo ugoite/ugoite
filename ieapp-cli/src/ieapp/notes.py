@@ -1,13 +1,19 @@
 """Notes management module."""
 
+from __future__ import annotations
+
 import difflib
 import json
 import logging
-import shutil
 import time
 import uuid
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import fsspec
 
 import yaml
 
@@ -22,10 +28,13 @@ except ImportError:  # pragma: no cover - platform specific
 
 from .integrity import IntegrityProvider
 from .utils import (
-    join_secure_path,
-    resolve_existing_path,
+    fs_exists,
+    fs_join,
+    fs_makedirs,
+    fs_read_json,
+    fs_write_json,
+    get_fs_and_path,
     validate_id,
-    write_json_secure,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,28 +47,43 @@ DEFAULT_UPDATE_MESSAGE = "Update"
 MIN_FRONTMATTER_PARTS = 3
 
 
-def _resolve_workspace_root(workspace_path: str | Path) -> Path:
-    """Resolve a workspace directory via trusted components.
+@dataclass
+class NotePaths:
+    """Paths related to a single note within a workspace."""
 
-    This re-traverses the filesystem from the parent ``workspaces`` directory
-    so that path components come from the OS (not user input), satisfying
-    CodeQL's path-injection checks.
-    """
-    base = Path(workspace_path).resolve()
-    workspaces_dir = base.parent
+    base: str
+    note_dir: str
+    content: str
+    meta: str
+    history_dir: str
 
-    if workspaces_dir.name != "workspaces":
-        msg = f"Workspace path must reside under a 'workspaces' directory: {base}"
+
+def _workspace_context(
+    workspace_path: str | Path,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> tuple[fsspec.AbstractFileSystem, str, str]:
+    """Return filesystem, workspace path, and validated workspace id."""
+    fs_obj, ws_path = get_fs_and_path(workspace_path, fs)
+    workspace_id = ws_path.rstrip("/").split("/")[-1]
+    workspace_id = validate_id(workspace_id, "workspace_id")
+
+    if not fs_exists(fs_obj, ws_path):
+        msg = f"Workspace {workspace_id} not found"
         raise FileNotFoundError(msg)
 
-    root_dir = workspaces_dir.parent
-    safe_workspace_id = validate_id(base.name, "workspace_id")
+    return fs_obj, ws_path, workspace_id
 
-    try:
-        return resolve_existing_path(root_dir, "workspaces", safe_workspace_id)
-    except FileNotFoundError as exc:  # pragma: no cover - defensive
-        msg = f"Workspace {safe_workspace_id} not found under {root_dir}"
-        raise FileNotFoundError(msg) from exc
+
+def _note_paths(workspace_path: str, note_id: str) -> NotePaths:
+    base = fs_join(workspace_path, "notes")
+    note_dir = fs_join(base, note_id) if note_id else base
+    return NotePaths(
+        base=base,
+        note_dir=note_dir,
+        content=fs_join(note_dir, "content.json"),
+        meta=fs_join(note_dir, "meta.json"),
+        history_dir=fs_join(note_dir, "history"),
+    )
 
 
 class NoteExistsError(Exception):
@@ -70,15 +94,9 @@ class RevisionMismatchError(Exception):
     """Raised when the supplied parent revision does not match the head."""
 
 
-def _mkdir_secure(path: Path, mode: int = 0o700) -> None:
-    """Create ``path`` with restrictive permissions from the outset.
-
-    Args:
-        path: Directory to create.
-        mode: Permission bits applied during creation.
-
-    """
-    path.mkdir(mode=mode)
+def _mkdir_secure(fs: fsspec.AbstractFileSystem, path: str, mode: int = 0o700) -> None:
+    """Create directory via fsspec with restrictive permissions."""
+    fs_makedirs(fs, path, mode=mode, exist_ok=False)
 
 
 def _extract_title_from_markdown(content: str, fallback: str) -> str:
@@ -153,6 +171,8 @@ def create_note(
     content: str,
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
 ) -> None:
     """Create a note directory with meta, content, and history files.
 
@@ -162,44 +182,36 @@ def create_note(
         content: Markdown body to persist.
         integrity_provider: Optional override for checksum/signature calculations.
         author: The author of the note (default: "user").
+        fs: Optional fsspec filesystem to use.
 
     Raises:
         NoteExistsError: If the note directory already exists.
 
     """
-    # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
 
-    ws_path = _resolve_workspace_root(workspace_path)
+    fs_obj, ws_path, workspace_id = _workspace_context(workspace_path, fs)
 
-    # Check if note exists using secure lookup
-    try:
-        resolve_existing_path(ws_path, "notes", safe_note_id)
+    notes_dir = fs_join(ws_path, "notes")
+    if not fs_exists(fs_obj, notes_dir):
+        msg = f"Notes directory missing for workspace {workspace_id}"
+        raise FileNotFoundError(msg)
+
+    note_dir = fs_join(notes_dir, safe_note_id)
+    if fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} already exists"
         raise NoteExistsError(msg)
-    except FileNotFoundError:
-        # This is expected for creation
-        pass
 
-    # Resolve parent directory securely
-    notes_dir = resolve_existing_path(ws_path, "notes")
+    _mkdir_secure(fs_obj, note_dir)
 
-    # Construct new note path securely
-    note_dir = join_secure_path(notes_dir, safe_note_id)
-
-    _mkdir_secure(note_dir)
-
-    # Parse content
     parsed = _parse_markdown(content)
-    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
+    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path, fs=fs_obj)
 
-    # Create initial revision
     rev_id = str(uuid.uuid4())
     timestamp = time.time()
     checksum = provider.checksum(content)
     signature = provider.signature(content)
 
-    # Create content.json
     content_data = {
         "revision_id": rev_id,
         "parent_revision_id": None,
@@ -210,9 +222,12 @@ def create_note(
         "attachments": [],
         "computed": {},
     }
-
-    content_path = join_secure_path(note_dir, "content.json")
-    write_json_secure(content_path, content_data, exclusive=True)
+    fs_write_json(
+        fs_obj,
+        fs_join(note_dir, "content.json"),
+        content_data,
+        exclusive=True,
+    )
 
     revision = {
         "revision_id": rev_id,
@@ -224,13 +239,15 @@ def create_note(
         "message": DEFAULT_INITIAL_MESSAGE,
     }
 
-    history_dir = join_secure_path(note_dir, "history")
-    _mkdir_secure(history_dir)
+    history_dir = fs_join(note_dir, "history")
+    _mkdir_secure(fs_obj, history_dir)
+    fs_write_json(
+        fs_obj,
+        fs_join(history_dir, f"{rev_id}.json"),
+        revision,
+        exclusive=True,
+    )
 
-    rev_path = join_secure_path(history_dir, f"{rev_id}.json")
-    write_json_secure(rev_path, revision, exclusive=True)
-
-    # Update history index
     history_index = {
         "note_id": note_id,
         "revisions": [
@@ -242,21 +259,18 @@ def create_note(
             },
         ],
     }
-    index_path = join_secure_path(history_dir, "index.json")
-    write_json_secure(index_path, history_index, exclusive=True)
+    fs_write_json(
+        fs_obj,
+        fs_join(history_dir, "index.json"),
+        history_index,
+        exclusive=True,
+    )
 
-    # Create meta.json
-    # Extract title from first H1 or use note_id
     title = _extract_title_from_markdown(content, note_id)
-
-    # Read workspace_id from workspace meta.json if available
-    workspace_meta_file = ws_path / "meta.json"
-    if workspace_meta_file.exists():
-        with workspace_meta_file.open("r") as f:
-            workspace_meta = json.load(f)
-            workspace_id = workspace_meta.get("id", ws_path.name)
-    else:
-        workspace_id = ws_path.name
+    workspace_meta_path = fs_join(ws_path, "meta.json")
+    if fs_exists(fs_obj, workspace_meta_path):
+        workspace_meta = fs_read_json(fs_obj, workspace_meta_path)
+        workspace_id = workspace_meta.get("id", workspace_id)
 
     meta = {
         "id": note_id,
@@ -271,8 +285,7 @@ def create_note(
         "integrity": {"checksum": checksum, "signature": signature},
     }
 
-    meta_path = join_secure_path(note_dir, "meta.json")
-    write_json_secure(meta_path, meta, exclusive=True)
+    fs_write_json(fs_obj, fs_join(note_dir, "meta.json"), meta, exclusive=True)
 
 
 def update_note(
@@ -283,6 +296,8 @@ def update_note(
     attachments: list[dict[str, Any]] | None = None,
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
 ) -> None:
     """Append a new revision to an existing note.
 
@@ -294,87 +309,72 @@ def update_note(
         attachments: Optional list of attachment metadata to persist.
         integrity_provider: Optional override for checksum/signature calculations.
         author: The author of the update (default: "user").
+        fs: Optional fsspec filesystem to use.
 
     Raises:
         FileNotFoundError: If the note directory is missing.
         RevisionMismatchError: If ``parent_revision_id`` does not match head.
 
     """
-    # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path, fs)
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
-    except FileNotFoundError:
+    note_dir = fs_join(ws_path, "notes", safe_note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    # Check parent revision from content.json (as per spec)
-    content_path = resolve_existing_path(note_dir, "content.json")
+    content_path = fs_join(note_dir, "content.json")
+    if not fs_exists(fs_obj, content_path):
+        msg = f"Note content not found for {safe_note_id}"
+        raise FileNotFoundError(msg)
 
-    # Use advisory locking to prevent race conditions
-    # We open in r+ mode to read and then write
-    with content_path.open("r+", encoding="utf-8") as f:
-        if fcntl:
-            fcntl.flock(f, fcntl.LOCK_EX)
+    current_content_data = fs_read_json(fs_obj, content_path)
 
-        try:
-            current_content_data = json.load(f)
+    if current_content_data["revision_id"] != parent_revision_id:
+        msg = (
+            "Revision conflict: the note has been modified. "
+            f"Current revision: {current_content_data['revision_id']}, "
+            f"provided revision: {parent_revision_id}"
+        )
+        raise RevisionMismatchError(msg)
 
-            if current_content_data["revision_id"] != parent_revision_id:
-                msg = (
-                    "Revision conflict: the note has been modified. "
-                    f"Current revision: {current_content_data['revision_id']}, "
-                    f"provided revision: {parent_revision_id}"
-                )
-                raise RevisionMismatchError(msg)
+    parsed = _parse_markdown(content)
+    provider = integrity_provider or IntegrityProvider.for_workspace(
+        ws_path,
+        fs=fs_obj,
+    )
 
-            # Parse content
-            parsed = _parse_markdown(content)
-            provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
+    rev_id = str(uuid.uuid4())
+    timestamp = time.time()
+    checksum = provider.checksum(content)
+    signature = provider.signature(content)
 
-            # Create new revision
-            rev_id = str(uuid.uuid4())
-            timestamp = time.time()
-            checksum = provider.checksum(content)
-            signature = provider.signature(content)
+    diff = difflib.unified_diff(
+        current_content_data["markdown"].splitlines(keepends=True),
+        content.splitlines(keepends=True),
+        fromfile=f"revision/{current_content_data['revision_id']}",
+        tofile=f"revision/{rev_id}",
+    )
+    diff_text = "".join(diff)
 
-            # Calculate diff
-            diff = difflib.unified_diff(
-                current_content_data["markdown"].splitlines(keepends=True),
-                content.splitlines(keepends=True),
-                fromfile=f"revision/{current_content_data['revision_id']}",
-                tofile=f"revision/{rev_id}",
-            )
-            diff_text = "".join(diff)
+    content_data = {
+        "revision_id": rev_id,
+        "parent_revision_id": parent_revision_id,
+        "author": author,
+        "markdown": content,
+        "frontmatter": parsed["frontmatter"],
+        "sections": parsed["sections"],
+        "attachments": attachments
+        if attachments is not None
+        else current_content_data.get("attachments", []),
+        "computed": current_content_data.get("computed", {}),
+    }
 
-            # Update content.json
-            content_data = {
-                "revision_id": rev_id,
-                "parent_revision_id": parent_revision_id,
-                "author": author,
-                "markdown": content,
-                "frontmatter": parsed["frontmatter"],
-                "sections": parsed["sections"],
-                "attachments": attachments
-                if attachments is not None
-                else current_content_data.get("attachments", []),
-                "computed": current_content_data.get("computed", {}),
-            }
+    fs_write_json(fs_obj, content_path, content_data)
 
-            # Write back to content.json
-            f.seek(0)
-            json.dump(content_data, f, indent=2)
-            f.truncate()
-
-        finally:
-            if fcntl:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-    # Finalize and record the new revision (extracted to helper to reduce function size)
     _finalize_revision(
+        fs_obj,
         note_dir,
         rev_id,
         parent_revision_id,
@@ -389,7 +389,8 @@ def update_note(
 
 
 def _finalize_revision(
-    note_dir: Path,
+    fs: fsspec.AbstractFileSystem,
+    note_dir: str,
     rev_id: str,
     parent_revision_id: str,
     timestamp: float,
@@ -400,7 +401,7 @@ def _finalize_revision(
     content: str,
     parsed: dict[str, Any],
 ) -> None:
-    """Write the revision file, update the history index, and update meta.json."""
+    """Write revision artifacts and update meta/history via fsspec."""
     revision = {
         "revision_id": rev_id,
         "parent_revision_id": parent_revision_id,
@@ -411,15 +412,11 @@ def _finalize_revision(
         "message": DEFAULT_UPDATE_MESSAGE,
     }
 
-    history_dir = resolve_existing_path(note_dir, "history")
-    rev_path = join_secure_path(history_dir, f"{rev_id}.json")
-    write_json_secure(rev_path, revision)
+    history_dir = fs_join(note_dir, "history")
+    fs_write_json(fs, fs_join(history_dir, f"{rev_id}.json"), revision)
 
-    # Update history index
-    index_path = resolve_existing_path(history_dir, "index.json")
-    with index_path.open("r", encoding="utf-8") as f:
-        history_index = json.load(f)
-
+    index_path = fs_join(history_dir, "index.json")
+    history_index = fs_read_json(fs, index_path)
     history_index["revisions"].append(
         {
             "revision_id": rev_id,
@@ -428,22 +425,18 @@ def _finalize_revision(
             "signature": signature,
         },
     )
+    fs_write_json(fs, index_path, history_index)
 
-    write_json_secure(index_path, history_index)
+    meta_path = fs_join(note_dir, "meta.json")
+    meta = fs_read_json(fs, meta_path)
 
-    # Update meta.json
-    meta_path = resolve_existing_path(note_dir, "meta.json")
-    with meta_path.open("r", encoding="utf-8") as f:
-        meta = json.load(f)
-
-    # Update title if changed
-    meta["title"] = _extract_title_from_markdown(content, meta["title"])
+    meta["title"] = _extract_title_from_markdown(content, meta.get("title", ""))
     meta["updated_at"] = timestamp
     meta["class"] = parsed["frontmatter"].get("class", meta.get("class"))
     meta["tags"] = parsed["frontmatter"].get("tags", meta.get("tags", []))
     meta["integrity"] = {"checksum": checksum, "signature": signature}
 
-    write_json_secure(meta_path, meta)
+    fs_write_json(fs, meta_path, meta)
 
 
 def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
@@ -460,27 +453,24 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
         FileNotFoundError: If the note does not exist or is deleted.
 
     """
-    # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
-    except FileNotFoundError:
+    note_dir = fs_join(ws_path, "notes", safe_note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    content_path = resolve_existing_path(note_dir, "content.json")
-    meta_path = resolve_existing_path(note_dir, "meta.json")
+    content_path = fs_join(note_dir, "content.json")
+    meta_path = fs_join(note_dir, "meta.json")
 
-    with content_path.open("r", encoding="utf-8") as f:
-        content_data = json.load(f)
+    if not fs_exists(fs_obj, content_path) or not fs_exists(fs_obj, meta_path):
+        msg = f"Note {safe_note_id} not found"
+        raise FileNotFoundError(msg)
 
-    with meta_path.open("r", encoding="utf-8") as f:
-        meta = json.load(f)
+    content_data = fs_read_json(fs_obj, content_path)
+    meta = fs_read_json(fs_obj, meta_path)
 
-    # Check if note is soft-deleted (tombstoned)
     if meta.get("deleted"):
         msg = f"Note {note_id} not found"
         raise FileNotFoundError(msg)
@@ -488,7 +478,7 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
     return {
         "id": note_id,
         "revision_id": content_data.get("revision_id"),
-        "content": content_data.get("markdown"),  # API uses "content" for frontend
+        "content": content_data.get("markdown"),
         "frontmatter": content_data.get("frontmatter", {}),
         "sections": content_data.get("sections", {}),
         "attachments": content_data.get("attachments", []),
@@ -514,47 +504,52 @@ def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
         List of note summaries (id, title, class, tags, etc.).
 
     """
-    ws_path = _resolve_workspace_root(workspace_path)
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
+    notes_dir = fs_join(ws_path, "notes")
+
+    if not fs_exists(fs_obj, notes_dir):
+        return []
+
     try:
-        notes_dir = resolve_existing_path(ws_path, "notes")
+        entries = fs_obj.ls(notes_dir, detail=True)
     except FileNotFoundError:
         return []
 
-    notes = []
-    for note_dir in notes_dir.iterdir():
-        if note_dir.is_dir():
-            try:
-                meta_path = resolve_existing_path(note_dir, "meta.json")
-            except FileNotFoundError:
+    notes: list[dict[str, Any]] = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            if entry.get("type") != "directory":
                 continue
+            note_dir = entry.get("name") or entry.get("path") or ""
+        else:
+            note_dir = str(entry)
 
-            if meta_path.exists():
-                try:
-                    with meta_path.open("r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                except (json.JSONDecodeError, OSError) as e:
-                    logger.warning(
-                        "Could not read metadata for note at %s: %s",
-                        meta_path,
-                        e,
-                    )
-                    continue
-                # Skip tombstoned notes
-                if meta.get("deleted"):
-                    continue
-                notes.append(
-                    {
-                        "id": meta.get("id"),
-                        "title": meta.get("title"),
-                        "class": meta.get("class"),
-                        "tags": meta.get("tags", []),
-                        "properties": meta.get("properties", {}),
-                        "links": meta.get("links", []),
-                        "canvas_position": meta.get("canvas_position", {}),
-                        "created_at": meta.get("created_at"),
-                        "updated_at": meta.get("updated_at"),
-                    },
-                )
+        meta_path = fs_join(note_dir, "meta.json")
+        if not fs_exists(fs_obj, meta_path):
+            continue
+
+        try:
+            meta = fs_read_json(fs_obj, meta_path)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Could not read metadata for note at %s: %s", meta_path, e)
+            continue
+
+        if meta.get("deleted"):
+            continue
+
+        notes.append(
+            {
+                "id": meta.get("id"),
+                "title": meta.get("title"),
+                "class": meta.get("class"),
+                "tags": meta.get("tags", []),
+                "properties": meta.get("properties", {}),
+                "links": meta.get("links", []),
+                "canvas_position": meta.get("canvas_position", {}),
+                "created_at": meta.get("created_at"),
+                "updated_at": meta.get("updated_at"),
+            },
+        )
 
     return notes
 
@@ -564,6 +559,7 @@ def delete_note(
     note_id: str,
     *,
     hard_delete: bool = False,
+    fs: fsspec.AbstractFileSystem | None = None,
 ) -> None:
     """Tombstone (soft delete) or permanently delete a note.
 
@@ -571,33 +567,34 @@ def delete_note(
         workspace_path: Absolute path to the workspace directory.
         note_id: Identifier for the note.
         hard_delete: If True, permanently delete. If False, tombstone.
+        fs: Optional fsspec filesystem to use.
 
     Raises:
         FileNotFoundError: If the note does not exist.
 
     """
     validate_id(note_id, "note_id")
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path, fs)
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", note_id)
-    except FileNotFoundError:
+    note_dir = fs_join(ws_path, "notes", note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
     if hard_delete:
-        shutil.rmtree(note_dir)
-    else:
-        # Soft delete - mark as deleted in meta.json
-        meta_path = resolve_existing_path(note_dir, "meta.json")
-        with meta_path.open("r", encoding="utf-8") as f:
-            meta = json.load(f)
+        fs_obj.rm(note_dir, recursive=True)
+        return
 
-        meta["deleted"] = True
-        meta["deleted_at"] = time.time()
+    meta_path = fs_join(note_dir, "meta.json")
+    if not fs_exists(fs_obj, meta_path):
+        msg = f"Note {note_id} not found"
+        raise FileNotFoundError(msg)
 
-        write_json_secure(meta_path, meta)
+    meta = fs_read_json(fs_obj, meta_path)
+    meta["deleted"] = True
+    meta["deleted_at"] = time.time()
+
+    fs_write_json(fs_obj, meta_path, meta)
 
 
 def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
@@ -614,24 +611,19 @@ def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]
         FileNotFoundError: If the note does not exist.
 
     """
-    # Validate and sanitize note_id
     safe_note_id = validate_id(note_id, "note_id")
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
-    except FileNotFoundError:
+    note_dir = fs_join(ws_path, "notes", safe_note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    try:
-        history_index_path = resolve_existing_path(note_dir, "history", "index.json")
-    except FileNotFoundError:
+    history_index_path = fs_join(note_dir, "history", "index.json")
+    if not fs_exists(fs_obj, history_index_path):
         return {"note_id": safe_note_id, "revisions": []}
 
-    with history_index_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return fs_read_json(fs_obj, history_index_path)
 
 
 def get_note_revision(
@@ -653,31 +645,21 @@ def get_note_revision(
         FileNotFoundError: If the note or revision does not exist.
 
     """
-    # Validate and sanitize IDs
     safe_note_id = validate_id(note_id, "note_id")
     safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
-    except FileNotFoundError:
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
+    note_dir = fs_join(ws_path, "notes", safe_note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    # revision_id is validated above, safe to use in path
-    try:
-        revision_path = resolve_existing_path(
-            note_dir,
-            "history",
-            f"{safe_revision_id}.json",
-        )
-    except FileNotFoundError:
+    revision_path = fs_join(note_dir, "history", f"{safe_revision_id}.json")
+    if not fs_exists(fs_obj, revision_path):
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    with revision_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return fs_read_json(fs_obj, revision_path)
 
 
 def restore_note(
@@ -686,6 +668,8 @@ def restore_note(
     revision_id: str,
     integrity_provider: IntegrityProvider | None = None,
     author: str = "user",
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
     """Restore a note to a previous revision.
 
@@ -701,6 +685,7 @@ def restore_note(
         revision_id: The revision ID to restore to.
         integrity_provider: Optional override for checksum/signature calculations.
         author: The author of the restore operation.
+        fs: Optional fsspec filesystem to use.
 
     Returns:
         Dictionary containing the new revision info.
@@ -709,55 +694,39 @@ def restore_note(
         FileNotFoundError: If the note or revision does not exist.
 
     """
-    # Validate and sanitize IDs
     safe_note_id = validate_id(note_id, "note_id")
     safe_revision_id = validate_id(revision_id, "revision_id")
 
-    ws_path = _resolve_workspace_root(workspace_path)
-    # Use safe path resolution to prevent path traversal
-    try:
-        note_dir = resolve_existing_path(ws_path, "notes", safe_note_id)
-    except FileNotFoundError:
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path, fs)
+    note_dir = fs_join(ws_path, "notes", safe_note_id)
+    if not fs_exists(fs_obj, note_dir):
         msg = f"Note {safe_note_id} not found"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    # Verify target revision exists (revision_id is validated above)
-    try:
-        resolve_existing_path(
-            note_dir,
-            "history",
-            f"{safe_revision_id}.json",
-        )
-    except FileNotFoundError:
+    revision_path = fs_join(note_dir, "history", f"{safe_revision_id}.json")
+    if not fs_exists(fs_obj, revision_path):
         msg = f"Revision {safe_revision_id} not found for note {safe_note_id}"
-        raise FileNotFoundError(msg) from None
+        raise FileNotFoundError(msg)
 
-    # Read current content to get parent_revision_id for the new revision
-    content_path = resolve_existing_path(note_dir, "content.json")
-    with content_path.open("r", encoding="utf-8") as f:
-        current_content_data = json.load(f)
+    content_path = fs_join(note_dir, "content.json")
+    if not fs_exists(fs_obj, content_path):
+        msg = f"Note {safe_note_id} content missing"
+        raise FileNotFoundError(msg)
 
+    current_content_data = fs_read_json(fs_obj, content_path)
     current_revision_id = current_content_data["revision_id"]
 
-    # Verify revision is in history index
-    history_index_path = resolve_existing_path(note_dir, "history", "index.json")
-    with history_index_path.open("r", encoding="utf-8") as f:
-        history_index = json.load(f)
-
-    revision_order = [r["revision_id"] for r in history_index["revisions"]]
+    history_index_path = fs_join(note_dir, "history", "index.json")
+    history_index = fs_read_json(fs_obj, history_index_path)
+    revision_order = [r["revision_id"] for r in history_index.get("revisions", [])]
     if revision_id not in revision_order:
         msg = f"Revision {revision_id} not found in history index"
         raise FileNotFoundError(msg)
 
-    # Note: Full time travel (restoring arbitrary revision content) requires
-    # storing full markdown in revision files. Current implementation creates
-    # a "restore marker" revision referencing the chosen ancestor.
-    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path)
+    provider = integrity_provider or IntegrityProvider.for_workspace(ws_path, fs=fs_obj)
 
     new_rev_id = str(uuid.uuid4())
     timestamp = time.time()
-
-    # Keep current content and mark the restore operation in revision metadata
     content = current_content_data["markdown"]
     checksum = provider.checksum(content)
     signature = provider.signature(content)
@@ -773,12 +742,9 @@ def restore_note(
         "restored_from": revision_id,
     }
 
-    # Write the revision
-    history_dir = resolve_existing_path(note_dir, "history")
-    rev_path = join_secure_path(history_dir, f"{new_rev_id}.json")
-    write_json_secure(rev_path, revision)
+    history_dir = fs_join(note_dir, "history")
+    fs_write_json(fs_obj, fs_join(history_dir, f"{new_rev_id}.json"), revision)
 
-    # Update history index
     history_index["revisions"].append(
         {
             "revision_id": new_rev_id,
@@ -787,24 +753,18 @@ def restore_note(
             "signature": signature,
         },
     )
-    write_json_secure(history_index_path, history_index)
+    fs_write_json(fs_obj, history_index_path, history_index)
 
-    # Update content.json with the new revision_id
     content_data = current_content_data.copy()
     content_data["revision_id"] = new_rev_id
     content_data["parent_revision_id"] = current_revision_id
+    fs_write_json(fs_obj, content_path, content_data)
 
-    write_json_secure(content_path, content_data)
-
-    # Update meta.json
-    meta_path = resolve_existing_path(note_dir, "meta.json")
-    with meta_path.open("r", encoding="utf-8") as f:
-        meta = json.load(f)
-
+    meta_path = fs_join(note_dir, "meta.json")
+    meta = fs_read_json(fs_obj, meta_path)
     meta["updated_at"] = timestamp
     meta["integrity"] = {"checksum": checksum, "signature": signature}
-
-    write_json_secure(meta_path, meta)
+    fs_write_json(fs_obj, meta_path, meta)
 
     return {
         "revision_id": new_rev_id,

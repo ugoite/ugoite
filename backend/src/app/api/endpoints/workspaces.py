@@ -4,12 +4,24 @@ import json
 import logging
 import re
 import uuid
-from pathlib import Path
 from typing import Annotated, Any
 
 import ieapp
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from ieapp.indexer import Indexer, extract_properties, validate_properties
+from ieapp import (
+    AttachmentReferencedError,
+    create_link,
+    delete_attachment,
+    delete_link,
+    get_schema,
+    list_attachments,
+    list_links,
+    list_schemas,
+    save_attachment,
+    search_notes,
+    upsert_schema,
+)
+from ieapp.indexer import extract_properties, validate_properties
 from ieapp.notes import (
     NoteExistsError,
     RevisionMismatchError,
@@ -22,12 +34,14 @@ from ieapp.notes import (
     restore_note,
     update_note,
 )
-from ieapp.utils import resolve_existing_path
 from ieapp.workspace import (
     WorkspaceExistsError,
     create_workspace,
     get_workspace,
     list_workspaces,
+    patch_workspace,
+    test_storage_connection,
+    workspace_path,
 )
 
 from app.core.config import get_root_path
@@ -78,37 +92,20 @@ def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-def _validate_note_markdown_against_schema(ws_path: Path, markdown: str) -> None:
-    """Validate extracted note properties against the workspace schema.
-
-    If the markdown contains a ``class: <ClassName>`` frontmatter entry this
-    function will load the corresponding schema from ``<workspace>/schemas``
-    and run the property validator. On validation errors it raises an
-    HTTPException with a 422 Unprocessable Entity status.
-
-    Args:
-        ws_path: Path to the workspace directory.
-        markdown: The raw markdown content of the note.
-
-    Raises:
-        HTTPException: 422 when validation fails or 500 when schema file is
-            malformed.
-
-    """
+def _validate_note_markdown_against_schema(ws_path: str, markdown: str) -> None:
+    """Validate extracted note properties against the workspace schema."""
     properties = extract_properties(markdown)
     note_class = properties.get("class")
     if not isinstance(note_class, str) or not note_class.strip():
         return
 
-    schema_path = ws_path / "schemas" / f"{note_class}.json"
-    if not schema_path.exists():
+    try:
+        schema = get_schema(ws_path, note_class)
+    except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Schema not found: {note_class}",
-        )
-
-    try:
-        schema = json.loads(schema_path.read_text())
+        ) from e
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -141,30 +138,17 @@ def _validate_path_id(identifier: str, name: str) -> None:
         )
 
 
-def _get_workspace_path(workspace_id: str) -> Path:
-    """Get a safe workspace path after validation.
-
-    Args:
-        workspace_id: The workspace identifier (must be pre-validated).
-
-    Returns:
-        Path to the workspace directory.
-
-    Raises:
-        HTTPException: If path resolution fails due to traversal attempt.
-
-    """
+def _get_workspace_path(workspace_id: str) -> str:
+    """Get a safe workspace path string after validation."""
     root_path = get_root_path()
     try:
-        return resolve_existing_path(root_path, "workspaces", workspace_id)
+        return workspace_path(root_path, workspace_id, must_exist=True)
     except ValueError as e:
-        # Input validation error -> 400 Bad Request
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid workspace_id: {workspace_id}",
         ) from e
-    except (FileNotFoundError, NotADirectoryError) as e:
-        # Missing workspace or path components -> 404 Not Found
+    except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workspace not found: {workspace_id}",
@@ -211,7 +195,7 @@ async def create_workspace_endpoint(
     return {
         "id": workspace_id,
         "name": payload.name,
-        "path": str(resolve_existing_path(root_path, "workspaces", workspace_id)),
+        "path": workspace_path(root_path, workspace_id, must_exist=True),
     }
 
 
@@ -243,33 +227,27 @@ async def patch_workspace_endpoint(
 ) -> dict[str, Any]:
     """Update workspace metadata/settings including storage connector."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    root_path = get_root_path()
 
-    meta_path = ws_path / "meta.json"
-    settings_path = ws_path / "settings.json"
-
-    if not meta_path.exists():
+    try:
+        return patch_workspace(
+            root_path,
+            workspace_id,
+            name=payload.name,
+            storage_config=payload.storage_config,
+            settings=payload.settings,
+        )
+    except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
-    meta = json.loads(meta_path.read_text())
-    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
-
-    if payload.name:
-        meta["name"] = payload.name
-
-    if payload.storage_config:
-        meta["storage_config"] = payload.storage_config
-
-    if payload.settings:
-        settings.update(payload.settings)
-
-    meta_path.write_text(json.dumps(meta, indent=2))
-    settings_path.write_text(json.dumps(settings, indent=2))
-
-    return {**meta, "settings": settings}
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to patch workspace")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.post("/workspaces/{workspace_id}/test-connection")
@@ -279,24 +257,15 @@ async def test_connection_endpoint(
 ) -> dict[str, str]:
     """Validate the provided storage connector (stubbed for Milestone 6)."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
-    if not ws_path.exists():
+    _get_workspace_path(workspace_id)
+
+    try:
+        return test_storage_connection(payload.storage_config)
+    except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-    uri = payload.storage_config.get("uri", "")
-
-    if uri.startswith(("file://", "/")):
-        return {"status": "ok", "mode": "local"}
-
-    if uri.startswith("s3://"):
-        return {"status": "ok", "mode": "s3"}
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Unsupported storage connector",
-    )
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
 
 @router.post(
@@ -310,12 +279,6 @@ async def create_note_endpoint(
     """Create a new note."""
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
-
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
 
     note_id = payload.id or str(uuid.uuid4())
 
@@ -344,12 +307,6 @@ async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
     try:
         return list_notes(ws_path)
     except Exception as e:
@@ -366,12 +323,6 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
     ws_path = _get_workspace_path(workspace_id)
-
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
 
     try:
         return get_note(ws_path, note_id)
@@ -403,12 +354,6 @@ async def update_note_endpoint(
     _validate_path_id(note_id, "note_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
     try:
         _validate_note_markdown_against_schema(ws_path, payload.markdown)
         update_note(
@@ -416,23 +361,8 @@ async def update_note_endpoint(
             note_id,
             payload.markdown,
             payload.parent_revision_id,
+            attachments=payload.attachments,
         )
-        if payload.attachments is not None:
-            try:
-                content_path = resolve_existing_path(
-                    ws_path,
-                    "notes",
-                    note_id,
-                    "content.json",
-                )
-            except (FileNotFoundError, NotADirectoryError) as e:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Note content not found: {note_id}",
-                ) from e
-            content_data = json.loads(content_path.read_text())
-            content_data["attachments"] = payload.attachments
-            content_path.write_text(json.dumps(content_data, indent=2))
         # Return the updated note with id and revision_id
         updated_note = get_note(ws_path, note_id)
         return {
@@ -484,18 +414,16 @@ async def upload_attachment_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    attachments_dir = ws_path / "attachments"
-    attachments_dir.mkdir(exist_ok=True)
-
-    attachment_id = uuid.uuid4().hex
-    filename = file.filename or attachment_id
-    relative_path = f"attachments/{attachment_id}_{filename}"
-    destination = attachments_dir / f"{attachment_id}_{filename}"
-
     contents = await file.read()
-    destination.write_bytes(contents)
 
-    return {"id": attachment_id, "name": filename, "path": relative_path}
+    try:
+        return save_attachment(ws_path, contents, file.filename or "")
+    except Exception as e:
+        logger.exception("Failed to save attachment")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/workspaces/{workspace_id}/attachments")
@@ -506,27 +434,14 @@ async def list_attachments_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    attachments_dir = ws_path / "attachments"
-    if not attachments_dir.exists():
-        return []
-
-    attachments = []
-    for file_path in attachments_dir.iterdir():
-        if file_path.is_file():
-            # Parse filename: {attachment_id}_{original_filename}
-            filename = file_path.name
-            if "_" in filename:
-                attachment_id, name = filename.split("_", 1)
-                relative_path = f"attachments/{filename}"
-                attachments.append(
-                    {
-                        "id": attachment_id,
-                        "name": name,
-                        "path": relative_path,
-                    },
-                )
-
-    return attachments
+    try:
+        return list_attachments(ws_path)
+    except Exception as e:
+        logger.exception("Failed to list attachments")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.delete("/workspaces/{workspace_id}/attachments/{attachment_id}")
@@ -539,37 +454,26 @@ async def delete_attachment_endpoint(
     _validate_path_id(attachment_id, "attachment_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    # Detect references in note content attachments arrays
-    notes_dir = ws_path / "notes"
-    if notes_dir.exists():
-        for note_dir in notes_dir.iterdir():
-            content_path = note_dir / "content.json"
-            if not content_path.exists():
-                continue
-            try:
-                content_data = json.loads(content_path.read_text())
-            except json.JSONDecodeError:
-                continue
-            for attachment in content_data.get("attachments", []):
-                if attachment.get("id") == attachment_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Attachment is referenced by a note",
-                    )
-
-    attachments_dir = ws_path / "attachments"
-    if not attachments_dir.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    deleted = False
-    for path in attachments_dir.glob(f"{attachment_id}_*"):
-        path.unlink(missing_ok=True)
-        deleted = True
-
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    return {"status": "deleted", "id": attachment_id}
+    try:
+        delete_attachment(ws_path, attachment_id)
+    except AttachmentReferencedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        ) from e
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to delete attachment")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+    else:
+        return {"status": "deleted", "id": attachment_id}
 
 
 @router.delete("/workspaces/{workspace_id}/notes/{note_id}")
@@ -581,12 +485,6 @@ async def delete_note_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
     ws_path = _get_workspace_path(workspace_id)
-
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
 
     try:
         delete_note(ws_path, note_id)
@@ -615,12 +513,6 @@ async def get_note_history_endpoint(
     _validate_path_id(note_id, "note_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
     try:
         return get_note_history(ws_path, note_id)
     except FileNotFoundError as e:
@@ -648,12 +540,6 @@ async def get_note_revision_endpoint(
     _validate_path_id(revision_id, "revision_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
     try:
         return get_note_revision(ws_path, note_id, revision_id)
     except FileNotFoundError as e:
@@ -679,12 +565,6 @@ async def restore_note_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
     ws_path = _get_workspace_path(workspace_id)
-
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
 
     try:
         return restore_note(ws_path, note_id, payload.revision_id)
@@ -716,47 +596,26 @@ async def create_link_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     link_id = uuid.uuid4().hex
-    link = {
-        "id": link_id,
-        "source": payload.source,
-        "target": payload.target,
-        "kind": payload.kind,
-    }
 
-    for note_id in (payload.source, payload.target):
-        try:
-            note_meta_path = resolve_existing_path(
-                ws_path,
-                "notes",
-                note_id,
-                "meta.json",
-            )
-        except (FileNotFoundError, NotADirectoryError) as e:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Note not found: {note_id}",
-            ) from e
-        meta = json.loads(note_meta_path.read_text())
-        links = meta.get("links", [])
-        # Avoid duplicate links by id or target
-        if not any(
-            item.get("target") == link["target"]
-            and item.get("source") == link["source"]
-            for item in links
-        ):
-            links.append(
-                link
-                if note_id == payload.source
-                else {
-                    **link,
-                    "source": payload.target,
-                    "target": payload.source,
-                },
-            )
-            meta["links"] = links
-            note_meta_path.write_text(json.dumps(meta, indent=2))
-
-    return link
+    try:
+        return create_link(
+            ws_path,
+            source=payload.source,
+            target=payload.target,
+            kind=payload.kind,
+            link_id=link_id,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to create link")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/workspaces/{workspace_id}/links")
@@ -765,27 +624,14 @@ async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    links_by_id: dict[str, dict[str, Any]] = {}
-    notes_dir = ws_path / "notes"
-    if notes_dir.exists():
-        for meta_path in notes_dir.glob("*/meta.json"):
-            try:
-                meta = json.loads(meta_path.read_text())
-            except json.JSONDecodeError:
-                continue
-            for link in meta.get("links", []):
-                link_id = link.get("id")
-                if link_id:
-                    link_key = link_id
-                else:
-                    # Use deterministic representation for links without explicit ID
-                    try:
-                        link_key = json.dumps(link, sort_keys=True)
-                    except TypeError:
-                        link_key = str(link)
-                links_by_id.setdefault(link_key, link)
-
-    return list(links_by_id.values())
+    try:
+        return list_links(ws_path)
+    except Exception as e:
+        logger.exception("Failed to list links")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.delete("/workspaces/{workspace_id}/links/{link_id}")
@@ -798,29 +644,21 @@ async def delete_link_endpoint(
     _validate_path_id(link_id, "link_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    notes_dir = ws_path / "notes"
-    found = False
-    if notes_dir.exists():
-        for meta_path in notes_dir.glob("*/meta.json"):
-            try:
-                meta = json.loads(meta_path.read_text())
-            except json.JSONDecodeError:
-                continue
-            original_len = len(meta.get("links", []))
-            meta["links"] = [
-                item for item in meta.get("links", []) if item.get("id") != link_id
-            ]
-            if len(meta.get("links", [])) != original_len:
-                found = True
-                meta_path.write_text(json.dumps(meta, indent=2))
-
-    if not found:
+    try:
+        delete_link(ws_path, link_id)
+    except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Link not found",
-        )
-
-    return {"status": "deleted", "id": link_id}
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to delete link")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+    else:
+        return {"status": "deleted", "id": link_id}
 
 
 @router.post("/workspaces/{workspace_id}/query")
@@ -831,12 +669,6 @@ async def query_endpoint(
     """Query the workspace index."""
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
-
-    if not ws_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
 
     try:
         # ieapp.query expects workspace_path as string or Path
@@ -849,50 +681,6 @@ async def query_endpoint(
         ) from e
 
 
-def _load_notes_map(index_path: Path) -> dict[str, Any]:
-    try:
-        index_data = json.loads(index_path.read_text())
-        return index_data.get("notes", {}) if isinstance(index_data, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _search_inverted(inverted_path: Path, token: str) -> set[str]:
-    try:
-        inverted = json.loads(inverted_path.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return set()
-    matches: set[str] = set()
-    for term, note_ids in inverted.items():
-        if token in term:
-            matches.update(note_ids)
-    return matches
-
-
-def _search_index_records(notes_map: dict[str, Any], token: str) -> set[str]:
-    matches: set[str] = set()
-    for note_id, record in notes_map.items():
-        haystack = json.dumps(record).lower()
-        if token in haystack:
-            matches.add(note_id)
-    return matches
-
-
-def _search_content_files(ws_path: Path, token: str) -> set[str]:
-    matches: set[str] = set()
-    notes_dir = ws_path / "notes"
-    if not notes_dir.exists():
-        return matches
-    for content_path in notes_dir.glob("*/content.json"):
-        try:
-            content_json = json.loads(content_path.read_text())
-        except json.JSONDecodeError:
-            continue
-        if token in json.dumps(content_json).lower():
-            matches.add(content_path.parent.name)
-    return matches
-
-
 @router.get("/workspaces/{workspace_id}/search")
 async def search_endpoint(
     workspace_id: str,
@@ -902,31 +690,14 @@ async def search_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    # Refresh index for deterministic tests
-    Indexer(str(ws_path)).run_once()
-
-    token = q.lower()
-    inverted_path = ws_path / "index" / "inverted_index.json"
-    index_path = ws_path / "index" / "index.json"
-
-    notes_map = _load_notes_map(index_path)
-
-    matches = _search_inverted(inverted_path, token)
-    if not matches:
-        matches = _search_index_records(notes_map, token)
-    if not matches:
-        matches = _search_content_files(ws_path, token)
-
-    results = []
-    for note_id in matches:
-        if note_id in notes_map:
-            note = notes_map[note_id]
-            note.setdefault("id", note_id)
-            results.append(note)
-        else:
-            results.append({"id": note_id})
-
-    return results
+    try:
+        return search_notes(ws_path, q)
+    except Exception as e:
+        logger.exception("Search failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/workspaces/{workspace_id}/schemas")
@@ -935,17 +706,14 @@ async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
-    schemas_dir = ws_path / "schemas"
-    if not schemas_dir.exists():
-        return []
-
-    schemas = []
-    for schema_file in schemas_dir.glob("*.json"):
-        try:
-            schemas.append(json.loads(schema_file.read_text()))
-        except json.JSONDecodeError:
-            continue
-    return schemas
+    try:
+        return list_schemas(ws_path)
+    except Exception as e:
+        logger.exception("Failed to list schemas")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/workspaces/{workspace_id}/schemas/{class_name}")
@@ -955,15 +723,13 @@ async def get_schema_endpoint(workspace_id: str, class_name: str) -> dict[str, A
     _validate_path_id(class_name, "class_name")
     ws_path = _get_workspace_path(workspace_id)
 
-    schema_path = ws_path / "schemas" / f"{class_name}.json"
-    if not schema_path.exists():
+    try:
+        return get_schema(ws_path, class_name)
+    except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Schema not found: {class_name}",
-        )
-
-    try:
-        return json.loads(schema_path.read_text())
+        ) from e
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -981,18 +747,11 @@ async def create_schema_endpoint(
     _validate_path_id(payload.name, "schema_name")
     ws_path = _get_workspace_path(workspace_id)
 
-    if not ws_path.exists():
+    try:
+        return upsert_schema(ws_path, payload.model_dump())
+    except Exception as e:
+        logger.exception("Failed to upsert schema")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workspace not found",
-        )
-
-    schemas_dir = ws_path / "schemas"
-    schemas_dir.mkdir(exist_ok=True)
-
-    schema_path = schemas_dir / f"{payload.name}.json"
-    schema_data = payload.model_dump()
-
-    schema_path.write_text(json.dumps(schema_data, indent=2))
-
-    return schema_data
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e

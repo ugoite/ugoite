@@ -3,7 +3,6 @@
 import base64
 import json
 import logging
-import os
 import secrets
 import time
 import uuid
@@ -22,7 +21,15 @@ except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
     fcntl: Any | None = None
 
-from .utils import resolve_existing_path, validate_id, write_json_secure
+from .utils import (
+    fs_exists,
+    fs_join,
+    fs_makedirs,
+    fs_read_json,
+    fs_write_json,
+    get_fs_and_path,
+    validate_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,56 +37,65 @@ EMPTY_INDEX_SCHEMA = {"notes": {}, "class_stats": {}}
 EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 
 
+def _resolve_workspace_paths(
+    root_path: str | Path,
+    workspace_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+    must_exist: bool = False,
+) -> tuple[fsspec.AbstractFileSystem, str, str]:
+    """Return filesystem, workspaces dir, and workspace path strings."""
+    safe_workspace_id = validate_id(workspace_id, "workspace_id")
+    try:
+        fs_obj, base_path = get_fs_and_path(root_path, fs)
+    except (ImportError, ValueError) as exc:
+        msg = "Protocol not supported in current runtime"
+        raise NotImplementedError(msg) from exc
+    workspaces_dir = fs_join(base_path, "workspaces")
+    workspace_path = fs_join(workspaces_dir, safe_workspace_id)
+
+    if must_exist and not fs_exists(fs_obj, workspace_path):
+        msg = f"Workspace {safe_workspace_id} not found"
+        raise FileNotFoundError(msg)
+
+    return fs_obj, workspaces_dir, workspace_path
+
+
 class WorkspaceExistsError(Exception):
     """Raised when trying to create a workspace that already exists."""
 
 
-def _append_workspace_to_global(global_json_path: str, workspace_id: str) -> None:
-    """Append a workspace id to ``global.json`` with advisory locking.
-
-    Args:
-        global_json_path: Absolute path to ``global.json``.
-        workspace_id: Workspace identifier to append.
-
-    """
-    path = Path(global_json_path)
-    if not path.exists():
+def _append_workspace_to_global(
+    fs: fsspec.AbstractFileSystem,
+    global_json_path: str,
+    workspace_id: str,
+) -> None:
+    """Append a workspace id to ``global.json`` using fsspec."""
+    if not fs_exists(fs, global_json_path):
         return
 
-    with path.open("r+", encoding="utf-8") as handle:
-        if fcntl:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+    try:
+        global_data = fs_read_json(fs, global_json_path)
+    except (json.JSONDecodeError, OSError):
+        global_data = {"workspaces": []}
 
-        try:
-            try:
-                global_data = json.load(handle)
-            except json.JSONDecodeError:
-                global_data = {"workspaces": []}
+    workspaces = global_data.setdefault("workspaces", [])
+    if workspace_id in workspaces:
+        return
 
-            workspaces = global_data.setdefault("workspaces", [])
-            if workspace_id not in workspaces:
-                workspaces.append(workspace_id)
-                handle.seek(0)
-                json.dump(global_data, handle, indent=2)
-                handle.truncate()
-        finally:
-            if fcntl:
-                fcntl.flock(handle, fcntl.LOCK_UN)
+    workspaces.append(workspace_id)
+    fs_write_json(fs, global_json_path, global_data)
 
 
-def _ensure_global_json(root_path_str: str) -> str:
-    """Ensure ``global.json`` exists and returns its path.
+def _ensure_global_json(fs: fsspec.AbstractFileSystem, root_path: str) -> str:
+    """Ensure ``global.json`` exists under ``root_path`` using fsspec."""
+    global_json_path = fs_join(root_path, "global.json")
+    if fs_exists(fs, global_json_path):
+        return global_json_path
 
-    Args:
-        root_path_str: Absolute path to the IEapp root directory.
-
-    Returns:
-        The string path to ``global.json``.
-
-    """
-    global_json_path = Path(root_path_str) / "global.json"
-    if global_json_path.exists():
-        return str(global_json_path)
+    protocol = getattr(fs, "protocol", "file") or "file"
+    if isinstance(protocol, (list, tuple)):
+        protocol = protocol[0]
 
     now_iso = datetime.now(UTC).isoformat()
     key_id = f"key-{uuid.uuid4().hex}"
@@ -87,126 +103,76 @@ def _ensure_global_json(root_path_str: str) -> str:
 
     payload = {
         "version": 1,
-        "default_storage": f"file://{Path(root_path_str).resolve()}",
+        "default_storage": f"{protocol}://{root_path}",
         "workspaces": [],
         "hmac_key_id": key_id,
         "hmac_key": hmac_key,
         "last_rotation": now_iso,
     }
 
-    try:
-        fd = os.open(global_json_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
-    except FileExistsError:
-        # Another process created the file; that's fine
-        pass
-    return str(global_json_path)
+    fs_write_json(fs, global_json_path, payload, mode=0o600, exclusive=True)
+    return global_json_path
 
 
-def create_workspace(root_path: str | Path, workspace_id: str) -> None:
-    """Create a new workspace with the required directory structure and metadata.
-
-    Args:
-        root_path: The root directory where workspaces are stored.
-        workspace_id: The unique identifier for the workspace.
-
-    Raises:
-        WorkspaceExistsError: If the workspace already exists.
-
-    """
-    # Validate and sanitize workspace_id
+def create_workspace(
+    root_path: str | Path,
+    workspace_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> None:
+    """Create a new workspace with the required directory structure."""
     safe_workspace_id = validate_id(workspace_id, "workspace_id")
-    logger.info("Creating workspace %s at %s", safe_workspace_id, root_path)
+    try:
+        fs_obj, base_path = get_fs_and_path(root_path, fs)
+    except (ImportError, ValueError) as exc:
+        msg = "Protocol not supported in current runtime"
+        raise NotImplementedError(msg) from exc
+    logger.info("Creating workspace %s at %s", safe_workspace_id, base_path)
 
-    # Use fsspec to handle filesystem operations
-    # For now, we assume local filesystem if protocol is not specified
-    # But fsspec.filesystem("file") works for local
+    fs_makedirs(fs_obj, base_path, exist_ok=True)
 
-    # If root_path is a string and looks like a URI, parse it.
-    # For Milestone 0, we mostly test local paths.
+    workspaces_dir = fs_join(base_path, "workspaces")
+    fs_makedirs(fs_obj, workspaces_dir, exist_ok=True)
 
-    root_path_str = str(root_path)
-    protocol = "file"
+    ws_path = fs_join(workspaces_dir, safe_workspace_id)
+    if fs_exists(fs_obj, ws_path):
+        protocol = getattr(fs_obj, "protocol", None)
+        if protocol == "memory" or (
+            isinstance(protocol, (list, tuple)) and "memory" in protocol
+        ):
+            fs_obj.rm(ws_path, recursive=True)
+        else:
+            msg = f"Workspace {safe_workspace_id} already exists at {ws_path}"
+            raise WorkspaceExistsError(msg)
 
-    if "://" in root_path_str:
-        protocol = root_path_str.split("://")[0]
+    fs_makedirs(fs_obj, ws_path, exist_ok=False)
 
-    if (
-        protocol != "file"
-        and not root_path_str.startswith("/")
-        and not root_path_str.startswith(".")
-    ):
-        # Simple check, fsspec has better tools but this suffices for M0
-        # If it's a windows path it might have :, but usually not ://
-        msg = f"Protocol {protocol} not supported in Milestone 0"
-        raise NotImplementedError(msg)
+    for subdir in ["schemas", "index", "attachments", "notes"]:
+        fs_makedirs(fs_obj, fs_join(ws_path, subdir), exist_ok=False)
 
-    fs = fsspec.filesystem("file")
-
-    # Ensure root exists
-    if not fs.exists(root_path_str):
-        fs.makedirs(root_path_str)
-
-    global_json_path = _ensure_global_json(root_path_str)
-
-    # Use safe path resolution to prevent path traversal
-    base_path = Path(root_path_str).resolve()
-
-    # Ensure the top-level `workspaces` component exists (create if missing)
-    workspaces_dir = base_path / "workspaces"
-    if not workspaces_dir.exists():
-        workspaces_dir.mkdir(mode=0o700)
-
-    # Construct the workspace path for the new workspace
-    ws_path = workspaces_dir / safe_workspace_id
-
-    if fs.exists(str(ws_path)):
-        msg = f"Workspace {safe_workspace_id} already exists at {ws_path}"
-        raise WorkspaceExistsError(msg)
-
-    # Create directories
-    dirs = ["schemas", "index", "attachments", "notes"]
-
-    ws_path.mkdir(mode=0o700, parents=True)
-
-    for d in dirs:
-        d_path = ws_path / d
-        d_path.mkdir(mode=0o700)
-
-    # Create meta.json
     meta = {
         "id": safe_workspace_id,
         "name": safe_workspace_id,
         "created_at": time.time(),
-        "storage": {"type": "local", "root": root_path_str},
+        "storage": {"type": "local", "root": base_path},
     }
+    fs_write_json(fs_obj, fs_join(ws_path, "meta.json"), meta)
 
-    meta_path = ws_path / "meta.json"
-    write_json_secure(str(meta_path), meta)
-
-    # Create settings.json
     settings = {"default_class": "Note"}
-    settings_path = ws_path / "settings.json"
-    write_json_secure(str(settings_path), settings)
+    fs_write_json(fs_obj, fs_join(ws_path, "settings.json"), settings)
 
-    # Create index/index.json
     index_data = {"notes": {}, "class_stats": {}}
-    index_json_path = ws_path / "index" / "index.json"
-    write_json_secure(str(index_json_path), index_data)
+    fs_write_json(fs_obj, fs_join(ws_path, "index/index.json"), index_data)
 
-    # Create index/stats.json
     stats_data = {
         "last_indexed": time.time(),
         "note_count": 0,
         "tag_counts": {},
     }
-    stats_json_path = ws_path / "index" / "stats.json"
-    write_json_secure(str(stats_json_path), stats_data)
+    fs_write_json(fs_obj, fs_join(ws_path, "index/stats.json"), stats_data)
 
-    # Update global.json (optional for now, but good practice)
-    if fs.exists(global_json_path):
-        _append_workspace_to_global(global_json_path, workspace_id)
+    global_json_path = _ensure_global_json(fs_obj, base_path)
+    _append_workspace_to_global(fs_obj, global_json_path, safe_workspace_id)
 
     logger.info("Workspace %s created successfully", workspace_id)
 
@@ -225,25 +191,18 @@ def get_workspace(root_path: str | Path, workspace_id: str) -> dict[str, Any]:
         FileNotFoundError: If the workspace does not exist.
 
     """
-    # Validate and sanitize workspace_id
-    safe_workspace_id = validate_id(workspace_id, "workspace_id")
+    fs_obj, _workspaces_dir, ws_path = _resolve_workspace_paths(
+        root_path,
+        workspace_id,
+        must_exist=True,
+    )
 
-    root_path_str = str(root_path)
-    # Use safe path resolution to prevent path traversal
-    base_path = Path(root_path_str).resolve()
-    ws_path = resolve_existing_path(base_path, "workspaces", safe_workspace_id)
-
-    if not ws_path.exists():
-        msg = f"Workspace {safe_workspace_id} not found"
+    meta_path = fs_join(ws_path, "meta.json")
+    if not fs_exists(fs_obj, meta_path):
+        msg = f"Workspace {workspace_id} metadata not found"
         raise FileNotFoundError(msg)
 
-    meta_path = ws_path / "meta.json"
-    if not meta_path.exists():
-        msg = f"Workspace {safe_workspace_id} metadata not found"
-        raise FileNotFoundError(msg)
-
-    with meta_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return fs_read_json(fs_obj, meta_path)
 
 
 def list_workspaces(root_path: str | Path) -> list[dict[str, Any]]:
@@ -256,26 +215,116 @@ def list_workspaces(root_path: str | Path) -> list[dict[str, Any]]:
         List of workspace metadata dictionaries.
 
     """
-    root_path_str = str(root_path)
-    workspaces_dir = Path(root_path_str) / "workspaces"
+    fs_obj, base_path = get_fs_and_path(root_path)
+    workspaces_dir = fs_join(base_path, "workspaces")
 
-    if not workspaces_dir.exists():
+    if not fs_exists(fs_obj, workspaces_dir):
         return []
 
-    workspaces = []
-    for ws_dir in workspaces_dir.iterdir():
-        if ws_dir.is_dir():
-            meta_path = ws_dir / "meta.json"
-            if meta_path.exists():
-                try:
-                    with meta_path.open("r", encoding="utf-8") as f:
-                        workspaces.append(json.load(f))
-                except (json.JSONDecodeError, OSError) as exc:
-                    logger.warning(
-                        "Failed to read workspace meta %s: %s",
-                        meta_path,
-                        exc,
-                    )
-                    continue
+    workspaces: list[dict[str, Any]] = []
+    try:
+        ws_entries = fs_obj.ls(workspaces_dir, detail=True)
+    except FileNotFoundError:
+        return []
+
+    for entry in ws_entries:
+        if isinstance(entry, dict):
+            if entry.get("type") != "directory":
+                continue
+            ws_path = entry.get("name") or entry.get("path") or ""
+        else:
+            ws_path = str(entry)
+
+        meta_path = fs_join(ws_path, "meta.json")
+        if not fs_exists(fs_obj, meta_path):
+            continue
+
+        try:
+            workspaces.append(fs_read_json(fs_obj, meta_path))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read workspace meta %s: %s", meta_path, exc)
+            continue
 
     return workspaces
+
+
+def workspace_path(
+    root_path: str | Path,
+    workspace_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+    must_exist: bool = False,
+) -> str:
+    """Public helper returning the absolute workspace path string."""
+    _, _, ws_path = _resolve_workspace_paths(
+        root_path,
+        workspace_id,
+        fs=fs,
+        must_exist=must_exist,
+    )
+    return ws_path
+
+
+def patch_workspace(
+    root_path: str | Path,
+    workspace_id: str,
+    *,
+    patch: dict[str, Any] | None = None,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Update workspace metadata and settings using fsspec.
+
+    The `patch` dict may contain keys: ``name``, ``storage_config``, and ``settings``.
+    """
+    fs_obj, _workspaces_dir, ws_path = _resolve_workspace_paths(
+        root_path,
+        workspace_id,
+        fs=fs,
+        must_exist=True,
+    )
+
+    if patch is None:
+        patch = {}
+
+    name = patch.get("name") if isinstance(patch, dict) else None
+    storage_config = patch.get("storage_config") if isinstance(patch, dict) else None
+    settings = patch.get("settings") if isinstance(patch, dict) else None
+
+    meta_path = fs_join(ws_path, "meta.json")
+    settings_path = fs_join(ws_path, "settings.json")
+
+    if not fs_exists(fs_obj, meta_path):
+        msg = f"Workspace {workspace_id} not found"
+        raise FileNotFoundError(msg)
+
+    meta = fs_read_json(fs_obj, meta_path)
+    if fs_exists(fs_obj, settings_path):
+        current_settings = fs_read_json(fs_obj, settings_path)
+    else:
+        current_settings = {}
+
+    if name:
+        meta["name"] = name
+    if storage_config:
+        meta["storage_config"] = storage_config
+    if settings:
+        current_settings.update(settings)
+
+    fs_write_json(fs_obj, meta_path, meta)
+    fs_write_json(fs_obj, settings_path, current_settings)
+
+    return {**meta, "settings": current_settings}
+
+
+def test_storage_connection(storage_config: dict[str, Any]) -> dict[str, str]:
+    """Validate storage connector payload (stub for now)."""
+    uri = storage_config.get("uri", "") if isinstance(storage_config, dict) else ""
+
+    if uri.startswith(("file://", "/", ".")):
+        return {"status": "ok", "mode": "local"}
+
+    if uri.startswith("s3://"):
+        return {"status": "ok", "mode": "s3"}
+
+    msg = "Unsupported storage connector"
+    raise ValueError(msg)
