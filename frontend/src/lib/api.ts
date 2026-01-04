@@ -3,6 +3,13 @@ export const getBackendBase = (): string => {
 	if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
 		return "http://localhost:3000/api";
 	}
+	// In SSR, Node's fetch requires an absolute URL.
+	// Default to the frontend dev server origin used in e2e/dev.
+	if (typeof window === "undefined") {
+		const env = process.env ?? {};
+		const origin = env.FRONTEND_ORIGIN || env.ORIGIN || "http://localhost:3000";
+		return `${origin.replace(/\/$/, "")}/api`;
+	}
 	// Always use /api which is proxied to the backend in development
 	// and should be served by the backend or a reverse proxy in production.
 	return "/api";

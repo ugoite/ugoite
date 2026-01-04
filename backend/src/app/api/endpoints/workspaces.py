@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import ieapp
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from ieapp.indexer import Indexer
+from ieapp.indexer import Indexer, extract_properties, validate_properties
 from ieapp.notes import (
     NoteExistsError,
     RevisionMismatchError,
@@ -37,6 +37,7 @@ from app.models.schemas import (
     NoteRestore,
     NoteUpdate,
     QueryRequest,
+    SchemaCreate,
     TestConnectionRequest,
     WorkspaceCreate,
     WorkspacePatch,
@@ -47,6 +48,79 @@ logger = logging.getLogger(__name__)
 
 # Pattern for valid IDs: alphanumeric, hyphens, underscores
 _SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
+    """Format schema validation warnings into a single human-readable string.
+
+    The validator returns a list of dicts describing issues. This helper
+    consolidates them into a newline-separated message suitable for HTTP API
+    responses.
+
+    Args:
+        errors: A list of dictionaries containing keys like "message" and
+            "field" as returned by the property validator.
+
+    Returns:
+        A newline-separated string describing the validation issues.
+
+    """
+    parts: list[str] = []
+    for err in errors:
+        message = err.get("message")
+        field = err.get("field")
+        if isinstance(message, str) and message:
+            parts.append(message)
+        elif isinstance(field, str) and field:
+            parts.append(f"Invalid field: {field}")
+        else:
+            parts.append("Schema validation error")
+    return "\n".join(parts)
+
+
+def _validate_note_markdown_against_schema(ws_path: Path, markdown: str) -> None:
+    """Validate extracted note properties against the workspace schema.
+
+    If the markdown contains a ``class: <ClassName>`` frontmatter entry this
+    function will load the corresponding schema from ``<workspace>/schemas``
+    and run the property validator. On validation errors it raises an
+    HTTPException with a 422 Unprocessable Entity status.
+
+    Args:
+        ws_path: Path to the workspace directory.
+        markdown: The raw markdown content of the note.
+
+    Raises:
+        HTTPException: 422 when validation fails or 500 when schema file is
+            malformed.
+
+    """
+    properties = extract_properties(markdown)
+    note_class = properties.get("class")
+    if not isinstance(note_class, str) or not note_class.strip():
+        return
+
+    schema_path = ws_path / "schemas" / f"{note_class}.json"
+    if not schema_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Schema not found: {note_class}",
+        )
+
+    try:
+        schema = json.loads(schema_path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid schema file",
+        ) from e
+
+    _casted, warnings = validate_properties(properties, schema)
+    if warnings:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_format_schema_validation_errors(warnings),
+        )
 
 
 def _validate_path_id(identifier: str, name: str) -> None:
@@ -336,6 +410,7 @@ async def update_note_endpoint(
         )
 
     try:
+        _validate_note_markdown_against_schema(ws_path, payload.markdown)
         update_note(
             ws_path,
             note_id,
@@ -387,6 +462,8 @@ async def update_note_endpoint(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(e),
             ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to update note")
         raise HTTPException(
@@ -850,3 +927,72 @@ async def search_endpoint(
             results.append({"id": note_id})
 
     return results
+
+
+@router.get("/workspaces/{workspace_id}/schemas")
+async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
+    """List all schemas in the workspace."""
+    _validate_path_id(workspace_id, "workspace_id")
+    ws_path = _get_workspace_path(workspace_id)
+
+    schemas_dir = ws_path / "schemas"
+    if not schemas_dir.exists():
+        return []
+
+    schemas = []
+    for schema_file in schemas_dir.glob("*.json"):
+        try:
+            schemas.append(json.loads(schema_file.read_text()))
+        except json.JSONDecodeError:
+            continue
+    return schemas
+
+
+@router.get("/workspaces/{workspace_id}/schemas/{class_name}")
+async def get_schema_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
+    """Get a specific schema definition."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(class_name, "class_name")
+    ws_path = _get_workspace_path(workspace_id)
+
+    schema_path = ws_path / "schemas" / f"{class_name}.json"
+    if not schema_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schema not found: {class_name}",
+        )
+
+    try:
+        return json.loads(schema_path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid schema file",
+        ) from e
+
+
+@router.post("/workspaces/{workspace_id}/schemas", status_code=status.HTTP_201_CREATED)
+async def create_schema_endpoint(
+    workspace_id: str,
+    payload: SchemaCreate,
+) -> dict[str, Any]:
+    """Create or update a schema definition."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(payload.name, "schema_name")
+    ws_path = _get_workspace_path(workspace_id)
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    schemas_dir = ws_path / "schemas"
+    schemas_dir.mkdir(exist_ok=True)
+
+    schema_path = schemas_dir / f"{payload.name}.json"
+    schema_data = payload.model_dump()
+
+    schema_path.write_text(json.dumps(schema_data, indent=2))
+
+    return schema_data

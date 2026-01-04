@@ -98,6 +98,27 @@ export interface NoteUpdatePayload {
 	attachments?: Attachment[];
 }
 
+export interface SchemaField {
+	type: string;
+	required: boolean;
+}
+
+export interface Schema {
+	name: string;
+	version: number;
+	template: string;
+	fields: Record<string, SchemaField>;
+	defaults?: Record<string, unknown>;
+}
+
+export interface SchemaCreatePayload {
+	name: string;
+	version?: number;
+	template: string;
+	fields: Record<string, SchemaField>;
+	defaults?: Record<string, unknown>;
+}
+
 /** Query request */
 export interface QueryRequest {
 	filter: Record<string, unknown>;

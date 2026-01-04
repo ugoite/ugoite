@@ -9,6 +9,8 @@ import type {
 	WorkspaceLink,
 	WorkspacePatchPayload,
 	TestConnectionPayload,
+	Schema,
+	SchemaCreatePayload,
 } from "./types";
 import { apiFetch } from "./api";
 
@@ -74,6 +76,44 @@ export const workspaceApi = {
 			throw new Error(error.detail || `Failed to test connection: ${res.statusText}`);
 		}
 		return (await res.json()) as { status: string };
+	},
+
+	/** Query workspace index */
+	async query(id: string, filter: Record<string, unknown>): Promise<NoteRecord[]> {
+		const res = await apiFetch(`/workspaces/${id}/query`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ filter }),
+		});
+		if (!res.ok) {
+			throw new Error(`Failed to query workspace: ${res.statusText}`);
+		}
+		return (await res.json()) as NoteRecord[];
+	},
+};
+
+/**
+ * Schema API client
+ */
+export const schemaApi = {
+	async list(workspaceId: string): Promise<Schema[]> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/schemas`);
+		if (!res.ok) throw new Error(`Failed to list schemas: ${res.statusText}`);
+		return (await res.json()) as Schema[];
+	},
+	async get(workspaceId: string, className: string): Promise<Schema> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/schemas/${className}`);
+		if (!res.ok) throw new Error(`Failed to get schema: ${res.statusText}`);
+		return (await res.json()) as Schema;
+	},
+	async create(workspaceId: string, payload: SchemaCreatePayload): Promise<Schema> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/schemas`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) throw new Error(`Failed to create schema: ${res.statusText}`);
+		return (await res.json()) as Schema;
 	},
 };
 

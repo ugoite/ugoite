@@ -6,7 +6,7 @@ export default function Nav() {
 		path === location.pathname ? "border-sky-600" : "border-transparent hover:border-sky-600";
 
 	// Hide nav on notes page (it has its own navigation)
-	if (location.pathname === "/notes") {
+	if (location.pathname === "/notes" || location.pathname.startsWith("/notes/")) {
 		return null;
 	}
 

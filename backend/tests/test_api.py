@@ -235,6 +235,60 @@ def test_update_note(
     assert "New content" in updated_note["content"]
 
 
+def test_update_note_schema_validation_error_returns_422_and_does_not_update(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Updating a classed note should fail with 422 when it violates the schema."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+
+    schema_def = {
+        "name": "Meeting",
+        "version": 1,
+        "template": "# Meeting\n\n## Date\n",
+        "fields": {"Date": {"type": "date", "required": True}},
+        "defaults": None,
+    }
+    res = test_client.post("/workspaces/test-ws/schemas", json=schema_def)
+    assert res.status_code == 201
+
+    # Create a note with class Meeting but missing required Date property
+    note_content = """---
+class: Meeting
+---
+# Meeting notes
+
+## Agenda
+Discuss stuff
+"""
+    res = test_client.post(
+        "/workspaces/test-ws/notes",
+        json={"id": "meeting-1", "content": note_content},
+    )
+    assert res.status_code == 201
+
+    get_res = test_client.get("/workspaces/test-ws/notes/meeting-1")
+    assert get_res.status_code == 200
+    original = get_res.json()
+    original_revision_id = original["revision_id"]
+
+    update_res = test_client.put(
+        "/workspaces/test-ws/notes/meeting-1",
+        json={
+            "markdown": note_content,
+            "parent_revision_id": original_revision_id,
+        },
+    )
+    assert update_res.status_code == 422
+    assert "Missing required field" in update_res.json()["detail"]
+
+    # Ensure it did not update the revision
+    get_res = test_client.get("/workspaces/test-ws/notes/meeting-1")
+    assert get_res.status_code == 200
+    after = get_res.json()
+    assert after["revision_id"] == original_revision_id
+
+
 def test_update_note_conflict(
     test_client: TestClient,
     temp_workspace_root: Path,

@@ -5,6 +5,8 @@ import type {
 	NoteCreatePayload,
 	NoteRecord,
 	NoteUpdatePayload,
+	Schema,
+	SchemaCreatePayload,
 	Workspace,
 	WorkspaceLink,
 } from "~/lib/types";
@@ -15,6 +17,7 @@ let mockNotes: Map<string, Map<string, Note>> = new Map();
 let mockNoteIndex: Map<string, Map<string, NoteRecord>> = new Map();
 let mockAttachments: Map<string, Map<string, Attachment>> = new Map();
 let mockLinks: Map<string, Map<string, WorkspaceLink>> = new Map();
+let mockSchemas: Map<string, Map<string, Schema>> = new Map();
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
@@ -26,6 +29,7 @@ export const resetMockData = () => {
 	mockNoteIndex = new Map();
 	mockAttachments = new Map();
 	mockLinks = new Map();
+	mockSchemas = new Map();
 	revisionCounter = 0;
 };
 
@@ -36,6 +40,7 @@ export const seedWorkspace = (workspace: Workspace) => {
 	mockNoteIndex.set(workspace.id, new Map());
 	mockAttachments.set(workspace.id, new Map());
 	mockLinks.set(workspace.id, new Map());
+	mockSchemas.set(workspace.id, new Map());
 };
 
 export const seedNote = (workspaceId: string, note: Note, record: NoteRecord) => {
@@ -69,9 +74,55 @@ export const handlers = [
 		mockNoteIndex.set(id, new Map());
 		mockAttachments.set(id, new Map());
 		mockLinks.set(id, new Map());
+		mockSchemas.set(id, new Map());
 
 		return HttpResponse.json({ id, name: body.name }, { status: 201 });
 	}),
+
+	// List schemas
+	http.get("http://localhost:3000/api/workspaces/:workspaceId/schemas", ({ params }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		const schemas = Array.from(mockSchemas.get(workspaceId)?.values() || []);
+		return HttpResponse.json(schemas);
+	}),
+
+	// Get schema
+	http.get("http://localhost:3000/api/workspaces/:workspaceId/schemas/:className", ({ params }) => {
+		const workspaceId = params.workspaceId as string;
+		const className = params.className as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		const schema = mockSchemas.get(workspaceId)?.get(className);
+		if (!schema) {
+			return HttpResponse.json({ detail: "Schema not found" }, { status: 404 });
+		}
+		return HttpResponse.json(schema);
+	}),
+
+	// Create schema
+	http.post(
+		"http://localhost:3000/api/workspaces/:workspaceId/schemas",
+		async ({ params, request }) => {
+			const workspaceId = params.workspaceId as string;
+			if (!mockWorkspaces.has(workspaceId)) {
+				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+			}
+			const body = (await request.json()) as SchemaCreatePayload;
+			const schema: Schema = {
+				name: body.name,
+				version: body.version ?? 1,
+				template: body.template,
+				fields: body.fields,
+				defaults: body.defaults,
+			};
+			mockSchemas.get(workspaceId)?.set(schema.name, schema);
+			return HttpResponse.json(schema, { status: 201 });
+		},
+	),
 
 	// Get workspace
 	http.get("http://localhost:3000/api/workspaces/:workspaceId", ({ params }) => {
