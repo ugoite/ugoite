@@ -65,3 +65,13 @@ class LinkCreate(BaseModel):
     source: str
     target: str
     kind: str = "related"
+
+
+class SchemaCreate(BaseModel):
+    """Schema creation payload."""
+
+    name: str
+    version: int = 1
+    template: str
+    fields: dict[str, dict[str, Any]]
+    defaults: dict[str, Any] | None = None

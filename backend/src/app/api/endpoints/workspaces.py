@@ -37,6 +37,7 @@ from app.models.schemas import (
     NoteRestore,
     NoteUpdate,
     QueryRequest,
+    SchemaCreate,
     TestConnectionRequest,
     WorkspaceCreate,
     WorkspacePatch,
@@ -850,3 +851,72 @@ async def search_endpoint(
             results.append({"id": note_id})
 
     return results
+
+
+@router.get("/workspaces/{workspace_id}/schemas")
+async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
+    """List all schemas in the workspace."""
+    _validate_path_id(workspace_id, "workspace_id")
+    ws_path = _get_workspace_path(workspace_id)
+
+    schemas_dir = ws_path / "schemas"
+    if not schemas_dir.exists():
+        return []
+
+    schemas = []
+    for schema_file in schemas_dir.glob("*.json"):
+        try:
+            schemas.append(json.loads(schema_file.read_text()))
+        except json.JSONDecodeError:
+            continue
+    return schemas
+
+
+@router.get("/workspaces/{workspace_id}/schemas/{class_name}")
+async def get_schema_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
+    """Get a specific schema definition."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(class_name, "class_name")
+    ws_path = _get_workspace_path(workspace_id)
+
+    schema_path = ws_path / "schemas" / f"{class_name}.json"
+    if not schema_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schema not found: {class_name}",
+        )
+
+    try:
+        return json.loads(schema_path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid schema file",
+        ) from e
+
+
+@router.post("/workspaces/{workspace_id}/schemas", status_code=status.HTTP_201_CREATED)
+async def create_schema_endpoint(
+    workspace_id: str,
+    payload: SchemaCreate,
+) -> dict[str, Any]:
+    """Create or update a schema definition."""
+    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(payload.name, "schema_name")
+    ws_path = _get_workspace_path(workspace_id)
+
+    if not ws_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+
+    schemas_dir = ws_path / "schemas"
+    schemas_dir.mkdir(exist_ok=True)
+
+    schema_path = schemas_dir / f"{payload.name}.json"
+    schema_data = payload.model_dump()
+
+    schema_path.write_text(json.dumps(schema_data, indent=2))
+
+    return schema_data
