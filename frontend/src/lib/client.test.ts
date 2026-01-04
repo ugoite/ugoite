@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { noteApi, workspaceApi, RevisionConflictError, attachmentApi, linksApi } from "./client";
+import {
+	noteApi,
+	workspaceApi,
+	schemaApi,
+	RevisionConflictError,
+	attachmentApi,
+	linksApi,
+} from "./client";
 import { resetMockData, seedWorkspace, seedNote } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "./types";
 
@@ -267,5 +274,39 @@ describe("noteApi", () => {
 			const deleted = await linksApi.delete("test-ws", link.id);
 			expect(deleted.status).toBe("deleted");
 		});
+	});
+});
+
+describe("schemaApi", () => {
+	const testWorkspace: Workspace = {
+		id: "schema-ws",
+		name: "Schema Workspace",
+		created_at: "2025-01-01T00:00:00Z",
+	};
+
+	beforeEach(() => {
+		resetMockData();
+		seedWorkspace(testWorkspace);
+	});
+
+	it("lists schemas (empty by default)", async () => {
+		const schemas = await schemaApi.list("schema-ws");
+		expect(schemas).toEqual([]);
+	});
+
+	it("creates and gets a schema", async () => {
+		await schemaApi.create("schema-ws", {
+			name: "Meeting",
+			version: 1,
+			template: "# Meeting\n\n## Date\n",
+			fields: { Date: { type: "date", required: true } },
+		});
+
+		const schemas = await schemaApi.list("schema-ws");
+		expect(schemas.find((s) => s.name === "Meeting")).toBeDefined();
+
+		const fetched = await schemaApi.get("schema-ws", "Meeting");
+		expect(fetched.name).toBe("Meeting");
+		expect(fetched.fields.Date.type).toBe("date");
 	});
 });

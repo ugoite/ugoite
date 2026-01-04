@@ -12,7 +12,10 @@ export function SchemaTable(props: SchemaTableProps) {
 	const [filterText, setFilterText] = createSignal("");
 
 	const [notes] = createResource(
-		() => ({ id: props.workspaceId, schema: props.schema.name }),
+		() => {
+			if (!props.workspaceId) return null;
+			return { id: props.workspaceId, schema: props.schema.name };
+		},
 		async ({ id, schema }) => {
 			return await workspaceApi.query(id, { class: schema });
 		},

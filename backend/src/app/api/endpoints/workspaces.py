@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import ieapp
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from ieapp.indexer import Indexer
+from ieapp.indexer import Indexer, extract_properties, validate_properties
 from ieapp.notes import (
     NoteExistsError,
     RevisionMismatchError,
@@ -48,6 +48,49 @@ logger = logging.getLogger(__name__)
 
 # Pattern for valid IDs: alphanumeric, hyphens, underscores
 _SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for err in errors:
+        message = err.get("message")
+        field = err.get("field")
+        if isinstance(message, str) and message:
+            parts.append(message)
+        elif isinstance(field, str) and field:
+            parts.append(f"Invalid field: {field}")
+        else:
+            parts.append("Schema validation error")
+    return "\n".join(parts)
+
+
+def _validate_note_markdown_against_schema(ws_path: Path, markdown: str) -> None:
+    properties = extract_properties(markdown)
+    note_class = properties.get("class")
+    if not isinstance(note_class, str) or not note_class.strip():
+        return
+
+    schema_path = ws_path / "schemas" / f"{note_class}.json"
+    if not schema_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Schema not found: {note_class}",
+        )
+
+    try:
+        schema = json.loads(schema_path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid schema file",
+        ) from e
+
+    _casted, warnings = validate_properties(properties, schema)
+    if warnings:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_format_schema_validation_errors(warnings),
+        )
 
 
 def _validate_path_id(identifier: str, name: str) -> None:
@@ -337,6 +380,7 @@ async def update_note_endpoint(
         )
 
     try:
+        _validate_note_markdown_against_schema(ws_path, payload.markdown)
         update_note(
             ws_path,
             note_id,
@@ -388,6 +432,8 @@ async def update_note_endpoint(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(e),
             ) from e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to update note")
         raise HTTPException(

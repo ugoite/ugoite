@@ -53,7 +53,16 @@ export default function NotesIndexPage() {
 
 	const [viewMode, setViewMode] = createSignal<"notes" | "schemas">("notes");
 	const [selectedSchema, setSelectedSchema] = createSignal<Schema | null>(null);
-	const [schemas] = createResource(workspaceId, schemaApi.list);
+	const [schemas] = createResource(
+		() => {
+			const wsId = workspaceId();
+			return wsId ? wsId : null;
+		},
+		async (wsId) => {
+			if (!wsId) return [];
+			return await schemaApi.list(wsId);
+		},
+	);
 
 	const [newNoteClass, setNewNoteClass] = createSignal<string>("");
 
