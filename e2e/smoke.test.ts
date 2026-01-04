@@ -53,6 +53,26 @@ describe("Smoke Tests", () => {
 			expect(body.toLowerCase()).toContain("<!doctype html>");
 		});
 
+		test("GET /notes/:id returns HTML", async () => {
+			// Create a note first so we can navigate to a real detail route
+			const createRes = await client.postApi("/workspaces/default/notes", {
+				content: `# E2E Detail Route Note\n\nCreated at ${new Date().toISOString()}`,
+			});
+			expect(createRes.status).toBe(201);
+
+			const created = (await createRes.json()) as { id: string };
+			expect(created).toHaveProperty("id");
+
+			const res = await client.getFrontend(`/notes/${created.id}`);
+			expect(res.ok).toBe(true);
+
+			const body = await res.text();
+			expect(body.toLowerCase()).toContain("<!doctype html>");
+
+			// Cleanup
+			await client.deleteApi(`/workspaces/default/notes/${created.id}`);
+		});
+
 		test("GET /about returns HTML", async () => {
 			const res = await client.getFrontend("/about");
 			expect(res.ok).toBe(true);
