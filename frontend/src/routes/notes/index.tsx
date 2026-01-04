@@ -10,39 +10,15 @@ import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
 import type { Schema, SearchResult } from "~/lib/types";
 
-function replaceFirstH1(template: string, title: string): string {
-	const lines = template.split(/\r?\n/);
-	for (let i = 0; i < lines.length; i += 1) {
-		if (lines[i].startsWith("# ") || lines[i].startsWith("#\t")) {
-			lines[i] = `# ${title}`;
-			return lines.join("\n");
-		}
-	}
-	return `# ${title}\n\n${template}`;
-}
-
-function ensureClassFrontmatter(markdown: string, className: string): string {
-	const trimmed = markdown.trimStart();
-	if (trimmed.startsWith("---")) {
-		const lines = markdown.split(/\r?\n/);
-		let endIdx = -1;
-		for (let i = 1; i < lines.length; i += 1) {
-			if (lines[i].trim() === "---") {
-				endIdx = i;
-				break;
-			}
-		}
-		if (endIdx !== -1) {
-			const fmLines = lines.slice(1, endIdx);
-			const hasClass = fmLines.some((l) => l.trimStart().startsWith("class:"));
-			const nextFmLines = hasClass
-				? fmLines.map((l) => (l.trimStart().startsWith("class:") ? `class: ${className}` : l))
-				: [`class: ${className}`, ...fmLines];
-			return ["---", ...nextFmLines, "---", ...lines.slice(endIdx + 1)].join("\n");
-		}
-	}
-	return `---\nclass: ${className}\n---\n\n${markdown}`;
-}
+/**
+ * Replace the first level-1 heading in a markdown template with the provided title.
+ * If no H1 is present, prepend one to the template.
+ *
+ * @param template - The markdown template to modify
+ * @param title - The replacement title to put in the first H1
+ * @returns The modified markdown content
+ */
+import { replaceFirstH1, ensureClassFrontmatter } from "~/lib/markdown";
 
 export default function NotesIndexPage() {
 	const navigate = useNavigate();

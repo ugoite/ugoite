@@ -31,7 +31,7 @@ export function SchemaTable(props: SchemaTableProps) {
 			if (note.title?.toLowerCase().includes(text)) return true;
 			// Check properties
 			for (const key in props.schema.fields) {
-				const val = String(note.properties[key] || "").toLowerCase();
+				const val = String(note.properties?.[key] ?? "").toLowerCase();
 				if (val.includes(text)) return true;
 			}
 			return false;
@@ -97,7 +97,7 @@ export function SchemaTable(props: SchemaTableProps) {
 										<For each={Object.keys(props.schema.fields)}>
 											{(field) => (
 												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-													{String(note.properties[field] || "-")}
+													{String(note.properties?.[field] ?? "-")}
 												</td>
 											)}
 										</For>
