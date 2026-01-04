@@ -51,6 +51,20 @@ _SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
+    """Format schema validation warnings into a single human-readable string.
+
+    The validator returns a list of dicts describing issues. This helper
+    consolidates them into a newline-separated message suitable for HTTP API
+    responses.
+
+    Args:
+        errors: A list of dictionaries containing keys like "message" and
+            "field" as returned by the property validator.
+
+    Returns:
+        A newline-separated string describing the validation issues.
+
+    """
     parts: list[str] = []
     for err in errors:
         message = err.get("message")
@@ -65,6 +79,22 @@ def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
 
 
 def _validate_note_markdown_against_schema(ws_path: Path, markdown: str) -> None:
+    """Validate extracted note properties against the workspace schema.
+
+    If the markdown contains a ``class: <ClassName>`` frontmatter entry this
+    function will load the corresponding schema from ``<workspace>/schemas``
+    and run the property validator. On validation errors it raises an
+    HTTPException with a 422 Unprocessable Entity status.
+
+    Args:
+        ws_path: Path to the workspace directory.
+        markdown: The raw markdown content of the note.
+
+    Raises:
+        HTTPException: 422 when validation fails or 500 when schema file is
+            malformed.
+
+    """
     properties = extract_properties(markdown)
     note_class = properties.get("class")
     if not isinstance(note_class, str) or not note_class.strip():

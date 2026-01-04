@@ -90,3 +90,35 @@ High
     results = response.json()
     assert len(results) == 1
     assert results[0]["properties"]["Priority"] == "High"
+
+
+def test_update_note_with_missing_schema_rejected(workspace_id: str) -> None:
+    """Updating a note that declares a class whose schema file is missing.
+
+    This should fail.
+    """
+    # Create a note that references a non-existent class
+    note_content = """---
+class: MissingSchema
+---
+## Field
+Value
+"""
+    create_resp = client.post(
+        f"/workspaces/{workspace_id}/notes",
+        json={"content": note_content},
+    )
+    assert create_resp.status_code == 201
+    note_id = create_resp.json()["id"]
+    revision_id = create_resp.json()["revision_id"]
+
+    # Attempt to update the note (this triggers schema validation)
+    updated_md = note_content + "\n## Another\nX"
+    upd_resp = client.put(
+        f"/workspaces/{workspace_id}/notes/{note_id}",
+        json={
+            "markdown": updated_md,
+            "parent_revision_id": revision_id,
+        },
+    )
+    assert upd_resp.status_code == 422
