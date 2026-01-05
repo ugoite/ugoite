@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+import fsspec
+
 from .utils import (
     fs_exists,
     fs_join,
@@ -23,8 +25,6 @@ from .utils import (
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import fsspec
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +46,18 @@ def _load_hmac_material_cached(
     """
     # The actual loading is done by the non-cached function
     # This is just a cache key wrapper
-    return _load_hmac_material_impl(root_path)
+    return _load_hmac_material_impl(root_path, protocol)
 
 
 def _load_hmac_material_impl(
     root_path: str,
+    protocol: str,
 ) -> tuple[str, bytes]:
     """Load HMAC key material from global.json using fsspec.
 
     Args:
         root_path: The root directory path
+        protocol: The filesystem protocol
 
     Returns:
         Tuple of (key_id, secret_bytes)
@@ -64,7 +66,8 @@ def _load_hmac_material_impl(
         ValueError: If hmac_key is missing from global.json
 
     """
-    fs_obj, base_path = get_fs_and_path(root_path)
+    fs_obj = fsspec.filesystem(protocol)
+    fs_obj, base_path = get_fs_and_path(root_path, fs=fs_obj)
     global_json_path = fs_join(base_path, "global.json")
 
     if not fs_exists(fs_obj, global_json_path):
