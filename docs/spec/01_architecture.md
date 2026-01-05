@@ -65,17 +65,20 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 
 ## 4. Component Responsibilities
 
-### `ieapp` (Library)
-*   Core logic for `fsspec` interactions.
-*   Implements the "Universal File System" logic.
-*   Handles versioning, hashing, and conflict resolution.
-*   Provides internal services consumed by the REST API (which the Wasm sandbox accesses via `host.call`).
+### `ieapp-cli` (Library)
+*   **Core fsspec abstraction**: ALL file operations go through fsspec in this library
+*   Implements the "Universal File System" logic for workspaces, notes, attachments, schemas
+*   Handles versioning, hashing, integrity (HMAC), and conflict resolution
+*   Provides internal services consumed by the REST API
+*   **No file operations outside of ieapp-cli**: Backend only calls ieapp-cli functions
 
 ### `backend` (Service)
-*   Hosts the FastAPI server.
-*   Implements the MCP Server endpoints.
-*   Manages the Wasm Sandbox (security, fuel limits).
-*   Handles optional authentication (API keys, bearer tokens) while defaulting to trusted localhost-only mode, and enforces CORS.
+*   Hosts the FastAPI server
+*   Implements the MCP Server endpoints
+*   Manages the Wasm Sandbox (security, fuel limits)
+*   **Delegates all file operations to ieapp-cli**: No direct filesystem access
+*   Validated against multiple `fsspec` implementations (file + memory) via backend tests to ensure IO stays inside ieapp-cli
+*   Handles optional authentication (API keys, bearer tokens) while defaulting to trusted localhost-only mode, and enforces CORS
 
 ### `frontend` (UI)
 *   Optimistic UI: Renders changes immediately, syncs in background.

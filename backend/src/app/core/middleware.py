@@ -73,7 +73,7 @@ async def _capture_response_body(response: Response) -> bytes:
 def _apply_security_headers(
     response: Response,
     body: bytes,
-    root_path: Path,
+    root_path: Path | str,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
     key_id, signature = build_response_signature(body, root_path)

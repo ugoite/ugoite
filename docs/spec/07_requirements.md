@@ -91,6 +91,17 @@ Workspaces MUST accept storage connector updates and provide a validation endpoi
 
 ---
 
+### REQ-STO-007: Backend IO Separation & Multi-fsspec Coverage
+**Related Spec**: [01_architecture.md](01_architecture.md) §4 Component Responsibilities, [06_frontend_backend_interface.md](06_frontend_backend_interface.md) §Storage Boundary
+
+All filesystem interactions MUST remain inside `ieapp-cli` via `fsspec`, and the backend MUST operate correctly across multiple `fsspec` implementations (at least `file` and `memory`) using the shared library.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `backend/tests/test_api_memory.py` | `test_create_workspace_memory`, `test_create_note_memory`, `test_update_note_and_search_memory`, `test_attachments_and_links_memory` |
+
+---
+
 ## 2. Note Management Requirements
 
 ### REQ-NOTE-001: Note Creation

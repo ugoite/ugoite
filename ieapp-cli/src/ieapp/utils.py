@@ -1,10 +1,15 @@
 """Utility functions for ieapp."""
 
+import contextlib
 import json
 import os
+import posixpath
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import fsspec
+from fsspec.core import url_to_fs
 
 
 def resolve_existing_path(base: Path, *parts: str) -> Path:
@@ -136,3 +141,90 @@ def write_json_secure(
     fd = os.open(str(path), flags, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# fsspec helpers
+# ---------------------------------------------------------------------------
+
+
+def get_fs_and_path(
+    base_path: str | Path,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> tuple[fsspec.AbstractFileSystem, str]:
+    """Return an fsspec filesystem and a normalized base path string.
+
+    When ``fs`` is provided, the base path is normalized as a POSIX string
+    without trailing slashes. Otherwise ``url_to_fs`` is used to infer the
+    filesystem from the path or URI.
+    """
+    if fs is not None:
+        return fs, str(base_path).rstrip("/") or "/"
+
+    inferred_fs, path = url_to_fs(str(base_path))
+    return inferred_fs, str(path).rstrip("/") or "/"
+
+
+def fs_join(base: str, *parts: str) -> str:
+    """Join path parts using POSIX semantics (suitable for fsspec)."""
+    return posixpath.join(base, *parts)
+
+
+def fs_makedirs(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    *,
+    mode: int = 0o700,
+    exist_ok: bool = True,
+) -> None:
+    """Create a directory and apply permissions when supported."""
+    fs.makedirs(path, exist_ok=exist_ok)
+    if hasattr(fs, "chmod"):
+        with contextlib.suppress(Exception):
+            cast("Any", fs).chmod(path, mode)
+
+
+def fs_write_json(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    payload: dict[str, Any],
+    *,
+    mode: int = 0o600,
+    exclusive: bool = False,
+) -> None:
+    """Write JSON via fsspec, optionally enforcing exclusivity."""
+    if exclusive and fs.exists(path):
+        raise FileExistsError(path)
+
+    with fs.open(path, "w") as handle:
+        json.dump(payload, handle, indent=2)
+
+    if hasattr(fs, "chmod"):
+        with contextlib.suppress(Exception):
+            cast("Any", fs).chmod(path, mode)
+
+
+def fs_read_json(fs: fsspec.AbstractFileSystem, path: str) -> dict[str, Any]:
+    """Read JSON content via fsspec."""
+    with fs.open(path, "r") as handle:
+        return json.load(handle)
+
+
+def fs_exists(fs: fsspec.AbstractFileSystem, path: str) -> bool:
+    """Return True if the given path exists on the filesystem."""
+    return bool(fs.exists(path))
+
+
+def fs_isdir(fs: fsspec.AbstractFileSystem, path: str) -> bool:
+    """Return True when path exists and is a directory (best-effort)."""
+    try:
+        info = fs.info(path)
+    except FileNotFoundError:
+        return False
+    return info.get("type") == "directory"
+
+
+def fs_ls(fs: fsspec.AbstractFileSystem, path: str) -> list[str]:
+    """List directory entries returning path strings."""
+    entries = fs.ls(path, detail=False)
+    return [str(entry) for entry in entries]

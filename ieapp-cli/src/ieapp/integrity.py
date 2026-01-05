@@ -9,9 +9,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import fsspec
+
+from .utils import fs_exists, fs_join, fs_read_json, get_fs_and_path
 
 
 @dataclass
@@ -21,11 +27,17 @@ class IntegrityProvider:
     secret: bytes
 
     @classmethod
-    def for_workspace(cls, workspace_path: str | Path) -> IntegrityProvider:
+    def for_workspace(
+        cls,
+        workspace_path: str | Path,
+        *,
+        fs: fsspec.AbstractFileSystem | None = None,
+    ) -> IntegrityProvider:
         """Build a provider using the workspace's root ``global.json``.
 
         Args:
             workspace_path: Absolute path to the workspace directory.
+            fs: Optional fsspec filesystem to use.
 
         Returns:
             An ``IntegrityProvider`` configured with the workspace's HMAC key.
@@ -35,29 +47,28 @@ class IntegrityProvider:
             ValueError: If the file does not contain the expected key material.
 
         """
-        ws_path = Path(workspace_path)
-        meta_path = ws_path / "meta.json"
+        fs_obj, ws_path = get_fs_and_path(workspace_path, fs)
+        meta_path = fs_join(ws_path, "meta.json")
 
-        if not meta_path.exists():
+        if not fs_exists(fs_obj, meta_path):
             msg = f"meta.json not found for workspace at {workspace_path}"
             raise FileNotFoundError(msg)
 
-        with meta_path.open("r", encoding="utf-8") as meta_handle:
-            meta = json.load(meta_handle)
+        meta: dict[str, Any] = fs_read_json(fs_obj, meta_path)
 
         storage_root = meta.get("storage", {}).get("root")
         if not storage_root:
             msg = "Workspace metadata missing storage.root"
             raise ValueError(msg)
 
-        global_json = Path(storage_root) / "global.json"
+        storage_fs, storage_path = get_fs_and_path(storage_root, fs_obj)
+        global_json = fs_join(storage_path, "global.json")
 
-        if not global_json.exists():
+        if not fs_exists(storage_fs, global_json):
             msg = f"global.json not found for workspace at {storage_root}"
             raise FileNotFoundError(msg)
 
-        with global_json.open("r", encoding="utf-8") as handle:
-            global_data = json.load(handle)
+        global_data = fs_read_json(storage_fs, global_json)
 
         key_b64 = global_data.get("hmac_key")
         if not key_b64:

@@ -290,7 +290,7 @@ wheels = [
 
 [[package]]
 name = "ieapp"
-version = "0.1.0"
+version = "0.1.1"
 source = { directory = "../ieapp-cli" }
 dependencies = [
     { name = "fsspec" },
