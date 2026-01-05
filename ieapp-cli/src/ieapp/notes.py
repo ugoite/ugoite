@@ -494,17 +494,22 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
     }
 
 
-def list_notes(workspace_path: str | Path) -> list[dict[str, Any]]:
+def list_notes(
+    workspace_path: str | Path,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> list[dict[str, Any]]:
     """List all notes in a workspace.
 
     Args:
         workspace_path: Absolute path to the workspace directory.
+        fs: Optional fsspec filesystem instance.
 
     Returns:
         List of note summaries (id, title, class, tags, etc.).
 
     """
-    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path, fs=fs)
     notes_dir = fs_join(ws_path, "notes")
 
     if not fs_exists(fs_obj, notes_dir):
