@@ -25,11 +25,15 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 	};
 
 	onMount(() => {
-		document.addEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.addEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	onCleanup(() => {
-		document.removeEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.removeEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	// Reset form and focus when dialog opens
@@ -155,11 +159,15 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 	};
 
 	onMount(() => {
-		document.addEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.addEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	onCleanup(() => {
-		document.removeEventListener("keydown", handleKeyDown);
+		if (typeof document !== "undefined") {
+			document.removeEventListener("keydown", handleKeyDown);
+		}
 	});
 
 	const handleDialogClick = (e: MouseEvent) => {
