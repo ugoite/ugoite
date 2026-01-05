@@ -88,7 +88,7 @@ export function ListPanel(props: ListPanelProps) {
 			</Show>
 
 			{/* Class filter */}
-			<Show when={props.schemas.length > 0}>
+			<Show when={props.mode === "notes" && props.schemas.length > 0}>
 				<div class="px-4 py-3 border-b bg-gray-50">
 					<label class="block text-xs font-medium text-gray-500 mb-1" for="filter-class">
 						Filter by Class
