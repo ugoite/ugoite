@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
-    root_path: Path = get_root_path()
+    root_path: Path | str = get_root_path()
     try:
         create_workspace(root_path, "default")
         logger.info("Created default workspace at startup")

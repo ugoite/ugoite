@@ -54,7 +54,7 @@ def is_local_host(host: str | None) -> bool:
     return normalized.startswith(("127.", "::ffff:127."))
 
 
-def build_response_signature(body: bytes, root_path: Path) -> tuple[str, str]:
+def build_response_signature(body: bytes, root_path: Path | str) -> tuple[str, str]:
     """Compute the HMAC signature for the response body.
 
     This function delegates to ieapp-cli which handles all file operations
