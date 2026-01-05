@@ -1,7 +1,3 @@
-"""Tests for notes."""
-
-import fsspec
-
 """Tests for notes management."""
 
 import hashlib
@@ -9,6 +5,7 @@ import hmac
 import json
 from typing import Any
 
+import fsspec
 import pytest
 
 from ieapp.notes import RevisionMismatchError, create_note, list_notes, update_note
