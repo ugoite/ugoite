@@ -136,14 +136,8 @@ def create_workspace(
 
     ws_path = fs_join(workspaces_dir, safe_workspace_id)
     if fs_exists(fs_obj, ws_path):
-        protocol = getattr(fs_obj, "protocol", None)
-        if protocol == "memory" or (
-            isinstance(protocol, (list, tuple)) and "memory" in protocol
-        ):
-            fs_obj.rm(ws_path, recursive=True)
-        else:
-            msg = f"Workspace {safe_workspace_id} already exists at {ws_path}"
-            raise WorkspaceExistsError(msg)
+        msg = f"Workspace {safe_workspace_id} already exists at {ws_path}"
+        raise WorkspaceExistsError(msg)
 
     fs_makedirs(fs_obj, ws_path, exist_ok=False)
 
@@ -256,12 +250,24 @@ def workspace_path(
     must_exist: bool = False,
 ) -> str:
     """Public helper returning the absolute workspace path string."""
-    _, _, ws_path = _resolve_workspace_paths(
+    fs_obj, _, ws_path = _resolve_workspace_paths(
         root_path,
         workspace_id,
         fs=fs,
         must_exist=must_exist,
     )
+
+    # If we are using a non-local filesystem, we must return a URI
+    # so that subsequent calls (like create_note) can resolve the correct filesystem.
+    protocol = getattr(fs_obj, "protocol", "file")
+    if isinstance(protocol, (list, tuple)):
+        protocol = protocol[0]
+
+    if protocol != "file":
+        # Reconstruct URI: protocol://path
+        # Ensure path doesn't start with / if we are appending to protocol://
+        return f"{protocol}://{ws_path.lstrip('/')}"
+
     return ws_path
 
 
