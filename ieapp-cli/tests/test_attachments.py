@@ -1,3 +1,7 @@
+"""Tests for attachments."""
+
+import fsspec
+
 """Attachment helpers must work across fsspec implementations."""
 
 import hashlib
@@ -5,7 +9,6 @@ import hmac
 import json
 from typing import Any
 
-import fsspec
 import pytest
 
 from ieapp.attachments import (
@@ -15,6 +18,7 @@ from ieapp.attachments import (
     save_attachment,
 )
 from ieapp.notes import create_note, update_note
+from ieapp.utils import fs_join
 from ieapp.workspace import create_workspace
 
 
@@ -38,19 +42,23 @@ def fake_integrity_provider() -> Any:  # type: ignore[override]
     return _FakeIntegrityProvider()
 
 
-def test_attachment_lifecycle_in_memory_fs(fake_integrity_provider: Any) -> None:
-    """Save/list/delete should work on memory filesystem and honor references."""
-    fs = fsspec.filesystem("memory")
-
-    root = "/ieapp"
+def test_attachment_lifecycle(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+    fake_integrity_provider: Any,
+) -> None:
+    """Save/list/delete should work on any filesystem and honor references."""
+    fs, root = fs_impl
     ws_id = "ws-attachments"
     create_workspace(root, ws_id, fs=fs)
-    ws_path = f"{root}/workspaces/{ws_id}"
+    ws_path = fs_join(root, "workspaces", ws_id)
 
     attachment = save_attachment(ws_path, b"hello", "voice.m4a", fs=fs)
 
     assert attachment["id"]
-    assert fs.exists(f"{ws_path}/attachments/{attachment['id']}_voice.m4a")
+    # Check file existence
+    # Filename format is {id}_{original_name}
+    expected_path = fs_join(ws_path, "attachments", f"{attachment['id']}_voice.m4a")
+    assert fs.exists(expected_path)
 
     listed = list_attachments(ws_path, fs=fs)
     assert any(item["id"] == attachment["id"] for item in listed)
@@ -63,7 +71,8 @@ def test_attachment_lifecycle_in_memory_fs(fake_integrity_provider: Any) -> None
         fs=fs,
     )
 
-    with fs.open(f"{ws_path}/notes/note-a/content.json", "r") as handle:
+    note_content_path = fs_join(ws_path, "notes", "note-a", "content.json")
+    with fs.open(note_content_path, "r") as handle:
         rev = json.load(handle)["revision_id"]
 
     update_note(
@@ -79,7 +88,7 @@ def test_attachment_lifecycle_in_memory_fs(fake_integrity_provider: Any) -> None
     with pytest.raises(AttachmentReferencedError):
         delete_attachment(ws_path, attachment["id"], fs=fs)
 
-    with fs.open(f"{ws_path}/notes/note-a/content.json", "r") as handle:
+    with fs.open(note_content_path, "r") as handle:
         rev_after = json.load(handle)["revision_id"]
 
     update_note(

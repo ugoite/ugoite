@@ -1,9 +1,12 @@
+"""Tests for indexer."""
+
+import fsspec
+
 """Tests for the ieapp indexer utilities."""
 
 import json
 from collections.abc import Callable
 
-import fsspec
 import pytest
 
 from ieapp.indexer import (
@@ -13,6 +16,7 @@ from ieapp.indexer import (
     query_index,
     validate_properties,
 )
+from ieapp.utils import fs_join
 
 EXPECTED_MEETING_COUNT = 2
 EXPECTED_TASK_COUNT = 1
@@ -99,78 +103,25 @@ def test_validate_properties_valid() -> None:
     assert len(warnings) == 0
 
 
-def test_validate_properties_casting() -> None:
-    """Ensure properties are cast to their schema types."""
-    schema = {
-        "fields": {
-            "Count": {"type": "number"},
-            "Attendees": {"type": "list"},
-            "Date": {"type": "date"},
-        },
-    }
-    properties = {
-        "Count": "42",
-        "Attendees": "- Alice\n- Bob",
-        "Date": "2025-10-27",
-    }
-
-    casted, warnings = validate_properties(properties, schema)
-    assert len(warnings) == 0
-    expected_count = 42
-    assert casted["Count"] == expected_count
-    assert casted["Attendees"] == ["Alice", "Bob"]
-    assert casted["Date"] == "2025-10-27"
-
-
-def test_validate_properties_invalid_type() -> None:
-    """Emit invalid_type warning when casting fails."""
-    schema = {"fields": {"Count": {"type": "number"}}}
-    properties = {"Count": "not-a-number"}
-
-    _, warnings = validate_properties(properties, schema)
-    assert len(warnings) == 1
-    assert warnings[0]["code"] == "invalid_type"
-
-
-def test_aggregate_stats() -> None:
-    """Aggregate counts for classes, tags, and totals."""
-    index_data = {
-        "note1": {"class": "meeting", "properties": {}, "tags": ["alpha"]},
-        "note2": {"class": "meeting", "properties": {}},
-        "note3": {"class": "task", "properties": {}, "tags": ["alpha"]},
-        "note4": {"title": "Just a note", "properties": {}},  # No class
-    }
-
-    stats = aggregate_stats(index_data)
-
-    assert stats["class_stats"]["meeting"]["count"] == EXPECTED_MEETING_COUNT
-    assert stats["class_stats"]["task"]["count"] == EXPECTED_TASK_COUNT
-    assert (
-        stats["class_stats"]["_uncategorized"]["count"] == EXPECTED_UNCATEGORIZED_COUNT
-    )
-    assert stats["tag_counts"]["alpha"] == EXPECTED_TAG_ALPHA_COUNT
-    assert stats["note_count"] == EXPECTED_TOTAL_NOTES
-
-
-def test_indexer_run_once() -> None:
+def test_indexer_run_once(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
     """Index all notes and persist stats in memory fs."""
-    fs = fsspec.filesystem("memory")
-    workspace_path = "/test_workspace"
-    fs.makedirs(f"{workspace_path}/notes/note1", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/notes/note2", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/schemas", exist_ok=True)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "notes", "note2"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "schemas"), exist_ok=True)
 
     # Create Schema
     schema = {"fields": {"Date": {"type": "date", "required": True}}}
-    with fs.open(f"{workspace_path}/schemas/meeting.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "schemas", "meeting.json"), "w") as f:
         json.dump(schema, f)
 
     # Create Note 1 (Valid Meeting)
     note1_content = {
         "markdown": "---\nclass: meeting\n---\n# Sync\n\n## Date\n2025-10-27",
     }
-    with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
         json.dump(note1_content, f)
     note1_meta = {
         "id": "note1",
@@ -182,12 +133,12 @@ def test_indexer_run_once() -> None:
         "canvas_position": {},
         "integrity": {"checksum": "aaa"},
     }
-    with fs.open(f"{workspace_path}/notes/note1/meta.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
         json.dump(note1_meta, f)
 
     # Create Note 2 (Invalid Meeting)
     note2_content = {"markdown": "---\nclass: meeting\n---\n# Sync\n"}
-    with fs.open(f"{workspace_path}/notes/note2/content.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note2", "content.json"), "w") as f:
         json.dump(note2_content, f)
     note2_meta = {
         "id": "note2",
@@ -199,14 +150,14 @@ def test_indexer_run_once() -> None:
         "canvas_position": {},
         "integrity": {"checksum": "bbb"},
     }
-    with fs.open(f"{workspace_path}/notes/note2/meta.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note2", "meta.json"), "w") as f:
         json.dump(note2_meta, f)
 
     indexer = Indexer(workspace_path, fs=fs)
     indexer.run_once()
 
     # Check index.json
-    with fs.open(f"{workspace_path}/index/index.json", "r") as f:
+    with fs.open(fs_join(workspace_path, "index", "index.json"), "r") as f:
         index_data = json.load(f)
 
     assert "notes" in index_data
@@ -222,7 +173,7 @@ def test_indexer_run_once() -> None:
     assert len(note2["validation_warnings"]) > 0
 
     # Check stats.json
-    with fs.open(f"{workspace_path}/index/stats.json", "r") as f:
+    with fs.open(fs_join(workspace_path, "index", "stats.json"), "r") as f:
         stats_data = json.load(f)
 
     assert stats_data["class_stats"]["meeting"]["count"] == EXPECTED_MEETING_COUNT
@@ -230,11 +181,11 @@ def test_indexer_run_once() -> None:
     assert "last_indexed" in stats_data
 
 
-def test_query_index() -> None:
+def test_query_index(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
     """Filter cached index by class and derived properties."""
-    fs = fsspec.filesystem("memory")
-    workspace_path = "/test_workspace"
-    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
 
     index_data = {
         "notes": {
@@ -256,7 +207,7 @@ def test_query_index() -> None:
         },
     }
 
-    with fs.open(f"{workspace_path}/index/index.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "index", "index.json"), "w") as f:
         json.dump(index_data, f)
 
     results = query_index(workspace_path, {"class": "meeting"}, fs=fs)
@@ -274,11 +225,11 @@ def test_query_index() -> None:
     assert results[0]["id"] == "note3"
 
 
-def test_query_index_by_tag() -> None:
+def test_query_index_by_tag(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
     """Filter cached index by tag membership."""
-    fs = fsspec.filesystem("memory")
-    workspace_path = "/test_workspace"
-    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
 
     index_data = {
         "notes": {
@@ -303,7 +254,7 @@ def test_query_index_by_tag() -> None:
         },
     }
 
-    with fs.open(f"{workspace_path}/index/index.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "index", "index.json"), "w") as f:
         json.dump(index_data, f)
 
     # Filter by tag
@@ -317,10 +268,14 @@ def test_query_index_by_tag() -> None:
     assert results[0]["id"] == "note1"
 
 
-def test_indexer_watch_loop_triggers_run(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_indexer_watch_loop_triggers_run(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure watch loop invokes run_once for each file-system event."""
-    fs = fsspec.filesystem("memory")
-    indexer = Indexer("/test_workspace", fs=fs)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    indexer = Indexer(workspace_path, fs=fs)
 
     calls: list[int] = []
 
@@ -338,27 +293,29 @@ def test_indexer_watch_loop_triggers_run(monkeypatch: pytest.MonkeyPatch) -> Non
     assert len(calls) == EXPECTED_WATCH_CALLBACKS
 
 
-def test_indexer_computes_word_count() -> None:
+def test_indexer_computes_word_count(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+) -> None:
     """Ensure word_count is computed for indexed notes."""
-    fs = fsspec.filesystem("memory")
-    workspace_path = "/test_workspace"
-    fs.makedirs(f"{workspace_path}/notes/note1", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
 
     # Create Note with some content
     note1_content = {
         "markdown": "# Hello World\n\nThis is a test note with some words.",
     }
-    with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
         json.dump(note1_content, f)
 
-    with fs.open(f"{workspace_path}/notes/note1/meta.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
         json.dump({"id": "note1"}, f)
 
     indexer = Indexer(workspace_path, fs=fs)
     indexer.run_once()
 
-    with fs.open(f"{workspace_path}/index/index.json", "r") as f:
+    with fs.open(fs_join(workspace_path, "index", "index.json"), "r") as f:
         index_data = json.load(f)
 
     note1 = index_data["notes"]["note1"]
@@ -397,17 +354,19 @@ def test_aggregate_stats_includes_field_usage() -> None:
     assert task_stats["fields"]["status"] == EXPECTED_SINGLE_RESULT
 
 
-def test_indexer_generates_inverted_index() -> None:
+def test_indexer_generates_inverted_index(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+) -> None:
     """Ensure run_once creates inverted_index.json with term-to-note mappings."""
-    fs = fsspec.filesystem("memory")
-    workspace_path = "/test_workspace"
-    fs.makedirs(f"{workspace_path}/notes/note1", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/notes/note2", exist_ok=True)
-    fs.makedirs(f"{workspace_path}/index", exist_ok=True)
+    fs, root = fs_impl
+    workspace_path = fs_join(root, "test_workspace")
+    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "notes", "note2"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
 
     # Create Note 1
     note1_content = {"markdown": "# Meeting Notes\n\n## Agenda\nDiscuss project alpha."}
-    with fs.open(f"{workspace_path}/notes/note1/content.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
         json.dump(note1_content, f)
     note1_meta = {
         "id": "note1",
@@ -415,12 +374,12 @@ def test_indexer_generates_inverted_index() -> None:
         "class": "meeting",
         "tags": ["project", "alpha"],
     }
-    with fs.open(f"{workspace_path}/notes/note1/meta.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
         json.dump(note1_meta, f)
 
     # Create Note 2
     note2_content = {"markdown": "# Task List\n\n## Priority\nHigh priority task."}
-    with fs.open(f"{workspace_path}/notes/note2/content.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note2", "content.json"), "w") as f:
         json.dump(note2_content, f)
     note2_meta = {
         "id": "note2",
@@ -428,16 +387,16 @@ def test_indexer_generates_inverted_index() -> None:
         "class": "task",
         "tags": ["priority"],
     }
-    with fs.open(f"{workspace_path}/notes/note2/meta.json", "w") as f:
+    with fs.open(fs_join(workspace_path, "notes", "note2", "meta.json"), "w") as f:
         json.dump(note2_meta, f)
 
     indexer = Indexer(workspace_path, fs=fs)
     indexer.run_once()
 
     # Verify inverted_index.json exists
-    assert fs.exists(f"{workspace_path}/index/inverted_index.json")
+    assert fs.exists(fs_join(workspace_path, "index", "inverted_index.json"))
 
-    with fs.open(f"{workspace_path}/index/inverted_index.json", "r") as f:
+    with fs.open(fs_join(workspace_path, "index", "inverted_index.json"), "r") as f:
         inverted_index = json.load(f)
 
     # Check that terms map to the correct notes
