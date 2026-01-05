@@ -229,13 +229,20 @@ async def patch_workspace_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     root_path = get_root_path()
 
+    # Build patch dict from payload
+    patch_data = {}
+    if payload.name is not None:
+        patch_data["name"] = payload.name
+    if payload.storage_config is not None:
+        patch_data["storage_config"] = payload.storage_config
+    if payload.settings is not None:
+        patch_data["settings"] = payload.settings
+
     try:
         return patch_workspace(
             root_path,
             workspace_id,
-            name=payload.name,
-            storage_config=payload.storage_config,
-            settings=payload.settings,
+            patch=patch_data,
         )
     except FileNotFoundError as e:
         raise HTTPException(

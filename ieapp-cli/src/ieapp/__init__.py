@@ -6,6 +6,11 @@ from .attachments import (
     list_attachments,
     save_attachment,
 )
+from .hmac_manager import (
+    build_response_signature,
+    ensure_global_json,
+    load_hmac_material,
+)
 from .indexer import (
     Indexer,
     aggregate_stats,
@@ -49,12 +54,14 @@ __all__ = [
     "RevisionMismatchError",
     "WorkspaceExistsError",
     "aggregate_stats",
+    "build_response_signature",
     "create_link",
     "create_note",
     "create_workspace",
     "delete_attachment",
     "delete_link",
     "delete_note",
+    "ensure_global_json",
     "extract_properties",
     "get_note",
     "get_note_history",
@@ -66,6 +73,7 @@ __all__ = [
     "list_notes",
     "list_schemas",
     "list_workspaces",
+    "load_hmac_material",
     "patch_workspace",
     "query",  # Alias for query_index
     "query_index",

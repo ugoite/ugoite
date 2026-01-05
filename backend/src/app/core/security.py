@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
-import secrets
-import uuid
-from datetime import UTC, datetime
-from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
+
+import ieapp
 
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
     from collections.abc import Mapping
+    from pathlib import Path
 
 LOCAL_CLIENT_SENTINELS: Final[set[str]] = {
     "127.0.0.1",
@@ -60,54 +54,18 @@ def is_local_host(host: str | None) -> bool:
     return normalized.startswith(("127.", "::ffff:127."))
 
 
-@lru_cache(maxsize=32)
-def _load_hmac_material(root_path: str) -> tuple[str, bytes]:
-    """Load (or create) the global HMAC key for ``root_path``."""
-    root = Path(root_path)
-    root.mkdir(parents=True, exist_ok=True)
-    global_json = root / "global.json"
-
-    if not global_json.exists():
-        _write_default_global(global_json)
-
-    with global_json.open("r", encoding="utf-8") as handle:
-        global_data = json.load(handle)
-
-    key_b64 = global_data.get("hmac_key")
-    key_id = global_data.get("hmac_key_id", "default")
-
-    if not key_b64:
-        msg = "Missing hmac_key in global.json"
-        raise ValueError(msg)
-
-    secret = base64.b64decode(key_b64)
-    return key_id, secret
-
-
-def _write_default_global(path: Path) -> None:
-    """Write a default global.json with a random HMAC key."""
-    now_iso = datetime.now(UTC).isoformat()
-    key_id = f"key-{uuid.uuid4().hex}"
-    hmac_key = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-
-    payload = {
-        "version": 1,
-        "default_storage": f"file://{path.parent.resolve()}",
-        "workspaces": [],
-        "hmac_key_id": key_id,
-        "hmac_key": hmac_key,
-        "last_rotation": now_iso,
-    }
-
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
-
-    # Restrict permissions: owner read/write only (chmod 600)
-    path.chmod(0o600)
-
-
 def build_response_signature(body: bytes, root_path: Path) -> tuple[str, str]:
-    """Compute the HMAC signature for the response body."""
-    key_id, secret = _load_hmac_material(str(root_path))
-    signature = hmac.new(secret, body, hashlib.sha256).hexdigest()
-    return key_id, signature
+    """Compute the HMAC signature for the response body.
+
+    This function delegates to ieapp-cli which handles all file operations
+    through fsspec, ensuring proper abstraction and testability.
+
+    Args:
+        body: The response body bytes to sign.
+        root_path: The root directory where global.json is stored.
+
+    Returns:
+        Tuple of (key_id, signature_hex).
+
+    """
+    return ieapp.build_response_signature(body, root_path)

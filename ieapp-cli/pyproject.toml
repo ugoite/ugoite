@@ -44,4 +44,5 @@ select = ["ALL"]
 "src/ieapp/indexer.py" = ["ANN401"]
 "src/ieapp/notes.py" = ["PLR0913"]
 "src/ieapp/sandbox/execution.py" = ["PLR0915", "PLR0913", "TRY301", "BLE001"]
+"src/ieapp/hmac_manager.py" = ["ARG001"]  # protocol arg is cache key for lru_cache
 "scripts/build_sandbox.py" = ["S603"]
