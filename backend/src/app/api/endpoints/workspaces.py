@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 import uuid
 from typing import Annotated, Any
 
@@ -34,6 +33,7 @@ from ieapp.notes import (
     restore_note,
     update_note,
 )
+from ieapp.utils import validate_id
 from ieapp.workspace import (
     WorkspaceExistsError,
     create_workspace,
@@ -59,9 +59,6 @@ from app.models.schemas import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Pattern for valid IDs: alphanumeric, hyphens, underscores
-_SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
@@ -121,21 +118,14 @@ def _validate_note_markdown_against_schema(ws_path: str, markdown: str) -> None:
 
 
 def _validate_path_id(identifier: str, name: str) -> None:
-    """Validate identifier to prevent path traversal attacks.
-
-    Args:
-        identifier: The ID to validate.
-        name: Name of the parameter (for error messages).
-
-    Raises:
-        HTTPException: If the identifier is invalid.
-
-    """
-    if not identifier or not _SAFE_ID_PATTERN.match(identifier):
+    """Validate identifier using shared ieapp-cli rules."""
+    try:
+        validate_id(identifier, name)
+    except ValueError as exc:  # pragma: no cover - exercised via API tests
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid {name}: must be alphanumeric, hyphens, or underscores",
-        )
+            detail=str(exc),
+        ) from exc
 
 
 def _get_workspace_path(workspace_id: str) -> str:

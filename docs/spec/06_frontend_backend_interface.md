@@ -54,6 +54,11 @@ To ensure a responsive UI, the frontend implements optimistic updates for note m
   -   Stores `canvas_position` in note metadata (prepared for future).
   -   Currently ignores position updates if sent, or persists them blindly.
 
+## Storage Boundary (Backend ↔ ieapp-cli)
+- All filesystem IO (workspaces, notes, attachments, schemas, indices) lives in `ieapp-cli` and goes through `fsspec`; the backend only routes requests and never constructs directories/files directly.
+- `IEAPP_ROOT` can point to any `fsspec` URI (e.g., `file://…`, `memory://…`); backend tests run with file and memory implementations to guard the separation (`backend/tests/test_api_memory.py`).
+- ID validation is delegated to the shared library utilities to avoid backend-only rules and keep path safety logic centralized.
+
 ## Error Handling Standards
 
 | HTTP Status | Frontend Behavior | User Feedback |

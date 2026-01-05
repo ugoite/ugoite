@@ -77,6 +77,7 @@ To bridge the gap between Markdown freedom and Database structure, IEapp impleme
 *   Implements the MCP Server endpoints
 *   Manages the Wasm Sandbox (security, fuel limits)
 *   **Delegates all file operations to ieapp-cli**: No direct filesystem access
+*   Validated against multiple `fsspec` implementations (file + memory) via backend tests to ensure IO stays inside ieapp-cli
 *   Handles optional authentication (API keys, bearer tokens) while defaulting to trusted localhost-only mode, and enforces CORS
 
 ### `frontend` (UI)
