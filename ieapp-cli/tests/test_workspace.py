@@ -1,11 +1,8 @@
-"""Tests for workspace."""
-
-import fsspec
-
 """Tests for workspace management."""
 
 import json
 
+import fsspec
 import pytest
 
 from ieapp.utils import fs_join
@@ -71,6 +68,9 @@ def test_create_workspace_scaffolding(
                 # Check if group/other have no permissions
                 assert (mode & 0o077) == 0
         except NotImplementedError:
+            # Some fsspec implementations (e.g. in-memory) don't implement
+            # filesystem metadata like mode/stat. In those cases the test
+            # cannot assert permissions and should ignore the check.
             pass
 
 

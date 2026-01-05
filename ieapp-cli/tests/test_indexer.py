@@ -1,12 +1,12 @@
-"""Tests for indexer."""
+"""Tests for the ieapp indexer utilities.
 
-import fsspec
-
-"""Tests for the ieapp indexer utilities."""
+These tests verify indexing, property extraction and validation logic.
+"""
 
 import json
 from collections.abc import Callable
 
+import fsspec
 import pytest
 
 from ieapp.indexer import (

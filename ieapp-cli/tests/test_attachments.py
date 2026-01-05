@@ -1,14 +1,15 @@
-"""Tests for attachments."""
+"""Attachment helpers must work across fsspec implementations.
 
-import fsspec
-
-"""Attachment helpers must work across fsspec implementations."""
+These tests exercise saving, listing and deleting attachments and
+reference handling across multiple filesystem implementations.
+"""
 
 import hashlib
 import hmac
 import json
 from typing import Any
 
+import fsspec
 import pytest
 
 from ieapp.attachments import (
