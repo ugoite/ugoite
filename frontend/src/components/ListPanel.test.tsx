@@ -213,6 +213,7 @@ describe("ListPanel", () => {
 					onFilterClassChange={setFilterClass}
 				/>
 			));
+			expect(screen.queryByText("Filter by Class")).not.toBeInTheDocument();
 			// "Meeting" appears both in filter dropdown and schema list
 			expect(screen.getAllByText("Meeting").length).toBeGreaterThanOrEqual(1);
 			expect(screen.getAllByText("Task").length).toBeGreaterThanOrEqual(1);
