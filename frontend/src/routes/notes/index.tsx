@@ -1,35 +1,58 @@
-import { useNavigate } from "@solidjs/router";
-import { createResource, createSignal, Show, createEffect, onMount, For } from "solid-js";
-import { NoteList } from "~/components/NoteList";
-import { SchemaList } from "~/components/SchemaList";
+import { createResource, createSignal, Show, createEffect, onMount, createMemo } from "solid-js";
+import { AttachmentUploader } from "~/components/AttachmentUploader";
+import { CreateNoteDialog, CreateSchemaDialog } from "~/components/create-dialogs";
+import { ListPanel } from "~/components/ListPanel";
+import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { SchemaTable } from "~/components/SchemaTable";
-import { SearchBar } from "~/components/SearchBar";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
-import { noteApi, schemaApi } from "~/lib/client";
+import { attachmentApi, noteApi, schemaApi, RevisionConflictError } from "~/lib/client";
+import { replaceFirstH1, ensureClassFrontmatter } from "~/lib/markdown";
 import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
-import type { Schema, SearchResult } from "~/lib/types";
-
-/**
- * Replace the first level-1 heading in a markdown template with the provided title.
- * If no H1 is present, prepend one to the template.
- *
- * @param template - The markdown template to modify
- * @param title - The replacement title to put in the first H1
- * @returns The modified markdown content
- */
-import { replaceFirstH1, ensureClassFrontmatter } from "~/lib/markdown";
+import type { Attachment, NoteRecord } from "~/lib/types";
 
 export default function NotesIndexPage() {
-	const navigate = useNavigate();
 	const workspaceStore = createWorkspaceStore();
 	const workspaceId = () => workspaceStore.selectedWorkspaceId() || "";
 
 	const store = createNoteStore(workspaceId);
 
+	// View mode: notes or schemas (data models)
 	const [viewMode, setViewMode] = createSignal<"notes" | "schemas">("notes");
-	const [selectedSchema, setSelectedSchema] = createSignal<Schema | null>(null);
-	const [schemas] = createResource(
+
+	// Selected items
+	const [selectedNoteId, setSelectedNoteId] = createSignal<string | null>(null);
+	const [selectedSchema, setSelectedSchema] = createSignal<{
+		name: string;
+		fields: Record<string, { type: string }>;
+		template: string;
+	} | null>(null);
+
+	// Filter state
+	const [filterClass, setFilterClass] = createSignal<string>("");
+
+	// Search state
+	const [searchQuery, setSearchQuery] = createSignal("");
+	const [searchResults, setSearchResults] = createSignal<NoteRecord[]>([]);
+	const [isSearching, setIsSearching] = createSignal(false);
+
+	// Dialogs
+	const [showCreateNoteDialog, setShowCreateNoteDialog] = createSignal(false);
+	const [showCreateSchemaDialog, setShowCreateSchemaDialog] = createSignal(false);
+
+	// Editor state
+	const [editorContent, setEditorContent] = createSignal("");
+	const [isDirty, setIsDirty] = createSignal(false);
+	const [isSaving, setIsSaving] = createSignal(false);
+	const [conflictMessage, setConflictMessage] = createSignal<string | null>(null);
+	const [currentRevisionId, setCurrentRevisionId] = createSignal<string | null>(null);
+	const [lastLoadedNoteId, setLastLoadedNoteId] = createSignal<string | null>(null);
+
+	// Attachments
+	const [attachments, setAttachments] = createSignal<Attachment[]>([]);
+
+	// Schemas resource
+	const [schemas, { refetch: refetchSchemas }] = createResource(
 		() => {
 			const wsId = workspaceId();
 			return wsId ? wsId : null;
@@ -40,27 +63,73 @@ export default function NotesIndexPage() {
 		},
 	);
 
-	const [newNoteClass, setNewNoteClass] = createSignal<string>("");
+	// Selected note resource
+	const [selectedNote, { refetch: refetchNote }] = createResource(
+		() => {
+			const wsId = workspaceId();
+			const noteId = selectedNoteId();
+			return wsId && noteId ? { wsId, noteId } : null;
+		},
+		async (p) => {
+			if (!p) return null;
+			try {
+				return await noteApi.get(p.wsId, p.noteId);
+			} catch {
+				return null;
+			}
+		},
+	);
 
-	// Search state
-	const [searchResults, setSearchResults] = createSignal<SearchResult[]>([]);
-	const [isSearching, setIsSearching] = createSignal(false);
-
+	// Initialize workspace
 	onMount(() => {
 		workspaceStore.loadWorkspaces().catch(() => {
 			// ignore
 		});
 	});
 
+	// Load notes when workspace changes
 	createEffect(() => {
 		const wsId = workspaceId();
 		if (wsId && workspaceStore.initialized()) {
 			store.loadNotes();
 			setSearchResults([]);
 			setIsSearching(false);
+			setSelectedNoteId(null);
+			setSelectedSchema(null);
+			// Load attachments
+			attachmentApi
+				.list(wsId)
+				.then(setAttachments)
+				.catch(() => setAttachments([]));
 		}
 	});
 
+	// Sync editor content when note changes
+	createEffect(() => {
+		const note = selectedNote();
+		if (note && note.id !== lastLoadedNoteId()) {
+			setLastLoadedNoteId(note.id);
+			setCurrentRevisionId(note.revision_id);
+			setEditorContent(note.content ?? "");
+			setIsDirty(false);
+			setConflictMessage(null);
+		}
+	});
+
+	// Computed: filtered notes for display
+	const displayNotes = createMemo(() => {
+		// If searching, use search results
+		if (searchQuery().trim()) {
+			return filterClass()
+				? searchResults().filter((n) => n.class === filterClass())
+				: searchResults();
+		}
+		// Otherwise use store notes, filtered by class if set
+		const notes = store.notes() || [];
+		return filterClass() ? notes.filter((n) => n.class === filterClass()) : notes;
+	});
+
+	// Handlers
 	const handleWorkspaceSelect = (wsId: string) => {
 		workspaceStore.selectWorkspace(wsId);
 	};
@@ -74,53 +143,50 @@ export default function NotesIndexPage() {
 		}
 	};
 
-	// Execute search without blocking UI
-	const executeSearch = async (query: string, controller: AbortController) => {
-		try {
-			const results = await noteApi.search(workspaceId(), query);
-			if (!controller.signal.aborted) {
-				setSearchResults(results);
-			}
-		} catch {
-			if (!controller.signal.aborted) {
-				setSearchResults([]);
-			}
-		} finally {
-			if (!controller.signal.aborted) {
-				setIsSearching(false);
-			}
-		}
-	};
-
+	// Search handler
 	let searchTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	let searchAbortController: AbortController | null = null;
+
 	const handleSearch = (query: string) => {
-		if (searchTimeoutId) {
-			clearTimeout(searchTimeoutId);
-		}
-		if (searchAbortController) {
-			searchAbortController.abort();
-		}
+		setSearchQuery(query);
+		if (searchTimeoutId) clearTimeout(searchTimeoutId);
+		if (searchAbortController) searchAbortController.abort();
+
 		if (!query.trim()) {
 			setSearchResults([]);
 			setIsSearching(false);
 			return;
 		}
+
 		setIsSearching(true);
-		searchTimeoutId = setTimeout(() => {
+		searchTimeoutId = setTimeout(async () => {
 			searchAbortController = new AbortController();
-			const currentController = searchAbortController;
-			Promise.resolve().then(() => executeSearch(query, currentController));
+			try {
+				const results = await noteApi.search(workspaceId(), query);
+				if (!searchAbortController.signal.aborted) {
+					setSearchResults(results as NoteRecord[]);
+				}
+			} catch {
+				if (!searchAbortController?.signal.aborted) {
+					setSearchResults([]);
+				}
+			} finally {
+				if (!searchAbortController?.signal.aborted) {
+					setIsSearching(false);
+				}
+			}
 		}, 300);
 	};
 
-	const handleCreateNote = async () => {
-		const title = prompt("Enter note title:");
-		if (!title) return;
+	// Note selection
+	const handleSelectNote = (noteId: string) => {
+		setSelectedNoteId(noteId);
+		setLastLoadedNoteId(null); // Force reload
+	};
 
-		const className = newNoteClass();
+	// Create note
+	const handleCreateNote = async (title: string, className: string) => {
 		const schema = (schemas() || []).find((s) => s.name === className);
-
 		let initialContent = `# ${title}\n\nStart writing here...`;
 		if (className && schema) {
 			initialContent = ensureClassFrontmatter(replaceFirstH1(schema.template, title), className);
@@ -128,10 +194,96 @@ export default function NotesIndexPage() {
 
 		try {
 			const result = await store.createNote(initialContent);
-			navigate(`/notes/${result.id}`);
+			setShowCreateNoteDialog(false);
+			setSelectedNoteId(result.id);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create note");
 		}
+	};
+
+	// Create schema
+	const handleCreateSchema = async (name: string) => {
+		try {
+			await schemaApi.create(workspaceId(), {
+				name,
+				fields: {},
+				template: `# New ${name}\n\n`,
+			});
+			setShowCreateSchemaDialog(false);
+			refetchSchemas();
+		} catch (e) {
+			alert(e instanceof Error ? e.message : "Failed to create data model");
+		}
+	};
+
+	// Editor handlers
+	const handleContentChange = (content: string) => {
+		setEditorContent(content);
+		setIsDirty(true);
+		setConflictMessage(null);
+	};
+
+	const handleSave = async () => {
+		const wsId = workspaceId();
+		const noteId = selectedNoteId();
+		const revisionId = currentRevisionId() || selectedNote()?.revision_id;
+
+		if (!wsId || !noteId || !revisionId) {
+			setConflictMessage("Cannot save: note not properly loaded. Please try refreshing.");
+			return;
+		}
+
+		setIsSaving(true);
+		setConflictMessage(null);
+
+		try {
+			const result = await noteApi.update(wsId, noteId, {
+				markdown: editorContent(),
+				parent_revision_id: revisionId,
+			});
+			setCurrentRevisionId(result.revision_id);
+			setIsDirty(false);
+			// Reload note list to reflect changes
+			store.loadNotes();
+		} catch (e) {
+			if (e instanceof RevisionConflictError) {
+				setConflictMessage(
+					"This note was modified elsewhere. Please refresh to see the latest version.",
+				);
+			} else {
+				setConflictMessage(e instanceof Error ? e.message : "Failed to save");
+			}
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
+	const handleDelete = async () => {
+		const wsId = workspaceId();
+		const noteId = selectedNoteId();
+		if (!wsId || !noteId) return;
+		if (!confirm("Are you sure you want to delete this note?")) return;
+
+		try {
+			await noteApi.delete(wsId, noteId);
+			setSelectedNoteId(null);
+			store.loadNotes();
+		} catch (e) {
+			alert(e instanceof Error ? e.message : "Failed to delete note");
+		}
+	};
+
+	const handleAttachmentUpload = async (file: File): Promise<Attachment> => {
+		const attachment = await attachmentApi.upload(workspaceId(), file);
+		const wsId = workspaceId();
+		if (wsId) {
+			try {
+				setAttachments(await attachmentApi.list(wsId));
+			} catch {
+				// ignore
+			}
+		}
+		return attachment;
 	};
 
 	return (
@@ -148,14 +300,14 @@ export default function NotesIndexPage() {
 				/>
 
 				{/* View Mode Switcher */}
-				<div class="flex border-b border-gray-200 dark:border-gray-800">
+				<div class="flex border-b border-gray-200">
 					<button
 						type="button"
 						onClick={() => setViewMode("notes")}
 						class={`flex-1 py-3 text-sm font-medium text-center ${
 							viewMode() === "notes"
-								? "text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20"
-								: "text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+								? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+								: "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
 						}`}
 					>
 						Notes
@@ -165,122 +317,134 @@ export default function NotesIndexPage() {
 						onClick={() => setViewMode("schemas")}
 						class={`flex-1 py-3 text-sm font-medium text-center ${
 							viewMode() === "schemas"
-								? "text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20"
-								: "text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+								? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+								: "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
 						}`}
 					>
 						Data Models
 					</button>
 				</div>
 
-				<Show when={viewMode() === "notes"}>
-					{/* Create Note */}
-					<div class="p-4 border-b space-y-3">
-						<button
-							type="button"
-							onClick={handleCreateNote}
-							class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2"
-						>
-							<svg
-								class="w-5 h-5"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-								aria-hidden="true"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M12 4v16m8-8H4"
-								/>
-							</svg>
-							New Note
-						</button>
-
-						<Show when={(schemas() || []).length > 0}>
-							<div>
-								<label class="block text-xs font-medium text-gray-600 mb-1" for="new-note-class">
-									Class (optional)
-								</label>
-								<select
-									id="new-note-class"
-									class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
-									value={newNoteClass()}
-									onChange={(e) => setNewNoteClass(e.currentTarget.value)}
-								>
-									<option value="">(none)</option>
-									<For each={schemas() || []}>
-										{(s) => <option value={s.name}>{s.name}</option>}
-									</For>
-								</select>
-							</div>
-						</Show>
-					</div>
-
-					{/* Search */}
-					<div class="p-4 border-b">
-						<SearchBar
-							onSearch={handleSearch}
-							loading={isSearching()}
-							resultsCount={searchResults().length}
-						/>
-					</div>
-
-					{/* Note List */}
-					<div class="flex-1 overflow-auto p-4">
-						<Show
-							when={searchResults().length === 0}
-							fallback={
-								<NoteList
-									notes={() => searchResults()}
-									loading={() => isSearching()}
-									error={() => null}
-									onSelect={(noteId) => navigate(`/notes/${noteId}`)}
-								/>
-							}
-						>
-							<NoteList
-								notes={store.notes}
-								loading={store.loading}
-								error={store.error}
-								onSelect={(noteId) => navigate(`/notes/${noteId}`)}
-							/>
-						</Show>
-					</div>
-				</Show>
-
-				<Show when={viewMode() === "schemas"}>
-					<SchemaList
-						schemas={schemas() || []}
-						selectedSchema={selectedSchema()}
-						onSelect={setSelectedSchema}
-					/>
-				</Show>
+				{/* List Panel */}
+				<ListPanel
+					mode={viewMode()}
+					schemas={schemas() || []}
+					filterClass={filterClass}
+					onFilterClassChange={setFilterClass}
+					onCreate={() =>
+						viewMode() === "notes" ? setShowCreateNoteDialog(true) : setShowCreateSchemaDialog(true)
+					}
+					onSearch={viewMode() === "notes" ? handleSearch : undefined}
+					isSearching={isSearching()}
+					searchResultsCount={searchResults().length}
+					notes={viewMode() === "notes" ? displayNotes() : undefined}
+					loading={store.loading()}
+					error={store.error()}
+					selectedId={selectedNoteId() || undefined}
+					onSelectNote={handleSelectNote}
+					onSelectSchema={setSelectedSchema}
+					selectedSchema={selectedSchema()}
+				/>
 			</aside>
 
 			{/* Main Content */}
 			<div class="flex-1 flex flex-col overflow-hidden">
 				<Show when={viewMode() === "notes"}>
-					<div class="flex-1 flex items-center justify-center text-gray-400">
-						<div class="text-center">
-							<svg
-								class="w-16 h-16 mx-auto mb-4 opacity-50"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-								aria-hidden="true"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="1"
-									d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-								/>
-							</svg>
-							<p>Select a note to view</p>
+					<Show
+						when={selectedNoteId() && selectedNote()}
+						fallback={
+							<div class="flex-1 flex items-center justify-center text-gray-400">
+								<div class="text-center">
+									<svg
+										class="w-16 h-16 mx-auto mb-4 opacity-50"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="1"
+											d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+										/>
+									</svg>
+									<p>Select a note to view</p>
+								</div>
+							</div>
+						}
+					>
+						{/* Note Editor */}
+						<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
+							<div>
+								<h2 class="font-semibold text-gray-800">{selectedNote()?.title || "Untitled"}</h2>
+								<Show when={selectedNote()?.class}>
+									<span class="text-sm text-gray-500">Class: {selectedNote()?.class}</span>
+								</Show>
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => refetchNote()}
+									class="p-2 hover:bg-gray-100 rounded"
+									aria-label="Refresh"
+								>
+									<svg
+										class="w-5 h-5"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+										/>
+									</svg>
+								</button>
+								<button
+									type="button"
+									onClick={handleDelete}
+									class="p-2 text-red-500 hover:bg-red-50 rounded"
+									aria-label="Delete note"
+								>
+									<svg
+										class="w-5 h-5"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+										/>
+									</svg>
+								</button>
+							</div>
 						</div>
-					</div>
+
+						<div class="flex-1 bg-white overflow-hidden flex flex-col">
+							<MarkdownEditor
+								content={editorContent()}
+								onChange={handleContentChange}
+								onSave={handleSave}
+								isDirty={isDirty()}
+								isSaving={isSaving()}
+								conflictMessage={conflictMessage() || undefined}
+								showPreview
+								placeholder="Start writing in Markdown..."
+							/>
+
+							<div class="border-t p-4">
+								<AttachmentUploader onUpload={handleAttachmentUpload} attachments={attachments()} />
+							</div>
+						</div>
+					</Show>
 				</Show>
 
 				<Show when={viewMode() === "schemas"}>
@@ -312,12 +476,29 @@ export default function NotesIndexPage() {
 							<SchemaTable
 								workspaceId={workspaceId()}
 								schema={schema()}
-								onNoteClick={(noteId) => navigate(`/notes/${noteId}`)}
+								onNoteClick={(noteId) => {
+									setViewMode("notes");
+									setSelectedNoteId(noteId);
+								}}
 							/>
 						)}
 					</Show>
 				</Show>
 			</div>
+
+			{/* Dialogs */}
+			<CreateNoteDialog
+				open={showCreateNoteDialog()}
+				schemas={schemas() || []}
+				onClose={() => setShowCreateNoteDialog(false)}
+				onSubmit={handleCreateNote}
+			/>
+
+			<CreateSchemaDialog
+				open={showCreateSchemaDialog()}
+				onClose={() => setShowCreateSchemaDialog(false)}
+				onSubmit={handleCreateSchema}
+			/>
 		</main>
 	);
 }
