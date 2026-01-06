@@ -84,15 +84,21 @@ export default function NotesRoute(props: RouteSectionProps) {
 	});
 
 	// Load notes when workspace changes
-	createEffect(() => {
+	createEffect((prevWsId) => {
 		const wsId = workspaceId();
 		if (wsId && workspaceStore.initialized()) {
 			noteStore.loadNotes();
 			setSearchResults([]);
 			setIsSearching(false);
-			navigate("/notes", { replace: true });
+
+			// Only redirect to /notes if the workspace actually changed
+			// and we're not already on a notes-related path
+			if (prevWsId && prevWsId !== wsId) {
+				navigate("/notes", { replace: true });
+			}
 		}
-	});
+		return wsId;
+	}, "");
 
 	// Computed: filtered notes for display
 	const displayNotes = createMemo(() => {
@@ -198,6 +204,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 				workspaceId,
 				noteStore,
 				schemas: () => schemas() || [],
+				loadingSchemas: () => schemas.loading,
 				refetchSchemas,
 			}}
 		>
