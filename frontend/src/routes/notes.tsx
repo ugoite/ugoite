@@ -1,6 +1,14 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, onMount, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createResource,
+	createSignal,
+	onMount,
+	onCleanup,
+	Show,
+} from "solid-js";
 import { CreateNoteDialog, CreateSchemaDialog } from "~/components/create-dialogs";
 import { ListPanel } from "~/components/ListPanel";
 import { SchemaTable } from "~/components/SchemaTable";

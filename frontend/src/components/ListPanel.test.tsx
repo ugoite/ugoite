@@ -218,8 +218,8 @@ describe("ListPanel", () => {
 			expect(screen.getAllByText("Meeting").length).toBeGreaterThanOrEqual(1);
 			expect(screen.getAllByText("Task").length).toBeGreaterThanOrEqual(1);
 			// Check for "fields" text which only appears in schema list
-			expect(screen.getByText("2 fields")).toBeInTheDocument();
-			expect(screen.getByText("1 fields")).toBeInTheDocument();
+			expect(screen.getByText(/2\s+fields/)).toBeInTheDocument();
+			expect(screen.getByText(/1\s+field/)).toBeInTheDocument();
 		});
 
 		it("should highlight selected schema", () => {
