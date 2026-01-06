@@ -345,7 +345,8 @@ function SchemaListContent(props: SchemaListContentProps) {
 							>
 								<div class="font-semibold text-gray-900">{schema.name}</div>
 								<div class="text-xs text-gray-500 mt-1">
-									{Object.keys(schema.fields).length} fields
+									{Object.keys(schema.fields).length}{" "}
+									{Object.keys(schema.fields).length === 1 ? "field" : "fields"}
 								</div>
 							</button>
 						</li>

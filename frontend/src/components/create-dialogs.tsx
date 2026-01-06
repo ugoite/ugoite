@@ -28,6 +28,10 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 		if (typeof document !== "undefined") {
 			document.addEventListener("keydown", handleKeyDown);
 		}
+		// Focus input when dialog opens
+		if (props.open) {
+			setTimeout(() => inputRef?.focus(), 50);
+		}
 	});
 
 	onCleanup(() => {
@@ -53,13 +57,6 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 			setSelectedClass("");
 		}
 	};
-
-	// Focus input when dialog opens
-	onMount(() => {
-		if (props.open && inputRef) {
-			setTimeout(() => inputRef?.focus(), 50);
-		}
-	});
 
 	return (
 		<Show when={props.open}>

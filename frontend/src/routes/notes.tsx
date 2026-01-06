@@ -59,6 +59,11 @@ export default function NotesRoute(props: RouteSectionProps) {
 		});
 	});
 
+	onCleanup(() => {
+		if (searchTimeoutId) clearTimeout(searchTimeoutId);
+		if (searchAbortController) searchAbortController.abort();
+	});
+
 	// Load notes when workspace changes
 	createEffect(() => {
 		const wsId = workspaceId();
