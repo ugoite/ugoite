@@ -72,6 +72,9 @@ export default function NotesRoute(props: RouteSectionProps) {
 		},
 	);
 
+	const safeSchemas = createMemo(() => schemas() || []);
+	const loadingSchemas = createMemo(() => schemas.loading);
+
 	onMount(() => {
 		workspaceStore.loadWorkspaces().catch(() => {
 			// ignore
@@ -203,8 +206,8 @@ export default function NotesRoute(props: RouteSectionProps) {
 				workspaceStore,
 				workspaceId,
 				noteStore,
-				schemas: () => schemas() || [],
-				loadingSchemas: () => schemas.loading,
+				schemas: safeSchemas,
+				loadingSchemas,
 				refetchSchemas,
 			}}
 		>

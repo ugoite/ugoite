@@ -1,4 +1,4 @@
-import { For, createResource, createSignal, createMemo } from "solid-js";
+import { For, createResource, createSignal, createMemo, untrack } from "solid-js";
 import type { Schema, NoteRecord } from "~/lib/types";
 import { workspaceApi } from "~/lib/client";
 
@@ -9,6 +9,40 @@ interface SchemaTableProps {
 }
 
 type SortDirection = "asc" | "desc" | null;
+
+/** Helper to filter notes by title or properties */
+function filterNotes(notes: NoteRecord[], fields: string[], query: string) {
+	if (!query) return notes;
+	const text = query.toLowerCase();
+	return notes.filter((note) => {
+		const title = (note.title || "").toLowerCase();
+		if (title.includes(text)) return true;
+		for (const field of fields) {
+			const val = String(note.properties?.[field] ?? "").toLowerCase();
+			if (val.includes(text)) return true;
+		}
+		return false;
+	});
+}
+
+/** Helper for column-specific filtering */
+function applyColumnFilters(notes: NoteRecord[], filters: Record<string, string>) {
+	const activeFilters = Object.entries(filters).filter(([_, val]) => !!val);
+	if (activeFilters.length === 0) return notes;
+
+	return notes.filter((note) => {
+		for (const [field, filter] of activeFilters) {
+			const filterLower = filter.toLowerCase();
+			let val = "";
+			if (field === "title") val = note.title || "";
+			else if (field === "updated_at") val = new Date(note.updated_at).toLocaleDateString();
+			else val = String(note.properties?.[field] ?? "");
+
+			if (!val.toLowerCase().includes(filterLower)) return false;
+		}
+		return true;
+	});
+}
 
 function sortNotes(notes: NoteRecord[], field: string, direction: SortDirection) {
 	if (!field || !direction) return notes;
@@ -78,6 +112,26 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
 	);
 }
 
+/** Helper to format a single note as a CSV row */
+function formatCsvRow(note: NoteRecord, headers: string[]) {
+	return headers
+		.map((field) => {
+			let val = "";
+			if (field === "title") val = note.title || "";
+			else if (field === "updated_at") {
+				try {
+					val = new Date(note.updated_at).toISOString();
+				} catch {
+					val = note.updated_at;
+				}
+			} else {
+				val = String(note.properties?.[field] ?? "");
+			}
+			return `"${val.replace(/"/g, '""')}"`;
+		})
+		.join(",");
+}
+
 export function SchemaTable(props: SchemaTableProps) {
 	// State for filtering and sorting
 	const [globalFilter, setGlobalFilter] = createSignal("");
@@ -87,49 +141,25 @@ export function SchemaTable(props: SchemaTableProps) {
 
 	const [notes] = createResource(
 		() => {
-			if (!props.workspaceId) return null;
+			if (!props.workspaceId || !props.schema?.name) return false;
 			return { id: props.workspaceId, schemaName: props.schema.name };
 		},
 		async ({ id, schemaName }) => {
-			setGlobalFilter("");
-			setSortField(null);
-			setSortDirection(null);
-			setColumnFilters({});
 			return await workspaceApi.query(id, { class: schemaName });
 		},
 	);
 
-	const fields = createMemo(() => Object.keys(props.schema.fields));
+	const fields = createMemo(() => (props.schema?.fields ? Object.keys(props.schema.fields) : []));
 
 	const processedNotes = createMemo(() => {
-		let result = (notes() || []) as NoteRecord[];
+		const currentNotes = notes();
+		if (!currentNotes) return [] as NoteRecord[];
 
 		// 1. Global Filter
-		if (globalFilter()) {
-			const text = globalFilter().toLowerCase();
-			result = result.filter((note) => {
-				if (note.title?.toLowerCase().includes(text)) return true;
-				for (const field of fields()) {
-					const val = String(note.properties?.[field] ?? "").toLowerCase();
-					if (val.includes(text)) return true;
-				}
-				return false;
-			});
-		}
+		let result = filterNotes([...currentNotes], fields(), globalFilter());
 
 		// 2. Column Filters
-		const filters = columnFilters();
-		for (const [field, filter] of Object.entries(filters)) {
-			if (!filter) continue;
-			const filterLower = filter.toLowerCase();
-			result = result.filter((note) => {
-				let val = "";
-				if (field === "title") val = note.title || "";
-				else if (field === "updated_at") val = new Date(note.updated_at).toLocaleDateString();
-				else val = String(note.properties?.[field] ?? "");
-				return val.toLowerCase().includes(filterLower);
-			});
-		}
+		result = applyColumnFilters(result, columnFilters());
 
 		// 3. Sorting
 		return sortNotes(result, sortField() || "", sortDirection());
@@ -150,31 +180,34 @@ export function SchemaTable(props: SchemaTableProps) {
 	};
 
 	const downloadCSV = () => {
-		const data = processedNotes();
-		const headers = ["title", ...fields(), "updated_at"];
-		const csvContent = [
-			headers.join(","),
-			...data.map((note) => {
-				return headers
-					.map((field) => {
-						let val = "";
-						if (field === "title") val = note.title || "";
-						else if (field === "updated_at") val = note.updated_at;
-						else val = String(note.properties?.[field] ?? "");
-						return `"${val.replace(/"/g, '""')}"`;
-					})
-					.join(",");
-			}),
-		].join("\n");
+		// Use untrack and try-catch for robustness in handler
+		try {
+			const { data, fieldNames, schemaName } = untrack(() => ({
+				data: processedNotes(),
+				fieldNames: fields(),
+				schemaName: props.schema?.name || "export",
+			}));
 
-		const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-		const link = document.createElement("a");
-		const url = URL.createObjectURL(blob);
-		link.setAttribute("href", url);
-		link.setAttribute("download", `${props.schema.name}_export.csv`);
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
+			const headers = ["title", ...fieldNames, "updated_at"];
+			const csvContent = [headers.join(","), ...data.map((n) => formatCsvRow(n, headers))].join(
+				"\n",
+			);
+
+			const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.setAttribute("href", url);
+			link.setAttribute("download", `${schemaName}_export.csv`);
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			// Clean up the URL object after some time
+			setTimeout(() => URL.revokeObjectURL(url), 100);
+		} catch (err) {
+			// biome-ignore lint/suspicious/noConsole: error reporting
+			console.error("CSV Export failed:", err);
+			alert("Failed to export CSV. Please check the console for details.");
+		}
 	};
 
 	return (
@@ -301,7 +334,7 @@ export function SchemaTable(props: SchemaTableProps) {
 						<tbody class="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-800">
 							<For each={processedNotes()}>
 								{(note) => (
-									// biome-ignore lint/a11y/useSemanticElements: Table rows cannot be buttons >
+									// biome-ignore lint/a11y/useSemanticElements: Table rows cannot be buttons
 									<tr
 										class="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
 										onClick={() => props.onNoteClick(note.id)}

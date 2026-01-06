@@ -16,6 +16,7 @@ export default function SchemaRoute() {
 	return (
 		<Show
 			when={schema()}
+			keyed
 			fallback={
 				<div class="p-8 text-center text-gray-500">
 					{ctx.loadingSchemas() ? "Loading data models..." : "Data model not found"}
