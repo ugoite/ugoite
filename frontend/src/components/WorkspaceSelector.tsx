@@ -35,7 +35,7 @@ export function WorkspaceSelector(props: WorkspaceSelectorProps) {
 	return (
 		<div class="border-b bg-gray-50 px-4 py-2">
 			<div class="flex items-center gap-2">
-				<label for="workspace-select" class="text-xs text-gray-500 font-medium">
+				<label for="workspace-select" class="text-xs text-gray-500 font-medium shrink-0">
 					Workspace:
 				</label>
 				<Show when={props.loading}>
@@ -44,7 +44,7 @@ export function WorkspaceSelector(props: WorkspaceSelectorProps) {
 				<Show when={!props.loading}>
 					<select
 						id="workspace-select"
-						class="flex-1 text-sm border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+						class="min-w-0 flex-1 text-sm border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
 						value={props.selectedWorkspaceId || ""}
 						onChange={(e) => props.onSelect(e.currentTarget.value)}
 					>
@@ -56,7 +56,7 @@ export function WorkspaceSelector(props: WorkspaceSelectorProps) {
 					</select>
 					<button
 						type="button"
-						class="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+						class="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded shrink-0"
 						title="Create new workspace"
 						onClick={() => setShowCreateForm(true)}
 					>

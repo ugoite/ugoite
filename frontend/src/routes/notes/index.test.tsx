@@ -1,17 +1,22 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@solidjs/testing-library";
-import NotesIndexPage from "./index";
-import { resetMockData, seedWorkspace } from "~/test/mocks/handlers";
-import type { Workspace } from "~/lib/types";
-import { schemaApi } from "~/lib/client";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import NotesRoute from "../notes";
+import { resetMockData, seedNote, seedWorkspace } from "~/test/mocks/handlers";
+import type { Note, NoteRecord, Workspace } from "~/lib/types";
+
+const navigateMock = vi.fn();
+const paramsMock: { noteId?: string } = {};
 
 vi.mock("@solidjs/router", () => ({
-	useNavigate: () => vi.fn(),
+	useNavigate: () => navigateMock,
+	useParams: () => paramsMock,
 }));
 
-describe("/notes (index route)", () => {
+describe("/notes (layout route)", () => {
 	beforeEach(() => {
+		navigateMock.mockReset();
+		paramsMock.noteId = undefined;
 		resetMockData();
 		const ws: Workspace = {
 			id: "default",
@@ -19,19 +24,38 @@ describe("/notes (index route)", () => {
 			created_at: "2025-01-01T00:00:00Z",
 		};
 		seedWorkspace(ws);
+
+		const note: Note = {
+			id: "note-1",
+			content: "# Test Note\n\nBody",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		};
+		const record: NoteRecord = {
+			id: "note-1",
+			title: "Test Note",
+			class: null,
+			updated_at: "2026-01-01T00:00:00Z",
+			created_at: "2026-01-01T00:00:00Z",
+			properties: {},
+			links: [],
+		};
+		seedNote("default", note, record);
 	});
 
-	it("does not call schemaApi.list with empty workspaceId", async () => {
-		const spy = vi.spyOn(schemaApi, "list");
-		render(() => <NotesIndexPage />);
+	it("REQ-FE-008: selecting a note navigates to /notes/:id", async () => {
+		render(() => (
+			<NotesRoute>
+				<div data-testid="route-children" />
+			</NotesRoute>
+		));
 
 		await waitFor(() => {
-			// Workspace store should eventually select a workspace
-			expect(spy).toHaveBeenCalled();
+			expect(screen.getByText("Test Note")).toBeInTheDocument();
 		});
 
-		for (const call of spy.mock.calls) {
-			expect(call[0]).not.toBe("");
-		}
+		fireEvent.click(screen.getByText("Test Note"));
+		expect(navigateMock).toHaveBeenCalledWith("/notes/note-1");
 	});
 });
