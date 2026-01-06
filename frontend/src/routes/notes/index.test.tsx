@@ -7,10 +7,12 @@ import type { Note, NoteRecord, Workspace } from "~/lib/types";
 
 const navigateMock = vi.fn();
 const paramsMock: { noteId?: string } = {};
+const locationMock = { pathname: "/notes" };
 
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
 	useParams: () => paramsMock,
+	useLocation: () => locationMock,
 }));
 
 describe("/notes (layout route)", () => {
