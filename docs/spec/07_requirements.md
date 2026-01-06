@@ -728,6 +728,50 @@ Workspace settings MUST allow configuring storage backends (local, S3, remote) w
 
 ---
 
+### REQ-FE-018: Data Models View with Routing
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) FR-04.1
+
+Frontend MUST provide a high-performance data model view using nested routing (`/notes/models/[class]`) to prevent full application redraws when switching between models.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/routes/notes/index.test.tsx` | `REQ-FE-018: selecting a data model navigates correctly` |
+
+---
+
+### REQ-FE-019: Multi-column Sorting
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) FR-04.2
+
+SchemaTable MUST support sorting by any displayed field (Title, schema-defined properties, Updated Date) with visual indicators.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-019: sorts notes when clicking headers` |
+
+---
+
+### REQ-FE-020: Hybrid Filtering
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) FR-04.3
+
+SchemaTable MUST provide both global keyword search and column-specific filtering to refine viewed records.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-020: filters notes globally` |
+
+---
+
+### REQ-FE-021: Context-aware CSV Export
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) FR-04.4
+
+Users MUST be able to export currently viewed records (respecting active filters and sort order) to a CSV file.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-021: exports filtered data to CSV` |
+
+---
+
 ## 9. E2E (End-to-End) Requirements
 
 ### REQ-E2E-001: Frontend Accessibility
@@ -799,9 +843,9 @@ mise run e2e
 | Security | 2 | ✅ | - | - |
 | Sandbox | 5 | ✅ | - | - |
 | REST API | 3 | ✅ | ✅ | ✅ |
-| Frontend | 17 | - | ✅ | ✅ |
+| Frontend | 21 | - | ✅ | ✅ |
 | E2E | 2 | - | - | ✅ |
-| **Total** | **55** | **35** | **34** | **22** |
+| **Total** | **59** | **35** | **38** | **22** |
 
 ---
 
@@ -809,6 +853,7 @@ mise run e2e
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-06 | 1.4.0 | Added REQ-FE-018 through REQ-FE-021 for Data Models View (Sorting, Filtering, CSV Export); Updated total from 55 to 59 requirements |
 | 2026-01-02 | 1.3.0 | Integrated Milestone 6 features as REQ-FE-014 through REQ-FE-017; Updated total from 46 to 55 requirements |
 | 2025-12-31 | 1.2.0 | Added REQ-FE-013 for save persistence verification; Enhanced REQ-FE-010/011/012 with critical implementation requirements |
 | 2025-12-31 | 1.1.0 | Added REQ-FE-010, REQ-FE-011, REQ-FE-012 for editor content persistence |
