@@ -16,6 +16,7 @@ import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { NotesRouteContext } from "~/lib/notes-route-context";
 import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
+import type { NoteRecord } from "~/lib/types";
 
 export default function NotesRoute(props: RouteSectionProps) {
 	const navigate = useNavigate();
@@ -74,7 +75,6 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	const safeSchemas = createMemo(() => schemas() || []);
 	const loadingSchemas = createMemo(() => schemas.loading);
-
 	onMount(() => {
 		workspaceStore.loadWorkspaces().catch(() => {
 			// ignore
