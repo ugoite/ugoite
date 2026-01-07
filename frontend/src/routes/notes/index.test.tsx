@@ -7,10 +7,12 @@ import type { Note, NoteRecord, Workspace } from "~/lib/types";
 
 const navigateMock = vi.fn();
 const paramsMock: { noteId?: string } = {};
+const locationMock = { pathname: "/notes" };
 
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
 	useParams: () => paramsMock,
+	useLocation: () => locationMock,
 }));
 
 describe("/notes (layout route)", () => {
@@ -57,5 +59,20 @@ describe("/notes (layout route)", () => {
 
 		fireEvent.click(screen.getByText("Test Note"));
 		expect(navigateMock).toHaveBeenCalledWith("/notes/note-1");
+	});
+
+	it("REQ-FE-018: selecting a data model navigates correctly", async () => {
+		render(() => (
+			<NotesRoute>
+				<div data-testid="route-children" />
+			</NotesRoute>
+		));
+
+		await waitFor(() => {
+			expect(screen.getByText("Data Models")).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByText("Data Models"));
+		expect(navigateMock).toHaveBeenCalledWith("/notes/models");
 	});
 });

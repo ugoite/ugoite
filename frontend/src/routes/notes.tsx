@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useLocation } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
 import {
 	createEffect,
@@ -7,21 +7,20 @@ import {
 	createSignal,
 	onMount,
 	onCleanup,
-	Show,
 } from "solid-js";
 import { CreateNoteDialog, CreateSchemaDialog } from "~/components/create-dialogs";
 import { ListPanel } from "~/components/ListPanel";
-import { SchemaTable } from "~/components/SchemaTable";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { schemaApi, noteApi } from "~/lib/client";
 import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { NotesRouteContext } from "~/lib/notes-route-context";
 import { createNoteStore } from "~/lib/store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
-import type { NoteRecord, Schema } from "~/lib/types";
+import type { NoteRecord } from "~/lib/types";
 
 export default function NotesRoute(props: RouteSectionProps) {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const params = useParams<{ noteId?: string }>();
 
 	const workspaceStore = createWorkspaceStore();
@@ -29,11 +28,24 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	const noteStore = createNoteStore(workspaceId);
 
-	// View mode: notes or schemas (data models)
-	const [viewMode, setViewMode] = createSignal<"notes" | "schemas">("notes");
+	// View mode: notes or schemas (data models) derived from URL
+	const viewMode = () => (location.pathname.includes("/notes/models") ? "schemas" : "notes");
 
-	// Schemas selection
-	const [selectedSchema, setSelectedSchema] = createSignal<Schema | null>(null);
+	// Schemas selection derived from URL
+	const selectedSchemaName = () => {
+		const parts = location.pathname.split("/");
+		const modelsIndex = parts.indexOf("models");
+		if (modelsIndex !== -1 && parts.length > modelsIndex + 1) {
+			return decodeURIComponent(parts[modelsIndex + 1]);
+		}
+		return null;
+	};
+
+	const selectedSchema = () => {
+		const name = selectedSchemaName();
+		if (!name) return null;
+		return schemas()?.find((s) => s.name === name) || null;
+	};
 
 	// Filter state (notes only)
 	const [filterClass, setFilterClass] = createSignal<string>("");
@@ -61,6 +73,8 @@ export default function NotesRoute(props: RouteSectionProps) {
 		},
 	);
 
+	const safeSchemas = createMemo(() => schemas() || []);
+	const loadingSchemas = createMemo(() => schemas.loading);
 	onMount(() => {
 		workspaceStore.loadWorkspaces().catch(() => {
 			// ignore
@@ -73,17 +87,21 @@ export default function NotesRoute(props: RouteSectionProps) {
 	});
 
 	// Load notes when workspace changes
-	createEffect(() => {
+	createEffect((prevWsId) => {
 		const wsId = workspaceId();
 		if (wsId && workspaceStore.initialized()) {
 			noteStore.loadNotes();
 			setSearchResults([]);
 			setIsSearching(false);
-			setSelectedSchema(null);
-			setViewMode("notes");
-			navigate("/notes", { replace: true });
+
+			// Only redirect to /notes if the workspace actually changed
+			// and we're not already on a notes-related path
+			if (prevWsId && prevWsId !== wsId) {
+				navigate("/notes", { replace: true });
+			}
 		}
-	});
+		return wsId;
+	}, "");
 
 	// Computed: filtered notes for display
 	const displayNotes = createMemo(() => {
@@ -147,7 +165,6 @@ export default function NotesRoute(props: RouteSectionProps) {
 	};
 
 	const handleSelectNote = (noteId: string) => {
-		setViewMode("notes");
 		navigate(`/notes/${noteId}`);
 	};
 
@@ -162,7 +179,6 @@ export default function NotesRoute(props: RouteSectionProps) {
 		try {
 			const result = await noteStore.createNote(initialContent);
 			setShowCreateNoteDialog(false);
-			setViewMode("notes");
 			navigate(`/notes/${result.id}`);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create note");
@@ -190,7 +206,8 @@ export default function NotesRoute(props: RouteSectionProps) {
 				workspaceStore,
 				workspaceId,
 				noteStore,
-				schemas: () => schemas() || [],
+				schemas: safeSchemas,
+				loadingSchemas,
 				refetchSchemas,
 			}}
 		>
@@ -208,7 +225,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 					<div class="flex border-b border-gray-200">
 						<button
 							type="button"
-							onClick={() => setViewMode("notes")}
+							onClick={() => navigate("/notes")}
 							class={`flex-1 py-3 text-sm font-medium text-center ${
 								viewMode() === "notes"
 									? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
@@ -219,11 +236,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 						</button>
 						<button
 							type="button"
-							onClick={() => {
-								setViewMode("schemas");
-								setSelectedSchema(null);
-								navigate("/notes", { replace: true });
-							}}
+							onClick={() => navigate("/notes/models")}
 							class={`flex-1 py-3 text-sm font-medium text-center ${
 								viewMode() === "schemas"
 									? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
@@ -252,49 +265,12 @@ export default function NotesRoute(props: RouteSectionProps) {
 						error={noteStore.error()}
 						selectedId={selectedNoteId() || undefined}
 						onSelectNote={handleSelectNote}
-						onSelectSchema={setSelectedSchema}
+						onSelectSchema={(s) => navigate(`/notes/models/${encodeURIComponent(s.name)}`)}
 						selectedSchema={selectedSchema()}
 					/>
 				</aside>
 
-				<div class="flex-1 flex flex-col overflow-hidden">
-					<Show when={viewMode() === "notes"}>{props.children}</Show>
-
-					<Show when={viewMode() === "schemas"}>
-						<Show
-							when={selectedSchema()}
-							fallback={
-								<div class="flex-1 flex items-center justify-center text-gray-400">
-									<div class="text-center">
-										<svg
-											class="w-16 h-16 mx-auto mb-4 opacity-50"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24"
-											aria-hidden="true"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="1"
-												d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
-											/>
-										</svg>
-										<p>Select a data model to view records</p>
-									</div>
-								</div>
-							}
-						>
-							{(schema) => (
-								<SchemaTable
-									workspaceId={workspaceId()}
-									schema={schema()}
-									onNoteClick={(noteId) => handleSelectNote(noteId)}
-								/>
-							)}
-						</Show>
-					</Show>
-				</div>
+				<div class="flex-1 flex flex-col overflow-hidden">{props.children}</div>
 
 				<CreateNoteDialog
 					open={showCreateNoteDialog()}

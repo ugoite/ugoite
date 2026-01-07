@@ -9,6 +9,7 @@ export interface NotesRouteContextValue {
 	workspaceId: Accessor<string>;
 	noteStore: NoteStore;
 	schemas: Accessor<Schema[]>;
+	loadingSchemas: Accessor<boolean>;
 	refetchSchemas: () => void;
 }
 
