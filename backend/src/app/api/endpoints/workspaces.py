@@ -9,6 +9,7 @@ import ieapp
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from ieapp import (
     AttachmentReferencedError,
+    Indexer,
     create_link,
     delete_attachment,
     delete_link,
@@ -281,6 +282,7 @@ async def create_note_endpoint(
 
     try:
         create_note(ws_path, note_id, payload.content)
+        Indexer(str(ws_path)).run_once()
         # Get the created note to retrieve revision_id
         note_data = get_note(ws_path, note_id)
     except NoteExistsError as e:
@@ -360,6 +362,7 @@ async def update_note_endpoint(
             payload.parent_revision_id,
             attachments=payload.attachments,
         )
+        Indexer(str(ws_path)).run_once()
         # Return the updated note with id and revision_id
         updated_note = get_note(ws_path, note_id)
         return {
@@ -485,6 +488,7 @@ async def delete_note_endpoint(
 
     try:
         delete_note(ws_path, note_id)
+        Indexer(str(ws_path)).run_once()
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -564,7 +568,8 @@ async def restore_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return restore_note(ws_path, note_id, payload.revision_id)
+        note_data = restore_note(ws_path, note_id, payload.revision_id)
+        Indexer(str(ws_path)).run_once()
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -576,6 +581,8 @@ async def restore_note_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
+
+    return note_data
 
 
 @router.post(
