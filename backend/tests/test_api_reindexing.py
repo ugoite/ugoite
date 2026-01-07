@@ -9,7 +9,7 @@ def test_update_note_reflects_in_query(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """Test that updating a note reflects in the query index."""
+    """Test that updating a note reflects in the query index (REQ-IDX-001)."""
     # 1. Create Workspace
     ws_id = "reindex-test-ws"
     test_client.post("/workspaces", json={"name": ws_id})

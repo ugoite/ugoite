@@ -289,7 +289,7 @@ def create_note(
     fs_write_json(fs_obj, fs_join(note_dir, "meta.json"), meta, exclusive=True)
 
     # Refresh the workspace index
-    Indexer(str(ws_path), fs=fs_obj).run_once()
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
 
 def update_note(
@@ -392,7 +392,7 @@ def update_note(
     )
 
     # Refresh the workspace index
-    Indexer(str(ws_path), fs=fs_obj).run_once()
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
 
 def _finalize_revision(
@@ -596,7 +596,7 @@ def delete_note(
     if hard_delete:
         fs_obj.rm(note_dir, recursive=True)
         # Refresh the workspace index
-        Indexer(str(ws_path), fs=fs_obj).run_once()
+        Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
         return
 
     meta_path = fs_join(note_dir, "meta.json")
@@ -611,7 +611,7 @@ def delete_note(
     fs_write_json(fs_obj, meta_path, meta)
 
     # Refresh the workspace index
-    Indexer(str(ws_path), fs=fs_obj).run_once()
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
 
 def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
@@ -784,7 +784,7 @@ def restore_note(
     fs_write_json(fs_obj, meta_path, meta)
 
     # Refresh the workspace index
-    Indexer(str(ws_path), fs=fs_obj).run_once()
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
     return {
         "revision_id": new_rev_id,
