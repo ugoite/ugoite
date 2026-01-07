@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import fsspec
 
 
+from .indexer import Indexer
 from .utils import (
     fs_exists,
     fs_join,
@@ -94,4 +95,8 @@ def upsert_schema(
 
     schema_path = fs_join(schemas_dir, f"{name}.json")
     fs_write_json(fs_obj, schema_path, schema_data)
+
+    # Refresh the workspace index
+    Indexer(str(ws_path), fs=fs_obj).run_once()
+
     return schema_data

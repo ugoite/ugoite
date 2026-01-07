@@ -564,7 +564,7 @@ async def restore_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return restore_note(ws_path, note_id, payload.revision_id)
+        note_data = restore_note(ws_path, note_id, payload.revision_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -576,6 +576,8 @@ async def restore_note_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
+
+    return note_data
 
 
 @router.post(

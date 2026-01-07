@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - platform specific
     # fcntl is not available on Windows/python distributions such as pypy
     fcntl: Any | None = None
 
+from .indexer import Indexer
 from .integrity import IntegrityProvider
 from .utils import (
     fs_exists,
@@ -287,6 +288,9 @@ def create_note(
 
     fs_write_json(fs_obj, fs_join(note_dir, "meta.json"), meta, exclusive=True)
 
+    # Refresh the workspace index
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
+
 
 def update_note(
     workspace_path: str | Path,
@@ -386,6 +390,9 @@ def update_note(
         content,
         parsed,
     )
+
+    # Refresh the workspace index
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
 
 def _finalize_revision(
@@ -588,6 +595,8 @@ def delete_note(
 
     if hard_delete:
         fs_obj.rm(note_dir, recursive=True)
+        # Refresh the workspace index
+        Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
         return
 
     meta_path = fs_join(note_dir, "meta.json")
@@ -600,6 +609,9 @@ def delete_note(
     meta["deleted_at"] = time.time()
 
     fs_write_json(fs_obj, meta_path, meta)
+
+    # Refresh the workspace index
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
 
 def get_note_history(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
@@ -770,6 +782,9 @@ def restore_note(
     meta["updated_at"] = timestamp
     meta["integrity"] = {"checksum": checksum, "signature": signature}
     fs_write_json(fs_obj, meta_path, meta)
+
+    # Refresh the workspace index
+    Indexer(str(ws_path), fs=fs_obj).update_note_index(note_id)
 
     return {
         "revision_id": new_rev_id,

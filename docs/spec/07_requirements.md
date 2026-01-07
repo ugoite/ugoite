@@ -238,6 +238,7 @@ Update `index/index.json` and `index/stats.json` on note changes.
 | pytest | `ieapp-cli/tests/test_indexer.py` | `test_indexer_run_once` |
 | pytest | `ieapp-cli/tests/test_indexer.py` | `test_aggregate_stats` |
 | pytest | `ieapp-cli/tests/test_indexer.py` | `test_aggregate_stats_includes_field_usage` |
+| pytest | `backend/tests/test_api_reindexing.py` | `test_update_note_reflects_in_query` |
 
 ---
 

@@ -263,6 +263,67 @@ class Indexer:
         self.workspace_path = workspace_path.rstrip("/")
         self.fs = fs or fsspec.filesystem("file")
 
+    def update_note_index(self, note_id: str) -> None:
+        """Incrementally update the index for a single note.
+
+        Args:
+            note_id: The ID of the note to update.
+
+        """
+        index_path = f"{self.workspace_path}/index/index.json"
+        stats_path = f"{self.workspace_path}/index/stats.json"
+        inverted_index_path = f"{self.workspace_path}/index/inverted_index.json"
+
+        if (
+            not self.fs.exists(index_path)
+            or not self.fs.exists(stats_path)
+            or not self.fs.exists(inverted_index_path)
+        ):
+            self.run_once()
+            return
+
+        # Load schemas for validation
+        schemas = self._load_schemas(f"{self.workspace_path}/schemas")
+
+        # Load existing index
+        with self.fs.open(index_path, "r") as f:
+            index_payload = json.load(f)
+
+        # Build new record if note still exists
+        note_dir = f"{self.workspace_path}/notes/{note_id}"
+        new_record = None
+        if self.fs.exists(note_dir):
+            new_record = self._build_record(note_dir, note_id, schemas)
+
+        # Update index.json
+        notes = index_payload.get("notes", {})
+        if new_record:
+            notes[note_id] = new_record
+        elif note_id in notes:
+            del notes[note_id]
+
+        # Recalculate stats and inverted index
+        # NOTE: For true performance on large datasets, we should update these
+        # incrementally too. But aggregate_stats(notes) is already much faster
+        # than scanning the disk.
+        stats_data = aggregate_stats(notes)
+        index_payload["notes"] = notes
+        index_payload["class_stats"] = stats_data["class_stats"]
+
+        with self.fs.open(index_path, "w") as f:
+            json.dump(index_payload, f, indent=2)
+
+        inverted_index = self._build_inverted_index(notes)
+        with self.fs.open(inverted_index_path, "w") as f:
+            json.dump(inverted_index, f, indent=2)
+
+        stats_payload = {
+            **stats_data,
+            "last_indexed": time.time(),
+        }
+        with self.fs.open(stats_path, "w") as f:
+            json.dump(stats_payload, f, indent=2)
+
     def run_once(self) -> None:
         """Build the structured cache and stats once.
 
