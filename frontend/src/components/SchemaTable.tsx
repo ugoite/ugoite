@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import type { Schema, NoteRecord } from "~/lib/types";
 import { workspaceApi, noteApi } from "~/lib/client";
+import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "~/lib/markdown";
 
 interface SchemaTableProps {
 	workspaceId: string;
@@ -223,23 +224,36 @@ export function SchemaTable(props: SchemaTableProps) {
 
 	const handleAddRow = async () => {
 		try {
+			let content = props.schema.template || `# New ${props.schema.name}\n`;
+			content = ensureClassFrontmatter(content, props.schema.name);
+
 			await noteApi.create(props.workspaceId, {
-				class: props.schema.name,
-				title: "",
-				properties: {},
+				content,
 			});
 			refetch();
 		} catch (err) {
 			// biome-ignore lint/suspicious/noConsole: error logging
 			console.error("Failed to add row", err);
-			alert("Failed to add row");
+			alert(`Failed to add row: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	};
 
 	const handleCellUpdate = async (noteId: string, field: string, value: string) => {
 		try {
-			const payload = field === "title" ? { title: value } : { properties: { [field]: value } };
-			await noteApi.update(props.workspaceId, noteId, payload);
+			// Fetch full note to get content and revision_id
+			const note = await noteApi.get(props.workspaceId, noteId);
+			let updatedMarkdown = note.content;
+
+			if (field === "title") {
+				updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
+			} else {
+				updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
+			}
+
+			await noteApi.update(props.workspaceId, noteId, {
+				markdown: updatedMarkdown,
+				parent_revision_id: note.revision_id,
+			});
 			// Optional: we might not need to refetch if we update local state, but strict consistency is safest
 			// refetch();
 			// Better to refetch to get updated_at etc.
@@ -247,7 +261,7 @@ export function SchemaTable(props: SchemaTableProps) {
 		} catch (err) {
 			// biome-ignore lint/suspicious/noConsole: error logging
 			console.error("Update failed", err);
-			alert("Update failed");
+			alert(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	};
 
@@ -351,7 +365,11 @@ export function SchemaTable(props: SchemaTableProps) {
 	};
 
 	return (
-		<div class="flex-1 h-full overflow-auto bg-white dark:bg-gray-950">
+		<div
+			class={`flex-1 h-full overflow-auto bg-white dark:bg-gray-950 ${
+				isSelecting() ? "select-none" : ""
+			}`}
+		>
 			<div class="p-6">
 				<div class="mb-6 flex justify-between items-start">
 					<div>
@@ -384,22 +402,24 @@ export function SchemaTable(props: SchemaTableProps) {
 							onClick={() => setIsEditMode(!isEditMode())}
 							class={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors ${
 								isEditMode()
-									? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-100"
+									? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-100"
 									: "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
 							}`}
 							title={isEditMode() ? "Disable Editing" : "Enable Editing"}
 						>
 							{isEditMode() ? (
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<title>Unlocked</title>
 									<path
 										stroke-linecap="round"
 										stroke-linejoin="round"
 										stroke-width="2"
-										d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a1 1 0 001-1v-6a1 1 0 00-1-1H9a1 1 0 00-1 1v6a1 1 0 001 1z"
+										d="M8 11V7a4 4 0 118 0m4 10v2m-6 4h12a1 1 0 001-1v-6a1 1 0 00-1-1H9a1 1 0 00-1 1v6a1 1 0 001 1z"
 									/>
 								</svg>
 							) : (
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<title>Locked</title>
 									<path
 										stroke-linecap="round"
 										stroke-linejoin="round"
@@ -414,7 +434,7 @@ export function SchemaTable(props: SchemaTableProps) {
 									/>
 								</svg>
 							)}
-							{isEditMode() ? "Unlock" : "Lock"}
+							{isEditMode() ? "Editable" : "Locked"}
 						</button>
 						<Show when={isEditMode()}>
 							<button

@@ -149,7 +149,12 @@ describe("SchemaTable", () => {
 		fireEvent.click(addButton);
 
 		await waitFor(() => {
-			expect(createSpy).toHaveBeenCalledWith("ws", expect.objectContaining({ class: "Test" }));
+			expect(createSpy).toHaveBeenCalledWith(
+				"ws",
+				expect.objectContaining({
+					content: expect.stringContaining("class: Test"),
+				}),
+			);
 		});
 		createSpy.mockRestore();
 	});
@@ -163,6 +168,11 @@ describe("SchemaTable", () => {
 			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
 		];
 		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const getSpy = vi.spyOn(noteApi, "get").mockResolvedValue({
+			id: "1",
+			content: "# Note1\n\n## col\nval",
+			revision_id: "rev1",
+		} as any);
 		const updateSpy = vi.spyOn(noteApi, "update").mockResolvedValue({} as any);
 
 		const { getByText, getByTitle, getByDisplayValue } = render(() => (
@@ -189,10 +199,12 @@ describe("SchemaTable", () => {
 				"ws",
 				"1",
 				expect.objectContaining({
-					properties: { col: "new-val" },
+					markdown: expect.stringContaining("new-val"),
+					parent_revision_id: "rev1",
 				}),
 			);
 		});
 		updateSpy.mockRestore();
+		getSpy.mockRestore();
 	});
 });
