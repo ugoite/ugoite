@@ -10,6 +10,7 @@ export interface NotesRouteContextValue {
 	noteStore: NoteStore;
 	schemas: Accessor<Schema[]>;
 	loadingSchemas: Accessor<boolean>;
+	columnTypes: Accessor<string[]>;
 	refetchSchemas: () => void;
 }
 
