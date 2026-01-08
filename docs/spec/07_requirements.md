@@ -843,6 +843,7 @@ CLI and Backend MUST expose available column types for class creation.
 | Test Type | File | Test Name |
 |-----------|------|-----------|
 | pytest | `ieapp-cli/tests/test_schemas.py` | `test_list_column_types` |
+| pytest | `ieapp-cli/tests/test_cli_schema.py` | `test_cli_list_types` |
 | pytest | `backend/tests/test_api.py` | `test_get_schema_types` |
 
 ### REQ-SCH-002: Class Migration Strategy
@@ -852,7 +853,8 @@ When updating a schema, allow specifying migration strategies for existing field
 
 | Test Type | File | Test Name |
 |-----------|------|-----------|
-| pytest | `ieapp-cli/tests/test_schemas.py` | `test_migrate_schema_strategies` |
+| pytest | `ieapp-cli/tests/test_schemas.py` | `test_migrate_schema_add_column_with_default`, `test_migrate_schema_remove_column` |
+| pytest | `ieapp-cli/tests/test_cli_schema.py` | `test_cli_schema_update` |
 | pytest | `backend/tests/test_api.py` | `test_update_schema_with_migration` |
 
 ---

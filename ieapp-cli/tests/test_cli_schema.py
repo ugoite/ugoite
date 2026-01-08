@@ -11,7 +11,7 @@ runner = CliRunner()
 
 
 def test_cli_list_types() -> None:
-    """Test listing column types."""
+    """Test listing column types (REQ-SCH-001)."""
     result = runner.invoke(app, ["schema", "list-types"])
     assert result.exit_code == 0
     assert "string" in result.stdout
@@ -19,7 +19,7 @@ def test_cli_list_types() -> None:
 
 
 def test_cli_schema_update(tmp_path: Path) -> None:
-    """Test updating schema via CLI."""
+    """Test updating schema via CLI (REQ-SCH-002)."""
     ws_root = tmp_path / "root"
     ws_root.mkdir()
 
