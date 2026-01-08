@@ -43,4 +43,10 @@ describe("markdown utils", () => {
 		const out = updateH2Section(md, "NewSec", "NewVal");
 		expect(out).toContain("## NewSec\nNewVal");
 	});
+
+	it("updateH2Section handles special regex characters in title", () => {
+		const md = "# Title\n\n## Section (Special) [Ref]\nOldValue";
+		const out = updateH2Section(md, "Section (Special) [Ref]", "NewValue");
+		expect(out).toContain("## Section (Special) [Ref]\nNewValue");
+	});
 });

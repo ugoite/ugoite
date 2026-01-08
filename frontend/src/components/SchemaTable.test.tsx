@@ -258,4 +258,66 @@ describe("SchemaTable", () => {
 		expect(getByTitle("Unlocked")).toBeInTheDocument();
 		expect(queryByTitle("Locked")).not.toBeInTheDocument();
 	});
+	it("REQ-FE-031: keyboard copy shortcut", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{
+				id: "1",
+				title: "Note1",
+				properties: { col: "val1" },
+				updated_at: new Date("2026-01-01").toISOString(),
+			},
+			{
+				id: "2",
+				title: "Note2",
+				properties: { col: "val2" },
+				updated_at: new Date("2026-01-02").toISOString(),
+			},
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
+
+		const { getByText } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		await waitFor(() => getByText("Note1"));
+
+		// Simulate drag selection from (0,0) to (1,1)
+		// Col 0: Title, Col 1: col
+		const cell1 = getByText("Note1");
+		const cell2 = getByText("val2");
+
+		fireEvent.mouseDown(cell1);
+		fireEvent.mouseEnter(cell2, { buttons: 1 });
+		fireEvent.mouseUp(document);
+
+		// Trigger Ctrl+C
+		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+
+		expect(writeTextSpy).toHaveBeenCalledWith("Note1\tval1\nNote2\tval2");
+	});
+
+	it("should not trigger custom copy when input is focused", async () => {
+		const schema = { name: "Test", fields: {} } as any;
+		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+		const writeTextSpy = vi.fn();
+		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
+
+		const { getByPlaceholderText } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		const searchInput = getByPlaceholderText("Global Search...");
+		searchInput.focus();
+
+		// We need to trigger the keydown event on document since that's where the listener is
+		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+
+		expect(writeTextSpy).not.toHaveBeenCalled();
+	});
 });

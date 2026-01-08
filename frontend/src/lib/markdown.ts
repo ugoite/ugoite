@@ -61,13 +61,21 @@ export function ensureClassFrontmatter(markdown: string, className: string): str
 }
 
 /**
+ * Helper to escape regex special characters.
+ */
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Update the content of an H2 section.
  * If the section exists, replace its content until the next header.
  * If it doesn't exist, append it to the end.
  */
 export function updateH2Section(markdown: string, sectionTitle: string, newValue: string): string {
 	const lines = markdown.split(/\r?\n/);
-	const h2Regex = new RegExp(`^##\\s+${sectionTitle}\\s*$`, "i");
+	const escapedTitle = escapeRegExp(sectionTitle);
+	const h2Regex = new RegExp(`^##\\s+${escapedTitle}\\s*$`, "i");
 
 	let sectionIdx = -1;
 	for (let i = 0; i < lines.length; i++) {

@@ -245,17 +245,19 @@ export function SchemaTable(props: SchemaTableProps) {
 			let updatedMarkdown = note.content;
 
 			if (field === "title") {
+				if (note.title === value) return;
 				updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
 			} else {
+				if (String(note.properties?.[field] ?? "") === value) return;
 				updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
 			}
 
-			await noteApi.update(props.workspaceId, noteId, {
+			const updatedNote = await noteApi.update(props.workspaceId, noteId, {
 				markdown: updatedMarkdown,
 				parent_revision_id: note.revision_id,
 			});
 
-			// Partial rendering: update local state without full refetch
+			// Partial rendering: update local state with server response
 			mutate((prev) => {
 				if (!prev) return prev;
 				return prev.map((n) => {
@@ -266,7 +268,7 @@ export function SchemaTable(props: SchemaTableProps) {
 						} else {
 							next.properties = { ...(n.properties || {}), [field]: value };
 						}
-						next.updated_at = new Date().toISOString();
+						next.updated_at = updatedNote.updated_at;
 						return next;
 					}
 					return n;
@@ -352,18 +354,27 @@ export function SchemaTable(props: SchemaTableProps) {
 
 	const handleGlobalKeyDown = async (e: KeyboardEvent) => {
 		if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+			// If focus is in an input or textarea, let the default copy behavior handle it
+			const active = document.activeElement;
+			if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+				return;
+			}
 			e.preventDefault();
 			await copySelection();
 		}
 	};
 
 	const handleCellMouseDown = (r: number, c: number) => {
-		setIsSelecting(true);
+		// Only set start/end, don't set isSelecting yet to allow text selection
 		setSelection({ start: { r, c }, end: { r, c } });
 	};
 
-	const handleCellMouseEnter = (r: number, c: number) => {
+	const handleCellMouseEnter = (e: MouseEvent, r: number, c: number) => {
 		if (isSelecting()) {
+			setSelection((prev) => ({ ...prev, end: { r, c } }));
+		} else if (selection().start && e.buttons === 1) {
+			// Start drag selection if moving between cells with button down
+			setIsSelecting(true);
 			setSelection((prev) => ({ ...prev, end: { r, c } }));
 		}
 	};
@@ -483,8 +494,9 @@ export function SchemaTable(props: SchemaTableProps) {
 								<th
 									scope="col"
 									class="w-10 px-4 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
+									aria-label="Actions"
 								>
-									{/* Action Column for Link */}
+									<span class="sr-only">Actions</span>
 								</th>
 								<th
 									scope="col"
@@ -592,7 +604,7 @@ export function SchemaTable(props: SchemaTableProps) {
 												isSelected(rowIndex(), 0) ? "bg-blue-100 dark:bg-blue-900" : ""
 											}`}
 											onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
-											onMouseEnter={() => handleCellMouseEnter(rowIndex(), 0)}
+											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), 0)}
 											onClick={(e) => {
 												if (isEditMode()) {
 													e.stopPropagation();
@@ -607,8 +619,11 @@ export function SchemaTable(props: SchemaTableProps) {
 												<input
 													value={note.title || ""}
 													onBlur={(e) => {
-														handleCellUpdate(note.id, "title", e.currentTarget.value);
-														setEditingCell(null);
+														const newVal = e.currentTarget.value;
+														handleCellUpdate(note.id, "title", newVal);
+														if (editingCell()?.id === note.id && editingCell()?.field === "title") {
+															setEditingCell(null);
+														}
 													}}
 													onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
 													class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
@@ -627,7 +642,9 @@ export function SchemaTable(props: SchemaTableProps) {
 															: ""
 													}`}
 													onMouseDown={() => handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
-													onMouseEnter={() => handleCellMouseEnter(rowIndex(), fieldIndex() + 1)}
+													onMouseEnter={(e) =>
+														handleCellMouseEnter(e, rowIndex(), fieldIndex() + 1)
+													}
 													onClick={(e) => {
 														if (isEditMode()) {
 															e.stopPropagation();
@@ -642,8 +659,14 @@ export function SchemaTable(props: SchemaTableProps) {
 														<input
 															value={String(note.properties?.[field] ?? "")}
 															onBlur={(e) => {
-																handleCellUpdate(note.id, field, e.currentTarget.value);
-																setEditingCell(null);
+																const newVal = e.currentTarget.value;
+																handleCellUpdate(note.id, field, newVal);
+																if (
+																	editingCell()?.id === note.id &&
+																	editingCell()?.field === field
+																) {
+																	setEditingCell(null);
+																}
 															}}
 															onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
 															class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
@@ -661,7 +684,7 @@ export function SchemaTable(props: SchemaTableProps) {
 													: ""
 											}`}
 											onMouseDown={() => handleCellMouseDown(rowIndex(), fields().length + 1)}
-											onMouseEnter={() => handleCellMouseEnter(rowIndex(), fields().length + 1)}
+											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), fields().length + 1)}
 										>
 											{new Date(note.updated_at).toLocaleDateString()}
 										</td>
