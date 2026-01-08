@@ -96,6 +96,14 @@ export const workspaceApi = {
  * Schema API client
  */
 export const schemaApi = {
+	async listTypes(workspaceId: string): Promise<string[]> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/schemas/types`);
+		if (!res.ok) {
+			throw new Error(`Failed to list schema types: ${res.statusText}`);
+		}
+		return (await res.json()) as string[];
+	},
+
 	async list(workspaceId: string): Promise<Schema[]> {
 		const res = await apiFetch(`/workspaces/${workspaceId}/schemas`);
 		if (!res.ok) throw new Error(`Failed to list schemas: ${res.statusText}`);

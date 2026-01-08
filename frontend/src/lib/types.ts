@@ -117,6 +117,7 @@ export interface SchemaCreatePayload {
 	template: string;
 	fields: Record<string, SchemaField>;
 	defaults?: Record<string, unknown>;
+	strategies?: Record<string, unknown>;
 }
 
 /** Query request */

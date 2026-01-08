@@ -75,3 +75,4 @@ class SchemaCreate(BaseModel):
     template: str
     fields: dict[str, dict[str, Any]]
     defaults: dict[str, Any] | None = None
+    strategies: dict[str, Any] | None = None

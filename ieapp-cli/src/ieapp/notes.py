@@ -446,12 +446,18 @@ def _finalize_revision(
     fs_write_json(fs, meta_path, meta)
 
 
-def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
+def get_note(
+    workspace_path: str | Path,
+    note_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
     """Retrieve a note's content and metadata.
 
     Args:
         workspace_path: Absolute path to the workspace directory.
         note_id: Identifier for the note.
+        fs: Optional fsspec filesystem to use.
 
     Returns:
         Dictionary containing note content and metadata.
@@ -461,7 +467,7 @@ def get_note(workspace_path: str | Path, note_id: str) -> dict[str, Any]:
 
     """
     safe_note_id = validate_id(note_id, "note_id")
-    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path)
+    fs_obj, ws_path, _workspace_id = _workspace_context(workspace_path, fs)
 
     note_dir = fs_join(ws_path, "notes", safe_note_id)
     if not fs_exists(fs_obj, note_dir):

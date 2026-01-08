@@ -31,7 +31,13 @@ from .notes import (
     restore_note,
     update_note,
 )
-from .schemas import get_schema, list_schemas, upsert_schema
+from .schemas import (
+    get_schema,
+    list_column_types,
+    list_schemas,
+    migrate_schema,
+    upsert_schema,
+)
 from .search import search_notes
 from .utils import resolve_existing_path
 from .workspace import (
@@ -69,11 +75,13 @@ __all__ = [
     "get_schema",
     "get_workspace",
     "list_attachments",
+    "list_column_types",
     "list_links",
     "list_notes",
     "list_schemas",
     "list_workspaces",
     "load_hmac_material",
+    "migrate_schema",
     "patch_workspace",
     "query",  # Alias for query_index
     "query_index",

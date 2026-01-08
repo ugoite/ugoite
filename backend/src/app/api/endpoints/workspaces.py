@@ -14,8 +14,10 @@ from ieapp import (
     delete_link,
     get_schema,
     list_attachments,
+    list_column_types,
     list_links,
     list_schemas,
+    migrate_schema,
     save_attachment,
     search_notes,
     upsert_schema,
@@ -715,6 +717,24 @@ async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
         ) from e
 
 
+@router.get("/workspaces/{workspace_id}/schemas/types")
+async def list_schema_types_endpoint(workspace_id: str) -> list[str]:
+    """Get list of available column types."""
+    _validate_path_id(workspace_id, "workspace_id")
+    try:
+        # Verify workspace exists even though types are static
+        _get_workspace_path(workspace_id)
+        return list_column_types()
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        logger.exception("Failed to list schema types")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
 @router.get("/workspaces/{workspace_id}/schemas/{class_name}")
 async def get_schema_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
     """Get a specific schema definition."""
@@ -747,7 +767,15 @@ async def create_schema_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return upsert_schema(ws_path, payload.model_dump())
+        # Separate strategies from persistent schema definition
+        schema_data = payload.model_dump()
+        strategies = schema_data.pop("strategies", None)
+
+        if strategies:
+            migrate_schema(ws_path, schema_data, strategies=strategies)
+            return get_schema(ws_path, payload.name)
+
+        return upsert_schema(ws_path, schema_data)
     except Exception as e:
         logger.exception("Failed to upsert schema")
         raise HTTPException(

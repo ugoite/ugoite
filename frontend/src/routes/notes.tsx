@@ -9,6 +9,7 @@ import {
 	onCleanup,
 } from "solid-js";
 import { CreateNoteDialog, CreateSchemaDialog } from "~/components/create-dialogs";
+import type { SchemaCreatePayload } from "~/lib/types";
 import { ListPanel } from "~/components/ListPanel";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { schemaApi, noteApi } from "~/lib/client";
@@ -70,6 +71,14 @@ export default function NotesRoute(props: RouteSectionProps) {
 		async (wsId) => {
 			if (!wsId) return [];
 			return await schemaApi.list(wsId);
+		},
+	);
+
+	const [columnTypes] = createResource(
+		() => workspaceId(),
+		async (wsId) => {
+			if (!wsId) return [];
+			return await schemaApi.listTypes(wsId);
 		},
 	);
 
@@ -186,13 +195,9 @@ export default function NotesRoute(props: RouteSectionProps) {
 	};
 
 	// Create schema
-	const handleCreateSchema = async (name: string) => {
+	const handleCreateSchema = async (payload: SchemaCreatePayload) => {
 		try {
-			await schemaApi.create(workspaceId(), {
-				name,
-				fields: {},
-				template: `# New ${name}\n\n`,
-			});
+			await schemaApi.create(workspaceId(), payload);
 			setShowCreateSchemaDialog(false);
 			refetchSchemas();
 		} catch (e) {
@@ -208,6 +213,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 				noteStore,
 				schemas: safeSchemas,
 				loadingSchemas,
+				columnTypes: () => columnTypes() || [],
 				refetchSchemas,
 			}}
 		>
@@ -281,6 +287,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 				<CreateSchemaDialog
 					open={showCreateSchemaDialog()}
+					columnTypes={columnTypes() || []}
 					onClose={() => setShowCreateSchemaDialog(false)}
 					onSubmit={handleCreateSchema}
 				/>
