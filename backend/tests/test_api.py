@@ -697,7 +697,7 @@ def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
 
 
 def test_get_schema_types(test_client: TestClient, temp_workspace_root: Path) -> None:
-    """Test getting available schema column types."""
+    """Test getting available schema column types (REQ-SCH-001)."""
     # Create workspace to ensure path is valid
     test_client.post("/workspaces", json={"name": "test-ws-types"})
 
@@ -713,7 +713,7 @@ def test_update_schema_with_migration(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """Test updating schema with migration strategies."""
+    """Test updating schema with migration strategies (REQ-SCH-002)."""
     # 1. Create Workspace
     test_client.post("/workspaces", json={"name": "test-ws-mig"})
 
