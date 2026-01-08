@@ -27,7 +27,7 @@ build-backend = "uv_build"
 [tool.uv]
 
 [tool.uv.sources]
-ieapp = { path = "../ieapp-cli" }
+ieapp = { path = "../ieapp-cli", editable = true }
 
 [tool.ruff]
 

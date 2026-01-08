@@ -694,3 +694,68 @@ def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
     assert "X-IEApp-Signature" in response.headers
+
+
+def test_get_schema_types(test_client: TestClient, temp_workspace_root: Path) -> None:
+    """Test getting available schema column types."""
+    # Create workspace to ensure path is valid
+    test_client.post("/workspaces", json={"name": "test-ws-types"})
+
+    response = test_client.get("/workspaces/test-ws-types/schemas/types")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert "string" in data
+    assert "number" in data
+
+
+def test_update_schema_with_migration(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """Test updating schema with migration strategies."""
+    # 1. Create Workspace
+    test_client.post("/workspaces", json={"name": "test-ws-mig"})
+
+    # 2. Create Initial Schema
+    schema = {
+        "name": "project",
+        "template": "# Project",
+        "fields": {
+            "status": {"type": "string"},
+        },
+    }
+    test_client.post("/workspaces/test-ws-mig/schemas", json=schema)
+
+    # 3. Create Note
+    note_payload = {
+        "content": "---\nclass: project\n---\n# Project A\n\n## status\nActive\n",
+    }
+    # Using endpoints: POST /workspaces/{id}/notes
+    # It autogenerates ID.
+    res = test_client.post("/workspaces/test-ws-mig/notes", json=note_payload)
+    assert res.status_code == 201
+    note_id = res.json()["id"]
+
+    # 4. Update Schema with new field and migration
+    updated_schema = {
+        "name": "project",
+        "template": "# Project",
+        "fields": {
+            "status": {"type": "string"},
+            "priority": {"type": "string"},
+        },
+        "strategies": {
+            "priority": "High",
+        },
+    }
+    res = test_client.post("/workspaces/test-ws-mig/schemas", json=updated_schema)
+    assert res.status_code == 201
+
+    # 5. Verify Note
+    res = test_client.get(f"/workspaces/test-ws-mig/notes/{note_id}")
+    assert res.status_code == 200
+    note_data = res.json()
+    content = note_data["content"]
+    assert "## priority" in content
+    assert "High" in content
