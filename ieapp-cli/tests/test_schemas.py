@@ -10,7 +10,7 @@ from ieapp.workspace import create_workspace
 
 
 def test_list_column_types() -> None:
-    """Test available column types listing."""
+    """Test available column types listing (REQ-SCH-001)."""
     types = list_column_types()
     assert isinstance(types, list)
     assert "string" in types
@@ -21,7 +21,7 @@ def test_list_column_types() -> None:
 
 
 def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
-    """Test migrating schema by adding a column with a default value."""
+    """Test migrating schema by adding a column with a default value (REQ-SCH-002)."""
     # Setup workspace
     create_workspace(str(tmp_path), "ws")
     ws_path = str(tmp_path / "workspaces" / "ws")
@@ -79,7 +79,7 @@ def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
 
 
 def test_migrate_schema_remove_column(tmp_path: Path) -> None:
-    """Test migrating schema by removing a column."""
+    """Test migrating schema by removing a column (REQ-SCH-002)."""
     # Setup workspace
     create_workspace(str(tmp_path), "ws")
     ws_path = str(tmp_path / "workspaces" / "ws")
