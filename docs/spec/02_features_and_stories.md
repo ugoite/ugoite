@@ -90,6 +90,20 @@ _Related APIs_: REST `POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}
 
 _Related APIs_: MCP tool `run_script` (which calls REST APIs internally via `host.call`); REST `GET/PUT /workspaces/{ws_id}/notes/{note_id}` for confirmation flows.
 
+### Story 9: "Data Grid" (Excel-like Interface)
+**As a** power user,
+**I want** to view and edit my class data in a spreadsheet-like grid,
+**So that** I can bulk edit, copy-paste to/from Excel, and manage data efficiently.
+
+*   **Acceptance Criteria**:
+    *   Class Detail view presents a data grid.
+    *   **Drag Select**: Users can drag to select multiple cells (rectangular selection) and copy them to clipboard.
+    *   **Inline Edit**: Users can toggle "Edit Mode" (lock icon). When unlocked, cells are editable in place.
+    *   **Quick Add**: Users can add a new row (Note) directly from the grid view.
+    *   Changes are saved immediately or on blur.
+
+_Related APIs_: REST `PUT /workspaces/{ws_id}/notes/{note_id}` for inline updates; `POST /workspaces/{ws_id}/notes` for new rows.
+
 ## 3. Functional Requirements
 
 ### FR-01: Storage & Data

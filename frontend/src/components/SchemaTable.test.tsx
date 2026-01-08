@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, waitFor, fireEvent } from "@solidjs/testing-library";
 import { SchemaTable } from "./SchemaTable";
-import { workspaceApi } from "~/lib/client";
+import { workspaceApi, noteApi } from "~/lib/client";
 
 describe("SchemaTable", () => {
 	it("renders '-' for missing properties and does not throw", async () => {
@@ -126,5 +126,73 @@ describe("SchemaTable", () => {
 
 		expect(createSpy).toHaveBeenCalled();
 		expect(linkClickSpy).toHaveBeenCalled();
+	});
+
+	it("REQ-FE-030: Add Row button creates a new note", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const createSpy = vi.spyOn(noteApi, "create").mockResolvedValue({ id: "new-note" } as any);
+
+		const { getByText, getByTitle } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Enable editing first
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		const addButton = getByText("Add Row");
+		fireEvent.click(addButton);
+
+		await waitFor(() => {
+			expect(createSpy).toHaveBeenCalledWith("ws", expect.objectContaining({ class: "Test" }));
+		});
+		createSpy.mockRestore();
+	});
+
+	it("REQ-FE-031: Edit Mode toggle and inline edit", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const updateSpy = vi.spyOn(noteApi, "update").mockResolvedValue({} as any);
+
+		const { getByText, getByTitle, getByDisplayValue } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Wait for render
+		await waitFor(() => getByText("Note1"));
+
+		// Click Edit Toggle (Lock icon)
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		// Now find the cell value and it should be an input or become input on click
+		const cell = getByText("val");
+		fireEvent.click(cell);
+
+		const input = getByDisplayValue("val");
+		fireEvent.input(input, { target: { value: "new-val" } });
+		fireEvent.blur(input);
+
+		await waitFor(() => {
+			expect(updateSpy).toHaveBeenCalledWith(
+				"ws",
+				"1",
+				expect.objectContaining({
+					properties: { col: "new-val" },
+				}),
+			);
+		});
+		updateSpy.mockRestore();
 	});
 });
