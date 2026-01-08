@@ -168,8 +168,19 @@ def cmd_schema_update(
     """Update schema and migrate existing notes using strategies."""
     setup_logging()
 
-    with Path(schema_file).open() as f:
-        schema_data = json.load(f)
+    schema_path = Path(schema_file)
+    try:
+        with schema_path.open() as f:
+            schema_data = json.load(f)
+    except FileNotFoundError as e:
+        err_msg = f"Schema file not found: '{schema_path}'"
+        raise typer.BadParameter(err_msg) from e
+    except OSError as e:
+        err_msg = f"Could not read schema file '{schema_path}': {e}"
+        raise typer.BadParameter(err_msg) from e
+    except json.JSONDecodeError as e:
+        err_msg = f"Invalid JSON in schema file '{schema_path}': {e}"
+        raise typer.BadParameter(err_msg) from e
 
     strat_dict = None
     if strategies:
