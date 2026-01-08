@@ -37,8 +37,6 @@ jobs:
         with:
           install: true
           cache: true
-        env:
-          MISE_ALLOW_UNATTESTED: "1"
 
       - name: Install backend dependencies
         working-directory: ./backend
