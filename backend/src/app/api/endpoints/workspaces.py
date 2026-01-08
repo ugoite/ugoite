@@ -721,10 +721,18 @@ async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
 async def list_schema_types_endpoint(workspace_id: str) -> list[str]:
     """Get list of available column types."""
     _validate_path_id(workspace_id, "workspace_id")
-    # Verify workspace exists even though types are static
-    _get_workspace_path(workspace_id)
-
-    return list_column_types()
+    try:
+        # Verify workspace exists even though types are static
+        _get_workspace_path(workspace_id)
+        return list_column_types()
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        logger.exception("Failed to list schema types")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/workspaces/{workspace_id}/schemas/{class_name}")
