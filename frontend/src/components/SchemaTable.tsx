@@ -264,7 +264,7 @@ export function SchemaTable(props: SchemaTableProps) {
 						if (field === "title") {
 							next.title = value;
 						} else {
-							next.properties = { ...n.properties, [field]: value };
+							next.properties = { ...(n.properties || {}), [field]: value };
 						}
 						next.updated_at = new Date().toISOString();
 						return next;
