@@ -191,4 +191,5 @@ def cmd_schema_update(
             raise typer.BadParameter(err_msg) from e
 
     count = migrate_schema(workspace_path, schema_data, strategies=strat_dict)
-    typer.echo(f"Schema updated. Migrated {count} notes.")
+    note_word = "note" if count == 1 else "notes"
+    typer.echo(f"Schema updated. Migrated {count} {note_word}.")

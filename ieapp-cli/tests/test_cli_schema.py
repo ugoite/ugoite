@@ -69,7 +69,7 @@ def test_cli_schema_update(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Migrated 1 notes" in result.stdout
+    assert "Migrated 1 note" in result.stdout
 
     # 5. Verify Note Content
     note_path = ws_path / "notes" / "note-1" / "content.json"
