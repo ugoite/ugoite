@@ -60,4 +60,49 @@ export function ensureClassFrontmatter(markdown: string, className: string): str
 	return `---\nclass: ${className}\n---\n\n${markdown}`;
 }
 
+/**
+ * Helper to escape regex special characters.
+ */
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Update the content of an H2 section.
+ * If the section exists, replace its content until the next header.
+ * If it doesn't exist, append it to the end.
+ */
+export function updateH2Section(markdown: string, sectionTitle: string, newValue: string): string {
+	const lines = markdown.split(/\r?\n/);
+	const escapedTitle = escapeRegExp(sectionTitle);
+	const h2Regex = new RegExp(`^##\\s+${escapedTitle}\\s*$`, "i");
+
+	let sectionIdx = -1;
+	for (let i = 0; i < lines.length; i++) {
+		if (h2Regex.test(lines[i])) {
+			sectionIdx = i;
+			break;
+		}
+	}
+
+	if (sectionIdx !== -1) {
+		// Find next header
+		let nextHeaderIdx = -1;
+		for (let i = sectionIdx + 1; i < lines.length; i++) {
+			if (lines[i].startsWith("#")) {
+				nextHeaderIdx = i;
+				break;
+			}
+		}
+
+		const before = lines.slice(0, sectionIdx + 1);
+		const after = nextHeaderIdx === -1 ? [] : lines.slice(nextHeaderIdx);
+
+		return [...before, newValue, ...after].join("\n");
+	}
+
+	// Append to end if not found
+	return `${markdown.trimEnd()}\n\n## ${sectionTitle}\n${newValue}\n`;
+}
+
 // Named exports only to match project conventions

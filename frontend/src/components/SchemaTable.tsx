@@ -1,6 +1,16 @@
-import { For, createResource, createSignal, createMemo, untrack } from "solid-js";
+import {
+	For,
+	createResource,
+	createSignal,
+	createMemo,
+	untrack,
+	Show,
+	onMount,
+	onCleanup,
+} from "solid-js";
 import type { Schema, NoteRecord } from "~/lib/types";
-import { workspaceApi } from "~/lib/client";
+import { workspaceApi, noteApi } from "~/lib/client";
+import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "~/lib/markdown";
 
 interface SchemaTableProps {
 	workspaceId: string;
@@ -138,8 +148,10 @@ export function SchemaTable(props: SchemaTableProps) {
 	const [sortField, setSortField] = createSignal<string | null>(null);
 	const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
 	const [columnFilters, setColumnFilters] = createSignal<Record<string, string>>({});
+	const [isEditMode, setIsEditMode] = createSignal(false);
+	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
 
-	const [notes] = createResource(
+	const [notes, { refetch, mutate }] = createResource(
 		() => {
 			if (!props.workspaceId || !props.schema?.name) return false;
 			return { id: props.workspaceId, schemaName: props.schema.name };
@@ -210,8 +222,179 @@ export function SchemaTable(props: SchemaTableProps) {
 		}
 	};
 
+	const handleAddRow = async () => {
+		try {
+			let content = props.schema.template || `# New ${props.schema.name}\n`;
+			content = ensureClassFrontmatter(content, props.schema.name);
+
+			await noteApi.create(props.workspaceId, {
+				content,
+			});
+			refetch();
+		} catch (err) {
+			// biome-ignore lint/suspicious/noConsole: error logging
+			console.error("Failed to add row", err);
+			alert(`Failed to add row: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	};
+
+	const handleCellUpdate = async (noteId: string, field: string, value: string) => {
+		try {
+			// Fetch full note to get content and revision_id
+			const note = await noteApi.get(props.workspaceId, noteId);
+			let updatedMarkdown = note.content;
+
+			if (field === "title") {
+				if (note.title === value) return;
+				updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
+			} else {
+				if (String(note.properties?.[field] ?? "") === value) return;
+				updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
+			}
+
+			const updatedNote = await noteApi.update(props.workspaceId, noteId, {
+				markdown: updatedMarkdown,
+				parent_revision_id: note.revision_id,
+			});
+
+			// Partial rendering: update local state with server response
+			mutate((prev) => {
+				if (!prev) return prev;
+				return prev.map((n) => {
+					if (n.id === noteId) {
+						const next = { ...n };
+						if (field === "title") {
+							next.title = value;
+						} else {
+							next.properties = { ...(n.properties || {}), [field]: value };
+						}
+						next.updated_at = updatedNote.updated_at;
+						return next;
+					}
+					return n;
+				});
+			});
+		} catch (err) {
+			// biome-ignore lint/suspicious/noConsole: error logging
+			console.error("Update failed", err);
+			alert(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	};
+
+	// Determine if a cell is being edited
+	const isCellEditing = (id: string, field: string) =>
+		isEditMode() && editingCell()?.id === id && editingCell()?.field === field;
+
+	// --- Drag Selection Logic ---
+	const [selection, setSelection] = createSignal<{
+		start: { r: number; c: number } | null;
+		end: { r: number; c: number } | null;
+	}>({ start: null, end: null });
+	const [isSelecting, setIsSelecting] = createSignal(false);
+
+	onMount(() => {
+		document.addEventListener("mouseup", handleGlobalMouseUp);
+		document.addEventListener("keydown", handleGlobalKeyDown);
+	});
+
+	onCleanup(() => {
+		document.removeEventListener("mouseup", handleGlobalMouseUp);
+		document.removeEventListener("keydown", handleGlobalKeyDown);
+	});
+
+	const handleGlobalMouseUp = () => setIsSelecting(false);
+
+	const getRowData = (note: NoteRecord, currentFields: string[], c1: number, c2: number) => {
+		const rowData = [];
+		// Col 0: Title
+		if (c1 <= 0 && c2 >= 0) rowData.push(note.title || "");
+
+		// Cols 1..N: Fields
+		for (let i = 0; i < currentFields.length; i++) {
+			const colIdx = i + 1;
+			if (colIdx >= c1 && colIdx <= c2) {
+				rowData.push(String(note.properties?.[currentFields[i]] ?? ""));
+			}
+		}
+
+		// Col N+1: Updated
+		const lastCol = currentFields.length + 1;
+		if (c1 <= lastCol && c2 >= lastCol) {
+			rowData.push(new Date(note.updated_at).toLocaleDateString());
+		}
+		return rowData.join("\t");
+	};
+
+	const copySelection = async () => {
+		const sel = selection();
+		if (!sel.start || !sel.end || editingCell()) return;
+
+		const r1 = Math.min(sel.start.r, sel.end.r);
+		const r2 = Math.max(sel.start.r, sel.end.r);
+		const c1 = Math.min(sel.start.c, sel.end.c);
+		const c2 = Math.max(sel.start.c, sel.end.c);
+
+		const currentNotes = processedNotes();
+		const currentFields = fields();
+
+		const rowsData = [];
+		for (let r = r1; r <= r2; r++) {
+			const note = currentNotes[r];
+			if (!note) continue;
+			rowsData.push(getRowData(note, currentFields, c1, c2));
+		}
+
+		try {
+			await navigator.clipboard.writeText(rowsData.join("\n"));
+		} catch (err) {
+			// biome-ignore lint/suspicious/noConsole: debugging
+			console.error("Failed to copy", err);
+		}
+	};
+
+	const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+		if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+			// If focus is in an input or textarea, let the default copy behavior handle it
+			const active = document.activeElement;
+			if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+				return;
+			}
+			e.preventDefault();
+			await copySelection();
+		}
+	};
+
+	const handleCellMouseDown = (r: number, c: number) => {
+		// Only set start/end, don't set isSelecting yet to allow text selection
+		setSelection({ start: { r, c }, end: { r, c } });
+	};
+
+	const handleCellMouseEnter = (e: MouseEvent, r: number, c: number) => {
+		if (isSelecting()) {
+			setSelection((prev) => ({ ...prev, end: { r, c } }));
+		} else if (selection().start && e.buttons === 1) {
+			// Start drag selection if moving between cells with button down
+			setIsSelecting(true);
+			setSelection((prev) => ({ ...prev, end: { r, c } }));
+		}
+	};
+
+	const isSelected = (r: number, c: number) => {
+		const sel = selection();
+		if (!sel.start || !sel.end) return false;
+		const r1 = Math.min(sel.start.r, sel.end.r);
+		const r2 = Math.max(sel.start.r, sel.end.r);
+		const c1 = Math.min(sel.start.c, sel.end.c);
+		const c2 = Math.max(sel.start.c, sel.end.c);
+		return r >= r1 && r <= r2 && c >= c1 && c <= c2;
+	};
+
 	return (
-		<div class="flex-1 h-full overflow-auto bg-white dark:bg-gray-950">
+		<div
+			class={`flex-1 h-full overflow-auto bg-white dark:bg-gray-950 ${
+				isSelecting() ? "select-none" : ""
+			}`}
+		>
 			<div class="p-6">
 				<div class="mb-6 flex justify-between items-start">
 					<div>
@@ -219,25 +402,79 @@ export function SchemaTable(props: SchemaTableProps) {
 							{props.schema.name}
 						</h1>
 						<p class="text-gray-500 dark:text-gray-400 text-sm">
-							{notes.loading ? "Loading..." : `${processedNotes().length} records found`}
+							{notes.loading && !notes()
+								? "Loading..."
+								: `${processedNotes().length} records found`}
 						</p>
 					</div>
-					<button
-						type="button"
-						onClick={downloadCSV}
-						class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<title>Download CSV</title>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-							/>
-						</svg>
-						Export CSV
-					</button>
+					<div class="flex gap-2">
+						<button
+							type="button"
+							onClick={downloadCSV}
+							class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<title>Download CSV</title>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+								/>
+							</svg>
+							Export CSV
+						</button>
+						<button
+							type="button"
+							onClick={() => setIsEditMode(!isEditMode())}
+							class={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors ${
+								isEditMode()
+									? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-100"
+									: "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+							}`}
+							title={isEditMode() ? "Disable Editing" : "Enable Editing"}
+						>
+							{isEditMode() ? (
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<title>Unlocked</title>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+									/>
+								</svg>
+							) : (
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<title>Locked</title>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+									/>
+								</svg>
+							)}
+							{isEditMode() ? "Editable" : "Locked"}
+						</button>
+						<Show when={isEditMode()}>
+							<button
+								type="button"
+								onClick={handleAddRow}
+								class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M12 4v16m8-8H4"
+									/>
+								</svg>
+								Add Row
+							</button>
+						</Show>
+					</div>
 				</div>
 
 				<div class="mb-4">
@@ -254,6 +491,13 @@ export function SchemaTable(props: SchemaTableProps) {
 					<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
 						<thead class="bg-gray-50 dark:bg-gray-900">
 							<tr>
+								<th
+									scope="col"
+									class="w-10 px-4 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
+									aria-label="Actions"
+								>
+									<span class="sr-only">Actions</span>
+								</th>
 								<th
 									scope="col"
 									class="px-6 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
@@ -333,30 +577,115 @@ export function SchemaTable(props: SchemaTableProps) {
 						</thead>
 						<tbody class="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-800">
 							<For each={processedNotes()}>
-								{(note) => (
-									// biome-ignore lint/a11y/useSemanticElements: Table rows cannot be buttons
-									<tr
-										class="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
-										onClick={() => props.onNoteClick(note.id)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" || e.key === " ") {
-												props.onNoteClick(note.id);
-											}
-										}}
-										tabIndex={0}
-										role="button"
-									>
-										<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-											{note.title || "Untitled"}
+								{(note, rowIndex) => (
+									<tr class="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+										<td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
+											<button
+												type="button"
+												onClick={() => props.onNoteClick(note.id)}
+												class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+												title="View Note"
+												aria-label="View Note"
+											>
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<title>View Note</title>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+													/>
+												</svg>
+											</button>
+										</td>
+										{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
+										<td
+											class={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white ${
+												isSelected(rowIndex(), 0) ? "bg-blue-100 dark:bg-blue-900" : ""
+											}`}
+											onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
+											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), 0)}
+											onClick={(e) => {
+												if (isEditMode()) {
+													e.stopPropagation();
+													setEditingCell({ id: note.id, field: "title" });
+												}
+											}}
+										>
+											<Show
+												when={isCellEditing(note.id, "title")}
+												fallback={note.title || "Untitled"}
+											>
+												<input
+													value={note.title || ""}
+													onBlur={(e) => {
+														const newVal = e.currentTarget.value;
+														handleCellUpdate(note.id, "title", newVal);
+														if (editingCell()?.id === note.id && editingCell()?.field === "title") {
+															setEditingCell(null);
+														}
+													}}
+													onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+													class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
+													autofocus
+													onClick={(e) => e.stopPropagation()}
+												/>
+											</Show>
 										</td>
 										<For each={fields()}>
-											{(field) => (
-												<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-													{String(note.properties?.[field] ?? "-")}
+											{(field, fieldIndex) => (
+												// biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now
+												<td
+													class={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 ${
+														isSelected(rowIndex(), fieldIndex() + 1)
+															? "bg-blue-100 dark:bg-blue-900"
+															: ""
+													}`}
+													onMouseDown={() => handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
+													onMouseEnter={(e) =>
+														handleCellMouseEnter(e, rowIndex(), fieldIndex() + 1)
+													}
+													onClick={(e) => {
+														if (isEditMode()) {
+															e.stopPropagation();
+															setEditingCell({ id: note.id, field });
+														}
+													}}
+												>
+													<Show
+														when={isCellEditing(note.id, field)}
+														fallback={String(note.properties?.[field] ?? "-")}
+													>
+														<input
+															value={String(note.properties?.[field] ?? "")}
+															onBlur={(e) => {
+																const newVal = e.currentTarget.value;
+																handleCellUpdate(note.id, field, newVal);
+																if (
+																	editingCell()?.id === note.id &&
+																	editingCell()?.field === field
+																) {
+																	setEditingCell(null);
+																}
+															}}
+															onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+															class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
+															autofocus
+															onClick={(e) => e.stopPropagation()}
+														/>
+													</Show>
 												</td>
 											)}
 										</For>
-										<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+										<td
+											class={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 ${
+												isSelected(rowIndex(), fields().length + 1)
+													? "bg-blue-100 dark:bg-blue-900"
+													: ""
+											}`}
+											onMouseDown={() => handleCellMouseDown(rowIndex(), fields().length + 1)}
+											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), fields().length + 1)}
+										>
 											{new Date(note.updated_at).toLocaleDateString()}
 										</td>
 									</tr>

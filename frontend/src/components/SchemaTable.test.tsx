@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, waitFor, fireEvent } from "@solidjs/testing-library";
 import { SchemaTable } from "./SchemaTable";
-import { workspaceApi } from "~/lib/client";
+import { workspaceApi, noteApi } from "~/lib/client";
 
 describe("SchemaTable", () => {
 	it("renders '-' for missing properties and does not throw", async () => {
@@ -40,7 +40,7 @@ describe("SchemaTable", () => {
 		];
 
 		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
-		const { getByText, getAllByRole } = render(() => (
+		const { getByText } = render(() => (
 			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
 		));
 
@@ -51,13 +51,13 @@ describe("SchemaTable", () => {
 		fireEvent.click(titleHeader); // Asc null -> asc
 
 		await waitFor(() => {
-			const rows = getAllByRole("button").filter((n) => n.tagName === "TR");
+			const rows = document.querySelectorAll("tbody tr");
 			expect(rows[0]).toHaveTextContent("A Note");
 		});
 
 		fireEvent.click(titleHeader); // Asc -> desc
 		await waitFor(() => {
-			const rows = getAllByRole("button").filter((n) => n.tagName === "TR");
+			const rows = document.querySelectorAll("tbody tr");
 			expect(rows[0]).toHaveTextContent("B Note");
 		});
 	});
@@ -126,5 +126,198 @@ describe("SchemaTable", () => {
 
 		expect(createSpy).toHaveBeenCalled();
 		expect(linkClickSpy).toHaveBeenCalled();
+	});
+
+	it("REQ-FE-030: Add Row button creates a new note", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const createSpy = vi.spyOn(noteApi, "create").mockResolvedValue({ id: "new-note" } as any);
+
+		const { getByText, getByTitle } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Enable editing first
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		const addButton = getByText("Add Row");
+		fireEvent.click(addButton);
+
+		await waitFor(() => {
+			expect(createSpy).toHaveBeenCalledWith(
+				"ws",
+				expect.objectContaining({
+					content: expect.stringContaining("class: Test"),
+				}),
+			);
+		});
+		createSpy.mockRestore();
+	});
+
+	it("REQ-FE-031: Edit Mode toggle and inline edit", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const getSpy = vi.spyOn(noteApi, "get").mockResolvedValue({
+			id: "1",
+			content: "# Note1\n\n## col\nval",
+			revision_id: "rev1",
+		} as any);
+		const updateSpy = vi.spyOn(noteApi, "update").mockResolvedValue({} as any);
+
+		const { getByText, getByTitle, getByDisplayValue } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Wait for render
+		await waitFor(() => getByText("Note1"));
+
+		// Click Edit Toggle (Lock icon)
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		// Now find the cell value and it should be an input or become input on click
+		const cell = getByText("val");
+		fireEvent.click(cell);
+
+		const input = getByDisplayValue("val");
+		fireEvent.input(input, { target: { value: "new-val" } });
+		fireEvent.blur(input);
+
+		await waitFor(() => {
+			expect(updateSpy).toHaveBeenCalledWith(
+				"ws",
+				"1",
+				expect.objectContaining({
+					markdown: expect.stringContaining("new-val"),
+					parent_revision_id: "rev1",
+				}),
+			);
+		});
+		updateSpy.mockRestore();
+		getSpy.mockRestore();
+	});
+
+	it("should have a link icon for navigation and not navigate on row click", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const onNoteClick = vi.fn();
+
+		const { getByText, getByRole } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={onNoteClick} />
+		));
+
+		await waitFor(() => expect(getByText("Note1")).toBeInTheDocument());
+
+		// Find the row
+		const row = getByText("Note1").closest("tr");
+		if (!row) throw new Error("Row not found");
+
+		// Click the row itself (but not the link icon)
+		fireEvent.click(row);
+		expect(onNoteClick).not.toHaveBeenCalled();
+
+		// Find the link icon (title="View Note") and click it
+		const linkButton = getByRole("button", { name: /view note/i });
+		fireEvent.click(linkButton);
+		expect(onNoteClick).toHaveBeenCalledWith("1");
+	});
+
+	it("should show restricted lock icon when not in edit mode and open lock icon when in edit mode", async () => {
+		const schema = { name: "Test", fields: {} } as any;
+		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+
+		const { getByTitle, queryByTitle } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Initially Locked
+		expect(getByTitle("Locked")).toBeInTheDocument();
+		expect(queryByTitle("Unlocked")).not.toBeInTheDocument();
+
+		// Toggle to Editable
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		expect(getByTitle("Unlocked")).toBeInTheDocument();
+		expect(queryByTitle("Locked")).not.toBeInTheDocument();
+	});
+	it("REQ-FE-031: keyboard copy shortcut", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{
+				id: "1",
+				title: "Note1",
+				properties: { col: "val1" },
+				updated_at: new Date("2026-01-01").toISOString(),
+			},
+			{
+				id: "2",
+				title: "Note2",
+				properties: { col: "val2" },
+				updated_at: new Date("2026-01-02").toISOString(),
+			},
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
+
+		const { getByText } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		await waitFor(() => getByText("Note1"));
+
+		// Simulate drag selection from (0,0) to (1,1)
+		// Col 0: Title, Col 1: col
+		const cell1 = getByText("Note1");
+		const cell2 = getByText("val2");
+
+		fireEvent.mouseDown(cell1);
+		fireEvent.mouseEnter(cell2, { buttons: 1 });
+		fireEvent.mouseUp(document);
+
+		// Trigger Ctrl+C
+		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+
+		expect(writeTextSpy).toHaveBeenCalledWith("Note1\tval1\nNote2\tval2");
+	});
+
+	it("should not trigger custom copy when input is focused", async () => {
+		const schema = { name: "Test", fields: {} } as any;
+		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+		const writeTextSpy = vi.fn();
+		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
+
+		const { getByPlaceholderText } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		const searchInput = getByPlaceholderText("Global Search...");
+		searchInput.focus();
+
+		// We need to trigger the keydown event on document since that's where the listener is
+		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+
+		expect(writeTextSpy).not.toHaveBeenCalled();
 	});
 });

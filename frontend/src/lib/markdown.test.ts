@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { replaceFirstH1, ensureClassFrontmatter } from "./markdown";
+import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "./markdown";
 
 describe("markdown utils", () => {
 	it("replaceFirstH1 replaces existing H1", () => {
@@ -29,5 +29,24 @@ describe("markdown utils", () => {
 		const md = "---\ntitle: A\n---\n\nThis line contains three dashes --- in content\n\n# Title";
 		const out = ensureClassFrontmatter(md, "Note");
 		expect(out).toContain("class: Note");
+	});
+
+	it("updateH2Section replaces existing section content", () => {
+		const md = "# Title\n\n## Section\nOldValue\n\n## Next\nKeepMe";
+		const out = updateH2Section(md, "Section", "NewValue");
+		expect(out).toContain("## Section\nNewValue");
+		expect(out).toContain("## Next\nKeepMe");
+	});
+
+	it("updateH2Section appends section if missing", () => {
+		const md = "# Title\n\n## Other\nVal";
+		const out = updateH2Section(md, "NewSec", "NewVal");
+		expect(out).toContain("## NewSec\nNewVal");
+	});
+
+	it("updateH2Section handles special regex characters in title", () => {
+		const md = "# Title\n\n## Section (Special) [Ref]\nOldValue";
+		const out = updateH2Section(md, "Section (Special) [Ref]", "NewValue");
+		expect(out).toContain("## Section (Special) [Ref]\nNewValue");
 	});
 });

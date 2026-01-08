@@ -773,6 +773,29 @@ Users MUST be able to export currently viewed records (respecting active filters
 
 ---
 
+### REQ-FE-030: Inline Row Creation in Grid View
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 9
+
+The grid view MUST provide a way to quickly add a new row (note) with appropriate class frontmatter.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-030: Add Row button creates a new note` |
+
+---
+
+### REQ-FE-031: Spreadsheet-like Grid Editing & Selection
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 9
+
+Users MUST be able to select rectangular ranges of cells via dragging and edit cell values inline when edit mode is enabled. Selected ranges MUST be copyable to the clipboard in tab-separated format.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-031: Edit Mode toggle and inline edit` |
+| vitest | `frontend/src/components/SchemaTable.test.tsx` | `REQ-FE-031: keyboard copy shortcut` |
+
+---
+
 ## 9. E2E (End-to-End) Requirements
 
 ### REQ-E2E-001: Frontend Accessibility
