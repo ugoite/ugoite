@@ -354,7 +354,7 @@ function processFields(
 		if (!currentNames.has(oldName)) strategies[oldName] = null;
 	}
 
-	return { fieldRecord, strategies, currentNames };
+	return { fieldRecord, strategies };
 }
 
 export interface EditSchemaDialogProps {
