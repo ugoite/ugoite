@@ -151,7 +151,7 @@ export function SchemaTable(props: SchemaTableProps) {
 	const [isEditMode, setIsEditMode] = createSignal(false);
 	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
 
-	const [notes, { refetch }] = createResource(
+	const [notes, { refetch, mutate }] = createResource(
 		() => {
 			if (!props.workspaceId || !props.schema?.name) return false;
 			return { id: props.workspaceId, schemaName: props.schema.name };
@@ -254,10 +254,24 @@ export function SchemaTable(props: SchemaTableProps) {
 				markdown: updatedMarkdown,
 				parent_revision_id: note.revision_id,
 			});
-			// Optional: we might not need to refetch if we update local state, but strict consistency is safest
-			// refetch();
-			// Better to refetch to get updated_at etc.
-			refetch();
+
+			// Partial rendering: update local state without full refetch
+			mutate((prev) => {
+				if (!prev) return prev;
+				return prev.map((n) => {
+					if (n.id === noteId) {
+						const next = { ...n };
+						if (field === "title") {
+							next.title = value;
+						} else {
+							next.properties = { ...n.properties, [field]: value };
+						}
+						next.updated_at = new Date().toISOString();
+						return next;
+					}
+					return n;
+				});
+			});
 		} catch (err) {
 			// biome-ignore lint/suspicious/noConsole: error logging
 			console.error("Update failed", err);
@@ -377,7 +391,9 @@ export function SchemaTable(props: SchemaTableProps) {
 							{props.schema.name}
 						</h1>
 						<p class="text-gray-500 dark:text-gray-400 text-sm">
-							{notes.loading ? "Loading..." : `${processedNotes().length} records found`}
+							{notes.loading && !notes()
+								? "Loading..."
+								: `${processedNotes().length} records found`}
 						</p>
 					</div>
 					<div class="flex gap-2">
@@ -414,7 +430,7 @@ export function SchemaTable(props: SchemaTableProps) {
 										stroke-linecap="round"
 										stroke-linejoin="round"
 										stroke-width="2"
-										d="M8 11V7a4 4 0 118 0m4 10v2m-6 4h12a1 1 0 001-1v-6a1 1 0 00-1-1H9a1 1 0 00-1 1v6a1 1 0 001 1z"
+										d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
 									/>
 								</svg>
 							) : (
@@ -424,13 +440,7 @@ export function SchemaTable(props: SchemaTableProps) {
 										stroke-linecap="round"
 										stroke-linejoin="round"
 										stroke-width="2"
-										d="M12 15v2m-6 4h12a1 1 0 001-1v-6a1 1 0 00-1-1H9a1 1 0 00-1 1v6a1 1 0 001 1z"
-									/>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M16 11V7a4 4 0 10-8 0"
+										d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
 									/>
 								</svg>
 							)}
@@ -470,6 +480,12 @@ export function SchemaTable(props: SchemaTableProps) {
 					<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
 						<thead class="bg-gray-50 dark:bg-gray-900">
 							<tr>
+								<th
+									scope="col"
+									class="w-10 px-4 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
+								>
+									{/* Action Column for Link */}
+								</th>
 								<th
 									scope="col"
 									class="px-6 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
@@ -550,16 +566,26 @@ export function SchemaTable(props: SchemaTableProps) {
 						<tbody class="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-800">
 							<For each={processedNotes()}>
 								{(note, rowIndex) => (
-									<tr
-										class={`hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors ${
-											isEditMode() ? "" : "cursor-pointer"
-										}`}
-										onClick={() => {
-											if (!isEditMode()) props.onNoteClick(note.id);
-										}}
-										role={!isEditMode() ? "button" : undefined}
-										tabIndex={!isEditMode() ? 0 : undefined}
-									>
+									<tr class="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+										<td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
+											<button
+												type="button"
+												onClick={() => props.onNoteClick(note.id)}
+												class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+												title="View Note"
+												aria-label="View Note"
+											>
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<title>View Note</title>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+													/>
+												</svg>
+											</button>
+										</td>
 										{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
 										<td
 											class={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white ${

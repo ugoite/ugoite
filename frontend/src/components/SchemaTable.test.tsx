@@ -40,7 +40,7 @@ describe("SchemaTable", () => {
 		];
 
 		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
-		const { getByText, getAllByRole } = render(() => (
+		const { getByText } = render(() => (
 			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
 		));
 
@@ -51,13 +51,13 @@ describe("SchemaTable", () => {
 		fireEvent.click(titleHeader); // Asc null -> asc
 
 		await waitFor(() => {
-			const rows = getAllByRole("button").filter((n) => n.tagName === "TR");
+			const rows = document.querySelectorAll("tbody tr");
 			expect(rows[0]).toHaveTextContent("A Note");
 		});
 
 		fireEvent.click(titleHeader); // Asc -> desc
 		await waitFor(() => {
-			const rows = getAllByRole("button").filter((n) => n.tagName === "TR");
+			const rows = document.querySelectorAll("tbody tr");
 			expect(rows[0]).toHaveTextContent("B Note");
 		});
 	});
@@ -206,5 +206,56 @@ describe("SchemaTable", () => {
 		});
 		updateSpy.mockRestore();
 		getSpy.mockRestore();
+	});
+
+	it("should have a link icon for navigation and not navigate on row click", async () => {
+		const schema = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const notes = [
+			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const onNoteClick = vi.fn();
+
+		const { getByText, getByRole } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={onNoteClick} />
+		));
+
+		await waitFor(() => expect(getByText("Note1")).toBeInTheDocument());
+
+		// Find the row
+		const row = getByText("Note1").closest("tr");
+		if (!row) throw new Error("Row not found");
+
+		// Click the row itself (but not the link icon)
+		fireEvent.click(row);
+		expect(onNoteClick).not.toHaveBeenCalled();
+
+		// Find the link icon (title="View Note") and click it
+		const linkButton = getByRole("button", { name: /view note/i });
+		fireEvent.click(linkButton);
+		expect(onNoteClick).toHaveBeenCalledWith("1");
+	});
+
+	it("should show restricted lock icon when not in edit mode and open lock icon when in edit mode", async () => {
+		const schema = { name: "Test", fields: {} } as any;
+		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+
+		const { getByTitle, queryByTitle } = render(() => (
+			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+		));
+
+		// Initially Locked
+		expect(getByTitle("Locked")).toBeInTheDocument();
+		expect(queryByTitle("Unlocked")).not.toBeInTheDocument();
+
+		// Toggle to Editable
+		const toggleButton = getByTitle("Enable Editing");
+		fireEvent.click(toggleButton);
+
+		expect(getByTitle("Unlocked")).toBeInTheDocument();
+		expect(queryByTitle("Locked")).not.toBeInTheDocument();
 	});
 });
