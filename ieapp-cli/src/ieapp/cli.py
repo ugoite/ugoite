@@ -1,7 +1,9 @@
 """CLI entry point using Typer."""
 
+import json
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -9,14 +11,17 @@ import typer
 from ieapp.indexer import Indexer, query_index
 from ieapp.logging_utils import setup_logging
 from ieapp.notes import create_note
+from ieapp.schemas import list_column_types, migrate_schema
 from ieapp.workspace import create_workspace
 
 app = typer.Typer(help="IEapp CLI - Knowledge base management")
 note_app = typer.Typer(help="Note management commands")
 index_app = typer.Typer(help="Indexer operations")
+schema_app = typer.Typer(help="Schema management commands")
 
 app.add_typer(note_app, name="note")
 app.add_typer(index_app, name="index")
+app.add_typer(schema_app, name="schema")
 
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 
@@ -136,3 +141,43 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@schema_app.command("list-types")
+@handle_cli_errors
+def cmd_list_types() -> None:
+    """List available column types."""
+    types = list_column_types()
+    for t in types:
+        typer.echo(t)
+
+
+@schema_app.command("update")
+@handle_cli_errors
+def cmd_schema_update(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    schema_file: Annotated[str, typer.Argument(help="Path to schema JSON file")],
+    strategies: Annotated[
+        str | None,
+        typer.Option(help="JSON string of migration strategies"),
+    ] = None,
+) -> None:
+    """Update schema and migrate existing notes using strategies."""
+    setup_logging()
+
+    with Path(schema_file).open() as f:
+        schema_data = json.load(f)
+
+    strat_dict = None
+    if strategies:
+        try:
+            strat_dict = json.loads(strategies)
+        except json.JSONDecodeError as e:
+            err_msg = f"Invalid JSON in strategies: {e}"
+            raise typer.BadParameter(err_msg) from e
+
+    count = migrate_schema(workspace_path, schema_data, strategies=strat_dict)
+    typer.echo(f"Schema updated. Migrated {count} notes.")

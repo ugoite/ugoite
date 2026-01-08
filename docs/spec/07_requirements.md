@@ -833,7 +833,31 @@ mise run e2e
 
 ---
 
-## 10. Requirements Coverage Summary
+## 10. Schema Management Requirements
+
+### REQ-SCH-001: List Column Types
+**Related Spec**: [07_requirements.md](07_requirements.md) §10
+
+CLI and Backend MUST expose available column types for class creation.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `ieapp-cli/tests/test_schemas.py` | `test_list_column_types` |
+| pytest | `backend/tests/test_api.py` | `test_get_schema_types` |
+
+### REQ-SCH-002: Class Migration Strategy
+**Related Spec**: [07_requirements.md](07_requirements.md) §10
+
+When updating a schema, allow specifying migration strategies for existing fields (e.g., set to null, default value, or keep as is).
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| pytest | `ieapp-cli/tests/test_schemas.py` | `test_migrate_schema_strategies` |
+| pytest | `backend/tests/test_api.py` | `test_update_schema_with_migration` |
+
+---
+
+## 11. Requirements Coverage Summary
 
 | Category | Requirements | pytest | vitest | e2e |
 |----------|--------------|--------|--------|-----|
@@ -850,7 +874,7 @@ mise run e2e
 
 ---
 
-## 11. Change History
+## 12. Change History
 
 | Date | Version | Changes |
 |------|---------|---------|

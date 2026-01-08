@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import fsspec
 
 
-from .indexer import Indexer
+from .indexer import Indexer, extract_properties
+from .notes import get_note, list_notes, update_note
 from .utils import (
     fs_exists,
     fs_join,
@@ -19,6 +21,11 @@ from .utils import (
     get_fs_and_path,
     validate_id,
 )
+
+
+def list_column_types() -> list[str]:
+    """Return list of supported column types."""
+    return ["string", "number", "date", "list", "markdown"]
 
 
 def _workspace_context(
@@ -100,3 +107,74 @@ def upsert_schema(
     Indexer(str(ws_path), fs=fs_obj).run_once()
 
     return schema_data
+
+
+def _apply_migration(markdown: str, strategies: dict[str, Any]) -> str:
+    new_markdown = markdown
+    for field, strategy in strategies.items():
+        if strategy is None:
+            # Drop section
+            pattern = re.compile(
+                rf"^##\s+{re.escape(field)}\s*\n(.*?)(?=(^##|\Z))",
+                re.MULTILINE | re.DOTALL,
+            )
+            new_markdown = pattern.sub("", new_markdown)
+        else:
+            # Set default using string value
+            pattern = re.compile(rf"^##\s+{re.escape(field)}", re.MULTILINE)
+            if not pattern.search(new_markdown):
+                if not new_markdown.endswith("\n"):
+                    new_markdown += "\n"
+                new_markdown += f"\n## {field}\n{strategy}\n"
+
+    # Normalize newlines
+    return re.sub(r"\n{3,}", "\n\n", new_markdown)
+
+
+def migrate_schema(
+    workspace_path: str,
+    schema_data: dict[str, Any],
+    strategies: dict[str, Any] | None = None,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> int:
+    """Upsert schema and migrate existing notes."""
+    upsert_schema(workspace_path, schema_data, fs=fs)
+
+    if not strategies:
+        return 0
+
+    fs_obj, _ws_path = _workspace_context(workspace_path, fs)
+    class_name = schema_data.get("name")
+    if not class_name:
+        return 0
+
+    all_notes = list_notes(workspace_path, fs=fs_obj)
+    updated_count = 0
+
+    for note_summary in all_notes:
+        note_id = note_summary["id"]
+        try:
+            note = get_note(workspace_path, note_id, fs=fs_obj)
+        except FileNotFoundError:
+            continue
+
+        props = extract_properties(note["content"])
+        if props.get("class") != class_name:
+            continue
+
+        original_md = note["content"]
+        new_md = _apply_migration(original_md, strategies)
+
+        if new_md != original_md:
+            update_note(
+                workspace_path,
+                note_id,
+                content=new_md,
+                author="system-migration",
+                parent_revision_id=note["revision_id"],
+                fs=fs_obj,
+            )
+            updated_count += 1
+
+    return updated_count
