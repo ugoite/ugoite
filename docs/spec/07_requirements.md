@@ -796,6 +796,17 @@ Users MUST be able to select rectangular ranges of cells via dragging and edit c
 
 ---
 
+### REQ-FE-032: Schema Creation Input Stability
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3
+
+When creating or editing a schema, inputting column names MUST NOT cause focus loss. The UI MUST maintain focus on the active input during consecutive keystrokes.
+
+| Test Type | File | Test Name |
+|-----------|------|-----------|
+| vitest | `frontend/src/components/create-dialogs.test.tsx` | `REQ-FE-032: maintains focus on column name input when typing` |
+
+---
+
 ## 9. E2E (End-to-End) Requirements
 
 ### REQ-E2E-001: Frontend Accessibility
@@ -893,9 +904,9 @@ When updating a schema, allow specifying migration strategies for existing field
 | Security | 2 | ✅ | - | - |
 | Sandbox | 5 | ✅ | - | - |
 | REST API | 3 | ✅ | ✅ | ✅ |
-| Frontend | 21 | - | ✅ | ✅ |
+| Frontend | 22 | - | ✅ | ✅ |
 | E2E | 2 | - | - | ✅ |
-| **Total** | **59** | **35** | **38** | **22** |
+| **Total** | **60** | **35** | **39** | **22** |
 
 ---
 
@@ -903,6 +914,7 @@ When updating a schema, allow specifying migration strategies for existing field
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-09 | 1.4.1 | Added REQ-FE-032 for schema creation input stability; Updated total from 59 to 60 requirements |
 | 2026-01-06 | 1.4.0 | Added REQ-FE-018 through REQ-FE-021 for Data Models View (Sorting, Filtering, CSV Export); Updated total from 55 to 59 requirements |
 | 2026-01-02 | 1.3.0 | Integrated Milestone 6 features as REQ-FE-014 through REQ-FE-017; Updated total from 46 to 55 requirements |
 | 2025-12-31 | 1.2.0 | Added REQ-FE-013 for save persistence verification; Enhanced REQ-FE-010/011/012 with critical implementation requirements |
