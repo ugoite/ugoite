@@ -29,7 +29,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	const noteStore = createNoteStore(workspaceId);
 
-	// View mode: notes or classes (data models) derived from URL
+	// View mode: notes or classes derived from URL
 	const viewMode = () => (location.pathname.includes("/notes/classes") ? "classes" : "notes");
 
 	// Classes selection derived from URL
@@ -190,7 +190,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 			setShowCreateNoteDialog(false);
 			navigate(`/notes/${result.id}`);
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create note");
+			alert(e instanceof Error ? e.message : "Failed to create note class");
 		}
 	};
 

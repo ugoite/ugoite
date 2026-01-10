@@ -289,9 +289,9 @@ describe("classApi", () => {
 		seedWorkspace(testWorkspace);
 	});
 
-	it("lists classs (empty by default)", async () => {
-		const classs = await classApi.list("class-ws");
-		expect(classs).toEqual([]);
+	it("lists classes (empty by default)", async () => {
+		const classes = await classApi.list("class-ws");
+		expect(classes).toEqual([]);
 	});
 
 	it("creates and gets a class", async () => {
@@ -302,8 +302,8 @@ describe("classApi", () => {
 			fields: { Date: { type: "date", required: true } },
 		});
 
-		const classs = await classApi.list("class-ws");
-		expect(classs.find((s) => s.name === "Meeting")).toBeDefined();
+		const classes = await classApi.list("class-ws");
+		expect(classes.find((s) => s.name === "Meeting")).toBeDefined();
 
 		const fetched = await classApi.get("class-ws", "Meeting");
 		expect(fetched.name).toBe("Meeting");

@@ -1,4 +1,4 @@
-# Class (Class) Management Requirements
+# Class Management Requirements
 
 category: Class Management
 prefix: REQ-CLS
@@ -11,7 +11,7 @@ requirements:
 
       Note: API paths may still use /classes while the user-facing concept is "Class".
     related_spec:
-      - api/rest.md#schemas
+      - api/rest.md#classes-formerly-schemas
       - data-model/overview.md#classes-formerly-schema
     priority: medium
     status: implemented
@@ -34,7 +34,7 @@ requirements:
       migration strategies for existing fields (for example: set to null,
       set a default value, or keep as-is).
     related_spec:
-      - api/rest.md#schemas
+      - api/rest.md#classes-formerly-schemas
       - data-model/overview.md#classes-formerly-schema
     priority: medium
     status: implemented

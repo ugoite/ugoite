@@ -6,7 +6,7 @@
 version: "0.1"
 updated: "2026-01"
 
-schemas:
+classes:
   # Root level
   global:
     description: Workspace registry and system configuration

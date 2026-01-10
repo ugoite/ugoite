@@ -94,7 +94,7 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 							/>
 						</div>
 
-						<Show when={props.noteClasses.length > 0}>
+						<Show when={props.classes.length > 0}>
 							<div>
 								<label class="block text-sm font-medium text-gray-700 mb-1" for="note-class">
 									Class (optional)
@@ -106,9 +106,7 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 									onChange={(e) => setSelectedClass(e.currentTarget.value)}
 								>
 									<option value="">(none)</option>
-									<For each={props.noteClasses}>
-										{(s) => <option value={s.name}>{s.name}</option>}
-									</For>
+									<For each={props.classes}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 								</select>
 							</div>
 						</Show>
