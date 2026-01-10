@@ -142,7 +142,7 @@ export interface CreateClassDialogProps {
 }
 
 /**
- * Dialog for creating a new class/data model.
+ * Dialog for creating a new class.
  */
 export function CreateClassDialog(props: CreateClassDialogProps) {
 	const [name, setName] = createSignal("");

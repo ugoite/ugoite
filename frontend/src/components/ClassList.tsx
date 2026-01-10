@@ -12,7 +12,7 @@ export function ClassList(props: ClassListProps) {
 		<div class="w-64 border-r border-gray-200 dark:border-gray-800 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 flex-shrink-0">
 			<div class="p-4 border-b border-gray-200 dark:border-gray-800">
 				<h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-					Data Models
+					Classes
 				</h2>
 			</div>
 			<ul>

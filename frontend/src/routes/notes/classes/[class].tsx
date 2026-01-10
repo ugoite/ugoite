@@ -33,7 +33,7 @@ export default function ClassRoute() {
 			keyed
 			fallback={
 				<div class="p-8 text-center text-gray-500">
-					{ctx.loadingClasses() ? "Loading data models..." : "Note class not found"}
+					{ctx.loadingClasses() ? "Loading note classes..." : "Note class not found"}
 				</div>
 			}
 		>
