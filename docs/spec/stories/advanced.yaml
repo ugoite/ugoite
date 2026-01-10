@@ -65,7 +65,7 @@ stories:
 
   - id: STORY-009
     title: Data Grid
-    type: Data Model
+    type: Class
     as_a: power user
     i_want: to view and edit my class data in a spreadsheet-like grid
     so_that: I can bulk edit, copy-paste to/from Excel, and manage data efficiently.

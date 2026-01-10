@@ -11,8 +11,8 @@ requirements:
 
       Note: API paths may still use /classes while the user-facing concept is "Class".
     related_spec:
-      - api/rest.md#classes-formerly-schemas
-      - data-model/overview.md#classes-formerly-schema
+      - api/rest.md#classes
+      - data-model/overview.md#classes
     priority: medium
     status: implemented
     tests:
@@ -34,8 +34,8 @@ requirements:
       migration strategies for existing fields (for example: set to null,
       set a default value, or keep as-is).
     related_spec:
-      - api/rest.md#classes-formerly-schemas
-      - data-model/overview.md#classes-formerly-schema
+      - api/rest.md#classes
+      - data-model/overview.md#classes
     priority: medium
     status: implemented
     tests:

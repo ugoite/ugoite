@@ -309,9 +309,9 @@ requirements:
             - should save valid configuration
 
   - id: REQ-FE-018
-    title: Data Models View with Routing
+    title: Note Classes View with Routing
     description: |
-      Frontend MUST provide a high-performance data model view using nested routing.
+      Frontend MUST provide a high-performance note class view using nested routing.
     related_spec:
       - stories/advanced.yaml#STORY-009
     priority: medium
@@ -320,7 +320,7 @@ requirements:
       vitest:
         - file: frontend/src/routes/notes/index.test.tsx
           tests:
-            - selecting a data model navigates correctly
+            - selecting a note class navigates correctly
 
   - id: REQ-FE-019
     title: Multi-column Sorting

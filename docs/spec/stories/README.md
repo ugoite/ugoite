@@ -16,7 +16,7 @@ Stories follow a structured YAML format for machine readability:
 stories:
   - id: STORY-001
     title: Short descriptive title
-    type: Category (AI Native, Data Model, Freedom, etc.)
+    type: Category (AI Native, Class, Freedom, etc.)
     as_a: Role (user, power user, AI agent, etc.)
     i_want: Desired action or capability
     so_that: Business value or outcome
@@ -34,7 +34,7 @@ stories:
 | Type | Description |
 |------|-------------|
 | AI Native | Features leveraging AI and code execution |
-| Data Model | Structured data and schema features |
+| Class | Structured data and schema features |
 | Freedom | User control and data portability |
 | Versioning | History and time travel features |
 | BYOAI | Bring Your Own AI integrations |

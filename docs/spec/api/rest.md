@@ -202,7 +202,7 @@ Content-Type: application/json
 
 ---
 
-### Classes (formerly Schemas)
+### Classes
 
 #### List Classes
 ```http

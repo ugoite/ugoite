@@ -1,5 +1,14 @@
 # Data Model Overview
 
+This document describes the high-level data model of IEapp, including its storage principles and directory structure.
+
+## Terminology Distinction
+
+To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Classes**:
+
+- **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, HMAC integrity).
+- **Note Classes**: User-defined templates and field definitions that add structure to notes. Formerly known as "Schemas".
+
 ## Principles
 
 IEapp's data model is built on these principles:
@@ -21,7 +30,7 @@ workspaces/
   {workspace_id}/
     meta.json                  # Workspace metadata
     settings.json              # Workspace settings
-    classes/                   # Class definitions (formerly "schemas")
+    classes/                   # Class definitions
       {class_name}.json
     index/                     # Materialized views
       index.json
@@ -39,7 +48,7 @@ workspaces/
 
 ## Key Concepts
 
-### Classes (formerly "Schema")
+### Classes
 
 Classes define note types with:
 - **Template**: Default Markdown content for new notes
