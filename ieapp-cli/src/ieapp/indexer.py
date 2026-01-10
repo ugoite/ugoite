@@ -133,16 +133,16 @@ MarkdownList = Annotated[list[str], BeforeValidator(parse_markdown_list)]
 
 def validate_properties(
     properties: dict[str, Any],
-    schema: dict[str, Any],
+    note_class: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Validate and cast extracted properties against a schema definition.
+    """Validate and cast extracted properties against a note_class definition.
 
     Returns:
         A tuple of (casted_properties, warnings).
 
     """
     warnings = []
-    fields = schema.get("fields", {})
+    fields = note_class.get("fields", {})
     casted = properties.copy()
 
     for field_name, field_def in fields.items():
@@ -282,8 +282,8 @@ class Indexer:
             self.run_once()
             return
 
-        # Load schemas for validation
-        schemas = self._load_schemas(f"{self.workspace_path}/schemas")
+        # Load classes for validation
+        classes = self._load_classes(f"{self.workspace_path}/classes")
 
         # Load existing index
         with self.fs.open(index_path, "r") as f:
@@ -293,7 +293,7 @@ class Indexer:
         note_dir = f"{self.workspace_path}/notes/{note_id}"
         new_record = None
         if self.fs.exists(note_dir):
-            new_record = self._build_record(note_dir, note_id, schemas)
+            new_record = self._build_record(note_dir, note_id, classes)
 
         # Update index.json
         notes = index_payload.get("notes", {})
@@ -327,19 +327,19 @@ class Indexer:
     def run_once(self) -> None:
         """Build the structured cache and stats once.
 
-        Loads schemas, collects note data, generates an inverted index for search,
+        Loads classes, collects note data, generates an inverted index for search,
         and persists index.json, inverted_index.json, and stats.json to the workspace.
         """
         notes_path = f"{self.workspace_path}/notes"
         index_path = f"{self.workspace_path}/index/index.json"
         stats_path = f"{self.workspace_path}/index/stats.json"
         inverted_index_path = f"{self.workspace_path}/index/inverted_index.json"
-        schemas_path = f"{self.workspace_path}/schemas"
+        classes_path = f"{self.workspace_path}/classes"
 
         self.fs.makedirs(f"{self.workspace_path}/index", exist_ok=True)
 
-        schemas = self._load_schemas(schemas_path)
-        index_notes = self._collect_notes(notes_path, schemas)
+        classes = self._load_classes(classes_path)
+        index_notes = self._collect_notes(notes_path, classes)
         stats_data = aggregate_stats(index_notes)
 
         index_payload = {
@@ -448,43 +448,43 @@ class Indexer:
             if len(word) > 1 and not word.isnumeric()
         }
 
-    def _load_schemas(self, schemas_path: str) -> dict[str, dict[str, Any]]:
-        """Load schema definitions from the workspace.
+    def _load_classes(self, classes_path: str) -> dict[str, dict[str, Any]]:
+        """Load note_class definitions from the workspace.
 
         Args:
-            schemas_path: Path to the schemas directory.
+            classes_path: Path to the classes directory.
 
         Returns:
-            A dictionary mapping class names to their schema definitions.
+            A dictionary mapping class names to their note_class definitions.
 
         """
-        schemas: dict[str, dict[str, Any]] = {}
-        if not self.fs.exists(schemas_path):
-            return schemas
+        classes: dict[str, dict[str, Any]] = {}
+        if not self.fs.exists(classes_path):
+            return classes
 
-        for schema_file in self.fs.glob(f"{schemas_path}/*.json"):
-            class_name = schema_file.split("/")[-1].removesuffix(".json")
+        for note_class_file in self.fs.glob(f"{classes_path}/*.json"):
+            class_name = note_class_file.split("/")[-1].removesuffix(".json")
             with (
                 contextlib.suppress(json.JSONDecodeError),
                 self.fs.open(
-                    schema_file,
+                    note_class_file,
                     "r",
                 ) as handle,
             ):
-                schemas[class_name] = json.load(handle)
+                classes[class_name] = json.load(handle)
 
-        return schemas
+        return classes
 
     def _collect_notes(
         self,
         notes_path: str,
-        schemas: dict[str, dict[str, Any]],
+        classes: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         """Collect structured records for every note directory.
 
         Args:
             notes_path: Path to the notes directory.
-            schemas: Dictionary of schema definitions keyed by class name.
+            classes: Dictionary of note_class definitions keyed by class name.
 
         Returns:
             A dictionary mapping note IDs to their structured records.
@@ -498,7 +498,7 @@ class Indexer:
 
         for note_dir in note_dirs:
             note_id = note_dir.split("/")[-1]
-            record = self._build_record(note_dir, note_id, schemas)
+            record = self._build_record(note_dir, note_id, classes)
             if record is not None:
                 records[note_id] = record
 
@@ -508,14 +508,14 @@ class Indexer:
         self,
         note_dir: str,
         note_id: str,
-        schemas: dict[str, dict[str, Any]],
+        classes: dict[str, dict[str, Any]],
     ) -> dict[str, Any] | None:
         """Build a single index record, returning ``None`` on decode errors.
 
         Args:
             note_dir: Path to the note directory.
             note_id: The note's unique identifier.
-            schemas: Dictionary of schema definitions keyed by class name.
+            classes: Dictionary of note_class definitions keyed by class name.
 
         Returns:
             A structured record dictionary, or None if the note cannot be read
@@ -555,8 +555,8 @@ class Indexer:
         )
 
         warnings: list[dict[str, Any]] = []
-        if note_class and note_class in schemas:
-            properties, warnings = validate_properties(properties, schemas[note_class])
+        if note_class and note_class in classes:
+            properties, warnings = validate_properties(properties, classes[note_class])
 
         # Calculate word count (simple whitespace split)
         word_count = len(markdown.split())

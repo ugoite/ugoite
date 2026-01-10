@@ -79,7 +79,7 @@ Section Title
 
 def test_validate_properties_missing_required() -> None:
     """Emit missing_field warning when required keys are absent."""
-    schema = {
+    note_class = {
         "fields": {
             "Date": {"type": "date", "required": True},
             "Attendees": {"type": "list", "required": False},
@@ -89,7 +89,7 @@ def test_validate_properties_missing_required() -> None:
     # Missing Date
     properties = {"Attendees": "- Alice"}
 
-    _, warnings = validate_properties(properties, schema)
+    _, warnings = validate_properties(properties, note_class)
     assert len(warnings) == EXPECTED_TASK_COUNT
     assert warnings[0]["code"] == "missing_field"
     assert warnings[0]["field"] == "Date"
@@ -97,9 +97,9 @@ def test_validate_properties_missing_required() -> None:
 
 def test_validate_properties_valid() -> None:
     """Return zero warnings when required data is present."""
-    schema = {"fields": {"Date": {"type": "date", "required": True}}}
+    note_class = {"fields": {"Date": {"type": "date", "required": True}}}
     properties = {"Date": "2025-10-27"}
-    _, warnings = validate_properties(properties, schema)
+    _, warnings = validate_properties(properties, note_class)
     assert len(warnings) == 0
 
 
@@ -110,12 +110,12 @@ def test_indexer_run_once(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> Non
     fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
     fs.makedirs(fs_join(workspace_path, "notes", "note2"), exist_ok=True)
     fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "schemas"), exist_ok=True)
+    fs.makedirs(fs_join(workspace_path, "classes"), exist_ok=True)
 
-    # Create Schema
-    schema = {"fields": {"Date": {"type": "date", "required": True}}}
-    with fs.open(fs_join(workspace_path, "schemas", "meeting.json"), "w") as f:
-        json.dump(schema, f)
+    # Create Class
+    note_class = {"fields": {"Date": {"type": "date", "required": True}}}
+    with fs.open(fs_join(workspace_path, "classes", "meeting.json"), "w") as f:
+        json.dump(note_class, f)
 
     # Create Note 1 (Valid Meeting)
     note1_content = {

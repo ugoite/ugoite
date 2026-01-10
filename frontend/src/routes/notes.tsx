@@ -35,9 +35,9 @@ export default function NotesRoute(props: RouteSectionProps) {
 	// Classes selection derived from URL
 	const selectedClassName = () => {
 		const parts = location.pathname.split("/");
-		const modelsIndex = parts.indexOf("models");
-		if (modelsIndex !== -1 && parts.length > modelsIndex + 1) {
-			return decodeURIComponent(parts[modelsIndex + 1]);
+		const classesIndex = parts.indexOf("classes");
+		if (classesIndex !== -1 && parts.length > classesIndex + 1) {
+			return decodeURIComponent(parts[classesIndex + 1]);
 		}
 		return null;
 	};
@@ -201,7 +201,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 			setShowCreateClassDialog(false);
 			refetchClasses();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create data model");
+			alert(e instanceof Error ? e.message : "Failed to create note class");
 		}
 	};
 

@@ -6,7 +6,7 @@ import { ListPanel } from "./ListPanel";
 import type { Class, NoteRecord } from "~/lib/types";
 
 describe("ListPanel", () => {
-	const mockClasss: Class[] = [
+	const mockClasses: Class[] = [
 		{
 			name: "Meeting",
 			fields: { date: { type: "date" }, attendees: { type: "string" } },
@@ -42,7 +42,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={vi.fn()}
@@ -57,7 +57,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={onCreate}
@@ -72,7 +72,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
@@ -87,7 +87,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={onFilterClassChange}
 				/>
@@ -102,7 +102,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -117,7 +117,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -134,7 +134,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -150,7 +150,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					loading={true}
@@ -164,7 +164,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					error="Test error message"
@@ -178,7 +178,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					classs={mockClasss}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={[]}
@@ -188,13 +188,13 @@ describe("ListPanel", () => {
 		});
 	});
 
-	describe("Classs mode", () => {
+	describe("Classes mode", () => {
 		it("should render New Class button", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="classs"
-					classs={mockClasss}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={vi.fn()}
@@ -203,12 +203,12 @@ describe("ListPanel", () => {
 			expect(screen.getByText("New Class")).toBeInTheDocument();
 		});
 
-		it("should render classs list", () => {
+		it("should render classes list", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="classs"
-					classs={mockClasss}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
@@ -226,11 +226,11 @@ describe("ListPanel", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="classs"
-					classs={mockClasss}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
-					selectedClass={mockClasss[0]}
+					selectedClass={mockClasses[0]}
 				/>
 			));
 			// Find the button containing "2 fields" which is in the Meeting class item
@@ -244,8 +244,8 @@ describe("ListPanel", () => {
 			const onSelectClass = vi.fn();
 			render(() => (
 				<ListPanel
-					mode="classs"
-					classs={mockClasss}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onSelectClass={onSelectClass}
@@ -257,20 +257,20 @@ describe("ListPanel", () => {
 			if (button) {
 				fireEvent.click(button);
 			}
-			expect(onSelectClass).toHaveBeenCalledWith(mockClasss[0]);
+			expect(onSelectClass).toHaveBeenCalledWith(mockClasses[0]);
 		});
 
-		it("should show empty state when no classs", () => {
+		it("should show empty state when no classes", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="classs"
-					classs={[]}
+					mode="classes"
+					classes={[]}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
 			));
-			expect(screen.getByText("No data models yet")).toBeInTheDocument();
+			expect(screen.getByText("No note classes yet")).toBeInTheDocument();
 		});
 	});
 });
