@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
+import { createSignal, createEffect, For, Index, Show, onMount, onCleanup } from "solid-js";
 import type { Schema, SchemaCreatePayload } from "~/lib/types";
 
 export interface CreateNoteDialogProps {
@@ -272,19 +272,19 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 								</button>
 							</div>
 
-							<For each={fields()}>
+							<Index each={fields()}>
 								{(field, i) => (
 									<div class="flex gap-2 items-center">
 										<input
 											type="text"
 											placeholder="Column Name"
-											value={field.name}
-											onInput={(e) => updateField(i(), "name", e.currentTarget.value)}
+											value={field().name}
+											onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 											class="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
 										/>
 										<select
-											value={field.type}
-											onChange={(e) => updateField(i(), "type", e.currentTarget.value)}
+											value={field().type}
+											onChange={(e) => updateField(i, "type", e.currentTarget.value)}
 											class="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
 										>
 											<For each={props.columnTypes}>
@@ -293,14 +293,14 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 										</select>
 										<button
 											type="button"
-											onClick={() => removeField(i())}
+											onClick={() => removeField(i)}
 											class="text-red-500 hover:text-red-700 px-2"
 										>
 											×
 										</button>
 									</div>
 								)}
-							</For>
+							</Index>
 							<Show when={fields().length === 0}>
 								<div class="text-sm text-gray-500 italic p-2 bg-gray-50 rounded text-center">
 									No columns defined
@@ -485,22 +485,22 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 								</button>
 							</div>
 
-							<For each={fields()}>
+							<Index each={fields()}>
 								{(field, i) => (
 									<div class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
 										<div class="flex gap-2 items-center">
 											<input
 												type="text"
 												placeholder="Column Name"
-												disabled={!field.isNew && !!props.schema.fields[field.name]}
-												value={field.name}
-												onInput={(e) => updateField(i(), "name", e.currentTarget.value)}
+												disabled={!field().isNew && !!props.schema.fields[field().name]}
+												value={field().name}
+												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 												class="flex-1 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-500"
-												title={!field.isNew ? "Delete and add a new column to rename" : ""}
+												title={!field().isNew ? "Delete and add a new column to rename" : ""}
 											/>
 											<select
-												value={field.type}
-												onChange={(e) => updateField(i(), "type", e.currentTarget.value)}
+												value={field().type}
+												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
 												class="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
 											>
 												<For each={props.columnTypes}>
@@ -509,27 +509,27 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 											</select>
 											<button
 												type="button"
-												onClick={() => removeField(i())}
+												onClick={() => removeField(i)}
 												class="text-red-500 hover:text-red-700 px-2"
 											>
 												×
 											</button>
 										</div>
-										<Show when={!props.schema.fields[field.name] || field.isNew}>
+										<Show when={!props.schema.fields[field().name] || field().isNew}>
 											<div class="ml-1 flex items-center gap-2">
 												<span class="text-xs text-gray-500">Default Value:</span>
 												<input
 													type="text"
 													placeholder="(Optional) e.g. Pending"
-													value={field.defaultValue || ""}
-													onInput={(e) => updateField(i(), "defaultValue", e.currentTarget.value)}
+													value={field().defaultValue || ""}
+													onInput={(e) => updateField(i, "defaultValue", e.currentTarget.value)}
 													class="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
 												/>
 											</div>
 										</Show>
 									</div>
 								)}
-							</For>
+							</Index>
 							<Show when={fields().length === 0}>
 								<div class="text-sm text-gray-500 italic p-2 bg-gray-50 rounded text-center">
 									No columns defined
