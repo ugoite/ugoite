@@ -797,7 +797,7 @@ Users MUST be able to select rectangular ranges of cells via dragging and edit c
 ---
 
 ### REQ-FE-032: Schema Creation Input Stability
-**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 3
+**Related Spec**: [02_features_and_stories.md](02_features_and_stories.md) Story 2
 
 When creating or editing a schema, inputting column names MUST NOT cause focus loss. The UI MUST maintain focus on the active input during consecutive keystrokes.
 
