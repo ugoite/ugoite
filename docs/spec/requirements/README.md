@@ -15,7 +15,7 @@ This directory contains machine-readable requirement definitions for IEapp.
 | [api.yaml](api.yaml) | REST API | REQ-API-* |
 | [frontend.yaml](frontend.yaml) | Frontend UI | REQ-FE-* |
 | [e2e.yaml](e2e.yaml) | End-to-End | REQ-E2E-* |
-| [class.yaml](class.yaml) | Class Management (Schemas) | REQ-SCH-* |
+| [class.yaml](class.yaml) | Class Management | REQ-CLS-* |
 
 ## Requirement Format
 
@@ -61,7 +61,7 @@ requirements:
 - `REQ-API-###` - API requirements
 - `REQ-FE-###` - Frontend requirements
 - `REQ-E2E-###` - End-to-end requirements
-- `REQ-SCH-###` - Class (schema) management requirements
+- `REQ-CLS-###` - Class (schema) management requirements
 
 ## Test Mapping
 

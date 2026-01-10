@@ -28,25 +28,24 @@ Transform the MVP codebase into a well-structured, maintainable system with:
 
 ---
 
-## Checkpoint 1: Terminology Unification
+## Checkpoint 1: Terminology Unification ✅ DONE (Refactored to "Note Class")
 
 **Goal**: Consolidate "datamodel", "schema", "class" terminology to single "class" term
 
-### AS-IS (Current State)
+### AS-IS (Status: Migrated)
 
-The codebase uses three different terms for the same concept (note type definitions):
+The codebase now consistently uses "Class" or "Note Class".
 
-| Location | Term Used | Files |
-|----------|-----------|-------|
-| `docs/spec/data-model/overview.md` | "Schema", "Class" | Specification (migrated) |
-| `ieapp-cli/src/ieapp/schemas.py` | "schema" | `list_schemas()`, `get_schema()`, `upsert_schema()` |
-| `backend/src/app/api/endpoints/workspaces.py` | "schema" | Routes: `/schemas`, `/schemas/{class}` |
-| `backend/src/app/models/schemas.py` | "SchemaCreate" | Pydantic models |
-| `frontend/src/lib/client.ts` | "schemaApi" | API client |
-| `docs/spec/stories/*.yaml` | "Class", "Schema" | Mixed usage (migrated) |
-| Directory structure | `schemas/` | Workspace subdirectory |
+| Location | Term Used | Status |
+|----------|-----------|--------|
+| Specification | "Note Class" | Updated |
+| CLI Logic | `classes.py` | Renamed / Updated |
+| API Routes | `/classes` | Updated |
+| Models | `ClassCreate` | Updated |
+| Frontend | `classApi` | Updated |
+| Directory | `classes/` | Migrated |
 
-### TO-BE (Target State)
+### TO-BE (Verified)
 
 Unified to "Class" terminology:
 
@@ -302,7 +301,7 @@ docs/spec/requirements/
 ├── sandbox.yaml           # REQ-SANDBOX-* requirements
 ├── api.yaml               # REQ-API-* requirements
 ├── frontend.yaml          # REQ-FE-* requirements
-├── class.yaml              # REQ-SCH-* requirements
+├── class.yaml              # REQ-CLS-* requirements
 └── e2e.yaml               # REQ-E2E-* requirements
 
 docs/tests/

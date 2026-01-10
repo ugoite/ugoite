@@ -1,0 +1,70 @@
+# Class APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: classes
+
+apis:
+  - id: class.list
+    method: GET
+    path: /workspaces/{workspace_id}/classes
+    paths:
+      backend: /workspaces/{workspace_id}/classes
+      frontend: /api/workspaces/{workspace_id}/classes
+    backend:
+      file: backend/src/app/api/endpoints/workspace.py
+      function: list_classes_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: classApi.list
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/classes.py
+      function: list_classes
+
+  - id: class.types
+    method: GET
+    path: /workspaces/{workspace_id}/classes/types
+    paths:
+      backend: /workspaces/{workspace_id}/classes/types
+      frontend: /api/workspaces/{workspace_id}/classes/types
+    backend:
+      file: backend/src/app/api/endpoints/workspace.py
+      function: list_class_types_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: classApi.listTypes
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/classes.py
+      function: list_column_types
+
+  - id: class.get
+    method: GET
+    path: /workspaces/{workspace_id}/classes/{class_name}
+    paths:
+      backend: /workspaces/{workspace_id}/classes/{class_name}
+      frontend: /api/workspaces/{workspace_id}/classes/{class_name}
+    backend:
+      file: backend/src/app/api/endpoints/workspace.py
+      function: get_class_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: classApi.get
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/classes.py
+      function: get_class
+
+  - id: class.upsert
+    method: POST
+    path: /workspaces/{workspace_id}/classes
+    paths:
+      backend: /workspaces/{workspace_id}/classes
+      frontend: /api/workspaces/{workspace_id}/classes
+    backend:
+      file: backend/src/app/api/endpoints/workspace.py
+      function: create_class_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: classApi.create
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/classes.py
+      function: upsert_class

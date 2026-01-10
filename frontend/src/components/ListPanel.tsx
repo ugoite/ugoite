@@ -1,19 +1,19 @@
 import { For, Show, createMemo } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { NoteRecord, Schema } from "~/lib/types";
+import type { NoteRecord, Class } from "~/lib/types";
 import { SearchBar } from "./SearchBar";
 
 export interface ListPanelProps {
 	/** Current view mode */
-	mode: "notes" | "schemas";
+	mode: "notes" | "classes";
 	/** Whether to show the create button */
 	showCreate?: boolean;
 	/** Label for create button */
 	createLabel?: string;
 	/** Callback when create button is clicked */
 	onCreate?: () => void;
-	/** List of schemas for filter dropdown */
-	schemas: Schema[];
+	/** List of classes for filter dropdown */
+	classes: Class[];
 	/** Selected class for filtering */
 	filterClass: Accessor<string>;
 	/** Callback when filter class changes */
@@ -34,10 +34,10 @@ export interface ListPanelProps {
 	selectedId?: string;
 	/** Callback when a note is selected */
 	onSelectNote?: (noteId: string) => void;
-	/** Callback when a schema is selected */
-	onSelectSchema?: (schema: Schema) => void;
-	/** Currently selected schema (for schemas mode) */
-	selectedSchema?: Schema | null;
+	/** Callback when a class is selected */
+	onSelectClass?: (noteClass: Class) => void;
+	/** Currently selected class (for classes mode) */
+	selectedClass?: Class | null;
 }
 
 export function ListPanel(props: ListPanelProps) {
@@ -88,7 +88,7 @@ export function ListPanel(props: ListPanelProps) {
 			</Show>
 
 			{/* Class filter */}
-			<Show when={props.mode === "notes" && props.schemas.length > 0}>
+			<Show when={props.mode === "notes" && props.classes.length > 0}>
 				<div class="px-4 py-3 border-b bg-gray-50">
 					<label class="block text-xs font-medium text-gray-500 mb-1" for="filter-class">
 						Filter by Class
@@ -100,7 +100,7 @@ export function ListPanel(props: ListPanelProps) {
 						onChange={(e) => props.onFilterClassChange(e.currentTarget.value)}
 					>
 						<option value="">All</option>
-						<For each={props.schemas}>{(s) => <option value={s.name}>{s.name}</option>}</For>
+						<For each={props.classes}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 					</select>
 				</div>
 			</Show>
@@ -117,11 +117,11 @@ export function ListPanel(props: ListPanelProps) {
 					/>
 				</Show>
 
-				<Show when={props.mode === "schemas"}>
-					<SchemaListContent
-						schemas={props.schemas}
-						selectedSchema={props.selectedSchema || null}
-						onSelect={props.onSelectSchema}
+				<Show when={props.mode === "classes"}>
+					<ClassListContent
+						classes={props.classes}
+						selectedClass={props.selectedClass || null}
+						onSelect={props.onSelectClass}
 					/>
 				</Show>
 			</div>
@@ -298,16 +298,16 @@ function NoteListItem(props: NoteListItemProps) {
 	);
 }
 
-interface SchemaListContentProps {
-	schemas: Schema[];
-	selectedSchema: Schema | null;
-	onSelect?: (schema: Schema) => void;
+interface ClassListContentProps {
+	classes: Class[];
+	selectedClass: Class | null;
+	onSelect?: (noteClass: Class) => void;
 }
 
-function SchemaListContent(props: SchemaListContentProps) {
+function ClassListContent(props: ClassListContentProps) {
 	return (
 		<Show
-			when={props.schemas.length > 0}
+			when={props.classes.length > 0}
 			fallback={
 				<div class="empty-state p-12 text-center">
 					<div class="flex flex-col items-center">
@@ -324,29 +324,29 @@ function SchemaListContent(props: SchemaListContentProps) {
 								d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
 							/>
 						</svg>
-						<p class="text-gray-600 font-medium mb-1">No data models yet</p>
-						<p class="text-sm text-gray-400">Create your first data model to get started</p>
+						<p class="text-gray-600 font-medium mb-1">No note classes yet</p>
+						<p class="text-sm text-gray-400">Create your first note class to get started</p>
 					</div>
 				</div>
 			}
 		>
 			<ul class="space-y-2">
-				<For each={props.schemas}>
-					{(schema) => (
+				<For each={props.classes}>
+					{(noteClass) => (
 						<li>
 							<button
 								type="button"
-								onClick={() => props.onSelect?.(schema)}
+								onClick={() => props.onSelect?.(noteClass)}
 								class={`w-full text-left p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
-									props.selectedSchema?.name === schema.name
+									props.selectedClass?.name === noteClass.name
 										? "border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
 										: "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md hover:bg-gray-50"
 								}`}
 							>
-								<div class="font-semibold text-gray-900">{schema.name}</div>
+								<div class="font-semibold text-gray-900">{noteClass.name}</div>
 								<div class="text-xs text-gray-500 mt-1">
-									{Object.keys(schema.fields).length}{" "}
-									{Object.keys(schema.fields).length === 1 ? "field" : "fields"}
+									{Object.keys(noteClass.fields).length}{" "}
+									{Object.keys(noteClass.fields).length === 1 ? "field" : "fields"}
 								</div>
 							</button>
 						</li>

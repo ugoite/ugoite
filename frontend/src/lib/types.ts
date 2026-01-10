@@ -98,24 +98,24 @@ export interface NoteUpdatePayload {
 	attachments?: Attachment[];
 }
 
-export interface SchemaField {
+export interface ClassField {
 	type: string;
 	required: boolean;
 }
 
-export interface Schema {
+export interface Class {
 	name: string;
 	version: number;
 	template: string;
-	fields: Record<string, SchemaField>;
+	fields: Record<string, ClassField>;
 	defaults?: Record<string, unknown>;
 }
 
-export interface SchemaCreatePayload {
+export interface ClassCreatePayload {
 	name: string;
 	version?: number;
 	template: string;
-	fields: Record<string, SchemaField>;
+	fields: Record<string, ClassField>;
 	defaults?: Record<string, unknown>;
 	strategies?: Record<string, unknown>;
 }

@@ -1,12 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, waitFor, fireEvent } from "@solidjs/testing-library";
-import { SchemaTable } from "./SchemaTable";
+import { ClassTable } from "./ClassTable";
 import { workspaceApi, noteApi } from "~/lib/client";
 
-describe("SchemaTable", () => {
+describe("ClassTable", () => {
 	it("renders '-' for missing properties and does not throw", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { A: { type: "string" }, B: { type: "string" } },
 		} as any;
@@ -16,7 +16,7 @@ describe("SchemaTable", () => {
 
 		const spy = vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
 
-		render(() => <SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />);
+		render(() => <ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />);
 
 		await waitFor(() => {
 			expect(spy).toHaveBeenCalled();
@@ -30,7 +30,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("REQ-FE-019: sorts notes when clicking headers", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { price: { type: "number" } },
 		} as any;
@@ -41,7 +41,7 @@ describe("SchemaTable", () => {
 
 		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
 		const { getByText } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		await waitFor(() => expect(getByText("A Note")).toBeInTheDocument());
@@ -63,7 +63,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("REQ-FE-020: filters notes globally", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { tag: { type: "string" } },
 		} as any;
@@ -74,7 +74,7 @@ describe("SchemaTable", () => {
 
 		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
 		const { getByPlaceholderText, queryByText } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		await waitFor(() => expect(queryByText("Apple")).toBeInTheDocument());
@@ -89,7 +89,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("REQ-FE-021: exports filtered data to CSV", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { price: { type: "number" } },
 		} as any;
@@ -117,7 +117,7 @@ describe("SchemaTable", () => {
 		});
 
 		const { getByText } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		await waitFor(() => expect(getByText("Export CSV")).toBeInTheDocument());
@@ -129,7 +129,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("REQ-FE-030: Add Row button creates a new note", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { col: { type: "string" } },
 		} as any;
@@ -138,7 +138,7 @@ describe("SchemaTable", () => {
 		const createSpy = vi.spyOn(noteApi, "create").mockResolvedValue({ id: "new-note" } as any);
 
 		const { getByText, getByTitle } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		// Enable editing first
@@ -160,7 +160,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("REQ-FE-031: Edit Mode toggle and inline edit", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { col: { type: "string" } },
 		} as any;
@@ -176,7 +176,7 @@ describe("SchemaTable", () => {
 		const updateSpy = vi.spyOn(noteApi, "update").mockResolvedValue({} as any);
 
 		const { getByText, getByTitle, getByDisplayValue } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		// Wait for render
@@ -209,7 +209,7 @@ describe("SchemaTable", () => {
 	});
 
 	it("should have a link icon for navigation and not navigate on row click", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { col: { type: "string" } },
 		} as any;
@@ -220,7 +220,7 @@ describe("SchemaTable", () => {
 		const onNoteClick = vi.fn();
 
 		const { getByText, getByRole } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={onNoteClick} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={onNoteClick} />
 		));
 
 		await waitFor(() => expect(getByText("Note1")).toBeInTheDocument());
@@ -240,11 +240,11 @@ describe("SchemaTable", () => {
 	});
 
 	it("should show restricted lock icon when not in edit mode and open lock icon when in edit mode", async () => {
-		const schema = { name: "Test", fields: {} } as any;
+		const noteClass = { name: "Test", fields: {} } as any;
 		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
 
 		const { getByTitle, queryByTitle } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		// Initially Locked
@@ -259,7 +259,7 @@ describe("SchemaTable", () => {
 		expect(queryByTitle("Locked")).not.toBeInTheDocument();
 	});
 	it("REQ-FE-031: keyboard copy shortcut", async () => {
-		const schema = {
+		const noteClass = {
 			name: "Test",
 			fields: { col: { type: "string" } },
 		} as any;
@@ -282,7 +282,7 @@ describe("SchemaTable", () => {
 		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
 		const { getByText } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		await waitFor(() => getByText("Note1"));
@@ -303,13 +303,13 @@ describe("SchemaTable", () => {
 	});
 
 	it("should not trigger custom copy when input is focused", async () => {
-		const schema = { name: "Test", fields: {} } as any;
+		const noteClass = { name: "Test", fields: {} } as any;
 		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
 		const writeTextSpy = vi.fn();
 		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
 		const { getByPlaceholderText } = render(() => (
-			<SchemaTable workspaceId="ws" schema={schema} onNoteClick={() => {}} />
+			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
 
 		const searchInput = getByPlaceholderText("Global Search...");

@@ -14,8 +14,8 @@ def test_update_note_reflects_in_query(
     ws_id = "reindex-test-ws"
     test_client.post("/workspaces", json={"name": ws_id})
 
-    # 2. Create Schema
-    schema = {
+    # 2. Create Class
+    note_class = {
         "name": "Task",
         "version": 1,
         "template": "# Task\n\n## priority\n",
@@ -23,7 +23,7 @@ def test_update_note_reflects_in_query(
             "priority": {"type": "string"},
         },
     }
-    test_client.post(f"/workspaces/{ws_id}/schemas", json=schema)
+    test_client.post(f"/workspaces/{ws_id}/classes", json=note_class)
 
     # 3. Create Note with Class
     note_payload = {

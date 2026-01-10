@@ -12,15 +12,15 @@ from ieapp import (
     create_link,
     delete_attachment,
     delete_link,
-    get_schema,
+    get_class,
     list_attachments,
+    list_classes,
     list_column_types,
     list_links,
-    list_schemas,
-    migrate_schema,
+    migrate_class,
     save_attachment,
     search_notes,
-    upsert_schema,
+    upsert_class,
 )
 from ieapp.indexer import extract_properties, validate_properties
 from ieapp.notes import (
@@ -47,13 +47,13 @@ from ieapp.workspace import (
 )
 
 from app.core.config import get_root_path
-from app.models.schemas import (
+from app.models.classes import (
+    ClassCreate,
     LinkCreate,
     NoteCreate,
     NoteRestore,
     NoteUpdate,
     QueryRequest,
-    SchemaCreate,
     TestConnectionRequest,
     WorkspaceCreate,
     WorkspacePatch,
@@ -63,8 +63,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
-    """Format schema validation warnings into a single human-readable string.
+def _format_class_validation_errors(errors: list[dict[str, Any]]) -> str:
+    """Format class validation warnings into a single human-readable string.
 
     The validator returns a list of dicts describing issues. This helper
     consolidates them into a newline-separated message suitable for HTTP API
@@ -87,35 +87,35 @@ def _format_schema_validation_errors(errors: list[dict[str, Any]]) -> str:
         elif isinstance(field, str) and field:
             parts.append(f"Invalid field: {field}")
         else:
-            parts.append("Schema validation error")
+            parts.append("Class validation error")
     return "\n".join(parts)
 
 
-def _validate_note_markdown_against_schema(ws_path: str, markdown: str) -> None:
-    """Validate extracted note properties against the workspace schema."""
+def _validate_note_markdown_against_class(ws_path: str, markdown: str) -> None:
+    """Validate extracted note properties against the workspace class."""
     properties = extract_properties(markdown)
     note_class = properties.get("class")
     if not isinstance(note_class, str) or not note_class.strip():
         return
 
     try:
-        schema = get_schema(ws_path, note_class)
+        class_def = get_class(ws_path, note_class)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Schema not found: {note_class}",
+            detail=f"Class not found: {note_class}",
         ) from e
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid schema file",
+            detail="Invalid class file",
         ) from e
 
-    _casted, warnings = validate_properties(properties, schema)
+    _casted, warnings = validate_properties(properties, class_def)
     if warnings:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=_format_schema_validation_errors(warnings),
+            detail=_format_class_validation_errors(warnings),
         )
 
 
@@ -354,7 +354,7 @@ async def update_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        _validate_note_markdown_against_schema(ws_path, payload.markdown)
+        _validate_note_markdown_against_class(ws_path, payload.markdown)
         update_note(
             ws_path,
             note_id,
@@ -701,24 +701,24 @@ async def search_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/schemas")
-async def list_schemas_endpoint(workspace_id: str) -> list[dict[str, Any]]:
-    """List all schemas in the workspace."""
+@router.get("/workspaces/{workspace_id}/classes")
+async def list_classes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
+    """List all classes in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return list_schemas(ws_path)
+        return list_classes(ws_path)
     except Exception as e:
-        logger.exception("Failed to list schemas")
+        logger.exception("Failed to list classes")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/schemas/types")
-async def list_schema_types_endpoint(workspace_id: str) -> list[str]:
+@router.get("/workspaces/{workspace_id}/classes/types")
+async def list_class_types_endpoint(workspace_id: str) -> list[str]:
     """Get list of available column types."""
     _validate_path_id(workspace_id, "workspace_id")
     try:
@@ -728,56 +728,56 @@ async def list_schema_types_endpoint(workspace_id: str) -> list[str]:
     except Exception as e:
         if isinstance(e, HTTPException):
             raise
-        logger.exception("Failed to list schema types")
+        logger.exception("Failed to list class types")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/schemas/{class_name}")
-async def get_schema_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
-    """Get a specific schema definition."""
+@router.get("/workspaces/{workspace_id}/classes/{class_name}")
+async def get_class_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
+    """Get a specific class definition."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(class_name, "class_name")
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return get_schema(ws_path, class_name)
+        return get_class(ws_path, class_name)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Schema not found: {class_name}",
+            detail=f"Class not found: {class_name}",
         ) from e
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid schema file",
+            detail="Invalid class file",
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/schemas", status_code=status.HTTP_201_CREATED)
-async def create_schema_endpoint(
+@router.post("/workspaces/{workspace_id}/classes", status_code=status.HTTP_201_CREATED)
+async def create_class_endpoint(
     workspace_id: str,
-    payload: SchemaCreate,
+    payload: ClassCreate,
 ) -> dict[str, Any]:
-    """Create or update a schema definition."""
+    """Create or update a class definition."""
     _validate_path_id(workspace_id, "workspace_id")
-    _validate_path_id(payload.name, "schema_name")
+    _validate_path_id(payload.name, "class_name")
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        # Separate strategies from persistent schema definition
-        schema_data = payload.model_dump()
-        strategies = schema_data.pop("strategies", None)
+        # Separate strategies from persistent class definition
+        class_data = payload.model_dump()
+        strategies = class_data.pop("strategies", None)
 
         if strategies:
-            migrate_schema(ws_path, schema_data, strategies=strategies)
-            return get_schema(ws_path, payload.name)
+            migrate_class(ws_path, class_data, strategies=strategies)
+            return get_class(ws_path, payload.name)
 
-        return upsert_schema(ws_path, schema_data)
+        return upsert_class(ws_path, class_data)
     except Exception as e:
-        logger.exception("Failed to upsert schema")
+        logger.exception("Failed to upsert class")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),

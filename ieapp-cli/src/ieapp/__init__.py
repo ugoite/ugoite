@@ -6,6 +6,13 @@ from .attachments import (
     list_attachments,
     save_attachment,
 )
+from .classes import (
+    get_class,
+    list_classes,
+    list_column_types,
+    migrate_class,
+    upsert_class,
+)
 from .hmac_manager import (
     build_response_signature,
     ensure_global_json,
@@ -30,13 +37,6 @@ from .notes import (
     list_notes,
     restore_note,
     update_note,
-)
-from .schemas import (
-    get_schema,
-    list_column_types,
-    list_schemas,
-    migrate_schema,
-    upsert_schema,
 )
 from .search import search_notes
 from .utils import resolve_existing_path
@@ -69,19 +69,19 @@ __all__ = [
     "delete_note",
     "ensure_global_json",
     "extract_properties",
+    "get_class",
     "get_note",
     "get_note_history",
     "get_note_revision",
-    "get_schema",
     "get_workspace",
     "list_attachments",
+    "list_classes",
     "list_column_types",
     "list_links",
     "list_notes",
-    "list_schemas",
     "list_workspaces",
     "load_hmac_material",
-    "migrate_schema",
+    "migrate_class",
     "patch_workspace",
     "query",  # Alias for query_index
     "query_index",
@@ -91,7 +91,7 @@ __all__ = [
     "search_notes",
     "test_storage_connection",
     "update_note",
-    "upsert_schema",
+    "upsert_class",
     "validate_properties",
     "workspace_path",
 ]

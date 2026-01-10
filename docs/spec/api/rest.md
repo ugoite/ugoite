@@ -357,7 +357,7 @@ GET /workspaces/{ws_id}/search?q=project
 | `400` | Bad Request - Invalid input |
 | `404` | Not Found - Resource doesn't exist |
 | `409` | Conflict - Duplicate or version mismatch |
-| `422` | Validation Error - Schema violation |
+| `422` | Validation Error - Class violation |
 | `500` | Internal Server Error |
 
 Error response format:

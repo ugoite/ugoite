@@ -8,11 +8,11 @@ import {
 	onMount,
 	onCleanup,
 } from "solid-js";
-import { CreateNoteDialog, CreateSchemaDialog } from "~/components/create-dialogs";
-import type { SchemaCreatePayload } from "~/lib/types";
+import { CreateNoteDialog, CreateClassDialog } from "~/components/create-dialogs";
+import type { ClassCreatePayload } from "~/lib/types";
 import { ListPanel } from "~/components/ListPanel";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
-import { schemaApi, noteApi } from "~/lib/client";
+import { classApi, noteApi } from "~/lib/client";
 import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { NotesRouteContext } from "~/lib/notes-route-context";
 import { createNoteStore } from "~/lib/store";
@@ -29,11 +29,11 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	const noteStore = createNoteStore(workspaceId);
 
-	// View mode: notes or schemas (data models) derived from URL
-	const viewMode = () => (location.pathname.includes("/notes/models") ? "schemas" : "notes");
+	// View mode: notes or classes (data models) derived from URL
+	const viewMode = () => (location.pathname.includes("/notes/classes") ? "classes" : "notes");
 
-	// Schemas selection derived from URL
-	const selectedSchemaName = () => {
+	// Classes selection derived from URL
+	const selectedClassName = () => {
 		const parts = location.pathname.split("/");
 		const modelsIndex = parts.indexOf("models");
 		if (modelsIndex !== -1 && parts.length > modelsIndex + 1) {
@@ -42,10 +42,10 @@ export default function NotesRoute(props: RouteSectionProps) {
 		return null;
 	};
 
-	const selectedSchema = () => {
-		const name = selectedSchemaName();
+	const selectedClass = () => {
+		const name = selectedClassName();
 		if (!name) return null;
-		return schemas()?.find((s) => s.name === name) || null;
+		return classes()?.find((s) => s.name === name) || null;
 	};
 
 	// Filter state (notes only)
@@ -58,19 +58,19 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	// Dialogs
 	const [showCreateNoteDialog, setShowCreateNoteDialog] = createSignal(false);
-	const [showCreateSchemaDialog, setShowCreateSchemaDialog] = createSignal(false);
+	const [showCreateClassDialog, setShowCreateClassDialog] = createSignal(false);
 
 	const selectedNoteId = () => params.noteId ?? null;
 
-	// Schemas resource
-	const [schemas, { refetch: refetchSchemas }] = createResource(
+	// Classes resource
+	const [classes, { refetch: refetchClasses }] = createResource(
 		() => {
 			const wsId = workspaceId();
 			return wsId ? wsId : null;
 		},
 		async (wsId) => {
 			if (!wsId) return [];
-			return await schemaApi.list(wsId);
+			return await classApi.list(wsId);
 		},
 	);
 
@@ -78,12 +78,12 @@ export default function NotesRoute(props: RouteSectionProps) {
 		() => workspaceId(),
 		async (wsId) => {
 			if (!wsId) return [];
-			return await schemaApi.listTypes(wsId);
+			return await classApi.listTypes(wsId);
 		},
 	);
 
-	const safeSchemas = createMemo(() => schemas() || []);
-	const loadingSchemas = createMemo(() => schemas.loading);
+	const safeClasses = createMemo(() => classes() || []);
+	const loadingClasses = createMemo(() => classes.loading);
 	onMount(() => {
 		workspaceStore.loadWorkspaces().catch(() => {
 			// ignore
@@ -179,10 +179,10 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	// Create note
 	const handleCreateNote = async (title: string, className: string) => {
-		const schema = (schemas() || []).find((s) => s.name === className);
+		const class_def = (classes() || []).find((s) => s.name === className);
 		let initialContent = `# ${title}\n\nStart writing here...`;
-		if (className && schema) {
-			initialContent = ensureClassFrontmatter(replaceFirstH1(schema.template, title), className);
+		if (className && class_def) {
+			initialContent = ensureClassFrontmatter(replaceFirstH1(class_def.template, title), className);
 		}
 
 		try {
@@ -194,12 +194,12 @@ export default function NotesRoute(props: RouteSectionProps) {
 		}
 	};
 
-	// Create schema
-	const handleCreateSchema = async (payload: SchemaCreatePayload) => {
+	// Create class
+	const handleCreateClass = async (payload: ClassCreatePayload) => {
 		try {
-			await schemaApi.create(workspaceId(), payload);
-			setShowCreateSchemaDialog(false);
-			refetchSchemas();
+			await classApi.create(workspaceId(), payload);
+			setShowCreateClassDialog(false);
+			refetchClasses();
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create data model");
 		}
@@ -211,10 +211,10 @@ export default function NotesRoute(props: RouteSectionProps) {
 				workspaceStore,
 				workspaceId,
 				noteStore,
-				schemas: safeSchemas,
-				loadingSchemas,
+				classes: safeClasses,
+				loadingClasses,
 				columnTypes: () => columnTypes() || [],
-				refetchSchemas,
+				refetchClasses,
 			}}
 		>
 			<main class="flex h-screen overflow-hidden bg-gray-100">
@@ -242,26 +242,26 @@ export default function NotesRoute(props: RouteSectionProps) {
 						</button>
 						<button
 							type="button"
-							onClick={() => navigate("/notes/models")}
+							onClick={() => navigate("/notes/classes")}
 							class={`flex-1 py-3 text-sm font-medium text-center ${
-								viewMode() === "schemas"
+								viewMode() === "classes"
 									? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
 									: "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
 							}`}
 						>
-							Data Models
+							Classes
 						</button>
 					</div>
 
 					<ListPanel
 						mode={viewMode()}
-						schemas={schemas() || []}
+						classes={classes() || []}
 						filterClass={filterClass}
 						onFilterClassChange={setFilterClass}
 						onCreate={() =>
 							viewMode() === "notes"
 								? setShowCreateNoteDialog(true)
-								: setShowCreateSchemaDialog(true)
+								: setShowCreateClassDialog(true)
 						}
 						onSearch={viewMode() === "notes" ? handleSearch : undefined}
 						isSearching={isSearching()}
@@ -271,8 +271,8 @@ export default function NotesRoute(props: RouteSectionProps) {
 						error={noteStore.error()}
 						selectedId={selectedNoteId() || undefined}
 						onSelectNote={handleSelectNote}
-						onSelectSchema={(s) => navigate(`/notes/models/${encodeURIComponent(s.name)}`)}
-						selectedSchema={selectedSchema()}
+						onSelectClass={(s) => navigate(`/notes/classes/${encodeURIComponent(s.name)}`)}
+						selectedClass={selectedClass()}
 					/>
 				</aside>
 
@@ -280,16 +280,16 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 				<CreateNoteDialog
 					open={showCreateNoteDialog()}
-					schemas={schemas() || []}
+					classes={classes() || []}
 					onClose={() => setShowCreateNoteDialog(false)}
 					onSubmit={handleCreateNote}
 				/>
 
-				<CreateSchemaDialog
-					open={showCreateSchemaDialog()}
+				<CreateClassDialog
+					open={showCreateClassDialog()}
 					columnTypes={columnTypes() || []}
-					onClose={() => setShowCreateSchemaDialog(false)}
-					onSubmit={handleCreateSchema}
+					onClose={() => setShowCreateClassDialog(false)}
+					onSubmit={handleCreateClass}
 				/>
 			</main>
 		</NotesRouteContext.Provider>

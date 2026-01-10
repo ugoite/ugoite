@@ -235,21 +235,21 @@ def test_update_note(
     assert "New content" in updated_note["content"]
 
 
-def test_update_note_schema_validation_error_returns_422_and_does_not_update(
+def test_update_note_class_validation_error_returns_422_and_does_not_update(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """Updating a classed note should fail with 422 when it violates the schema."""
+    """Updating a classed note should fail with 422 when it violates the class."""
     test_client.post("/workspaces", json={"name": "test-ws"})
 
-    schema_def = {
+    class_def = {
         "name": "Meeting",
         "version": 1,
         "template": "# Meeting\n\n## Date\n",
         "fields": {"Date": {"type": "date", "required": True}},
         "defaults": None,
     }
-    res = test_client.post("/workspaces/test-ws/schemas", json=schema_def)
+    res = test_client.post("/workspaces/test-ws/classes", json=class_def)
     assert res.status_code == 201
 
     # Create a note with class Meeting but missing required Date property
@@ -696,12 +696,12 @@ def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
     assert "X-IEApp-Signature" in response.headers
 
 
-def test_get_schema_types(test_client: TestClient, temp_workspace_root: Path) -> None:
-    """Test getting available schema column types (REQ-SCH-001)."""
+def test_get_class_types(test_client: TestClient, temp_workspace_root: Path) -> None:
+    """Test getting available class column types (REQ-CLS-001)."""
     # Create workspace to ensure path is valid
     test_client.post("/workspaces", json={"name": "test-ws-types"})
 
-    response = test_client.get("/workspaces/test-ws-types/schemas/types")
+    response = test_client.get("/workspaces/test-ws-types/classes/types")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -709,23 +709,23 @@ def test_get_schema_types(test_client: TestClient, temp_workspace_root: Path) ->
     assert "number" in data
 
 
-def test_update_schema_with_migration(
+def test_update_class_with_migration(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """Test updating schema with migration strategies (REQ-SCH-002)."""
+    """Test updating class with migration strategies (REQ-CLS-002)."""
     # 1. Create Workspace
     test_client.post("/workspaces", json={"name": "test-ws-mig"})
 
-    # 2. Create Initial Schema
-    schema = {
+    # 2. Create Initial Class
+    note_class = {
         "name": "project",
         "template": "# Project",
         "fields": {
             "status": {"type": "string"},
         },
     }
-    test_client.post("/workspaces/test-ws-mig/schemas", json=schema)
+    test_client.post("/workspaces/test-ws-mig/classes", json=note_class)
 
     # 3. Create Note
     note_payload = {
@@ -737,8 +737,8 @@ def test_update_schema_with_migration(
     assert res.status_code == 201
     note_id = res.json()["id"]
 
-    # 4. Update Schema with new field and migration
-    updated_schema = {
+    # 4. Update Class with new field and migration
+    updated_class = {
         "name": "project",
         "template": "# Project",
         "fields": {
@@ -749,7 +749,7 @@ def test_update_schema_with_migration(
             "priority": "High",
         },
     }
-    res = test_client.post("/workspaces/test-ws-mig/schemas", json=updated_schema)
+    res = test_client.post("/workspaces/test-ws-mig/classes", json=updated_class)
     assert res.status_code == 201
 
     # 5. Verify Note

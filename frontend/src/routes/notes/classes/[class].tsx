@@ -1,27 +1,27 @@
 import { useParams, useNavigate } from "@solidjs/router";
 import { Show, createMemo, createSignal } from "solid-js";
-import { SchemaTable } from "~/components/SchemaTable";
-import { EditSchemaDialog } from "~/components/create-dialogs";
+import { ClassTable } from "~/components/ClassTable";
+import { EditClassDialog } from "~/components/create-dialogs";
 import { useNotesRouteContext } from "~/lib/notes-route-context";
-import { schemaApi } from "~/lib/client";
-import type { SchemaCreatePayload } from "~/lib/types";
+import { classApi } from "~/lib/client";
+import type { ClassCreatePayload } from "~/lib/types";
 
-export default function SchemaRoute() {
+export default function ClassRoute() {
 	const params = useParams();
 	const navigate = useNavigate();
 	const ctx = useNotesRouteContext();
 	const [showEditDialog, setShowEditDialog] = createSignal(false);
 
-	const schema = createMemo(() => {
+	const class_def = createMemo(() => {
 		const name = params.class;
-		return ctx.schemas().find((s) => s.name === name);
+		return ctx.classes().find((s) => s.name === name);
 	});
 
-	const handleUpdateSchema = async (payload: SchemaCreatePayload) => {
+	const handleUpdateClass = async (payload: ClassCreatePayload) => {
 		try {
-			await schemaApi.create(ctx.workspaceId(), payload);
+			await classApi.create(ctx.workspaceId(), payload);
 			setShowEditDialog(false);
-			ctx.refetchSchemas();
+			ctx.refetchClasses();
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to update class");
 		}
@@ -29,11 +29,11 @@ export default function SchemaRoute() {
 
 	return (
 		<Show
-			when={schema()}
+			when={class_def()}
 			keyed
 			fallback={
 				<div class="p-8 text-center text-gray-500">
-					{ctx.loadingSchemas() ? "Loading data models..." : "Data model not found"}
+					{ctx.loadingClasses() ? "Loading data models..." : "Note class not found"}
 				</div>
 			}
 		>
@@ -49,17 +49,17 @@ export default function SchemaRoute() {
 							Edit Class
 						</button>
 					</div>
-					<SchemaTable
+					<ClassTable
 						workspaceId={ctx.workspaceId()}
-						schema={s}
+						noteClass={s}
 						onNoteClick={(noteId) => navigate(`/notes/${noteId}`)}
 					/>
-					<EditSchemaDialog
+					<EditClassDialog
 						open={showEditDialog()}
-						schema={s}
+						noteClass={s}
 						columnTypes={ctx.columnTypes()}
 						onClose={() => setShowEditDialog(false)}
-						onSubmit={handleUpdateSchema}
+						onSubmit={handleUpdateClass}
 					/>
 				</div>
 			)}

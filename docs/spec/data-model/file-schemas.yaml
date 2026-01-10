@@ -172,7 +172,7 @@ schemas:
           type: string
           format: date-time
         integrity:
-          $ref: "#/schemas/integrity"
+          $ref: "#/classes/integrity"
 
   note_content:
     description: Note content
@@ -252,7 +252,7 @@ schemas:
           type: string
           description: Unified diff against parent
         integrity:
-          $ref: "#/schemas/integrity"
+          $ref: "#/classes/integrity"
 
   # Index files
   note_index:
@@ -265,7 +265,7 @@ schemas:
         notes:
           type: object
           additionalProperties:
-            $ref: "#/schemas/note_record"
+            $ref: "#/classes/note_record"
         class_stats:
           type: object
           additionalProperties:
