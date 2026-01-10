@@ -4,7 +4,7 @@ import { E2EClient, waitForServers } from "./lib/client";
 const client = new E2EClient();
 const workspaceId = "default";
 
-describe("Note Class", () => {
+describe("Class", () => {
 	beforeAll(async () => {
 		await waitForServers(client, { timeout: 60000 });
 	});

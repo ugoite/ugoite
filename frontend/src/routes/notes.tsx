@@ -190,7 +190,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 			setShowCreateNoteDialog(false);
 			navigate(`/notes/${result.id}`);
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create note class");
+			alert(e instanceof Error ? e.message : "Failed to create note");
 		}
 	};
 
@@ -201,7 +201,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 			setShowCreateClassDialog(false);
 			refetchClasses();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create note class");
+			alert(e instanceof Error ? e.message : "Failed to create class");
 		}
 	};
 

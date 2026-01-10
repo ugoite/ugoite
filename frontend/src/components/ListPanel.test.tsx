@@ -270,7 +270,7 @@ describe("ListPanel", () => {
 					onFilterClassChange={setFilterClass}
 				/>
 			));
-			expect(screen.getByText("No note classes yet")).toBeInTheDocument();
+			expect(screen.getByText("No classes yet")).toBeInTheDocument();
 		});
 	});
 });

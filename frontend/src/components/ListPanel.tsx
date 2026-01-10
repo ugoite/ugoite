@@ -324,8 +324,8 @@ function ClassListContent(props: ClassListContentProps) {
 								d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
 							/>
 						</svg>
-						<p class="text-gray-600 font-medium mb-1">No note classes yet</p>
-						<p class="text-sm text-gray-400">Create your first note class to get started</p>
+						<p class="text-gray-600 font-medium mb-1">No classes yet</p>
+						<p class="text-sm text-gray-400">Create your first class to get started</p>
 					</div>
 				</div>
 			}

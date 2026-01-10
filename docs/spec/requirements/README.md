@@ -61,7 +61,7 @@ requirements:
 - `REQ-API-###` - API requirements
 - `REQ-FE-###` - Frontend requirements
 - `REQ-E2E-###` - End-to-end requirements
-- `REQ-CLS-###` - Class (schema) management requirements
+- `REQ-CLS-###` - Class management requirements
 
 ## Test Mapping
 
