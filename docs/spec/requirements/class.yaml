@@ -1,0 +1,52 @@
+# Class (Schema) Management Requirements
+
+category: Class Management
+prefix: REQ-SCH
+
+requirements:
+  - id: REQ-SCH-001
+    title: List Column Types
+    description: |
+      CLI and Backend MUST expose available column types for class creation.
+
+      Note: API paths may still use /schemas while the user-facing concept is "Class".
+    related_spec:
+      - api/rest.md#schemas
+      - data-model/overview.md#classes-formerly-schema
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_schemas.py
+          tests:
+            - test_list_column_types
+        - file: ieapp-cli/tests/test_cli_schema.py
+          tests:
+            - test_cli_list_types
+        - file: backend/tests/test_api.py
+          tests:
+            - test_get_schema_types
+
+  - id: REQ-SCH-002
+    title: Class Migration Strategy
+    description: |
+      When updating a class definition, the system MUST allow specifying
+      migration strategies for existing fields (for example: set to null,
+      set a default value, or keep as-is).
+    related_spec:
+      - api/rest.md#schemas
+      - data-model/overview.md#classes-formerly-schema
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_schemas.py
+          tests:
+            - test_migrate_schema_add_column_with_default
+            - test_migrate_schema_remove_column
+        - file: ieapp-cli/tests/test_cli_schema.py
+          tests:
+            - test_cli_schema_update
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_schema_with_migration

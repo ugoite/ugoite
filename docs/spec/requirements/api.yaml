@@ -1,0 +1,76 @@
+# REST API Requirements
+
+category: REST API
+prefix: REQ-API
+
+requirements:
+  - id: REQ-API-001
+    title: Workspace CRUD
+    description: |
+      Create, retrieve, and list workspaces.
+    related_spec:
+      - api/rest.md#workspaces
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_workspace
+            - test_list_workspaces
+            - test_get_workspace
+            - test_get_workspace_not_found
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - workspaceApi.list
+            - workspaceApi.create
+      e2e:
+        - file: e2e/smoke.test.ts
+          tests:
+            - GET /workspaces returns list
+            - GET /workspaces includes default workspace
+
+  - id: REQ-API-002
+    title: Note CRUD
+    description: |
+      Create, retrieve, update, and delete notes.
+    related_spec:
+      - api/rest.md#notes
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_note
+            - test_list_notes
+            - test_get_note
+            - test_update_note
+            - test_delete_note
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - noteApi.list
+            - noteApi.create
+            - noteApi.get
+            - noteApi.update
+            - noteApi.delete
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - Create/Read/Update/Delete Notes
+
+  - id: REQ-API-003
+    title: Health Check
+    description: |
+      Check server health via /health endpoint.
+    related_spec:
+      - api/rest.md
+    priority: low
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/smoke.test.ts
+          tests:
+            - GET /health returns OK

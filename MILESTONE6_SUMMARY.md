@@ -138,10 +138,9 @@ Added M6-specific handlers:
 
 ## 📝 Documentation Updates
 
-Updated `/workspace/docs/spec/07_requirements.md`:
-- Added REQ-M6-001 through REQ-M6-005
-- Linked to test files for verification
-- Increased total requirements from 46 to 51
+Updated requirements documentation:
+- Requirements are tracked under `docs/spec/requirements/*.yaml` (legacy `docs/spec/07_requirements.md` has been migrated/removed).
+- Added Milestone 6-related REQ entries and linked them to test files for verification.
 
 ---
 
@@ -214,7 +213,7 @@ All M6 features are implemented, tested, and integrated. The frontend now provid
 
 ## 📦 Git Commits
 
-1. `docs: Add Milestone 6 requirements to 07_requirements.md`
+1. `docs: Add Milestone 6 requirements (now tracked in docs/spec/requirements/*.yaml)`
 2. `feat(frontend): Add SearchBar component with tests (REQ-M6-001)`
 3. `feat(frontend): Add AttachmentUploader component with tests (REQ-M6-002)`
 4. `feat(frontend): Add interactive Canvas component with drag-drop and linking (REQ-M6-003, REQ-M6-004)`

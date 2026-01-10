@@ -1,0 +1,86 @@
+# Workspace APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: workspaces
+
+apis:
+  - id: workspace.list
+    method: GET
+    path: /workspaces
+    paths:
+      backend: /workspaces
+      frontend: /api/workspaces
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: list_workspaces_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.list
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/workspace.py
+      function: list_workspaces
+
+  - id: workspace.create
+    method: POST
+    path: /workspaces
+    paths:
+      backend: /workspaces
+      frontend: /api/workspaces
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: create_workspace_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.create
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/workspace.py
+      function: create_workspace
+
+  - id: workspace.get
+    method: GET
+    path: /workspaces/{workspace_id}
+    paths:
+      backend: /workspaces/{workspace_id}
+      frontend: /api/workspaces/{workspace_id}
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: get_workspace_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.get
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/workspace.py
+      function: get_workspace
+
+  - id: workspace.patch
+    method: PATCH
+    path: /workspaces/{workspace_id}
+    paths:
+      backend: /workspaces/{workspace_id}
+      frontend: /api/workspaces/{workspace_id}
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: patch_workspace_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.patch
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/workspace.py
+      function: patch_workspace
+
+  - id: workspace.test_connection
+    method: POST
+    path: /workspaces/{workspace_id}/test-connection
+    paths:
+      backend: /workspaces/{workspace_id}/test-connection
+      frontend: /api/workspaces/{workspace_id}/test-connection
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: test_connection_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.testConnection
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/workspace.py
+      function: test_storage_connection

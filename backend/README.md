@@ -127,7 +127,7 @@ uv run ruff format .
 
 ## API Endpoints
 
-See [docs/spec/04_api_and_mcp.md](../docs/spec/04_api_and_mcp.md) for full API specification.
+See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md](../docs/spec/api/mcp.md) for the API specification.
 
 ### Quick Reference
 
@@ -145,7 +145,7 @@ See [docs/spec/04_api_and_mcp.md](../docs/spec/04_api_and_mcp.md) for full API s
 
 ## Testing Strategy
 
-Following TDD approach from [tasks.md](../docs/spec/tasks.md):
+Following TDD approach from [docs/spec/testing/strategy.md](../docs/spec/testing/strategy.md) and [docs/tasks/tasks.md](../docs/tasks/tasks.md):
 
 1. **Unit Tests**: Test library functions in isolation
 2. **API Tests**: TestClient-based endpoint testing

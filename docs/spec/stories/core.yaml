@@ -1,0 +1,104 @@
+# Core User Stories
+#
+# Essential scenarios that define the core IEapp product.
+# These stories represent the MVP functionality.
+
+version: "0.1"
+updated: "2026-01"
+category: Core User Stories
+
+stories:
+  - id: STORY-001
+    title: The Programmable Knowledge Base
+    type: AI Native
+    as_a: power user or AI agent
+    i_want: to execute JavaScript code against my notes
+    so_that: >
+      I can perform complex tasks like "Find all notes mentioning 'Project X',
+      extract the dates, and plot a timeline."
+    acceptance_criteria:
+      - MCP Tool `run_script` is available
+      - AI can call host functions (e.g., `host.call(...)`) to access the API
+      - AI can query structured properties via the API
+      - Output (text/charts) is returned to the AI context
+    related_apis:
+      - mcp: run_script
+      - rest: POST /workspaces/{ws_id}/query
+    requirements:
+      - REQ-SANDBOX-001
+      - REQ-SANDBOX-002
+      - REQ-SANDBOX-003
+      - REQ-SANDBOX-004
+
+  - id: STORY-002
+    title: Structured Freedom
+    type: Data Model
+    as_a: user
+    i_want: to use standard Markdown headers to define data fields (e.g., `## Date`)
+    so_that: >
+      I can manage structured data with the ease of writing text,
+      without complex forms.
+    acceptance_criteria:
+      - System parses H2 headers as property keys
+      - Users can define Classes to enforce required headers and data types
+      - Frontend provides validation warnings if a note violates its Class definition
+      - Creating a note from a Class pre-fills the template
+    related_apis:
+      - rest: POST /workspaces/{ws_id}/notes
+      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
+      - rest: GET /workspaces/{ws_id}/classes
+      - mcp: ieapp://{workspace_id}/classes
+    requirements:
+      - REQ-NOTE-006
+      - REQ-IDX-002
+
+  - id: STORY-003
+    title: Bring Your Own Cloud
+    type: Freedom
+    as_a: privacy-conscious user
+    i_want: to store my notes on my own S3 bucket or local NAS
+    so_that: I have complete control over my data privacy and backup.
+    acceptance_criteria:
+      - Configurable storage backend via connection string (e.g., `s3://my-bucket/notes`)
+      - Seamless switching between local and remote storage
+    related_apis:
+      - rest: PATCH /workspaces/{id}
+      - rest: POST /workspaces/{id}/test-connection
+    requirements:
+      - REQ-STO-001
+      - REQ-STO-006
+
+  - id: STORY-004
+    title: Time Travel
+    type: Versioning
+    as_a: user who made a mistake
+    i_want: to view and restore previous versions of a note
+    so_that: I never lose important information.
+    acceptance_criteria:
+      - Every save creates a new immutable revision
+      - UI allows browsing history and reverting
+    related_apis:
+      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history
+      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
+      - rest: POST /workspaces/{ws_id}/notes/{note_id}/restore
+      - mcp: run_script (can also restore revisions via host.call)
+    requirements:
+      - REQ-NOTE-005
+
+  - id: STORY-005
+    title: Search Across Everything
+    type: Data Model
+    as_a: user with many notes
+    i_want: to search my notes by keywords and structured fields
+    so_that: I can quickly find relevant information.
+    acceptance_criteria:
+      - Keyword search returns matching notes
+      - Structured queries filter by Class and properties
+      - Results are ranked by relevance
+    related_apis:
+      - rest: GET /workspaces/{ws_id}/search?q=query
+      - rest: POST /workspaces/{ws_id}/query
+    requirements:
+      - REQ-IDX-003
+      - REQ-IDX-004
+      - REQ-IDX-007

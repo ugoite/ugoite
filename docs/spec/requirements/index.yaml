@@ -1,0 +1,120 @@
+# Indexer Requirements
+
+category: Indexer
+prefix: REQ-IDX
+
+requirements:
+  - id: REQ-IDX-001
+    title: Structured Cache via Live Indexer
+    description: |
+      Update index/index.json and index/stats.json on note changes.
+    related_spec:
+      - architecture/overview.md#structure-from-text-engine
+      - data-model/overview.md#indices
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_indexer_run_once
+            - test_aggregate_stats
+            - test_aggregate_stats_includes_field_usage
+        - file: backend/tests/test_api_reindexing.py
+          tests:
+            - test_update_note_reflects_in_query
+
+  - id: REQ-IDX-002
+    title: Class Validation
+    description: |
+      Validate properties against class definitions and generate warnings.
+    related_spec:
+      - stories/core.yaml#STORY-002
+      - data-model/file-schemas.yaml#class_definition
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_validate_properties_missing_required
+            - test_validate_properties_valid
+            - test_validate_properties_casting
+            - test_validate_properties_invalid_type
+
+  - id: REQ-IDX-003
+    title: Structured Queries
+    description: |
+      Execute structured queries against the index.
+    related_spec:
+      - stories/core.yaml#STORY-005
+      - api/rest.md#structured-query
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_query_index
+            - test_query_index_by_tag
+        - file: backend/tests/test_api.py
+          tests:
+            - test_query_notes
+
+  - id: REQ-IDX-004
+    title: Inverted Index Generation
+    description: |
+      Generate inverted index for keyword search.
+    related_spec:
+      - data-model/overview.md#indices
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_indexer_generates_inverted_index
+
+  - id: REQ-IDX-005
+    title: Word Count Calculation
+    description: |
+      Calculate word count as an automatic property.
+    related_spec:
+      - data-model/file-schemas.yaml#note_content
+    priority: low
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_indexer_computes_word_count
+
+  - id: REQ-IDX-006
+    title: Indexing via Watch Loop
+    description: |
+      Trigger indexer in response to filesystem events.
+    related_spec:
+      - architecture/overview.md#structure-from-text-engine
+    priority: low
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_indexer_watch_loop_triggers_run
+
+  - id: REQ-IDX-007
+    title: Hybrid Search Endpoint
+    description: |
+      Expose GET /workspaces/{ws_id}/search using the inverted index (keyword)
+      and falling back to a simple scan when the index is absent.
+    related_spec:
+      - stories/core.yaml#STORY-005
+      - api/rest.md#keyword-search
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_search_returns_matches

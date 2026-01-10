@@ -154,7 +154,7 @@ The frontend connects to the backend REST API:
 - `PUT /workspaces/{id}/notes/{noteId}` - Update note (requires `parent_revision_id`)
 - `DELETE /workspaces/{id}/notes/{noteId}` - Delete note
 
-See [docs/spec/04_api_and_mcp.md](../docs/spec/04_api_and_mcp.md) for full API specification.
+See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md](../docs/spec/api/mcp.md) for the API specification.
 
 ## TDD Approach
 

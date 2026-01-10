@@ -1,0 +1,54 @@
+# Attachment APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: attachments
+
+apis:
+  - id: attachment.upload
+    method: POST
+    path: /workspaces/{workspace_id}/attachments
+    paths:
+      backend: /workspaces/{workspace_id}/attachments
+      frontend: /api/workspaces/{workspace_id}/attachments
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: upload_attachment_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: attachmentApi.upload
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/attachments.py
+      function: save_attachment
+
+  - id: attachment.list
+    method: GET
+    path: /workspaces/{workspace_id}/attachments
+    paths:
+      backend: /workspaces/{workspace_id}/attachments
+      frontend: /api/workspaces/{workspace_id}/attachments
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: list_attachments_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: attachmentApi.list
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/attachments.py
+      function: list_attachments
+
+  - id: attachment.delete
+    method: DELETE
+    path: /workspaces/{workspace_id}/attachments/{attachment_id}
+    paths:
+      backend: /workspaces/{workspace_id}/attachments/{attachment_id}
+      frontend: /api/workspaces/{workspace_id}/attachments/{attachment_id}
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: delete_attachment_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: attachmentApi.delete
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/attachments.py
+      function: delete_attachment

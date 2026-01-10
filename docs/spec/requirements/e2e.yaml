@@ -1,0 +1,39 @@
+# End-to-End Requirements
+
+category: End-to-End
+prefix: REQ-E2E
+
+requirements:
+  - id: REQ-E2E-001
+    title: Frontend Accessibility
+    description: |
+      Frontend correctly returns HTML with proper content types.
+    related_spec:
+      - testing/strategy.md
+    priority: high
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/smoke.test.ts
+          tests:
+            - GET / returns HTML with DOCTYPE
+            - GET / has correct content-type
+            - GET /notes returns HTML
+            - GET /about returns HTML
+
+  - id: REQ-E2E-002
+    title: API-Frontend Integration
+    description: |
+      Backend API and frontend work together correctly.
+    related_spec:
+      - testing/strategy.md
+    priority: high
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/smoke.test.ts
+          tests:
+            - all API tests
+        - file: e2e/notes.test.ts
+          tests:
+            - all Notes CRUD tests

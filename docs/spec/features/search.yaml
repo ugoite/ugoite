@@ -1,0 +1,38 @@
+# Search & Query APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: search
+
+apis:
+  - id: query.execute
+    method: POST
+    path: /workspaces/{workspace_id}/query
+    paths:
+      backend: /workspaces/{workspace_id}/query
+      frontend: /api/workspaces/{workspace_id}/query
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: query_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: workspaceApi.query
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/__init__.py
+      function: query
+
+  - id: search.keyword
+    method: GET
+    path: /workspaces/{workspace_id}/search
+    paths:
+      backend: /workspaces/{workspace_id}/search
+      frontend: /api/workspaces/{workspace_id}/search
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: search_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: noteApi.search
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/search.py
+      function: search_notes

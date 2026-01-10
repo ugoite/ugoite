@@ -1,0 +1,201 @@
+# Note Management Requirements
+
+category: Note Management
+prefix: REQ-NOTE
+
+requirements:
+  - id: REQ-NOTE-001
+    title: Note Creation
+    description: |
+      Create note from Markdown content, generating meta.json, content.json,
+      and history/index.json files.
+    related_spec:
+      - api/rest.md#create-note
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_create_note_basic
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_note
+            - test_create_note_conflict
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should create a note and extract title from markdown
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should create a note and reload list
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - POST /workspaces/default/notes creates a new note
+
+  - id: REQ-NOTE-002
+    title: Optimistic Concurrency via Revisions
+    description: |
+      Validate parent_revision_id during update; return 409 Conflict on mismatch.
+    related_spec:
+      - architecture/decisions.md#adr-005
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_update_note_revision_mismatch
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_note_conflict
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should throw RevisionConflictError (409) on revision mismatch
+
+  - id: REQ-NOTE-003
+    title: Note Update
+    description: |
+      Update note and create new revision.
+    related_spec:
+      - api/rest.md#update-note
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_note_history_append
+            - test_note_history_diff
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_note
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should update note with correct parent_revision_id
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should apply optimistic updates during update
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - PUT /workspaces/default/notes/:id updates note
+
+  - id: REQ-NOTE-004
+    title: Note Deletion (Tombstone)
+    description: |
+      Delete note (tombstone) and exclude from list.
+    related_spec:
+      - api/rest.md#delete-note
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_delete_note
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should remove note from list
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should delete note optimistically
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - DELETE /workspaces/default/notes/:id removes note
+
+  - id: REQ-NOTE-005
+    title: Note History (Time Travel)
+    description: |
+      Every save creates an immutable revision; history can be browsed and restored.
+    related_spec:
+      - stories/core.yaml#STORY-004
+      - api/rest.md#get-note-history
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_note_history_append
+            - test_note_history_diff
+        - file: backend/tests/test_api.py
+          tests:
+            - test_get_note_history
+            - test_get_note_revision
+            - test_restore_note
+
+  - id: REQ-NOTE-006
+    title: Structured Data Extraction from Markdown
+    description: |
+      Extract H2 headers (## Key) as fields and merge with frontmatter.
+    related_spec:
+      - stories/core.yaml#STORY-002
+      - data-model/overview.md#properties-extraction
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_markdown_sections_persist
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_extract_properties_h2_sections
+            - test_extract_properties_precedence
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should extract H2 headers as properties
+
+  - id: REQ-NOTE-007
+    title: Properties and Links in List Response
+    description: |
+      Include properties and links fields when retrieving note list.
+    related_spec:
+      - api/rest.md#list-notes
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_list_notes_returns_properties_and_links
+        - file: backend/tests/test_api.py
+          tests:
+            - test_list_notes
+
+  - id: REQ-NOTE-008
+    title: Attachments Upload & Linking
+    description: |
+      Upload binary attachments, return a generated attachment ID, and allow
+      notes to reference attachments in content.json.
+    related_spec:
+      - stories/advanced.yaml#STORY-006
+      - api/rest.md#upload-attachment
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_upload_attachment_and_link_to_note
+
+  - id: REQ-NOTE-009
+    title: Attachment Garbage Collection Guard
+    description: |
+      Prevent deleting attachments that are still referenced by any note.
+    related_spec:
+      - data-model/directory-structure.md#attachments
+    priority: low
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_delete_attachment_referenced_fails

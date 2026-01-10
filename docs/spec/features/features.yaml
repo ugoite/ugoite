@@ -1,0 +1,93 @@
+# Features Registry (API-level)
+
+# The registry is intentionally API-operation oriented (not file oriented).
+# Each operation is described with the columns:
+# - PATH (AS-IS): backend and frontend paths are identical except frontend uses
+#   the "/api" prefix.
+# - file definition location
+# - function name (or component name)
+
+version: "0.2"
+updated: "2026-01"
+scope: as-is
+
+conventions:
+  canonical_path: Backend HTTP path without the "/api" prefix.
+  frontend_path_prefix: /api
+  columns:
+    - method
+    - path
+    - paths.backend
+    - paths.frontend
+    - backend.file
+    - backend.function
+    - frontend.file
+    - frontend.function
+    - ieapp_cli.file
+    - ieapp_cli.function
+
+files:
+  - kind: system
+    file: system.yaml
+  - kind: workspaces
+    file: workspaces.yaml
+  - kind: notes
+    file: notes.yaml
+  - kind: schemas
+    file: schemas.yaml
+  - kind: attachments
+    file: attachments.yaml
+  - kind: links
+    file: links.yaml
+  - kind: search
+    file: search.yaml
+    backend: src/app/mcp/sandbox.py
+    frontend: null  # Not applicable
+
+# Path mapping for current (AS-IS) structure
+# This section documents current paths before migration
+current_paths:
+  workspace:
+    ieapp_cli: src/ieapp/workspace.py
+    backend: src/app/api/endpoints/workspaces.py  # Note: plural
+    frontend: src/lib/workspace-store.ts
+
+  note:
+    ieapp_cli: src/ieapp/notes.py  # Note: plural
+    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    frontend: src/lib/store.ts  # Generic store
+
+  class:
+    ieapp_cli: src/ieapp/schemas.py  # OLD NAME: schemas
+    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    frontend: src/lib/client.ts  # schemaApi in client
+
+  attachment:
+    ieapp_cli: src/ieapp/attachments.py  # Note: plural
+    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    frontend: src/lib/store.ts  # In generic store
+
+  link:
+    ieapp_cli: src/ieapp/links.py  # Note: plural
+    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    frontend: src/lib/store.ts  # In generic store
+
+  search:
+    ieapp_cli: src/ieapp/search.py
+    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    frontend: src/lib/client.ts  # In client
+
+  index:
+    ieapp_cli: src/ieapp/indexer.py  # Different name: indexer
+    backend: null
+    frontend: null
+
+  integrity:
+    ieapp_cli: src/ieapp/integrity.py
+    backend: null
+    frontend: null
+
+  sandbox:
+    ieapp_cli: src/ieapp/sandbox/__init__.py
+    backend: src/app/mcp/handlers.py  # In MCP handlers
+    frontend: null
