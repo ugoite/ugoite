@@ -1,0 +1,89 @@
+# Experimental User Stories
+#
+# Future features under consideration.
+# These may be implemented in later milestones.
+
+version: "0.1"
+updated: "2026-01"
+category: Experimental User Stories
+
+stories:
+  - id: STORY-010
+    title: Multi-User Collaboration
+    type: Collaboration
+    as_a: team lead
+    i_want: to share a workspace with my team
+    so_that: we can collaborate on shared knowledge.
+    acceptance_criteria:
+      - Workspace owner can invite users by email
+      - Invited users can view and edit notes based on permissions
+      - Concurrent edits are handled with conflict resolution
+    related_apis:
+      - rest: POST /workspaces/{ws_id}/members
+      - rest: GET /workspaces/{ws_id}/members
+      - rest: DELETE /workspaces/{ws_id}/members/{user_id}
+    requirements: []
+    milestone: User Management
+
+  - id: STORY-011
+    title: Desktop App
+    type: Native
+    as_a: user who prefers native apps
+    i_want: to use IEapp as a standalone desktop application
+    so_that: I can access my notes without a browser and with better OS integration.
+    acceptance_criteria:
+      - Cross-platform desktop app (Windows, macOS, Linux)
+      - Works offline with local storage
+      - System tray icon with quick capture
+      - Keyboard shortcuts for common actions
+    related_apis:
+      - Direct crate integration (no HTTP)
+    requirements: []
+    milestone: Native App
+
+  - id: STORY-012
+    title: Mobile Companion
+    type: Native
+    as_a: user on the go
+    i_want: to access my notes on my phone
+    so_that: I can capture and review knowledge anywhere.
+    acceptance_criteria:
+      - iOS and Android apps
+      - Quick capture with voice, camera, or text
+      - Sync with main workspace
+    related_apis:
+      - rest: All note APIs
+    requirements: []
+    milestone: Native App
+
+  - id: STORY-013
+    title: Vector Search
+    type: AI Native
+    as_a: user searching by concept
+    i_want: to find notes semantically similar to a query
+    so_that: I can discover related content even without exact keyword matches.
+    acceptance_criteria:
+      - Configurable embedding provider (OpenAI, local models)
+      - Semantic search returns notes by conceptual similarity
+      - Combined with keyword search for best results
+    related_apis:
+      - rest: GET /workspaces/{ws_id}/search?type=semantic&q=query
+    requirements: []
+    milestone: AI-Enabled & AI-Used
+
+  - id: STORY-014
+    title: Scheduled AI Tasks
+    type: AI Native
+    as_a: user who wants automated maintenance
+    i_want: to schedule AI agents to run periodically
+    so_that: my workspace stays organized without manual intervention.
+    acceptance_criteria:
+      - Define scheduled tasks with cron-like syntax
+      - Tasks run AI scripts via MCP
+      - Results logged and notifications sent
+    related_apis:
+      - rest: POST /workspaces/{ws_id}/schedules
+      - rest: GET /workspaces/{ws_id}/schedules
+      - mcp: run_script
+    requirements: []
+    milestone: AI-Enabled & AI-Used

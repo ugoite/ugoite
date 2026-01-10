@@ -1,0 +1,22 @@
+# System APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: system
+
+apis:
+  - id: system.health
+    method: GET
+    path: /health
+    paths:
+      backend: /health
+      frontend: /api/health
+    backend:
+      file: backend/src/app/main.py
+      function: health
+    frontend:
+      file: frontend/src/lib/api.ts
+      function: apiFetch (via getBackendBase)
+    ieapp_cli:
+      file: n/a
+      function: n/a

@@ -1,0 +1,53 @@
+# Integrity Requirements
+
+category: Data Integrity
+prefix: REQ-INT
+
+requirements:
+  - id: REQ-INT-001
+    title: HMAC Signature
+    description: |
+      Sign all data revisions with locally generated key to prevent tampering.
+    related_spec:
+      - security/overview.md
+      - data-model/file-schemas.yaml#integrity
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_integrity.py
+          tests:
+            - test_integrity_provider_for_workspace_success
+            - test_integrity_provider_missing_hmac_key
+            - test_integrity_provider_invalid_hmac_key
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_note_history_append
+
+  - id: REQ-INT-002
+    title: Checksum Verification
+    description: |
+      Calculate and store checksums for note content.
+    related_spec:
+      - data-model/file-schemas.yaml#integrity
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_notes.py
+          tests:
+            - test_note_history_append
+
+  - id: REQ-INT-003
+    title: HMAC Signature for API Responses
+    description: |
+      Add HMAC signature header to API responses.
+    related_spec:
+      - security/overview.md
+    priority: low
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_middleware_hmac_signature

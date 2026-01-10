@@ -1,7 +1,7 @@
 # Code Review Guidelines for Copilot
 
 ## Requirements & Test Traceability
-- **Every new test must reference a requirement** in `docs/spec/07_requirements.md`. Link the test name to the related REQ-* identifier.
+- **Every new test must reference a requirement** in `docs/spec/requirements/*.yaml` (REQ-*). Link the test name/docstring to the related REQ-* identifier.
 - **Every new requirement must have tests**. Do not add requirements without corresponding test coverage.
 
 ## Linting & Code Quality

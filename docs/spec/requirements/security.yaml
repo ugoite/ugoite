@@ -1,0 +1,35 @@
+# Security Requirements
+
+category: Security
+prefix: REQ-SEC
+
+requirements:
+  - id: REQ-SEC-001
+    title: Localhost Binding
+    description: |
+      API binds to 127.0.0.1 only by default. Remote access requires
+      explicit IEAPP_ALLOW_REMOTE=true environment variable.
+    related_spec:
+      - security/overview.md
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_middleware_blocks_remote_clients
+
+  - id: REQ-SEC-002
+    title: Security Headers
+    description: |
+      Set security-related HTTP headers (X-Content-Type-Options,
+      X-Frame-Options, etc.).
+    related_spec:
+      - security/overview.md
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_middleware_headers

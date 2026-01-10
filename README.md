@@ -1,29 +1,61 @@
-# IE-app
+# IEapp
 
-## Overview
+**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
 
-This repository provides a sample knowledge-management web app (IE-app) as a demo project.
+## Vision
 
-Stack overview:
-- Frontend: Bun + SolidStart
-- Backend: Python (FastAPI) + fsspec
+IEapp is a knowledge management system built on three core principles:
+
+| Principle | Description |
+|-----------|-------------|
+| **Low Cost** | No expensive cloud services required; runs on local storage |
+| **Easy** | Markdown-first with automatic structure extraction |
+| **Freedom** | Your data, your storage, your AI - no vendor lock-in |
+
+## Key Features
+
+- **Markdown as Database**: Write standard Markdown with `## Headers` that become structured fields
+- **Class Definitions**: Define note types (Meeting, Task, etc.) with typed fields and templates
+- **AI-Programmable**: MCP protocol + JavaScript sandbox for AI agents to interact with your knowledge
+- **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
+- **Version History**: Every save creates an immutable revision; time travel through your notes
+
+## Stack Overview
+
+| Component | Technology |
+|-----------|------------|
+| Frontend | Bun + SolidStart + TailwindCSS |
+| Backend | Python 3.12+ (FastAPI) |
+| Storage | fsspec (local, S3, memory) |
+| AI Interface | MCP + Wasm Sandbox |
 
 ---
 
-## Directory structure
+## Directory Structure
 
 ```
-frontend/
+frontend/           # SolidStart frontend
   ├─ src/
-  ├─ public/
-backend/
-  ├─ src/
-  ├─ requirements.txt
-ieapp-cli/
+  └─ public/
+backend/            # FastAPI backend
+  └─ src/
+ieapp-cli/          # Core library (Python, future: Rust bindings)
+  └─ src/
 docs/
-tests/
-README.md
+  ├─ spec/          # Technical specifications (YAML + Markdown)
+  └─ tasks/         # Milestone tracking and roadmap
+e2e/                # End-to-end tests (Bun)
 ```
+
+---
+
+## Documentation
+
+- [Specification Index](docs/spec/index.md) - Technical specifications
+- [Architecture Overview](docs/spec/architecture/overview.md) - System design
+- [API Reference](docs/spec/api/rest.md) - REST API documentation
+- [Roadmap](docs/tasks/roadmap.md) - Future milestones
+- [Current Tasks](docs/tasks/tasks.md) - Active development
 
 ---
 
@@ -130,15 +162,21 @@ Frontend tests: check `frontend/package.json`.
 
 ---
 
-## Known issues & TODO
+## Known Issues & Future Work
 
-- Authentication (JWT/OAuth) is not implemented yet.
-- Production-grade persistence (e.g. Postgres) is not configured.
+See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
+
+- **Milestone 2** (In Progress): Codebase unification, Rust core library
+- **Milestone 3**: Full AI integration, vector search
+- **Milestone 4**: User management, authentication
+- **Milestone 5**: Native desktop app (Tauri)
 
 ---
 
 ## Contributing
 
-Contributions welcome. Open an issue to discuss larger changes before submitting a PR.
+Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
 
----
+1. Check [docs/tasks/tasks.md](docs/tasks/tasks.md) for current work items
+2. Open an issue to discuss larger changes
+3. Submit PR with tests

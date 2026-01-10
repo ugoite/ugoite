@@ -1,0 +1,398 @@
+# Frontend Requirements
+
+category: Frontend UI
+prefix: REQ-FE
+
+requirements:
+  - id: REQ-FE-001
+    title: Workspace Selector
+    description: |
+      Select, switch, and create workspaces.
+    related_spec:
+      - stories/core.yaml#STORY-003
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/WorkspaceSelector.test.tsx
+          tests:
+            - all tests
+        - file: frontend/src/lib/workspace-store.test.ts
+          tests:
+            - all tests
+
+  - id: REQ-FE-002
+    title: Automatic Default Workspace Creation
+    description: |
+      Automatically create "default" workspace when none exist.
+    related_spec:
+      - architecture/overview.md
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/workspace-store.test.ts
+          tests:
+            - should create default workspace when none exist
+
+  - id: REQ-FE-003
+    title: Persist Workspace Selection
+    description: |
+      Save selected workspace to localStorage and maintain across sessions.
+    related_spec:
+      - architecture/overview.md
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/workspace-store.test.ts
+          tests:
+            - should restore persisted workspace selection
+            - should select workspace and persist choice
+
+  - id: REQ-FE-004
+    title: Note List Display
+    description: |
+      Display note list with titles and properties.
+    related_spec:
+      - stories/core.yaml
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/NoteList.test.tsx
+          tests:
+            - all tests
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should load notes from API
+
+  - id: REQ-FE-005
+    title: Markdown Editor
+    description: |
+      Editor with Markdown editing, preview, and save functionality.
+    related_spec:
+      - stories/core.yaml#STORY-002
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/MarkdownEditor.test.tsx
+          tests:
+            - all tests
+
+  - id: REQ-FE-005a
+    title: Editor Content Graceful Handling
+    description: |
+      Editor MUST handle undefined/null content gracefully, displaying an empty
+      string instead of the literal text "undefined".
+
+      New note creation MUST display initial content immediately without
+      waiting for resource load.
+
+      Preview mode MUST NOT crash when content is undefined.
+    related_spec:
+      - architecture/frontend-backend-interface.md#error-handling-standards
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/MarkdownEditor.test.tsx
+          tests:
+            - should handle undefined content gracefully
+            - should handle null content gracefully
+            - should render preview with undefined content without crashing
+            - should display placeholder when content is empty
+
+  - id: REQ-FE-006
+    title: Optimistic Updates
+    description: |
+      UI reflects changes immediately and syncs in background.
+    related_spec:
+      - architecture/decisions.md#adr-005
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should apply optimistic updates during update
+            - should delete note optimistically
+
+  - id: REQ-FE-008
+    title: Note Selection and Highlight
+    description: |
+      Frontend MUST highlight the selected note and load note details.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/NoteList.test.tsx
+          tests:
+            - should highlight selected note
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should handle note selection
+
+  - id: REQ-FE-009
+    title: Conflict Message Display
+    description: |
+      Frontend MUST notify the user on 409 Conflict errors.
+    related_spec:
+      - architecture/frontend-backend-interface.md#error-handling-standards
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/MarkdownEditor.test.tsx
+          tests:
+            - should show conflict message when there is a conflict
+
+  - id: REQ-FE-010
+    title: Editor Content Persistence During Save
+    description: |
+      Editor content MUST NOT be overwritten during or after save operation.
+      Save operation MUST NOT trigger content reload from server.
+    related_spec:
+      - architecture/overview.md
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should not refetch after successful update
+            - should preserve editor content during save
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - saved content should persist after reload
+
+  - id: REQ-FE-011
+    title: Editor Content Sync on Note Switch Only
+    description: |
+      Editor content synchronization with server MUST only occur when:
+      1) user explicitly selects a different note
+      2) user explicitly clicks refresh button
+      3) workspace is changed
+
+      Editor content MUST NOT be overwritten when:
+      1) save operation completes
+      2) selected note resource is refetched
+      3) note list is reloaded
+
+      Implementation requirements:
+      - Track last-loaded note id to detect note switches vs resource updates.
+      - Only update editor content when the note id changes.
+      - Reset the last-loaded note id when workspace changes.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should only sync content on note switch
+            - should not overwrite content on refetch
+
+  - id: REQ-FE-012
+    title: Consecutive Save Support
+    description: |
+      Multiple consecutive saves on the same note MUST work correctly.
+      After each successful save, the local revision_id MUST be updated to
+      enable the next save.
+
+      Implementation requirements:
+      - Store currentRevisionId locally and update after each successful save.
+      - Use currentRevisionId as parent_revision_id for updates.
+      - After note creation, set currentRevisionId from API response.
+      - Fall back to selected note revision id only if currentRevisionId is unset.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/store.test.ts
+          tests:
+            - should support consecutive saves with updated revision_id
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - consecutive PUT should succeed with updated revision_id
+            - PUT with stale revision_id should return 409 conflict
+
+  - id: REQ-FE-013
+    title: Save Must Actually Persist to Server
+    description: |
+      Save operation MUST send the actual edited content to the server.
+      Server MUST persist the content to the filesystem.
+      Reloading the page MUST show the previously saved content.
+
+      Failure modes to prevent:
+      - Early return due to missing revision id
+      - editorContent returning stale/empty value
+      - API request missing markdown field
+      - backend returning success before write completes
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_note
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - saved content should persist after reload (REQ-FE-010)
+
+  - id: REQ-FE-014
+    title: Search UI Component
+    description: |
+      Frontend MUST provide a search input that calls the /search endpoint
+      and displays results with keyboard shortcuts (Cmd/Ctrl+K).
+    related_spec:
+      - stories/core.yaml#STORY-005
+      - api/rest.md#keyword-search
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SearchBar.test.tsx
+          tests:
+            - should render search input
+            - should call onSearch when form is submitted
+
+  - id: REQ-FE-015
+    title: Attachment Upload UI
+    description: |
+      Editor MUST provide file upload capability with drag-drop support and
+      display attached files with type icons.
+    related_spec:
+      - stories/advanced.yaml#STORY-006
+      - api/rest.md#attachments
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/AttachmentUploader.test.tsx
+          tests:
+            - should render upload button
+            - should upload file on selection
+            - should display uploaded attachments with icons
+            - should delete attachment
+      e2e:
+        - file: e2e/canvas.test.ts
+          tests:
+            - attachments - upload and delete
+
+  - id: REQ-FE-017
+    title: Workspace Storage Configuration
+    description: |
+      Workspace settings MUST allow configuring storage backends (local, S3,
+      remote) with connection validation before saving.
+    related_spec:
+      - api/rest.md#workspaces
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/WorkspaceSettings.test.tsx
+          tests:
+            - should render storage config form
+            - should test connection before save
+            - should save valid configuration
+
+  - id: REQ-FE-018
+    title: Data Models View with Routing
+    description: |
+      Frontend MUST provide a high-performance data model view using nested routing.
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/routes/notes/index.test.tsx
+          tests:
+            - selecting a data model navigates correctly
+
+  - id: REQ-FE-019
+    title: Multi-column Sorting
+    description: |
+      SchemaTable MUST support sorting by any displayed field (Title,
+      class-defined properties, Updated Date) with visual indicators.
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SchemaTable.test.tsx
+          tests:
+            - REQ-FE-019: sorts notes when clicking headers
+
+  - id: REQ-FE-020
+    title: Hybrid Filtering
+    description: |
+      SchemaTable MUST provide both global keyword search and column-specific
+      filtering to refine viewed records.
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SchemaTable.test.tsx
+          tests:
+            - REQ-FE-020: filters notes globally
+
+  - id: REQ-FE-021
+    title: Context-aware CSV Export
+    description: |
+      Users MUST be able to export currently viewed records (respecting active
+      filters and sort order) to a CSV file.
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SchemaTable.test.tsx
+          tests:
+            - REQ-FE-021: exports filtered data to CSV
+
+  - id: REQ-FE-030
+    title: Inline Row Creation in Grid View
+    description: |
+      The grid view MUST provide a way to quickly add a new row (note).
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SchemaTable.test.tsx
+          tests:
+            - Add Row button creates a new note
+
+  - id: REQ-FE-031
+    title: Spreadsheet-like Grid Editing & Selection
+    description: |
+      Users MUST be able to select rectangular ranges of cells via dragging
+      and edit cell values inline when edit mode is enabled.
+    related_spec:
+      - stories/advanced.yaml#STORY-009
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/components/SchemaTable.test.tsx
+          tests:
+            - Edit Mode toggle and inline edit
+            - keyboard copy shortcut

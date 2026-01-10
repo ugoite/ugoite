@@ -1,0 +1,135 @@
+# Storage & Data Model Requirements
+
+category: Storage & Data Model
+prefix: REQ-STO
+
+requirements:
+  - id: REQ-STO-001
+    title: Storage Abstraction Using fsspec/OpenDAL
+    description: |
+      System MUST use fsspec (current) or OpenDAL (future Rust core) for all I/O operations.
+      No direct filesystem calls allowed outside the storage abstraction layer.
+    related_spec:
+      - architecture/overview.md#module-responsibilities
+      - stories/core.yaml#STORY-003
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_workspace.py
+          tests:
+            - test_create_workspace_scaffolding
+            - test_create_workspace_s3_unimplemented
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_indexer_run_once
+
+  - id: REQ-STO-002
+    title: Workspace Directory Structure
+    description: |
+      Workspace has the following structure:
+      - meta.json, settings.json
+      - classes/, index/, attachments/, notes/
+      - index/index.json, index/stats.json
+    related_spec:
+      - data-model/directory-structure.md
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_workspace.py
+          tests:
+            - test_create_workspace_scaffolding
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_workspace
+
+  - id: REQ-STO-003
+    title: File Permissions (chmod 600)
+    description: |
+      Apply chmod 600 to data directories to ensure privacy on local filesystem.
+    related_spec:
+      - security/overview.md
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_workspace.py
+          tests:
+            - test_create_workspace_scaffolding
+
+  - id: REQ-STO-004
+    title: Workspace Management via global.json
+    description: |
+      global.json maintains workspace registry and HMAC keys.
+    related_spec:
+      - data-model/file-schemas.yaml#global
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_workspace.py
+          tests:
+            - test_create_workspace_scaffolding
+        - file: ieapp-cli/tests/test_integrity.py
+          tests:
+            - test_integrity_provider_for_workspace_success
+            - test_integrity_provider_missing_hmac_key
+
+  - id: REQ-STO-005
+    title: Prevent Duplicate Workspace Creation
+    description: |
+      Returns 409 error when attempting to create a workspace with an existing ID.
+    related_spec:
+      - api/rest.md#create-workspace
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_workspace.py
+          tests:
+            - test_create_workspace_idempotency
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_workspace_conflict
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should throw error for duplicate workspace
+
+  - id: REQ-STO-006
+    title: Storage Connector Validation
+    description: |
+      Workspaces MUST accept storage connector updates and provide
+      a validation endpoint before committing changes.
+    related_spec:
+      - stories/core.yaml#STORY-003
+      - api/rest.md#test-connection
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_workspace_storage_connector
+            - test_test_connection_endpoint
+
+  - id: REQ-STO-007
+    title: Backend IO Separation & Multi-fsspec Coverage
+    description: |
+      All filesystem interactions MUST remain inside ieapp-cli via fsspec/OpenDAL.
+      Backend MUST operate correctly across multiple storage implementations
+      (at least file and memory) using the shared library.
+    related_spec:
+      - architecture/overview.md#module-responsibilities
+      - architecture/decisions.md#adr-006
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api_memory.py
+          tests:
+            - test_create_workspace_memory
+            - test_create_note_memory
+            - test_update_note_and_search_memory
+            - test_attachments_and_links_memory

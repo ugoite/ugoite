@@ -1,0 +1,70 @@
+# Schema (Class) APIs (AS-IS)
+
+version: "0.1"
+updated: "2026-01"
+kind: schemas
+
+apis:
+  - id: schema.list
+    method: GET
+    path: /workspaces/{workspace_id}/schemas
+    paths:
+      backend: /workspaces/{workspace_id}/schemas
+      frontend: /api/workspaces/{workspace_id}/schemas
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: list_schemas_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: schemaApi.list
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/schemas.py
+      function: list_schemas
+
+  - id: schema.types
+    method: GET
+    path: /workspaces/{workspace_id}/schemas/types
+    paths:
+      backend: /workspaces/{workspace_id}/schemas/types
+      frontend: /api/workspaces/{workspace_id}/schemas/types
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: list_schema_types_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: schemaApi.listTypes
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/schemas.py
+      function: list_column_types
+
+  - id: schema.get
+    method: GET
+    path: /workspaces/{workspace_id}/schemas/{class_name}
+    paths:
+      backend: /workspaces/{workspace_id}/schemas/{class_name}
+      frontend: /api/workspaces/{workspace_id}/schemas/{class_name}
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: get_schema_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: schemaApi.get
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/schemas.py
+      function: get_schema
+
+  - id: schema.upsert
+    method: POST
+    path: /workspaces/{workspace_id}/schemas
+    paths:
+      backend: /workspaces/{workspace_id}/schemas
+      frontend: /api/workspaces/{workspace_id}/schemas
+    backend:
+      file: backend/src/app/api/endpoints/workspaces.py
+      function: create_schema_endpoint
+    frontend:
+      file: frontend/src/lib/client.ts
+      function: schemaApi.create
+    ieapp_cli:
+      file: ieapp-cli/src/ieapp/schemas.py
+      function: upsert_schema

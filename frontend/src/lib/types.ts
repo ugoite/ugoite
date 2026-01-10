@@ -1,6 +1,6 @@
 /**
  * Type definitions for the IEapp API
- * Based on docs/spec/03_data_model.md and docs/spec/04_api_and_mcp.md
+ * Based on docs/spec/data-model/overview.md and docs/spec/api/rest.md
  */
 
 /** Workspace metadata */
