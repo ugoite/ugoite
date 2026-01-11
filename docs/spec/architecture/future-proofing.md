@@ -18,11 +18,11 @@ Non-goals:
 
 ## Multi-Platform Core
 
-To enable a native desktop app and future Wasm targets:
-- Move core operations into `ieapp-core` (Rust).
-- Provide bindings:
-  - Python bindings for `ieapp-cli` and backend reuse
-  - WebAssembly bindings for browser/native contexts
+To enable cross-platform operation and varied deployment targets:
+- Core operations are contained in `ieapp-core` (Rust).
+- Multiple language bindings are provided:
+  - Python bindings for backend and `ieapp-cli`
+  - WebAssembly bindings for browser and sandbox contexts (future target)
 
 ## Data Portability
 

@@ -1,4 +1,4 @@
-# Note APIs (AS-IS)
+# Note APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,128 +7,144 @@ kind: notes
 apis:
   - id: note.create
     method: POST
-    path: /workspaces/{workspace_id}/notes
-    paths:
-      backend: /workspaces/{workspace_id}/notes
-      frontend: /api/workspaces/{workspace_id}/notes
     backend:
+      path: /workspaces/{workspace_id}/notes
       file: backend/src/app/api/endpoints/workspaces.py
       function: create_note_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes
       file: frontend/src/lib/client.ts
       function: noteApi.create
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: create_note
+    ieapp_cli:
+      command: ieapp note create
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_create
 
   - id: note.list
     method: GET
-    path: /workspaces/{workspace_id}/notes
-    paths:
-      backend: /workspaces/{workspace_id}/notes
-      frontend: /api/workspaces/{workspace_id}/notes
     backend:
+      path: /workspaces/{workspace_id}/notes
       file: backend/src/app/api/endpoints/workspaces.py
       function: list_notes_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes
       file: frontend/src/lib/client.ts
       function: noteApi.list
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: list_notes
+    ieapp_cli:
+      command: ieapp note list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_list
 
   - id: note.get
     method: GET
-    path: /workspaces/{workspace_id}/notes/{note_id}
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: get_note_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/client.ts
       function: noteApi.get
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: get_note
+    ieapp_cli:
+      command: ieapp note get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_get
 
   - id: note.update
     method: PUT
-    path: /workspaces/{workspace_id}/notes/{note_id}
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: update_note_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/client.ts
       function: noteApi.update
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: update_note
+    ieapp_cli:
+      command: ieapp note update
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_update
 
   - id: note.delete
     method: DELETE
-    path: /workspaces/{workspace_id}/notes/{note_id}
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: delete_note_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/client.ts
       function: noteApi.delete
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: delete_note
+    ieapp_cli:
+      command: ieapp note delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_delete
 
   - id: note.history
     method: GET
-    path: /workspaces/{workspace_id}/notes/{note_id}/history
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}/history
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}/history
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}/history
       file: backend/src/app/api/endpoints/workspaces.py
       function: get_note_history_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/history
       file: frontend/src/lib/client.ts
-      function: n/a (not implemented as a dedicated client helper)
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+      function: n/a
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: get_note_history
+    ieapp_cli:
+      command: ieapp note history
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_history
 
   - id: note.revision
     method: GET
-    path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: get_note_revision_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
       file: frontend/src/lib/client.ts
       function: n/a
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: get_note_revision
+    ieapp_cli:
+      command: ieapp note revision
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_revision
 
   - id: note.restore
     method: POST
-    path: /workspaces/{workspace_id}/notes/{note_id}/restore
-    paths:
-      backend: /workspaces/{workspace_id}/notes/{note_id}/restore
-      frontend: /api/workspaces/{workspace_id}/notes/{note_id}/restore
     backend:
+      path: /workspaces/{workspace_id}/notes/{note_id}/restore
       file: backend/src/app/api/endpoints/workspaces.py
       function: restore_note_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
       file: frontend/src/lib/client.ts
       function: n/a
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/notes.py
+    ieapp_core:
+      file: ieapp-core/src/note.rs
       function: restore_note
+    ieapp_cli:
+      command: ieapp note restore
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_restore

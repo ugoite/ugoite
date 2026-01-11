@@ -131,15 +131,15 @@ Use revision-based optimistic concurrency:
 
 **Context**: 
 - Original backend contained business logic
-- Duplicated validation between backend and ieapp-cli
+- Duplicated validation between backend and core logic
 - Hard to test backend in isolation
 
 **Decision**: 
 Backend should be a pure API layer:
-- All business logic in ieapp-core/ieapp-cli
+- All business logic in `ieapp-core`
 - Backend only routes requests and formats responses
 - No direct filesystem access in backend
-- Backend tests use memory filesystem via ieapp-cli
+- Backend tests use memory filesystem via `ieapp-core`
 
 **Consequences**:
 - (+) Single source of truth for business logic
@@ -147,6 +147,8 @@ Backend should be a pure API layer:
 - (+) Backend becomes simpler
 - (-) More abstraction layers
 - (-) Slightly more latency
+
+**Note**: `ieapp-cli` is a separate tool for direct command-line interaction with `ieapp-core`.
 
 ---
 

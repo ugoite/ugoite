@@ -13,7 +13,7 @@ FastAPI-based REST API for IEapp - your AI-native, programmable knowledge base.
 │             │                 │  - Localhost Guard      │
 │             │                 │  - Error Handling       │
 ├─────────────┴─────────────────┴────────────────────────┤
-│                   ieapp-cli Library                      │
+│                   ieapp-core Library                     │
 │  - workspace.py  (Workspace CRUD)                        │
 │  - notes.py      (Note CRUD + Revision Control)          │
 │  - indexer.py    (Structure-from-Text Extraction)        │
@@ -44,9 +44,9 @@ src/app/
 
 ## Key Design Decisions
 
-### 1. Dependency on ieapp-cli Library
+### 1. Dependency on ieapp-core Library
 
-The backend does NOT implement business logic directly. Instead, it delegates to `ieapp-cli`:
+The backend does NOT implement business logic directly. Instead, it delegates to `ieapp-core`:
 
 ```python
 # ✅ Correct: Use library functions

@@ -1,4 +1,4 @@
-# Link APIs (AS-IS)
+# Link APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,48 +7,54 @@ kind: links
 apis:
   - id: link.create
     method: POST
-    path: /workspaces/{workspace_id}/links
-    paths:
-      backend: /workspaces/{workspace_id}/links
-      frontend: /api/workspaces/{workspace_id}/links
     backend:
+      path: /workspaces/{workspace_id}/links
       file: backend/src/app/api/endpoints/workspaces.py
       function: create_link_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/links
       file: frontend/src/lib/client.ts
       function: linksApi.create
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/links.py
+    ieapp_core:
+      file: ieapp-core/src/link.rs
       function: create_link
+    ieapp_cli:
+      command: ieapp link create
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_create
 
   - id: link.list
     method: GET
-    path: /workspaces/{workspace_id}/links
-    paths:
-      backend: /workspaces/{workspace_id}/links
-      frontend: /api/workspaces/{workspace_id}/links
     backend:
+      path: /workspaces/{workspace_id}/links
       file: backend/src/app/api/endpoints/workspaces.py
       function: list_links_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/links
       file: frontend/src/lib/client.ts
       function: linksApi.list
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/links.py
+    ieapp_core:
+      file: ieapp-core/src/link.rs
       function: list_links
+    ieapp_cli:
+      command: ieapp link list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_list
 
   - id: link.delete
     method: DELETE
-    path: /workspaces/{workspace_id}/links/{link_id}
-    paths:
-      backend: /workspaces/{workspace_id}/links/{link_id}
-      frontend: /api/workspaces/{workspace_id}/links/{link_id}
     backend:
+      path: /workspaces/{workspace_id}/links/{link_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: delete_link_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/links/{link_id}
       file: frontend/src/lib/client.ts
       function: linksApi.delete
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/links.py
+    ieapp_core:
+      file: ieapp-core/src/link.rs
       function: delete_link
+    ieapp_cli:
+      command: ieapp link delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_delete

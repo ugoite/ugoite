@@ -8,11 +8,12 @@
 - **Do not use `# noqa` comments**. All linter exemptions must be configured in `pyproject.toml` under `[tool.ruff.lint] ignore` only.
 - **No future-proofing aliases**. When modifying existing functions, maintain backward compatibility only if actively required. Do not create unnecessary wrapper functions.
 
-## Architecture: Backend & CLI Separation
+## Architecture: Backend & Core Separation
 **Strict responsibility boundary:**
-- **ieapp-cli**: Handles all filesystem I/O via `fsspec`. User requests are materialized to disk here only.
-- **backend**: Pure API layer that calls ieapp-cli. No filesystem operations, no business logic duplication.
-- **Violation check**: If the same logic exists in both modules or backend writes directly to fs, flag as architectural violation.
+- **ieapp-core**: Handles all logic and filesystem I/O.
+- **backend**: Pure API layer that calls ieapp-core. No business logic duplication.
+- **ieapp-cli**: CLI tool for direct user interaction, also calling ieapp-core.
+- **Violation check**: If business logic exists in the backend or ieapp-cli instead of the core, flag as architectural violation.
 
 ## General Best Practices
 - **Test coverage**: Aim for >80% code coverage (excepting integration stubs).

@@ -1,4 +1,4 @@
-# Workspace APIs (AS-IS)
+# Workspace APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,80 +7,74 @@ kind: workspaces
 apis:
   - id: workspace.list
     method: GET
-    path: /workspaces
-    paths:
-      backend: /workspaces
-      frontend: /api/workspaces
     backend:
+      path: /workspaces
       file: backend/src/app/api/endpoints/workspace.py
       function: list_workspaces_endpoint
     frontend:
+      path: /api/workspaces
       file: frontend/src/lib/client.ts
       function: workspaceApi.list
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/workspace.py
+    ieapp_core:
+      file: ieapp-core/src/workspace.rs
       function: list_workspaces
 
   - id: workspace.create
     method: POST
-    path: /workspaces
-    paths:
-      backend: /workspaces
-      frontend: /api/workspaces
     backend:
+      path: /workspaces
       file: backend/src/app/api/endpoints/workspace.py
       function: create_workspace_endpoint
     frontend:
+      path: /api/workspaces
       file: frontend/src/lib/client.ts
       function: workspaceApi.create
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/workspace.py
+    ieapp_core:
+      file: ieapp-core/src/workspace.rs
       function: create_workspace
+    ieapp_cli:
+      command: ieapp create-workspace
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_create_workspace
 
   - id: workspace.get
     method: GET
-    path: /workspaces/{workspace_id}
-    paths:
-      backend: /workspaces/{workspace_id}
-      frontend: /api/workspaces/{workspace_id}
     backend:
+      path: /workspaces/{workspace_id}
       file: backend/src/app/api/endpoints/workspace.py
       function: get_workspace_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}
       file: frontend/src/lib/client.ts
       function: workspaceApi.get
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/workspace.py
+    ieapp_core:
+      file: ieapp-core/src/workspace.rs
       function: get_workspace
 
   - id: workspace.patch
     method: PATCH
-    path: /workspaces/{workspace_id}
-    paths:
-      backend: /workspaces/{workspace_id}
-      frontend: /api/workspaces/{workspace_id}
     backend:
+      path: /workspaces/{workspace_id}
       file: backend/src/app/api/endpoints/workspace.py
       function: patch_workspace_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}
       file: frontend/src/lib/client.ts
       function: workspaceApi.patch
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/workspace.py
+    ieapp_core:
+      file: ieapp-core/src/workspace.rs
       function: patch_workspace
 
   - id: workspace.test_connection
     method: POST
-    path: /workspaces/{workspace_id}/test-connection
-    paths:
-      backend: /workspaces/{workspace_id}/test-connection
-      frontend: /api/workspaces/{workspace_id}/test-connection
     backend:
+      path: /workspaces/{workspace_id}/test-connection
       file: backend/src/app/api/endpoints/workspace.py
       function: test_connection_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/test-connection
       file: frontend/src/lib/client.ts
       function: workspaceApi.testConnection
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/workspace.py
+    ieapp_core:
+      file: ieapp-core/src/workspace.rs
       function: test_storage_connection

@@ -1,4 +1,4 @@
-# Search & Query APIs (AS-IS)
+# Search & Query APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,32 +7,36 @@ kind: search
 apis:
   - id: query.execute
     method: POST
-    path: /workspaces/{workspace_id}/query
-    paths:
-      backend: /workspaces/{workspace_id}/query
-      frontend: /api/workspaces/{workspace_id}/query
     backend:
+      path: /workspaces/{workspace_id}/query
       file: backend/src/app/api/endpoints/workspaces.py
       function: query_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/query
       file: frontend/src/lib/client.ts
       function: workspaceApi.query
+    ieapp_core:
+      file: ieapp-core/src/index.rs
+      function: query_index
     ieapp_cli:
-      file: ieapp-cli/src/ieapp/__init__.py
-      function: query
+      command: ieapp query
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_index_query
 
   - id: search.keyword
     method: GET
-    path: /workspaces/{workspace_id}/search
-    paths:
-      backend: /workspaces/{workspace_id}/search
-      frontend: /api/workspaces/{workspace_id}/search
     backend:
+      path: /workspaces/{workspace_id}/search
       file: backend/src/app/api/endpoints/workspaces.py
       function: search_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/search
       file: frontend/src/lib/client.ts
       function: noteApi.search
-    ieapp_cli:
-      file: ieapp-cli/src/ieapp/search.py
+    ieapp_core:
+      file: ieapp-core/src/search.rs
       function: search_notes
+    ieapp_cli:
+      command: ieapp search
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_search
