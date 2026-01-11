@@ -63,8 +63,8 @@ IEapp is a knowledge management system built on three core principles:
 | Module | Responsibility | Language |
 |--------|----------------|----------|
 | `ieapp-core` | Core data operations, storage (OpenDAL), validation, sandbox | Rust |
-| `ieapp-cli` | Python bindings, CLI interface | Python |
-| `backend` | REST API, MCP server (no business logic) | Python (FastAPI) |
+| `ieapp-cli` | Command-line interface for direct user interaction | Python |
+| `backend` | REST API, MCP server (delegates to ieapp-core) | Python (FastAPI) |
 | `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |
 
 ---

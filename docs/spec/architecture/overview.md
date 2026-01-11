@@ -9,36 +9,23 @@ IEapp follows a **Local-First, Server-Relay** architecture. The system is design
 - **Multi-Platform**: Core logic in Rust enables native apps and WebAssembly
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User / Browser                          │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-                    ▼                       ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
-│     Frontend (SolidStart)   │   │      AI Agent (Claude)      │
-│   - Optimistic UI           │   │   - MCP Client              │
-│   - Markdown Editor         │   │   - Code Execution          │
-└─────────────────────────────┘   └─────────────────────────────┘
-                    │                       │
-                    └───────────┬───────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │   REST API / MCP      │
-                    ▼                       ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   Backend (FastAPI)                             │
-│   - Routes REST & MCP requests                                  │
-│   - No business logic (delegates to ieapp-cli)                  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   ieapp-cli (Python Bindings)                   │
-│   - Wraps ieapp-core via pyo3                                   │
-│   - Provides Click CLI                                          │
-└─────────────────────────────────────────────────────────────────┘
+│                         User / Browser                          │
+└──────────────┬──────────────┘   └──────────────┬──────────────┘
+               │                                 │
+     ┌─────────┴─────────┐             ┌─────────┴─────────┐
+     │  Frontend App     │             │     Terminal      │
+     │  (Web/Desktop)    │             │     (Power User)  │
+     └─────────┬─────────┘             └─────────┬─────────┘
+               │                                 │
+               ▼                                 ▼
+┌─────────────────────────────┐   ┌─────────────────────────────┐
+│     Backend (FastAPI)       │   │      ieapp-cli (Python)     │
+│  - REST API & MCP Server    │   │  - Click-based CLI          │
+│  - Auth & Orchestration     │   │  - Direct data access       │
+└──────────────┬──────────────┘   └──────────────┬──────────────┘
+               │                                 │
+               └────────────────┬────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -79,21 +66,20 @@ The core library handles ALL data operations:
 
 ### ieapp-cli (Python)
 
-Thin wrapper providing Python access:
+Command-line interface for power users:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `__init__.py` | Re-exports from Rust bindings |
 | `cli.py` | Click-based command-line interface |
 | `compat.py` | Backwards compatibility helpers |
 
 ### Backend (Python/FastAPI)
 
-Pure API layer with NO business logic:
+API layer providing access to frontend and AI agents:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `api/endpoints/` | REST route handlers (delegate to ieapp-cli) |
+| `api/endpoints/` | REST route handlers (call ieapp-core bindings) |
 | `mcp/` | MCP protocol implementation |
 | `models/` | Pydantic request/response schemas |
 | `core/` | Configuration, middleware |
@@ -134,7 +120,7 @@ This enables "Markdown sections as database fields" without complex forms.
 **Creating a Note:**
 
 ```
-Frontend                 Backend              ieapp-cli            Storage
+Frontend                 Backend              ieapp-core           Storage
    │                        │                     │                   │
    │ POST /notes            │                     │                   │
    │───────────────────────>│                     │                   │

@@ -74,7 +74,7 @@ The ieapp-core crate compiles to multiple targets:
 
 | Target | Use Case |
 |--------|----------|
-| Native (x86_64, arm64) | ieapp-cli via pyo3 |
+| Native (x86_64, arm64) | backend & ieapp-cli via pyo3 |
 | WebAssembly | Browser-based frontend (future) |
 | Tauri integration | Desktop application (future) |
 

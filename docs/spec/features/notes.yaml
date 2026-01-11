@@ -17,7 +17,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.create
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: create_note
 
@@ -33,7 +33,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.list
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: list_notes
 
@@ -49,7 +49,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.get
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: get_note
 
@@ -65,7 +65,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.update
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: update_note
 
@@ -81,7 +81,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.delete
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: delete_note
 
@@ -97,7 +97,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: n/a (not implemented as a dedicated client helper)
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: get_note_history
 
@@ -113,7 +113,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: n/a
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: get_note_revision
 
@@ -129,6 +129,6 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: n/a
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: restore_note

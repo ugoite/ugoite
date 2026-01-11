@@ -21,7 +21,7 @@ Non-goals:
 To enable a native desktop app and future Wasm targets:
 - Move core operations into `ieapp-core` (Rust).
 - Provide bindings:
-  - Python bindings for `ieapp-cli` and backend reuse
+  - Python bindings for backend and `ieapp-cli` reuse
   - WebAssembly bindings for browser/native contexts
 
 ## Data Portability

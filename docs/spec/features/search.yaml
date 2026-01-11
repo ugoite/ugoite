@@ -17,7 +17,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: workspaceApi.query
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/__init__.py
       function: query
 
@@ -33,6 +33,6 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.search
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/search.py
       function: search_notes

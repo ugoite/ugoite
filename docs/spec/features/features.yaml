@@ -48,46 +48,46 @@ files:
 # This section documents current paths before migration
 current_paths:
   workspace:
-    ieapp_cli: src/ieapp/workspace.py
+    ieapp_core: src/ieapp/workspace.py
     backend: src/app/api/endpoints/workspace.py
     frontend: src/lib/workspace-store.ts
 
   note:
-    ieapp_cli: src/ieapp/notes.py  # Note: plural
+    ieapp_core: src/ieapp/notes.py  # Note: plural
     backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # Generic store
 
   class:
-    ieapp_cli: src/ieapp/classes.py
+    ieapp_core: src/ieapp/classes.py
     backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/client.ts  # classApi in client
 
   attachment:
-    ieapp_cli: src/ieapp/attachments.py  # Note: plural
+    ieapp_core: src/ieapp/attachments.py  # Note: plural
     backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # In generic store
 
   link:
-    ieapp_cli: src/ieapp/links.py  # Note: plural
+    ieapp_core: src/ieapp/links.py  # Note: plural
     backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # In generic store
 
   search:
-    ieapp_cli: src/ieapp/search.py
+    ieapp_core: src/ieapp/search.py
     backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/client.ts  # In client
 
   index:
-    ieapp_cli: src/ieapp/indexer.py  # Different name: indexer
+    ieapp_core: src/ieapp/indexer.py  # Different name: indexer
     backend: null
     frontend: null
 
   integrity:
-    ieapp_cli: src/ieapp/integrity.py
+    ieapp_core: src/ieapp/integrity.py
     backend: null
     frontend: null
 
   sandbox:
-    ieapp_cli: src/ieapp/sandbox/__init__.py
+    ieapp_core: src/ieapp/sandbox/__init__.py
     backend: src/app/mcp/handlers.py  # In MCP handlers
     frontend: null

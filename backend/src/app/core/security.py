@@ -57,8 +57,8 @@ def is_local_host(host: str | None) -> bool:
 def build_response_signature(body: bytes, root_path: Path | str) -> tuple[str, str]:
     """Compute the HMAC signature for the response body.
 
-    This function delegates to ieapp-cli which handles all file operations
-    through fsspec, ensuring proper abstraction and testability.
+    This function delegates to ieapp-core which handles all logic,
+    ensuring proper abstraction and testability.
 
     Args:
         body: The response body bytes to sign.

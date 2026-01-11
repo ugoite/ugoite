@@ -48,7 +48,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: noteApi.create
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/notes.py
       function: create_note
 ```

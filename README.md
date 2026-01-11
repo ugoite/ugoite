@@ -37,9 +37,9 @@ IEapp is a knowledge management system built on three core principles:
 frontend/           # SolidStart frontend
   ├─ src/
   └─ public/
-backend/            # FastAPI backend
+backend/            # FastAPI backend (REST & MCP server)
   └─ src/
-ieapp-cli/          # Core library (Python, future: Rust bindings)
+ieapp-cli/          # Command-line interface for power users
   └─ src/
 docs/
   ├─ spec/          # Technical specifications (YAML + Markdown)

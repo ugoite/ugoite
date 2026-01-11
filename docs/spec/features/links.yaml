@@ -17,7 +17,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: linksApi.create
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/links.py
       function: create_link
 
@@ -33,7 +33,7 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: linksApi.list
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/links.py
       function: list_links
 
@@ -49,6 +49,6 @@ apis:
     frontend:
       file: frontend/src/lib/client.ts
       function: linksApi.delete
-    ieapp_cli:
+    ieapp_core:
       file: ieapp-cli/src/ieapp/links.py
       function: delete_link

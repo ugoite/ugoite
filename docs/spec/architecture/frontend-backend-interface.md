@@ -33,11 +33,11 @@ and responsibility boundaries.
 - Frontend clears selection/editor state on workspace change.
 - Frontend reloads workspace-scoped resources (notes, classes, etc.).
 
-## Storage Boundary (Backend ↔ ieapp-cli)
+## Storage Boundary (Backend ↔ ieapp-core)
 
-- All filesystem I/O lives in `ieapp-cli` and goes through `fsspec`.
-- Backend is a routing/translation layer and must not create directories/files.
-- Backend tests must cover `file://` and `memory://` style backends.
+- All filesystem I/O lives in `ieapp-core` (currently via `fsspec`, transitioning to OpenDAL).
+- Backend is a routing/translation layer and must not perform direct filesystem operations.
+- Backend tests must cover `file://` and `memory://` style backends via `ieapp-core`.
 
 ## Error Handling Standards
 

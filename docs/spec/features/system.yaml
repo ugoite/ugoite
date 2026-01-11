@@ -17,6 +17,6 @@ apis:
     frontend:
       file: frontend/src/lib/api.ts
       function: apiFetch (via getBackendBase)
-    ieapp_cli:
+    ieapp_core:
       file: n/a
       function: n/a

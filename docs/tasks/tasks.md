@@ -97,7 +97,7 @@ ieapp-cli/
 │   └── utils.py          # fsspec helpers
 backend/
 ├── src/app/
-│   ├── api/              # FastAPI routes (calls ieapp-cli)
+│   ├── api/              # FastAPI routes (calls ieapp-core)
 │   └── mcp/              # MCP server endpoints
 ```
 
@@ -130,16 +130,15 @@ ieapp-core/                     # NEW: Rust crate
 │       ├── Cargo.toml
 │       └── src/lib.rs
 
-ieapp-cli/                      # UPDATED: Thin Python wrapper
+ieapp-cli/                      # UPDATED: CLI for power users
 ├── src/ieapp/
-│   ├── __init__.py            # Re-export from Rust bindings
-│   ├── cli.py                 # Click CLI (unchanged)
+│   ├── cli.py                 # Click CLI
 │   └── compat.py              # Compatibility layer (optional)
 
-backend/                        # UPDATED: Pure API layer
+backend/                        # UPDATED: Pure API layer (calls ieapp-core)
 ├── src/app/
-│   ├── api/                   # Routes only, no business logic
-│   └── mcp/                   # MCP server
+│   ├── api/                   # Routes (delegate to ieapp-core)
+│   └── mcp/                   # MCP server (delegate to ieapp-core)
 
 frontend/                       # UNCHANGED: UI only
 ```
@@ -149,8 +148,8 @@ frontend/                       # UNCHANGED: UI only
 | Module | Responsibility |
 |--------|----------------|
 | `ieapp-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing, sandbox |
-| `ieapp-cli` (Python) | Python bindings + Click CLI wrapper |
-| `backend` (Python) | REST API routes, MCP server, no business logic |
+| `ieapp-cli` (Python) | Click CLI for direct user interaction |
+| `backend` (Python) | REST API routes, MCP server, delegates to ieapp-core |
 | `frontend` (TypeScript) | UI rendering, optimistic updates, no data logic |
 
 ### Tasks
@@ -166,7 +165,7 @@ frontend/                       # UNCHANGED: UI only
 - [ ] Port Wasm sandbox to Rust (wasmtime native)
 - [ ] Create pyo3 Python bindings
 - [ ] Update ieapp-cli to use Rust bindings
-- [ ] Update backend to use ieapp-cli (no direct file access)
+- [ ] Update backend to use ieapp-core bindings (no direct file access)
 - [ ] Ensure all tests pass with new architecture
 - [ ] Benchmark performance vs Python implementation
 
@@ -213,19 +212,19 @@ All modules follow the same feature-based structure:
 features:
   workspace:
     crate: src/workspace.rs
-    ieapp_cli: src/ieapp/workspace.py
+    ieapp_core: src/ieapp/workspace.py
     backend: src/app/api/endpoints/workspace.py
     frontend: src/lib/workspace-store.ts
     
   note:
     crate: src/note.rs
-    ieapp_cli: src/ieapp/note.py
+    ieapp_core: src/ieapp/note.py
     backend: src/app/api/endpoints/note.py
     frontend: src/lib/note-store.ts
     
   class:
     crate: src/class.rs
-    ieapp_cli: src/ieapp/class.py
+    ieapp_core: src/ieapp/class.py
     backend: src/app/api/endpoints/class.py
     frontend: src/lib/class-store.ts
     
