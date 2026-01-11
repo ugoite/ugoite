@@ -1,4 +1,4 @@
-"""Tests for schema management endpoints."""
+"""Tests for class management endpoints."""
 
 import uuid
 
@@ -13,17 +13,17 @@ client = TestClient(app)
 @pytest.fixture
 def workspace_id(tmp_path: object) -> str:
     """Create a workspace for testing."""
-    ws_name = f"schema-test-ws-{uuid.uuid4().hex}"
+    ws_name = f"class-test-ws-{uuid.uuid4().hex}"
     response = client.post("/workspaces", json={"name": ws_name})
     assert response.status_code == 201
     return response.json()["id"]
 
 
-def test_create_and_get_schema(workspace_id: str) -> None:
-    """Test creating and retrieving a schema."""
-    schema_name = "Meeting"
-    schema_def = {
-        "name": schema_name,
+def test_create_and_get_class(workspace_id: str) -> None:
+    """Test creating and retrieving a class."""
+    class_name = "Meeting"
+    class_def = {
+        "name": class_name,
         "version": 1,
         "template": "# Meeting\n\n## Date\n## Attendees\n",
         "fields": {
@@ -33,35 +33,35 @@ def test_create_and_get_schema(workspace_id: str) -> None:
         "defaults": None,
     }
 
-    # Create Schema
-    response = client.post(f"/workspaces/{workspace_id}/schemas", json=schema_def)
+    # Create Class
+    response = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
     assert response.status_code == 201
-    assert response.json()["name"] == schema_name
+    assert response.json()["name"] == class_name
 
-    # Get Schema
-    response = client.get(f"/workspaces/{workspace_id}/schemas/{schema_name}")
+    # Get Class
+    response = client.get(f"/workspaces/{workspace_id}/classes/{class_name}")
     assert response.status_code == 200
-    assert response.json() == schema_def
+    assert response.json() == class_def
 
-    # List Schemas
-    response = client.get(f"/workspaces/{workspace_id}/schemas")
+    # List Classes
+    response = client.get(f"/workspaces/{workspace_id}/classes")
     assert response.status_code == 200
-    schemas = response.json()
-    assert len(schemas) == 1
-    assert schemas[0]["name"] == schema_name
+    classes = response.json()
+    assert len(classes) == 1
+    assert classes[0]["name"] == class_name
 
 
-def test_schema_validation_in_note(workspace_id: str) -> None:
+def test_class_validation_in_note(workspace_id: str) -> None:
     """Test that notes created with a class have their properties extracted."""
-    # 1. Define Schema
-    schema_name = "Task"
-    schema_def = {
-        "name": schema_name,
+    # 1. Define Class
+    class_name = "Task"
+    class_def = {
+        "name": class_name,
         "fields": {
             "Priority": {"type": "string", "required": True},
         },
     }
-    client.post(f"/workspaces/{workspace_id}/schemas", json=schema_def)
+    client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
 
     # 2. Create Note with that Class
     note_content = """---
@@ -92,14 +92,14 @@ High
     assert results[0]["properties"]["Priority"] == "High"
 
 
-def test_update_note_with_missing_schema_rejected(workspace_id: str) -> None:
-    """Updating a note that declares a class whose schema file is missing.
+def test_update_note_with_missing_class_rejected(workspace_id: str) -> None:
+    """Updating a note that declares a class whose class file is missing.
 
     This should fail.
     """
     # Create a note that references a non-existent class
     note_content = """---
-class: MissingSchema
+class: MissingClass
 ---
 ## Field
 Value
@@ -112,7 +112,7 @@ Value
     note_id = create_resp.json()["id"]
     revision_id = create_resp.json()["revision_id"]
 
-    # Attempt to update the note (this triggers schema validation)
+    # Attempt to update the note (this triggers class validation)
     updated_md = note_content + "\n## Another\nX"
     upd_resp = client.put(
         f"/workspaces/{workspace_id}/notes/{note_id}",

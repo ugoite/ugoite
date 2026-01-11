@@ -1,17 +1,17 @@
 import { createContext, useContext } from "solid-js";
 import type { Accessor } from "solid-js";
 import type { NoteStore } from "~/lib/store";
-import type { Schema } from "~/lib/types";
+import type { Class } from "~/lib/types";
 import type { WorkspaceStore } from "~/lib/workspace-store";
 
 export interface NotesRouteContextValue {
 	workspaceStore: WorkspaceStore;
 	workspaceId: Accessor<string>;
 	noteStore: NoteStore;
-	schemas: Accessor<Schema[]>;
-	loadingSchemas: Accessor<boolean>;
+	classes: Accessor<Class[]>;
+	loadingClasses: Accessor<boolean>;
 	columnTypes: Accessor<string[]>;
-	refetchSchemas: () => void;
+	refetchClasses: () => void;
 }
 
 export const NotesRouteContext = createContext<NotesRouteContextValue>();

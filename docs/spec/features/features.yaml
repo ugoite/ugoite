@@ -33,8 +33,8 @@ files:
     file: workspaces.yaml
   - kind: notes
     file: notes.yaml
-  - kind: schemas
-    file: schemas.yaml
+  - kind: classes
+    file: classes.yaml
   - kind: attachments
     file: attachments.yaml
   - kind: links
@@ -49,32 +49,32 @@ files:
 current_paths:
   workspace:
     ieapp_cli: src/ieapp/workspace.py
-    backend: src/app/api/endpoints/workspaces.py  # Note: plural
+    backend: src/app/api/endpoints/workspace.py
     frontend: src/lib/workspace-store.ts
 
   note:
     ieapp_cli: src/ieapp/notes.py  # Note: plural
-    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # Generic store
 
   class:
-    ieapp_cli: src/ieapp/schemas.py  # OLD NAME: schemas
-    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
-    frontend: src/lib/client.ts  # schemaApi in client
+    ieapp_cli: src/ieapp/classes.py
+    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
+    frontend: src/lib/client.ts  # classApi in client
 
   attachment:
     ieapp_cli: src/ieapp/attachments.py  # Note: plural
-    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # In generic store
 
   link:
     ieapp_cli: src/ieapp/links.py  # Note: plural
-    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/store.ts  # In generic store
 
   search:
     ieapp_cli: src/ieapp/search.py
-    backend: src/app/api/endpoints/workspaces.py  # Mixed in workspaces
+    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
     frontend: src/lib/client.ts  # In client
 
   index:

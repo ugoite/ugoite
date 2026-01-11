@@ -1,4 +1,4 @@
-"""Schema management helpers backed by fsspec."""
+"""Class management helpers backed by fsspec."""
 
 from __future__ import annotations
 
@@ -39,74 +39,74 @@ def _workspace_context(
     return fs_obj, ws_path
 
 
-def list_schemas(
+def list_classes(
     workspace_path: str,
     *,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
-    """Return all JSON schemas in the workspace's schemas directory."""
+    """Return all classes (JSON files) in the workspace's classes directory."""
     fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    schemas_dir = fs_join(ws_path, "schemas")
-    if not fs_exists(fs_obj, schemas_dir):
+    classes_dir = fs_join(ws_path, "classes")
+    if not fs_exists(fs_obj, classes_dir):
         return []
 
     try:
-        entries = fs_obj.ls(schemas_dir, detail=False)
+        entries = fs_obj.ls(classes_dir, detail=False)
     except FileNotFoundError:
         return []
 
-    schemas: list[dict[str, Any]] = []
+    classes: list[dict[str, Any]] = []
     for entry in entries:
         path_str = str(entry)
         if not path_str.endswith(".json"):
             continue
         try:
-            schemas.append(fs_read_json(fs_obj, path_str))
+            classes.append(fs_read_json(fs_obj, path_str))
         except (json.JSONDecodeError, OSError):
             continue
-    return schemas
+    return classes
 
 
-def get_schema(
+def get_class(
     workspace_path: str,
     class_name: str,
     *,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
-    """Return the JSON schema for ``class_name`` in the workspace."""
+    """Return the class definition for ``class_name`` in the workspace."""
     validate_id(class_name, "class_name")
     fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    schema_path = fs_join(ws_path, "schemas", f"{class_name}.json")
-    if not fs_exists(fs_obj, schema_path):
-        msg = f"Schema not found: {class_name}"
+    class_path = fs_join(ws_path, "classes", f"{class_name}.json")
+    if not fs_exists(fs_obj, class_path):
+        msg = f"Class not found: {class_name}"
         raise FileNotFoundError(msg)
-    return fs_read_json(fs_obj, schema_path)
+    return fs_read_json(fs_obj, class_path)
 
 
-def upsert_schema(
+def upsert_class(
     workspace_path: str,
-    schema_data: dict[str, Any],
+    class_data: dict[str, Any],
     *,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
-    """Create or replace a schema definition in the workspace."""
-    name = schema_data.get("name")
+    """Create or replace a class definition in the workspace."""
+    name = class_data.get("name")
     if not name:
-        msg = "Schema name is required"
+        msg = "Class name is required"
         raise ValueError(msg)
-    validate_id(str(name), "schema_name")
+    validate_id(str(name), "class_name")
 
     fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    schemas_dir = fs_join(ws_path, "schemas")
-    fs_makedirs(fs_obj, schemas_dir, exist_ok=True)
+    classes_dir = fs_join(ws_path, "classes")
+    fs_makedirs(fs_obj, classes_dir, exist_ok=True)
 
-    schema_path = fs_join(schemas_dir, f"{name}.json")
-    fs_write_json(fs_obj, schema_path, schema_data)
+    class_path = fs_join(classes_dir, f"{name}.json")
+    fs_write_json(fs_obj, class_path, class_data)
 
     # Refresh the workspace index
     Indexer(str(ws_path), fs=fs_obj).run_once()
 
-    return schema_data
+    return class_data
 
 
 def _apply_migration(markdown: str, strategies: dict[str, Any]) -> str:
@@ -131,21 +131,21 @@ def _apply_migration(markdown: str, strategies: dict[str, Any]) -> str:
     return re.sub(r"\n{3,}", "\n\n", new_markdown)
 
 
-def migrate_schema(
+def migrate_class(
     workspace_path: str,
-    schema_data: dict[str, Any],
+    class_data: dict[str, Any],
     strategies: dict[str, Any] | None = None,
     *,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> int:
-    """Upsert schema and migrate existing notes."""
-    upsert_schema(workspace_path, schema_data, fs=fs)
+    """Upsert class and migrate existing notes."""
+    upsert_class(workspace_path, class_data, fs=fs)
 
     if not strategies:
         return 0
 
     fs_obj, _ws_path = _workspace_context(workspace_path, fs)
-    class_name = schema_data.get("name")
+    class_name = class_data.get("name")
     if not class_name:
         return 0
 

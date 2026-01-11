@@ -27,7 +27,7 @@ def test_create_workspace_scaffolding(
     assert fs.exists(ws_path)
     assert fs.exists(fs_join(ws_path, "meta.json"))
     assert fs.exists(fs_join(ws_path, "settings.json"))
-    assert fs.exists(fs_join(ws_path, "schemas"))
+    assert fs.exists(fs_join(ws_path, "classes"))
     assert fs.exists(fs_join(ws_path, "index"))
     assert fs.exists(fs_join(ws_path, "attachments"))
     assert fs.exists(fs_join(ws_path, "notes"))

@@ -309,9 +309,9 @@ requirements:
             - should save valid configuration
 
   - id: REQ-FE-018
-    title: Data Models View with Routing
+    title: Note Classes View with Routing
     description: |
-      Frontend MUST provide a high-performance data model view using nested routing.
+      Frontend MUST provide a high-performance note class view using nested routing.
     related_spec:
       - stories/advanced.yaml#STORY-009
     priority: medium
@@ -320,12 +320,12 @@ requirements:
       vitest:
         - file: frontend/src/routes/notes/index.test.tsx
           tests:
-            - selecting a data model navigates correctly
+            - selecting a note class navigates correctly
 
   - id: REQ-FE-019
     title: Multi-column Sorting
     description: |
-      SchemaTable MUST support sorting by any displayed field (Title,
+      ClassTable MUST support sorting by any displayed field (Title,
       class-defined properties, Updated Date) with visual indicators.
     related_spec:
       - stories/advanced.yaml#STORY-009
@@ -333,14 +333,14 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/SchemaTable.test.tsx
+        - file: frontend/src/components/ClassTable.test.tsx
           tests:
             - REQ-FE-019: sorts notes when clicking headers
 
   - id: REQ-FE-020
     title: Hybrid Filtering
     description: |
-      SchemaTable MUST provide both global keyword search and column-specific
+      ClassTable MUST provide both global keyword search and column-specific
       filtering to refine viewed records.
     related_spec:
       - stories/advanced.yaml#STORY-009
@@ -348,7 +348,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/SchemaTable.test.tsx
+        - file: frontend/src/components/ClassTable.test.tsx
           tests:
             - REQ-FE-020: filters notes globally
 
@@ -363,7 +363,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/SchemaTable.test.tsx
+        - file: frontend/src/components/ClassTable.test.tsx
           tests:
             - REQ-FE-021: exports filtered data to CSV
 
@@ -377,7 +377,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/SchemaTable.test.tsx
+        - file: frontend/src/components/ClassTable.test.tsx
           tests:
             - Add Row button creates a new note
 
@@ -392,7 +392,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/SchemaTable.test.tsx
+        - file: frontend/src/components/ClassTable.test.tsx
           tests:
             - Edit Mode toggle and inline edit
             - keyboard copy shortcut

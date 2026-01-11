@@ -1,16 +1,16 @@
-"""Tests for schema migration and column types."""
+"""Tests for class migration and column types."""
 
 import uuid
 from pathlib import Path
 
+from ieapp.classes import list_column_types, migrate_class, upsert_class
 from ieapp.indexer import extract_properties
 from ieapp.notes import create_note, get_note
-from ieapp.schemas import list_column_types, migrate_schema, upsert_schema
 from ieapp.workspace import create_workspace
 
 
 def test_list_column_types() -> None:
-    """Test available column types listing (REQ-SCH-001)."""
+    """Test available column types listing (REQ-CLS-001)."""
     types = list_column_types()
     assert isinstance(types, list)
     assert "string" in types
@@ -20,21 +20,21 @@ def test_list_column_types() -> None:
     assert "markdown" in types
 
 
-def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
-    """Test migrating schema by adding a column with a default value (REQ-SCH-002)."""
+def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
+    """Test migrating class by adding a column with a default value (REQ-CLS-002)."""
     # Setup workspace
     create_workspace(str(tmp_path), "ws")
     ws_path = str(tmp_path / "workspaces" / "ws")
 
-    # Define initial schema
-    initial_schema = {
+    # Define initial class
+    initial_class = {
         "name": "project",
         "fields": {
             "title": {"type": "string"},
             "status": {"type": "string"},
         },
     }
-    upsert_schema(ws_path, initial_schema)
+    upsert_class(ws_path, initial_class)
 
     # Create a note
     note_id = str(uuid.uuid4())
@@ -49,8 +49,8 @@ def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
         content=content,
     )
 
-    # Define new schema (adding 'priority')
-    new_schema = {
+    # Define new class (adding 'priority')
+    new_class = {
         "name": "project",
         "fields": {
             "title": {"type": "string"},
@@ -60,9 +60,9 @@ def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
     }
 
     # Migrate with default value for new column
-    count = migrate_schema(
+    count = migrate_class(
         ws_path,
-        new_schema,
+        new_class,
         strategies={"priority": "Medium"},
     )
 
@@ -78,21 +78,21 @@ def test_migrate_schema_add_column_with_default(tmp_path: Path) -> None:
     assert "Medium" in updated_note["content"]
 
 
-def test_migrate_schema_remove_column(tmp_path: Path) -> None:
-    """Test migrating schema by removing a column (REQ-SCH-002)."""
+def test_migrate_class_remove_column(tmp_path: Path) -> None:
+    """Test migrating class by removing a column (REQ-CLS-002)."""
     # Setup workspace
     create_workspace(str(tmp_path), "ws")
     ws_path = str(tmp_path / "workspaces" / "ws")
 
-    # Initial schema with extra field
-    initial_schema = {
+    # Initial class with extra field
+    initial_class = {
         "name": "task",
         "fields": {
             "title": {"type": "string"},
             "old_field": {"type": "string"},
         },
     }
-    upsert_schema(ws_path, initial_schema)
+    upsert_class(ws_path, initial_class)
 
     note_id = str(uuid.uuid4())
     content = (
@@ -106,17 +106,17 @@ def test_migrate_schema_remove_column(tmp_path: Path) -> None:
         content=content,
     )
 
-    # New schema without old_field
-    new_schema = {
+    # New class without old_field
+    new_class = {
         "name": "task",
         "fields": {
             "title": {"type": "string"},
         },
     }
 
-    migrate_schema(
+    migrate_class(
         ws_path,
-        new_schema,
+        new_class,
         strategies={"old_field": None},
     )
 

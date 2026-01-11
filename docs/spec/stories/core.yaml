@@ -32,7 +32,7 @@ stories:
 
   - id: STORY-002
     title: Structured Freedom
-    type: Data Model
+    type: Class
     as_a: user
     i_want: to use standard Markdown headers to define data fields (e.g., `## Date`)
     so_that: >
@@ -87,7 +87,7 @@ stories:
 
   - id: STORY-005
     title: Search Across Everything
-    type: Data Model
+    type: Class
     as_a: user with many notes
     i_want: to search my notes by keywords and structured fields
     so_that: I can quickly find relevant information.

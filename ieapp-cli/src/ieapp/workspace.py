@@ -33,8 +33,8 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-EMPTY_INDEX_SCHEMA = {"notes": {}, "class_stats": {}}
-EMPTY_STATS_SCHEMA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
+EMPTY_INDEX_DATA = {"notes": {}, "class_stats": {}}
+EMPTY_STATS_DATA = {"last_indexed": 0.0, "note_count": 0, "tag_counts": {}}
 
 
 def _resolve_workspace_paths(
@@ -141,7 +141,7 @@ def create_workspace(
 
     fs_makedirs(fs_obj, ws_path, exist_ok=False)
 
-    for subdir in ["schemas", "index", "attachments", "notes"]:
+    for subdir in ["classes", "index", "attachments", "notes"]:
         fs_makedirs(fs_obj, fs_join(ws_path, subdir), exist_ok=False)
 
     meta = {

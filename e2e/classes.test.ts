@@ -4,55 +4,55 @@ import { E2EClient, waitForServers } from "./lib/client";
 const client = new E2EClient();
 const workspaceId = "default";
 
-describe("Data Model (Schemas)", () => {
+describe("Class", () => {
 	beforeAll(async () => {
 		await waitForServers(client, { timeout: 60000 });
 	});
 
-	test("Create and List Schemas", async () => {
-		const schemaName = "E2ETestSchema";
-		const schemaDef = {
-			name: schemaName,
+	test("Create and List Classes", async () => {
+		const className = "E2ETestClass";
+		const classDef = {
+			name: className,
 			version: 1,
-			template: "# E2ETestSchema\n\n## Field1\n",
+			template: "# E2ETestClass\n\n## Field1\n",
 			fields: {
 				Field1: { type: "string", required: true },
 			},
 		};
 
-		// Create Schema
+		// Create Class
 		const createRes = await client.postApi(
-			`/workspaces/${workspaceId}/schemas`,
-			schemaDef,
+			`/workspaces/${workspaceId}/classes`,
+			classDef,
 		);
 		expect(createRes.status).toBe(201);
 
-		// List Schemas
-		const listRes = await client.getApi(`/workspaces/${workspaceId}/schemas`);
+		// List Classes
+		const listRes = await client.getApi(`/workspaces/${workspaceId}/classes`);
 		expect(listRes.status).toBe(200);
-		const schemas = (await listRes.json()) as any[];
-		expect(Array.isArray(schemas)).toBe(true);
-		const found = schemas.find((s: any) => s.name === schemaName);
+		const noteClasses = (await listRes.json()) as any[];
+		expect(Array.isArray(noteClasses)).toBe(true);
+		const found = noteClasses.find((s: any) => s.name === className);
 		expect(found).toBeDefined();
 	});
 
-	test("Query Notes by Schema", async () => {
-		const schemaName = "QueryTestSchema";
-		const schemaDef = {
-			name: schemaName,
+	test("Query Notes by Class", async () => {
+		const className = "QueryTestClass";
+		const classDef = {
+			name: className,
 			version: 1,
-			template: "# QueryTestSchema\n\n## Status\n",
+			template: "# QueryTestClass\n\n## Status\n",
 			fields: {
 				Status: { type: "string", required: true },
 			},
 		};
 
-		// Create Schema
-		await client.postApi(`/workspaces/${workspaceId}/schemas`, schemaDef);
+		// Create Class
+		await client.postApi(`/workspaces/${workspaceId}/classes`, classDef);
 
-		// Create Note with this schema
+		// Create Note with this class
 		const noteContent = `---
-class: ${schemaName}
+class: ${className}
 ---
 ## Status
 Active
@@ -68,7 +68,7 @@ Active
 
 		// Query
 		const queryRes = await client.postApi(`/workspaces/${workspaceId}/query`, {
-			filter: { class: schemaName },
+			filter: { class: className },
 		});
 		expect(queryRes.status).toBe(200);
 		const results = (await queryRes.json()) as any[];

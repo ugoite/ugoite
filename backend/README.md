@@ -39,7 +39,7 @@ src/app/
 ├── mcp/
 │   └── server.py        # MCP protocol server (Milestone 4)
 └── models/
-    └── schemas.py       # Pydantic request/response models
+    └── classes.py       # Pydantic request/response models
 ```
 
 ## Key Design Decisions

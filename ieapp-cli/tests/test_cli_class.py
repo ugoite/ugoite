@@ -1,4 +1,4 @@
-"""Tests for CLI schema commands."""
+"""Tests for CLI class commands."""
 
 import json
 from pathlib import Path
@@ -11,15 +11,15 @@ runner = CliRunner()
 
 
 def test_cli_list_types() -> None:
-    """Test listing column types (REQ-SCH-001)."""
-    result = runner.invoke(app, ["schema", "list-types"])
+    """Test listing column types (REQ-CLS-001)."""
+    result = runner.invoke(app, ["class", "list-types"])
     assert result.exit_code == 0
     assert "string" in result.stdout
     assert "date" in result.stdout
 
 
-def test_cli_schema_update(tmp_path: Path) -> None:
-    """Test updating schema via CLI (REQ-SCH-002)."""
+def test_cli_class_update(tmp_path: Path) -> None:
+    """Test updating class via CLI (REQ-CLS-002)."""
     ws_root = tmp_path / "root"
     ws_root.mkdir()
 
@@ -43,25 +43,25 @@ def test_cli_schema_update(tmp_path: Path) -> None:
     )
     assert res.exit_code == 0
 
-    # 3. Define New Schema
-    schema_file = tmp_path / "schema.json"
-    schema_data = {
+    # 3. Define New Class
+    class_file = tmp_path / "class.json"
+    class_data = {
         "name": "Task",
         "fields": {
             "NewField": {"type": "string", "required": False},
         },
     }
-    schema_file.write_text(json.dumps(schema_data))
+    class_file.write_text(json.dumps(class_data))
 
     # 4. Run Update with Strategy
     strategies = json.dumps({"NewField": "DefaultVal", "Field": None})
     result = runner.invoke(
         app,
         [
-            "schema",
+            "class",
             "update",
             str(ws_path),
-            str(schema_file),
+            str(class_file),
             "--strategies",
             strategies,
         ],

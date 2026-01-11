@@ -67,8 +67,8 @@ class LinkCreate(BaseModel):
     kind: str = "related"
 
 
-class SchemaCreate(BaseModel):
-    """Schema creation payload."""
+class ClassCreate(BaseModel):
+    """Class creation payload."""
 
     name: str
     version: int = 1

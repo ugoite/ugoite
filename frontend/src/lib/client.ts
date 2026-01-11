@@ -9,8 +9,8 @@ import type {
 	WorkspaceLink,
 	WorkspacePatchPayload,
 	TestConnectionPayload,
-	Schema,
-	SchemaCreatePayload,
+	Class,
+	ClassCreatePayload,
 } from "./types";
 import { apiFetch } from "./api";
 
@@ -93,35 +93,35 @@ export const workspaceApi = {
 };
 
 /**
- * Schema API client
+ * Class API client
  */
-export const schemaApi = {
+export const classApi = {
 	async listTypes(workspaceId: string): Promise<string[]> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/schemas/types`);
+		const res = await apiFetch(`/workspaces/${workspaceId}/classes/types`);
 		if (!res.ok) {
-			throw new Error(`Failed to list schema types: ${res.statusText}`);
+			throw new Error(`Failed to list class types: ${res.statusText}`);
 		}
 		return (await res.json()) as string[];
 	},
 
-	async list(workspaceId: string): Promise<Schema[]> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/schemas`);
-		if (!res.ok) throw new Error(`Failed to list schemas: ${res.statusText}`);
-		return (await res.json()) as Schema[];
+	async list(workspaceId: string): Promise<Class[]> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/classes`);
+		if (!res.ok) throw new Error(`Failed to list classes: ${res.statusText}`);
+		return (await res.json()) as Class[];
 	},
-	async get(workspaceId: string, className: string): Promise<Schema> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/schemas/${className}`);
-		if (!res.ok) throw new Error(`Failed to get schema: ${res.statusText}`);
-		return (await res.json()) as Schema;
+	async get(workspaceId: string, className: string): Promise<Class> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/classes/${className}`);
+		if (!res.ok) throw new Error(`Failed to get class: ${res.statusText}`);
+		return (await res.json()) as Class;
 	},
-	async create(workspaceId: string, payload: SchemaCreatePayload): Promise<Schema> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/schemas`, {
+	async create(workspaceId: string, payload: ClassCreatePayload): Promise<Class> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/classes`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
 		});
-		if (!res.ok) throw new Error(`Failed to create schema: ${res.statusText}`);
-		return (await res.json()) as Schema;
+		if (!res.ok) throw new Error(`Failed to create class: ${res.statusText}`);
+		return (await res.json()) as Class;
 	},
 };
 

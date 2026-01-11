@@ -61,7 +61,7 @@ describe("/notes (layout route)", () => {
 		expect(navigateMock).toHaveBeenCalledWith("/notes/note-1");
 	});
 
-	it("REQ-FE-018: selecting a data model navigates correctly", async () => {
+	it("REQ-FE-018: selecting a note class navigates correctly", async () => {
 		render(() => (
 			<NotesRoute>
 				<div data-testid="route-children" />
@@ -69,10 +69,10 @@ describe("/notes (layout route)", () => {
 		));
 
 		await waitFor(() => {
-			expect(screen.getByText("Data Models")).toBeInTheDocument();
+			expect(screen.getByText("Classes")).toBeInTheDocument();
 		});
 
-		fireEvent.click(screen.getByText("Data Models"));
-		expect(navigateMock).toHaveBeenCalledWith("/notes/models");
+		fireEvent.click(screen.getByText("Classes"));
+		expect(navigateMock).toHaveBeenCalledWith("/notes/classes");
 	});
 });

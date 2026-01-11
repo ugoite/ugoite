@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
 	noteApi,
 	workspaceApi,
-	schemaApi,
+	classApi,
 	RevisionConflictError,
 	attachmentApi,
 	linksApi,
@@ -277,10 +277,10 @@ describe("noteApi", () => {
 	});
 });
 
-describe("schemaApi", () => {
+describe("classApi", () => {
 	const testWorkspace: Workspace = {
-		id: "schema-ws",
-		name: "Schema Workspace",
+		id: "class-ws",
+		name: "Class Workspace",
 		created_at: "2025-01-01T00:00:00Z",
 	};
 
@@ -289,23 +289,23 @@ describe("schemaApi", () => {
 		seedWorkspace(testWorkspace);
 	});
 
-	it("lists schemas (empty by default)", async () => {
-		const schemas = await schemaApi.list("schema-ws");
-		expect(schemas).toEqual([]);
+	it("lists classes (empty by default)", async () => {
+		const classes = await classApi.list("class-ws");
+		expect(classes).toEqual([]);
 	});
 
-	it("creates and gets a schema", async () => {
-		await schemaApi.create("schema-ws", {
+	it("creates and gets a class", async () => {
+		await classApi.create("class-ws", {
 			name: "Meeting",
 			version: 1,
 			template: "# Meeting\n\n## Date\n",
 			fields: { Date: { type: "date", required: true } },
 		});
 
-		const schemas = await schemaApi.list("schema-ws");
-		expect(schemas.find((s) => s.name === "Meeting")).toBeDefined();
+		const classes = await classApi.list("class-ws");
+		expect(classes.find((s) => s.name === "Meeting")).toBeDefined();
 
-		const fetched = await schemaApi.get("schema-ws", "Meeting");
+		const fetched = await classApi.get("class-ws", "Meeting");
 		expect(fetched.name).toBe("Meeting");
 		expect(fetched.fields.Date.type).toBe("date");
 	});

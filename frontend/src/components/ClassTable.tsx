@@ -8,13 +8,13 @@ import {
 	onMount,
 	onCleanup,
 } from "solid-js";
-import type { Schema, NoteRecord } from "~/lib/types";
+import type { Class, NoteRecord } from "~/lib/types";
 import { workspaceApi, noteApi } from "~/lib/client";
 import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "~/lib/markdown";
 
-interface SchemaTableProps {
+interface ClassTableProps {
 	workspaceId: string;
-	schema: Schema;
+	noteClass: Class;
 	onNoteClick: (noteId: string) => void;
 }
 
@@ -142,7 +142,7 @@ function formatCsvRow(note: NoteRecord, headers: string[]) {
 		.join(",");
 }
 
-export function SchemaTable(props: SchemaTableProps) {
+export function ClassTable(props: ClassTableProps) {
 	// State for filtering and sorting
 	const [globalFilter, setGlobalFilter] = createSignal("");
 	const [sortField, setSortField] = createSignal<string | null>(null);
@@ -153,15 +153,17 @@ export function SchemaTable(props: SchemaTableProps) {
 
 	const [notes, { refetch, mutate }] = createResource(
 		() => {
-			if (!props.workspaceId || !props.schema?.name) return false;
-			return { id: props.workspaceId, schemaName: props.schema.name };
+			if (!props.workspaceId || !props.noteClass?.name) return false;
+			return { id: props.workspaceId, className: props.noteClass.name };
 		},
-		async ({ id, schemaName }) => {
-			return await workspaceApi.query(id, { class: schemaName });
+		async ({ id, className }) => {
+			return await workspaceApi.query(id, { class: className });
 		},
 	);
 
-	const fields = createMemo(() => (props.schema?.fields ? Object.keys(props.schema.fields) : []));
+	const fields = createMemo(() =>
+		props.noteClass?.fields ? Object.keys(props.noteClass.fields) : [],
+	);
 
 	const processedNotes = createMemo(() => {
 		const currentNotes = notes();
@@ -194,10 +196,10 @@ export function SchemaTable(props: SchemaTableProps) {
 	const downloadCSV = () => {
 		// Use untrack and try-catch for robustness in handler
 		try {
-			const { data, fieldNames, schemaName } = untrack(() => ({
+			const { data, fieldNames, className } = untrack(() => ({
 				data: processedNotes(),
 				fieldNames: fields(),
-				schemaName: props.schema?.name || "export",
+				className: props.noteClass?.name || "export",
 			}));
 
 			const headers = ["title", ...fieldNames, "updated_at"];
@@ -209,7 +211,7 @@ export function SchemaTable(props: SchemaTableProps) {
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.setAttribute("href", url);
-			link.setAttribute("download", `${schemaName}_export.csv`);
+			link.setAttribute("download", `${className}_export.csv`);
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -224,8 +226,8 @@ export function SchemaTable(props: SchemaTableProps) {
 
 	const handleAddRow = async () => {
 		try {
-			let content = props.schema.template || `# New ${props.schema.name}\n`;
-			content = ensureClassFrontmatter(content, props.schema.name);
+			let content = props.noteClass.template || `# New ${props.noteClass.name}\n`;
+			content = ensureClassFrontmatter(content, props.noteClass.name);
 
 			await noteApi.create(props.workspaceId, {
 				content,
@@ -399,7 +401,7 @@ export function SchemaTable(props: SchemaTableProps) {
 				<div class="mb-6 flex justify-between items-start">
 					<div>
 						<h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-							{props.schema.name}
+							{props.noteClass.name}
 						</h1>
 						<p class="text-gray-500 dark:text-gray-400 text-sm">
 							{notes.loading && !notes()

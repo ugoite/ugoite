@@ -8,20 +8,20 @@ from typing import Annotated, Any
 
 import typer
 
+from ieapp.classes import list_column_types, migrate_class
 from ieapp.indexer import Indexer, query_index
 from ieapp.logging_utils import setup_logging
 from ieapp.notes import create_note
-from ieapp.schemas import list_column_types, migrate_schema
 from ieapp.workspace import create_workspace
 
 app = typer.Typer(help="IEapp CLI - Knowledge base management")
 note_app = typer.Typer(help="Note management commands")
 index_app = typer.Typer(help="Indexer operations")
-schema_app = typer.Typer(help="Schema management commands")
+class_app = typer.Typer(help="Class management commands")
 
 app.add_typer(note_app, name="note")
 app.add_typer(index_app, name="index")
-app.add_typer(schema_app, name="schema")
+app.add_typer(class_app, name="class")
 
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     main()
 
 
-@schema_app.command("list-types")
+@class_app.command("list-types")
 @handle_cli_errors
 def cmd_list_types() -> None:
     """List available column types."""
@@ -152,34 +152,34 @@ def cmd_list_types() -> None:
         typer.echo(t)
 
 
-@schema_app.command("update")
+@class_app.command("update")
 @handle_cli_errors
-def cmd_schema_update(
+def cmd_class_update(
     workspace_path: Annotated[
         str,
         typer.Argument(help="Full path to the workspace directory"),
     ],
-    schema_file: Annotated[str, typer.Argument(help="Path to schema JSON file")],
+    class_file: Annotated[str, typer.Argument(help="Path to class JSON file")],
     strategies: Annotated[
         str | None,
         typer.Option(help="JSON string of migration strategies"),
     ] = None,
 ) -> None:
-    """Update schema and migrate existing notes using strategies."""
+    """Update class and migrate existing notes using strategies."""
     setup_logging()
 
-    schema_path = Path(schema_file)
+    class_path = Path(class_file)
     try:
-        with schema_path.open() as f:
-            schema_data = json.load(f)
+        with class_path.open() as f:
+            class_data = json.load(f)
     except FileNotFoundError as e:
-        err_msg = f"Schema file not found: '{schema_path}'"
+        err_msg = f"Class file not found: '{class_path}'"
         raise typer.BadParameter(err_msg) from e
     except OSError as e:
-        err_msg = f"Could not read schema file '{schema_path}': {e}"
+        err_msg = f"Could not read class file '{class_path}': {e}"
         raise typer.BadParameter(err_msg) from e
     except json.JSONDecodeError as e:
-        err_msg = f"Invalid JSON in schema file '{schema_path}': {e}"
+        err_msg = f"Invalid JSON in class file '{class_path}': {e}"
         raise typer.BadParameter(err_msg) from e
 
     strat_dict = None
@@ -190,6 +190,6 @@ def cmd_schema_update(
             err_msg = f"Invalid JSON in strategies: {e}"
             raise typer.BadParameter(err_msg) from e
 
-    count = migrate_schema(workspace_path, schema_data, strategies=strat_dict)
+    count = migrate_class(workspace_path, class_data, strategies=strat_dict)
     note_word = "note" if count == 1 else "notes"
-    typer.echo(f"Schema updated. Migrated {count} {note_word}.")
+    typer.echo(f"Class updated. Migrated {count} {note_word}.")

@@ -172,9 +172,9 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/schemas:
+  /workspaces/{workspace_id}/classes:
     get:
-      summary: List schemas
+      summary: List classes
       parameters:
         - name: workspace_id
           in: path
@@ -185,7 +185,7 @@ paths:
         "200":
           description: OK
     post:
-      summary: Upsert schema
+      summary: Upsert class
       parameters:
         - name: workspace_id
           in: path
@@ -196,9 +196,9 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/schemas/types:
+  /workspaces/{workspace_id}/classes/types:
     get:
-      summary: List schema column types
+      summary: List class column types
       parameters:
         - name: workspace_id
           in: path

@@ -1,9 +1,9 @@
 import { createSignal, createEffect, For, Index, Show, onMount, onCleanup } from "solid-js";
-import type { Schema, SchemaCreatePayload } from "~/lib/types";
+import type { Class, ClassCreatePayload } from "~/lib/types";
 
 export interface CreateNoteDialogProps {
 	open: boolean;
-	schemas: Schema[];
+	classes: Class[];
 	onClose: () => void;
 	onSubmit: (title: string, className: string) => void;
 }
@@ -94,7 +94,7 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 							/>
 						</div>
 
-						<Show when={props.schemas.length > 0}>
+						<Show when={props.classes.length > 0}>
 							<div>
 								<label class="block text-sm font-medium text-gray-700 mb-1" for="note-class">
 									Class (optional)
@@ -106,7 +106,7 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 									onChange={(e) => setSelectedClass(e.currentTarget.value)}
 								>
 									<option value="">(none)</option>
-									<For each={props.schemas}>{(s) => <option value={s.name}>{s.name}</option>}</For>
+									<For each={props.classes}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 								</select>
 							</div>
 						</Show>
@@ -134,17 +134,17 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 	);
 }
 
-export interface CreateSchemaDialogProps {
+export interface CreateClassDialogProps {
 	open: boolean;
 	columnTypes: string[];
 	onClose: () => void;
-	onSubmit: (payload: SchemaCreatePayload) => void;
+	onSubmit: (payload: ClassCreatePayload) => void;
 }
 
 /**
- * Dialog for creating a new schema/data model.
+ * Dialog for creating a new class.
  */
-export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
+export function CreateClassDialog(props: CreateClassDialogProps) {
 	const [name, setName] = createSignal("");
 	const [fields, setFields] = createSignal<
 		Array<{ name: string; type: string; required: boolean }>
@@ -179,11 +179,11 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		const schemaName = name().trim();
-		if (!schemaName) return;
+		const className = name().trim();
+		if (!className) return;
 
 		const fieldRecord: Record<string, { type: string; required: boolean }> = {};
-		let template = `# ${schemaName}\n\n`;
+		let template = `# ${className}\n\n`;
 
 		for (const f of fields()) {
 			const trimmedName = f.name.trim();
@@ -194,7 +194,7 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 		}
 
 		props.onSubmit({
-			name: schemaName,
+			name: className,
 			template,
 			fields: fieldRecord,
 		});
@@ -245,12 +245,12 @@ export function CreateSchemaDialog(props: CreateSchemaDialogProps) {
 
 					<form onSubmit={handleSubmit} class="space-y-4 flex-1 overflow-auto">
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1" for="schema-name">
+							<label class="block text-sm font-medium text-gray-700 mb-1" for="class-name">
 								Name
 							</label>
 							<input
 								ref={inputRef}
-								id="schema-name"
+								id="class-name"
 								type="text"
 								value={name()}
 								onInput={(e) => setName(e.currentTarget.value)}
@@ -357,15 +357,15 @@ function processFields(
 	return { fieldRecord, strategies };
 }
 
-export interface EditSchemaDialogProps {
+export interface EditClassDialogProps {
 	open: boolean;
-	schema: Schema;
+	noteClass: Class;
 	columnTypes: string[];
 	onClose: () => void;
-	onSubmit: (payload: SchemaCreatePayload) => void;
+	onSubmit: (payload: ClassCreatePayload) => void;
 }
 
-export function EditSchemaDialog(props: EditSchemaDialogProps) {
+export function EditClassDialog(props: EditClassDialogProps) {
 	const [fields, setFields] = createSignal<
 		Array<{ name: string; type: string; required: boolean; defaultValue?: string; isNew?: boolean }>
 	>([]);
@@ -390,8 +390,8 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 	});
 
 	createEffect(() => {
-		if (props.open && props.schema) {
-			const initialFields = Object.entries(props.schema.fields).map(([name, def]) => ({
+		if (props.open && props.noteClass) {
+			const initialFields = Object.entries(props.noteClass.fields).map(([name, def]) => ({
 				name,
 				type: def.type,
 				required: def.required,
@@ -410,15 +410,15 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
 
-		const { fieldRecord, strategies } = processFields(fields(), props.schema.fields);
+		const { fieldRecord, strategies } = processFields(fields(), props.noteClass.fields);
 
-		let template = `# ${props.schema.name}\n\n`;
+		let template = `# ${props.noteClass.name}\n\n`;
 		for (const f of fields()) {
 			if (f.name.trim()) template += `## ${f.name.trim()}\n\n`;
 		}
 
 		props.onSubmit({
-			name: props.schema.name,
+			name: props.noteClass.name,
 			template,
 			fields: fieldRecord,
 			strategies: Object.keys(strategies).length > 0 ? strategies : undefined,
@@ -464,7 +464,9 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">Edit Class: {props.schema?.name}</h2>
+					<h2 class="text-lg font-semibold text-gray-900 mb-4">
+						Edit Class: {props.noteClass?.name}
+					</h2>
 					<div class="mb-4 text-sm text-gray-600 bg-yellow-50 p-2 rounded border border-yellow-200">
 						<p>
 							<strong>Warning:</strong> Removing or renaming columns will delete associated data in
@@ -492,7 +494,7 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 											<input
 												type="text"
 												placeholder="Column Name"
-												disabled={!field().isNew && !!props.schema.fields[field().name]}
+												disabled={!field().isNew && !!props.noteClass.fields[field().name]}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 												class="flex-1 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-500"
@@ -515,7 +517,7 @@ export function EditSchemaDialog(props: EditSchemaDialogProps) {
 												×
 											</button>
 										</div>
-										<Show when={!props.schema.fields[field().name] || field().isNew}>
+										<Show when={!props.noteClass.fields[field().name] || field().isNew}>
 											<div class="ml-1 flex items-center gap-2">
 												<span class="text-xs text-gray-500">Default Value:</span>
 												<input

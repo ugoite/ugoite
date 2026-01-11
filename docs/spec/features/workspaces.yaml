@@ -12,7 +12,7 @@ apis:
       backend: /workspaces
       frontend: /api/workspaces
     backend:
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/workspace.py
       function: list_workspaces_endpoint
     frontend:
       file: frontend/src/lib/client.ts
@@ -28,7 +28,7 @@ apis:
       backend: /workspaces
       frontend: /api/workspaces
     backend:
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/workspace.py
       function: create_workspace_endpoint
     frontend:
       file: frontend/src/lib/client.ts
@@ -44,7 +44,7 @@ apis:
       backend: /workspaces/{workspace_id}
       frontend: /api/workspaces/{workspace_id}
     backend:
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/workspace.py
       function: get_workspace_endpoint
     frontend:
       file: frontend/src/lib/client.ts
@@ -60,7 +60,7 @@ apis:
       backend: /workspaces/{workspace_id}
       frontend: /api/workspaces/{workspace_id}
     backend:
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/workspace.py
       function: patch_workspace_endpoint
     frontend:
       file: frontend/src/lib/client.ts
@@ -76,7 +76,7 @@ apis:
       backend: /workspaces/{workspace_id}/test-connection
       frontend: /api/workspaces/{workspace_id}/test-connection
     backend:
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/workspace.py
       function: test_connection_endpoint
     frontend:
       file: frontend/src/lib/client.ts

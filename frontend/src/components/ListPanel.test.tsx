@@ -3,10 +3,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { ListPanel } from "./ListPanel";
-import type { Schema, NoteRecord } from "~/lib/types";
+import type { Class, NoteRecord } from "~/lib/types";
 
 describe("ListPanel", () => {
-	const mockSchemas: Schema[] = [
+	const mockClasses: Class[] = [
 		{
 			name: "Meeting",
 			fields: { date: { type: "date" }, attendees: { type: "string" } },
@@ -42,7 +42,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={vi.fn()}
@@ -57,7 +57,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={onCreate}
@@ -72,7 +72,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
@@ -87,7 +87,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={onFilterClassChange}
 				/>
@@ -102,7 +102,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -117,7 +117,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -134,7 +134,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={mockNotes}
@@ -150,7 +150,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					loading={true}
@@ -164,7 +164,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					error="Test error message"
@@ -178,7 +178,7 @@ describe("ListPanel", () => {
 			render(() => (
 				<ListPanel
 					mode="notes"
-					schemas={mockSchemas}
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					notes={[]}
@@ -188,13 +188,13 @@ describe("ListPanel", () => {
 		});
 	});
 
-	describe("Schemas mode", () => {
+	describe("Classes mode", () => {
 		it("should render New Class button", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="schemas"
-					schemas={mockSchemas}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 					onCreate={vi.fn()}
@@ -203,74 +203,74 @@ describe("ListPanel", () => {
 			expect(screen.getByText("New Class")).toBeInTheDocument();
 		});
 
-		it("should render schemas list", () => {
+		it("should render classes list", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="schemas"
-					schemas={mockSchemas}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
 			));
 			expect(screen.queryByText("Filter by Class")).not.toBeInTheDocument();
-			// "Meeting" appears both in filter dropdown and schema list
+			// "Meeting" appears both in filter dropdown and class list
 			expect(screen.getAllByText("Meeting").length).toBeGreaterThanOrEqual(1);
 			expect(screen.getAllByText("Task").length).toBeGreaterThanOrEqual(1);
-			// Check for "fields" text which only appears in schema list
+			// Check for "fields" text which only appears in class list
 			expect(screen.getByText(/2\s+fields/)).toBeInTheDocument();
 			expect(screen.getByText(/1\s+field/)).toBeInTheDocument();
 		});
 
-		it("should highlight selected schema", () => {
+		it("should highlight selected class", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="schemas"
-					schemas={mockSchemas}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
-					selectedSchema={mockSchemas[0]}
+					selectedClass={mockClasses[0]}
 				/>
 			));
-			// Find the button containing "2 fields" which is in the Meeting schema item
+			// Find the button containing "2 fields" which is in the Meeting class item
 			const fieldsText = screen.getByText("2 fields");
 			const selectedButton = fieldsText.closest("button");
 			expect(selectedButton).toHaveClass("ring-2");
 		});
 
-		it("should call onSelectSchema when a schema is clicked", () => {
+		it("should call onSelectClass when a class is clicked", () => {
 			const [filterClass, setFilterClass] = createSignal("");
-			const onSelectSchema = vi.fn();
+			const onSelectClass = vi.fn();
 			render(() => (
 				<ListPanel
-					mode="schemas"
-					schemas={mockSchemas}
+					mode="classes"
+					classes={mockClasses}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
-					onSelectSchema={onSelectSchema}
+					onSelectClass={onSelectClass}
 				/>
 			));
-			// Click on the schema button (not dropdown) by clicking on "2 fields"
+			// Click on the class button (not dropdown) by clicking on "2 fields"
 			const fieldsText = screen.getByText("2 fields");
 			const button = fieldsText.closest("button");
 			if (button) {
 				fireEvent.click(button);
 			}
-			expect(onSelectSchema).toHaveBeenCalledWith(mockSchemas[0]);
+			expect(onSelectClass).toHaveBeenCalledWith(mockClasses[0]);
 		});
 
-		it("should show empty state when no schemas", () => {
+		it("should show empty state when no classes", () => {
 			const [filterClass, setFilterClass] = createSignal("");
 			render(() => (
 				<ListPanel
-					mode="schemas"
-					schemas={[]}
+					mode="classes"
+					classes={[]}
 					filterClass={filterClass}
 					onFilterClassChange={setFilterClass}
 				/>
 			));
-			expect(screen.getByText("No data models yet")).toBeInTheDocument();
+			expect(screen.getByText("No classes yet")).toBeInTheDocument();
 		});
 	});
 });
