@@ -109,10 +109,13 @@ backend/
 ### TO-BE (Target State)
 
 ```
-ieapp-core/                     # NEW: Rust crate
-├── Cargo.toml
-├── src/
-│   ├── lib.rs
+ieapp-core/                     # NEW: Rust crate (Mixed Layout)
+├── Cargo.toml                  # Rust package config
+├── pyproject.toml              # Python package config (maturin)
+├── ieapp_core/                 # Python package
+│   └── __init__.py
+├── src/                        # Rust core + bindings
+│   ├── lib.rs                  # pyo3 entry point & bindings
 │   ├── workspace.rs           # Workspace operations
 │   ├── note.rs                # Note operations
 │   ├── class.rs               # Class definitions
@@ -125,10 +128,7 @@ ieapp-core/                     # NEW: Rust crate
 │   │   ├── opendal.rs         # OpenDAL backend
 │   │   └── memory.rs          # In-memory for tests
 │   └── sandbox/               # Wasm sandbox (wasmtime)
-├── bindings/
-│   └── python/                # pyo3 bindings
-│       ├── Cargo.toml
-│       └── src/lib.rs
+│       └── mod.rs
 
 ieapp-cli/                      # UPDATED: CLI for power users
 ├── src/ieapp/
