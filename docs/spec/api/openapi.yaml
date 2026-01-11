@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: IEapp API (AS-IS)
+  title: IEapp API
   version: "0.1"
   description: |
     Minimal OpenAPI document for the current REST surface.

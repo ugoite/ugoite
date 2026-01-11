@@ -2,27 +2,28 @@
 
 # The registry is intentionally API-operation oriented (not file oriented).
 # Each operation is described with the columns:
-# - PATH (AS-IS): backend and frontend paths are identical except frontend uses
-#   the "/api" prefix.
-# - file definition location
-# - function name (or component name)
+# - backend: includes path, file definition location, and function name
+# - frontend: includes path, file definition location, and function name
+# - ieapp_core: includes file and function name
+# - ieapp_cli: includes command, file, and function name
 
 version: "0.2"
 updated: "2026-01"
-scope: as-is
 
 conventions:
-  canonical_path: Backend HTTP path without the "/api" prefix.
+  canonical_path: Backend HTTP path.
   frontend_path_prefix: /api
   columns:
     - method
-    - path
-    - paths.backend
-    - paths.frontend
+    - backend.path
     - backend.file
     - backend.function
+    - frontend.path
     - frontend.file
     - frontend.function
+    - ieapp_core.file
+    - ieapp_core.function
+    - ieapp_cli.command
     - ieapp_cli.file
     - ieapp_cli.function
 
@@ -43,51 +44,3 @@ files:
     file: search.yaml
     backend: src/app/mcp/sandbox.py
     frontend: null  # Not applicable
-
-# Path mapping for current (AS-IS) structure
-# This section documents current paths before migration
-current_paths:
-  workspace:
-    ieapp_core: src/ieapp/workspace.py
-    backend: src/app/api/endpoints/workspace.py
-    frontend: src/lib/workspace-store.ts
-
-  note:
-    ieapp_core: src/ieapp/notes.py  # Note: plural
-    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
-    frontend: src/lib/store.ts  # Generic store
-
-  class:
-    ieapp_core: src/ieapp/classes.py
-    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
-    frontend: src/lib/client.ts  # classApi in client
-
-  attachment:
-    ieapp_core: src/ieapp/attachments.py  # Note: plural
-    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
-    frontend: src/lib/store.ts  # In generic store
-
-  link:
-    ieapp_core: src/ieapp/links.py  # Note: plural
-    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
-    frontend: src/lib/store.ts  # In generic store
-
-  search:
-    ieapp_core: src/ieapp/search.py
-    backend: src/app/api/endpoints/workspace.py  # Mixed in workspace
-    frontend: src/lib/client.ts  # In client
-
-  index:
-    ieapp_core: src/ieapp/indexer.py  # Different name: indexer
-    backend: null
-    frontend: null
-
-  integrity:
-    ieapp_core: src/ieapp/integrity.py
-    backend: null
-    frontend: null
-
-  sandbox:
-    ieapp_core: src/ieapp/sandbox/__init__.py
-    backend: src/app/mcp/handlers.py  # In MCP handlers
-    frontend: null

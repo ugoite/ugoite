@@ -1,4 +1,4 @@
-# Class APIs (AS-IS)
+# Class APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,64 +7,72 @@ kind: classes
 apis:
   - id: class.list
     method: GET
-    path: /workspaces/{workspace_id}/classes
-    paths:
-      backend: /workspaces/{workspace_id}/classes
-      frontend: /api/workspaces/{workspace_id}/classes
     backend:
+      path: /workspaces/{workspace_id}/classes
       file: backend/src/app/api/endpoints/workspace.py
       function: list_classes_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/classes
       file: frontend/src/lib/client.ts
       function: classApi.list
     ieapp_core:
-      file: ieapp-cli/src/ieapp/classes.py
+      file: ieapp-core/src/class.rs
       function: list_classes
+    ieapp_cli:
+      command: ieapp class list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_class_list
 
   - id: class.types
     method: GET
-    path: /workspaces/{workspace_id}/classes/types
-    paths:
-      backend: /workspaces/{workspace_id}/classes/types
-      frontend: /api/workspaces/{workspace_id}/classes/types
     backend:
+      path: /workspaces/{workspace_id}/classes/types
       file: backend/src/app/api/endpoints/workspace.py
       function: list_class_types_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/classes/types
       file: frontend/src/lib/client.ts
       function: classApi.listTypes
     ieapp_core:
-      file: ieapp-cli/src/ieapp/classes.py
+      file: ieapp-core/src/class.rs
       function: list_column_types
+    ieapp_cli:
+      command: ieapp class types
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_class_types
 
   - id: class.get
     method: GET
-    path: /workspaces/{workspace_id}/classes/{class_name}
-    paths:
-      backend: /workspaces/{workspace_id}/classes/{class_name}
-      frontend: /api/workspaces/{workspace_id}/classes/{class_name}
     backend:
+      path: /workspaces/{workspace_id}/classes/{class_name}
       file: backend/src/app/api/endpoints/workspace.py
       function: get_class_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/classes/{class_name}
       file: frontend/src/lib/client.ts
       function: classApi.get
     ieapp_core:
-      file: ieapp-cli/src/ieapp/classes.py
+      file: ieapp-core/src/class.rs
       function: get_class
+    ieapp_cli:
+      command: ieapp class get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_class_get
 
   - id: class.upsert
     method: POST
-    path: /workspaces/{workspace_id}/classes
-    paths:
-      backend: /workspaces/{workspace_id}/classes
-      frontend: /api/workspaces/{workspace_id}/classes
     backend:
+      path: /workspaces/{workspace_id}/classes
       file: backend/src/app/api/endpoints/workspace.py
       function: create_class_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/classes
       file: frontend/src/lib/client.ts
       function: classApi.create
     ieapp_core:
-      file: ieapp-cli/src/ieapp/classes.py
+      file: ieapp-core/src/class.rs
       function: upsert_class
+    ieapp_cli:
+      command: ieapp class upsert
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_class_upsert

@@ -146,5 +146,5 @@ Frontend                 Backend              ieapp-core           Storage
 | **Local-First** | All data in user-controlled storage; no required cloud services |
 | **Portable** | Standard formats (JSON, Markdown); easy export/import |
 | **AI-Native** | MCP protocol + code execution sandbox for AI agents |
-| **Layered** | Clear separation: Core → CLI → Backend → Frontend |
+| **Layered** | Clear separation: Core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |

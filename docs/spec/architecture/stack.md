@@ -22,7 +22,7 @@ IEapp uses a modern stack optimized for local-first operation and AI integration
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Python | 3.12+ | Runtime |
-| Click | Latest | CLI framework |
+| Typer | Latest | CLI framework |
 | pyo3 bindings | - | Rust core integration |
 
 ### Backend (Python/FastAPI)
@@ -75,8 +75,8 @@ The ieapp-core crate compiles to multiple targets:
 | Target | Use Case |
 |--------|----------|
 | Native (x86_64, arm64) | backend & ieapp-cli via pyo3 |
-| WebAssembly | Browser-based frontend (future) |
-| Tauri integration | Desktop application (future) |
+| WebAssembly | Browser-based frontend and sandbox |
+| Tauri integration | Desktop application |
 
 ## CI/CD Pipeline
 

@@ -1,4 +1,4 @@
-# Attachment APIs (AS-IS)
+# Attachment APIs
 
 version: "0.1"
 updated: "2026-01"
@@ -7,48 +7,54 @@ kind: attachments
 apis:
   - id: attachment.upload
     method: POST
-    path: /workspaces/{workspace_id}/attachments
-    paths:
-      backend: /workspaces/{workspace_id}/attachments
-      frontend: /api/workspaces/{workspace_id}/attachments
     backend:
+      path: /workspaces/{workspace_id}/attachments
       file: backend/src/app/api/endpoints/workspaces.py
       function: upload_attachment_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/attachments
       file: frontend/src/lib/client.ts
       function: attachmentApi.upload
     ieapp_core:
-      file: ieapp-cli/src/ieapp/attachments.py
+      file: ieapp-core/src/attachment.rs
       function: save_attachment
+    ieapp_cli:
+      command: ieapp attachment upload
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_upload
 
   - id: attachment.list
     method: GET
-    path: /workspaces/{workspace_id}/attachments
-    paths:
-      backend: /workspaces/{workspace_id}/attachments
-      frontend: /api/workspaces/{workspace_id}/attachments
     backend:
+      path: /workspaces/{workspace_id}/attachments
       file: backend/src/app/api/endpoints/workspaces.py
       function: list_attachments_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/attachments
       file: frontend/src/lib/client.ts
       function: attachmentApi.list
     ieapp_core:
-      file: ieapp-cli/src/ieapp/attachments.py
+      file: ieapp-core/src/attachment.rs
       function: list_attachments
+    ieapp_cli:
+      command: ieapp attachment list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_list
 
   - id: attachment.delete
     method: DELETE
-    path: /workspaces/{workspace_id}/attachments/{attachment_id}
-    paths:
-      backend: /workspaces/{workspace_id}/attachments/{attachment_id}
-      frontend: /api/workspaces/{workspace_id}/attachments/{attachment_id}
     backend:
+      path: /workspaces/{workspace_id}/attachments/{attachment_id}
       file: backend/src/app/api/endpoints/workspaces.py
       function: delete_attachment_endpoint
     frontend:
+      path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
       file: frontend/src/lib/client.ts
       function: attachmentApi.delete
     ieapp_core:
-      file: ieapp-cli/src/ieapp/attachments.py
+      file: ieapp-core/src/attachment.rs
       function: delete_attachment
+    ieapp_cli:
+      command: ieapp attachment delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_delete
