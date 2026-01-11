@@ -179,10 +179,10 @@ export default function NotesRoute(props: RouteSectionProps) {
 
 	// Create note
 	const handleCreateNote = async (title: string, className: string) => {
-		const class_def = (classes() || []).find((s) => s.name === className);
+		const classDef = (classes() || []).find((s) => s.name === className);
 		let initialContent = `# ${title}\n\nStart writing here...`;
-		if (className && class_def) {
-			initialContent = ensureClassFrontmatter(replaceFirstH1(class_def.template, title), className);
+		if (className && classDef) {
+			initialContent = ensureClassFrontmatter(replaceFirstH1(classDef.template, title), className);
 		}
 
 		try {

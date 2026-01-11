@@ -12,7 +12,7 @@ export default function ClassRoute() {
 	const ctx = useNotesRouteContext();
 	const [showEditDialog, setShowEditDialog] = createSignal(false);
 
-	const class_def = createMemo(() => {
+	const classDef = createMemo(() => {
 		const name = params.class;
 		return ctx.classes().find((s) => s.name === name);
 	});
@@ -29,7 +29,7 @@ export default function ClassRoute() {
 
 	return (
 		<Show
-			when={class_def()}
+			when={classDef()}
 			keyed
 			fallback={
 				<div class="p-8 text-center text-gray-500">
