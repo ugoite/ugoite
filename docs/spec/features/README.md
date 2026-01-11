@@ -69,4 +69,3 @@ When implementing features:
 
 1. Update the registry to match implementation
 2. Run verification tests to confirm alignment
-```

@@ -132,7 +132,7 @@ ieapp-core/                     # NEW: Rust crate
 
 ieapp-cli/                      # UPDATED: CLI for power users
 ├── src/ieapp/
-│   ├── cli.py                 # Click CLI
+│   ├── cli.py                 # Typer-based CLI
 │   └── compat.py              # Compatibility layer (optional)
 
 backend/                        # UPDATED: Pure API layer (calls ieapp-core)
@@ -148,7 +148,7 @@ frontend/                       # UNCHANGED: UI only
 | Module | Responsibility |
 |--------|----------------|
 | `ieapp-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing, sandbox |
-| `ieapp-cli` (Python) | Click CLI for direct user interaction |
+| `ieapp-cli` (Python) | Typer CLI for direct user interaction |
 | `backend` (Python) | REST API routes, MCP server, delegates to ieapp-core |
 | `frontend` (TypeScript) | UI rendering, optimistic updates, no data logic |
 

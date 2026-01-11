@@ -63,7 +63,7 @@ apis:
       function: workspaceApi.patch
     ieapp_core:
       file: ieapp-core/src/workspace.rs
-      function: get_workspace
+      function: patch_workspace
 
   - id: workspace.test_connection
     method: POST

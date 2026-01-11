@@ -21,7 +21,7 @@ IEapp follows a **Local-First, Server-Relay** architecture. The system is design
                ▼                                 ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │     Backend (FastAPI)       │   │      ieapp-cli (Python)     │
-│  - REST API & MCP Server    │   │  - Click-based CLI          │
+│  - REST API & MCP Server    │   │  - Typer-based CLI          │
 │  - Auth & Orchestration     │   │  - Direct data access       │
 └──────────────┬──────────────┘   └──────────────┬──────────────┘
                │                                 │
@@ -70,7 +70,7 @@ Command-line interface for power users:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `cli.py` | Click-based command-line interface |
+| `cli.py` | Typer-based CLI |
 | `compat.py` | Backwards compatibility helpers |
 
 ### Backend (Python/FastAPI)
