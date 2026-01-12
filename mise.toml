@@ -1,8 +1,13 @@
 min_version = "2025.11.3"
 experimental_monorepo_root = true
 
+[settings]
+experimental = true
+
 [env]
-_.python.venv = { path = "backend/.venv" }
+CARGO_HOME = "{{env.HOME}}/.cargo"
+RUSTUP_HOME = "{{env.HOME}}/.rustup"
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
 
 [tools]
 biome = "2.3.11"
@@ -11,14 +16,15 @@ python = "3.13"
 rust = "1.92.0"
 uv = "0.9.8"
 
-[tasks.install]
-depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//ieapp-core:install"]
+[tasks.setup]
+depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//ieapp-core:install", "//e2e:install"]
 
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks."sandbox:build"]
-run = "uv run /workspace/ieapp-cli/scripts/build_sandbox.py"
+run = "uv run scripts/build_sandbox.py"
+dir = "ieapp-cli"
 
 [tasks.test]
 depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test", "//ieapp-core:test"]
@@ -26,12 +32,12 @@ description = "Run tests for all packages (ieapp-core, backend, frontend, ieapp-
 
 [tasks.e2e]
 description = "Run E2E tests with backend and frontend servers"
-run = "bash /workspace/scripts/run-e2e.sh full"
+run = "bash scripts/run-e2e.sh full"
 
 [tasks."e2e:smoke"]
 description = "Run only smoke E2E tests (fast verification)"
-run = "bash /workspace/scripts/run-e2e.sh smoke"
+run = "bash scripts/run-e2e.sh smoke"
 
 [tasks."e2e:notes"]
 description = "Run notes E2E tests"
-run = "bash /workspace/scripts/run-e2e.sh notes"
+run = "bash scripts/run-e2e.sh notes"

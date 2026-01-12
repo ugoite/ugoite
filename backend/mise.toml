@@ -1,3 +1,6 @@
+[env]
+_.python.venv = { path = ".venv" }
+
 [tasks.install]
 run = "uv sync"
 

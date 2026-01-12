@@ -64,7 +64,7 @@ e2e/                # End-to-end tests (Bun)
 Install dependencies:
 
 ```bash
-mise run install
+mise run setup
 ```
 
 Start development (frontend + backend):
