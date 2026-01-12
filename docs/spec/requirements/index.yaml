@@ -26,8 +26,8 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_index.rs
           tests:
-            - test_indexer_basic
-            - test_extract_properties_stub
+            - test_index_req_idx_001_reindex_writes_index_files
+            - test_index_req_idx_001_extract_properties_returns_object
 
 
   - id: REQ-IDX-002

@@ -26,7 +26,7 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_integrity.rs
           tests:
-            - test_fake_integrity_provider
+            - test_integrity_req_int_001_fake_integrity_provider
 
   - id: REQ-INT-002
     title: Checksum Verification

@@ -24,7 +24,7 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_sandbox.rs
           tests:
-            - test_run_script
+            - test_sandbox_req_sandbox_001_simple_execution
 
 
   - id: REQ-SANDBOX-002
@@ -43,6 +43,10 @@ requirements:
         - file: backend/tests/test_sandbox.py
           tests:
             - test_host_call
+      rust:
+        - file: ieapp-core/tests/test_sandbox.rs
+          tests:
+            - test_sandbox_req_sandbox_002_host_call
 
   - id: REQ-SANDBOX-003
     title: Execution Error Handling
@@ -60,6 +64,10 @@ requirements:
         - file: backend/tests/test_sandbox.py
           tests:
             - test_execution_error
+      rust:
+        - file: ieapp-core/tests/test_sandbox.rs
+          tests:
+            - test_sandbox_req_sandbox_003_execution_error
 
   - id: REQ-SANDBOX-004
     title: Prevent Infinite Loops via Fuel Limits
@@ -78,6 +86,10 @@ requirements:
         - file: backend/tests/test_sandbox.py
           tests:
             - test_infinite_loop_fuel
+      rust:
+        - file: ieapp-core/tests/test_sandbox.rs
+          tests:
+            - test_sandbox_req_sandbox_004_infinite_loop_fuel
 
   - id: REQ-SANDBOX-005
     title: Wasm Artifact Validation
@@ -95,3 +107,7 @@ requirements:
         - file: backend/tests/test_sandbox.py
           tests:
             - test_missing_wasm_raises
+      rust:
+        - file: ieapp-core/tests/test_sandbox.rs
+          tests:
+            - test_sandbox_req_sandbox_005_missing_wasm_raises

@@ -29,7 +29,7 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_class.rs
           tests:
-            - test_list_column_types
+            - test_class_req_cls_001_list_column_types
 
 
   - id: REQ-CLS-002
@@ -49,11 +49,6 @@ requirements:
           tests:
             - test_migrate_class_add_column_with_default
             - test_migrate_class_remove_column
-      rust:
-        - file: ieapp-core/tests/test_class.rs
-          tests:
-            - test_migrate_class_stub
-            - test_migrate_class_remove_column
         - file: ieapp-cli/tests/test_cli_class.py
           tests:
             - test_cli_class_update
@@ -63,4 +58,4 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_class.rs
           tests:
-            - test_upsert_and_list_classes
+            - test_class_req_cls_002_upsert_and_list_classes

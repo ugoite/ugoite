@@ -35,6 +35,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "string".to_string(),
         "number".to_string(),
         "date".to_string(),
+        "list".to_string(),
         "boolean".to_string(),
         "markdown".to_string(),
     ])

@@ -25,8 +25,7 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_note.rs
           tests:
-            - test_create_note_basic
-            - test_note_history_append
+            - test_note_req_note_001_create_note_basic
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -55,15 +54,8 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_note.rs
           tests:
-            - test_update_note_success
-            - test_update_note_conflict
-        - file: backend/tests/test_api.py
-          tests:
-            - test_update_note_conflict
-      rust:
-        - file: ieapp-core/tests/test_note.rs
-          tests:
-            - test_update_note_conflict
+            - test_note_req_note_003_update_note_success
+            - test_note_req_note_002_update_note_conflict
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -89,7 +81,7 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_note.rs
           tests:
-            - test_update_note_success
+            - test_note_req_note_003_update_note_success
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -147,6 +139,10 @@ requirements:
             - test_get_note_history
             - test_get_note_revision
             - test_restore_note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_005_note_history_append
 
   - id: REQ-NOTE-006
     title: Structured Data Extraction from Markdown

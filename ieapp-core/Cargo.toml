@@ -13,6 +13,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 opendal = { version = "0.55", features = ["services-fs", "services-memory", "services-s3"] }
 wasmtime = "29.0"
+wasmtime-wasi = "29.0"
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 chrono = { version = "0.4.42", features = ["serde"] }
@@ -20,6 +21,7 @@ url = "2.5.0"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 futures = { version = "0.3.31", features = ["std"] }
 pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
+thiserror = "2.0.11"
 
 [dev-dependencies]
 pyo3 = { version = "0.23", features = ["auto-initialize"] }

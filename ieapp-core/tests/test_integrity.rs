@@ -2,7 +2,8 @@ mod common;
 use _ieapp_core::integrity::{FakeIntegrityProvider, IntegrityProvider};
 
 #[test]
-fn test_fake_integrity_provider() {
+/// REQ-INT-001
+fn test_integrity_req_int_001_fake_integrity_provider() {
     let provider = FakeIntegrityProvider;
     let content = "hello";
 

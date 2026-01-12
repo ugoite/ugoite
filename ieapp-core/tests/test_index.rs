@@ -4,7 +4,8 @@ use _ieapp_core::workspace;
 use common::setup_operator;
 
 #[tokio::test]
-async fn test_indexer_basic() -> anyhow::Result<()> {
+/// REQ-IDX-001
+async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";
@@ -18,7 +19,8 @@ async fn test_indexer_basic() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_extract_properties_stub() {
+/// REQ-IDX-001
+fn test_index_req_idx_001_extract_properties_returns_object() {
     let markdown = "# Title";
     let props = index::extract_properties(markdown);
     assert!(props.is_object());

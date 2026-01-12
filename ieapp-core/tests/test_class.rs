@@ -4,7 +4,8 @@ use _ieapp_core::workspace;
 use common::setup_operator;
 
 #[tokio::test]
-async fn test_upsert_and_list_classes() -> anyhow::Result<()> {
+/// REQ-CLS-002
+async fn test_class_req_cls_002_upsert_and_list_classes() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";
@@ -27,27 +28,14 @@ async fn test_upsert_and_list_classes() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_list_column_types() -> anyhow::Result<()> {
+/// REQ-CLS-001
+async fn test_class_req_cls_001_list_column_types() -> anyhow::Result<()> {
     let types = class::list_column_types().await?;
+    assert!(types.contains(&"string".to_string()));
     assert!(types.contains(&"markdown".to_string()));
     assert!(types.contains(&"number".to_string()));
     assert!(types.contains(&"date".to_string()));
+    assert!(types.contains(&"list".to_string()));
     assert!(types.contains(&"boolean".to_string()));
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_migrate_class_stub() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
-    let ws_path = "workspaces/test-workspace";
-
-    // Setup not really needed for stub but consistent style
-    let new_class = r#"{"name": "test", "fields": []}"#;
-    let count = class::migrate_class(&op, ws_path, new_class, None).await?;
-
-    // Stub returns 0
-    assert_eq!(count, 0);
-
     Ok(())
 }

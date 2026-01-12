@@ -4,7 +4,8 @@ use common::setup_operator;
 use serde_json::Value;
 
 #[tokio::test]
-async fn test_create_workspace_scaffolding() -> anyhow::Result<()> {
+/// REQ-STO-002, REQ-STO-004
+async fn test_workspace_req_sto_002_create_workspace_scaffolding() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-workspace";
 
@@ -54,7 +55,8 @@ async fn test_create_workspace_scaffolding() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_create_workspace_idempotency() -> anyhow::Result<()> {
+/// REQ-STO-005
+async fn test_workspace_req_sto_005_create_workspace_idempotency() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-workspace";
 
@@ -63,6 +65,21 @@ async fn test_create_workspace_idempotency() -> anyhow::Result<()> {
     // Should fail (result err) when creating again
     let result = workspace::create_workspace(&op, ws_id).await;
     assert!(result.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-004
+async fn test_workspace_req_sto_004_list_workspaces_from_global_json() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+
+    workspace::create_workspace(&op, "ws-a").await?;
+    workspace::create_workspace(&op, "ws-b").await?;
+
+    let mut listed = workspace::list_workspaces(&op).await?;
+    listed.sort();
+    assert_eq!(listed, vec!["ws-a".to_string(), "ws-b".to_string()]);
 
     Ok(())
 }

@@ -4,7 +4,8 @@ use _ieapp_core::workspace;
 use common::setup_operator;
 
 #[tokio::test]
-async fn test_create_attachment() -> anyhow::Result<()> {
+/// REQ-ATT-001
+async fn test_attachment_req_att_001_create_attachment() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";
@@ -18,11 +19,15 @@ async fn test_create_attachment() -> anyhow::Result<()> {
             .await?
     );
 
+    let listed = attachment::list_attachments(&op, ws_path).await?;
+    assert_eq!(listed, vec!["image.png".to_string()]);
+
     Ok(())
 }
 
 #[tokio::test]
-async fn test_delete_attachment() -> anyhow::Result<()> {
+/// REQ-ATT-001
+async fn test_attachment_req_att_001_delete_attachment() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";

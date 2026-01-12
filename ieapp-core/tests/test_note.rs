@@ -5,7 +5,8 @@ use _ieapp_core::workspace;
 use common::setup_operator;
 
 #[tokio::test]
-async fn test_create_note_basic() -> anyhow::Result<()> {
+/// REQ-NOTE-001
+async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
     let op = setup_operator()?;
     // We assume workspace exists
     workspace::create_workspace(&op, "test-workspace").await?;
@@ -30,7 +31,8 @@ async fn test_create_note_basic() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_update_note_success() -> anyhow::Result<()> {
+/// REQ-NOTE-003
+async fn test_note_req_note_003_update_note_success() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";
@@ -76,7 +78,8 @@ async fn test_update_note_success() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_update_note_conflict() -> anyhow::Result<()> {
+/// REQ-NOTE-002
+async fn test_note_req_note_002_update_note_conflict() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";
@@ -105,7 +108,8 @@ async fn test_update_note_conflict() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_note_history_append() -> anyhow::Result<()> {
+/// REQ-NOTE-005
+async fn test_note_req_note_005_note_history_append() -> anyhow::Result<()> {
     let op = setup_operator()?;
     workspace::create_workspace(&op, "test-workspace").await?;
     let ws_path = "workspaces/test-workspace";

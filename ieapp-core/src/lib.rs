@@ -5,7 +5,7 @@ use opendal::Operator;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use pyo3::ToPyObject;
+use pyo3::IntoPyObjectExt;
 use serde_json::Value;
 
 pub mod attachment;
@@ -34,17 +34,17 @@ fn get_operator(_py: Python<'_>, config: &Bound<'_, PyDict>) -> PyResult<Operato
 fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
     match value {
         Value::Null => Ok(py.None()),
-        Value::Bool(b) => Ok(b.to_object(py)),
+        Value::Bool(b) => b.into_py_any(py),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Ok(i.to_object(py))
+                i.into_py_any(py)
             } else if let Some(f) = n.as_f64() {
-                Ok(f.to_object(py))
+                f.into_py_any(py)
             } else {
-                Ok(n.to_string().to_object(py))
+                n.to_string().into_py_any(py)
             }
         }
-        Value::String(s) => Ok(s.to_object(py)),
+        Value::String(s) => s.into_py_any(py),
         Value::Array(arr) => {
             let list = PyList::empty(py);
             for item in arr {
@@ -108,6 +108,7 @@ fn test_storage_connection_py<'a>(
 // Note
 
 #[pyfunction]
+#[pyo3(signature = (storage_config, workspace_id, note_id, content, author=None))]
 fn create_note<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,

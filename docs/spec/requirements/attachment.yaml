@@ -21,5 +21,5 @@ requirements:
       rust:
         - file: ieapp-core/tests/test_attachment.rs
           tests:
-            - test_create_attachment
-            - test_delete_attachment
+            - test_attachment_req_att_001_create_attachment
+            - test_attachment_req_att_001_delete_attachment
