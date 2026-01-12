@@ -1,18 +1,65 @@
 """ieapp-core: Rust-based core logic and Python bindings."""
 
-from . import _ieapp_core
+from ._ieapp_core import (
+    create_link,
+    create_note,
+    create_workspace,
+    delete_attachment,
+    delete_link,
+    delete_note,
+    get_class,
+    get_note,
+    get_note_history,
+    get_note_revision,
+    get_workspace,
+    list_attachments,
+    list_classes,
+    list_column_types,
+    list_links,
+    list_notes,
+    list_workspaces,
+    patch_workspace,
+    query_index,
+    restore_note,
+    save_attachment,
+    search_notes,
+    test_storage_connection,
+    update_note,
+    upsert_class,
+)
 
 # Export the docstring from the native module
-__doc__ = _ieapp_core.__doc__
+try:
+    from . import _ieapp_core
 
-# Export all symbols from the native library
-# We do this explicitly to help linters and IDEs, or use __all__
-if hasattr(_ieapp_core, "__all__"):
-    __all__ = _ieapp_core.__all__
-else:
-    # Fallback: export everything that doesn't start with an underscore
-    __all__ = [k for k in _ieapp_core.__dict__ if not k.startswith("_")]
+    __doc__ = _ieapp_core.__doc__
+except ImportError:
+    pass
 
-# Inject symbols into the current module's namespace
-for name in __all__:
-    globals()[name] = getattr(_ieapp_core, name)
+__all__ = [
+    "create_link",
+    "create_note",
+    "create_workspace",
+    "delete_attachment",
+    "delete_link",
+    "delete_note",
+    "get_class",
+    "get_note",
+    "get_note_history",
+    "get_note_revision",
+    "get_workspace",
+    "list_attachments",
+    "list_classes",
+    "list_column_types",
+    "list_links",
+    "list_notes",
+    "list_workspaces",
+    "patch_workspace",
+    "query_index",
+    "restore_note",
+    "save_attachment",
+    "search_notes",
+    "test_storage_connection",
+    "update_note",
+    "upsert_class",
+]

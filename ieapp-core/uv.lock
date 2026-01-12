@@ -30,7 +30,7 @@ dev = [
     { name = "maturin", specifier = ">=1.5,<2.0" },
     { name = "pytest", specifier = ">=9.0.1" },
     { name = "ruff", specifier = ">=0.14.7" },
-    { name = "ty", specifier = ">=0.0.1a26" },
+    { name = "ty", specifier = ">=0.0.11" },
 ]
 
 [[package]]

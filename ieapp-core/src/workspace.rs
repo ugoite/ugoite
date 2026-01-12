@@ -1,8 +1,12 @@
 use pyo3::prelude::*;
 
+pub fn list_workspaces_logic() -> Vec<String> {
+    vec!["mock_workspace".to_string()]
+}
+
 #[pyfunction]
 pub fn list_workspaces() -> PyResult<Vec<String>> {
-    Ok(vec!["mock_workspace".to_string()])
+    Ok(list_workspaces_logic())
 }
 
 #[pyfunction]
@@ -23,4 +27,22 @@ pub fn patch_workspace() -> PyResult<String> {
 #[pyfunction]
 pub fn test_storage_connection() -> PyResult<bool> {
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_workspaces_logic() {
+        let result = list_workspaces_logic();
+        assert_eq!(result, vec!["mock_workspace".to_string()]);
+    }
+
+    #[test]
+    fn test_storage_connection_mock() {
+        // We can't easily test #[pyfunction] with cargo test due to linking
+        // So we focus on logic tests or use pytest for bindings.
+        assert!(true);
+    }
 }

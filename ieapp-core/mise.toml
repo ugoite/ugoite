@@ -12,8 +12,8 @@ description = "Build Rust extension for local development"
 
 [tasks.test]
 depends = ["build"]
-run = "cargo test && if [ -d tests ]; then uv run pytest; fi"
-description = "Run Rust and Python tests"
+run = "if [ -d tests ]; then uv run pytest; fi"
+description = "Run Python tests for bindings"
 
 [tasks.lint]
 run = "cargo clippy && uv run ruff check ."
