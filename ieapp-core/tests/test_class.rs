@@ -25,3 +25,13 @@ async fn test_upsert_and_list_classes() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_list_column_types() -> anyhow::Result<()> {
+    let types = class::list_column_types().await?;
+    assert!(types.contains(&"markdown".to_string()));
+    assert!(types.contains(&"number".to_string()));
+    assert!(types.contains(&"date".to_string()));
+    assert!(types.contains(&"boolean".to_string()));
+    Ok(())
+}

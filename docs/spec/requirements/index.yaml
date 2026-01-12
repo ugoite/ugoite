@@ -23,6 +23,11 @@ requirements:
         - file: backend/tests/test_api_reindexing.py
           tests:
             - test_update_note_reflects_in_query
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_indexer_basic
+
 
   - id: REQ-IDX-002
     title: Class Validation

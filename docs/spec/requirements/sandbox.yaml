@@ -21,6 +21,11 @@ requirements:
         - file: backend/tests/test_sandbox.py
           tests:
             - test_simple_execution
+      rust:
+        - file: ieapp-core/tests/test_sandbox.rs
+          tests:
+            - test_run_script
+
 
   - id: REQ-SANDBOX-002
     title: API Calls via host.call

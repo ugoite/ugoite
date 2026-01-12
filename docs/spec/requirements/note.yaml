@@ -54,6 +54,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_update_note_conflict
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_update_note_conflict
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -76,6 +80,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_update_note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_update_note_success
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
