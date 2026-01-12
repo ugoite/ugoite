@@ -23,6 +23,10 @@ requirements:
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_002_create_workspace_scaffolding
 
   - id: REQ-STO-002
     title: Workspace Directory Structure

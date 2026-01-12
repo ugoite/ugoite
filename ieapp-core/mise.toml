@@ -10,9 +10,11 @@ run = "uv run maturin develop"
 description = "Build Rust extension for local development"
 
 [tasks.test]
-depends = ["build"]
-run = "if [ -d tests ]; then uv run pytest; fi"
-description = "Run Python tests for bindings"
+run = [
+	"cargo test -j 1",
+	"if [ -d tests ]; then uv run pytest; fi",
+]
+description = "Run Rust crate tests and Python binding tests"
 
 [tasks.lint]
 run = "cargo clippy && uv run ruff check ."
