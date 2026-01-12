@@ -11,11 +11,11 @@ struct GlobalConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct WorkspaceMeta {
-    id: String,
-    name: String,
-    created_at: String,
-    storage: String,
+pub struct WorkspaceMeta {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    pub storage: String,
 }
 
 #[pyfunction]
@@ -120,9 +120,12 @@ pub async fn list_workspaces(op: &Operator) -> Result<Vec<String>> {
     Ok(config.workspaces)
 }
 
-pub async fn get_workspace(op: &Operator, name: &str) -> Result<()> {
+pub async fn get_workspace(op: &Operator, name: &str) -> Result<WorkspaceMeta> {
     if !workspace_exists(op, name).await? {
         return Err(anyhow!("Workspace not found: {}", name));
     }
-    Ok(())
+    let meta_path = format!("workspaces/{}/meta.json", name);
+    let bytes = op.read(&meta_path).await?;
+    let meta: WorkspaceMeta = serde_json::from_slice(&bytes.to_vec())?;
+    Ok(meta)
 }

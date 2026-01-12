@@ -220,6 +220,244 @@ fn delete_attachment<'a>(
     })
 }
 
+// Search
+
+#[pyfunction]
+fn search_notes<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    query: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let results = search::search_notes(&op, &ws_path, &query)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        // Return list of dicts
+        let val =
+            serde_json::to_value(results).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+// Links
+
+#[pyfunction]
+fn create_link<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    source: String,
+    target: String,
+    kind: String,
+    link_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let link = link::create_link(&op, &ws_path, &source, &target, &kind, &link_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(link).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_links<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let links = link::list_links(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(links).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn delete_link<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    link_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        link::delete_link(&op, &ws_path, &link_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn delete_note<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    note_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        note::delete_note(&op, &ws_path, &note_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn get_note<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    note_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let meta = note::get_note(&op, &ws_path, &note_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_notes<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let notes = note::list_notes(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(notes)
+    })
+}
+
+#[pyfunction]
+fn get_workspace<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    name: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let meta = workspace::get_workspace(&op, &name)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_column_types<'a>(py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let types = class::list_column_types()
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(types)
+    })
+}
+
+#[pyfunction]
+fn get_class<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    class_name: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let cls = class::get_class(&op, &ws_path, &class_name)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        // Class content is already string (JSON), return as parsed strict dict?
+        // Or return as string? Python side might expect dict.
+        // class::get_class returns String (legacy).
+        // Better to parse it here.
+        let val: serde_json::Value =
+            serde_json::from_str(&cls).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let val_obj =
+            serde_json::to_value(val).map_err(|e| PyRuntimeError::new_err(e.to_string()))?; // Already value, but okay.
+        Python::with_gil(|py| json_to_py(py, val_obj))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, workspace_id, note_id, content, parent_revision_id=None, author=None))]
+fn update_note<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    note_id: String,
+    content: String,
+    parent_revision_id: Option<String>,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = FakeIntegrityProvider;
+        // note::update_note takes generic I: IntegrityProvider.
+        // We need to move integrity inside async block?
+        // integrity is zero-sized, so it's Copy/Clone.
+        let meta = note::update_note(
+            &op,
+            &ws_path,
+            &note_id,
+            &content,
+            parent_revision_id.as_deref(),
+            &author,
+            &integrity,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn query_index<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    query: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let res = index::query_index(&op, &ws_path, &query)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val: serde_json::Value =
+            serde_json::from_str(&res).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
 // Stubs using generic signature
 macro_rules! make_stub {
     ($name:ident) => {
@@ -237,18 +475,10 @@ macro_rules! make_stub {
     };
 }
 
-make_stub!(delete_note);
-make_stub!(get_class);
-make_stub!(get_note);
 make_stub!(get_note_history);
 make_stub!(get_note_revision);
-make_stub!(get_workspace);
-make_stub!(list_column_types);
-make_stub!(list_notes);
 make_stub!(patch_workspace);
-make_stub!(query_index);
 make_stub!(restore_note);
-make_stub!(update_note);
 
 /// A Python module implemented in Rust.
 #[pymodule]
@@ -280,11 +510,10 @@ fn _ieapp_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(query_index, m)?)?;
 
-    // Keep mocks for others
-    // m.add_function(wrap_pyfunction!(link::create_link, m)?)?;
-    // m.add_function(wrap_pyfunction!(link::list_links, m)?)?;
-    // m.add_function(wrap_pyfunction!(link::delete_link, m)?)?;
-    m.add_function(wrap_pyfunction!(search::search_notes, m)?)?;
+    m.add_function(wrap_pyfunction!(create_link, m)?)?;
+    m.add_function(wrap_pyfunction!(list_links, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_link, m)?)?;
+    m.add_function(wrap_pyfunction!(search_notes, m)?)?;
 
     Ok(())
 }

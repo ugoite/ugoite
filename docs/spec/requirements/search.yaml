@@ -1,0 +1,19 @@
+# Search Requirements
+
+REQ-SRCH-001:
+  description: "Users must be able to search notes by keyword."
+  priority: High
+  status: In Progress
+  verification:
+    type: "Automated Test"
+    file: "ieapp-core/tests/test_search.rs"
+    test: "test_search_req_srch_001_keyword_search"
+
+REQ-SRCH-002:
+  description: "Search must fall back to content scanning if index misses."
+  priority: Medium
+  status: In Progress
+  verification:
+    type: "Automated Test"
+    file: "ieapp-core/tests/test_search.rs"
+    test: "test_search_req_srch_002_fallback_scan"

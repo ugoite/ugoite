@@ -87,14 +87,86 @@ pub async fn create_note<I: IntegrityProvider>(
     Ok(meta)
 }
 
-pub async fn list_notes(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
-    // TODO: Implement list_notes
-    Ok(vec![])
+use futures::TryStreamExt;
+use opendal::EntryMode;
+
+// ...
+
+pub async fn list_notes(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let notes_dir = format!("{}/notes/", ws_path);
+    if !op.exists(&notes_dir).await? {
+        return Ok(Vec::new());
+    }
+
+    let mut lister = op.lister(&notes_dir).await?;
+    let mut notes = Vec::new();
+
+    while let Some(entry) = lister.try_next().await? {
+        let meta = entry.metadata();
+        if meta.mode() == EntryMode::DIR {
+            let name = entry.name().trim_end_matches("/");
+            let parts: Vec<&str> = name.split('/').collect();
+            if let Some(id) = parts.last() {
+                if !id.is_empty() {
+                    notes.push(id.to_string());
+                }
+            }
+        }
+    }
+    Ok(notes)
 }
 
-pub async fn get_note(_op: &Operator, _ws_path: &str, _note_id: &str) -> Result<String> {
-    // TODO: Implement get_note
-    Ok("".to_string())
+pub async fn get_note(op: &Operator, ws_path: &str, note_id: &str) -> Result<serde_json::Value> {
+    let note_path = format!("{}/notes/{}", ws_path, note_id);
+    let meta_path = format!("{}/meta.json", note_path);
+    let content_path = format!("{}/content.json", note_path);
+
+    if !op.exists(&meta_path).await? || !op.exists(&content_path).await? {
+        return Err(anyhow!("Note not found: {}", note_id));
+    }
+
+    let meta_bytes = op.read(&meta_path).await?;
+    let content_bytes = op.read(&content_path).await?;
+
+    let meta: serde_json::Value = serde_json::from_slice(&meta_bytes.to_vec())?;
+    let content: serde_json::Value = serde_json::from_slice(&content_bytes.to_vec())?;
+
+    let mut result = serde_json::Map::new();
+    result.insert(
+        "id".to_string(),
+        serde_json::Value::String(note_id.to_string()),
+    );
+
+    // From content.json
+    if let Some(v) = content.get("revision_id") {
+        result.insert("revision_id".to_string(), v.clone());
+    }
+    if let Some(v) = content.get("markdown") {
+        result.insert("content".to_string(), v.clone());
+    }
+    if let Some(v) = content.get("frontmatter") {
+        result.insert("frontmatter".to_string(), v.clone());
+    }
+    if let Some(v) = content.get("sections") {
+        result.insert("sections".to_string(), v.clone());
+    }
+    if let Some(v) = content.get("author") {
+        result.insert("author".to_string(), v.clone());
+    }
+    if let Some(v) = content.get("parent_revision_id") {
+        result.insert("parent_revision_id".to_string(), v.clone());
+    }
+
+    // From meta.json (overrides if key collision? No, content usually wins for data fields, meta for metadata)
+    if let Some(obj) = meta.as_object() {
+        for (k, v) in obj {
+            if !result.contains_key(k) {
+                result.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    Ok(serde_json::Value::Object(result))
 }
 
 pub async fn get_note_content(op: &Operator, ws_path: &str, note_id: &str) -> Result<NoteContent> {
@@ -115,7 +187,7 @@ pub async fn update_note<I: IntegrityProvider>(
     parent_revision_id: Option<&str>,
     author: &str,
     integrity: &I,
-) -> Result<NoteMeta> {
+) -> Result<serde_json::Value> {
     let note_path = format!("{}/notes/{}", ws_path, note_id);
 
     // Check existence
@@ -179,9 +251,13 @@ pub async fn update_note<I: IntegrityProvider>(
     op.write(&history_path, serde_json::to_vec_pretty(&history)?)
         .await?;
 
-    Ok(meta)
+    get_note(op, ws_path, note_id).await
 }
 
-pub async fn delete_note(_op: &Operator, _ws_path: &str, _note_id: &str) -> Result<()> {
+pub async fn delete_note(op: &Operator, ws_path: &str, note_id: &str) -> Result<()> {
+    let note_path = format!("{}/notes/{}", ws_path, note_id);
+    if op.exists(&format!("{}/", note_path)).await? {
+        op.remove_all(&format!("{}/", note_path)).await?;
+    }
     Ok(())
 }

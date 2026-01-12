@@ -68,7 +68,8 @@ async fn test_note_req_note_003_update_note_success() -> anyhow::Result<()> {
     .await?;
 
     // Verify update
-    assert_ne!(meta.updated_at, new_meta.updated_at);
+    let updated_at = new_meta.get("updated_at").and_then(|v| v.as_str()).unwrap();
+    assert_ne!(meta.updated_at, updated_at);
 
     let current_content = note::get_note_content(&op, ws_path, note_id).await?;
     assert_eq!(current_content.markdown, new_content);
