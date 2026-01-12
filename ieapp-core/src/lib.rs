@@ -1,3 +1,6 @@
+#![deny(warnings)]
+#![deny(clippy::all)]
+
 use pyo3::prelude::*;
 
 pub mod attachment;
