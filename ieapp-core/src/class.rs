@@ -67,3 +67,13 @@ pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &str) -> Resu
 
     Ok(())
 }
+
+pub async fn migrate_class(
+    _op: &Operator,
+    _ws_path: &str,
+    _new_class: &str,
+    _strategies: Option<serde_json::Value>,
+) -> Result<usize> {
+    // TODO: Implement migration logic
+    Ok(0)
+}

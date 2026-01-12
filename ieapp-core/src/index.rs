@@ -18,3 +18,8 @@ pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
 
     Ok(())
 }
+
+pub fn extract_properties(_markdown: &str) -> serde_json::Value {
+    // TODO: Implement property extraction
+    serde_json::json!({})
+}

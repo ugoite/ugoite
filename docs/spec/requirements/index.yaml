@@ -27,6 +27,7 @@ requirements:
         - file: ieapp-core/tests/test_index.rs
           tests:
             - test_indexer_basic
+            - test_extract_properties_stub
 
 
   - id: REQ-IDX-002

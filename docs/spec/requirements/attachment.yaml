@@ -22,3 +22,4 @@ requirements:
         - file: ieapp-core/tests/test_attachment.rs
           tests:
             - test_create_attachment
+            - test_delete_attachment

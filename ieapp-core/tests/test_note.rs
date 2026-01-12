@@ -103,3 +103,42 @@ async fn test_update_note_conflict() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_note_history_append() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-workspace").await?;
+    let ws_path = "workspaces/test-workspace";
+    let integrity = FakeIntegrityProvider;
+    let note_id = "note-history";
+
+    // Version 1
+    note::create_note(&op, ws_path, note_id, "# Version 1", "author1", &integrity).await?;
+
+    let content_v1 = note::get_note_content(&op, ws_path, note_id).await?;
+    let rev_v1 = content_v1.revision_id;
+
+    // Version 2
+    note::update_note(
+        &op,
+        ws_path,
+        note_id,
+        "# Version 2",
+        Some(&rev_v1),
+        "author1",
+        &integrity,
+    )
+    .await?;
+
+    // Check history/index.json
+    let history_path = format!("{}/notes/{}/history/index.json", ws_path, note_id);
+    let bytes = op.read(&history_path).await?;
+    let history: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+
+    let versions = history.get("versions").unwrap().as_array().unwrap();
+    assert_eq!(versions.len(), 2);
+    // versions[0] should be v1 revision
+    assert_eq!(versions[0].as_str().unwrap(), rev_v1);
+
+    Ok(())
+}

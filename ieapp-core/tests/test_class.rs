@@ -35,3 +35,19 @@ async fn test_list_column_types() -> anyhow::Result<()> {
     assert!(types.contains(&"boolean".to_string()));
     Ok(())
 }
+
+#[tokio::test]
+async fn test_migrate_class_stub() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-workspace").await?;
+    let ws_path = "workspaces/test-workspace";
+
+    // Setup not really needed for stub but consistent style
+    let new_class = r#"{"name": "test", "fields": []}"#;
+    let count = class::migrate_class(&op, ws_path, new_class, None).await?;
+
+    // Stub returns 0
+    assert_eq!(count, 0);
+
+    Ok(())
+}

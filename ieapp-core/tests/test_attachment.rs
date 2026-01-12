@@ -20,3 +20,26 @@ async fn test_create_attachment() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_delete_attachment() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-workspace").await?;
+    let ws_path = "workspaces/test-workspace";
+
+    attachment::save_attachment(&op, ws_path, "file.txt", b"data").await?;
+
+    assert!(
+        op.exists(&format!("{}/attachments/file.txt", ws_path))
+            .await?
+    );
+
+    attachment::delete_attachment(&op, ws_path, "file.txt").await?;
+
+    assert!(
+        !op.exists(&format!("{}/attachments/file.txt", ws_path))
+            .await?
+    );
+
+    Ok(())
+}

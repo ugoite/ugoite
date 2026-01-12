@@ -23,6 +23,10 @@ requirements:
         - file: ieapp-cli/tests/test_notes.py
           tests:
             - test_note_history_append
+      rust:
+        - file: ieapp-core/tests/test_integrity.rs
+          tests:
+            - test_fake_integrity_provider
 
   - id: REQ-INT-002
     title: Checksum Verification

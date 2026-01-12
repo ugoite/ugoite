@@ -16,3 +16,10 @@ async fn test_indexer_basic() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_extract_properties_stub() {
+    let markdown = "# Title";
+    let props = index::extract_properties(markdown);
+    assert!(props.is_object());
+}

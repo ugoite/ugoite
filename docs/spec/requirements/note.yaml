@@ -26,6 +26,7 @@ requirements:
         - file: ieapp-core/tests/test_note.rs
           tests:
             - test_create_note_basic
+            - test_note_history_append
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -51,6 +52,11 @@ requirements:
         - file: ieapp-cli/tests/test_notes.py
           tests:
             - test_update_note_revision_mismatch
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_update_note_success
+            - test_update_note_conflict
         - file: backend/tests/test_api.py
           tests:
             - test_update_note_conflict
