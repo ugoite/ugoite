@@ -14,7 +14,7 @@ async fn test_create_workspace_scaffolding() -> anyhow::Result<()> {
     // Verify directory structure using exists()
     // OpenDAL's exists() returns bool.
     let ws_path = format!("workspaces/{}", ws_id);
-    assert!(op.exists(&ws_path).await?);
+    assert!(op.exists(&format!("{}/", ws_path)).await?);
 
     // Check meta.json
     let meta_path = format!("{}/meta.json", ws_path);
@@ -22,10 +22,10 @@ async fn test_create_workspace_scaffolding() -> anyhow::Result<()> {
 
     // Check other files/folders
     assert!(op.exists(&format!("{}/settings.json", ws_path)).await?);
-    assert!(op.exists(&format!("{}/classes", ws_path)).await?);
-    assert!(op.exists(&format!("{}/index", ws_path)).await?);
-    assert!(op.exists(&format!("{}/attachments", ws_path)).await?);
-    assert!(op.exists(&format!("{}/notes", ws_path)).await?);
+    assert!(op.exists(&format!("{}/classes/", ws_path)).await?);
+    assert!(op.exists(&format!("{}/index/", ws_path)).await?);
+    assert!(op.exists(&format!("{}/attachments/", ws_path)).await?);
+    assert!(op.exists(&format!("{}/notes/", ws_path)).await?);
     assert!(op.exists(&format!("{}/index/index.json", ws_path)).await?);
     assert!(op.exists(&format!("{}/index/stats.json", ws_path)).await?);
 
