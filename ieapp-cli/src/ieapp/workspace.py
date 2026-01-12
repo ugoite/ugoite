@@ -326,7 +326,7 @@ def test_storage_connection(storage_config: dict[str, Any]) -> dict[str, str]:
     """Validate storage connector payload (stub for now)."""
     uri = storage_config.get("uri", "") if isinstance(storage_config, dict) else ""
 
-    if uri.startswith(("file://", "/", ".")):
+    if uri.startswith(("file://", "fs://", "/", ".")):
         return {"status": "ok", "mode": "local"}
 
     if uri.startswith("s3://"):

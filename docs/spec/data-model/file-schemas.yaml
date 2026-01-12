@@ -20,7 +20,7 @@ classes:
           description: Schema version
         default_storage:
           type: string
-          description: Default storage URI (e.g., file:///path)
+          description: Default storage URI (e.g., fs:///path)
         workspaces:
           type: array
           items:
@@ -59,7 +59,7 @@ classes:
           properties:
             uri:
               type: string
-              description: Storage URI (s3://, file://, etc.)
+              description: Storage URI (s3://, fs://, etc.)
             credentials_profile:
               type: string
         merge_strategy:

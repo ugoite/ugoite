@@ -37,7 +37,7 @@ and responsibility boundaries.
 
 - All filesystem I/O lives in `ieapp-core` (currently via `fsspec`, transitioning to OpenDAL).
 - Backend is a routing/translation layer and must not perform direct filesystem operations.
-- Backend tests must cover `file://` and `memory://` style backends via `ieapp-core`.
+- Backend tests must cover `fs://` and `memory://` style backends via `ieapp-core`.
 
 ## Error Handling Standards
 

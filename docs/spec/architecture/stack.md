@@ -62,7 +62,7 @@ OpenDAL provides unified access to multiple storage systems:
 
 | Backend | Use Case | Configuration |
 |---------|----------|---------------|
-| `fs` | Local development, personal use | `file:///path/to/data` |
+| `fs` | Local development, personal use | `fs:///path/to/data` |
 | `memory` | Testing, temporary storage | `memory://` |
 | `s3` | Cloud storage (AWS, MinIO) | `s3://bucket/prefix` |
 | `gcs` | Google Cloud Storage | `gcs://bucket/prefix` |

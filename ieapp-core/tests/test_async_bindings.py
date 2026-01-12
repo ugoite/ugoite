@@ -29,8 +29,8 @@ async def test_bindings_async() -> None:
     # `get_operator`), then state is lost!
 
     # This is a problem for stateless bindings using Memory backend.
-    # But for "file://", keys persist on disk.
-    # So I should test with "file://".
+    # But for "fs://", keys persist on disk.
+    # So I should test with "fs://".
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_bindings_file_backend(tmp_path: pathlib.Path) -> None:
     """Test workspace and note operations using a file-based backend."""
     root = tmp_path / "storage"
     root.mkdir()
-    uri = f"file://{root}"
+    uri = f"fs://{root}"
     config = {"uri": uri}
 
     # List

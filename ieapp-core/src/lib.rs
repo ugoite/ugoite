@@ -16,7 +16,6 @@ pub mod link;
 pub mod note;
 pub mod sandbox;
 pub mod search;
-pub mod storage;
 pub mod workspace;
 
 use integrity::FakeIntegrityProvider;
@@ -29,8 +28,7 @@ fn get_operator(_py: Python<'_>, config: &Bound<'_, PyDict>) -> PyResult<Operato
         .ok_or_else(|| PyValueError::new_err("Missing 'uri' in storage config"))?
         .extract::<String>()?;
 
-    storage::opendal::create_operator_from_uri(&uri)
-        .map_err(|e: anyhow::Error| PyValueError::new_err(e.to_string()))
+    Operator::from_uri(uri).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
