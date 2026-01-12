@@ -26,9 +26,10 @@ jobs:
         with:
           install: true
           cache: true
+          experimental: true
 
       - name: Install project dependencies
-        run: mise run install
+        run: mise run setup
 
       - name: Run E2E tests
         run: mise run e2e
