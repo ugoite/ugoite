@@ -15,10 +15,10 @@ struct NoteContent {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct NoteMeta {
-    id: String,
-    created_at: String,
-    updated_at: String,
+pub struct NoteMeta {
+    pub id: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,8 +31,9 @@ pub async fn create_note<I: IntegrityProvider>(
     ws_path: &str,
     note_id: &str,
     content: &str,
+    author: &str,
     integrity: &I,
-) -> Result<()> {
+) -> Result<NoteMeta> {
     let note_path = format!("{}/notes/{}", ws_path, note_id);
 
     // Check if note already exists
@@ -55,7 +56,7 @@ pub async fn create_note<I: IntegrityProvider>(
         sections: serde_json::json!({}),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
-        author: "user".to_string(), // Placeholder
+        author: author.to_string(),
     };
 
     let content_json = serde_json::to_vec_pretty(&note_content)?;
@@ -80,7 +81,7 @@ pub async fn create_note<I: IntegrityProvider>(
     op.write(&format!("{}/history/index.json", note_path), history_json)
         .await?;
 
-    Ok(())
+    Ok(meta)
 }
 
 pub async fn list_notes(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {

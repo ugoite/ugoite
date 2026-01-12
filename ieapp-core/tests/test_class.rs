@@ -21,7 +21,7 @@ async fn test_upsert_and_list_classes() -> anyhow::Result<()> {
     class::upsert_class(&op, ws_path, class_def).await?;
 
     let classes = class::list_classes(&op, ws_path).await?;
-    // assert!(classes.contains(&"meeting".to_string())); // Uncomment when implemented
+    assert!(classes.contains(&"meeting".to_string()));
 
     Ok(())
 }

@@ -12,6 +12,7 @@ dynamic = ["version"]
 dev = [
     "maturin>=1.5,<2.0",
     "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
     "ruff>=0.14.7",
     "ty>=0.0.11",
 ]

@@ -1,6 +1,6 @@
+use anyhow::{anyhow, Result};
 use opendal::{Operator, Scheme};
 use std::collections::HashMap;
-use anyhow::{Result, anyhow};
 use std::str::FromStr;
 use url::Url;
 
@@ -16,16 +16,20 @@ pub fn create_operator_from_uri(uri: &str) -> Result<Operator> {
         let op = Operator::new(builder)?.finish();
         return Ok(op);
     }
-    
+
     // Parse URI
     let url = Url::parse(uri).map_err(|e| anyhow!("Invalid storage URI: {}", e))?;
-    let scheme_str = url.scheme();
-    
+    let mut scheme_str = url.scheme();
+    // Map "file" scheme to "fs" as expected by OpenDAL
+    if scheme_str == "file" {
+        scheme_str = "fs";
+    }
+
     let scheme = Scheme::from_str(scheme_str)
         .map_err(|_| anyhow!("Unsupported storage scheme: {}", scheme_str))?;
 
     let mut map = HashMap::new();
-    
+
     match scheme {
         Scheme::Fs => {
             // For file://, path is the root
@@ -35,7 +39,9 @@ pub fn create_operator_from_uri(uri: &str) -> Result<Operator> {
         }
         Scheme::S3 => {
             // s3://bucket/root
-            let bucket = url.host_str().ok_or_else(|| anyhow!("S3 URI missing bucket"))?;
+            let bucket = url
+                .host_str()
+                .ok_or_else(|| anyhow!("S3 URI missing bucket"))?;
             map.insert("bucket".to_string(), bucket.to_string());
             let root = url.path();
             if !root.is_empty() && root != "/" {
@@ -50,6 +56,6 @@ pub fn create_operator_from_uri(uri: &str) -> Result<Operator> {
         }
     }
 
-    let op = Operator::via_map(scheme, map)?;
+    let op = Operator::via_iter(scheme, map)?;
     Ok(op)
 }

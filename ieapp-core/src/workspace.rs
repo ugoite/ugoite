@@ -3,7 +3,6 @@ use chrono::Utc;
 use opendal::Operator;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct GlobalConfig {

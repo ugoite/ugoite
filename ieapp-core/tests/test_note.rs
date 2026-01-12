@@ -15,7 +15,7 @@ async fn test_create_note_basic() -> anyhow::Result<()> {
     let content = "# My Note\n\nHello World";
     let note_id = "note-1";
 
-    note::create_note(&op, ws_path, note_id, content, &integrity).await?;
+    note::create_note(&op, ws_path, note_id, content, "test-author", &integrity).await?;
 
     let note_path = format!("{}/notes/{}", ws_path, note_id);
     assert!(op.exists(&format!("{}/", note_path)).await?);

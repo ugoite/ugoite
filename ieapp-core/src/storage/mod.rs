@@ -4,3 +4,5 @@
 // for ieapp-core (for example, persistence backends, repositories, and
 // related helpers). It is currently a placeholder to satisfy the module
 // structure and will be populated in a future iteration.
+
+pub mod opendal;
