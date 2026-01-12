@@ -23,7 +23,8 @@ depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//
 depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks."sandbox:build"]
-run = "uv run /workspace/ieapp-cli/scripts/build_sandbox.py"
+run = "uv run scripts/build_sandbox.py"
+dir = "ieapp-cli"
 
 [tasks.test]
 depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test", "//ieapp-core:test"]
@@ -31,12 +32,12 @@ description = "Run tests for all packages (ieapp-core, backend, frontend, ieapp-
 
 [tasks.e2e]
 description = "Run E2E tests with backend and frontend servers"
-run = "bash /workspace/scripts/run-e2e.sh full"
+run = "bash scripts/run-e2e.sh full"
 
 [tasks."e2e:smoke"]
 description = "Run only smoke E2E tests (fast verification)"
-run = "bash /workspace/scripts/run-e2e.sh smoke"
+run = "bash scripts/run-e2e.sh smoke"
 
 [tasks."e2e:notes"]
 description = "Run notes E2E tests"
-run = "bash /workspace/scripts/run-e2e.sh notes"
+run = "bash scripts/run-e2e.sh notes"
