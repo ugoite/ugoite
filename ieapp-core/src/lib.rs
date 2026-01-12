@@ -281,9 +281,9 @@ fn _ieapp_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(query_index, m)?)?;
 
     // Keep mocks for others
-    m.add_function(wrap_pyfunction!(link::create_link, m)?)?;
-    m.add_function(wrap_pyfunction!(link::list_links, m)?)?;
-    m.add_function(wrap_pyfunction!(link::delete_link, m)?)?;
+    // m.add_function(wrap_pyfunction!(link::create_link, m)?)?;
+    // m.add_function(wrap_pyfunction!(link::list_links, m)?)?;
+    // m.add_function(wrap_pyfunction!(link::delete_link, m)?)?;
     m.add_function(wrap_pyfunction!(search::search_notes, m)?)?;
 
     Ok(())

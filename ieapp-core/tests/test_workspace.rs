@@ -39,9 +39,13 @@ async fn test_workspace_req_sto_002_create_workspace_scaffolding() -> anyhow::Re
     let global_json: Value = serde_json::from_slice(&global_bytes)?;
 
     // assert workspace is in global_json["workspaces"]
-    let workspaces = global_json.get("workspaces").and_then(|v| v.as_object());
+    let workspaces = global_json.get("workspaces").and_then(|v| v.as_array());
     assert!(workspaces.is_some());
-    assert!(workspaces.unwrap().contains_key(ws_id));
+    let exists = workspaces
+        .unwrap()
+        .iter()
+        .any(|v| v.as_str() == Some(ws_id));
+    assert!(exists);
 
     // Verify meta.json content
     let meta_bytes = op.read(&meta_path).await?.to_vec();

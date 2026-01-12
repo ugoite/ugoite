@@ -1,0 +1,28 @@
+# Link Management Requirements
+
+REQ-LNK-001:
+  description: "Users must be able to create a bi-directional link between two notes."
+  priority: High
+  status: Implemented
+  verification:
+    type: "Automated Test"
+    file: "ieapp-core/tests/test_link.rs"
+    test: "test_link_req_lnk_001_create_link_bidirectional"
+
+REQ-LNK-002:
+  description: "Users must be able to list all links in a workspace."
+  priority: Medium
+  status: Implemented
+  verification:
+    type: "Automated Test"
+    file: "ieapp-core/tests/test_link.rs"
+    test: "test_link_req_lnk_002_list_links"
+
+REQ-LNK-003:
+  description: "Users must be able to delete a link, removing it from both involved notes."
+  priority: Medium
+  status: Implemented
+  verification:
+    type: "Automated Test"
+    file: "ieapp-core/tests/test_link.rs"
+    test: "test_link_req_lnk_003_delete_link"

@@ -19,6 +19,8 @@ pub struct NoteMeta {
     pub id: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub links: Vec<crate::link::Link>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -68,6 +70,7 @@ pub async fn create_note<I: IntegrityProvider>(
         id: note_id.to_string(),
         created_at: now.clone(),
         updated_at: now.clone(),
+        links: vec![],
     };
     let meta_json = serde_json::to_vec_pretty(&meta)?;
     op.write(&format!("{}/meta.json", note_path), meta_json)

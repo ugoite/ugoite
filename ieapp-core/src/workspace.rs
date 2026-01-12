@@ -6,12 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct GlobalConfig {
-    workspaces: std::collections::HashMap<String, WorkspaceConfig>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct WorkspaceConfig {
-    path: String,
+    #[serde(default)]
+    workspaces: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -41,7 +37,7 @@ pub async fn workspace_exists(op: &Operator, name: &str) -> Result<bool> {
         Err(_) => return Ok(false),
     };
 
-    Ok(config.workspaces.contains_key(name))
+    Ok(config.workspaces.contains(&name.to_string()))
 }
 
 pub async fn create_workspace(op: &Operator, name: &str) -> Result<()> {
@@ -83,31 +79,28 @@ pub async fn create_workspace(op: &Operator, name: &str) -> Result<()> {
         .await?;
 
     // 5. Update global.json
-    update_global_json(op, name, &ws_path).await?;
+    update_global_json(op, name).await?;
 
     Ok(())
 }
 
-async fn update_global_json(op: &Operator, ws_id: &str, ws_path: &str) -> Result<()> {
+async fn update_global_json(op: &Operator, ws_id: &str) -> Result<()> {
     let global_path = "global.json";
 
     let mut config: GlobalConfig = if op.exists(global_path).await? {
         let bytes = op.read(global_path).await?;
         serde_json::from_slice(&bytes.to_vec()).unwrap_or(GlobalConfig {
-            workspaces: std::collections::HashMap::new(),
+            workspaces: Vec::new(),
         })
     } else {
         GlobalConfig {
-            workspaces: std::collections::HashMap::new(),
+            workspaces: Vec::new(),
         }
     };
 
-    config.workspaces.insert(
-        ws_id.to_string(),
-        WorkspaceConfig {
-            path: ws_path.to_string(),
-        },
-    );
+    if !config.workspaces.contains(&ws_id.to_string()) {
+        config.workspaces.push(ws_id.to_string());
+    }
 
     let json_bytes = serde_json::to_vec_pretty(&config)?;
     op.write(global_path, json_bytes).await?;
@@ -124,7 +117,7 @@ pub async fn list_workspaces(op: &Operator) -> Result<Vec<String>> {
     let bytes = op.read(global_path).await?;
     let config: GlobalConfig = serde_json::from_slice(&bytes.to_vec())?;
 
-    Ok(config.workspaces.keys().cloned().collect())
+    Ok(config.workspaces)
 }
 
 pub async fn get_workspace(op: &Operator, name: &str) -> Result<()> {
