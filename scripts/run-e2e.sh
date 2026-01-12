@@ -27,6 +27,11 @@ else
     echo "Skipping sandbox build (SKIP_BUILD=1)"
 fi
 
+# Create default workspace for tests
+echo "Creating default workspace..."
+cd "$ROOT_DIR/backend"
+uv run python -c "from ieapp.workspace import create_workspace; create_workspace('.', 'default')"
+
 # Start backend in background
 echo "Starting backend server..."
 cd "$ROOT_DIR/backend"

@@ -3,6 +3,9 @@ experimental_monorepo_root = true
 
 [env]
 _.python.venv = { path = "backend/.venv" }
+CARGO_HOME = "{{env.HOME}}/.cargo"
+RUSTUP_HOME = "{{env.HOME}}/.rustup"
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
 
 [tools]
 biome = "2.3.11"
@@ -12,7 +15,7 @@ rust = "1.92.0"
 uv = "0.9.8"
 
 [tasks.install]
-depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//ieapp-core:install"]
+depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//ieapp-core:install", "//e2e:install"]
 
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev"]
