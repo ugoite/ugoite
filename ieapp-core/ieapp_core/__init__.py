@@ -34,6 +34,7 @@ try:
 
     __doc__ = _ieapp_core.__doc__
 except ImportError:
+    # Failing to import the native module for its docstring is non-fatal.
     pass
 
 __all__ = [

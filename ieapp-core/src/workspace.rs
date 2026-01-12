@@ -38,11 +38,4 @@ mod tests {
         let result = list_workspaces_logic();
         assert_eq!(result, vec!["mock_workspace".to_string()]);
     }
-
-    #[test]
-    fn test_storage_connection_mock() {
-        // We can't easily test #[pyfunction] with cargo test due to linking
-        // So we focus on logic tests or use pytest for bindings.
-        assert!(true);
-    }
 }

@@ -1,4 +1,8 @@
-"""Tests for ieapp-core Python bindings."""
+"""Tests for ieapp-core Python bindings.
+
+Note: These tests currently verify mock implementations. They should be expanded
+to cover real business logic and edge cases as the core moves beyond mocks.
+"""
 
 import ieapp_core
 
