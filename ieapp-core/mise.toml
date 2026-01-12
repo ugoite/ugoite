@@ -1,0 +1,28 @@
+[env]
+_.python.venv = { path = ".venv" }
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
+
+[tasks.install]
+run = "uv sync"
+description = "Install dependencies"
+
+[tasks.build]
+run = "uv run maturin develop"
+description = "Build Rust extension for local development"
+
+[tasks.test]
+depends = ["build"]
+run = "if [ -d tests ]; then uv run pytest; fi"
+description = "Run Python tests for bindings"
+
+[tasks.lint]
+run = "cargo clippy && uv run ruff check ."
+description = "Run Rust and Python linters"
+
+[tasks.format]
+run = "cargo fmt && uv run ruff format ."
+description = "Format Rust and Python code"
+
+[tasks.ty]
+run = "uv run ty check ."
+description = "Run Python type checking"

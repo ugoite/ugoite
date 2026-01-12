@@ -17,6 +17,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: rustfmt
+        name: rustfmt
+        entry: bash -c "cd ieapp-core && cargo fmt --"
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: biome-ci
         name: biome ci
         # Run biome in CI mode for linting and formatting checks on frontend code
@@ -41,3 +50,17 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: ty-core
+        name: "ty: ieapp-core type check"
+        entry: bash -c "cd ieapp-core && uv run ty check ."
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c "cd ieapp-core && cargo clippy"
+        language: system
+        files: \.rs$
+        pass_filenames: false

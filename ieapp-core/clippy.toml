@@ -1,0 +1,8 @@
+# Clippy configuration
+# See: https://rust-lang.github.io/rust-clippy/master/index.html#configuration-options
+
+# Example: Avoid large enum variants
+# enum-variant-size-threshold = 200
+
+# Consistent with project standards
+msrv = "1.92.0"
