@@ -28,7 +28,7 @@ async fn create_test_note(
 async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-ws";
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp").await?;
     let ws_path = format!("workspaces/{}", ws_id);
 
     // Create two notes
@@ -69,7 +69,7 @@ async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()>
 async fn test_link_req_lnk_002_list_links() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-list-ws";
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp").await?;
     let ws_path = format!("workspaces/{}", ws_id);
 
     create_test_note(&op, &ws_path, "noteA").await?;
@@ -91,7 +91,7 @@ async fn test_link_req_lnk_002_list_links() -> anyhow::Result<()> {
 async fn test_link_req_lnk_003_delete_link() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-del-ws";
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp").await?;
     let ws_path = format!("workspaces/{}", ws_id);
 
     create_test_note(&op, &ws_path, "noteX").await?;

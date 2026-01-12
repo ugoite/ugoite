@@ -28,7 +28,7 @@ async fn create_test_note(
 async fn test_search_req_srch_002_fallback_scan() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-search-ws";
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp").await?;
     let ws_path = format!("workspaces/{}", ws_id);
 
     // Create notes with distinct content

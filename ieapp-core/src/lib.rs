@@ -86,9 +86,13 @@ fn create_workspace<'a>(
     storage_config: Bound<'a, PyDict>,
     name: String,
 ) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
     let op = get_operator(py, &storage_config)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        workspace::create_workspace(&op, &name)
+        workspace::create_workspace(&op, &name, &uri)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(())

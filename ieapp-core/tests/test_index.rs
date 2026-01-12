@@ -7,7 +7,7 @@ use common::setup_operator;
 /// REQ-IDX-001
 async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
     index::reindex_all(&op, ws_path).await?;

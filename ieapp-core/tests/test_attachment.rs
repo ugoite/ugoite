@@ -7,7 +7,7 @@ use common::setup_operator;
 /// REQ-ATT-001
 async fn test_attachment_req_att_001_create_attachment() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
     let content = b"fake image content";
@@ -29,7 +29,7 @@ async fn test_attachment_req_att_001_create_attachment() -> anyhow::Result<()> {
 /// REQ-ATT-001
 async fn test_attachment_req_att_001_delete_attachment() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
     attachment::save_attachment(&op, ws_path, "file.txt", b"data").await?;

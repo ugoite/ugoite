@@ -7,7 +7,7 @@ use common::setup_operator;
 /// REQ-CLS-002
 async fn test_class_req_cls_002_upsert_and_list_classes() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
     let class_def = r#"{

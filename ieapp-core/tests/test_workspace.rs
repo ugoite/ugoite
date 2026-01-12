@@ -10,7 +10,7 @@ async fn test_workspace_req_sto_002_create_workspace_scaffolding() -> anyhow::Re
     let ws_id = "test-workspace";
 
     // Call create_workspace
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp/ieapp").await?;
 
     // Verify directory structure using exists()
     // OpenDAL's exists() returns bool.
@@ -64,10 +64,10 @@ async fn test_workspace_req_sto_005_create_workspace_idempotency() -> anyhow::Re
     let op = setup_operator()?;
     let ws_id = "test-workspace";
 
-    workspace::create_workspace(&op, ws_id).await?;
+    workspace::create_workspace(&op, ws_id, "/tmp").await?;
 
     // Should fail (result err) when creating again
-    let result = workspace::create_workspace(&op, ws_id).await;
+    let result = workspace::create_workspace(&op, ws_id, "/tmp").await;
     assert!(result.is_err());
 
     Ok(())
@@ -78,8 +78,8 @@ async fn test_workspace_req_sto_005_create_workspace_idempotency() -> anyhow::Re
 async fn test_workspace_req_sto_004_list_workspaces_from_global_json() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
-    workspace::create_workspace(&op, "ws-a").await?;
-    workspace::create_workspace(&op, "ws-b").await?;
+    workspace::create_workspace(&op, "ws-a", "/tmp").await?;
+    workspace::create_workspace(&op, "ws-b", "/tmp").await?;
 
     let mut listed = workspace::list_workspaces(&op).await?;
     listed.sort();

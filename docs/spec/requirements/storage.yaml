@@ -105,6 +105,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_create_workspace_conflict
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_005_create_workspace_idempotency
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:

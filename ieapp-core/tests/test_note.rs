@@ -9,7 +9,7 @@ use common::setup_operator;
 async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
     let op = setup_operator()?;
     // We assume workspace exists
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
     let integrity = FakeIntegrityProvider;
@@ -34,7 +34,7 @@ async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
 /// REQ-NOTE-003
 async fn test_note_req_note_003_update_note_success() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
     let integrity = FakeIntegrityProvider;
     let note_id = "note-2";
@@ -82,7 +82,7 @@ async fn test_note_req_note_003_update_note_success() -> anyhow::Result<()> {
 /// REQ-NOTE-002
 async fn test_note_req_note_002_update_note_conflict() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
     let integrity = FakeIntegrityProvider;
     let note_id = "note-3";
@@ -112,7 +112,7 @@ async fn test_note_req_note_002_update_note_conflict() -> anyhow::Result<()> {
 /// REQ-NOTE-005
 async fn test_note_req_note_005_note_history_append() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace").await?;
+    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
     let integrity = FakeIntegrityProvider;
     let note_id = "note-history";
