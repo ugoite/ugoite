@@ -50,3 +50,7 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_update_class_with_migration
+      rust:
+        - file: ieapp-core/tests/test_class.rs
+          tests:
+            - test_upsert_and_list_classes

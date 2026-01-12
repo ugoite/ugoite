@@ -1,21 +1,18 @@
-use pyo3::prelude::*;
+use anyhow::Result;
+use opendal::Operator;
 
-#[pyfunction]
-pub fn list_classes() -> PyResult<Vec<String>> {
-    Ok(vec!["mock_class".to_string()])
+pub async fn list_classes(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
+    Ok(vec![])
 }
 
-#[pyfunction]
-pub fn list_column_types() -> PyResult<Vec<String>> {
+pub async fn list_column_types() -> Result<Vec<String>> {
     Ok(vec!["string".to_string(), "number".to_string()])
 }
 
-#[pyfunction]
-pub fn get_class() -> PyResult<String> {
-    Ok("mock: get_class".to_string())
+pub async fn get_class(_op: &Operator, _ws_path: &str, _class_name: &str) -> Result<String> {
+    Ok("".to_string())
 }
 
-#[pyfunction]
-pub fn upsert_class() -> PyResult<String> {
-    Ok("mock: upsert_class".to_string())
+pub async fn upsert_class(_op: &Operator, _ws_path: &str, _class_def: &str) -> Result<()> {
+    Ok(())
 }

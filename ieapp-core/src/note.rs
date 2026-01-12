@@ -1,41 +1,40 @@
-use pyo3::prelude::*;
+use crate::integrity::IntegrityProvider;
+use anyhow::Result;
+use opendal::Operator;
 
-#[pyfunction]
-pub fn create_note() -> PyResult<String> {
-    Ok("mock: create_note".to_string())
+pub async fn create_note<I: IntegrityProvider>(
+    _op: &Operator,
+    _ws_path: &str,
+    _note_id: &str,
+    _content: &str,
+    _integrity: &I,
+) -> Result<()> {
+    // TODO: Implement create_note
+    Ok(())
 }
 
-#[pyfunction]
-pub fn list_notes() -> PyResult<Vec<String>> {
-    Ok(vec!["mock_note".to_string()])
+pub async fn list_notes(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
+    // TODO: Implement list_notes
+    Ok(vec![])
 }
 
-#[pyfunction]
-pub fn get_note() -> PyResult<String> {
-    Ok("mock: get_note".to_string())
+pub async fn get_note(_op: &Operator, _ws_path: &str, _note_id: &str) -> Result<String> {
+    // TODO: Implement get_note
+    Ok("".to_string())
 }
 
-#[pyfunction]
-pub fn update_note() -> PyResult<String> {
-    Ok("mock: update_note".to_string())
+pub async fn update_note<I: IntegrityProvider>(
+    _op: &Operator,
+    _ws_path: &str,
+    _note_id: &str,
+    _content: &str,
+    _old_revision: Option<&str>,
+    _integrity: &I,
+) -> Result<()> {
+    // TODO: Implement update_note
+    Ok(())
 }
 
-#[pyfunction]
-pub fn delete_note() -> PyResult<String> {
-    Ok("mock: delete_note".to_string())
-}
-
-#[pyfunction]
-pub fn get_note_history() -> PyResult<Vec<String>> {
-    Ok(vec!["mock_history".to_string()])
-}
-
-#[pyfunction]
-pub fn get_note_revision() -> PyResult<String> {
-    Ok("mock: get_note_revision".to_string())
-}
-
-#[pyfunction]
-pub fn restore_note() -> PyResult<String> {
-    Ok("mock: restore_note".to_string())
+pub async fn delete_note(_op: &Operator, _ws_path: &str, _note_id: &str) -> Result<()> {
+    Ok(())
 }

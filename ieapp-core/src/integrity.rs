@@ -1,7 +1,15 @@
-//! Integrity-related logic for ieapp-core.
-//!
-//! This module is currently a placeholder and intentionally left empty.
-//!
-//! TODO: Implement integrity verification utilities (e.g., checksums,
-//!       signatures, and configuration validation) and expose a stable API
-//!       for use by the backend and CLI layers.
+pub trait IntegrityProvider {
+    fn checksum(&self, content: &str) -> String;
+    fn signature(&self, content: &str) -> String;
+}
+
+pub struct FakeIntegrityProvider;
+
+impl IntegrityProvider for FakeIntegrityProvider {
+    fn checksum(&self, content: &str) -> String {
+        format!("mock-checksum-{}", content.len())
+    }
+    fn signature(&self, content: &str) -> String {
+        format!("mock-signature-{}", content.len())
+    }
+}

@@ -1,16 +1,19 @@
-use pyo3::prelude::*;
+use anyhow::Result;
+use opendal::Operator;
 
-#[pyfunction]
-pub fn save_attachment() -> PyResult<String> {
-    Ok("mock: save_attachment".to_string())
+pub async fn save_attachment(
+    _op: &Operator,
+    _ws_path: &str,
+    _filename: &str,
+    _content: &[u8],
+) -> Result<()> {
+    Ok(())
 }
 
-#[pyfunction]
-pub fn list_attachments() -> PyResult<Vec<String>> {
-    Ok(vec!["mock_attachment".to_string()])
+pub async fn list_attachments(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
+    Ok(vec![])
 }
 
-#[pyfunction]
-pub fn delete_attachment() -> PyResult<String> {
-    Ok("mock: delete_attachment".to_string())
+pub async fn delete_attachment(_op: &Operator, _ws_path: &str, _filename: &str) -> Result<()> {
+    Ok(())
 }

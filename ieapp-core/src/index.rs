@@ -1,6 +1,10 @@
-use pyo3::prelude::*;
+use anyhow::Result;
+use opendal::Operator;
 
-#[pyfunction]
-pub fn query_index() -> PyResult<String> {
-    Ok("mock: query_index".to_string())
+pub async fn query_index(_op: &Operator, _ws_path: &str, _query: &str) -> Result<String> {
+    Ok("".to_string())
+}
+
+pub async fn reindex_all(_op: &Operator, _ws_path: &str) -> Result<()> {
+    Ok(())
 }

@@ -22,6 +22,10 @@ requirements:
           tests:
             - test_create_note
             - test_create_note_conflict
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_create_note_basic
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
