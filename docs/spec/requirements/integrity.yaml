@@ -27,6 +27,7 @@ requirements:
         - file: ieapp-core/tests/test_integrity.rs
           tests:
             - test_integrity_req_int_001_fake_integrity_provider
+            - test_integrity_req_int_001_real_integrity_provider
 
   - id: REQ-INT-002
     title: Checksum Verification
@@ -41,6 +42,10 @@ requirements:
         - file: ieapp-cli/tests/test_notes.py
           tests:
             - test_note_history_append
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_005_note_history_append
 
   - id: REQ-INT-003
     title: HMAC Signature for API Responses
