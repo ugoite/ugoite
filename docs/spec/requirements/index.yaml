@@ -47,6 +47,10 @@ requirements:
             - test_validate_properties_valid
             - test_validate_properties_casting
             - test_validate_properties_invalid_type
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_002_validate_properties
 
   - id: REQ-IDX-003
     title: Structured Queries
@@ -66,6 +70,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_query_notes
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_003_query_index
 
   - id: REQ-IDX-004
     title: Inverted Index Generation
@@ -80,6 +88,10 @@ requirements:
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_generates_inverted_index
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_004_inverted_index_generation
 
   - id: REQ-IDX-005
     title: Word Count Calculation
@@ -94,6 +106,10 @@ requirements:
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_computes_word_count
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_005_word_count
 
   - id: REQ-IDX-006
     title: Indexing via Watch Loop

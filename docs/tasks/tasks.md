@@ -147,7 +147,7 @@ frontend/                       # UNCHANGED: UI only
 
 | Module | Responsibility |
 |--------|----------------|
-| `ieapp-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing, sandbox |
+| `ieapp-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing |
 | `ieapp-cli` (Python) | Typer CLI for direct user interaction |
 | `backend` (Python) | REST API routes, MCP server, delegates to ieapp-core |
 | `frontend` (TypeScript) | UI rendering, optimistic updates, no data logic |
@@ -162,7 +162,7 @@ frontend/                       # UNCHANGED: UI only
 - [ ] Port `indexer.py` → `index.rs`
 - [ ] Port `attachments.py` → `attachment.rs`
 - [ ] Port `integrity.py` → `integrity.rs`
-- [ ] Port Wasm sandbox to Rust (wasmtime native)
+- [x] Port Wasm sandbox to Rust (wasmtime native) (CANCELLED)
 - [ ] Create pyo3 Python bindings
 - [ ] Update ieapp-cli to use Rust bindings
 - [ ] Update backend to use ieapp-core bindings (no direct file access)
@@ -175,7 +175,6 @@ frontend/                       # UNCHANGED: UI only
 |-----------|---------|-----------|
 | Storage | [OpenDAL](https://opendal.apache.org/) | Rust-native fsspec equivalent, supports S3/GCS/local/memory |
 | Python Bindings | [pyo3](https://pyo3.rs/) | De facto standard for Rust-Python FFI |
-| Wasm Sandbox | [wasmtime](https://wasmtime.dev/) | Already used, native Rust integration |
 | JSON | serde_json | Standard Rust serialization |
 
 ### Acceptance Criteria
@@ -250,12 +249,6 @@ features:
     crate: src/index.rs
     ieapp_cli: src/ieapp/index.py
     backend: (internal, no API)
-    frontend: (not applicable)
-    
-  sandbox:
-    crate: src/sandbox/
-    ieapp_cli: src/ieapp/sandbox/
-    backend: src/app/mcp/sandbox.py
     frontend: (not applicable)
 ```
 

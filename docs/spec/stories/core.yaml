@@ -8,27 +8,7 @@ updated: "2026-01"
 category: Core User Stories
 
 stories:
-  - id: STORY-001
-    title: The Programmable Knowledge Base
-    type: AI Native
-    as_a: power user or AI agent
-    i_want: to execute JavaScript code against my notes
-    so_that: >
-      I can perform complex tasks like "Find all notes mentioning 'Project X',
-      extract the dates, and plot a timeline."
-    acceptance_criteria:
-      - MCP Tool `run_script` is available
-      - AI can call host functions (e.g., `host.call(...)`) to access the API
-      - AI can query structured properties via the API
-      - Output (text/charts) is returned to the AI context
-    related_apis:
-      - mcp: run_script
-      - rest: POST /workspaces/{ws_id}/query
-    requirements:
-      - REQ-SANDBOX-001
-      - REQ-SANDBOX-002
-      - REQ-SANDBOX-003
-      - REQ-SANDBOX-004
+  # STORY-001 (Programmable Knowledge Base / Sandbox) removed as per requirement change.
 
   - id: STORY-002
     title: Structured Freedom
@@ -81,7 +61,6 @@ stories:
       - rest: GET /workspaces/{ws_id}/notes/{note_id}/history
       - rest: GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
       - rest: POST /workspaces/{ws_id}/notes/{note_id}/restore
-      - mcp: run_script (can also restore revisions via host.call)
     requirements:
       - REQ-NOTE-005
 
