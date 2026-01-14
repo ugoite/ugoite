@@ -9,6 +9,7 @@ pub struct NoteContent {
     pub markdown: String,
     pub frontmatter: serde_json::Value,
     pub sections: serde_json::Value,
+    pub properties: serde_json::Value, // Merged
     pub revision_id: String,
     pub parent_revision_id: Option<String>,
     pub author: String,
@@ -51,11 +52,16 @@ pub async fn create_note<I: IntegrityProvider>(
     let now = Utc::now().to_rfc3339();
     let revision_id = integrity.checksum(content); // Use checksum as revision ID for now
 
+    // Extract properties
+    let properties = crate::index::extract_properties(content);
+    // TODO: separate frontmatter and sections properly if needed by struct
+
     // 1. Create content.json
     let note_content = NoteContent {
         markdown: content.to_string(),
         frontmatter: serde_json::json!({}), // Parsing logic needed if we want to extract frontmatter
         sections: serde_json::json!({}),
+        properties,
         revision_id: revision_id.clone(),
         parent_revision_id: None,
         author: author.to_string(),
@@ -213,11 +219,15 @@ pub async fn update_note<I: IntegrityProvider>(
     // New revision
     let revision_id = integrity.checksum(content);
 
+    // Extract properties
+    let properties = crate::index::extract_properties(content);
+
     // Update content.json
     let new_note_content = NoteContent {
         markdown: content.to_string(),
         frontmatter: serde_json::json!({}),
         sections: serde_json::json!({}),
+        properties,
         revision_id: revision_id.clone(),
         parent_revision_id: Some(current_content.revision_id.clone()),
         author: author.to_string(),

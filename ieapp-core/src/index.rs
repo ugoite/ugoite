@@ -102,3 +102,17 @@ fn extract_sections(body: &str) -> Vec<(String, String)> {
 
     sections
 }
+
+pub fn compute_word_count(content: &str) -> usize {
+    content.split_whitespace().count()
+}
+
+pub async fn validate_properties(
+    _op: &Operator,
+    _ws_path: &str,
+    _class_name: &str,
+    _properties: &serde_json::Value,
+) -> Result<Vec<String>> {
+    // Stub implementation
+    Ok(Vec::new())
+}

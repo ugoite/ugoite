@@ -1,9 +1,0 @@
-# Sandbox Requirements
-#
-# THIS FEATURE HAS BEEN REMOVED.
-# This file is kept as a placeholder to avoid breaking file list assumptions until full cleanup.
-
-category: Code Sandbox
-prefix: REQ-SANDBOX
-
-requirements: []

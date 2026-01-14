@@ -14,7 +14,6 @@ pub mod index;
 pub mod integrity;
 pub mod link;
 pub mod note;
-pub mod sandbox;
 pub mod search;
 pub mod workspace;
 
