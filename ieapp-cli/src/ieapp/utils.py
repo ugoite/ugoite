@@ -217,7 +217,7 @@ _T = TypeVar("_T")
 
 
 def run_async(
-    awaitable_or_factory: Awaitable[_T] | Callable[_P, Awaitable[_T]],
+    awaitable_or_factory: Awaitable[_T] | Callable[_P, _T | Awaitable[_T]],
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _T:
@@ -228,13 +228,14 @@ def run_async(
 
     async def _runner() -> _T:
         if isinstance(awaitable_or_factory, AwaitableABC):
-            awaitable = awaitable_or_factory
-        elif callable(awaitable_or_factory):
-            awaitable = awaitable_or_factory(*args, **kwargs)
-        else:
-            msg = "Expected awaitable or awaitable factory"
-            raise TypeError(msg)
-        return await cast("Awaitable[_T]", awaitable)
+            return await cast("Awaitable[_T]", awaitable_or_factory)
+        if callable(awaitable_or_factory):
+            result = awaitable_or_factory(*args, **kwargs)
+            if isinstance(result, AwaitableABC):
+                return await cast("Awaitable[_T]", result)
+            return cast("_T", result)
+        msg = "Expected awaitable or awaitable factory"
+        raise TypeError(msg)
 
     try:
         asyncio.get_running_loop()
