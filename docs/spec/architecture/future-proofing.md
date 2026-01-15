@@ -22,7 +22,7 @@ To enable cross-platform operation and varied deployment targets:
 - Core operations are contained in `ieapp-core` (Rust).
 - Multiple language bindings are provided:
   - Python bindings for backend and `ieapp-cli`
-  - WebAssembly bindings for browser and sandbox contexts (future target)
+  - WebAssembly bindings for browser contexts (future target)
 
 ## Data Portability
 

@@ -44,7 +44,7 @@ async def security_middleware(
             },
         )
         body = bytes(response.body or b"")
-        return _apply_security_headers(response, body, root_path)
+        return await _apply_security_headers(response, body, root_path)
 
     # Skip body capture/signing for MCP SSE endpoints as they are streaming
     if request.url.path.startswith("/mcp"):
@@ -52,7 +52,7 @@ async def security_middleware(
 
     response = await call_next(request)
     body = await _capture_response_body(response)
-    return _apply_security_headers(response, body, root_path)
+    return await _apply_security_headers(response, body, root_path)
 
 
 async def _capture_response_body(response: Response) -> bytes:
@@ -70,13 +70,13 @@ async def _capture_response_body(response: Response) -> bytes:
     return body
 
 
-def _apply_security_headers(
+async def _apply_security_headers(
     response: Response,
     body: bytes,
     root_path: Path | str,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
-    key_id, signature = build_response_signature(body, root_path)
+    key_id, signature = await build_response_signature(body, root_path)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-IEApp-Key-Id"] = key_id
     response.headers["X-IEApp-Signature"] = signature

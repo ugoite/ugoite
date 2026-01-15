@@ -28,7 +28,6 @@ Delivered the foundational architecture and core features:
 - Note CRUD with revision history and conflict detection
 - Markdown-to-structured-data extraction
 - Schema/Class definitions for typed notes
-- Wasm sandbox for AI code execution
 - SolidStart frontend + FastAPI backend
 
 ---

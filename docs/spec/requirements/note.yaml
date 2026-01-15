@@ -22,6 +22,10 @@ requirements:
           tests:
             - test_create_note
             - test_create_note_conflict
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_001_create_note_basic
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -47,9 +51,11 @@ requirements:
         - file: ieapp-cli/tests/test_notes.py
           tests:
             - test_update_note_revision_mismatch
-        - file: backend/tests/test_api.py
+      rust:
+        - file: ieapp-core/tests/test_note.rs
           tests:
-            - test_update_note_conflict
+            - test_note_req_note_003_update_note_success
+            - test_note_req_note_002_update_note_conflict
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -72,6 +78,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_update_note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_003_update_note_success
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
@@ -108,6 +118,10 @@ requirements:
         - file: e2e/notes.test.ts
           tests:
             - DELETE /workspaces/default/notes/:id removes note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_004_delete_note
 
   - id: REQ-NOTE-005
     title: Note History (Time Travel)
@@ -129,6 +143,10 @@ requirements:
             - test_get_note_history
             - test_get_note_revision
             - test_restore_note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_005_note_history_append
 
   - id: REQ-NOTE-006
     title: Structured Data Extraction from Markdown
@@ -152,6 +170,10 @@ requirements:
         - file: frontend/src/lib/client.test.ts
           tests:
             - should extract H2 headers as properties
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_006_extract_h2_headers
 
   - id: REQ-NOTE-007
     title: Properties and Links in List Response
@@ -185,6 +207,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_upload_attachment_and_link_to_note
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_note_008_attachments_linking
 
   - id: REQ-NOTE-009
     title: Attachment Garbage Collection Guard

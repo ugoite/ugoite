@@ -5,48 +5,12 @@ import logging
 import uuid
 from typing import Annotated, Any
 
-import ieapp
+import ieapp_core
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from ieapp import (
-    AttachmentReferencedError,
-    create_link,
-    delete_attachment,
-    delete_link,
-    get_class,
-    list_attachments,
-    list_classes,
-    list_column_types,
-    list_links,
-    migrate_class,
-    save_attachment,
-    search_notes,
-    upsert_class,
-)
-from ieapp.indexer import extract_properties, validate_properties
-from ieapp.notes import (
-    NoteExistsError,
-    RevisionMismatchError,
-    create_note,
-    delete_note,
-    get_note,
-    get_note_history,
-    get_note_revision,
-    list_notes,
-    restore_note,
-    update_note,
-)
-from ieapp.utils import validate_id
-from ieapp.workspace import (
-    WorkspaceExistsError,
-    create_workspace,
-    get_workspace,
-    list_workspaces,
-    patch_workspace,
-    test_storage_connection,
-    workspace_path,
-)
 
 from app.core.config import get_root_path
+from app.core.ids import validate_id
+from app.core.storage import storage_config_from_root, workspace_uri
 from app.models.classes import (
     ClassCreate,
     LinkCreate,
@@ -61,6 +25,31 @@ from app.models.classes import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _storage_config() -> dict[str, str]:
+    """Build storage config for the current workspace root."""
+    return storage_config_from_root(get_root_path())
+
+
+async def _ensure_workspace_exists(
+    storage_config: dict[str, str],
+    workspace_id: str,
+) -> dict[str, Any]:
+    """Ensure a workspace exists or raise 404."""
+    try:
+        return await ieapp_core.get_workspace(storage_config, workspace_id)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workspace not found: {workspace_id}",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        ) from exc
 
 
 def _format_class_validation_errors(errors: list[dict[str, Any]]) -> str:
@@ -91,27 +80,34 @@ def _format_class_validation_errors(errors: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-def _validate_note_markdown_against_class(ws_path: str, markdown: str) -> None:
+async def _validate_note_markdown_against_class(
+    storage_config: dict[str, str],
+    workspace_id: str,
+    markdown: str,
+) -> None:
     """Validate extracted note properties against the workspace class."""
-    properties = extract_properties(markdown)
+    properties = ieapp_core.extract_properties(markdown)
     note_class = properties.get("class")
     if not isinstance(note_class, str) or not note_class.strip():
         return
 
     try:
-        class_def = get_class(ws_path, note_class)
-    except FileNotFoundError as e:
+        class_def = await ieapp_core.get_class(storage_config, workspace_id, note_class)
+    except RuntimeError as e:
+        if "not found" not in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to load class definition",
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Class not found: {note_class}",
         ) from e
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid class file",
-        ) from e
 
-    _casted, warnings = validate_properties(properties, class_def)
+    _casted, warnings = ieapp_core.validate_properties(
+        json.dumps(properties),
+        json.dumps(class_def),
+    )
     if warnings:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -130,36 +126,31 @@ def _validate_path_id(identifier: str, name: str) -> None:
         ) from exc
 
 
-def _get_workspace_path(workspace_id: str) -> str:
-    """Get a safe workspace path string after validation."""
-    root_path = get_root_path()
-    try:
-        return workspace_path(root_path, workspace_id, must_exist=True)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid workspace_id: {workspace_id}",
-        ) from e
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workspace not found: {workspace_id}",
-        ) from e
+def _workspace_uri(workspace_id: str) -> str:
+    """Return workspace URI/path for API responses."""
+    return workspace_uri(get_root_path(), workspace_id)
 
 
 @router.get("/workspaces")
 async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     """List all workspaces."""
-    root_path = get_root_path()
-
     try:
-        return list_workspaces(root_path)
+        storage_config = _storage_config()
+        workspace_ids = await ieapp_core.list_workspaces(storage_config)
+        results: list[dict[str, Any]] = []
+        for ws_id in workspace_ids:
+            try:
+                results.append(await ieapp_core.get_workspace(storage_config, ws_id))
+            except RuntimeError as exc:
+                logger.warning("Failed to read workspace meta %s: %s", ws_id, exc)
     except Exception as e:
         logger.exception("Failed to list workspaces")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
+    else:
+        return results
 
 
 @router.post("/workspaces", status_code=status.HTTP_201_CREATED)
@@ -167,14 +158,19 @@ async def create_workspace_endpoint(
     payload: WorkspaceCreate,
 ) -> dict[str, str]:
     """Create a new workspace."""
-    root_path = get_root_path()
     workspace_id = payload.name  # Using name as ID for now per simple spec
 
     try:
-        create_workspace(root_path, workspace_id)
-    except WorkspaceExistsError as e:
+        storage_config = _storage_config()
+        await ieapp_core.create_workspace(storage_config, workspace_id)
+    except RuntimeError as e:
+        if "already exists" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -187,7 +183,7 @@ async def create_workspace_endpoint(
     return {
         "id": workspace_id,
         "name": payload.name,
-        "path": workspace_path(root_path, workspace_id, must_exist=True),
+        "path": _workspace_uri(workspace_id),
     }
 
 
@@ -195,13 +191,17 @@ async def create_workspace_endpoint(
 async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
     """Get workspace metadata."""
     _validate_path_id(workspace_id, "workspace_id")
-    root_path = get_root_path()
-
     try:
-        return get_workspace(root_path, workspace_id)
-    except FileNotFoundError as e:
+        storage_config = _storage_config()
+        return await ieapp_core.get_workspace(storage_config, workspace_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -219,7 +219,6 @@ async def patch_workspace_endpoint(
 ) -> dict[str, Any]:
     """Update workspace metadata/settings including storage connector."""
     _validate_path_id(workspace_id, "workspace_id")
-    root_path = get_root_path()
 
     # Build patch dict from payload
     patch_data = {}
@@ -231,14 +230,20 @@ async def patch_workspace_endpoint(
         patch_data["settings"] = payload.settings
 
     try:
-        return patch_workspace(
-            root_path,
+        storage_config = _storage_config()
+        return await ieapp_core.patch_workspace(
+            storage_config,
             workspace_id,
-            patch=patch_data,
+            json.dumps(patch_data),
         )
-    except FileNotFoundError as e:
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -253,13 +258,14 @@ async def patch_workspace_endpoint(
 async def test_connection_endpoint(
     workspace_id: str,
     payload: TestConnectionRequest,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Validate the provided storage connector (stubbed for Milestone 6)."""
     _validate_path_id(workspace_id, "workspace_id")
-    _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return test_storage_connection(payload.storage_config)
+        return await ieapp_core.test_storage_connection(payload.storage_config)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -274,20 +280,30 @@ async def test_connection_endpoint(
 async def create_note_endpoint(
     workspace_id: str,
     payload: NoteCreate,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Create a new note."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     note_id = payload.id or str(uuid.uuid4())
 
     try:
-        create_note(ws_path, note_id, payload.content)
-        # Get the created note to retrieve revision_id
-        note_data = get_note(ws_path, note_id)
-    except NoteExistsError as e:
+        await ieapp_core.create_note(
+            storage_config,
+            workspace_id,
+            note_id,
+            payload.content,
+        )
+        note_data = await ieapp_core.get_note(storage_config, workspace_id, note_id)
+    except RuntimeError as e:
+        if "already exists" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -304,10 +320,11 @@ async def create_note_endpoint(
 async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all notes in a workspace."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return list_notes(ws_path)
+        return await ieapp_core.list_notes(storage_config, workspace_id)
     except Exception as e:
         logger.exception("Failed to list notes")
         raise HTTPException(
@@ -321,13 +338,19 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     """Get a note by ID."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return get_note(ws_path, note_id)
-    except FileNotFoundError as e:
+        return await ieapp_core.get_note(storage_config, workspace_id, note_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -351,46 +374,60 @@ async def update_note_endpoint(
     """
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        _validate_note_markdown_against_class(ws_path, payload.markdown)
-        update_note(
-            ws_path,
+        await _validate_note_markdown_against_class(
+            storage_config,
+            workspace_id,
+            payload.markdown,
+        )
+        attachments_json = (
+            json.dumps(payload.attachments) if payload.attachments is not None else None
+        )
+        updated_note = await ieapp_core.update_note(
+            storage_config,
+            workspace_id,
             note_id,
             payload.markdown,
             payload.parent_revision_id,
-            attachments=payload.attachments,
+            attachments_json=attachments_json,
         )
-        # Return the updated note with id and revision_id
-        updated_note = get_note(ws_path, note_id)
         return {
             "id": note_id,
             "revision_id": updated_note.get("revision_id", ""),
         }
-    except FileNotFoundError as e:
+    except RuntimeError as e:
+        msg = str(e)
+        if "conflict" in msg.lower():
+            try:
+                current_note = await ieapp_core.get_note(
+                    storage_config,
+                    workspace_id,
+                    note_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": msg,
+                        "current_revision": current_note,
+                    },
+                ) from e
+            except RuntimeError:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=msg,
+                ) from e
+        if "not found" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg,
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
         ) from e
-    except RevisionMismatchError as e:
-        # Return 409 with the current server version for client merge.
-        # FastAPI supports dict as detail value, which serializes to JSON.
-        # This allows clients to perform OCC merge with the current_revision.
-        try:
-            current_note = get_note(ws_path, note_id)
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "message": str(e),
-                    "current_revision": current_note,
-                },
-            ) from e
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(e),
-            ) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -408,15 +445,21 @@ async def update_note_endpoint(
 async def upload_attachment_endpoint(
     workspace_id: str,
     file: Annotated[UploadFile, File(...)],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Upload a binary attachment into the workspace attachments directory."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     contents = await file.read()
 
     try:
-        return save_attachment(ws_path, contents, file.filename or "")
+        return await ieapp_core.save_attachment(
+            storage_config,
+            workspace_id,
+            file.filename or "",
+            contents,
+        )
     except Exception as e:
         logger.exception("Failed to save attachment")
         raise HTTPException(
@@ -428,13 +471,14 @@ async def upload_attachment_endpoint(
 @router.get("/workspaces/{workspace_id}/attachments")
 async def list_attachments_endpoint(
     workspace_id: str,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """List all attachments in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return list_attachments(ws_path)
+        return await ieapp_core.list_attachments(storage_config, workspace_id)
     except Exception as e:
         logger.exception("Failed to list attachments")
         raise HTTPException(
@@ -451,19 +495,26 @@ async def delete_attachment_endpoint(
     """Delete an attachment if it is not referenced by any note."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(attachment_id, "attachment_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        delete_attachment(ws_path, attachment_id)
-    except AttachmentReferencedError as e:
+        await ieapp_core.delete_attachment(storage_config, workspace_id, attachment_id)
+    except RuntimeError as e:
+        msg = str(e)
+        if "referenced" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=msg,
+            ) from e
+        if "not found" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not found",
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Not found",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
         ) from e
     except Exception as e:
         logger.exception("Failed to delete attachment")
@@ -483,13 +534,19 @@ async def delete_note_endpoint(
     """Tombstone (soft delete) a note."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        delete_note(ws_path, note_id)
-    except FileNotFoundError as e:
+        await ieapp_core.delete_note(storage_config, workspace_id, note_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -510,13 +567,19 @@ async def get_note_history_endpoint(
     """Get the revision history for a note."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return get_note_history(ws_path, note_id)
-    except FileNotFoundError as e:
+        return await ieapp_core.get_note_history(storage_config, workspace_id, note_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -537,13 +600,24 @@ async def get_note_revision_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
     _validate_path_id(revision_id, "revision_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return get_note_revision(ws_path, note_id, revision_id)
-    except FileNotFoundError as e:
+        return await ieapp_core.get_note_revision(
+            storage_config,
+            workspace_id,
+            note_id,
+            revision_id,
+        )
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -563,13 +637,24 @@ async def restore_note_endpoint(
     """Restore a note to a previous revision."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(note_id, "note_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        note_data = restore_note(ws_path, note_id, payload.revision_id)
-    except FileNotFoundError as e:
+        note_data = await ieapp_core.restore_note(
+            storage_config,
+            workspace_id,
+            note_id,
+            payload.revision_id,
+        )
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -594,21 +679,28 @@ async def create_link_endpoint(
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(payload.source, "source")
     _validate_path_id(payload.target, "target")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     link_id = uuid.uuid4().hex
 
     try:
-        return create_link(
-            ws_path,
-            source=payload.source,
-            target=payload.target,
-            kind=payload.kind,
-            link_id=link_id,
+        return await ieapp_core.create_link(
+            storage_config,
+            workspace_id,
+            payload.source,
+            payload.target,
+            payload.kind,
+            link_id,
         )
-    except FileNotFoundError as e:
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
     except Exception as e:
@@ -623,10 +715,11 @@ async def create_link_endpoint(
 async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all unique links in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return list_links(ws_path)
+        return await ieapp_core.list_links(storage_config, workspace_id)
     except Exception as e:
         logger.exception("Failed to list links")
         raise HTTPException(
@@ -643,14 +736,20 @@ async def delete_link_endpoint(
     """Delete a link and remove it from both notes."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(link_id, "link_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        delete_link(ws_path, link_id)
-    except FileNotFoundError as e:
+        await ieapp_core.delete_link(storage_config, workspace_id, link_id)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Link not found",
+            ) from e
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Link not found",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         ) from e
     except Exception as e:
         logger.exception("Failed to delete link")
@@ -669,11 +768,15 @@ async def query_endpoint(
 ) -> list[dict[str, Any]]:
     """Query the workspace index."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        # ieapp.query expects workspace_path as string or Path
-        return ieapp.query(str(ws_path), payload.filter)
+        return await ieapp_core.query_index(
+            storage_config,
+            workspace_id,
+            json.dumps(payload.filter),
+        )
     except Exception as e:
         logger.exception("Query failed")
         raise HTTPException(
@@ -689,10 +792,11 @@ async def search_endpoint(
 ) -> list[dict[str, Any]]:
     """Hybrid keyword search using inverted index with on-demand indexing."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return search_notes(ws_path, q)
+        return await ieapp_core.search_notes(storage_config, workspace_id, q)
     except Exception as e:
         logger.exception("Search failed")
         raise HTTPException(
@@ -705,10 +809,11 @@ async def search_endpoint(
 async def list_classes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all classes in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return list_classes(ws_path)
+        return await ieapp_core.list_classes(storage_config, workspace_id)
     except Exception as e:
         logger.exception("Failed to list classes")
         raise HTTPException(
@@ -723,8 +828,9 @@ async def list_class_types_endpoint(workspace_id: str) -> list[str]:
     _validate_path_id(workspace_id, "workspace_id")
     try:
         # Verify workspace exists even though types are static
-        _get_workspace_path(workspace_id)
-        return list_column_types()
+        storage_config = _storage_config()
+        await _ensure_workspace_exists(storage_config, workspace_id)
+        return await ieapp_core.list_column_types()
     except Exception as e:
         if isinstance(e, HTTPException):
             raise
@@ -740,19 +846,20 @@ async def get_class_endpoint(workspace_id: str, class_name: str) -> dict[str, An
     """Get a specific class definition."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(class_name, "class_name")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
-        return get_class(ws_path, class_name)
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Class not found: {class_name}",
-        ) from e
-    except json.JSONDecodeError as e:
+        return await ieapp_core.get_class(storage_config, workspace_id, class_name)
+    except RuntimeError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Class not found: {class_name}",
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid class file",
+            detail=str(e),
         ) from e
 
 
@@ -764,18 +871,27 @@ async def create_class_endpoint(
     """Create or update a class definition."""
     _validate_path_id(workspace_id, "workspace_id")
     _validate_path_id(payload.name, "class_name")
-    ws_path = _get_workspace_path(workspace_id)
+    storage_config = _storage_config()
+    await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
         # Separate strategies from persistent class definition
         class_data = payload.model_dump()
         strategies = class_data.pop("strategies", None)
+        class_json = json.dumps(class_data)
+
+        await ieapp_core.upsert_class(storage_config, workspace_id, class_json)
 
         if strategies:
-            migrate_class(ws_path, class_data, strategies=strategies)
-            return get_class(ws_path, payload.name)
+            strategies_json = json.dumps(strategies)
+            await ieapp_core.migrate_class(
+                storage_config,
+                workspace_id,
+                class_json,
+                strategies_json,
+            )
 
-        return upsert_class(ws_path, class_data)
+        return await ieapp_core.get_class(storage_config, workspace_id, payload.name)
     except Exception as e:
         logger.exception("Failed to upsert class")
         raise HTTPException(

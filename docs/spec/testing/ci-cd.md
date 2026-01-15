@@ -38,7 +38,6 @@ jobs:
 ```yaml
 jobs:
   e2e:
-    - mise run sandbox:build
     - Start backend (background)
     - Start frontend (background)
     - Wait for servers

@@ -42,5 +42,4 @@ files:
     file: links.yaml
   - kind: search
     file: search.yaml
-    backend: src/app/mcp/sandbox.py
     frontend: null  # Not applicable

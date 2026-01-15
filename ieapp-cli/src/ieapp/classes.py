@@ -6,26 +6,25 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
+import ieapp_core
+
 if TYPE_CHECKING:
     import fsspec
 
 
-from .indexer import Indexer, extract_properties
-from .notes import get_note, list_notes, update_note
 from .utils import (
     fs_exists,
-    fs_join,
-    fs_makedirs,
-    fs_read_json,
-    fs_write_json,
     get_fs_and_path,
+    run_async,
+    split_workspace_path,
+    storage_config_from_root,
     validate_id,
 )
 
 
 def list_column_types() -> list[str]:
     """Return list of supported column types."""
-    return ["string", "number", "date", "list", "markdown"]
+    return run_async(ieapp_core.list_column_types)
 
 
 def _workspace_context(
@@ -45,26 +44,9 @@ def list_classes(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
     """Return all classes (JSON files) in the workspace's classes directory."""
-    fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    classes_dir = fs_join(ws_path, "classes")
-    if not fs_exists(fs_obj, classes_dir):
-        return []
-
-    try:
-        entries = fs_obj.ls(classes_dir, detail=False)
-    except FileNotFoundError:
-        return []
-
-    classes: list[dict[str, Any]] = []
-    for entry in entries:
-        path_str = str(entry)
-        if not path_str.endswith(".json"):
-            continue
-        try:
-            classes.append(fs_read_json(fs_obj, path_str))
-        except (json.JSONDecodeError, OSError):
-            continue
-    return classes
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    return run_async(ieapp_core.list_classes, config, workspace_id)
 
 
 def get_class(
@@ -75,12 +57,15 @@ def get_class(
 ) -> dict[str, Any]:
     """Return the class definition for ``class_name`` in the workspace."""
     validate_id(class_name, "class_name")
-    fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    class_path = fs_join(ws_path, "classes", f"{class_name}.json")
-    if not fs_exists(fs_obj, class_path):
-        msg = f"Class not found: {class_name}"
-        raise FileNotFoundError(msg)
-    return fs_read_json(fs_obj, class_path)
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    try:
+        return run_async(ieapp_core.get_class, config, workspace_id, class_name)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not found" in msg:
+            raise FileNotFoundError(msg) from exc
+        raise
 
 
 def upsert_class(
@@ -95,17 +80,10 @@ def upsert_class(
         msg = "Class name is required"
         raise ValueError(msg)
     validate_id(str(name), "class_name")
-
-    fs_obj, ws_path = _workspace_context(workspace_path, fs)
-    classes_dir = fs_join(ws_path, "classes")
-    fs_makedirs(fs_obj, classes_dir, exist_ok=True)
-
-    class_path = fs_join(classes_dir, f"{name}.json")
-    fs_write_json(fs_obj, class_path, class_data)
-
-    # Refresh the workspace index
-    Indexer(str(ws_path), fs=fs_obj).run_once()
-
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    payload = json.dumps(class_data)
+    run_async(ieapp_core.upsert_class, config, workspace_id, payload)
     return class_data
 
 
@@ -139,42 +117,14 @@ def migrate_class(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> int:
     """Upsert class and migrate existing notes."""
-    upsert_class(workspace_path, class_data, fs=fs)
-
-    if not strategies:
-        return 0
-
-    fs_obj, _ws_path = _workspace_context(workspace_path, fs)
-    class_name = class_data.get("name")
-    if not class_name:
-        return 0
-
-    all_notes = list_notes(workspace_path, fs=fs_obj)
-    updated_count = 0
-
-    for note_summary in all_notes:
-        note_id = note_summary["id"]
-        try:
-            note = get_note(workspace_path, note_id, fs=fs_obj)
-        except FileNotFoundError:
-            continue
-
-        props = extract_properties(note["content"])
-        if props.get("class") != class_name:
-            continue
-
-        original_md = note["content"]
-        new_md = _apply_migration(original_md, strategies)
-
-        if new_md != original_md:
-            update_note(
-                workspace_path,
-                note_id,
-                content=new_md,
-                author="system-migration",
-                parent_revision_id=note["revision_id"],
-                fs=fs_obj,
-            )
-            updated_count += 1
-
-    return updated_count
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    payload = json.dumps(class_data)
+    strategies_payload = json.dumps(strategies) if strategies is not None else None
+    return run_async(
+        ieapp_core.migrate_class,
+        config,
+        workspace_id,
+        payload,
+        strategies_payload,
+    )

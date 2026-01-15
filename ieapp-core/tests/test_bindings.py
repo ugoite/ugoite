@@ -1,20 +1,21 @@
-"""Tests for ieapp-core Python bindings.
+"""Tests for the Python bindings of ieapp-core."""
 
-Note: These tests currently verify mock implementations. They should be expanded
-to cover real business logic and edge cases as the core moves beyond mocks.
-"""
+import pytest
 
 import ieapp_core
 
 
-def test_list_workspaces_binding() -> None:
+@pytest.mark.asyncio
+async def test_list_workspaces_binding() -> None:
     """Verify that we can call list_workspaces from Python."""
-    result = ieapp_core.list_workspaces()
+    # list_workspaces now returns a future and requires storage_config
+    result = await ieapp_core.list_workspaces({"uri": "memory://"})
     assert isinstance(result, list)
-    assert "mock_workspace" in result
 
 
-def test_test_storage_connection_binding() -> None:
+@pytest.mark.asyncio
+async def test_test_storage_connection_binding() -> None:
     """Verify that we can call test_storage_connection from Python."""
-    result = ieapp_core.test_storage_connection()
-    assert result is True
+    # test_storage_connection now returns a future and requires storage_config
+    result = await ieapp_core.test_storage_connection({"uri": "memory://"})
+    assert result["status"] == "ok"

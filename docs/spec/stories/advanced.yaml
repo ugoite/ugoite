@@ -24,10 +24,8 @@ stories:
       - rest: POST /workspaces/{ws_id}/attachments
       - rest: PUT /workspaces/{ws_id}/notes/{note_id}
       - mcp: ieapp://{workspace_id}/notes/{note_id}
-      - mcp: run_script
     requirements:
       - REQ-NOTE-008
-      - REQ-SANDBOX-001
 
   - id: STORY-007
     title: Computational Notebooks
@@ -37,14 +35,11 @@ stories:
     so_that: I can create live reports or analyze my own knowledge base within the app.
     acceptance_criteria:
       - Markdown code blocks tagged `javascript` can be executed
-      - Code runs in the same Wasm sandbox as the MCP agent
+      - Code execution is handled by explicit tooling (future)
       - Output (text, tables, charts) is rendered interactively below the code block
     related_apis:
       - rest: POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute
-      - mcp: run_script
-    requirements:
-      - REQ-SANDBOX-001
-      - REQ-SANDBOX-002
+    requirements: []
 
   - id: STORY-008
     title: Agentic Refactoring
@@ -53,15 +48,13 @@ stories:
     i_want: to ask my AI agent to "clean up this folder"
     so_that: I can leverage external intelligence to organize my knowledge base on demand.
     acceptance_criteria:
-      - App exposes `run_script` tool via MCP
+      - App exposes MCP resources for note discovery and updates
       - User asks Agent: "Find duplicates in Project X and merge them."
       - Agent executes the logic and presents the result for confirmation
     related_apis:
-      - mcp: run_script
+      - mcp: ieapp://{workspace_id}/notes/list
       - rest: GET/PUT /workspaces/{ws_id}/notes/{note_id}
-    requirements:
-      - REQ-SANDBOX-001
-      - REQ-SANDBOX-002
+    requirements: []
 
   - id: STORY-009
     title: Data Grid

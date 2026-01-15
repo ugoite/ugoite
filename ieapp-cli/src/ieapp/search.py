@@ -5,11 +5,20 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+import ieapp_core
+
 if TYPE_CHECKING:
     import fsspec
 
-from .indexer import Indexer
-from .utils import fs_exists, fs_join, fs_read_json, get_fs_and_path
+from .utils import (
+    fs_exists,
+    fs_join,
+    fs_read_json,
+    get_fs_and_path,
+    run_async,
+    split_workspace_path,
+    storage_config_from_root,
+)
 
 
 def _workspace_context(
@@ -94,31 +103,6 @@ def search_notes(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid keyword search using index and content fallback."""
-    fs_obj, ws_path = _workspace_context(workspace_path, fs)
-
-    # Refresh index for deterministic tests
-    Indexer(ws_path, fs=fs_obj).run_once()
-
-    token_lc = token.lower()
-    inverted_path = fs_join(ws_path, "index", "inverted_index.json")
-    index_path = fs_join(ws_path, "index", "index.json")
-
-    notes_map = _load_notes_map(fs_obj, index_path)
-
-    matches = _search_inverted(fs_obj, inverted_path, token_lc)
-    if not matches:
-        matches = _search_index_records(notes_map, token_lc)
-    if not matches:
-        matches = _search_content_files(fs_obj, ws_path, token_lc)
-
-    results: list[dict[str, Any]] = []
-    for note_id in matches:
-        if note_id in notes_map:
-            note = notes_map[note_id]
-            note = {**note} if isinstance(note, dict) else {"id": note_id}
-            note.setdefault("id", note_id)
-            results.append(note)
-        else:
-            results.append({"id": note_id})
-
-    return results
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    return run_async(ieapp_core.search_notes, config, workspace_id, token)

@@ -23,6 +23,10 @@ requirements:
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_002_create_workspace_scaffolding
 
   - id: REQ-STO-002
     title: Workspace Directory Structure
@@ -43,6 +47,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_create_workspace
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_002_create_workspace_scaffolding
 
   - id: REQ-STO-003
     title: File Permissions (chmod 600)
@@ -75,6 +83,11 @@ requirements:
           tests:
             - test_integrity_provider_for_workspace_success
             - test_integrity_provider_missing_hmac_key
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_002_create_workspace_scaffolding
+            - test_workspace_req_sto_004_list_workspaces_from_global_json
 
   - id: REQ-STO-005
     title: Prevent Duplicate Workspace Creation
@@ -92,6 +105,10 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_create_workspace_conflict
+      rust:
+        - file: ieapp-core/tests/test_workspace.rs
+          tests:
+            - test_workspace_req_sto_005_create_workspace_idempotency
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:

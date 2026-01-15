@@ -16,7 +16,7 @@ IEapp is a knowledge management system built on three core principles:
 
 - **Markdown as Database**: Write standard Markdown with `## Headers` that become structured fields
 - **Class Definitions**: Define note types (Meeting, Task, etc.) with typed fields and templates
-- **AI-Programmable**: MCP protocol + JavaScript sandbox for AI agents to interact with your knowledge
+- **AI-Programmable**: MCP protocol with resource-first integration for AI agents
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
 - **Version History**: Every save creates an immutable revision; time travel through your notes
 
@@ -27,7 +27,7 @@ IEapp is a knowledge management system built on three core principles:
 | Frontend | Bun + SolidStart + TailwindCSS |
 | Backend | Python 3.12+ (FastAPI) |
 | Storage | fsspec (local, S3, memory) |
-| AI Interface | MCP + Wasm Sandbox |
+| AI Interface | MCP (resource-first integration) |
 
 ---
 
@@ -141,22 +141,11 @@ Run all Python tests from repo root:
 uv run pytest
 ```
 
-### Sandbox (Wasm) prerequisites
-
-The backend includes a WebAssembly-based JavaScript sandbox. The `sandbox.wasm` artifact is pre-compiled and included in the repository.
-
-If you need to modify the sandbox runtime (`runner.js`), you can rebuild the Wasm artifact:
-
-```bash
-# Rebuild sandbox.wasm (automatically handles tool dependencies)
-mise run sandbox:build
-```
-
 Where you can run this:
 
 - Dev Container: everything needed to run tests is available; run `uv run pytest`.
 - GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ieapp-cli/`.
-- Local (non-container): install `uv`, then run the commands above. If you want the real Wasm sandbox, build `sandbox.wasm` and place it at `backend/src/app/sandbox/sandbox.wasm`.
+- Local (non-container): install `uv`, then run the commands above.
 
 Frontend tests: check `frontend/package.json`.
 

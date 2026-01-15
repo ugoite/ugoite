@@ -11,7 +11,7 @@ and responsibility boundaries.
 | State management | Optimistic updates, local cache, selection/view state | Persistence, history, indexing | `revision_id` optimistic concurrency |
 | Validation | UI/form validation, basic format checks | Class validation, business rules, integrity checks | Request/response schemas |
 | Search & query | Query construction + display | Indexing, query execution | Query payload shape |
-| Code execution | Sandbox UI (future) | Wasm sandbox + MCP host | MCP protocol |
+| Code execution | Code execution UI (future) | MCP host | MCP protocol |
 
 ## Interaction Patterns
 
@@ -37,7 +37,7 @@ and responsibility boundaries.
 
 - All filesystem I/O lives in `ieapp-core` (currently via `fsspec`, transitioning to OpenDAL).
 - Backend is a routing/translation layer and must not perform direct filesystem operations.
-- Backend tests must cover `file://` and `memory://` style backends via `ieapp-core`.
+- Backend tests must cover `fs://` and `memory://` style backends via `ieapp-core`.
 
 ## Error Handling Standards
 

@@ -7,12 +7,22 @@ import json
 import re
 import time
 from collections import Counter
-from datetime import date
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import fsspec
+import ieapp_core
 import yaml
-from pydantic import BeforeValidator, TypeAdapter, ValidationError
+from pydantic import BeforeValidator
+
+from .utils import (
+    fs_join,
+    fs_makedirs,
+    fs_read_json,
+    fs_write_json,
+    run_async,
+    split_workspace_path,
+    storage_config_from_root,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -98,11 +108,7 @@ def extract_properties(content: str) -> dict[str, Any]:
         frontmatter values.
 
     """
-    frontmatter, body = _extract_frontmatter(content)
-    sections = _extract_sections(body)
-    merged = dict(frontmatter)
-    merged.update({key: value for key, value in sections.items() if value})
-    return merged
+    return run_async(ieapp_core.extract_properties, content)
 
 
 def parse_markdown_list(v: Any) -> Any:
@@ -141,60 +147,11 @@ def validate_properties(
         A tuple of (casted_properties, warnings).
 
     """
-    warnings = []
-    fields = note_class.get("fields", {})
-    casted = properties.copy()
-
-    for field_name, field_def in fields.items():
-        value = properties.get(field_name)
-        field_type_str = field_def.get("type", "string")
-        is_required = field_def.get("required", False)
-
-        # Check required
-        if is_required and (value is None or str(value).strip() == ""):
-            warnings.append(
-                {
-                    "code": "missing_field",
-                    "field": field_name,
-                    "message": f"Missing required field: {field_name}",
-                },
-            )
-            continue
-
-        if value is None:
-            continue
-
-        # Determine Pydantic type
-        target_type: Any = str
-        if field_type_str == "number":
-            target_type = int | float
-        elif field_type_str == "date":
-            target_type = date
-        elif field_type_str == "list":
-            target_type = MarkdownList
-
-        # Validate
-        try:
-            adapter = TypeAdapter(target_type)
-            validated_value = adapter.validate_python(value)
-
-            if field_type_str == "date" and isinstance(validated_value, date):
-                validated_value = validated_value.isoformat()
-
-            casted[field_name] = validated_value
-
-        except ValidationError as e:
-            # Extract a nice message
-            err = e.errors()[0]
-            msg = err["msg"]
-            warnings.append(
-                {
-                    "code": "invalid_type",
-                    "field": field_name,
-                    "message": f"Field '{field_name}' {msg}",
-                },
-            )
-
+    casted, warnings = run_async(
+        ieapp_core.validate_properties,
+        json.dumps(properties),
+        json.dumps(note_class),
+    )
     return casted, warnings
 
 
@@ -261,6 +218,7 @@ class Indexer:
 
         """
         self.workspace_path = workspace_path.rstrip("/")
+        self._use_fsspec = fs is not None
         self.fs = fs or fsspec.filesystem("file")
 
     def update_note_index(self, note_id: str) -> None:
@@ -270,59 +228,13 @@ class Indexer:
             note_id: The ID of the note to update.
 
         """
-        index_path = f"{self.workspace_path}/index/index.json"
-        stats_path = f"{self.workspace_path}/index/stats.json"
-        inverted_index_path = f"{self.workspace_path}/index/inverted_index.json"
-
-        if (
-            not self.fs.exists(index_path)
-            or not self.fs.exists(stats_path)
-            or not self.fs.exists(inverted_index_path)
-        ):
+        if self._use_fsspec:
             self.run_once()
             return
 
-        # Load classes for validation
-        classes = self._load_classes(f"{self.workspace_path}/classes")
-
-        # Load existing index
-        with self.fs.open(index_path, "r") as f:
-            index_payload = json.load(f)
-
-        # Build new record if note still exists
-        note_dir = f"{self.workspace_path}/notes/{note_id}"
-        new_record = None
-        if self.fs.exists(note_dir):
-            new_record = self._build_record(note_dir, note_id, classes)
-
-        # Update index.json
-        notes = index_payload.get("notes", {})
-        if new_record:
-            notes[note_id] = new_record
-        elif note_id in notes:
-            del notes[note_id]
-
-        # Recalculate stats and inverted index
-        # NOTE: For true performance on large datasets, we should update these
-        # incrementally too. But aggregate_stats(notes) is already much faster
-        # than scanning the disk.
-        stats_data = aggregate_stats(notes)
-        index_payload["notes"] = notes
-        index_payload["class_stats"] = stats_data["class_stats"]
-
-        with self.fs.open(index_path, "w") as f:
-            json.dump(index_payload, f, indent=2)
-
-        inverted_index = self._build_inverted_index(notes)
-        with self.fs.open(inverted_index_path, "w") as f:
-            json.dump(inverted_index, f, indent=2)
-
-        stats_payload = {
-            **stats_data,
-            "last_indexed": time.time(),
-        }
-        with self.fs.open(stats_path, "w") as f:
-            json.dump(stats_payload, f, indent=2)
+        root_path, workspace_id = split_workspace_path(self.workspace_path)
+        config = storage_config_from_root(root_path, self.fs)
+        run_async(ieapp_core.update_note_index, config, workspace_id, note_id)
 
     def run_once(self) -> None:
         """Build the structured cache and stats once.
@@ -330,37 +242,48 @@ class Indexer:
         Loads classes, collects note data, generates an inverted index for search,
         and persists index.json, inverted_index.json, and stats.json to the workspace.
         """
-        notes_path = f"{self.workspace_path}/notes"
-        index_path = f"{self.workspace_path}/index/index.json"
-        stats_path = f"{self.workspace_path}/index/stats.json"
-        inverted_index_path = f"{self.workspace_path}/index/inverted_index.json"
-        classes_path = f"{self.workspace_path}/classes"
+        if self._use_fsspec:
+            classes_path = fs_join(self.workspace_path, "classes")
+            notes_path = fs_join(self.workspace_path, "notes")
+            index_path = fs_join(self.workspace_path, "index", "index.json")
+            inverted_path = fs_join(
+                self.workspace_path,
+                "index",
+                "inverted_index.json",
+            )
+            stats_path = fs_join(self.workspace_path, "index", "stats.json")
 
-        self.fs.makedirs(f"{self.workspace_path}/index", exist_ok=True)
+            fs_makedirs(self.fs, fs_join(self.workspace_path, "index"), exist_ok=True)
 
-        classes = self._load_classes(classes_path)
-        index_notes = self._collect_notes(notes_path, classes)
-        stats_data = aggregate_stats(index_notes)
+            classes = self._load_classes(classes_path)
+            notes = self._collect_notes(notes_path, classes)
+            stats = aggregate_stats(notes)
+            inverted = self._build_inverted_index(notes)
 
-        index_payload = {
-            "notes": index_notes,
-            "class_stats": stats_data["class_stats"],
-        }
+            fs_write_json(
+                self.fs,
+                index_path,
+                {
+                    "notes": notes,
+                    "class_stats": stats.get("class_stats", {}),
+                },
+            )
+            fs_write_json(self.fs, inverted_path, inverted)
+            fs_write_json(
+                self.fs,
+                stats_path,
+                {
+                    "note_count": stats.get("note_count", 0),
+                    "class_stats": stats.get("class_stats", {}),
+                    "tag_counts": stats.get("tag_counts", {}),
+                    "last_indexed": time.time(),
+                },
+            )
+            return
 
-        with self.fs.open(index_path, "w") as f:
-            json.dump(index_payload, f, indent=2)
-
-        # Build and persist inverted index for keyword search
-        inverted_index = self._build_inverted_index(index_notes)
-        with self.fs.open(inverted_index_path, "w") as f:
-            json.dump(inverted_index, f, indent=2)
-
-        stats_payload = {
-            **stats_data,
-            "last_indexed": time.time(),
-        }
-        with self.fs.open(stats_path, "w") as f:
-            json.dump(stats_payload, f, indent=2)
+        root_path, workspace_id = split_workspace_path(self.workspace_path)
+        config = storage_config_from_root(root_path, self.fs)
+        run_async(ieapp_core.reindex_all, config, workspace_id)
 
     def _build_inverted_index(
         self,
@@ -663,20 +586,16 @@ def query_index(
         A list of note records that match the filter criteria.
 
     """
-    fs = fs or fsspec.filesystem("file")
-    index_path = f"{workspace_path.rstrip('/')}/index/index.json"
-
-    if not fs.exists(index_path):
-        return []
-
-    with fs.open(index_path, "r") as handle:
-        try:
-            index_data = json.load(handle)
-        except json.JSONDecodeError:
+    if fs is not None:
+        index_path = fs_join(workspace_path, "index", "index.json")
+        if not fs.exists(index_path):
             return []
+        index_data = fs_read_json(fs, index_path)
+        notes = index_data.get("notes", {}) or {}
+        filters = filter_dict or {}
+        return [note for note in notes.values() if _matches_filters(note, filters)]
 
-    notes = index_data.get("notes", {})
-    if not filter_dict:
-        return list(notes.values())
-
-    return [note for note in notes.values() if _matches_filters(note, filter_dict)]
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    payload = json.dumps(filter_dict or {})
+    return run_async(ieapp_core.query_index, config, workspace_id, payload)

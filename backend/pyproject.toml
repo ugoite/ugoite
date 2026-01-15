@@ -6,10 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.121.1",
-    "ieapp",
+    "ieapp-core",
     "mcp>=1.0.0",
     "uvicorn>=0.38.0",
-    "wasmtime>=26.0.0",
 ]
 
 [dependency-groups]
@@ -27,7 +26,7 @@ build-backend = "uv_build"
 [tool.uv]
 
 [tool.uv.sources]
-ieapp = { path = "../ieapp-cli", editable = true }
+ieapp-core = { path = "../ieapp-core", editable = true }
 
 [tool.ruff]
 
@@ -35,4 +34,3 @@ ieapp = { path = "../ieapp-cli", editable = true }
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
-"src/app/mcp/server.py" = ["TD003", "FIX002", "BLE001"]

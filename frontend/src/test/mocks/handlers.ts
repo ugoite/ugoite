@@ -371,30 +371,20 @@ export const handlers = [
 	}),
 
 	// Upload attachment
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/attachments",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
-			}
-			let name = "upload.bin";
-			try {
-				const formData = await request.formData();
-				const file = formData.get("file");
-				if (file && typeof file === "object" && "name" in file) {
-					name = (file as File).name || name;
-				}
-			} catch {
-				// Fallback to default name when form parsing is unavailable
-			}
-			const id = crypto.randomUUID();
-			const attachment: Attachment = { id, name, path: `attachments/${id}_${name}` };
-			const store = mockAttachments.get(workspaceId);
-			store?.set(id, attachment);
-			return HttpResponse.json(attachment, { status: 201 });
-		},
-	),
+	http.post("http://localhost:3000/api/workspaces/:workspaceId/attachments", async ({ params }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+		// In mock tests, we don't actually need to parse FormData which can hang in CI
+		// The file name is not critical for these tests
+		const name = "test-file.bin";
+		const id = crypto.randomUUID();
+		const attachment: Attachment = { id, name, path: `attachments/${id}_${name}` };
+		const store = mockAttachments.get(workspaceId);
+		store?.set(id, attachment);
+		return HttpResponse.json(attachment, { status: 201 });
+	}),
 
 	// Delete attachment
 	http.delete(

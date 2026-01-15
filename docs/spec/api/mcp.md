@@ -55,63 +55,7 @@ Returns all note-to-note relationships.
 
 ## Tools
 
-### `run_script`
-
-The core power tool - executes JavaScript in a secure Wasm sandbox.
-
-**Arguments**:
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `code` | string | Yes | JavaScript code to execute |
-| `workspace_id` | string | Yes | Target workspace |
-
-**Environment**:
-- Runtime: WebAssembly (wasmtime) + QuickJS
-- Security: Strictly sandboxed, no network/filesystem access
-- Resource limits: Fuel (CPU cycles) and memory limits
-
-**Host Interface**:
-
-The global `host` object provides API access:
-
-```javascript
-// Call REST API from sandbox
-host.call(method, path, body)
-
-// Examples:
-const notes = host.call("GET", `/workspaces/${workspace_id}/notes`);
-const note = host.call("GET", `/workspaces/${workspace_id}/notes/${noteId}`);
-const created = host.call("POST", `/workspaces/${workspace_id}/notes`, {
-  markdown: "# New Note\n\nContent here"
-});
-```
-
-**Example Usage**:
-
-```javascript
-// Find all pending tasks and create a summary
-const tasks = host.call("POST", `/workspaces/${workspace_id}/query`, {
-  filter: { class: "Task", "properties.Status": "pending" }
-});
-
-let report = "# Pending Tasks\n\n";
-for (const task of tasks) {
-  const due = task.properties.Due || "No due date";
-  report += `- [ ] ${task.title} (Due: ${due})\n`;
-}
-
-// Return value is sent back to the AI
-report;
-```
-
-**Error Handling**:
-
-| Error | Description |
-|-------|-------------|
-| `FuelExhausted` | Script exceeded CPU cycle limit |
-| `MemoryExceeded` | Script exceeded memory limit |
-| `ExecutionError` | JavaScript runtime error |
-| `HostCallError` | API call failed |
+No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
 
 ---
 
@@ -135,14 +79,6 @@ Pre-defined prompts help AI understand the context:
 
 ## Security Model
 
-### Sandbox Isolation
-
-1. **No Network**: Scripts cannot make external HTTP requests
-2. **No Filesystem**: Scripts cannot read/write files directly
-3. **API Only**: All data access goes through `host.call()` which uses the REST API
-4. **Fuel Limits**: CPU cycles are metered to prevent infinite loops
-5. **Memory Limits**: Wasm instances have bounded memory (128MB default)
-
 ### Authentication
 
 MCP requests inherit the authentication of the HTTP connection:
@@ -151,9 +87,7 @@ MCP requests inherit the authentication of the HTTP connection:
 
 ### Audit Trail
 
-All `run_script` executions are logged with:
+MCP requests are logged with:
 - Timestamp
 - Workspace ID
-- Code hash (not full code for privacy)
-- Result status
-- Resource usage
+- Resource identifier

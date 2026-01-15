@@ -8,7 +8,7 @@
 
 **Key Architecture**:
 - Storage: `fsspec`-based (not traditional DB)
-- AI Interface: MCP with Wasm/JavaScript sandbox
+- AI Interface: MCP with resource-first integration
 - Stack: SolidStart (Bun) + FastAPI (Python 3.12+) + uv
 - Data Model: Markdown sections as structured fields
 
@@ -34,8 +34,6 @@ cd backend && uv run ty check .      # Type check backend
 cd ieapp-cli && uv run ty check .    # Type check CLI
 cd frontend && biome ci . # Check frontend
 
-# Sandbox
-mise run sandbox:build    # Build Wasm sandbox
 ```
 
 ---
@@ -59,7 +57,7 @@ Before marking any task as complete:
 
 - **2025 Standards**: Research current best practices before implementing new features
 - **Type Safety**: Complete type hints (Python) and types (TypeScript)
-- **Security**: User code runs in Wasm sandbox only; validate all inputs
+- **Security**: Validate all inputs; no sandboxed code execution in Milestone 2
 - **Data Privacy**: Never commit secrets; respect local-first principle
 
 ---

@@ -41,9 +41,6 @@ IEapp implements a **Local-Only by Default** security model:
 - Path traversal prevention in file operations
 - SQL injection not applicable (no SQL database)
 
-## Code Sandbox Security
-
-See [sandbox.md](sandbox.md) for detailed sandbox security measures.
 
 ## Authentication (Future)
 
@@ -60,7 +57,6 @@ When authentication is required (Milestone 4):
 ### In Scope
 - Data integrity (tampering prevention)
 - Access control (localhost isolation)
-- Code execution isolation (Wasm sandbox)
 - Input validation
 
 ### Out of Scope (User Responsibility)
@@ -73,4 +69,3 @@ When authentication is required (Milestone 4):
 
 1. **Data Corruption**: Restore from revision history
 2. **Key Compromise**: Rotate `hmac_key` in `global.json`
-3. **Sandbox Escape**: Report as critical security issue

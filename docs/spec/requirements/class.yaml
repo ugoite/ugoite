@@ -26,6 +26,11 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_get_class_types
+      rust:
+        - file: ieapp-core/tests/test_class.rs
+          tests:
+            - test_class_req_cls_001_list_column_types
+
 
   - id: REQ-CLS-002
     title: Class Migration Strategy
@@ -50,3 +55,7 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_update_class_with_migration
+      rust:
+        - file: ieapp-core/tests/test_class.rs
+          tests:
+            - test_class_req_cls_002_upsert_and_list_classes

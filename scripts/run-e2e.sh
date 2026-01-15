@@ -4,9 +4,14 @@
 #   test-type: "smoke", "notes", or "full" (runs all tests)
 #
 # Environment variables:
-#   SKIP_BUILD=1  - Skip sandbox.wasm build
 
 set -e
+
+# Unset VIRTUAL_ENV to ensure we're using the environment managed by mise/uv 
+# and not inheriting an active virtualenv from the current shell session.
+unset VIRTUAL_ENV
+export BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true
+export BROWSERSLIST_IGNORE_OLD_DATA=true
 
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,19 +23,29 @@ fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
 
-# Build sandbox.wasm if needed (can be skipped with SKIP_BUILD=1)
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    echo "Building sandbox.wasm..."
-    cd "$ROOT_DIR"
-    mise run sandbox:build
-else
-    echo "Skipping sandbox build (SKIP_BUILD=1)"
-fi
-
 # Create default workspace for tests
 echo "Creating default workspace..."
 cd "$ROOT_DIR/backend"
-uv run python -c "from ieapp.workspace import create_workspace; create_workspace('.', 'default')"
+uv run python - <<'PY'
+import asyncio
+
+import ieapp_core
+
+from app.core.config import get_root_path
+from app.core.storage import storage_config_from_root
+
+
+async def main() -> None:
+    config = storage_config_from_root(get_root_path())
+    try:
+        await ieapp_core.create_workspace(config, "default")
+    except RuntimeError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
+
+
+asyncio.run(main())
+PY
 
 # Start backend in background
 echo "Starting backend server..."

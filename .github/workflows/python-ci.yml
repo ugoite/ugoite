@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
@@ -34,12 +39,17 @@ jobs:
         working-directory: ./ieapp-cli
         run: uv run ty check .
 
-      - name: Build sandbox.wasm
-        run: uv run ieapp-cli/scripts/build_sandbox.py
+      - name: Run ty check (core)
+        working-directory: ./ieapp-core
+        run: uv run ty check .
 
-      - name: Sync backend dependencies (include rebuilt sandbox.wasm)
-        working-directory: ./backend
-        run: uv sync --reinstall-package ieapp
+      - name: Run rustfmt check (core)
+        working-directory: ./ieapp-core
+        run: cargo fmt --check
+
+      - name: Run clippy (core)
+        working-directory: ./ieapp-core
+        run: cargo clippy -- -D warnings
 
       - name: Run pytest (backend)
         working-directory: ./backend
@@ -48,3 +58,15 @@ jobs:
       - name: Run pytest (cli)
         working-directory: ./ieapp-cli
         run: uv run pytest
+
+      - name: Build core (maturin)
+        working-directory: ./ieapp-core
+        run: uv run maturin develop
+
+      - name: Run pytest (core)
+        working-directory: ./ieapp-core
+        run: uv run pytest
+
+      - name: Run cargo test (core)
+        working-directory: ./ieapp-core
+        run: cargo test

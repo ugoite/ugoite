@@ -37,7 +37,7 @@ Workspace registry and system configuration:
 ```json
 {
   "version": 1,
-  "default_storage": "file:///Users/alex/ieapp",
+  "default_storage": "fs:///Users/alex/ieapp",
   "workspaces": ["ws-main", "ws-research"],
   "hmac_key_id": "key-2025-11-01",
   "hmac_key": "base64-encoded-secret",

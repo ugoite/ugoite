@@ -1,0 +1,27 @@
+category: Search
+prefix: REQ-SRCH
+
+requirements:
+  - id: REQ-SRCH-001
+    title: Keyword search
+    description: |
+      Users must be able to search notes by keyword.
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_search.rs
+          tests:
+            - test_search_req_srch_001_keyword_search
+
+  - id: REQ-SRCH-002
+    title: Index fallback search
+    description: |
+      Search must fall back to content scanning if index misses.
+    priority: medium
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_search.rs
+          tests:
+            - test_search_req_srch_002_fallback_scan

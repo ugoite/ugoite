@@ -1,12 +1,16 @@
 """Utility functions for ieapp."""
 
+import asyncio
+import concurrent.futures
 import contextlib
 import json
 import os
 import posixpath
 import re
+from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable as AwaitableABC
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 import fsspec
 from fsspec.core import url_to_fs
@@ -198,10 +202,103 @@ def fs_write_json(
 
     with fs.open(path, "w") as handle:
         json.dump(payload, handle, indent=2)
-
     if hasattr(fs, "chmod"):
         with contextlib.suppress(Exception):
             cast("Any", fs).chmod(path, mode)
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+# ---------------------------------------------------------------------------
+# ieapp-core bridge helpers
+# ---------------------------------------------------------------------------
+
+
+def run_async(
+    awaitable_or_factory: Awaitable[_T] | Callable[_P, _T | Awaitable[_T]],
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _T:
+    """Run an async coroutine from sync code.
+
+    Accepts either an awaitable or a callable that returns an awaitable.
+    """
+
+    async def _runner() -> _T:
+        if isinstance(awaitable_or_factory, AwaitableABC):
+            return await cast("Awaitable[_T]", awaitable_or_factory)
+        if callable(awaitable_or_factory):
+            result = awaitable_or_factory(*args, **kwargs)
+            if isinstance(result, AwaitableABC):
+                return await cast("Awaitable[_T]", result)
+            return cast("_T", result)
+        msg = "Expected awaitable or awaitable factory"
+        raise TypeError(msg)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_runner())
+
+    def _run_in_new_loop() -> _T:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(_runner())
+        finally:
+            loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_run_in_new_loop)
+        return future.result()
+
+
+def storage_uri_from_root(
+    root_path: str | Path,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> str:
+    """Return an OpenDAL-compatible storage URI for root_path."""
+    root_str = str(root_path)
+    if "://" in root_str:
+        return root_str
+
+    fs_obj, base_path = get_fs_and_path(root_str, fs)
+    protocol = getattr(fs_obj, "protocol", "file") or "file"
+    if isinstance(protocol, (list, tuple)):
+        protocol = protocol[0]
+
+    if protocol in {"file", "fs"}:
+        return f"fs://{base_path}"
+    if protocol == "memory":
+        return f"memory://{base_path}"
+
+    msg = "Protocol not supported in current runtime"
+    raise NotImplementedError(msg)
+
+
+def storage_config_from_root(
+    root_path: str | Path,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, str]:
+    """Build ieapp-core storage_config from root_path."""
+    return {"uri": storage_uri_from_root(root_path, fs)}
+
+
+def split_workspace_path(workspace_path: str | Path) -> tuple[str, str]:
+    """Split workspace_path into (root_path, workspace_id)."""
+    path_str = str(workspace_path)
+    if "/workspaces/" in path_str:
+        root, ws_id = path_str.split("/workspaces/", 1)
+        return root, ws_id.strip("/")
+    parts = path_str.rstrip("/").split("/")
+    if not parts:
+        msg = f"Invalid workspace path: {workspace_path}"
+        raise ValueError(msg)
+    ws_id = parts[-1]
+    root = "/".join(parts[:-1])
+    return root, ws_id
 
 
 def fs_read_json(fs: fsspec.AbstractFileSystem, path: str) -> dict[str, Any]:
