@@ -12,7 +12,6 @@ dependencies = [
     "pyyaml>=6.0.0",
     "pydantic>=2.0.0",
     "typer>=0.15.0",
-    "wasmtime>=26.0.0",
 ]
 
 [project.scripts]
@@ -43,6 +42,4 @@ select = ["ALL"]
 "src/ieapp/cli.py" = ["ANN401"]
 "src/ieapp/indexer.py" = ["ANN401"]
 "src/ieapp/notes.py" = ["PLR0913"]
-"src/ieapp/sandbox/execution.py" = ["PLR0915", "PLR0913", "TRY301", "BLE001"]
 "src/ieapp/hmac_manager.py" = ["ARG001"]  # protocol arg is cache key for lru_cache
-"scripts/build_sandbox.py" = ["S603"]
