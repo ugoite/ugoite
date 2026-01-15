@@ -380,13 +380,18 @@ export const handlers = [
 			}
 			let name = "upload.bin";
 			try {
-				const formData = await request.formData();
-				const file = formData.get("file");
-				if (file && typeof file === "object" && "name" in file) {
-					name = (file as File).name || name;
+				// Use cloned request for formData to avoid potential hangs in some environments
+				const contentType = request.headers.get("content-type") || "";
+				if (contentType.includes("multipart/form-data")) {
+					const formData = await request.clone().formData();
+					const file = formData.get("file");
+					if (file && typeof file === "object" && "name" in file) {
+						name = (file as File).name || name;
+					}
 				}
-			} catch {
-				// Fallback to default name when form parsing is unavailable
+			} catch (e) {
+				// Fallback to default name when form parsing is unavailable or fails
+				console.warn("Mock upload formData error:", e);
 			}
 			const id = crypto.randomUUID();
 			const attachment: Attachment = { id, name, path: `attachments/${id}_${name}` };
