@@ -1,11 +1,14 @@
 """Workspace endpoints."""
 
+import functools
 import json
 import logging
 import uuid
-from typing import Annotated, Any
+from collections.abc import Callable
+from typing import Annotated, Any, ParamSpec, TypeVar
 
 import ieapp
+from anyio.to_thread import run_sync
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from ieapp import (
     AttachmentReferencedError,
@@ -61,6 +64,17 @@ from app.models.classes import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+async def _run_sync(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+    """Run blocking ieapp calls in a worker thread."""
+    if kwargs:
+        return await run_sync(
+            functools.partial(func, *args, **kwargs),
+        )
+    return await run_sync(func, *args)
 
 
 def _format_class_validation_errors(errors: list[dict[str, Any]]) -> str:
@@ -91,7 +105,10 @@ def _format_class_validation_errors(errors: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-def _validate_note_markdown_against_class(ws_path: str, markdown: str) -> None:
+async def _validate_note_markdown_against_class(
+    ws_path: str,
+    markdown: str,
+) -> None:
     """Validate extracted note properties against the workspace class."""
     properties = extract_properties(markdown)
     note_class = properties.get("class")
@@ -99,7 +116,7 @@ def _validate_note_markdown_against_class(ws_path: str, markdown: str) -> None:
         return
 
     try:
-        class_def = get_class(ws_path, note_class)
+        class_def = await _run_sync(get_class, ws_path, note_class)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -153,7 +170,7 @@ async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     root_path = get_root_path()
 
     try:
-        return list_workspaces(root_path)
+        return await _run_sync(list_workspaces, root_path)
     except Exception as e:
         logger.exception("Failed to list workspaces")
         raise HTTPException(
@@ -171,7 +188,7 @@ async def create_workspace_endpoint(
     workspace_id = payload.name  # Using name as ID for now per simple spec
 
     try:
-        create_workspace(root_path, workspace_id)
+        await _run_sync(create_workspace, root_path, workspace_id)
     except WorkspaceExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -198,7 +215,7 @@ async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
     root_path = get_root_path()
 
     try:
-        return get_workspace(root_path, workspace_id)
+        return await _run_sync(get_workspace, root_path, workspace_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -231,7 +248,8 @@ async def patch_workspace_endpoint(
         patch_data["settings"] = payload.settings
 
     try:
-        return patch_workspace(
+        return await _run_sync(
+            patch_workspace,
             root_path,
             workspace_id,
             patch=patch_data,
@@ -259,7 +277,7 @@ async def test_connection_endpoint(
     _get_workspace_path(workspace_id)
 
     try:
-        return test_storage_connection(payload.storage_config)
+        return await _run_sync(test_storage_connection, payload.storage_config)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -282,9 +300,9 @@ async def create_note_endpoint(
     note_id = payload.id or str(uuid.uuid4())
 
     try:
-        create_note(ws_path, note_id, payload.content)
+        await _run_sync(create_note, ws_path, note_id, payload.content)
         # Get the created note to retrieve revision_id
-        note_data = get_note(ws_path, note_id)
+        note_data = await _run_sync(get_note, ws_path, note_id)
     except NoteExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -307,7 +325,7 @@ async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return list_notes(ws_path)
+        return await _run_sync(list_notes, ws_path)
     except Exception as e:
         logger.exception("Failed to list notes")
         raise HTTPException(
@@ -324,7 +342,7 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return get_note(ws_path, note_id)
+        return await _run_sync(get_note, ws_path, note_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -354,8 +372,9 @@ async def update_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        _validate_note_markdown_against_class(ws_path, payload.markdown)
-        update_note(
+        await _validate_note_markdown_against_class(ws_path, payload.markdown)
+        await _run_sync(
+            update_note,
             ws_path,
             note_id,
             payload.markdown,
@@ -363,7 +382,7 @@ async def update_note_endpoint(
             attachments=payload.attachments,
         )
         # Return the updated note with id and revision_id
-        updated_note = get_note(ws_path, note_id)
+        updated_note = await _run_sync(get_note, ws_path, note_id)
         return {
             "id": note_id,
             "revision_id": updated_note.get("revision_id", ""),
@@ -378,7 +397,7 @@ async def update_note_endpoint(
         # FastAPI supports dict as detail value, which serializes to JSON.
         # This allows clients to perform OCC merge with the current_revision.
         try:
-            current_note = get_note(ws_path, note_id)
+            current_note = await _run_sync(get_note, ws_path, note_id)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -416,7 +435,7 @@ async def upload_attachment_endpoint(
     contents = await file.read()
 
     try:
-        return save_attachment(ws_path, contents, file.filename or "")
+        return await _run_sync(save_attachment, ws_path, contents, file.filename or "")
     except Exception as e:
         logger.exception("Failed to save attachment")
         raise HTTPException(
@@ -434,7 +453,7 @@ async def list_attachments_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return list_attachments(ws_path)
+        return await _run_sync(list_attachments, ws_path)
     except Exception as e:
         logger.exception("Failed to list attachments")
         raise HTTPException(
@@ -454,7 +473,7 @@ async def delete_attachment_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        delete_attachment(ws_path, attachment_id)
+        await _run_sync(delete_attachment, ws_path, attachment_id)
     except AttachmentReferencedError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -486,7 +505,7 @@ async def delete_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        delete_note(ws_path, note_id)
+        await _run_sync(delete_note, ws_path, note_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -513,7 +532,7 @@ async def get_note_history_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return get_note_history(ws_path, note_id)
+        return await _run_sync(get_note_history, ws_path, note_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -540,7 +559,7 @@ async def get_note_revision_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return get_note_revision(ws_path, note_id, revision_id)
+        return await _run_sync(get_note_revision, ws_path, note_id, revision_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -566,7 +585,7 @@ async def restore_note_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        note_data = restore_note(ws_path, note_id, payload.revision_id)
+        note_data = await _run_sync(restore_note, ws_path, note_id, payload.revision_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -599,7 +618,8 @@ async def create_link_endpoint(
     link_id = uuid.uuid4().hex
 
     try:
-        return create_link(
+        return await _run_sync(
+            create_link,
             ws_path,
             source=payload.source,
             target=payload.target,
@@ -626,7 +646,7 @@ async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return list_links(ws_path)
+        return await _run_sync(list_links, ws_path)
     except Exception as e:
         logger.exception("Failed to list links")
         raise HTTPException(
@@ -646,7 +666,7 @@ async def delete_link_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        delete_link(ws_path, link_id)
+        await _run_sync(delete_link, ws_path, link_id)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -673,7 +693,7 @@ async def query_endpoint(
 
     try:
         # ieapp.query expects workspace_path as string or Path
-        return ieapp.query(str(ws_path), payload.filter)
+        return await _run_sync(ieapp.query, str(ws_path), payload.filter)
     except Exception as e:
         logger.exception("Query failed")
         raise HTTPException(
@@ -692,7 +712,7 @@ async def search_endpoint(
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return search_notes(ws_path, q)
+        return await _run_sync(search_notes, ws_path, q)
     except Exception as e:
         logger.exception("Search failed")
         raise HTTPException(
@@ -708,7 +728,7 @@ async def list_classes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return list_classes(ws_path)
+        return await _run_sync(list_classes, ws_path)
     except Exception as e:
         logger.exception("Failed to list classes")
         raise HTTPException(
@@ -724,7 +744,7 @@ async def list_class_types_endpoint(workspace_id: str) -> list[str]:
     try:
         # Verify workspace exists even though types are static
         _get_workspace_path(workspace_id)
-        return list_column_types()
+        return await _run_sync(list_column_types)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise
@@ -743,7 +763,7 @@ async def get_class_endpoint(workspace_id: str, class_name: str) -> dict[str, An
     ws_path = _get_workspace_path(workspace_id)
 
     try:
-        return get_class(ws_path, class_name)
+        return await _run_sync(get_class, ws_path, class_name)
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -772,10 +792,15 @@ async def create_class_endpoint(
         strategies = class_data.pop("strategies", None)
 
         if strategies:
-            migrate_class(ws_path, class_data, strategies=strategies)
-            return get_class(ws_path, payload.name)
+            await _run_sync(
+                migrate_class,
+                ws_path,
+                class_data,
+                strategies=strategies,
+            )
+            return await _run_sync(get_class, ws_path, payload.name)
 
-        return upsert_class(ws_path, class_data)
+        return await _run_sync(upsert_class, ws_path, class_data)
     except Exception as e:
         logger.exception("Failed to upsert class")
         raise HTTPException(

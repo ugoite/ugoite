@@ -4,17 +4,12 @@ _.python.venv = { path = ".venv" }
 [tasks.install]
 run = "uv sync"
 
-[tasks.build-sandbox]
-run = "uv run ../ieapp-cli/scripts/build_sandbox.py"
-sources = ["../ieapp-cli/src/ieapp/sandbox/runner.js"]
-outputs = ["../ieapp-cli/src/ieapp/sandbox/sandbox.wasm"]
-
 [tasks.dev]
-depends = ["build-sandbox"]
 # IEAPP_ALLOW_REMOTE=true allows remote connections in dev containers / Codespaces
 run = "IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir . --reload-dir ../ieapp-cli/src"
 
 [tasks.test]
 run = "uv run pytest"
 description = "Run backend pytest suite"
+depends = ["//ieapp-core:build"]
 

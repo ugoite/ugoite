@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+from anyio.to_thread import run_sync
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ieapp.workspace import WorkspaceExistsError, create_workspace
@@ -29,7 +30,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Startup
     root_path: Path | str = get_root_path()
     try:
-        create_workspace(root_path, "default")
+        await run_sync(create_workspace, root_path, "default")
         logger.info("Created default workspace at startup")
     except WorkspaceExistsError:
         logger.info("Default workspace already exists")
