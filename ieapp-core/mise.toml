@@ -15,6 +15,7 @@ run = [
 	"if [ -d tests ]; then uv run pytest; fi",
 ]
 description = "Run Rust crate tests and Python binding tests"
+depends = ["build"]
 
 [tasks.lint]
 run = "cargo clippy && uv run ruff check ."

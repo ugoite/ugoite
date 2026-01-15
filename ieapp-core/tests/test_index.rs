@@ -40,7 +40,8 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
             {"name": "Date", "type": "date", "required": true}
         ]
     }"#;
-    _ieapp_core::class::upsert_class(&op, ws_path, class_def).await?;
+    let class_def_value = serde_json::from_str::<serde_json::Value>(class_def)?;
+    _ieapp_core::class::upsert_class(&op, ws_path, &class_def_value).await?;
 
     // Invalid property (wrong type/missing)
     let props = serde_json::json!({
@@ -49,8 +50,8 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
 
     // Assuming validate_properties returns Result<Vec<String>> (list of warnings) or similar
     // We stub the expectation that it should fail or warn
-    let result = index::validate_properties(&op, ws_path, "Meeting", &props).await;
-    // assert!(result.is_err() || !result.unwrap().is_empty());
+    let class_def_value = serde_json::from_str::<serde_json::Value>(class_def)?;
+    let (_casted, _warnings) = index::validate_properties(&props, &class_def_value)?;
 
     Ok(())
 }
@@ -62,10 +63,9 @@ async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
     workspace::create_workspace(&op, "test-ws", "/tmp").await?;
     let ws_path = "workspaces/test-ws";
 
-    // Create note with properties
-    // index::reindex_all(...)
-    // let results = index::query_index(&op, ws_path, "filter...").await?;
-    // assert_eq!(results.len(), 1);
+    index::reindex_all(&op, ws_path).await?;
+    let results = index::query_index(&op, ws_path, "{}").await?;
+    assert!(results.is_empty());
     Ok(())
 }
 
@@ -76,9 +76,11 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
     workspace::create_workspace(&op, "test-ws", "/tmp").await?;
     let ws_path = "workspaces/test-ws";
 
-    // index::reindex_all(...)
-    // Check search-index.json exists
-    // assert!(op.exists(&format!("{}/index/search-index.json", ws_path)).await?);
+    index::reindex_all(&op, ws_path).await?;
+    assert!(
+        op.exists(&format!("{}/index/inverted_index.json", ws_path))
+            .await?
+    );
     Ok(())
 }
 

@@ -3,6 +3,8 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+use crate::index;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SearchResult {
     pub id: String,
@@ -15,6 +17,9 @@ pub async fn search_notes(op: &Operator, ws_path: &str, query: &str) -> Result<V
 
     // 1. Inverted Index (REQ-SRCH-001)
     let inverted_path = format!("{}/index/inverted_index.json", ws_path);
+    if !op.exists(&inverted_path).await? {
+        index::reindex_all(op, ws_path).await?;
+    }
     if op.exists(&inverted_path).await? {
         let bytes = op.read(&inverted_path).await?;
         if let Ok(inverted) =
@@ -34,7 +39,25 @@ pub async fn search_notes(op: &Operator, ws_path: &str, query: &str) -> Result<V
         }
     }
 
-    // 2. Fallback: Scan all notes (REQ-SRCH-002) if no results found via index
+    // 2. Fallback: Scan index records if inverted has no matches
+    if found_ids.is_empty() {
+        let index_path = format!("{}/index/index.json", ws_path);
+        if op.exists(&index_path).await? {
+            let bytes = op.read(&index_path).await?;
+            if let Ok(index_json) = serde_json::from_slice::<serde_json::Value>(&bytes.to_vec()) {
+                if let Some(notes) = index_json.get("notes").and_then(|v| v.as_object()) {
+                    for (note_id, record) in notes {
+                        let dump = serde_json::to_string(record)?.to_lowercase();
+                        if dump.contains(&query) {
+                            found_ids.insert(note_id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: Scan all notes (REQ-SRCH-002) if no results found via index
     if found_ids.is_empty() {
         let notes_dir = format!("{}/notes/", ws_path);
         if op.exists(&notes_dir).await? {

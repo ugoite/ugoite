@@ -13,7 +13,7 @@ async def test_bindings_async() -> None:
     config = {"uri": "memory://"}
 
     # Test Storage Connection
-    assert await ieapp_core.test_storage_connection(config) is True
+    assert (await ieapp_core.test_storage_connection(config))["status"] == "ok"
 
     # List (initially empty or not exists?)
     # With memory backend, root is empty.
@@ -73,5 +73,5 @@ async def test_bindings_file_backend(tmp_path: pathlib.Path) -> None:
     await ieapp_core.upsert_class(config, "ws-1", class_def)
 
     classes = await ieapp_core.list_classes(config, "ws-1")
-    assert "person" in classes
     assert len(classes) == 1
+    assert classes[0]["name"] == "person"

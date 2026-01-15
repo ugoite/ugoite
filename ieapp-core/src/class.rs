@@ -8,7 +8,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::HashSet;
 
-pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let classes_path = format!("{}/classes/", ws_path);
     if !op.exists(&classes_path).await? {
         return Ok(vec![]);
@@ -21,14 +21,15 @@ pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     while let Some(entry) = lister.try_next().await? {
         let meta = entry.metadata();
         if meta.mode() == EntryMode::FILE && entry.name().ends_with(".json") {
-            let name = entry
-                .name()
-                .trim_end_matches(".json")
-                .split('/')
-                .next_back()
-                .unwrap_or("");
-            if !name.is_empty() {
-                classes.push(name.to_string());
+            let entry_name = entry.name();
+            let entry_path = if entry_name.contains('/') {
+                entry_name.to_string()
+            } else {
+                format!("{}{}", classes_path, entry_name)
+            };
+            let bytes = op.read(&entry_path).await?;
+            if let Ok(value) = serde_json::from_slice::<Value>(&bytes.to_vec()) {
+                classes.push(value);
             }
         }
     }
@@ -42,30 +43,27 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "number".to_string(),
         "date".to_string(),
         "list".to_string(),
-        "boolean".to_string(),
         "markdown".to_string(),
     ])
 }
 
-pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result<String> {
+pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result<Value> {
     let class_path = format!("{}/classes/{}.json", ws_path, class_name);
     let bytes = op
         .read(&class_path)
         .await
         .context(format!("Class {} not found", class_name))?;
-    let content = String::from_utf8(bytes.to_vec())?;
+    let content: Value = serde_json::from_slice(&bytes.to_vec())?;
     Ok(content)
 }
 
-pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &str) -> Result<()> {
-    // Basic validation could happen here
-    let parsed: serde_json::Value = serde_json::from_str(class_def)?;
-    let name = parsed["name"]
+pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Result<()> {
+    let name = class_def["name"]
         .as_str()
         .context("Class definition missing 'name' field")?;
 
     let class_path = format!("{}/classes/{}.json", ws_path, name);
-    let content = class_def.to_string().into_bytes();
+    let content = serde_json::to_vec_pretty(class_def)?;
     op.write(&class_path, content).await?;
 
     Ok(())
@@ -87,7 +85,15 @@ pub async fn migrate_class<I: IntegrityProvider>(
         .context("Strategies must be an object")?;
     let class_name = class_def["name"].as_str().context("Class name required")?;
 
-    let note_ids = note::list_notes(op, ws_path).await?;
+    let note_entries = note::list_notes(op, ws_path).await?;
+    let note_ids: Vec<String> = note_entries
+        .iter()
+        .filter_map(|val| {
+            val.get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
     let mut updated_count = 0;
 
     for note_id in note_ids {
@@ -112,6 +118,7 @@ pub async fn migrate_class<I: IntegrityProvider>(
                 &new_md,
                 Some(&note_content.revision_id),
                 "system-migration",
+                None,
                 integrity,
             )
             .await?;

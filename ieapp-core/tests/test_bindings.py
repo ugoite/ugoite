@@ -18,4 +18,4 @@ async def test_test_storage_connection_binding() -> None:
     """Verify that we can call test_storage_connection from Python."""
     # test_storage_connection now returns a future and requires storage_config
     result = await ieapp_core.test_storage_connection({"uri": "memory://"})
-    assert result is True
+    assert result["status"] == "ok"

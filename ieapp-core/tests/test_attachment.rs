@@ -11,16 +11,15 @@ async fn test_attachment_req_att_001_create_attachment() -> anyhow::Result<()> {
     let ws_path = "workspaces/test-workspace";
 
     let content = b"fake image content";
-    attachment::save_attachment(&op, ws_path, "image.png", content).await?;
+    let info = attachment::save_attachment(&op, ws_path, "image.png", content).await?;
 
     // Check if it exists in attachment folder (path might need check against implementation spec)
-    assert!(
-        op.exists(&format!("{}/attachments/image.png", ws_path))
-            .await?
-    );
+    assert!(op.exists(&format!("{}/{}", ws_path, info.path)).await?);
 
     let listed = attachment::list_attachments(&op, ws_path).await?;
-    assert_eq!(listed, vec!["image.png".to_string()]);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, info.id);
+    assert_eq!(listed[0].name, "image.png");
 
     Ok(())
 }
@@ -32,19 +31,13 @@ async fn test_attachment_req_att_001_delete_attachment() -> anyhow::Result<()> {
     workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
     let ws_path = "workspaces/test-workspace";
 
-    attachment::save_attachment(&op, ws_path, "file.txt", b"data").await?;
+    let info = attachment::save_attachment(&op, ws_path, "file.txt", b"data").await?;
 
-    assert!(
-        op.exists(&format!("{}/attachments/file.txt", ws_path))
-            .await?
-    );
+    assert!(op.exists(&format!("{}/{}", ws_path, info.path)).await?);
 
-    attachment::delete_attachment(&op, ws_path, "file.txt").await?;
+    attachment::delete_attachment(&op, ws_path, &info.id).await?;
 
-    assert!(
-        !op.exists(&format!("{}/attachments/file.txt", ws_path))
-            .await?
-    );
+    assert!(!op.exists(&format!("{}/{}", ws_path, info.path)).await?);
 
     Ok(())
 }
