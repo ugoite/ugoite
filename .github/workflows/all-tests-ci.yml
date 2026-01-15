@@ -1,4 +1,4 @@
-name: All Tests
+name: All Tests Status
 
 on:
   push:
@@ -9,30 +9,15 @@ on:
       - main
 
 jobs:
-  all-tests:
+  all-tests-check:
+    name: All Tests Check
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
+      actions: read
       contents: read
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Wait for other workflows
+        uses: int128/wait-for-workflows-action@v1
         with:
-          persist-credentials: false
-
-      - name: Setup mise (install tools and dependencies)
-        uses: jdx/mise-action@v2
-        with:
-          install: true
-          cache: true
-          experimental: true
-
-      - name: Install project dependencies
-        run: mise run setup
-
-      - name: Run unit and integration tests
-        run: mise run test
-
-      - name: Run E2E tests
-        run: mise run e2e
+          token: ${{ secrets.GITHUB_TOKEN }}

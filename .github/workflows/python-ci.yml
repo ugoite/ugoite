@@ -58,3 +58,15 @@ jobs:
       - name: Run pytest (cli)
         working-directory: ./ieapp-cli
         run: uv run pytest
+
+      - name: Build core (maturin)
+        working-directory: ./ieapp-core
+        run: uv run maturin develop
+
+      - name: Run pytest (core)
+        working-directory: ./ieapp-core
+        run: uv run pytest
+
+      - name: Run cargo test (core)
+        working-directory: ./ieapp-core
+        run: cargo test
