@@ -79,11 +79,10 @@ stories:
     so_that: my workspace stays organized without manual intervention.
     acceptance_criteria:
       - Define scheduled tasks with cron-like syntax
-      - Tasks run AI scripts via MCP
+      - Tasks invoke MCP resources/tools via schedules
       - Results logged and notifications sent
     related_apis:
       - rest: POST /workspaces/{ws_id}/schedules
       - rest: GET /workspaces/{ws_id}/schedules
-      - mcp: run_script
     requirements: []
     milestone: AI-Enabled & AI-Used

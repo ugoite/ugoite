@@ -11,7 +11,7 @@ and responsibility boundaries.
 | State management | Optimistic updates, local cache, selection/view state | Persistence, history, indexing | `revision_id` optimistic concurrency |
 | Validation | UI/form validation, basic format checks | Class validation, business rules, integrity checks | Request/response schemas |
 | Search & query | Query construction + display | Indexing, query execution | Query payload shape |
-| Code execution | Sandbox UI (future) | Wasm sandbox + MCP host | MCP protocol |
+| Code execution | Code execution UI (future) | MCP host | MCP protocol |
 
 ## Interaction Patterns
 

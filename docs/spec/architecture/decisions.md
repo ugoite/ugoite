@@ -50,28 +50,22 @@ Use "Classes" to define note types:
 
 ---
 
-## ADR-003: MCP + Code Sandbox for AI
+## ADR-003: MCP Resource-First Integration
 
-**Status**: Accepted
+**Status**: Superseded (Milestone 2)
 
-**Context**: 
-- AI agents need to interact with the knowledge base
-- Building individual tools for every operation is unsustainable
-- Need security isolation for arbitrary code execution
+**Context**:
+- The initial plan used a sandboxed code execution tool to reduce tool surface
+- Requirements shifted to remove the Wasm sandbox in Milestone 2
 
-**Decision**: 
-Implement Model Context Protocol (MCP) with a single `run_script` tool:
-- AI writes JavaScript code to accomplish tasks
-- Code runs in Wasm sandbox (wasmtime + QuickJS)
-- Sandbox accesses app via `host.call()` (proxied REST calls)
-- Fuel limits prevent infinite loops
+**Decision**:
+Use MCP resources (and future explicit tools) without sandboxed execution. The
+`run_script` tool is deprecated and removed from the backend.
 
 **Consequences**:
-- (+) Infinite flexibility: AI can do anything the API allows
-- (+) Security: strong Wasm isolation
-- (+) Maintainability: one tool instead of hundreds
-- (-) Complexity: AI must generate correct code
-- (-) Performance: Wasm has overhead vs native
+- (+) Simpler runtime and dependency footprint
+- (+) Clearer security posture without code execution
+- (-) Less flexibility until explicit MCP tools are added
 
 ---
 

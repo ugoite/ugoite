@@ -44,11 +44,10 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Requirements
 - [Requirements Overview](requirements/README.md) - How requirements are tracked
-- Requirements by category: [storage](requirements/storage.yaml) | [note](requirements/note.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [sandbox](requirements/sandbox.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [class](requirements/class.yaml)
+- Requirements by category: [storage](requirements/storage.yaml) | [note](requirements/note.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [class](requirements/class.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
 
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model
-- [Wasm Sandbox](security/sandbox.md) - Code execution isolation
 - [Testing Strategy](testing/strategy.md) - TDD approach and test organization
 - [CI/CD](testing/ci-cd.md) - Continuous integration setup
 - [Error Handling](quality/error-handling.md) - Error-handling principles and resilience
@@ -62,7 +61,7 @@ IEapp is a knowledge management system built on three core principles:
 
 | Module | Responsibility | Language |
 |--------|----------------|----------|
-| `ieapp-core` | Core data operations, storage (OpenDAL), validation, sandbox | Rust |
+| `ieapp-core` | Core data operations, storage (OpenDAL), validation | Rust |
 | `ieapp-cli` | Command-line interface for direct user interaction | Python |
 | `backend` | REST API, MCP server (delegates to ieapp-core) | Python (FastAPI) |
 | `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |

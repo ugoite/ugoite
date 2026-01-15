@@ -93,7 +93,6 @@ ieapp-cli/
 │   ├── attachments.py    # Binary file management
 │   ├── links.py          # Note-to-note links
 │   ├── integrity.py      # HMAC signing
-│   ├── sandbox/          # Wasm sandbox (Python wrapper)
 │   └── utils.py          # fsspec helpers
 backend/
 ├── src/app/
@@ -127,7 +126,6 @@ ieapp-core/                     # NEW: Rust crate (Mixed Layout)
 │   │   ├── mod.rs
 │   │   ├── opendal.rs         # OpenDAL backend
 │   │   └── memory.rs          # In-memory for tests
-│   └── sandbox/               # Wasm sandbox (wasmtime)
 │       └── mod.rs
 
 ieapp-cli/                      # UPDATED: CLI for power users
@@ -162,7 +160,6 @@ frontend/                       # UNCHANGED: UI only
 - [ ] Port `indexer.py` → `index.rs`
 - [ ] Port `attachments.py` → `attachment.rs`
 - [ ] Port `integrity.py` → `integrity.rs`
-- [x] Port Wasm sandbox to Rust (wasmtime native) (CANCELLED)
 - [ ] Create pyo3 Python bindings
 - [ ] Update ieapp-cli to use Rust bindings
 - [ ] Update backend to use ieapp-core bindings (no direct file access)
@@ -290,7 +287,6 @@ docs/spec/requirements/
 ├── index.yaml             # REQ-IDX-* requirements
 ├── integrity.yaml         # REQ-INT-* requirements
 ├── security.yaml          # REQ-SEC-* requirements
-├── sandbox.yaml           # REQ-SANDBOX-* requirements
 ├── api.yaml               # REQ-API-* requirements
 ├── frontend.yaml          # REQ-FE-* requirements
 ├── class.yaml              # REQ-CLS-* requirements
@@ -414,7 +410,6 @@ docs/spec/
 │   └── ... (per category)
 ├── security/
 │   ├── overview.md               # Security strategy
-│   ├── sandbox.md                # Wasm sandbox details
 │   └── authentication.md         # Auth (future)
 ├── quality/
 │   └── error-handling.md          # Error handling & resilience
@@ -443,19 +438,16 @@ stories:
     title: The Programmable Knowledge Base
     type: AI Native
     as_a: power user or AI agent
-    i_want: to execute JavaScript code against my notes
+    i_want: to query my notes through MCP resources
     so_that: I can perform complex tasks like analyzing data and generating reports
     acceptance_criteria:
-      - MCP Tool run_script is available
-      - AI can call host functions via host.call()
+      - MCP resources expose note lists and content
       - AI can query structured properties via API
       - Output (text/charts) is returned to AI context
     related_apis:
-      - MCP tool: run_script
+      - MCP resource: ieapp://{workspace_id}/notes/list
       - REST: POST /workspaces/{ws_id}/query
     requirements:
-      - REQ-SANDBOX-001
-      - REQ-SANDBOX-002
 ```
 
 ### Tasks

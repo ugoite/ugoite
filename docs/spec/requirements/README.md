@@ -11,11 +11,12 @@ This directory contains machine-readable requirement definitions for IEapp.
 | [index.yaml](index.yaml) | Indexer | REQ-IDX-* |
 | [integrity.yaml](integrity.yaml) | Data Integrity | REQ-INT-* |
 | [security.yaml](security.yaml) | Security | REQ-SEC-* |
-| [sandbox.yaml](sandbox.yaml) | Code Sandbox | REQ-SANDBOX-* |
 | [api.yaml](api.yaml) | REST API | REQ-API-* |
 | [frontend.yaml](frontend.yaml) | Frontend UI | REQ-FE-* |
 | [e2e.yaml](e2e.yaml) | End-to-End | REQ-E2E-* |
 | [class.yaml](class.yaml) | Class Management | REQ-CLS-* |
+| [links.yaml](links.yaml) | Link Management | REQ-LNK-* |
+| [search.yaml](search.yaml) | Search | REQ-SRCH-* |
 
 ## Requirement Format
 
@@ -57,11 +58,12 @@ requirements:
 - `REQ-IDX-###` - Indexer requirements
 - `REQ-INT-###` - Integrity requirements
 - `REQ-SEC-###` - Security requirements
-- `REQ-SANDBOX-###` - Sandbox requirements
 - `REQ-API-###` - API requirements
 - `REQ-FE-###` - Frontend requirements
 - `REQ-E2E-###` - End-to-end requirements
 - `REQ-CLS-###` - Class management requirements
+- `REQ-LNK-###` - Link requirements
+- `REQ-SRCH-###` - Search requirements
 
 ## Test Mapping
 

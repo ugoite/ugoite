@@ -8,7 +8,7 @@ updated: "2026-01"
 category: Core User Stories
 
 stories:
-  # STORY-001 (Programmable Knowledge Base / Sandbox) removed as per requirement change.
+  # STORY-001 (Programmable Knowledge Base) removed as per requirement change.
 
   - id: STORY-002
     title: Structured Freedom

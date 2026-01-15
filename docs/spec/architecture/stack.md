@@ -12,7 +12,6 @@ IEapp uses a modern stack optimized for local-first operation and AI integration
 |------------|---------|---------|
 | Rust | 1.75+ | Core language |
 | [OpenDAL](https://opendal.apache.org/) | Latest | Storage abstraction (local, S3, GCS, memory) |
-| [wasmtime](https://wasmtime.dev/) | Latest | WebAssembly runtime for sandbox |
 | [serde](https://serde.rs/) | Latest | JSON serialization |
 | [pyo3](https://pyo3.rs/) | Latest | Python bindings |
 | [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/) | Latest | WebAssembly bindings (future) |
@@ -75,7 +74,7 @@ The ieapp-core crate compiles to multiple targets:
 | Target | Use Case |
 |--------|----------|
 | Native (x86_64, arm64) | backend & ieapp-cli via pyo3 |
-| WebAssembly | Browser-based frontend and sandbox |
+| WebAssembly | Browser-based frontend |
 | Tauri integration | Desktop application |
 
 ## CI/CD Pipeline

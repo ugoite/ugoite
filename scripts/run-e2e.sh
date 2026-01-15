@@ -4,7 +4,6 @@
 #   test-type: "smoke", "notes", or "full" (runs all tests)
 #
 # Environment variables:
-#   SKIP_BUILD=1  - Skip sandbox.wasm build
 
 set -e
 
@@ -17,15 +16,6 @@ echo "Checking for existing processes on ports 8000 and 3000..."
 fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
-
-# Build sandbox.wasm if needed (can be skipped with SKIP_BUILD=1)
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    echo "Building sandbox.wasm..."
-    cd "$ROOT_DIR"
-    mise run sandbox:build
-else
-    echo "Skipping sandbox build (SKIP_BUILD=1)"
-fi
 
 # Create default workspace for tests
 echo "Creating default workspace..."

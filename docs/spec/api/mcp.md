@@ -55,7 +55,7 @@ Returns all note-to-note relationships.
 
 ## Tools
 
-(Tools section is currently empty as `run_script` has been deprecated)
+No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
 
 ---
 
@@ -87,9 +87,7 @@ MCP requests inherit the authentication of the HTTP connection:
 
 ### Audit Trail
 
-All `run_script` executions are logged with:
+MCP requests are logged with:
 - Timestamp
 - Workspace ID
-- Code hash (not full code for privacy)
-- Result status
-- Resource usage
+- Resource identifier

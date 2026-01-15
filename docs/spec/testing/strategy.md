@@ -61,12 +61,11 @@ mise run e2e
 ```
 
 This command:
-1. Builds sandbox.wasm if needed
-2. Starts backend server on port 8000
-3. Starts frontend server on port 3000
-4. Waits for servers to be ready
-5. Executes E2E tests
-6. Shuts down servers
+1. Starts backend server on port 8000
+2. Starts frontend server on port 3000
+3. Waits for servers to be ready
+4. Executes E2E tests
+5. Shuts down servers
 
 ### Fast E2E Iteration
 ```bash
@@ -116,7 +115,6 @@ backend/tests/
 ├── conftest.py          # Shared fixtures
 ├── test_api.py          # API endpoint tests
 ├── test_api_memory.py   # Memory filesystem tests
-├── test_sandbox.py      # Sandbox tests
 └── ...
 
 frontend/src/
