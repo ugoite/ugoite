@@ -86,7 +86,7 @@ async def _validate_note_markdown_against_class(
     markdown: str,
 ) -> None:
     """Validate extracted note properties against the workspace class."""
-    properties = await ieapp_core.extract_properties(markdown)
+    properties = ieapp_core.extract_properties(markdown)
     note_class = properties.get("class")
     if not isinstance(note_class, str) or not note_class.strip():
         return
@@ -104,7 +104,7 @@ async def _validate_note_markdown_against_class(
             detail=f"Class not found: {note_class}",
         ) from e
 
-    _casted, warnings = await ieapp_core.validate_properties(
+    _casted, warnings = ieapp_core.validate_properties(
         json.dumps(properties),
         json.dumps(class_def),
     )

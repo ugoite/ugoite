@@ -103,11 +103,11 @@ def search_notes(
 def extract_properties(
     *args: object,
     **kwargs: object,
-) -> Awaitable[dict[str, object]]: ...
+) -> dict[str, object]: ...
 def validate_properties(
     *args: object,
     **kwargs: object,
-) -> Awaitable[tuple[dict[str, object], list[dict[str, object]]]]: ...
+) -> tuple[dict[str, object], list[dict[str, object]]]: ...
 def build_response_signature(
     *args: object,
     **kwargs: object,
