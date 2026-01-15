@@ -241,8 +241,17 @@ def run_async(
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(_runner())
+
+    def _run_in_new_loop() -> _T:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(_runner())
+        finally:
+            loop.close()
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _runner())
+        future = executor.submit(_run_in_new_loop)
         return future.result()
 
 

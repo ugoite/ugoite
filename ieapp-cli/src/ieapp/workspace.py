@@ -201,20 +201,16 @@ def create_workspace(
         logger.info("Workspace %s created successfully", workspace_id)
         return
 
-    root_uri = str(root_path)
-    if "://" in root_uri:
-        scheme = root_uri.split("://", 1)[0]
-        if scheme not in {"file", "fs", "memory"}:
-            msg = "Protocol not supported in current runtime"
-            raise NotImplementedError(msg)
-
     config = storage_config_from_root(root_path, fs)
     try:
         run_async(ieapp_core.create_workspace, config, safe_workspace_id)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError) as exc:
         msg = str(exc)
         if "already exists" in msg:
             raise WorkspaceExistsError(msg) from exc
+        if "scheme is not registered" in msg:
+            msg_err = f"Protocol not supported: {msg}"
+            raise NotImplementedError(msg_err) from exc
         raise
     logger.info("Workspace %s created successfully", workspace_id)
 

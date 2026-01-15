@@ -7,6 +7,8 @@
 
 set -e
 
+# Unset VIRTUAL_ENV to ensure we're using the environment managed by mise/uv 
+# and not inheriting an active virtualenv from the current shell session.
 unset VIRTUAL_ENV
 export BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true
 export BROWSERSLIST_IGNORE_OLD_DATA=true
