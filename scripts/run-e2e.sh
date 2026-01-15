@@ -7,6 +7,10 @@
 
 set -e
 
+unset VIRTUAL_ENV
+export BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true
+export BROWSERSLIST_IGNORE_OLD_DATA=true
+
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -20,7 +24,26 @@ sleep 1
 # Create default workspace for tests
 echo "Creating default workspace..."
 cd "$ROOT_DIR/backend"
-uv run python -c "from ieapp.workspace import create_workspace; create_workspace('.', 'default')"
+uv run python - <<'PY'
+import asyncio
+
+import ieapp_core
+
+from app.core.config import get_root_path
+from app.core.storage import storage_config_from_root
+
+
+async def main() -> None:
+    config = storage_config_from_root(get_root_path())
+    try:
+        await ieapp_core.create_workspace(config, "default")
+    except RuntimeError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
+
+
+asyncio.run(main())
+PY
 
 # Start backend in background
 echo "Starting backend server..."

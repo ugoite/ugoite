@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-import ieapp
+import ieapp_core
+
+from app.core.storage import storage_config_from_root
 
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
     from collections.abc import Mapping
@@ -54,7 +56,10 @@ def is_local_host(host: str | None) -> bool:
     return normalized.startswith(("127.", "::ffff:127."))
 
 
-def build_response_signature(body: bytes, root_path: Path | str) -> tuple[str, str]:
+async def build_response_signature(
+    body: bytes,
+    root_path: Path | str,
+) -> tuple[str, str]:
     """Compute the HMAC signature for the response body.
 
     This function delegates to ieapp-core, which computes the HMAC signature
@@ -70,4 +75,5 @@ def build_response_signature(body: bytes, root_path: Path | str) -> tuple[str, s
         Tuple of (key_id, signature_hex).
 
     """
-    return ieapp.build_response_signature(body, root_path)
+    storage_config = storage_config_from_root(root_path)
+    return await ieapp_core.build_response_signature(storage_config, body)

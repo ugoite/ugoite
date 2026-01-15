@@ -113,10 +113,6 @@ requirements:
         - file: frontend/src/lib/client.test.ts
           tests:
             - should throw error for duplicate workspace
-      rust:
-        - file: ieapp-core/tests/test_workspace.rs
-          tests:
-            - test_workspace_req_sto_005_create_workspace_idempotency
 
   - id: REQ-STO-006
     title: Storage Connector Validation

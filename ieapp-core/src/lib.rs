@@ -507,8 +507,10 @@ fn load_hmac_material<'a>(
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Python::with_gil(|py| {
             let secret_bytes = PyBytes::new(py, &secret);
-            let tuple = PyTuple::new(py, [key_id.into_py(py), secret_bytes.into_py(py)])?;
-            Ok(tuple.into_py(py))
+            let key_id_obj = key_id.into_py_any(py)?;
+            let secret_obj = secret_bytes.into_py_any(py)?;
+            let tuple = PyTuple::new(py, [key_id_obj, secret_obj])?;
+            tuple.into_py_any(py)
         })
     })
 }
@@ -613,7 +615,7 @@ fn validate_properties_py(
     let casted_obj = json_to_py(py, casted)?;
     let warnings_obj = json_to_py(py, serde_json::Value::Array(warnings))?;
     let tuple = PyTuple::new(py, [casted_obj, warnings_obj])?;
-    Ok(tuple.into_py(py))
+    tuple.into_py_any(py)
 }
 
 #[pyfunction]

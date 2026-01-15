@@ -9,14 +9,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-from anyio.to_thread import run_sync
+import ieapp_core
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from ieapp.workspace import WorkspaceExistsError, create_workspace
 
 from app.api.api import router as api_router
 from app.core.config import get_root_path
 from app.core.middleware import security_middleware
+from app.core.storage import storage_config_from_root
 from app.mcp.server import mcp
 
 # Configure logging
@@ -29,16 +29,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
     root_path: Path | str = get_root_path()
+    storage_config = storage_config_from_root(root_path)
     try:
-        await run_sync(create_workspace, root_path, "default")
+        await ieapp_core.create_workspace(storage_config, "default")
         logger.info("Created default workspace at startup")
-    except WorkspaceExistsError:
-        logger.info("Default workspace already exists")
-    except (
-        OSError,
-        RuntimeError,
-        ValueError,
-    ) as exc:  # pragma: no cover - best effort guard
+    except RuntimeError as exc:  # pragma: no cover - best effort guard
+        if "already exists" in str(exc).lower():
+            logger.info("Default workspace already exists")
+        else:
+            logger.warning("Failed to ensure default workspace: %s", exc)
+    except (OSError, ValueError) as exc:  # pragma: no cover - best effort guard
         logger.warning("Failed to ensure default workspace: %s", exc)
 
     yield

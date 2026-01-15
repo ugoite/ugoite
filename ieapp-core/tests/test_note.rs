@@ -1,4 +1,5 @@
 mod common;
+use _ieapp_core::attachment;
 use _ieapp_core::integrity::FakeIntegrityProvider;
 use _ieapp_core::note;
 use _ieapp_core::workspace;
@@ -212,6 +213,50 @@ async fn test_note_req_note_006_extract_h2_headers() -> anyhow::Result<()> {
 #[tokio::test]
 /// REQ-NOTE-008
 async fn test_note_req_note_008_attachments_linking() -> anyhow::Result<()> {
-    // Test creating note referencing attachment
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-attachments", "/tmp").await?;
+    let ws_path = "workspaces/test-attachments";
+    let integrity = FakeIntegrityProvider;
+
+    let info = attachment::save_attachment(&op, ws_path, "file.txt", b"data").await?;
+    note::create_note(
+        &op,
+        ws_path,
+        "note-attach",
+        "# Attachments",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let current = note::get_note_content(&op, ws_path, "note-attach").await?;
+    let attachments = vec![serde_json::json!({
+        "id": info.id,
+        "name": info.name,
+        "path": info.path,
+    })];
+
+    note::update_note(
+        &op,
+        ws_path,
+        "note-attach",
+        "# Attachments\nwith file",
+        Some(&current.revision_id),
+        "author",
+        Some(attachments),
+        &integrity,
+    )
+    .await?;
+
+    let note_json = note::get_note(&op, ws_path, "note-attach").await?;
+    let attachments = note_json
+        .get("attachments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(attachments
+        .iter()
+        .any(|att| att.get("id").and_then(|v| v.as_str()) == Some(info.id.as_str())));
+
     Ok(())
 }

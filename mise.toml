@@ -8,6 +8,9 @@ experimental = true
 CARGO_HOME = "{{env.HOME}}/.cargo"
 RUSTUP_HOME = "{{env.HOME}}/.rustup"
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
+UV_LINK_MODE = "copy"
+BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA = "true"
+BROWSERSLIST_IGNORE_OLD_DATA = "true"
 
 [tools]
 biome = "2.3.11"

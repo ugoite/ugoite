@@ -14,10 +14,6 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-IEAPP_SRC = PROJECT_ROOT.parent / "ieapp-cli" / "src"
-if str(IEAPP_SRC) not in sys.path:
-    sys.path.insert(0, str(IEAPP_SRC))
-
 from app.main import app
 
 
