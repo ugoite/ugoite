@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/notes
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: create_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes
@@ -27,7 +27,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/notes
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: list_notes_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes
@@ -45,7 +45,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: get_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
@@ -63,7 +63,7 @@ apis:
     method: PUT
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: update_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
@@ -81,7 +81,7 @@ apis:
     method: DELETE
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: delete_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
@@ -99,7 +99,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}/history
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: get_note_history_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history
@@ -117,7 +117,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: get_note_revision_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
@@ -135,7 +135,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/notes/{note_id}/restore
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/note.py
       function: restore_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/restore

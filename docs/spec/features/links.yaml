@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/links
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: create_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
@@ -27,7 +27,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/links
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: list_links_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
@@ -45,7 +45,7 @@ apis:
     method: DELETE
     backend:
       path: /workspaces/{workspace_id}/links/{link_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: delete_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links/{link_id}

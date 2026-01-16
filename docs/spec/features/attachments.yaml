@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/attachments
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: upload_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
@@ -27,7 +27,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/attachments
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: list_attachments_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
@@ -45,7 +45,7 @@ apis:
     method: DELETE
     backend:
       path: /workspaces/{workspace_id}/attachments/{attachment_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: delete_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments/{attachment_id}

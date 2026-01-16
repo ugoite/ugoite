@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/query
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/search.py
       function: query_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/query
@@ -27,7 +27,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/search
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/search.py
       function: search_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/search
