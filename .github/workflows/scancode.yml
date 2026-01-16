@@ -23,19 +23,6 @@ jobs:
         with:
           path: scancode-inputs
 
-      - name: Prune non-source artifacts
-        run: |
-          rm -rf scancode-inputs/.git
-          rm -rf scancode-inputs/**/.venv
-          rm -rf scancode-inputs/**/__pycache__
-          rm -rf scancode-inputs/**/.pytest_cache
-          rm -rf scancode-inputs/**/.mypy_cache
-          rm -rf scancode-inputs/**/node_modules
-          rm -rf scancode-inputs/**/dist
-          rm -rf scancode-inputs/**/build
-          rm -rf scancode-inputs/backend/workspaces
-          rm -rf scancode-inputs/ieapp-core/target
-
       - name: Run ScanCode pipelines
         uses: aboutcode-org/scancode-action@beta
         with:
