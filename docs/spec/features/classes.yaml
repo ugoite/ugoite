@@ -9,7 +9,7 @@ apis:
     method: GET
     backend:
       path: /workspaces/{workspace_id}/classes
-      file: backend/src/app/api/endpoints/workspace.py
+      file: backend/src/app/api/endpoints/classes.py
       function: list_classes_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes
@@ -19,15 +19,15 @@ apis:
       file: ieapp-core/src/class.rs
       function: list_classes
     ieapp_cli:
-      command: ieapp class list
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_class_list
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: class.types
     method: GET
     backend:
       path: /workspaces/{workspace_id}/classes/types
-      file: backend/src/app/api/endpoints/workspace.py
+      file: backend/src/app/api/endpoints/classes.py
       function: list_class_types_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes/types
@@ -37,15 +37,15 @@ apis:
       file: ieapp-core/src/class.rs
       function: list_column_types
     ieapp_cli:
-      command: ieapp class types
+      command: ieapp class list-types
       file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_class_types
+      function: cmd_list_types
 
   - id: class.get
     method: GET
     backend:
       path: /workspaces/{workspace_id}/classes/{class_name}
-      file: backend/src/app/api/endpoints/workspace.py
+      file: backend/src/app/api/endpoints/classes.py
       function: get_class_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes/{class_name}
@@ -55,15 +55,15 @@ apis:
       file: ieapp-core/src/class.rs
       function: get_class
     ieapp_cli:
-      command: ieapp class get
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_class_get
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: class.upsert
     method: POST
     backend:
       path: /workspaces/{workspace_id}/classes
-      file: backend/src/app/api/endpoints/workspace.py
+      file: backend/src/app/api/endpoints/classes.py
       function: create_class_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes
@@ -73,6 +73,6 @@ apis:
       file: ieapp-core/src/class.rs
       function: upsert_class
     ieapp_cli:
-      command: ieapp class upsert
+      command: ieapp class update
       file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_class_upsert
+      function: cmd_class_update

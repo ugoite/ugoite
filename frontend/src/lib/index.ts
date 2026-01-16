@@ -2,5 +2,5 @@
 export * from "./types";
 export * from "./api";
 export * from "./client";
-export * from "./store";
+export * from "./note-store";
 export * from "./workspace-store";

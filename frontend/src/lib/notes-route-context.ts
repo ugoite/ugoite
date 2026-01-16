@@ -1,6 +1,6 @@
 import { createContext, useContext } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { NoteStore } from "~/lib/store";
+import type { NoteStore } from "~/lib/note-store";
 import type { Class } from "~/lib/types";
 import type { WorkspaceStore } from "~/lib/workspace-store";
 

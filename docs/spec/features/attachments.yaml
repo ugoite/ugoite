@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/attachments
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: upload_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
@@ -19,15 +19,15 @@ apis:
       file: ieapp-core/src/attachment.rs
       function: save_attachment
     ieapp_cli:
-      command: ieapp attachment upload
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_attachment_upload
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: attachment.list
     method: GET
     backend:
       path: /workspaces/{workspace_id}/attachments
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: list_attachments_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
@@ -37,15 +37,15 @@ apis:
       file: ieapp-core/src/attachment.rs
       function: list_attachments
     ieapp_cli:
-      command: ieapp attachment list
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_attachment_list
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: attachment.delete
     method: DELETE
     backend:
       path: /workspaces/{workspace_id}/attachments/{attachment_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/attachment.py
       function: delete_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
@@ -55,6 +55,6 @@ apis:
       file: ieapp-core/src/attachment.rs
       function: delete_attachment
     ieapp_cli:
-      command: ieapp attachment delete
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_attachment_delete
+      command: n/a
+      file: n/a
+      function: n/a

@@ -74,3 +74,20 @@ requirements:
         - file: e2e/smoke.test.ts
           tests:
             - GET /health returns OK
+
+  - id: REQ-API-004
+    title: Feature Registry Consistency
+    description: |
+      API feature registry entries MUST match implemented backend and frontend
+      paths, files, and functions.
+    related_spec:
+      - features/README.md
+      - features/features.yaml
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_features.py
+          tests:
+            - test_feature_paths_exist
+            - test_no_undeclared_feature_modules

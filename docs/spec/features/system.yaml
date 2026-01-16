@@ -19,6 +19,6 @@ apis:
       file: n/a
       function: n/a
     ieapp_cli:
-      command: ieapp health
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_health
+      command: n/a
+      file: n/a
+      function: n/a

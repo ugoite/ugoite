@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/links
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: create_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
@@ -19,15 +19,15 @@ apis:
       file: ieapp-core/src/link.rs
       function: create_link
     ieapp_cli:
-      command: ieapp link create
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_link_create
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: link.list
     method: GET
     backend:
       path: /workspaces/{workspace_id}/links
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: list_links_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
@@ -37,15 +37,15 @@ apis:
       file: ieapp-core/src/link.rs
       function: list_links
     ieapp_cli:
-      command: ieapp link list
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_link_list
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: link.delete
     method: DELETE
     backend:
       path: /workspaces/{workspace_id}/links/{link_id}
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/link.py
       function: delete_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links/{link_id}
@@ -55,6 +55,6 @@ apis:
       file: ieapp-core/src/link.rs
       function: delete_link
     ieapp_cli:
-      command: ieapp link delete
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_link_delete
+      command: n/a
+      file: n/a
+      function: n/a

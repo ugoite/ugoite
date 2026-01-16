@@ -26,8 +26,12 @@ depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//
 depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test", "//ieapp-core:test"]
+depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test", "//ieapp-core:test", "test:docs"]
 description = "Run tests for all packages (ieapp-core, backend, frontend, ieapp-cli)"
+
+[tasks."test:docs"]
+description = "Check consistency between documentation and implementation"
+run = "uv run --with pytest --with pyyaml pytest docs/tests -v"
 
 [tasks.e2e]
 description = "Run E2E tests with backend and frontend servers"

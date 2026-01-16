@@ -9,7 +9,7 @@ apis:
     method: POST
     backend:
       path: /workspaces/{workspace_id}/query
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/search.py
       function: query_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/query
@@ -21,13 +21,13 @@ apis:
     ieapp_cli:
       command: ieapp query
       file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_index_query
+      function: cmd_query
 
   - id: search.keyword
     method: GET
     backend:
       path: /workspaces/{workspace_id}/search
-      file: backend/src/app/api/endpoints/workspaces.py
+      file: backend/src/app/api/endpoints/search.py
       function: search_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/search
@@ -37,6 +37,6 @@ apis:
       file: ieapp-core/src/search.rs
       function: search_notes
     ieapp_cli:
-      command: ieapp search
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_search
+      command: n/a
+      file: n/a
+      function: n/a
