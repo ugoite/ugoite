@@ -37,9 +37,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: list_notes
     ieapp_cli:
-      command: ieapp note list
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_list
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.get
     method: GET
@@ -55,9 +55,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: get_note
     ieapp_cli:
-      command: ieapp note get
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_get
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.update
     method: PUT
@@ -73,9 +73,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: update_note
     ieapp_cli:
-      command: ieapp note update
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_update
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.delete
     method: DELETE
@@ -91,9 +91,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: delete_note
     ieapp_cli:
-      command: ieapp note delete
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_delete
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.history
     method: GET
@@ -109,9 +109,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: get_note_history
     ieapp_cli:
-      command: ieapp note history
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_history
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.revision
     method: GET
@@ -127,9 +127,9 @@ apis:
       file: ieapp-core/src/note.rs
       function: get_note_revision
     ieapp_cli:
-      command: ieapp note revision
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_revision
+      command: n/a
+      file: n/a
+      function: n/a
 
   - id: note.restore
     method: POST
@@ -145,6 +145,6 @@ apis:
       file: ieapp-core/src/note.rs
       function: restore_note
     ieapp_cli:
-      command: ieapp note restore
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_restore
+      command: n/a
+      file: n/a
+      function: n/a

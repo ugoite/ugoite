@@ -21,7 +21,7 @@ apis:
     ieapp_cli:
       command: ieapp query
       file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_index_query
+      function: cmd_query
 
   - id: search.keyword
     method: GET
@@ -37,6 +37,6 @@ apis:
       file: ieapp-core/src/search.rs
       function: search_notes
     ieapp_cli:
-      command: ieapp search
-      file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_search
+      command: n/a
+      file: n/a
+      function: n/a
