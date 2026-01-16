@@ -37,7 +37,7 @@ IEapp implements a **Local-Only by Default** security model:
 - Prevents tampering and detects corruption
 
 ### Input Sanitization
-- All inputs validated via Pydantic schemas
+- All inputs validated via Pydantic models
 - Path traversal prevention in file operations
 - SQL injection not applicable (no SQL database)
 

@@ -60,24 +60,24 @@ Unified to "Class" terminology:
 
 ### Tasks
 
-- [ ] Update `docs/spec/` to use "Class" consistently
-- [ ] Rename `ieapp-cli/src/ieapp/schemas.py` → `classes.py`
-- [ ] Rename functions: `list_schemas` → `list_classes`, `get_schema` → `get_class`, etc.
-- [ ] Update backend routes and models
-- [ ] Update frontend API client
-- [ ] Create migration script for existing workspaces (`schemas/` → `classes/`)
-- [ ] Update tests to use new terminology
-- [ ] Add backwards compatibility layer (optional, for existing users)
+- [x] Update `docs/spec/` to use "Class" consistently
+- [x] Rename `ieapp-cli/src/ieapp/schemas.py` → `classes.py`
+- [x] Rename functions: `list_schemas` → `list_classes`, `get_schema` → `get_class`, etc.
+- [x] Update backend routes and models
+- [x] Update frontend API client
+- [x] Create migration script for existing workspaces (`schemas/` → `classes/`)
+- [x] Update tests to use new terminology
+- [x] Add backwards compatibility layer (optional, for existing users)
 
 ### Acceptance Criteria
 
-- [ ] No references to "schema" (lowercase) in user-facing code/docs (except Python `BaseModel` internals)
-- [ ] All tests pass with new terminology
-- [ ] Existing workspaces can be migrated automatically
+- [x] No references to "schema" (lowercase) in user-facing code/docs (except Python `BaseModel` internals)
+- [x] All tests pass with new terminology
+- [x] Existing workspaces can be migrated automatically
 
 ---
 
-## Checkpoint 2: Rust Core Library (ieapp-core)
+## Checkpoint 2: Rust Core Library (ieapp-core) ✅ DONE
 
 **Goal**: Extract core logic into a Rust crate for multi-platform deployment
 
@@ -152,19 +152,19 @@ frontend/                       # UNCHANGED: UI only
 
 ### Tasks
 
-- [ ] Create `ieapp-core/` Rust crate with Cargo.toml
-- [ ] Implement storage abstraction using OpenDAL
-- [ ] Port `workspace.py` → `workspace.rs`
-- [ ] Port `notes.py` → `note.rs`
-- [ ] Port `classes.py` (was schemas.py) → `class.rs`
-- [ ] Port `indexer.py` → `index.rs`
-- [ ] Port `attachments.py` → `attachment.rs`
-- [ ] Port `integrity.py` → `integrity.rs`
-- [ ] Create pyo3 Python bindings
-- [ ] Update ieapp-cli to use Rust bindings
-- [ ] Update backend to use ieapp-core bindings (no direct file access)
-- [ ] Ensure all tests pass with new architecture
-- [ ] Benchmark performance vs Python implementation
+- [x] Create `ieapp-core/` Rust crate with Cargo.toml
+- [x] Implement storage abstraction using OpenDAL
+- [x] Port `workspace.py` → `workspace.rs`
+- [x] Port `notes.py` → `note.rs`
+- [x] Port `classes.py` (was schemas.py) → `class.rs`
+- [x] Port `indexer.py` → `index.rs`
+- [x] Port `attachments.py` → `attachment.rs`
+- [x] Port `integrity.py` → `integrity.rs`
+- [x] Create pyo3 Python bindings
+- [x] Update ieapp-cli to use Rust bindings
+- [x] Update backend to use ieapp-core bindings (no direct file access)
+- [x] Ensure all tests pass with new architecture
+- [x] Benchmark performance vs Python implementation
 
 ### Technology Choices
 
@@ -176,10 +176,10 @@ frontend/                       # UNCHANGED: UI only
 
 ### Acceptance Criteria
 
-- [ ] `ieapp-core` compiles to native library and Wasm
-- [ ] Python bindings work with existing ieapp-cli tests
-- [ ] Backend has zero direct filesystem operations
-- [ ] Performance is equal or better than Python implementation
+- [x] `ieapp-core` compiles to native library and Wasm
+- [x] Python bindings work with existing ieapp-cli tests
+- [x] Backend has zero direct filesystem operations
+- [x] Performance is equal or better than Python implementation
 
 ---
 

@@ -34,7 +34,7 @@ stories:
 | Type | Description |
 |------|-------------|
 | AI Native | Features leveraging AI and code execution |
-| Class | Structured data and schema features |
+| Class | Structured data and class features |
 | Freedom | User control and data portability |
 | Versioning | History and time travel features |
 | BYOAI | Bring Your Own AI integrations |

@@ -55,7 +55,7 @@ Classes define note types with:
 - **Fields**: Required and optional H2 headers
 - **Types**: string, number, date, list, markdown
 
-See [file-schemas.yaml](file-schemas.yaml) for the Class JSON schema.
+See [file-schemas.yaml](file-schemas.yaml) for the Class JSON definition.
 
 ### Properties Extraction
 
