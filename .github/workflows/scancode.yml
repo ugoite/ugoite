@@ -1,0 +1,38 @@
+name: ScanCode
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scancode:
+    name: ScanCode Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          path: scancode-inputs
+
+      - name: Run ScanCode pipelines
+        uses: aboutcode-org/scancode-action@beta
+        with:
+          project-name: "ieapp"
+          inputs-path: "scancode-inputs"
+          pipelines: "scan_codebase,find_vulnerabilities"
+          output-formats: "json xlsx spdx cyclonedx:1.5"
+          check-compliance: true
+          compliance-fail-level: "ERROR"
+          compliance-fail-on-vulnerabilities: true
+          python-version: "3.12"
+        env:
+          VULNERABLECODE_URL: "https://public.vulnerablecode.io/"
