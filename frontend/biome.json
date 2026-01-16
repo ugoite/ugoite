@@ -117,7 +117,6 @@
 			"includes": [
 				"src/lib/types.ts",
 				"src/lib/api.ts",
-				"src/lib/store.ts",
 				"src/lib/note-store.ts",
 				"src/lib/workspace-api.ts",
 				"src/lib/note-api.ts",
