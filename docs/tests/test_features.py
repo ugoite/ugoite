@@ -55,7 +55,8 @@ def _function_exists_typescript(contents: str, name: str) -> bool:
 
 def _assert_function_exists(file_path: Path, function_name: str) -> None:
     if function_name.lower() in {"n/a", "na"}:
-        return
+        message = "Feature registry must not use n/a for function names"
+        raise AssertionError(message)
     contents = _read_text(file_path)
     suffix = file_path.suffix.lower()
     if suffix == ".py":
@@ -98,17 +99,25 @@ def test_feature_paths_exist() -> None:
         raise AssertionError(message)
 
     for api in entries:
+        api_id = api.get("id", "<unknown>")
         for section_key in ("backend", "frontend", "ieapp_core", "ieapp_cli"):
             section = api.get(section_key)
             if not isinstance(section, dict):
-                continue
+                message = f"Missing {section_key} section for {api_id}"
+                raise TypeError(message)
             file_value = section.get("file")
             function_value = section.get("function")
             if not file_value or not function_value:
-                continue
+                message = f"Missing {section_key} file/function for {api_id}"
+                raise AssertionError(message)
 
             if str(file_value).strip().lower() in {"n/a", "na"}:
-                continue
+                message = "Feature registry must not use n/a for file paths"
+                raise AssertionError(message)
+
+            if section_key == "ieapp_cli" and not section.get("command"):
+                message = f"Missing ieapp_cli command for {api_id}"
+                raise AssertionError(message)
 
             file_path = REPO_ROOT / file_value
             if not file_path.exists():

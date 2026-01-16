@@ -28,8 +28,6 @@ conventions:
     - ieapp_cli.function
 
 files:
-  - kind: system
-    file: system.yaml
   - kind: workspaces
     file: workspaces.yaml
   - kind: notes
@@ -42,4 +40,3 @@ files:
     file: links.yaml
   - kind: search
     file: search.yaml
-    frontend: null  # Not applicable

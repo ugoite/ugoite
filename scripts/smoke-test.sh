@@ -33,7 +33,7 @@ log_info() {
 # Test: API health check
 test_api_health() {
     local response
-    response=$(curl -s -w "\n%{http_code}" "$API_URL/health" 2>/dev/null)
+    response=$(curl -s -w "\n%{http_code}" "$API_URL/workspaces" 2>/dev/null)
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | head -n-1)
     

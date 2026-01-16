@@ -18,6 +18,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: list_workspaces
+    ieapp_cli:
+      command: ieapp workspace list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_workspace_list
 
   - id: workspace.create
     method: POST
@@ -50,6 +54,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: get_workspace
+    ieapp_cli:
+      command: ieapp workspace get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_workspace_get
 
   - id: workspace.patch
     method: PATCH
@@ -64,6 +72,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: patch_workspace
+    ieapp_cli:
+      command: ieapp workspace patch
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_workspace_patch
 
   - id: workspace.test_connection
     method: POST
@@ -78,3 +90,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: test_storage_connection
+    ieapp_cli:
+      command: ieapp workspace test-connection
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_workspace_test_connection
