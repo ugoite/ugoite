@@ -36,10 +36,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: list_notes
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.get
     method: GET
@@ -54,10 +51,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.update
     method: PUT
@@ -72,10 +66,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: update_note
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.delete
     method: DELETE
@@ -90,10 +81,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: delete_note
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.history
     method: GET
@@ -104,14 +92,11 @@ apis:
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history
       file: frontend/src/lib/client.ts
-      function: n/a
+      function: noteApi.history
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_history
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.revision
     method: GET
@@ -122,14 +107,11 @@ apis:
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
       file: frontend/src/lib/client.ts
-      function: n/a
+      function: noteApi.getRevision
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_revision
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: note.restore
     method: POST
@@ -140,11 +122,8 @@ apis:
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
       file: frontend/src/lib/client.ts
-      function: n/a
+      function: noteApi.restore
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: restore_note
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null

@@ -15,10 +15,5 @@ apis:
       path: /api/health
       file: frontend/src/lib/api.ts
       function: apiFetch
-    ieapp_core:
-      file: n/a
-      function: n/a
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_core: null
+    ieapp_cli: null

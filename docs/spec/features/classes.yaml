@@ -18,10 +18,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/class.rs
       function: list_classes
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: class.types
     method: GET
@@ -54,10 +51,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/class.rs
       function: get_class
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null
 
   - id: class.upsert
     method: POST

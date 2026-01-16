@@ -36,7 +36,4 @@ apis:
     ieapp_core:
       file: ieapp-core/src/search.rs
       function: search_notes
-    ieapp_cli:
-      command: n/a
-      file: n/a
-      function: n/a
+    ieapp_cli: null

@@ -108,7 +108,8 @@ def test_feature_paths_exist() -> None:
                 continue
 
             if str(file_value).strip().lower() in {"n/a", "na"}:
-                continue
+                message = "Feature registry must not use n/a for file paths"
+                raise AssertionError(message)
 
             file_path = REPO_ROOT / file_value
             if not file_path.exists():
