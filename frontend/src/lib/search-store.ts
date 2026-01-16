@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { NoteRecord, SearchResult } from "./types";
-import { noteApi, workspaceApi } from "./client";
+import { searchApi } from "./search-api";
 
 export function createSearchStore(workspaceId: () => string) {
 	const [results, setResults] = createSignal<SearchResult[]>([]);
@@ -12,7 +12,7 @@ export function createSearchStore(workspaceId: () => string) {
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await noteApi.search(workspaceId(), query);
+			const data = await searchApi.keyword(workspaceId(), query);
 			setResults(data);
 			return data;
 		} catch (e) {
@@ -27,7 +27,7 @@ export function createSearchStore(workspaceId: () => string) {
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await workspaceApi.query(workspaceId(), filter);
+			const data = await searchApi.query(workspaceId(), filter);
 			setQueryResults(data);
 			return data;
 		} catch (e) {

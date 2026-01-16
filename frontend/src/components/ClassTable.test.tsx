@@ -2,7 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, waitFor, fireEvent } from "@solidjs/testing-library";
 import { ClassTable } from "./ClassTable";
-import { workspaceApi, noteApi } from "~/lib/client";
+import { noteApi } from "~/lib/note-api";
+import { searchApi } from "~/lib/search-api";
 
 describe("ClassTable", () => {
 	it("renders '-' for missing properties and does not throw", async () => {
@@ -14,7 +15,7 @@ describe("ClassTable", () => {
 			{ id: "1", title: "Note1", properties: undefined, updated_at: new Date().toISOString() },
 		];
 
-		const spy = vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		const spy = vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 
 		render(() => <ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />);
 
@@ -39,7 +40,7 @@ describe("ClassTable", () => {
 			{ id: "2", title: "A Note", properties: { price: 10 }, updated_at: "2026-01-02" },
 		];
 
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const { getByText } = render(() => (
 			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
@@ -72,7 +73,7 @@ describe("ClassTable", () => {
 			{ id: "2", title: "Carrot", properties: { tag: "veggie" }, updated_at: "2026-01-01" },
 		];
 
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const { getByPlaceholderText, queryByText } = render(() => (
 			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
 		));
@@ -97,7 +98,7 @@ describe("ClassTable", () => {
 			{ id: "1", title: "ExportMe", properties: { price: 100 }, updated_at: "2026-01-01" },
 		];
 
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 
 		// Mock URL.createObjectURL/revokeObjectURL
 		const createSpy = vi.fn().mockReturnValue("blob:test");
@@ -134,7 +135,7 @@ describe("ClassTable", () => {
 			fields: { col: { type: "string" } },
 		} as any;
 		const notes = [];
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const createSpy = vi.spyOn(noteApi, "create").mockResolvedValue({ id: "new-note" } as any);
 
 		const { getByText, getByTitle } = render(() => (
@@ -167,7 +168,7 @@ describe("ClassTable", () => {
 		const notes = [
 			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
 		];
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const getSpy = vi.spyOn(noteApi, "get").mockResolvedValue({
 			id: "1",
 			content: "# Note1\n\n## col\nval",
@@ -216,7 +217,7 @@ describe("ClassTable", () => {
 		const notes = [
 			{ id: "1", title: "Note1", properties: { col: "val" }, updated_at: "2026-01-01" },
 		];
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const onNoteClick = vi.fn();
 
 		const { getByText, getByRole } = render(() => (
@@ -241,7 +242,7 @@ describe("ClassTable", () => {
 
 	it("should show restricted lock icon when not in edit mode and open lock icon when in edit mode", async () => {
 		const noteClass = { name: "Test", fields: {} } as any;
-		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
 
 		const { getByTitle, queryByTitle } = render(() => (
 			<ClassTable workspaceId="ws" noteClass={noteClass} onNoteClick={() => {}} />
@@ -277,7 +278,7 @@ describe("ClassTable", () => {
 				updated_at: new Date("2026-01-02").toISOString(),
 			},
 		];
-		vi.spyOn(workspaceApi, "query").mockResolvedValue(notes as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue(notes as any);
 		const writeTextSpy = vi.fn().mockResolvedValue(undefined);
 		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
@@ -304,7 +305,7 @@ describe("ClassTable", () => {
 
 	it("should not trigger custom copy when input is focused", async () => {
 		const noteClass = { name: "Test", fields: {} } as any;
-		vi.spyOn(workspaceApi, "query").mockResolvedValue([] as any);
+		vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
 		const writeTextSpy = vi.fn();
 		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 

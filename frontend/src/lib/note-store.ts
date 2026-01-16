@@ -1,6 +1,7 @@
 import { createSignal, createResource } from "solid-js";
 import type { Note, NoteRecord, NoteUpdatePayload } from "./types";
-import { noteApi, RevisionConflictError } from "./client";
+import { noteApi, RevisionConflictError } from "./note-api";
+import { searchApi } from "./search-api";
 
 export interface NoteStoreState {
 	notes: NoteRecord[];
@@ -202,7 +203,7 @@ export function createNoteStore(workspaceId: () => string) {
 		/** Perform a keyword search without mutating store state */
 		async searchNotes(query: string) {
 			try {
-				return await noteApi.search(workspaceId(), query);
+				return await searchApi.keyword(workspaceId(), query);
 			} catch (e) {
 				setError(e instanceof Error ? e.message : "Failed to search notes");
 				throw e;

@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Attachment } from "./types";
-import { attachmentApi } from "./client";
+import { attachmentApi } from "./attachment-api";
 
 export function createAttachmentStore(workspaceId: () => string) {
 	const [attachments, setAttachments] = createSignal<Attachment[]>([]);
