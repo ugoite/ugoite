@@ -13,8 +13,8 @@ apis:
       function: query_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/query
-      file: frontend/src/lib/client.ts
-      function: workspaceApi.query
+      file: frontend/src/lib/search-api.ts
+      function: searchApi.query
     ieapp_core:
       file: ieapp-core/src/index.rs
       function: query_index
@@ -31,8 +31,8 @@ apis:
       function: search_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/search
-      file: frontend/src/lib/client.ts
-      function: noteApi.search
+      file: frontend/src/lib/search-api.ts
+      function: searchApi.keyword
     ieapp_core:
       file: ieapp-core/src/search.rs
       function: search_notes

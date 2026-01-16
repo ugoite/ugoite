@@ -13,7 +13,7 @@ apis:
       function: list_workspaces_endpoint
     frontend:
       path: /api/workspaces
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.list
     ieapp_core:
       file: ieapp-core/src/workspace.rs
@@ -31,7 +31,7 @@ apis:
       function: create_workspace_endpoint
     frontend:
       path: /api/workspaces
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.create
     ieapp_core:
       file: ieapp-core/src/workspace.rs
@@ -49,7 +49,7 @@ apis:
       function: get_workspace_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.get
     ieapp_core:
       file: ieapp-core/src/workspace.rs
@@ -67,7 +67,7 @@ apis:
       function: patch_workspace_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.patch
     ieapp_core:
       file: ieapp-core/src/workspace.rs
@@ -85,7 +85,7 @@ apis:
       function: test_connection_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/test-connection
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.testConnection
     ieapp_core:
       file: ieapp-core/src/workspace.rs

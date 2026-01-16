@@ -13,7 +13,7 @@ apis:
       function: upload_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.upload
     ieapp_core:
       file: ieapp-core/src/attachment.rs
@@ -31,7 +31,7 @@ apis:
       function: list_attachments_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.list
     ieapp_core:
       file: ieapp-core/src/attachment.rs
@@ -49,7 +49,7 @@ apis:
       function: delete_attachment_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.delete
     ieapp_core:
       file: ieapp-core/src/attachment.rs

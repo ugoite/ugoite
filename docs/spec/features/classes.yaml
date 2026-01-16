@@ -13,7 +13,7 @@ apis:
       function: list_classes_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/class-api.ts
       function: classApi.list
     ieapp_core:
       file: ieapp-core/src/class.rs
@@ -31,7 +31,7 @@ apis:
       function: list_class_types_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes/types
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/class-api.ts
       function: classApi.listTypes
     ieapp_core:
       file: ieapp-core/src/class.rs
@@ -49,7 +49,7 @@ apis:
       function: get_class_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes/{class_name}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/class-api.ts
       function: classApi.get
     ieapp_core:
       file: ieapp-core/src/class.rs
@@ -67,7 +67,7 @@ apis:
       function: create_class_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/classes
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/class-api.ts
       function: classApi.create
     ieapp_core:
       file: ieapp-core/src/class.rs

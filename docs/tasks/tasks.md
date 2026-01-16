@@ -55,7 +55,7 @@ Unified to "Class" terminology:
 | `ieapp-cli/src/ieapp/classes.py` | "class" | Rename `schemas.py` → `classes.py`, rename functions |
 | `backend/src/app/api/endpoints/` | "class" | Routes: `/classes`, `/classes/{name}` |
 | `backend/src/app/models/classes.py` | "ClassCreate" | Rename models file |
-| `frontend/src/lib/client.ts` | "classApi" | Rename API client methods |
+| `frontend/src/lib/*-api.ts` | "classApi" | Rename API client methods |
 | Directory structure | `classes/` | Rename workspace subdirectory |
 
 ### Tasks
@@ -195,9 +195,9 @@ Path patterns are inconsistent across modules:
 |---------|-----------|---------|----------|
 | Workspace | `workspace.py` | `api/endpoints/workspaces.py` | `workspace-store.ts` |
 | Notes | `notes.py` | `api/endpoints/workspaces.py` (mixed) | `store.ts`, `routes/notes/` |
-| Classes | `schemas.py` | `api/endpoints/workspaces.py` (mixed) | `client.ts` (schemaApi) |
+| Classes | `schemas.py` | `api/endpoints/workspaces.py` (mixed) | `class-api.ts` (classApi) |
 | Attachments | `attachments.py` | `api/endpoints/workspaces.py` | (in store) |
-| Search | `search.py` | `api/endpoints/workspaces.py` | `client.ts` |
+| Search | `search.py` | `api/endpoints/workspaces.py` | `search-api.ts` |
 
 ### TO-BE (Target State)
 
