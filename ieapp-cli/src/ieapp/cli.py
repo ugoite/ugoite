@@ -6,7 +6,6 @@ from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.request import urlopen
 
 import typer
 
@@ -454,7 +453,20 @@ def cmd_attachment_upload(
     """Upload an attachment to the workspace."""
     setup_logging()
     path = Path(file_path)
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError as exc:
+        err_msg = f"Attachment file not found: '{path}'"
+        raise typer.BadParameter(err_msg) from exc
+    except IsADirectoryError as exc:
+        err_msg = f"Attachment path is a directory, not a file: '{path}'"
+        raise typer.BadParameter(err_msg) from exc
+    except PermissionError as exc:
+        err_msg = f"Permission denied when reading attachment file '{path}'"
+        raise typer.BadParameter(err_msg) from exc
+    except OSError as exc:
+        err_msg = f"Could not read attachment file '{path}': {exc}"
+        raise typer.BadParameter(err_msg) from exc
     name = filename or path.name
     attachment = save_attachment(workspace_path, data, name)
     typer.echo(json.dumps(attachment, indent=2))
@@ -540,18 +552,3 @@ def cmd_search_keyword(
     setup_logging()
     results = search_notes(workspace_path, query)
     typer.echo(json.dumps(results, indent=2))
-
-
-@app.command("health")
-@handle_cli_errors
-def cmd_health(
-    url: Annotated[
-        str,
-        typer.Option(help="Health endpoint URL"),
-    ] = "http://localhost:8000/health",
-) -> None:
-    """Check backend health endpoint."""
-    setup_logging()
-    with urlopen(url) as response:
-        data = response.read().decode("utf-8")
-    typer.echo(data)

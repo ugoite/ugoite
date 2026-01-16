@@ -2,7 +2,6 @@
  * Smoke Tests for IEapp
  *
  * These tests verify that the basic infrastructure is working:
- * - Backend health check
  * - Frontend serves pages
  * - API endpoints respond correctly
  */
@@ -19,16 +18,6 @@ describe("Smoke Tests", () => {
 	beforeAll(async () => {
 		// Wait for servers to be ready with a longer timeout
 		await waitForServers(client, { timeout: 60000 });
-	});
-
-	describe("Backend Health", () => {
-		test("GET /health returns OK", async () => {
-			const res = await client.getApi("/health");
-			expect(res.ok).toBe(true);
-
-			const json = await res.json();
-			expect(json).toHaveProperty("status", "healthy");
-		});
 	});
 
 	describe("Frontend Accessibility", () => {

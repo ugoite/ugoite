@@ -5,7 +5,6 @@ This directory contains the feature definitions for IEapp.
 ## Files
 
 - [features.yaml](features.yaml) - Registry manifest and conventions
-- [system.yaml](system.yaml) - System endpoints (health)
 - [workspaces.yaml](workspaces.yaml) - Workspace APIs
 - [notes.yaml](notes.yaml) - Note APIs
 - [classes.yaml](classes.yaml) - Class APIs

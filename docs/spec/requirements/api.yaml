@@ -61,20 +61,6 @@ requirements:
           tests:
             - Create/Read/Update/Delete Notes
 
-  - id: REQ-API-003
-    title: Health Check
-    description: |
-      Check server health via /health endpoint.
-    related_spec:
-      - api/rest.md
-    priority: low
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/smoke.test.ts
-          tests:
-            - GET /health returns OK
-
   - id: REQ-API-004
     title: Feature Registry Consistency
     description: |

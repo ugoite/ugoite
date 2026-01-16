@@ -202,7 +202,6 @@ export const noteApi = {
 		}
 	},
 
-	/** Query notes with filters */
 	/** Search notes by keyword */
 	async search(workspaceId: string, query: string): Promise<SearchResult[]> {
 		const params = new URLSearchParams({ q: query });

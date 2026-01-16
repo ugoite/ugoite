@@ -252,17 +252,17 @@ features:
 ### Tasks
 
 - [x] Define API-level feature registry under `docs/spec/features/`
-- [ ] Refactor backend: split `workspaces.py` into feature-specific files
-- [ ] Refactor frontend: organize stores by feature
-- [ ] Rename `schemas.py` → `class.py` (part of Checkpoint 1)
-- [ ] Create path verification test for each module
-- [ ] Add CI check for feature path consistency
+- [x] Refactor backend: split `workspaces.py` into feature-specific files
+- [x] Refactor frontend: organize stores by feature
+- [x] Rename `schemas.py` → `class.py` (part of Checkpoint 1)
+- [x] Create path verification test for each module
+- [x] Add CI check for feature path consistency
 
 ### Acceptance Criteria
 
 - [x] `docs/spec/features/` defines API operations with paths + symbol locations
-- [ ] All modules follow the defined path structure
-- [ ] Automated tests verify path consistency
+- [x] All modules follow the defined path structure
+- [x] Automated tests verify path consistency
 
 ---
 
