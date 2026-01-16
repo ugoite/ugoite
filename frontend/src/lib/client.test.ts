@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-	noteApi,
-	workspaceApi,
-	classApi,
-	RevisionConflictError,
-	attachmentApi,
-	linksApi,
-} from "./client";
+import { attachmentApi } from "./attachment-api";
+import { classApi } from "./class-api";
+import { linkApi } from "./link-api";
+import { noteApi, RevisionConflictError } from "./note-api";
+import { searchApi } from "./search-api";
+import { workspaceApi } from "./workspace-api";
 import { resetMockData, seedWorkspace, seedNote } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "./types";
 
@@ -237,7 +235,7 @@ describe("noteApi", () => {
 				content: "# Rocket Project\nNotes about propulsion",
 			});
 
-			const matches = await noteApi.search("test-ws", "rocket");
+			const matches = await searchApi.keyword("test-ws", "rocket");
 			expect(matches.find((m) => m.id === created.id)).toBeDefined();
 		});
 
@@ -262,16 +260,16 @@ describe("noteApi", () => {
 			const noteA = await noteApi.create("test-ws", { content: "# A" });
 			const noteB = await noteApi.create("test-ws", { content: "# B" });
 
-			const link = await linksApi.create("test-ws", {
+			const link = await linkApi.create("test-ws", {
 				source: noteA.id,
 				target: noteB.id,
 				kind: "related",
 			});
 
-			const links = await linksApi.list("test-ws");
+			const links = await linkApi.list("test-ws");
 			expect(links.map((l) => l.id)).toContain(link.id);
 
-			const deleted = await linksApi.delete("test-ws", link.id);
+			const deleted = await linkApi.delete("test-ws", link.id);
 			expect(deleted.status).toBe("deleted");
 		});
 	});

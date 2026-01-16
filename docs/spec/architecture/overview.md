@@ -89,7 +89,7 @@ UI layer with NO data logic:
 | Component | Responsibility |
 |-----------|----------------|
 | `lib/*-store.ts` | State management, optimistic updates |
-| `lib/client.ts` | API client (REST calls only) |
+| `lib/*-api.ts` | Feature API clients (REST calls only) |
 | `routes/` | Page components |
 | `components/` | Reusable UI components |
 

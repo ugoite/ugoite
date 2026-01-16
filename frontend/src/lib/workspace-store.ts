@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Workspace } from "./types";
-import { workspaceApi } from "./client";
+import { workspaceApi } from "./workspace-api";
 
 const DEFAULT_WORKSPACE_ID = "default";
 const STORAGE_KEY = "ieapp-selected-workspace";

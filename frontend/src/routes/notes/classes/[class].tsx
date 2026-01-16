@@ -3,7 +3,7 @@ import { Show, createMemo, createSignal } from "solid-js";
 import { ClassTable } from "~/components/ClassTable";
 import { EditClassDialog } from "~/components/create-dialogs";
 import { useNotesRouteContext } from "~/lib/notes-route-context";
-import { classApi } from "~/lib/client";
+import { classApi } from "~/lib/class-api";
 import type { ClassCreatePayload } from "~/lib/types";
 
 export default function ClassRoute() {

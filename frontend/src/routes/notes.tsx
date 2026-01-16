@@ -12,7 +12,8 @@ import { CreateNoteDialog, CreateClassDialog } from "~/components/create-dialogs
 import type { ClassCreatePayload } from "~/lib/types";
 import { ListPanel } from "~/components/ListPanel";
 import { WorkspaceSelector } from "~/components/WorkspaceSelector";
-import { classApi, noteApi } from "~/lib/client";
+import { classApi } from "~/lib/class-api";
+import { searchApi } from "~/lib/search-api";
 import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { NotesRouteContext } from "~/lib/notes-route-context";
 import { createNoteStore } from "~/lib/note-store";
@@ -144,7 +145,7 @@ export default function NotesRoute(props: RouteSectionProps) {
 		searchTimeoutId = setTimeout(async () => {
 			searchAbortController = new AbortController();
 			try {
-				const results = await noteApi.search(workspaceId(), query);
+				const results = await searchApi.keyword(workspaceId(), query);
 				if (!searchAbortController.signal.aborted) {
 					setSearchResults(results as NoteRecord[]);
 				}

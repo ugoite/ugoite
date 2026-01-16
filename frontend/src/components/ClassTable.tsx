@@ -9,7 +9,8 @@ import {
 	onCleanup,
 } from "solid-js";
 import type { Class, NoteRecord } from "~/lib/types";
-import { workspaceApi, noteApi } from "~/lib/client";
+import { noteApi } from "~/lib/note-api";
+import { searchApi } from "~/lib/search-api";
 import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "~/lib/markdown";
 
 interface ClassTableProps {
@@ -157,7 +158,7 @@ export function ClassTable(props: ClassTableProps) {
 			return { id: props.workspaceId, className: props.noteClass.name };
 		},
 		async ({ id, className }) => {
-			return await workspaceApi.query(id, { class: className });
+			return await searchApi.query(id, { class: className });
 		},
 	);
 

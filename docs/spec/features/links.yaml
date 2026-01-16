@@ -13,8 +13,8 @@ apis:
       function: create_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
-      file: frontend/src/lib/client.ts
-      function: linksApi.create
+      file: frontend/src/lib/link-api.ts
+      function: linkApi.create
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: create_link
@@ -31,8 +31,8 @@ apis:
       function: list_links_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links
-      file: frontend/src/lib/client.ts
-      function: linksApi.list
+      file: frontend/src/lib/link-api.ts
+      function: linkApi.list
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: list_links
@@ -49,8 +49,8 @@ apis:
       function: delete_link_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/links/{link_id}
-      file: frontend/src/lib/client.ts
-      function: linksApi.delete
+      file: frontend/src/lib/link-api.ts
+      function: linkApi.delete
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: delete_link

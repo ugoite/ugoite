@@ -13,7 +13,7 @@ apis:
       function: create_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.create
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -31,7 +31,7 @@ apis:
       function: list_notes_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.list
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -49,7 +49,7 @@ apis:
       function: get_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.get
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -67,7 +67,7 @@ apis:
       function: update_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.update
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -85,7 +85,7 @@ apis:
       function: delete_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.delete
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -103,7 +103,7 @@ apis:
       function: get_note_history_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.history
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -121,7 +121,7 @@ apis:
       function: get_note_revision_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.getRevision
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -139,7 +139,7 @@ apis:
       function: restore_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.restore
     ieapp_core:
       file: ieapp-core/src/note.rs

@@ -43,7 +43,7 @@ apis:
       function: create_note_endpoint
     frontend:
       path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/client.ts
+      file: frontend/src/lib/note-api.ts
       function: noteApi.create
     ieapp_core:
       file: ieapp-core/src/note.rs

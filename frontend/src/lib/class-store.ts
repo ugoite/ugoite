@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Class, ClassCreatePayload } from "./types";
-import { classApi } from "./client";
+import { classApi } from "./class-api";
 
 export function createClassStore(workspaceId: () => string) {
 	const [classes, setClasses] = createSignal<Class[]>([]);

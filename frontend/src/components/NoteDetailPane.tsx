@@ -2,7 +2,8 @@ import { createEffect, createResource, createSignal, onCleanup, Show } from "sol
 import type { Accessor } from "solid-js";
 import { AttachmentUploader } from "~/components/AttachmentUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
-import { attachmentApi, noteApi, RevisionConflictError } from "~/lib/client";
+import { attachmentApi } from "~/lib/attachment-api";
+import { noteApi, RevisionConflictError } from "~/lib/note-api";
 import type { Attachment } from "~/lib/types";
 
 export interface NoteDetailPaneProps {
