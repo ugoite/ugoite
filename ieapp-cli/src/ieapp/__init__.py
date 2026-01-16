@@ -50,9 +50,6 @@ from .workspace import (
     workspace_path,
 )
 
-# Alias query_index to query for convenience
-query = query_index
-
 __all__ = [
     "AttachmentReferencedError",
     "Indexer",
@@ -83,7 +80,6 @@ __all__ = [
     "load_hmac_material",
     "migrate_class",
     "patch_workspace",
-    "query",  # Alias for query_index
     "query_index",
     "resolve_existing_path",
     "restore_note",

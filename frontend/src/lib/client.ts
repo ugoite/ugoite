@@ -3,6 +3,7 @@ import type {
 	Note,
 	NoteCreatePayload,
 	NoteRecord,
+	NoteRevision,
 	NoteUpdatePayload,
 	SearchResult,
 	Workspace,
@@ -202,18 +203,6 @@ export const noteApi = {
 	},
 
 	/** Query notes with filters */
-	async query(workspaceId: string, filter: Record<string, unknown>): Promise<NoteRecord[]> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/query`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ filter }),
-		});
-		if (!res.ok) {
-			throw new Error(`Failed to query notes: ${res.statusText}`);
-		}
-		return (await res.json()) as NoteRecord[];
-	},
-
 	/** Search notes by keyword */
 	async search(workspaceId: string, query: string): Promise<SearchResult[]> {
 		const params = new URLSearchParams({ q: query });
@@ -222,6 +211,38 @@ export const noteApi = {
 			throw new Error(`Failed to search notes: ${res.statusText}`);
 		}
 		return (await res.json()) as SearchResult[];
+	},
+
+	/** Get note revision history */
+	async history(workspaceId: string, noteId: string): Promise<{ revisions: NoteRevision[] }> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/notes/${noteId}/history`);
+		if (!res.ok) {
+			throw new Error(`Failed to get note history: ${res.statusText}`);
+		}
+		return (await res.json()) as { revisions: NoteRevision[] };
+	},
+
+	/** Get a specific note revision */
+	async getRevision(workspaceId: string, noteId: string, revisionId: string): Promise<Note> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/notes/${noteId}/history/${revisionId}`);
+		if (!res.ok) {
+			throw new Error(`Failed to get note revision: ${res.statusText}`);
+		}
+		return (await res.json()) as Note;
+	},
+
+	/** Restore note to a previous revision */
+	async restore(workspaceId: string, noteId: string, revisionId: string): Promise<Note> {
+		const res = await apiFetch(`/workspaces/${workspaceId}/notes/${noteId}/restore`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ revision_id: revisionId }),
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to restore note: ${res.statusText}`);
+		}
+		return (await res.json()) as Note;
 	},
 };
 
