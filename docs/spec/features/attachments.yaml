@@ -18,7 +18,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: save_attachment
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp attachment upload
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_upload
 
   - id: attachment.list
     method: GET
@@ -33,7 +36,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: list_attachments
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp attachment list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_list
 
   - id: attachment.delete
     method: DELETE
@@ -48,4 +54,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: delete_attachment
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp attachment delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_attachment_delete

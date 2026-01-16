@@ -36,7 +36,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: list_notes
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_list
 
   - id: note.get
     method: GET
@@ -51,7 +54,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_get
 
   - id: note.update
     method: PUT
@@ -66,7 +72,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: update_note
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note update
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_update
 
   - id: note.delete
     method: DELETE
@@ -81,7 +90,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: delete_note
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_delete
 
   - id: note.history
     method: GET
@@ -96,7 +108,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_history
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note history
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_history
 
   - id: note.revision
     method: GET
@@ -111,7 +126,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_revision
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note revision
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_revision
 
   - id: note.restore
     method: POST
@@ -126,4 +144,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: restore_note
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp note restore
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_note_restore

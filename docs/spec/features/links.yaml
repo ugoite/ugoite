@@ -18,7 +18,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: create_link
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp link create
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_create
 
   - id: link.list
     method: GET
@@ -33,7 +36,10 @@ apis:
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: list_links
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp link list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_list
 
   - id: link.delete
     method: DELETE
@@ -48,4 +54,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: delete_link
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp link delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_link_delete

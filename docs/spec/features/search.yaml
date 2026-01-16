@@ -36,4 +36,7 @@ apis:
     ieapp_core:
       file: ieapp-core/src/search.rs
       function: search_notes
-    ieapp_cli: null
+    ieapp_cli:
+      command: ieapp search keyword
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_search_keyword

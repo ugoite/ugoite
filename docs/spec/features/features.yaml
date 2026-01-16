@@ -42,4 +42,3 @@ files:
     file: links.yaml
   - kind: search
     file: search.yaml
-    frontend: null  # Not applicable
