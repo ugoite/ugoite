@@ -16,6 +16,7 @@ pub mod link;
 pub mod note;
 pub mod search;
 pub mod storage;
+pub mod system;
 pub mod workspace;
 
 use integrity::RealIntegrityProvider;
