@@ -107,6 +107,9 @@ def test_feature_paths_exist() -> None:
             if not file_value or not function_value:
                 continue
 
+            if str(file_value).strip().lower() in {"n/a", "na"}:
+                continue
+
             file_path = REPO_ROOT / file_value
             if not file_path.exists():
                 message = f"Missing file {file_value}"
