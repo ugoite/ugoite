@@ -24,7 +24,7 @@ This document defines cross-cutting error-handling principles for IEapp.
 
 ### Not Found
 
-- Use **404** when workspace/note/schema does not exist.
+- Use **404** when workspace/note/class does not exist.
 
 ### Server Errors
 

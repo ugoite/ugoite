@@ -9,7 +9,7 @@ and responsibility boundaries.
 | Feature | Frontend | Backend | Shared Contract |
 |---|---|---|---|
 | State management | Optimistic updates, local cache, selection/view state | Persistence, history, indexing | `revision_id` optimistic concurrency |
-| Validation | UI/form validation, basic format checks | Class validation, business rules, integrity checks | Request/response schemas |
+| Validation | UI/form validation, basic format checks | Class validation, business rules, integrity checks | Request/response models |
 | Search & query | Query construction + display | Indexing, query execution | Query payload shape |
 | Code execution | Code execution UI (future) | MCP host | MCP protocol |
 

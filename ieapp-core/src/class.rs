@@ -8,10 +8,58 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::HashSet;
 
+async fn migrate_legacy_schemas_dir(op: &Operator, ws_path: &str) -> Result<bool> {
+    let legacy_path = format!("{}/schemas/", ws_path);
+    if !op.exists(&legacy_path).await? {
+        return Ok(false);
+    }
+
+    let classes_path = format!("{}/classes/", ws_path);
+    if !op.exists(&classes_path).await? {
+        op.create_dir(&classes_path).await?;
+    }
+
+    let mut migrated = false;
+    let mut lister = op.lister(&legacy_path).await?;
+    while let Some(entry) = lister.try_next().await? {
+        let meta = entry.metadata();
+        if meta.mode() != EntryMode::FILE {
+            continue;
+        }
+
+        let entry_name = entry.name();
+        if !entry_name.ends_with(".json") {
+            continue;
+        }
+
+        let entry_path = if entry_name.contains('/') {
+            entry_name.to_string()
+        } else {
+            format!("{}{}", legacy_path, entry_name)
+        };
+        let file_name = entry_name.rsplit('/').next().unwrap_or(entry_name);
+        let target_path = format!("{}{}", classes_path, file_name);
+
+        if op.exists(&target_path).await? {
+            continue;
+        }
+
+        let bytes = op.read(&entry_path).await?;
+        op.write(&target_path, bytes).await?;
+        op.delete(&entry_path).await?;
+        migrated = true;
+    }
+
+    Ok(migrated)
+}
+
 pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let classes_path = format!("{}/classes/", ws_path);
     if !op.exists(&classes_path).await? {
-        return Ok(vec![]);
+        let migrated = migrate_legacy_schemas_dir(op, ws_path).await?;
+        if !migrated && !op.exists(&classes_path).await? {
+            return Ok(vec![]);
+        }
     }
 
     // List all files in classes/ directory
@@ -48,6 +96,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
 }
 
 pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result<Value> {
+    migrate_legacy_schemas_dir(op, ws_path).await?;
     let class_path = format!("{}/classes/{}.json", ws_path, class_name);
     let bytes = op
         .read(&class_path)
@@ -58,6 +107,7 @@ pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result
 }
 
 pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Result<()> {
+    migrate_legacy_schemas_dir(op, ws_path).await?;
     let name = class_def["name"]
         .as_str()
         .context("Class definition missing 'name' field")?;
@@ -76,6 +126,7 @@ pub async fn migrate_class<I: IntegrityProvider>(
     strategies: Option<Value>,
     integrity: &I,
 ) -> Result<usize> {
+    migrate_legacy_schemas_dir(op, ws_path).await?;
     if strategies.is_none() {
         return Ok(0);
     }

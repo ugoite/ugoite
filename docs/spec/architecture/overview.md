@@ -79,7 +79,7 @@ API layer providing access to frontend and AI agents:
 |-----------|----------------|
 | `api/endpoints/` | REST route handlers (call ieapp-core bindings) |
 | `mcp/` | MCP protocol implementation |
-| `models/` | Pydantic request/response schemas |
+| `models/` | Pydantic request/response models |
 | `core/` | Configuration, middleware |
 
 ### Frontend (TypeScript/SolidStart)

@@ -34,7 +34,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
-- [File Schemas](data-model/file-schemas.yaml) - JSON schema definitions
+- [File Definitions](data-model/file-schemas.yaml) - JSON schema definitions
 - [Directory Structure](data-model/directory-structure.md) - Workspace layout conventions
 
 ### API Reference

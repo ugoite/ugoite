@@ -31,7 +31,7 @@ Extract core logic into a Rust crate (`ieapp-core`) with:
 **Status**: Accepted
 
 **Context**: 
-- Users need structure without rigid database schemas
+- Users need structure without rigid database structures
 - Pure Markdown lacks metadata capabilities
 - Traditional forms are cumbersome for knowledge work
 

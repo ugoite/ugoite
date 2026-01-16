@@ -8,7 +8,7 @@ This directory contains the feature definitions for IEapp.
 - [system.yaml](system.yaml) - System endpoints (health)
 - [workspaces.yaml](workspaces.yaml) - Workspace APIs
 - [notes.yaml](notes.yaml) - Note APIs
-- [schemas.yaml](schemas.yaml) - Schema/Class APIs
+- [classes.yaml](classes.yaml) - Class APIs
 - [attachments.yaml](attachments.yaml) - Attachment APIs
 - [links.yaml](links.yaml) - Link APIs
 - [search.yaml](search.yaml) - Search + structured query APIs

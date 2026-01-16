@@ -7,7 +7,7 @@ This document describes the high-level data model of IEapp, including its storag
 To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Classes**:
 
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, HMAC integrity).
-- **Note Classes**: User-defined templates and field definitions that add structure to notes. Formerly known as "Schemas".
+- **Note Classes**: User-defined templates and field definitions that add structure to notes. Formerly known by a legacy term.
 
 ## Principles
 
@@ -55,7 +55,7 @@ Classes define note types with:
 - **Fields**: Required and optional H2 headers
 - **Types**: string, number, date, list, markdown
 
-See [file-schemas.yaml](file-schemas.yaml) for the Class JSON schema.
+See [file-schemas.yaml](file-schemas.yaml) for the Class JSON definition.
 
 ### Properties Extraction
 

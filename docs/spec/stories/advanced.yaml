@@ -9,7 +9,7 @@ category: Advanced User Stories
 
 stories:
   - id: STORY-006
-    title: Voice-to-Schema
+    title: Voice-to-Class
     type: BYOAI
     as_a: mobile user
     i_want: to record a voice memo and have my chosen AI assistant structure it
