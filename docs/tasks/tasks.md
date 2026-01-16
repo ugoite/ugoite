@@ -77,7 +77,7 @@ Unified to "Class" terminology:
 
 ---
 
-## Checkpoint 2: Rust Core Library (ieapp-core)
+## Checkpoint 2: Rust Core Library (ieapp-core) ✅ DONE
 
 **Goal**: Extract core logic into a Rust crate for multi-platform deployment
 
@@ -164,7 +164,7 @@ frontend/                       # UNCHANGED: UI only
 - [x] Update ieapp-cli to use Rust bindings
 - [x] Update backend to use ieapp-core bindings (no direct file access)
 - [x] Ensure all tests pass with new architecture
-- [ ] Benchmark performance vs Python implementation
+- [x] Benchmark performance vs Python implementation
 
 ### Technology Choices
 
@@ -176,10 +176,10 @@ frontend/                       # UNCHANGED: UI only
 
 ### Acceptance Criteria
 
-- [ ] `ieapp-core` compiles to native library and Wasm
+- [x] `ieapp-core` compiles to native library and Wasm
 - [x] Python bindings work with existing ieapp-cli tests
 - [x] Backend has zero direct filesystem operations
-- [ ] Performance is equal or better than Python implementation
+- [x] Performance is equal or better than Python implementation
 
 ---
 
