@@ -15,7 +15,7 @@ import { WorkspaceSelector } from "~/components/WorkspaceSelector";
 import { classApi, noteApi } from "~/lib/client";
 import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { NotesRouteContext } from "~/lib/notes-route-context";
-import { createNoteStore } from "~/lib/store";
+import { createNoteStore } from "~/lib/note-store";
 import { createWorkspaceStore } from "~/lib/workspace-store";
 import type { NoteRecord } from "~/lib/types";
 

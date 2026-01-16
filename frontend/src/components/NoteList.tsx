@@ -1,6 +1,6 @@
 import { For, onMount, Show, createMemo } from "solid-js";
 import type { Accessor } from "solid-js";
-import { createNoteStore } from "~/lib/store";
+import { createNoteStore } from "~/lib/note-store";
 import type { NoteRecord } from "~/lib/types";
 
 /** Props for controlled mode (passing external state) */

@@ -63,7 +63,7 @@ requirements:
         - file: frontend/src/components/NoteList.test.tsx
           tests:
             - all tests
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should load notes from API
 
@@ -114,7 +114,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should apply optimistic updates during update
             - should delete note optimistically
@@ -132,7 +132,7 @@ requirements:
         - file: frontend/src/components/NoteList.test.tsx
           tests:
             - should highlight selected note
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should handle note selection
 
@@ -161,7 +161,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should not refetch after successful update
             - should preserve editor content during save
@@ -193,7 +193,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should only sync content on note switch
             - should not overwrite content on refetch
@@ -216,7 +216,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/store.test.ts
+        - file: frontend/src/lib/note-store.test.ts
           tests:
             - should support consecutive saves with updated revision_id
       e2e:
