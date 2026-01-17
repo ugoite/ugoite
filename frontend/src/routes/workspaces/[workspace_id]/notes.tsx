@@ -187,7 +187,7 @@ export default function WorkspaceNotesRoute(props: RouteSectionProps) {
 		try {
 			const result = await noteStore.createNote(initialContent);
 			setShowCreateNoteDialog(false);
-			navigate(`/workspaces/${workspaceId()}/notes/${result.id}`);
+			navigate(`/workspaces/${workspaceId()}/notes/${encodeURIComponent(result.id)}`);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create note");
 		}

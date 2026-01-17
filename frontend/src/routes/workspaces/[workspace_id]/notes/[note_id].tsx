@@ -11,15 +11,8 @@ export default function WorkspaceNoteDetailRoute() {
 	const ctx = useContext(NotesRouteContext);
 	const workspaceId = ctx?.workspaceId ?? fallbackWorkspaceId;
 	const noteStore = ctx?.noteStore ?? createNoteStore(fallbackWorkspaceId);
-	const noteId = () => {
-		const raw = params.note_id ?? "";
-		if (!raw) return "";
-		try {
-			return decodeURIComponent(raw);
-		} catch {
-			return raw;
-		}
-	};
+	// SolidJS router already decodes URL parameters
+	const noteId = () => params.note_id ?? "";
 
 	return (
 		<NoteDetailPane
