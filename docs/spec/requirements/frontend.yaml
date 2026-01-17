@@ -429,3 +429,4 @@ requirements:
         - file: e2e/notes.test.ts
           tests:
             - REQ-FE-033: Retrieve note with special characters
+            - REQ-FE-033: frontend note detail route renders (not SolidJS Not Found)

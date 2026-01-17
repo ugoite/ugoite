@@ -106,6 +106,16 @@ describe("Notes CRUD", () => {
 			expect(note.title).toBe("Read Test Note");
 		});
 
+		test("REQ-FE-033: frontend note detail route renders (not SolidJS Not Found)", async () => {
+			const res = await client.getFrontend(
+				`/workspaces/default/notes/${encodeURIComponent(testNoteId)}`,
+			);
+			expect(res.ok).toBe(true);
+			const html = await res.text();
+			expect(html).not.toContain("Visit solidjs.com");
+			expect(html).not.toContain("NOT FOUND");
+		});
+
 		test("GET /workspaces/default/notes/:id returns 404 for nonexistent", async () => {
 			const res = await client.getApi(
 				"/workspaces/default/notes/nonexistent-note-id-xyz",
