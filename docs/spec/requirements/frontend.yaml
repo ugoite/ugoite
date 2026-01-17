@@ -396,3 +396,17 @@ requirements:
           tests:
             - Edit Mode toggle and inline edit
             - keyboard copy shortcut
+
+  - id: REQ-FE-032
+    title: Legacy Notes Route Redirect
+    description: |
+      The legacy /notes UI route MUST redirect users to /workspaces.
+    related_spec:
+      - features/README.md
+    priority: low
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/routes/notes/index.test.tsx
+          tests:
+            - REQ-FE-032: legacy notes route redirects

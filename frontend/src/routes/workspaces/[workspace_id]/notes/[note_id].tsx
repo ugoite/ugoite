@@ -11,11 +11,12 @@ export default function WorkspaceNoteDetailRoute() {
 	const ctx = useContext(NotesRouteContext);
 	const workspaceId = ctx?.workspaceId ?? fallbackWorkspaceId;
 	const noteStore = ctx?.noteStore ?? createNoteStore(fallbackWorkspaceId);
+	const noteId = () => (params.note_id ? decodeURIComponent(params.note_id) : "");
 
 	return (
 		<NoteDetailPane
 			workspaceId={workspaceId}
-			noteId={() => params.note_id}
+			noteId={noteId}
 			onAfterSave={() => noteStore.loadNotes()}
 			onDeleted={() => {
 				noteStore.loadNotes();
