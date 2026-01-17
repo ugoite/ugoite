@@ -5,8 +5,12 @@ export default function Nav() {
 	const active = (path: string) =>
 		path === location.pathname ? "border-sky-600" : "border-transparent hover:border-sky-600";
 
-	// Hide nav on notes page (it has its own navigation)
-	if (location.pathname === "/notes" || location.pathname.startsWith("/notes/")) {
+	const isWorkspaceExplorer =
+		location.pathname.includes("/workspaces/") &&
+		(location.pathname.includes("/notes") || location.pathname.includes("/classes"));
+
+	// Hide nav on workspace explorer pages (they have their own navigation)
+	if (isWorkspaceExplorer) {
 		return null;
 	}
 
@@ -16,8 +20,8 @@ export default function Nav() {
 				<li class={`border-b-2 ${active("/")} mx-1.5 sm:mx-6`}>
 					<a href="/">Home</a>
 				</li>
-				<li class={`border-b-2 ${active("/notes")} mx-1.5 sm:mx-6`}>
-					<a href="/notes">Notes</a>
+				<li class={`border-b-2 ${active("/workspaces")} mx-1.5 sm:mx-6`}>
+					<a href="/workspaces">Workspaces</a>
 				</li>
 				<li class={`border-b-2 ${active("/about")} mx-1.5 sm:mx-6`}>
 					<a href="/about">About</a>

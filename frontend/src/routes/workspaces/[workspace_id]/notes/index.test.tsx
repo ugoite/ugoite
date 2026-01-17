@@ -1,24 +1,23 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import NotesRoute from "../notes";
+import WorkspaceNotesRoute from "../notes";
 import { resetMockData, seedNote, seedWorkspace } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "~/lib/types";
 
 const navigateMock = vi.fn();
-const paramsMock: { noteId?: string } = {};
-const locationMock = { pathname: "/notes" };
+const paramsMock: { note_id?: string; workspace_id?: string } = {};
 
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
 	useParams: () => paramsMock,
-	useLocation: () => locationMock,
 }));
 
-describe.skip("/notes (layout route)", () => {
+describe("/workspaces/:workspace_id/notes (layout route)", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
-		paramsMock.noteId = undefined;
+		paramsMock.note_id = undefined;
+		paramsMock.workspace_id = "default";
 		resetMockData();
 		const ws: Workspace = {
 			id: "default",
@@ -46,11 +45,11 @@ describe.skip("/notes (layout route)", () => {
 		seedNote("default", note, record);
 	});
 
-	it("REQ-FE-008: selecting a note navigates to /notes/:id", async () => {
+	it("REQ-FE-008: selecting a note navigates to /workspaces/:workspace_id/notes/:id", async () => {
 		render(() => (
-			<NotesRoute>
+			<WorkspaceNotesRoute>
 				<div data-testid="route-children" />
-			</NotesRoute>
+			</WorkspaceNotesRoute>
 		));
 
 		await waitFor(() => {
@@ -58,14 +57,14 @@ describe.skip("/notes (layout route)", () => {
 		});
 
 		fireEvent.click(screen.getByText("Test Note"));
-		expect(navigateMock).toHaveBeenCalledWith("/notes/note-1");
+		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/notes/note-1");
 	});
 
 	it("REQ-FE-018: selecting a note class navigates correctly", async () => {
 		render(() => (
-			<NotesRoute>
+			<WorkspaceNotesRoute>
 				<div data-testid="route-children" />
-			</NotesRoute>
+			</WorkspaceNotesRoute>
 		));
 
 		await waitFor(() => {
@@ -73,6 +72,6 @@ describe.skip("/notes (layout route)", () => {
 		});
 
 		fireEvent.click(screen.getByText("Classes"));
-		expect(navigateMock).toHaveBeenCalledWith("/notes/classes");
+		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/classes");
 	});
 });

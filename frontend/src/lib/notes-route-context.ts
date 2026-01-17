@@ -19,7 +19,9 @@ export const NotesRouteContext = createContext<NotesRouteContextValue>();
 export function useNotesRouteContext(): NotesRouteContextValue {
 	const ctx = useContext(NotesRouteContext);
 	if (!ctx) {
-		throw new Error("NotesRouteContext is missing. Ensure it is provided by the /notes route.");
+		throw new Error(
+			"NotesRouteContext is missing. Ensure it is provided by the /workspaces/{workspace_id}/notes route.",
+		);
 	}
 	return ctx;
 }

@@ -7,10 +7,10 @@ export default function Home() {
 			<p class="text-xl mb-8 text-gray-600">Your AI-native, programmable knowledge base</p>
 			<div class="flex justify-center gap-4">
 				<A
-					href="/notes"
+					href="/workspaces"
 					class="px-6 py-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
 				>
-					Open Notes
+					Open Workspaces
 				</A>
 				<A
 					href="/about"
