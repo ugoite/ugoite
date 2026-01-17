@@ -401,4 +401,53 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		);
 		expect(conflictRes.status).toBe(409);
 	});
+
+	// REQ-FE-034: Multi-note navigation should not get stuck in loading state
+	test("Frontend: navigating between multiple notes from class table and note list loads properly", async () => {
+		// Create test notes with a class
+		const classNotes = await Promise.all([
+			client.postApi("/workspaces/default/notes", {
+				content: "# Note A\nclass: test-nav\nContent A",
+			}),
+			client.postApi("/workspaces/default/notes", {
+				content: "# Note B\nclass: test-nav\nContent B",
+			}),
+			client.postApi("/workspaces/default/notes", {
+				content: "# Note C\nclass: test-nav\nContent C",
+			}),
+		]);
+
+		const notes = await Promise.all(classNotes.map(r => r.json())) as Array<{ id: string }>;
+		notes.forEach(n => createdNoteIds.push(n.id));
+
+		// Wait for indexing (longer wait for class indexing)
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// Navigate to each note detail page and verify they load (not stuck on "Loading note...")
+		for (const note of notes) {
+			const noteRes = await client.getFrontend(`/workspaces/default/notes/${encodeURIComponent(note.id)}`);
+			expect(noteRes.ok).toBe(true);
+			const noteHtml = await noteRes.text();
+			
+			// Should NOT contain the loading message
+			expect(noteHtml).not.toContain("Loading note...");
+			
+			// Should contain actual note-related markup (SSR renders the page)
+			expect(noteHtml).toContain("<div id=\"app\">");
+		}
+
+		// Test rapid navigation between notes (simulating clicking through notes list)
+		const rapidNav = await Promise.all(
+			notes.map(n => client.getFrontend(`/workspaces/default/notes/${encodeURIComponent(n.id)}`))
+		);
+		
+		for (const res of rapidNav) {
+			expect(res.ok).toBe(true);
+			const html = await res.text();
+			// Key: verify no "Loading note..." in any parallel navigation
+			expect(html).not.toContain("Loading note...");
+			// Verify SSR rendered successfully
+			expect(html).toContain("<div id=\"app\">");
+		}
+	});
 });

@@ -139,7 +139,11 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		return attachment;
 	};
 
-	if (note.loading) {
+	// Check if we're actively loading AND don't have a note yet
+	// This prevents getting stuck in loading state on navigation
+	const isInitiallyLoading = note.loading && !note() && !noteError();
+
+	if (isInitiallyLoading) {
 		return <div class="flex-1 flex items-center justify-center text-gray-500">Loading note...</div>;
 	}
 

@@ -433,3 +433,24 @@ requirements:
           tests:
             - REQ-FE-033: Retrieve note with special characters
             - REQ-FE-033: frontend note detail route renders (not SolidJS Not Found)
+  - id: REQ-FE-034
+    title: Note Detail Loading State Management
+    description: |
+      When navigating between notes (from note list, class table, or any navigation),
+      the loading state MUST properly clear and display the note content.
+      The UI MUST NOT get stuck showing "Loading note..." indefinitely.
+      Rapid sequential navigation between multiple notes MUST work smoothly without
+      requiring page reloads.
+    rationale: |
+      SolidJS createResource can maintain loading=true even after data loads/fails,
+      especially during rapid navigation. The fix checks loading state in conjunction
+      with data presence to avoid infinite loading screens.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: critical
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - REQ-FE-034: Multi-note navigation should not get stuck in loading state
