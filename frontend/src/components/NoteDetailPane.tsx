@@ -136,6 +136,27 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		return attachment;
 	};
 
+	if (note.loading) {
+		return <div class="flex-1 flex items-center justify-center text-gray-500">Loading note...</div>;
+	}
+
+	if (!note()) {
+		return (
+			<div class="flex-1 flex items-center justify-center text-gray-500">
+				<div class="text-center space-y-2">
+					<p>Note not found.</p>
+					<button
+						type="button"
+						class="text-sm text-sky-700 hover:underline"
+						onClick={props.onDeleted}
+					>
+						Back to notes
+					</button>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<div class="flex-1 flex flex-col overflow-hidden">
 			<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
