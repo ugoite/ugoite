@@ -12,7 +12,7 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: list_workspaces_endpoint
     frontend:
-      path: /api/workspaces
+      path: /workspaces
       file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.list
     ieapp_core:
@@ -30,7 +30,7 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: create_workspace_endpoint
     frontend:
-      path: /api/workspaces
+      path: /workspaces
       file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.create
     ieapp_core:
@@ -48,7 +48,7 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: get_workspace_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}
+      path: /workspaces/{workspace_id}
       file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.get
     ieapp_core:
@@ -66,7 +66,7 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: patch_workspace_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}
+      path: /workspaces/{workspace_id}
       file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.patch
     ieapp_core:
@@ -84,7 +84,7 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: test_connection_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/test-connection
+      path: /workspaces/{workspace_id}/test-connection
       file: frontend/src/lib/workspace-api.ts
       function: workspaceApi.testConnection
     ieapp_core:

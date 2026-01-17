@@ -9,7 +9,7 @@ FastAPI-based REST API for IEapp - your AI-native, programmable knowledge base.
 │                    FastAPI Application                   │
 ├─────────────┬─────────────────┬────────────────────────┤
 │   REST API  │   MCP Server    │     Middleware         │
-│  /api/*     │  (Milestone 4)  │  - HMAC Signing        │
+│ /workspaces/* │  (Milestone 4)  │  - HMAC Signing        │
 │             │                 │  - Localhost Guard      │
 │             │                 │  - Error Handling       │
 ├─────────────┴─────────────────┴────────────────────────┤

@@ -12,7 +12,7 @@ updated: "2026-01"
 
 conventions:
   canonical_path: Backend HTTP path.
-  frontend_path_prefix: /api
+  frontend_path_prefix: ""
   columns:
     - method
     - backend.path

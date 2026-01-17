@@ -73,7 +73,7 @@ Start development (frontend + backend):
 mise run dev
 ```
 
-Note: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
+Note: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/workspaces` requests to this URL. Client code calls the backend using the same paths as the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
 
 Notes:
