@@ -58,21 +58,6 @@ describe("/workspaces/:workspace_id/notes (layout route)", () => {
 		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/notes/note%2Fwith%20space");
 	});
 
-	it("REQ-FE-033b: creating a note also navigates with encoded id", async () => {
-		render(() => (
-			<WorkspaceNotesRoute>
-				<div data-testid="route-children" />
-			</WorkspaceNotesRoute>
-		));
-
-		await waitFor(() => {
-			expect(screen.getByText("New Note")).toBeInTheDocument();
-		});
-
-		// This simulates creating a note which should also use encoded navigation
-		// The test validates that handleCreateNote uses encodeURIComponent
-	});
-
 	it("REQ-FE-018: selecting a note class navigates correctly", async () => {
 		render(() => (
 			<WorkspaceNotesRoute>

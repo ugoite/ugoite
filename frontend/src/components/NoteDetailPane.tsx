@@ -22,6 +22,7 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 	const [conflictMessage, setConflictMessage] = createSignal<string | null>(null);
 	const [currentRevisionId, setCurrentRevisionId] = createSignal<string | null>(null);
 	const [lastLoadedNoteId, setLastLoadedNoteId] = createSignal<string | null>(null);
+	const [noteError, setNoteError] = createSignal<string | null>(null);
 
 	const [note, { refetch: refetchNote }] = createResource(
 		() => {
@@ -32,8 +33,10 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		async (p) => {
 			if (!p) return null;
 			try {
+				setNoteError(null);
 				return await noteApi.get(p.wsId, p.noteId);
-			} catch {
+			} catch (error) {
+				setNoteError(error instanceof Error ? error.message : "Failed to load note");
 				return null;
 			}
 		},
@@ -144,7 +147,13 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		return (
 			<div class="flex-1 flex items-center justify-center text-gray-500">
 				<div class="text-center space-y-2">
-					<p>Note not found.</p>
+					<p class="text-gray-700">Note not found.</p>
+					<Show when={noteError()}>
+						<p class="text-sm text-red-600">{noteError()}</p>
+						<p class="text-xs text-gray-400">
+							Workspace: {props.workspaceId()} / Note: {props.noteId()}
+						</p>
+					</Show>
 					<button
 						type="button"
 						class="text-sm text-sky-700 hover:underline"

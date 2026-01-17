@@ -7,6 +7,7 @@ export default function WorkspaceNoteRestoreRoute() {
 	const params = useParams<{ workspace_id: string; note_id: string }>();
 	const workspaceId = () => params.workspace_id;
 	const noteId = () => params.note_id;
+	const encodedNoteId = () => encodeURIComponent(noteId());
 	const [selectedRevision, setSelectedRevision] = createSignal<string | null>(null);
 	const [restoreError, setRestoreError] = createSignal<string | null>(null);
 	const [isRestoring, setIsRestoring] = createSignal(false);
@@ -22,7 +23,7 @@ export default function WorkspaceNoteRestoreRoute() {
 		setRestoreError(null);
 		try {
 			await noteApi.restore(workspaceId(), noteId(), revisionId);
-			navigate(`/workspaces/${workspaceId()}/notes/${noteId()}`);
+			navigate(`/workspaces/${workspaceId()}/notes/${encodedNoteId()}`);
 		} catch (err) {
 			setRestoreError(err instanceof Error ? err.message : "Failed to restore note");
 		} finally {
@@ -38,7 +39,7 @@ export default function WorkspaceNoteRestoreRoute() {
 					<p class="text-sm text-gray-500">Select a revision to restore.</p>
 				</div>
 				<A
-					href={`/workspaces/${workspaceId()}/notes/${noteId()}`}
+					href={`/workspaces/${workspaceId()}/notes/${encodedNoteId()}`}
 					class="text-sm text-sky-700 hover:underline"
 				>
 					Back to Note

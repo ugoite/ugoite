@@ -20,7 +20,16 @@ export const noteApi = {
 			`/workspaces/${encodeURIComponent(workspaceId)}/notes/${encodeURIComponent(noteId)}`,
 		);
 		if (!res.ok) {
-			throw new Error(`Failed to get note: ${res.statusText}`);
+			let detail = res.statusText;
+			try {
+				const data = (await res.json()) as { detail?: string };
+				if (data?.detail) {
+					detail = data.detail;
+				}
+			} catch {
+				// ignore parse errors
+			}
+			throw new Error(`Failed to get note: ${detail}`);
 		}
 		return (await res.json()) as Note;
 	},

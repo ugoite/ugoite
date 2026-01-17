@@ -6,6 +6,7 @@ export default function WorkspaceNoteHistoryRoute() {
 	const params = useParams<{ workspace_id: string; note_id: string }>();
 	const workspaceId = () => params.workspace_id;
 	const noteId = () => params.note_id;
+	const encodedNoteId = () => encodeURIComponent(noteId());
 
 	const [history] = createResource(async () => {
 		return await noteApi.history(workspaceId(), noteId());
@@ -19,7 +20,7 @@ export default function WorkspaceNoteHistoryRoute() {
 					<p class="text-sm text-gray-500">Note ID: {noteId()}</p>
 				</div>
 				<A
-					href={`/workspaces/${workspaceId()}/notes/${noteId()}`}
+					href={`/workspaces/${workspaceId()}/notes/${encodedNoteId()}`}
 					class="text-sm text-sky-700 hover:underline"
 				>
 					Back to Note
@@ -45,7 +46,7 @@ export default function WorkspaceNoteHistoryRoute() {
 										<p class="text-xs text-gray-500">{revision.created_at}</p>
 									</div>
 									<A
-										href={`/workspaces/${workspaceId()}/notes/${noteId()}/history/${revision.revision_id}`}
+										href={`/workspaces/${workspaceId()}/notes/${encodedNoteId()}/history/${revision.revision_id}`}
 										class="text-sm text-blue-600 hover:underline"
 									>
 										View Revision
