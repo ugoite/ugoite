@@ -13,6 +13,22 @@ export interface NoteDetailPaneProps {
 	onAfterSave?: () => void;
 }
 
+async function fetchWithTimeout<T>(
+	promise: Promise<T>,
+	ms = 10000,
+	errorMsg = "Operation timed out",
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+	});
+	try {
+		return await Promise.race([promise, timeout]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
 export function NoteDetailPane(props: NoteDetailPaneProps) {
 	const [attachments, setAttachments] = createSignal<Attachment[]>([]);
 
@@ -34,7 +50,11 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 			if (!p) return null;
 			try {
 				setNoteError(null);
-				return await noteApi.get(p.wsId, p.noteId);
+				return await fetchWithTimeout(
+					noteApi.get(p.wsId, p.noteId),
+					10000,
+					"Loading note timed out",
+				);
 			} catch (error) {
 				setNoteError(error instanceof Error ? error.message : "Failed to load note");
 				return null;
@@ -139,108 +159,129 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		return attachment;
 	};
 
-	// Check if we're actively loading AND don't have a note yet
-	// This prevents getting stuck in loading state on navigation
-	const isInitiallyLoading = note.loading && !note() && !noteError();
-
-	if (isInitiallyLoading) {
-		return <div class="flex-1 flex items-center justify-center text-gray-500">Loading note...</div>;
-	}
-
-	if (!note()) {
-		return (
-			<div class="flex-1 flex items-center justify-center text-gray-500">
-				<div class="text-center space-y-2">
-					<p class="text-gray-700">Note not found.</p>
-					<Show when={noteError()}>
-						<p class="text-sm text-red-600">{noteError()}</p>
-						<p class="text-xs text-gray-400">
-							Workspace: {props.workspaceId()} / Note: {props.noteId()}
-						</p>
-					</Show>
-					<button
-						type="button"
-						class="text-sm text-sky-700 hover:underline"
-						onClick={props.onDeleted}
-					>
-						Back to notes
-					</button>
-				</div>
-			</div>
-		);
-	}
-
 	return (
-		<div class="flex-1 flex flex-col overflow-hidden">
-			<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
-				<div>
-					<h2 class="font-semibold text-gray-800">{note()?.title || "Untitled"}</h2>
-					<Show when={note()?.class}>
-						<span class="text-sm text-gray-500">Class: {note()?.class}</span>
-					</Show>
+		<div class="flex-1 flex flex-col overflow-hidden relative h-full">
+			<Show when={note.loading}>
+				<div class="absolute inset-0 bg-white/80 z-50 flex items-center justify-center">
+					<div class="text-center">
+						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2" />
+						<p class="text-gray-500 text-sm">Loading note...</p>
+					</div>
 				</div>
-				<div class="flex items-center gap-2">
-					<button
-						type="button"
-						onClick={() => refetchNote()}
-						class="p-2 hover:bg-gray-100 rounded"
-						aria-label="Refresh"
-					>
-						<svg
-							class="w-5 h-5"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-							/>
-						</svg>
-					</button>
-					<button
-						type="button"
-						onClick={handleDelete}
-						class="p-2 text-red-500 hover:bg-red-50 rounded"
-						aria-label="Delete note"
-					>
-						<svg
-							class="w-5 h-5"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-							/>
-						</svg>
-					</button>
-				</div>
-			</div>
+			</Show>
 
-			<div class="flex-1 bg-white overflow-hidden flex flex-col">
-				<MarkdownEditor
-					content={editorContent()}
-					onChange={handleContentChange}
-					onSave={handleSave}
-					isDirty={isDirty()}
-					isSaving={isSaving()}
-					conflictMessage={conflictMessage() || undefined}
-					showPreview
-					placeholder="Start writing in Markdown..."
-				/>
+			<Show
+				when={note()}
+				fallback={
+					<div class="flex-1 flex items-center justify-center text-gray-500">
+						<Show
+							when={noteError()}
+							fallback={
+								<Show when={!note.loading} fallback={<div />}>
+									<p class="text-gray-700">Note not found.</p>
+								</Show>
+							}
+						>
+							<div class="text-center space-y-2">
+								<p class="text-red-600">{noteError()}</p>
+								<p class="text-xs text-gray-400">
+									Workspace: {props.workspaceId()} / Note: {props.noteId()}
+								</p>
+								<button
+									type="button"
+									onClick={() => refetchNote()}
+									class="text-blue-600 hover:underline"
+								>
+									Retry
+								</button>
+								<div class="mt-4">
+									<button
+										type="button"
+										class="text-sm text-sky-700 hover:underline"
+										onClick={props.onDeleted}
+									>
+										Back to notes
+									</button>
+								</div>
+							</div>
+						</Show>
+					</div>
+				}
+			>
+				{(currentNote) => (
+					<div class="flex-1 flex flex-col overflow-hidden">
+						<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
+							<div>
+								<h2 class="font-semibold text-gray-800">{currentNote().title || "Untitled"}</h2>
+								<Show when={currentNote().class}>
+									<span class="text-sm text-gray-500">Class: {currentNote().class}</span>
+								</Show>
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => refetchNote()}
+									class="p-2 hover:bg-gray-100 rounded"
+									aria-label="Refresh"
+								>
+									<svg
+										class="w-5 h-5"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+										/>
+									</svg>
+								</button>
+								<button
+									type="button"
+									onClick={handleDelete}
+									class="p-2 text-red-500 hover:bg-red-50 rounded"
+									aria-label="Delete note"
+								>
+									<svg
+										class="w-5 h-5"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										aria-hidden="true"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+										/>
+									</svg>
+								</button>
+							</div>
+						</div>
 
-				<div class="border-t p-4">
-					<AttachmentUploader onUpload={handleAttachmentUpload} attachments={attachments()} />
-				</div>
-			</div>
+						<div class="flex-1 bg-white overflow-hidden flex flex-col">
+							<MarkdownEditor
+								content={editorContent()}
+								onChange={handleContentChange}
+								onSave={handleSave}
+								isDirty={isDirty()}
+								isSaving={isSaving()}
+								conflictMessage={conflictMessage() || undefined}
+								showPreview
+								placeholder="Start writing in Markdown..."
+							/>
+
+							<div class="border-t p-4">
+								<AttachmentUploader onUpload={handleAttachmentUpload} attachments={attachments()} />
+							</div>
+						</div>
+					</div>
+				)}
+			</Show>
 		</div>
 	);
 }

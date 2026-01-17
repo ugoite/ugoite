@@ -454,3 +454,18 @@ requirements:
         - file: e2e/notes.test.ts
           tests:
             - REQ-FE-034: Multi-note navigation should not get stuck in loading state
+
+  - id: REQ-FE-035
+    title: Robust Note Navigation and Recovery
+    description: |
+      Navigation to note details must include fail-safes (e.g., timeouts) to prevent infinite loading states.
+      The UI must successfully transition from loading to content or error state within 10 seconds.
+      Users must be able to navigate away from a pending load without the UI becoming unresponsive.
+    type: non-functional
+    priority: critical
+    status: planned
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - REQ-FE-035: Navigation timeout handling and recovery
