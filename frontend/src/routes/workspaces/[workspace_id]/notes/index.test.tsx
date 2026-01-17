@@ -27,25 +27,23 @@ describe("/workspaces/:workspace_id/notes (layout route)", () => {
 		seedWorkspace(ws);
 
 		const note: Note = {
-			id: "note-1",
+			id: "note/with space",
 			content: "# Test Note\n\nBody",
 			revision_id: "rev-1",
 			created_at: "2026-01-01T00:00:00Z",
 			updated_at: "2026-01-01T00:00:00Z",
 		};
 		const record: NoteRecord = {
-			id: "note-1",
+			id: "note/with space",
 			title: "Test Note",
-			class: null,
 			updated_at: "2026-01-01T00:00:00Z",
-			created_at: "2026-01-01T00:00:00Z",
 			properties: {},
 			links: [],
 		};
 		seedNote("default", note, record);
 	});
 
-	it("REQ-FE-008: selecting a note navigates to /workspaces/:workspace_id/notes/:id", async () => {
+	it("REQ-FE-033: selecting a note navigates with encoded id", async () => {
 		render(() => (
 			<WorkspaceNotesRoute>
 				<div data-testid="route-children" />
@@ -57,7 +55,7 @@ describe("/workspaces/:workspace_id/notes (layout route)", () => {
 		});
 
 		fireEvent.click(screen.getByText("Test Note"));
-		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/notes/note-1");
+		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/notes/note%2Fwith%20space");
 	});
 
 	it("REQ-FE-018: selecting a note class navigates correctly", async () => {
