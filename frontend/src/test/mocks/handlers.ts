@@ -50,13 +50,13 @@ export const seedNote = (workspaceId: string, note: Note, record: NoteRecord) =>
 
 export const handlers = [
 	// List workspaces
-	http.get("http://localhost:3000/api/workspaces", () => {
+	http.get("http://localhost:3000/workspaces", () => {
 		const workspaces = Array.from(mockWorkspaces.values());
 		return HttpResponse.json(workspaces);
 	}),
 
 	// Create workspace
-	http.post("http://localhost:3000/api/workspaces", async ({ request }) => {
+	http.post("http://localhost:3000/workspaces", async ({ request }) => {
 		const body = (await request.json()) as { name: string };
 		const id = body.name;
 
@@ -80,7 +80,7 @@ export const handlers = [
 	}),
 
 	// List classes
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/classes", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/classes", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		if (!mockWorkspaces.has(workspaceId)) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -90,7 +90,7 @@ export const handlers = [
 	}),
 
 	// Get class
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/classes/:className", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/classes/:className", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		const className = params.className as string;
 		if (!mockWorkspaces.has(workspaceId)) {
@@ -105,7 +105,7 @@ export const handlers = [
 
 	// Create class
 	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/classes",
+		"http://localhost:3000/workspaces/:workspaceId/classes",
 		async ({ params, request }) => {
 			const workspaceId = params.workspaceId as string;
 			if (!mockWorkspaces.has(workspaceId)) {
@@ -125,7 +125,7 @@ export const handlers = [
 	),
 
 	// Get workspace
-	http.get("http://localhost:3000/api/workspaces/:workspaceId", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId", ({ params }) => {
 		const workspace = mockWorkspaces.get(params.workspaceId as string);
 		if (!workspace) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -134,7 +134,7 @@ export const handlers = [
 	}),
 
 	// Patch workspace
-	http.patch("http://localhost:3000/api/workspaces/:workspaceId", async ({ params, request }) => {
+	http.patch("http://localhost:3000/workspaces/:workspaceId", async ({ params, request }) => {
 		const workspaceId = params.workspaceId as string;
 		const workspace = mockWorkspaces.get(workspaceId);
 		if (!workspace) {
@@ -153,7 +153,7 @@ export const handlers = [
 
 	// Test connection
 	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/test-connection",
+		"http://localhost:3000/workspaces/:workspaceId/test-connection",
 		async ({ params, request }) => {
 			const workspaceId = params.workspaceId as string;
 			if (!mockWorkspaces.has(workspaceId)) {
@@ -168,7 +168,7 @@ export const handlers = [
 	),
 
 	// List notes in workspace
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/notes", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/notes", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		if (!mockWorkspaces.has(workspaceId)) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -178,61 +178,58 @@ export const handlers = [
 	}),
 
 	// Create note
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/notes",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
-			}
+	http.post("http://localhost:3000/workspaces/:workspaceId/notes", async ({ params, request }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
 
-			const body = (await request.json()) as NoteCreatePayload;
-			const noteId = body.id || crypto.randomUUID();
-			const revisionId = generateRevisionId();
-			const now = new Date().toISOString();
+		const body = (await request.json()) as NoteCreatePayload;
+		const noteId = body.id || crypto.randomUUID();
+		const revisionId = generateRevisionId();
+		const now = new Date().toISOString();
 
-			// Extract title from markdown (first H1 or first line)
-			const titleMatch = body.content.match(/^#\s+(.+)$/m);
-			const title = titleMatch ? titleMatch[1] : body.content.split("\n")[0] || "Untitled";
+		// Extract title from markdown (first H1 or first line)
+		const titleMatch = body.content.match(/^#\s+(.+)$/m);
+		const title = titleMatch ? titleMatch[1] : body.content.split("\n")[0] || "Untitled";
 
-			// Extract properties from H2 headers
-			const properties: Record<string, string> = {};
-			const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-			for (const match of body.content.matchAll(h2Regex)) {
-				const key = match[1].trim();
-				const value = match[2].trim();
-				properties[key] = value;
-			}
+		// Extract properties from H2 headers
+		const properties: Record<string, string> = {};
+		const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
+		for (const match of body.content.matchAll(h2Regex)) {
+			const key = match[1].trim();
+			const value = match[2].trim();
+			properties[key] = value;
+		}
 
-			const note: Note = {
-				id: noteId,
-				content: body.content,
-				revision_id: revisionId,
-				created_at: now,
-				updated_at: now,
-				attachments: [],
-				links: [],
-			};
+		const note: Note = {
+			id: noteId,
+			content: body.content,
+			revision_id: revisionId,
+			created_at: now,
+			updated_at: now,
+			attachments: [],
+			links: [],
+		};
 
-			const record: NoteRecord = {
-				id: noteId,
-				title,
-				updated_at: now,
-				properties,
-				tags: [],
-				links: [],
-				attachments: [],
-			};
+		const record: NoteRecord = {
+			id: noteId,
+			title,
+			updated_at: now,
+			properties,
+			tags: [],
+			links: [],
+			attachments: [],
+		};
 
-			mockNotes.get(workspaceId)?.set(noteId, note);
-			mockNoteIndex.get(workspaceId)?.set(noteId, record);
+		mockNotes.get(workspaceId)?.set(noteId, note);
+		mockNoteIndex.get(workspaceId)?.set(noteId, record);
 
-			return HttpResponse.json({ id: noteId, revision_id: revisionId }, { status: 201 });
-		},
-	),
+		return HttpResponse.json({ id: noteId, revision_id: revisionId }, { status: 201 });
+	}),
 
 	// Get note
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		const noteId = params.noteId as string;
 
@@ -245,7 +242,7 @@ export const handlers = [
 
 	// Update note
 	http.put(
-		"http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId",
+		"http://localhost:3000/workspaces/:workspaceId/notes/:noteId",
 		async ({ params, request }) => {
 			const workspaceId = params.workspaceId as string;
 			const noteId = params.noteId as string;
@@ -312,7 +309,7 @@ export const handlers = [
 	),
 
 	// Delete note
-	http.delete("http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
+	http.delete("http://localhost:3000/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		const noteId = params.noteId as string;
 
@@ -327,32 +324,29 @@ export const handlers = [
 	}),
 
 	// Query notes
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/query",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	http.post("http://localhost:3000/workspaces/:workspaceId/query", async ({ params, request }) => {
+		const workspaceId = params.workspaceId as string;
+		if (!mockWorkspaces.has(workspaceId)) {
+			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+		}
+
+		const body = (await request.json()) as { filter: Record<string, unknown> };
+		const notes = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
+
+		// Simple filtering
+		const filtered = notes.filter((note) => {
+			for (const [key, value] of Object.entries(body.filter)) {
+				if (key === "class" && note.class !== value) return false;
+				if (note.properties[key] !== value) return false;
 			}
+			return true;
+		});
 
-			const body = (await request.json()) as { filter: Record<string, unknown> };
-			const notes = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
-
-			// Simple filtering
-			const filtered = notes.filter((note) => {
-				for (const [key, value] of Object.entries(body.filter)) {
-					if (key === "class" && note.class !== value) return false;
-					if (note.properties[key] !== value) return false;
-				}
-				return true;
-			});
-
-			return HttpResponse.json(filtered);
-		},
-	),
+		return HttpResponse.json(filtered);
+	}),
 
 	// Search notes
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/search", ({ params, request }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/search", ({ params, request }) => {
 		const workspaceId = params.workspaceId as string;
 		if (!mockWorkspaces.has(workspaceId)) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -371,7 +365,7 @@ export const handlers = [
 	}),
 
 	// Upload attachment
-	http.post("http://localhost:3000/api/workspaces/:workspaceId/attachments", async ({ params }) => {
+	http.post("http://localhost:3000/workspaces/:workspaceId/attachments", async ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		if (!mockWorkspaces.has(workspaceId)) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -388,7 +382,7 @@ export const handlers = [
 
 	// Delete attachment
 	http.delete(
-		"http://localhost:3000/api/workspaces/:workspaceId/attachments/:attachmentId",
+		"http://localhost:3000/workspaces/:workspaceId/attachments/:attachmentId",
 		({ params }) => {
 			const workspaceId = params.workspaceId as string;
 			const attachmentId = params.attachmentId as string;
@@ -414,47 +408,44 @@ export const handlers = [
 	),
 
 	// Create link
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/links",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			const { source, target, kind } = (await request.json()) as WorkspaceLink;
-			const notesStore = mockNotes.get(workspaceId);
-			if (!notesStore?.has(source) || !notesStore?.has(target)) {
-				return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+	http.post("http://localhost:3000/workspaces/:workspaceId/links", async ({ params, request }) => {
+		const workspaceId = params.workspaceId as string;
+		const { source, target, kind } = (await request.json()) as WorkspaceLink;
+		const notesStore = mockNotes.get(workspaceId);
+		if (!notesStore?.has(source) || !notesStore?.has(target)) {
+			return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+		}
+		const id = crypto.randomUUID();
+		const link: WorkspaceLink = { id, source, target, kind };
+		mockLinks.get(workspaceId)?.set(id, link);
+
+		const updateLinks = (noteId: string, linkEntry: WorkspaceLink) => {
+			const note = notesStore.get(noteId);
+			if (note) {
+				note.links = [...(note.links || []), linkEntry];
 			}
-			const id = crypto.randomUUID();
-			const link: WorkspaceLink = { id, source, target, kind };
-			mockLinks.get(workspaceId)?.set(id, link);
+			const record = mockNoteIndex.get(workspaceId)?.get(noteId);
+			if (record) {
+				record.links = [
+					...record.links,
+					{
+						id: linkEntry.id,
+						target: linkEntry.target,
+						kind: linkEntry.kind,
+						source: linkEntry.source,
+					},
+				];
+			}
+		};
 
-			const updateLinks = (noteId: string, linkEntry: WorkspaceLink) => {
-				const note = notesStore.get(noteId);
-				if (note) {
-					note.links = [...(note.links || []), linkEntry];
-				}
-				const record = mockNoteIndex.get(workspaceId)?.get(noteId);
-				if (record) {
-					record.links = [
-						...record.links,
-						{
-							id: linkEntry.id,
-							target: linkEntry.target,
-							kind: linkEntry.kind,
-							source: linkEntry.source,
-						},
-					];
-				}
-			};
+		updateLinks(source, link);
+		updateLinks(target, { ...link, source: target, target: source });
 
-			updateLinks(source, link);
-			updateLinks(target, { ...link, source: target, target: source });
-
-			return HttpResponse.json(link, { status: 201 });
-		},
-	),
+		return HttpResponse.json(link, { status: 201 });
+	}),
 
 	// List links
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/links", ({ params }) => {
+	http.get("http://localhost:3000/workspaces/:workspaceId/links", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		if (!mockWorkspaces.has(workspaceId)) {
 			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
@@ -464,7 +455,7 @@ export const handlers = [
 	}),
 
 	// Delete link
-	http.delete("http://localhost:3000/api/workspaces/:workspaceId/links/:linkId", ({ params }) => {
+	http.delete("http://localhost:3000/workspaces/:workspaceId/links/:linkId", ({ params }) => {
 		const workspaceId = params.workspaceId as string;
 		const linkId = params.linkId as string;
 		const linksStore = mockLinks.get(workspaceId);

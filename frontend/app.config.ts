@@ -10,11 +10,10 @@ const backendUrl = env.BACKEND_URL;
 const proxyRule: Record<string, ProxyOptions> = {};
 
 if (backendUrl) {
-	proxyRule["/api"] = {
+	proxyRule["/workspaces"] = {
 		target: backendUrl,
 		changeOrigin: true,
 		secure: false,
-		rewrite: (path: string) => path.replace(/^\/api/, ""),
 	};
 } else if (env.NODE_ENV === "development") {
 	throw new Error(
