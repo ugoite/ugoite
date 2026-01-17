@@ -6,12 +6,10 @@
  * - Read notes
  * - Update notes
  * - Delete notes
- * - Navigation between note list and detail views
  */
 
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { E2EClient, waitForServers } from "./lib/client";
-import type { Note, NoteRecord } from "../frontend/src/lib/types";
 
 const client = new E2EClient();
 
@@ -113,6 +111,27 @@ describe("Notes CRUD", () => {
 				"/workspaces/default/notes/nonexistent-note-id-xyz",
 			);
 			expect(res.status).toBe(404);
+		});
+
+		test("REQ-FE-033: Retrieve note with special characters", async () => {
+			const timestamp = Date.now();
+			const title = `Special Note @ ${timestamp} % &`;
+			const res = await client.postApi("/workspaces/default/notes", {
+				content: `# ${title}\nTesting special chars in title.`,
+			});
+			expect(res.status).toBe(201);
+			const created = await res.json() as { id: string };
+			createdNoteIds.push(created.id);
+
+			// Ensure we can fetch it using encoded ID
+			// This verifies that the backend (and our fetch logic) handles encoded IDs correctly
+			// mirroring the frontend fix where we use encodeURIComponent
+			const getRes = await client.getApi(
+				`/workspaces/default/notes/${encodeURIComponent(created.id)}`
+			);
+			expect(getRes.ok).toBe(true);
+			const fetched = await getRes.json() as { title: string };
+			expect(fetched.title).toBe(title);
 		});
 	});
 
@@ -371,51 +390,5 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 			},
 		);
 		expect(conflictRes.status).toBe(409);
-	});
-});
-
-describe("Note Navigation", () => {
-	test("Selecting a note from list navigates to detail view", async () => {
-		// Create a test note
-		const timestamp = Date.now();
-		const createRes = await client.postApi("/workspaces/default/notes", {
-			content: `# Navigation Test ${timestamp}\n\nTest note for navigation verification`,
-		});
-		expect(createRes.status).toBe(201);
-		const created = await createRes.json() as { id: string; revision_id: string };
-		createdNoteIds.push(created.id);
-
-		// Fetch note list to verify note is in list
-		const listRes = await client.getApi("/workspaces/default/notes");
-		expect(listRes.ok).toBe(true);
-		const notes = await listRes.json() as NoteRecord[];
-		const noteInList = notes.find((n) => n.id === created.id);
-		expect(noteInList).toBeDefined();
-		expect(noteInList?.title).toBe(`Navigation Test ${timestamp}`);
-
-		// Fetch note detail by ID (simulating navigation)
-		const detailRes = await client.getApi(`/workspaces/default/notes/${created.id}`);
-		expect(detailRes.ok).toBe(true);
-		const detail = await detailRes.json() as Note;
-		expect(detail.title).toBe(`Navigation Test ${timestamp}`);
-		expect(detail.content).toContain("Test note for navigation verification");
-	});
-
-	test("Note detail works with special characters in ID", async () => {
-		// Create note with content that might generate special char IDs
-		const createRes = await client.postApi("/workspaces/default/notes", {
-			content: "# Test Note: Special/Characters-2025\n\nContent with special chars",
-		});
-		expect(createRes.status).toBe(201);
-		const created = await createRes.json() as { id: string; revision_id: string };
-		createdNoteIds.push(created.id);
-
-		// Fetch detail (ID might contain special chars or be URL-encoded)
-		const detailRes = await client.getApi(
-			`/workspaces/default/notes/${encodeURIComponent(created.id)}`,
-		);
-		expect(detailRes.ok).toBe(true);
-		const detail = await detailRes.json() as Note;
-		expect(detail.id).toBe(created.id);
 	});
 });

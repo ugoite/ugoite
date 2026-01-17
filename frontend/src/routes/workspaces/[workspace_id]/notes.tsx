@@ -173,7 +173,7 @@ export default function WorkspaceNotesRoute(props: RouteSectionProps) {
 	};
 
 	const handleSelectNote = (noteId: string) => {
-		navigate(`/workspaces/${workspaceId()}/notes/${noteId}`);
+		navigate(`/workspaces/${workspaceId()}/notes/${encodeURIComponent(noteId)}`);
 	};
 
 	// Create note
