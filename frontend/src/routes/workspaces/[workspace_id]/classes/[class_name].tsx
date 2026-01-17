@@ -52,7 +52,9 @@ export default function WorkspaceClassDetailRoute() {
 					<ClassTable
 						workspaceId={ctx.workspaceId()}
 						noteClass={s}
-						onNoteClick={(noteId) => navigate(`/workspaces/${ctx.workspaceId()}/notes/${noteId}`)}
+						onNoteClick={(noteId) =>
+							navigate(`/workspaces/${ctx.workspaceId()}/notes/${encodeURIComponent(noteId)}`)
+						}
 					/>
 					<EditClassDialog
 						open={showEditDialog()}

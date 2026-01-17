@@ -49,7 +49,7 @@ apis:
       function: get_note_endpoint
     frontend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/index.tsx
       function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -67,7 +67,7 @@ apis:
       function: update_note_endpoint
     frontend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/index.tsx
       function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
@@ -85,7 +85,7 @@ apis:
       function: delete_note_endpoint
     frontend:
       path: /workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/index.tsx
       function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs

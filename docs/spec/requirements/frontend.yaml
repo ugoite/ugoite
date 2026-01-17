@@ -425,6 +425,9 @@ requirements:
         - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
           tests:
             - REQ-FE-033: selecting a note navigates with encoded id
+        - file: frontend/src/routes/workspaces/[workspace_id]/classes/class-detail.test.tsx
+          tests:
+            - REQ-FE-033: class detail navigation encodes note id
       e2e:
         - file: e2e/notes.test.ts
           tests:
