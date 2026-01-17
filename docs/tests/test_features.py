@@ -53,6 +53,64 @@ def _function_exists_typescript(contents: str, name: str) -> bool:
     return bool(re.search(rf"\b{re.escape(name)}\b", contents))
 
 
+def _path_exists_python(contents: str, path: str) -> bool:
+    return bool(re.search(rf"['\"]{re.escape(path)}['\"]", contents))
+
+
+def _path_exists_typescript(contents: str, path: str) -> bool:
+    pattern = re.escape(path)
+    pattern = re.sub(r"\\\{[^}]+\\\}", r"\\$\\{[^}]+\\}", pattern)
+    return bool(re.search(pattern, contents))
+
+
+def _assert_path_exists(file_path: Path, path_value: str) -> None:
+    if path_value.lower() in {"n/a", "na"}:
+        message = "Feature registry must not use n/a for path values"
+        raise AssertionError(message)
+    contents = _read_text(file_path)
+    suffix = file_path.suffix.lower()
+    if suffix == ".py":
+        if not _path_exists_python(contents, path_value):
+            message = f"Missing path {path_value} in {file_path}"
+            raise AssertionError(message)
+    elif suffix in {".ts", ".tsx"}:
+        if not _path_exists_typescript(contents, path_value):
+            message = f"Missing path {path_value} in {file_path}"
+            raise AssertionError(message)
+    else:
+        message = f"Unsupported file type for {file_path}"
+        raise AssertionError(message)
+
+
+def _validate_section(api_id: str, section_key: str, section: dict[str, Any]) -> None:
+    file_value = section.get("file")
+    function_value = section.get("function")
+    if not file_value or not function_value:
+        message = f"Missing {section_key} file/function for {api_id}"
+        raise AssertionError(message)
+
+    if str(file_value).strip().lower() in {"n/a", "na"}:
+        message = "Feature registry must not use n/a for file paths"
+        raise AssertionError(message)
+
+    if section_key == "ieapp_cli" and not section.get("command"):
+        message = f"Missing ieapp_cli command for {api_id}"
+        raise AssertionError(message)
+
+    file_path = REPO_ROOT / file_value
+    if not file_path.exists():
+        message = f"Missing file {file_value}"
+        raise AssertionError(message)
+    _assert_function_exists(file_path, str(function_value))
+
+    if section_key in {"backend", "frontend"}:
+        path_value = section.get("path")
+        if not path_value:
+            message = f"Missing {section_key} path for {api_id}"
+            raise AssertionError(message)
+        _assert_path_exists(file_path, str(path_value))
+
+
 def _assert_function_exists(file_path: Path, function_name: str) -> None:
     if function_name.lower() in {"n/a", "na"}:
         message = "Feature registry must not use n/a for function names"
@@ -105,25 +163,7 @@ def test_feature_paths_exist() -> None:
             if not isinstance(section, dict):
                 message = f"Missing {section_key} section for {api_id}"
                 raise TypeError(message)
-            file_value = section.get("file")
-            function_value = section.get("function")
-            if not file_value or not function_value:
-                message = f"Missing {section_key} file/function for {api_id}"
-                raise AssertionError(message)
-
-            if str(file_value).strip().lower() in {"n/a", "na"}:
-                message = "Feature registry must not use n/a for file paths"
-                raise AssertionError(message)
-
-            if section_key == "ieapp_cli" and not section.get("command"):
-                message = f"Missing ieapp_cli command for {api_id}"
-                raise AssertionError(message)
-
-            file_path = REPO_ROOT / file_value
-            if not file_path.exists():
-                message = f"Missing file {file_value}"
-                raise AssertionError(message)
-            _assert_function_exists(file_path, str(function_value))
+            _validate_section(api_id, section_key, section)
 
 
 def test_no_undeclared_feature_modules() -> None:

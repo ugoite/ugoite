@@ -12,7 +12,7 @@ apis:
       file: backend/src/app/api/endpoints/search.py
       function: query_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/query
+      path: /workspaces/{workspace_id}/query
       file: frontend/src/lib/search-api.ts
       function: searchApi.query
     ieapp_core:
@@ -30,7 +30,7 @@ apis:
       file: backend/src/app/api/endpoints/search.py
       function: search_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/search
+      path: /workspaces/{workspace_id}/search
       file: frontend/src/lib/search-api.ts
       function: searchApi.keyword
     ieapp_core:
