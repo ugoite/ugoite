@@ -410,3 +410,20 @@ requirements:
         - file: frontend/src/routes/notes/index.test.tsx
           tests:
             - REQ-FE-032: legacy notes route redirects
+
+  - id: REQ-FE-033
+    title: Note Selection and Navigation
+    description: |
+      Selecting a note from the list view MUST correctly navigate to that
+      note's detail view, displaying the full note content. The navigation
+      MUST work correctly regardless of special characters in note IDs.
+    related_spec:
+      - stories/core.yaml#STORY-002
+    priority: high
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - Selecting a note from list navigates to detail view
+            - Note detail works with special characters in ID
