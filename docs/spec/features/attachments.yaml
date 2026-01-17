@@ -8,11 +8,11 @@ apis:
   - id: attachment.upload
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/attachments
+      path: /api/workspaces/{workspace_id}/attachments
       file: backend/src/app/api/endpoints/attachment.py
       function: upload_attachment_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments
+      path: /workspaces/{workspace_id}/attachments
       file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.upload
     ieapp_core:
@@ -26,11 +26,11 @@ apis:
   - id: attachment.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/attachments
+      path: /api/workspaces/{workspace_id}/attachments
       file: backend/src/app/api/endpoints/attachment.py
       function: list_attachments_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments
+      path: /workspaces/{workspace_id}/attachments
       file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.list
     ieapp_core:
@@ -44,11 +44,11 @@ apis:
   - id: attachment.delete
     method: DELETE
     backend:
-      path: /workspaces/{workspace_id}/attachments/{attachment_id}
+      path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
       file: backend/src/app/api/endpoints/attachment.py
       function: delete_attachment_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
+      path: /workspaces/{workspace_id}/attachments/{attachment_id}
       file: frontend/src/lib/attachment-api.ts
       function: attachmentApi.delete
     ieapp_core:

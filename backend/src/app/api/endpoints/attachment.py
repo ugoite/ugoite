@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/attachments",
+    "/api/workspaces/{workspace_id}/attachments",
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_attachment_endpoint(
@@ -46,7 +46,7 @@ async def upload_attachment_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/attachments")
+@router.get("/api/workspaces/{workspace_id}/attachments")
 async def list_attachments_endpoint(
     workspace_id: str,
 ) -> list[dict[str, Any]]:
@@ -65,7 +65,7 @@ async def list_attachments_endpoint(
         ) from e
 
 
-@router.delete("/workspaces/{workspace_id}/attachments/{attachment_id}")
+@router.delete("/api/workspaces/{workspace_id}/attachments/{attachment_id}")
 async def delete_attachment_endpoint(
     workspace_id: str,
     attachment_id: str,

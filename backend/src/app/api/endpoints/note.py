@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/notes",
+    "/api/workspaces/{workspace_id}/notes",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_note_endpoint(
@@ -63,7 +63,7 @@ async def create_note_endpoint(
     return {"id": note_id, "revision_id": note_data.get("revision_id", "")}
 
 
-@router.get("/workspaces/{workspace_id}/notes")
+@router.get("/api/workspaces/{workspace_id}/notes")
 async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all notes in a workspace."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -80,7 +80,7 @@ async def list_notes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/notes/{note_id}")
+@router.get("/api/workspaces/{workspace_id}/notes/{note_id}")
 async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
     """Get a note by ID."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -108,7 +108,7 @@ async def get_note_endpoint(workspace_id: str, note_id: str) -> dict[str, Any]:
         ) from e
 
 
-@router.put("/workspaces/{workspace_id}/notes/{note_id}")
+@router.put("/api/workspaces/{workspace_id}/notes/{note_id}")
 async def update_note_endpoint(
     workspace_id: str,
     note_id: str,
@@ -185,7 +185,7 @@ async def update_note_endpoint(
         ) from e
 
 
-@router.delete("/workspaces/{workspace_id}/notes/{note_id}")
+@router.delete("/api/workspaces/{workspace_id}/notes/{note_id}")
 async def delete_note_endpoint(
     workspace_id: str,
     note_id: str,
@@ -218,7 +218,7 @@ async def delete_note_endpoint(
         return {"id": note_id, "status": "deleted"}
 
 
-@router.get("/workspaces/{workspace_id}/notes/{note_id}/history")
+@router.get("/api/workspaces/{workspace_id}/notes/{note_id}/history")
 async def get_note_history_endpoint(
     workspace_id: str,
     note_id: str,
@@ -249,7 +249,7 @@ async def get_note_history_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}")
+@router.get("/api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}")
 async def get_note_revision_endpoint(
     workspace_id: str,
     note_id: str,
@@ -287,7 +287,7 @@ async def get_note_revision_endpoint(
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/notes/{note_id}/restore")
+@router.post("/api/workspaces/{workspace_id}/notes/{note_id}/restore")
 async def restore_note_endpoint(
     workspace_id: str,
     note_id: str,

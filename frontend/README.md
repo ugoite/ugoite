@@ -147,12 +147,12 @@ E2E tests are located in the root `/e2e` directory using Bun's native test runne
 
 The frontend connects to the backend REST API:
 
-- `GET /workspaces` - List workspaces
-- `POST /workspaces` - Create workspace
-- `GET /workspaces/{id}/notes` - List notes
-- `POST /workspaces/{id}/notes` - Create note
-- `PUT /workspaces/{id}/notes/{noteId}` - Update note (requires `parent_revision_id`)
-- `DELETE /workspaces/{id}/notes/{noteId}` - Delete note
+- `GET /api/workspaces` - List workspaces
+- `POST /api/workspaces` - Create workspace
+- `GET /api/workspaces/{id}/notes` - List notes
+- `POST /api/workspaces/{id}/notes` - Create note
+- `PUT /api/workspaces/{id}/notes/{noteId}` - Update note (requires `parent_revision_id`)
+- `DELETE /api/workspaces/{id}/notes/{noteId}` - Delete note
 
 See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md](../docs/spec/api/mcp.md) for the API specification.
 

@@ -53,6 +53,17 @@ def _function_exists_typescript(contents: str, name: str) -> bool:
     return bool(re.search(rf"\b{re.escape(name)}\b", contents))
 
 
+def _path_regex(path: str) -> re.Pattern[str]:
+    parts = re.split(r"(\{[^}]+\})", path)
+    pattern = ""
+    for part in parts:
+        if part.startswith("{") and part.endswith("}"):
+            pattern += r"(?:[^/]+|\$\{[^}]+\}|:[^/]+)"
+        else:
+            pattern += re.escape(part)
+    return re.compile(pattern)
+
+
 def _assert_function_exists(file_path: Path, function_name: str) -> None:
     if function_name.lower() in {"n/a", "na"}:
         message = "Feature registry must not use n/a for function names"
@@ -124,6 +135,41 @@ def test_feature_paths_exist() -> None:
                 message = f"Missing file {file_value}"
                 raise AssertionError(message)
             _assert_function_exists(file_path, str(function_value))
+
+
+def test_feature_paths_match_implementation() -> None:
+    """REQ-API-004: Feature registry paths must align with implementations."""
+    entries = _iter_api_entries()
+    if not entries:
+        message = "No API entries found in feature registry"
+        raise AssertionError(message)
+
+    for api in entries:
+        api_id = api.get("id", "<unknown>")
+        backend = api.get("backend", {})
+        frontend = api.get("frontend", {})
+        backend_path = str(backend.get("path", ""))
+        frontend_path = str(frontend.get("path", ""))
+
+        if not backend_path.startswith("/api"):
+            message = f"Backend path must start with /api for {api_id}"
+            raise AssertionError(message)
+        if frontend_path.startswith("/api"):
+            message = f"Frontend path must not start with /api for {api_id}"
+            raise AssertionError(message)
+
+        backend_file = REPO_ROOT / str(backend.get("file", ""))
+        frontend_file = REPO_ROOT / str(frontend.get("file", ""))
+
+        backend_contents = _read_text(backend_file)
+        frontend_contents = _read_text(frontend_file)
+
+        if not _path_regex(backend_path).search(backend_contents):
+            message = f"Missing backend path {backend_path} for {api_id}"
+            raise AssertionError(message)
+        if not _path_regex(frontend_path).search(frontend_contents):
+            message = f"Missing frontend path {frontend_path} for {api_id}"
+            raise AssertionError(message)
 
 
 def test_no_undeclared_feature_modules() -> None:

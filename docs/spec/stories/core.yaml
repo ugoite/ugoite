@@ -24,9 +24,9 @@ stories:
       - Frontend provides validation warnings if a note violates its Class definition
       - Creating a note from a Class pre-fills the template
     related_apis:
-      - rest: POST /workspaces/{ws_id}/notes
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
-      - rest: GET /workspaces/{ws_id}/classes
+      - rest: POST /api/workspaces/{ws_id}/notes
+      - rest: PUT /api/workspaces/{ws_id}/notes/{note_id}
+      - rest: GET /api/workspaces/{ws_id}/classes
       - mcp: ieapp://{workspace_id}/classes
     requirements:
       - REQ-NOTE-006
@@ -42,8 +42,8 @@ stories:
       - Configurable storage backend via connection string (e.g., `s3://my-bucket/notes`)
       - Seamless switching between local and remote storage
     related_apis:
-      - rest: PATCH /workspaces/{id}
-      - rest: POST /workspaces/{id}/test-connection
+      - rest: PATCH /api/workspaces/{id}
+      - rest: POST /api/workspaces/{id}/test-connection
     requirements:
       - REQ-STO-001
       - REQ-STO-006
@@ -58,9 +58,9 @@ stories:
       - Every save creates a new immutable revision
       - UI allows browsing history and reverting
     related_apis:
-      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history
-      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
-      - rest: POST /workspaces/{ws_id}/notes/{note_id}/restore
+      - rest: GET /api/workspaces/{ws_id}/notes/{note_id}/history
+      - rest: GET /api/workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
+      - rest: POST /api/workspaces/{ws_id}/notes/{note_id}/restore
     requirements:
       - REQ-NOTE-005
 
@@ -75,8 +75,8 @@ stories:
       - Structured queries filter by Class and properties
       - Results are ranked by relevance
     related_apis:
-      - rest: GET /workspaces/{ws_id}/search?q=query
-      - rest: POST /workspaces/{ws_id}/query
+      - rest: GET /api/workspaces/{ws_id}/search?q=query
+      - rest: POST /api/workspaces/{ws_id}/query
     requirements:
       - REQ-IDX-003
       - REQ-IDX-004

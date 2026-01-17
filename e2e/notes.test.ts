@@ -25,7 +25,7 @@ describe("Notes CRUD", () => {
 		// Cleanup: delete all notes created during tests
 		for (const id of createdNoteIds) {
 			try {
-				await client.deleteApi(`/workspaces/default/notes/${id}`);
+				await client.deleteApi(`/api/workspaces/default/notes/${id}`);
 			} catch {
 				// Ignore cleanup errors
 			}
@@ -33,14 +33,14 @@ describe("Notes CRUD", () => {
 	});
 
 	describe("Create Notes", () => {
-		test("POST /workspaces/default/notes creates a new note", async () => {
+		test("POST /api/workspaces/default/notes creates a new note", async () => {
 			const timestamp = Date.now();
 			const noteData = {
 				content: `# E2E Test Note ${timestamp}\n\nThis note was created by E2E tests at ${new Date().toISOString()}`,
 			};
 
 			const res = await client.postApi(
-				"/workspaces/default/notes",
+				"/api/workspaces/default/notes",
 				noteData,
 			);
 			expect(res.status).toBe(201);
@@ -53,14 +53,14 @@ describe("Notes CRUD", () => {
 			createdNoteIds.push(note.id);
 
 			// Verify note content via GET
-			const getRes = await client.getApi(`/workspaces/default/notes/${note.id}`);
+			const getRes = await client.getApi(`/api/workspaces/default/notes/${note.id}`);
 			const fetched = await getRes.json() as { title: string; content: string };
 			expect(fetched.title).toBe(`E2E Test Note ${timestamp}`);
 		});
 
-		test("POST /workspaces/default/notes validates required fields", async () => {
+		test("POST /api/workspaces/default/notes validates required fields", async () => {
 			// Missing title should fail or use default
-			const res = await client.postApi("/workspaces/default/notes", {
+			const res = await client.postApi("/api/workspaces/default/notes", {
 				content: "Content without title",
 			});
 
@@ -79,7 +79,7 @@ describe("Notes CRUD", () => {
 
 		beforeAll(async () => {
 			// Create a note for read tests (title comes from first heading)
-			const res = await client.postApi("/workspaces/default/notes", {
+			const res = await client.postApi("/api/workspaces/default/notes", {
 				content: "# Read Test Note\n\nNote for testing read operations",
 			});
 			const note = await res.json() as { id: string };
@@ -87,17 +87,17 @@ describe("Notes CRUD", () => {
 			createdNoteIds.push(testNoteId);
 		});
 
-		test("GET /workspaces/default/notes returns note list", async () => {
-			const res = await client.getApi("/workspaces/default/notes");
+		test("GET /api/workspaces/default/notes returns note list", async () => {
+			const res = await client.getApi("/api/workspaces/default/notes");
 			expect(res.ok).toBe(true);
 
 			const notes = await res.json();
 			expect(Array.isArray(notes)).toBe(true);
 		});
 
-		test("GET /workspaces/default/notes/:id returns specific note", async () => {
+		test("GET /api/workspaces/default/notes/:id returns specific note", async () => {
 			const res = await client.getApi(
-				`/workspaces/default/notes/${testNoteId}`,
+				`/api/workspaces/default/notes/${testNoteId}`,
 			);
 			expect(res.ok).toBe(true);
 
@@ -106,9 +106,9 @@ describe("Notes CRUD", () => {
 			expect(note.title).toBe("Read Test Note");
 		});
 
-		test("GET /workspaces/default/notes/:id returns 404 for nonexistent", async () => {
+		test("GET /api/workspaces/default/notes/:id returns 404 for nonexistent", async () => {
 			const res = await client.getApi(
-				"/workspaces/default/notes/nonexistent-note-id-xyz",
+				"/api/workspaces/default/notes/nonexistent-note-id-xyz",
 			);
 			expect(res.status).toBe(404);
 		});
@@ -119,7 +119,7 @@ describe("Notes CRUD", () => {
 
 		beforeAll(async () => {
 			// Create a note for update tests (title comes from first heading)
-			const res = await client.postApi("/workspaces/default/notes", {
+			const res = await client.postApi("/api/workspaces/default/notes", {
 				content: "# Update Test Note\n\nOriginal content",
 			});
 			const note = await res.json() as { id: string; revision_id: string };
@@ -127,9 +127,9 @@ describe("Notes CRUD", () => {
 			createdNoteIds.push(testNoteId);
 		});
 
-		test("PUT /workspaces/default/notes/:id updates note", async () => {
+		test("PUT /api/workspaces/default/notes/:id updates note", async () => {
 			// First get the current note to get revision_id
-			const getRes = await client.getApi(`/workspaces/default/notes/${testNoteId}`);
+			const getRes = await client.getApi(`/api/workspaces/default/notes/${testNoteId}`);
 			const currentNote = await getRes.json() as { revision_id: string };
 
 			const updatedData = {
@@ -138,7 +138,7 @@ describe("Notes CRUD", () => {
 			};
 
 			const res = await client.putApi(
-				`/workspaces/default/notes/${testNoteId}`,
+				`/api/workspaces/default/notes/${testNoteId}`,
 				updatedData,
 			);
 			expect(res.ok).toBe(true);
@@ -147,20 +147,20 @@ describe("Notes CRUD", () => {
 			expect(note).toHaveProperty("revision_id");
 
 			// Verify via GET
-			const verifyRes = await client.getApi(`/workspaces/default/notes/${testNoteId}`);
+			const verifyRes = await client.getApi(`/api/workspaces/default/notes/${testNoteId}`);
 			const verified = await verifyRes.json() as { title: string; content: string };
 			expect(verified.title).toBe("Updated Title");
 			expect(verified.content).toContain("Updated content by E2E test");
 		});
 
-		test("PUT /workspaces/default/notes/:id preserves title from heading", async () => {
+		test("PUT /api/workspaces/default/notes/:id preserves title from heading", async () => {
 			// Get current note to get revision_id
-			const getRes = await client.getApi(`/workspaces/default/notes/${testNoteId}`);
+			const getRes = await client.getApi(`/api/workspaces/default/notes/${testNoteId}`);
 			const currentNote = await getRes.json() as { revision_id: string; title: string };
 
 			// Update with same title (heading) but different body
 			const res = await client.putApi(
-				`/workspaces/default/notes/${testNoteId}`,
+				`/api/workspaces/default/notes/${testNoteId}`,
 				{
 					markdown: `# ${currentNote.title}\n\nOnly body content updated`,
 					parent_revision_id: currentNote.revision_id,
@@ -169,15 +169,15 @@ describe("Notes CRUD", () => {
 			expect(res.ok).toBe(true);
 
 			// Verify title was preserved and content updated
-			const verifyRes = await client.getApi(`/workspaces/default/notes/${testNoteId}`);
+			const verifyRes = await client.getApi(`/api/workspaces/default/notes/${testNoteId}`);
 			const note = await verifyRes.json() as { title: string; content: string };
 			expect(note.title).toBe(currentNote.title);
 			expect(note.content).toContain("Only body content updated");
 		});
 
-		test("PUT /workspaces/default/notes/:id returns 404 for nonexistent", async () => {
+		test("PUT /api/workspaces/default/notes/:id returns 404 for nonexistent", async () => {
 			const res = await client.putApi(
-				"/workspaces/default/notes/nonexistent-note-id-xyz",
+				"/api/workspaces/default/notes/nonexistent-note-id-xyz",
 				{
 					markdown: "# Will Fail",
 					parent_revision_id: "any-revision-id",
@@ -188,29 +188,29 @@ describe("Notes CRUD", () => {
 	});
 
 	describe("Delete Notes", () => {
-		test("DELETE /workspaces/default/notes/:id removes note", async () => {
+		test("DELETE /api/workspaces/default/notes/:id removes note", async () => {
 			// Create a note specifically for deletion
-			const createRes = await client.postApi("/workspaces/default/notes", {
+			const createRes = await client.postApi("/api/workspaces/default/notes", {
 				content: "# Note to Delete\n\nThis will be deleted",
 			});
 			const note = await createRes.json() as { id: string };
 
 			// Delete it
 			const deleteRes = await client.deleteApi(
-				`/workspaces/default/notes/${note.id}`,
+				`/api/workspaces/default/notes/${note.id}`,
 			);
 			expect([200, 204]).toContain(deleteRes.status);
 
 			// Verify it's gone
 			const getRes = await client.getApi(
-				`/workspaces/default/notes/${note.id}`,
+				`/api/workspaces/default/notes/${note.id}`,
 			);
 			expect(getRes.status).toBe(404);
 		});
 
-		test("DELETE /workspaces/default/notes/:id returns 404 for nonexistent", async () => {
+		test("DELETE /api/workspaces/default/notes/:id returns 404 for nonexistent", async () => {
 			const res = await client.deleteApi(
-				"/workspaces/default/notes/nonexistent-note-id-xyz",
+				"/api/workspaces/default/notes/nonexistent-note-id-xyz",
 			);
 			expect(res.status).toBe(404);
 		});
@@ -220,11 +220,11 @@ describe("Notes CRUD", () => {
 describe("Workspace Isolation", () => {
 	test("Notes from different workspaces are isolated", async () => {
 		// Get notes from default workspace
-		const defaultRes = await client.getApi("/workspaces/default/notes");
+		const defaultRes = await client.getApi("/api/workspaces/default/notes");
 		expect(defaultRes.ok).toBe(true);
 
 		// Get notes from Stay workspace (if exists)
-		const stayRes = await client.getApi("/workspaces/Stay/notes");
+		const stayRes = await client.getApi("/api/workspaces/Stay/notes");
 		// May return 200 (exists) or 404 (doesn't exist)
 		expect([200, 404]).toContain(stayRes.status);
 	});
@@ -240,7 +240,7 @@ describe("Note Search", () => {
 		];
 
 		for (const note of notes) {
-			const res = await client.postApi("/workspaces/default/notes", note);
+			const res = await client.postApi("/api/workspaces/default/notes", note);
 			if (res.status === 201) {
 				const created = await res.json();
 				createdNoteIds.push(created.id);
@@ -248,8 +248,8 @@ describe("Note Search", () => {
 		}
 	});
 
-	test("GET /workspaces/default/notes returns all created notes", async () => {
-		const res = await client.getApi("/workspaces/default/notes");
+	test("GET /api/workspaces/default/notes returns all created notes", async () => {
+		const res = await client.getApi("/api/workspaces/default/notes");
 		expect(res.ok).toBe(true);
 
 		const notes = await res.json();
@@ -263,7 +263,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 	test("consecutive PUT should succeed with updated revision_id", async () => {
 		// REQ-FE-012: Multiple consecutive saves must work correctly
 		// Create a note
-		const createRes = await client.postApi("/workspaces/default/notes", {
+		const createRes = await client.postApi("/api/workspaces/default/notes", {
 			content: "# Initial Content\n\nThis is the first version.",
 		});
 		expect(createRes.status).toBe(201);
@@ -273,7 +273,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// First update
 		const firstUpdateRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# Updated Content\n\nThis is the second version.",
 				parent_revision_id: createResult.revision_id,
@@ -287,7 +287,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// Second update with new revision_id
 		const secondUpdateRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# Third Version\n\nThis is the third version.",
 				parent_revision_id: firstResult.revision_id,
@@ -301,7 +301,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// Third update to confirm it keeps working
 		const thirdUpdateRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# Fourth Version\n\nConsecutive saves work correctly!",
 				parent_revision_id: secondResult.revision_id,
@@ -313,7 +313,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 	test("saved content should persist after reload (REQ-FE-010)", async () => {
 		// REQ-FE-010: Content must be persisted to server
 		// Create a note
-		const createRes = await client.postApi("/workspaces/default/notes", {
+		const createRes = await client.postApi("/api/workspaces/default/notes", {
 			content: "# Persistence Test\n\nOriginal content.",
 		});
 		expect(createRes.status).toBe(201);
@@ -323,7 +323,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// Update with new content
 		const updateRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# Persistence Test\n\nUpdated content that should persist.",
 				parent_revision_id: createResult.revision_id,
@@ -332,7 +332,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		expect(updateRes.ok).toBe(true);
 
 		// Fetch the note and verify content was saved
-		const getRes = await client.getApi(`/workspaces/default/notes/${createResult.id}`);
+		const getRes = await client.getApi(`/api/workspaces/default/notes/${createResult.id}`);
 		expect(getRes.ok).toBe(true);
 
 		const note = await getRes.json() as { id: string; content: string; revision_id: string };
@@ -342,7 +342,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 	test("PUT with stale revision_id should return 409 conflict", async () => {
 		// Create a note
-		const createRes = await client.postApi("/workspaces/default/notes", {
+		const createRes = await client.postApi("/api/workspaces/default/notes", {
 			content: "# Conflict Test\n\nTesting revision conflicts.",
 		});
 		expect(createRes.status).toBe(201);
@@ -352,7 +352,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// First update succeeds
 		const firstUpdateRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# After First Update",
 				parent_revision_id: createResult.revision_id,
@@ -362,7 +362,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 
 		// Second update with old/stale revision_id should fail with 409
 		const conflictRes = await client.putApi(
-			`/workspaces/default/notes/${createResult.id}`,
+			`/api/workspaces/default/notes/${createResult.id}`,
 			{
 				markdown: "# This Should Fail",
 				parent_revision_id: createResult.revision_id, // Using old revision_id

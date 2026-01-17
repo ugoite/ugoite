@@ -128,7 +128,7 @@ requirements:
   - id: REQ-IDX-007
     title: Hybrid Search Endpoint
     description: |
-      Expose GET /workspaces/{ws_id}/search using the inverted index (keyword)
+      Expose GET /api/workspaces/{ws_id}/search using the inverted index (keyword)
       and falling back to a simple scan when the index is absent.
     related_spec:
       - stories/core.yaml#STORY-005

@@ -14,7 +14,7 @@ client = TestClient(app)
 def workspace_id(tmp_path: object) -> str:
     """Create a workspace for testing."""
     ws_name = f"class-test-ws-{uuid.uuid4().hex}"
-    response = client.post("/workspaces", json={"name": ws_name})
+    response = client.post("/api/workspaces", json={"name": ws_name})
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -34,17 +34,17 @@ def test_create_and_get_class(workspace_id: str) -> None:
     }
 
     # Create Class
-    response = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
+    response = client.post(f"/api/workspaces/{workspace_id}/classes", json=class_def)
     assert response.status_code == 201
     assert response.json()["name"] == class_name
 
     # Get Class
-    response = client.get(f"/workspaces/{workspace_id}/classes/{class_name}")
+    response = client.get(f"/api/workspaces/{workspace_id}/classes/{class_name}")
     assert response.status_code == 200
     assert response.json() == class_def
 
     # List Classes
-    response = client.get(f"/workspaces/{workspace_id}/classes")
+    response = client.get(f"/api/workspaces/{workspace_id}/classes")
     assert response.status_code == 200
     classes = response.json()
     assert len(classes) == 1
@@ -61,7 +61,7 @@ def test_class_validation_in_note(workspace_id: str) -> None:
             "Priority": {"type": "string", "required": True},
         },
     }
-    client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
+    client.post(f"/api/workspaces/{workspace_id}/classes", json=class_def)
 
     # 2. Create Note with that Class
     note_content = """---
@@ -71,7 +71,7 @@ class: Task
 High
 """
     response = client.post(
-        f"/workspaces/{workspace_id}/notes",
+        f"/api/workspaces/{workspace_id}/notes",
         json={"content": note_content},
     )
     assert response.status_code == 201
@@ -79,11 +79,11 @@ High
     # 3. Query to check if properties are extracted
     # We need to trigger indexing first. In tests, we might need to wait or force index.
     # The search endpoint forces index run_once.
-    client.get(f"/workspaces/{workspace_id}/search?q=Task")
+    client.get(f"/api/workspaces/{workspace_id}/search?q=Task")
 
     # Now query
     response = client.post(
-        f"/workspaces/{workspace_id}/query",
+        f"/api/workspaces/{workspace_id}/query",
         json={"filter": {"class": "Task"}},
     )
     assert response.status_code == 200
@@ -105,7 +105,7 @@ class: MissingClass
 Value
 """
     create_resp = client.post(
-        f"/workspaces/{workspace_id}/notes",
+        f"/api/workspaces/{workspace_id}/notes",
         json={"content": note_content},
     )
     assert create_resp.status_code == 201
@@ -115,7 +115,7 @@ Value
     # Attempt to update the note (this triggers class validation)
     updated_md = note_content + "\n## Another\nX"
     upd_resp = client.put(
-        f"/workspaces/{workspace_id}/notes/{note_id}",
+        f"/api/workspaces/{workspace_id}/notes/{note_id}",
         json={
             "markdown": updated_md,
             "parent_revision_id": revision_id,

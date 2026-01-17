@@ -209,7 +209,7 @@ export async function waitForServers(
 	await waitFor(
 		async () => {
 			try {
-				const res = await client.getApi("/workspaces");
+				const res = await client.getApi("/api/workspaces");
 				return res.ok;
 			} catch {
 				return false;

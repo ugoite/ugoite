@@ -18,7 +18,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/workspaces/{workspace_id}/classes")
+@router.get("/api/workspaces/{workspace_id}/classes")
 async def list_classes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all classes in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -35,7 +35,7 @@ async def list_classes_endpoint(workspace_id: str) -> list[dict[str, Any]]:
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/classes/types")
+@router.get("/api/workspaces/{workspace_id}/classes/types")
 async def list_class_types_endpoint(workspace_id: str) -> list[str]:
     """Get list of available column types."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -54,7 +54,7 @@ async def list_class_types_endpoint(workspace_id: str) -> list[str]:
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/classes/{class_name}")
+@router.get("/api/workspaces/{workspace_id}/classes/{class_name}")
 async def get_class_endpoint(workspace_id: str, class_name: str) -> dict[str, Any]:
     """Get a specific class definition."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -76,7 +76,10 @@ async def get_class_endpoint(workspace_id: str, class_name: str) -> dict[str, An
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/classes", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/workspaces/{workspace_id}/classes",
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_class_endpoint(
     workspace_id: str,
     payload: ClassCreate,

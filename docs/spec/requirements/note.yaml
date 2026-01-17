@@ -36,7 +36,7 @@ requirements:
       e2e:
         - file: e2e/notes.test.ts
           tests:
-            - POST /workspaces/default/notes creates a new note
+            - POST /api/workspaces/default/notes creates a new note
 
   - id: REQ-NOTE-002
     title: Optimistic Concurrency via Revisions
@@ -92,7 +92,7 @@ requirements:
       e2e:
         - file: e2e/notes.test.ts
           tests:
-            - PUT /workspaces/default/notes/:id updates note
+            - PUT /api/workspaces/default/notes/:id updates note
 
   - id: REQ-NOTE-004
     title: Note Deletion (Tombstone)
@@ -117,7 +117,7 @@ requirements:
       e2e:
         - file: e2e/notes.test.ts
           tests:
-            - DELETE /workspaces/default/notes/:id removes note
+            - DELETE /api/workspaces/default/notes/:id removes note
       rust:
         - file: ieapp-core/tests/test_note.rs
           tests:

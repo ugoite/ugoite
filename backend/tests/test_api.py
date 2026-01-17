@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 def test_create_workspace(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a new workspace."""
-    response = test_client.post("/workspaces", json={"name": "test-ws"})
+    response = test_client.post("/api/workspaces", json={"name": "test-ws"})
     assert response.status_code == 201
     data = response.json()
     assert data["id"] == "test-ws"
@@ -30,10 +30,10 @@ def test_create_workspace_conflict(
 ) -> None:
     """Test creating a workspace that already exists."""
     # Create first time
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     # Create second time
-    response = test_client.post("/workspaces", json={"name": "test-ws"})
+    response = test_client.post("/api/workspaces", json={"name": "test-ws"})
     assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
 
@@ -44,10 +44,10 @@ def test_list_workspaces(
 ) -> None:
     """Test listing workspaces."""
     # Create some workspaces
-    test_client.post("/workspaces", json={"name": "ws1"})
-    test_client.post("/workspaces", json={"name": "ws2"})
+    test_client.post("/api/workspaces", json={"name": "ws1"})
+    test_client.post("/api/workspaces", json={"name": "ws2"})
 
-    response = test_client.get("/workspaces")
+    response = test_client.get("/api/workspaces")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -59,9 +59,9 @@ def test_get_workspace(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific workspace."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
-    response = test_client.get("/workspaces/test-ws")
+    response = test_client.get("/api/workspaces/test-ws")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "test-ws"
@@ -72,20 +72,20 @@ def test_get_workspace_not_found(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting a non-existent workspace."""
-    response = test_client.get("/workspaces/nonexistent")
+    response = test_client.get("/api/workspaces/nonexistent")
     assert response.status_code == 404
 
 
 def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a note in a workspace."""
     # Create workspace first
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     note_payload = {
         "content": "# My Note\n\nSome content",
     }
 
-    response = test_client.post("/workspaces/test-ws/notes", json=note_payload)
+    response = test_client.post("/api/workspaces/test-ws/notes", json=note_payload)
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
@@ -103,7 +103,7 @@ def test_create_note_conflict(
     temp_workspace_root: Path,
 ) -> None:
     """Test creating a note with an existing ID (if ID is provided)."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     # Create note with specific ID
     note_id = "my-note"
@@ -112,10 +112,10 @@ def test_create_note_conflict(
         "content": "# My Note",
     }
 
-    test_client.post("/workspaces/test-ws/notes", json=note_payload)
+    test_client.post("/api/workspaces/test-ws/notes", json=note_payload)
 
     # Try again
-    response = test_client.post("/workspaces/test-ws/notes", json=note_payload)
+    response = test_client.post("/api/workspaces/test-ws/notes", json=note_payload)
     assert response.status_code == 409
 
 
@@ -124,17 +124,17 @@ def test_list_notes(
     temp_workspace_root: Path,
 ) -> None:
     """Test listing notes in a workspace."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note1", "content": "# Note 1"},
     )
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note2", "content": "# Note 2"},
     )
 
-    response = test_client.get("/workspaces/test-ws/notes")
+    response = test_client.get("/api/workspaces/test-ws/notes")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -156,12 +156,12 @@ def test_list_notes_workspace_not_found_returns_404(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """GET /workspaces/{id}/notes should return 404 when workspace root.
+    """GET /api/workspaces/{id}/notes should return 404 when workspace root.
 
     lacks workspaces dir.
     """
     # temp_workspace_root fixture sets IEAPP_ROOT to an empty temporary directory
-    response = test_client.get("/workspaces/Stay/notes")
+    response = test_client.get("/api/workspaces/Stay/notes")
     assert response.status_code == 404
 
 
@@ -170,13 +170,13 @@ def test_get_note(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific note."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Test Note\n\nContent here"},
     )
 
-    response = test_client.get("/workspaces/test-ws/notes/test-note")
+    response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "test-note"
@@ -190,9 +190,9 @@ def test_get_note_not_found(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting a non-existent note."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
-    response = test_client.get("/workspaces/test-ws/notes/nonexistent")
+    response = test_client.get("/api/workspaces/test-ws/notes/nonexistent")
     assert response.status_code == 404
 
 
@@ -201,14 +201,14 @@ def test_update_note(
     temp_workspace_root: Path,
 ) -> None:
     """Test updating a note."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Original Title"},
     )
 
     # Get the note to get the revision_id
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     revision_id = get_response.json()["revision_id"]
 
     # Update the note
@@ -218,7 +218,7 @@ def test_update_note(
     }
 
     response = test_client.put(
-        "/workspaces/test-ws/notes/test-note",
+        "/api/workspaces/test-ws/notes/test-note",
         json=update_payload,
     )
     assert response.status_code == 200
@@ -228,7 +228,7 @@ def test_update_note(
     assert data["revision_id"] != revision_id  # New revision
 
     # Verify the note was updated by fetching it
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     updated_note = get_response.json()
     assert updated_note["title"] == "Updated Title"
     # Note: get_note returns "content" field (not "markdown")
@@ -240,7 +240,7 @@ def test_update_note_class_validation_error_returns_422_and_does_not_update(
     temp_workspace_root: Path,
 ) -> None:
     """Updating a classed note should fail with 422 when it violates the class."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     class_def = {
         "name": "Meeting",
@@ -249,7 +249,7 @@ def test_update_note_class_validation_error_returns_422_and_does_not_update(
         "fields": {"Date": {"type": "date", "required": True}},
         "defaults": None,
     }
-    res = test_client.post("/workspaces/test-ws/classes", json=class_def)
+    res = test_client.post("/api/workspaces/test-ws/classes", json=class_def)
     assert res.status_code == 201
 
     # Create a note with class Meeting but missing required Date property
@@ -262,18 +262,18 @@ class: Meeting
 Discuss stuff
 """
     res = test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "meeting-1", "content": note_content},
     )
     assert res.status_code == 201
 
-    get_res = test_client.get("/workspaces/test-ws/notes/meeting-1")
+    get_res = test_client.get("/api/workspaces/test-ws/notes/meeting-1")
     assert get_res.status_code == 200
     original = get_res.json()
     original_revision_id = original["revision_id"]
 
     update_res = test_client.put(
-        "/workspaces/test-ws/notes/meeting-1",
+        "/api/workspaces/test-ws/notes/meeting-1",
         json={
             "markdown": note_content,
             "parent_revision_id": original_revision_id,
@@ -283,7 +283,7 @@ Discuss stuff
     assert "Missing required field" in update_res.json()["detail"]
 
     # Ensure it did not update the revision
-    get_res = test_client.get("/workspaces/test-ws/notes/meeting-1")
+    get_res = test_client.get("/api/workspaces/test-ws/notes/meeting-1")
     assert get_res.status_code == 200
     after = get_res.json()
     assert after["revision_id"] == original_revision_id
@@ -294,19 +294,19 @@ def test_update_note_conflict(
     temp_workspace_root: Path,
 ) -> None:
     """Test updating a note with a stale parent_revision_id returns 409."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Original"},
     )
 
     # Get the original revision_id
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     original_revision_id = get_response.json()["revision_id"]
 
     # First update succeeds
     test_client.put(
-        "/workspaces/test-ws/notes/test-note",
+        "/api/workspaces/test-ws/notes/test-note",
         json={
             "markdown": "# Update 1",
             "parent_revision_id": original_revision_id,
@@ -315,7 +315,7 @@ def test_update_note_conflict(
 
     # Second update with stale revision_id should fail with 409
     response = test_client.put(
-        "/workspaces/test-ws/notes/test-note",
+        "/api/workspaces/test-ws/notes/test-note",
         json={
             "markdown": "# Update 2",
             "parent_revision_id": original_revision_id,  # Stale!
@@ -335,19 +335,19 @@ def test_delete_note(
     temp_workspace_root: Path,
 ) -> None:
     """Test deleting (tombstoning) a note."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# To Delete"},
     )
 
-    response = test_client.delete("/workspaces/test-ws/notes/test-note")
+    response = test_client.delete("/api/workspaces/test-ws/notes/test-note")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "deleted"
 
     # Deleted notes should not appear in list
-    list_response = test_client.get("/workspaces/test-ws/notes")
+    list_response = test_client.get("/api/workspaces/test-ws/notes")
     notes = list_response.json()
     note_ids = [n["id"] for n in notes]
     assert "test-note" not in note_ids
@@ -358,19 +358,19 @@ def test_get_note_history(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting note history."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Original"},
     )
 
     # Get initial revision
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     revision_id = get_response.json()["revision_id"]
 
     # Update to create another revision
     test_client.put(
-        "/workspaces/test-ws/notes/test-note",
+        "/api/workspaces/test-ws/notes/test-note",
         json={
             "markdown": "# Updated",
             "parent_revision_id": revision_id,
@@ -378,7 +378,7 @@ def test_get_note_history(
     )
 
     # Get history
-    response = test_client.get("/workspaces/test-ws/notes/test-note/history")
+    response = test_client.get("/api/workspaces/test-ws/notes/test-note/history")
     assert response.status_code == 200
     data = response.json()
     assert "revisions" in data
@@ -390,19 +390,19 @@ def test_get_note_revision(
     temp_workspace_root: Path,
 ) -> None:
     """Test getting a specific revision."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Original"},
     )
 
     # Get the revision_id
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     revision_id = get_response.json()["revision_id"]
 
     # Get the specific revision
     response = test_client.get(
-        f"/workspaces/test-ws/notes/test-note/history/{revision_id}",
+        f"/api/workspaces/test-ws/notes/test-note/history/{revision_id}",
     )
     assert response.status_code == 200
     data = response.json()
@@ -414,19 +414,19 @@ def test_restore_note(
     temp_workspace_root: Path,
 ) -> None:
     """Test restoring a note to a previous revision."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "test-note", "content": "# Original"},
     )
 
     # Get original revision
-    get_response = test_client.get("/workspaces/test-ws/notes/test-note")
+    get_response = test_client.get("/api/workspaces/test-ws/notes/test-note")
     original_revision_id = get_response.json()["revision_id"]
 
     # Update the note
     test_client.put(
-        "/workspaces/test-ws/notes/test-note",
+        "/api/workspaces/test-ws/notes/test-note",
         json={
             "markdown": "# Updated",
             "parent_revision_id": original_revision_id,
@@ -435,7 +435,7 @@ def test_restore_note(
 
     # Restore to original
     response = test_client.post(
-        "/workspaces/test-ws/notes/test-note/restore",
+        "/api/workspaces/test-ws/notes/test-note/restore",
         json={"revision_id": original_revision_id},
     )
     assert response.status_code == 200
@@ -449,7 +449,7 @@ def test_query_notes(
     temp_workspace_root: Path,
 ) -> None:
     """Test structured query endpoint."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     # Create a note that should be indexed
     # Note: In a real scenario, the indexer runs in background.
@@ -462,7 +462,7 @@ def test_query_notes(
     # trigger indexing (unlikely per spec).
     # Or, we just test that the endpoint exists and returns empty list for now.
 
-    response = test_client.post("/workspaces/test-ws/query", json={"filter": {}})
+    response = test_client.post("/api/workspaces/test-ws/query", json={"filter": {}})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
@@ -472,16 +472,16 @@ def test_upload_attachment_and_link_to_note(
     temp_workspace_root: Path,
 ) -> None:
     """Attachments can be uploaded, returned with id, and linked to a note."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     note_res = test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-1", "content": "# Attach Note"},
     )
     assert note_res.status_code == 201
 
     file_bytes = b"hello attachment"
     response = test_client.post(
-        "/workspaces/test-ws/attachments",
+        "/api/workspaces/test-ws/attachments",
         files={"file": ("voice.m4a", io.BytesIO(file_bytes), "audio/m4a")},
     )
     assert response.status_code == 201
@@ -490,7 +490,7 @@ def test_upload_attachment_and_link_to_note(
     assert attachment["path"].startswith("attachments/")
 
     update_res = test_client.put(
-        "/workspaces/test-ws/notes/note-1",
+        "/api/workspaces/test-ws/notes/note-1",
         json={
             "markdown": "# Attach Note\ncontent",
             "parent_revision_id": note_res.json()["revision_id"],
@@ -500,7 +500,7 @@ def test_upload_attachment_and_link_to_note(
     assert update_res.status_code == 200
 
     # Ensure GET reflects the attachment reference
-    get_res = test_client.get("/workspaces/test-ws/notes/note-1")
+    get_res = test_client.get("/api/workspaces/test-ws/notes/note-1")
     assert get_res.status_code == 200
     content = get_res.json()
     assert any(a["id"] == attachment["id"] for a in content.get("attachments", []))
@@ -511,20 +511,20 @@ def test_delete_attachment_referenced_fails(
     temp_workspace_root: Path,
 ) -> None:
     """Deleting an attachment referenced by a note should fail."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     note_res = test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-1", "content": "# Attach Note"},
     )
 
     response = test_client.post(
-        "/workspaces/test-ws/attachments",
+        "/api/workspaces/test-ws/attachments",
         files={"file": ("voice.m4a", io.BytesIO(b"data"), "audio/m4a")},
     )
     attachment = response.json()
 
     test_client.put(
-        "/workspaces/test-ws/notes/note-1",
+        "/api/workspaces/test-ws/notes/note-1",
         json={
             "markdown": "# Attach Note\nupdated",
             "parent_revision_id": note_res.json()["revision_id"],
@@ -533,7 +533,7 @@ def test_delete_attachment_referenced_fails(
     )
 
     delete_res = test_client.delete(
-        f"/workspaces/test-ws/attachments/{attachment['id']}",
+        f"/api/workspaces/test-ws/attachments/{attachment['id']}",
     )
     assert delete_res.status_code == 409
     assert "referenced" in delete_res.json()["detail"].lower()
@@ -544,32 +544,32 @@ def test_create_and_list_links(
     temp_workspace_root: Path,
 ) -> None:
     """Links are created bi-directionally and listed at workspace level."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-a", "content": "# A"},
     )
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-b", "content": "# B"},
     )
 
     create_res = test_client.post(
-        "/workspaces/test-ws/links",
+        "/api/workspaces/test-ws/links",
         json={"source": "note-a", "target": "note-b", "kind": "related"},
     )
     assert create_res.status_code == 201
     link = create_res.json()
     assert link["id"]
 
-    list_res = test_client.get("/workspaces/test-ws/links")
+    list_res = test_client.get("/api/workspaces/test-ws/links")
     assert list_res.status_code == 200
     links = list_res.json()
     assert any(link_item["id"] == link["id"] for link_item in links)
 
     # Note meta files should contain the link
-    note_a = test_client.get("/workspaces/test-ws/notes/note-a").json()
-    note_b = test_client.get("/workspaces/test-ws/notes/note-b").json()
+    note_a = test_client.get("/api/workspaces/test-ws/notes/note-a").json()
+    note_b = test_client.get("/api/workspaces/test-ws/notes/note-b").json()
     assert any(item["target"] == "note-b" for item in note_a.get("links", []))
     assert any(item["target"] == "note-a" for item in note_b.get("links", []))
 
@@ -579,27 +579,27 @@ def test_delete_link_updates_notes(
     temp_workspace_root: Path,
 ) -> None:
     """Deleting a link should remove it from both notes."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-a", "content": "# A"},
     )
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "note-b", "content": "# B"},
     )
 
     create_res = test_client.post(
-        "/workspaces/test-ws/links",
+        "/api/workspaces/test-ws/links",
         json={"source": "note-a", "target": "note-b", "kind": "related"},
     )
     link_id = create_res.json()["id"]
 
-    delete_res = test_client.delete(f"/workspaces/test-ws/links/{link_id}")
+    delete_res = test_client.delete(f"/api/workspaces/test-ws/links/{link_id}")
     assert delete_res.status_code == 200
 
-    note_a = test_client.get("/workspaces/test-ws/notes/note-a").json()
-    note_b = test_client.get("/workspaces/test-ws/notes/note-b").json()
+    note_a = test_client.get("/api/workspaces/test-ws/notes/note-a").json()
+    note_b = test_client.get("/api/workspaces/test-ws/notes/note-b").json()
     assert all(item["id"] != link_id for item in note_a.get("links", []))
     assert all(item["id"] != link_id for item in note_b.get("links", []))
 
@@ -609,13 +609,16 @@ def test_search_returns_matches(
     temp_workspace_root: Path,
 ) -> None:
     """Hybrid search returns notes containing the keyword via inverted index."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     test_client.post(
-        "/workspaces/test-ws/notes",
+        "/api/workspaces/test-ws/notes",
         json={"id": "alpha", "content": "# Alpha\nProject rocket"},
     )
 
-    search_res = test_client.get("/workspaces/test-ws/search", params={"q": "rocket"})
+    search_res = test_client.get(
+        "/api/workspaces/test-ws/search",
+        params={"q": "rocket"},
+    )
     assert search_res.status_code == 200
     ids = [n["id"] for n in search_res.json()]
     assert "alpha" in ids
@@ -626,10 +629,10 @@ def test_update_workspace_storage_connector(
     temp_workspace_root: Path,
 ) -> None:
     """PATCH workspace should persist storage connector details."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
 
     patch_res = test_client.patch(
-        "/workspaces/test-ws",
+        "/api/workspaces/test-ws",
         json={
             "storage_config": {
                 "uri": "s3://bucket/path",
@@ -649,9 +652,9 @@ def test_test_connection_endpoint(
     temp_workspace_root: Path,
 ) -> None:
     """POST /test-connection returns success for local connector stub."""
-    test_client.post("/workspaces", json={"name": "test-ws"})
+    test_client.post("/api/workspaces", json={"name": "test-ws"})
     res = test_client.post(
-        "/workspaces/test-ws/test-connection",
+        "/api/workspaces/test-ws/test-connection",
         json={"storage_config": {"uri": "file:///tmp"}},
     )
     assert res.status_code == 200
@@ -699,9 +702,9 @@ def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
 def test_get_class_types(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test getting available class column types (REQ-CLS-001)."""
     # Create workspace to ensure path is valid
-    test_client.post("/workspaces", json={"name": "test-ws-types"})
+    test_client.post("/api/workspaces", json={"name": "test-ws-types"})
 
-    response = test_client.get("/workspaces/test-ws-types/classes/types")
+    response = test_client.get("/api/workspaces/test-ws-types/classes/types")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -715,7 +718,7 @@ def test_update_class_with_migration(
 ) -> None:
     """Test updating class with migration strategies (REQ-CLS-002)."""
     # 1. Create Workspace
-    test_client.post("/workspaces", json={"name": "test-ws-mig"})
+    test_client.post("/api/workspaces", json={"name": "test-ws-mig"})
 
     # 2. Create Initial Class
     note_class = {
@@ -725,15 +728,15 @@ def test_update_class_with_migration(
             "status": {"type": "string"},
         },
     }
-    test_client.post("/workspaces/test-ws-mig/classes", json=note_class)
+    test_client.post("/api/workspaces/test-ws-mig/classes", json=note_class)
 
     # 3. Create Note
     note_payload = {
         "content": "---\nclass: project\n---\n# Project A\n\n## status\nActive\n",
     }
-    # Using endpoints: POST /workspaces/{id}/notes
+    # Using endpoints: POST /api/workspaces/{id}/notes
     # It autogenerates ID.
-    res = test_client.post("/workspaces/test-ws-mig/notes", json=note_payload)
+    res = test_client.post("/api/workspaces/test-ws-mig/notes", json=note_payload)
     assert res.status_code == 201
     note_id = res.json()["id"]
 
@@ -749,11 +752,11 @@ def test_update_class_with_migration(
             "priority": "High",
         },
     }
-    res = test_client.post("/workspaces/test-ws-mig/classes", json=updated_class)
+    res = test_client.post("/api/workspaces/test-ws-mig/classes", json=updated_class)
     assert res.status_code == 201
 
     # 5. Verify Note
-    res = test_client.get(f"/workspaces/test-ws-mig/notes/{note_id}")
+    res = test_client.get(f"/api/workspaces/test-ws-mig/notes/{note_id}")
     assert res.status_code == 200
     note_data = res.json()
     content = note_data["content"]

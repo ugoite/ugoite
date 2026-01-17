@@ -28,8 +28,8 @@ requirements:
       e2e:
         - file: e2e/smoke.test.ts
           tests:
-            - GET /workspaces returns list
-            - GET /workspaces includes default workspace
+            - GET /api/workspaces returns list
+            - GET /api/workspaces includes default workspace
 
   - id: REQ-API-002
     title: Note CRUD
@@ -76,4 +76,5 @@ requirements:
         - file: docs/tests/test_features.py
           tests:
             - test_feature_paths_exist
+            - test_feature_paths_match_implementation
             - test_no_undeclared_feature_modules

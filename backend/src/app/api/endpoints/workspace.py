@@ -120,7 +120,7 @@ def _workspace_uri(workspace_id: str) -> str:
     return workspace_uri(get_root_path(), workspace_id)
 
 
-@router.get("/workspaces")
+@router.get("/api/workspaces")
 async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     """List all workspaces."""
     try:
@@ -142,7 +142,7 @@ async def list_workspaces_endpoint() -> list[dict[str, Any]]:
         return results
 
 
-@router.post("/workspaces", status_code=status.HTTP_201_CREATED)
+@router.post("/api/workspaces", status_code=status.HTTP_201_CREATED)
 async def create_workspace_endpoint(
     payload: WorkspaceCreate,
 ) -> dict[str, str]:
@@ -176,7 +176,7 @@ async def create_workspace_endpoint(
     }
 
 
-@router.get("/workspaces/{workspace_id}")
+@router.get("/api/workspaces/{workspace_id}")
 async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
     """Get workspace metadata."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -201,7 +201,7 @@ async def get_workspace_endpoint(workspace_id: str) -> dict[str, Any]:
         ) from e
 
 
-@router.patch("/workspaces/{workspace_id}")
+@router.patch("/api/workspaces/{workspace_id}")
 async def patch_workspace_endpoint(
     workspace_id: str,
     payload: WorkspacePatch,
@@ -243,7 +243,7 @@ async def patch_workspace_endpoint(
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/test-connection")
+@router.post("/api/workspaces/{workspace_id}/test-connection")
 async def test_connection_endpoint(
     workspace_id: str,
     payload: TestConnectionRequest,

@@ -16,7 +16,7 @@ These metrics help evaluate whether IEapp is delivering on its principles
 
 ## Performance Metrics
 
-- **List/query latency**: `GET /workspaces/{id}/notes` and `POST /workspaces/{id}/query` remain fast as notes scale.
+- **List/query latency**: `GET /api/workspaces/{id}/notes` and `POST /api/workspaces/{id}/query` remain fast as notes scale.
 - **Indexer cost**: incremental updates complete quickly and do not block the UI.
 
 ## Developer Experience Metrics

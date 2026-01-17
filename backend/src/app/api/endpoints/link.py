@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/links",
+    "/api/workspaces/{workspace_id}/links",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_link_endpoint(
@@ -62,7 +62,7 @@ async def create_link_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/links")
+@router.get("/api/workspaces/{workspace_id}/links")
 async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
     """List all unique links in the workspace."""
     _validate_path_id(workspace_id, "workspace_id")
@@ -79,7 +79,7 @@ async def list_links_endpoint(workspace_id: str) -> list[dict[str, Any]]:
         ) from e
 
 
-@router.delete("/workspaces/{workspace_id}/links/{link_id}")
+@router.delete("/api/workspaces/{workspace_id}/links/{link_id}")
 async def delete_link_endpoint(
     workspace_id: str,
     link_id: str,

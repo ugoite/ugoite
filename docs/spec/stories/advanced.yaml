@@ -21,8 +21,8 @@ stories:
       - User invokes their connected MCP Agent (e.g., "Format this voice note")
       - Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers
     related_apis:
-      - rest: POST /workspaces/{ws_id}/attachments
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
+      - rest: POST /api/workspaces/{ws_id}/attachments
+      - rest: PUT /api/workspaces/{ws_id}/notes/{note_id}
       - mcp: ieapp://{workspace_id}/notes/{note_id}
     requirements:
       - REQ-NOTE-008
@@ -38,7 +38,7 @@ stories:
       - Code execution is handled by explicit tooling (future)
       - Output (text, tables, charts) is rendered interactively below the code block
     related_apis:
-      - rest: POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute
+      - rest: POST /api/workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute
     requirements: []
 
   - id: STORY-008
@@ -53,7 +53,7 @@ stories:
       - Agent executes the logic and presents the result for confirmation
     related_apis:
       - mcp: ieapp://{workspace_id}/notes/list
-      - rest: GET/PUT /workspaces/{ws_id}/notes/{note_id}
+      - rest: GET/PUT /api/workspaces/{ws_id}/notes/{note_id}
     requirements: []
 
   - id: STORY-009
@@ -69,8 +69,8 @@ stories:
       - Quick Add: Users can add a new row (Note) directly from the grid view
       - Changes are saved immediately or on blur
     related_apis:
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
-      - rest: POST /workspaces/{ws_id}/notes
+      - rest: PUT /api/workspaces/{ws_id}/notes/{note_id}
+      - rest: POST /api/workspaces/{ws_id}/notes
     requirements:
       - REQ-FE-030
       - REQ-FE-031

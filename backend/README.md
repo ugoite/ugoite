@@ -62,7 +62,7 @@ All note updates require `parent_revision_id` for conflict detection:
 
 ```python
 # Update endpoint returns 409 if revision mismatch
-@router.put("/workspaces/{workspace_id}/notes/{note_id}")
+@router.put("/api/workspaces/{workspace_id}/notes/{note_id}")
 async def update_note_endpoint(payload: NoteUpdate):
     try:
         update_note(ws_path, note_id, payload.markdown, payload.parent_revision_id)
@@ -133,15 +133,15 @@ See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md]
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/workspaces` | List all workspaces |
-| POST | `/workspaces` | Create workspace |
-| GET | `/workspaces/{id}` | Get workspace metadata |
-| GET | `/workspaces/{id}/notes` | List notes (index data) |
-| POST | `/workspaces/{id}/notes` | Create note |
-| GET | `/workspaces/{id}/notes/{noteId}` | Get full note |
-| PUT | `/workspaces/{id}/notes/{noteId}` | Update note |
-| DELETE | `/workspaces/{id}/notes/{noteId}` | Delete (tombstone) note |
-| POST | `/workspaces/{id}/query` | Query notes by filter |
+| GET | `/api/workspaces` | List all workspaces |
+| POST | `/api/workspaces` | Create workspace |
+| GET | `/api/workspaces/{id}` | Get workspace metadata |
+| GET | `/api/workspaces/{id}/notes` | List notes (index data) |
+| POST | `/api/workspaces/{id}/notes` | Create note |
+| GET | `/api/workspaces/{id}/notes/{noteId}` | Get full note |
+| PUT | `/api/workspaces/{id}/notes/{noteId}` | Update note |
+| DELETE | `/api/workspaces/{id}/notes/{noteId}` | Delete (tombstone) note |
+| POST | `/api/workspaces/{id}/query` | Query notes by filter |
 
 ## Testing Strategy
 

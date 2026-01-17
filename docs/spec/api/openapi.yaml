@@ -9,7 +9,7 @@ servers:
   - url: http://localhost:8000
 
 paths:
-  /workspaces:
+  /api/workspaces:
     get:
       summary: List workspaces
       responses:
@@ -21,7 +21,7 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}:
+  /api/workspaces/{workspace_id}:
     get:
       summary: Get workspace
       parameters:
@@ -45,7 +45,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/test-connection:
+  /api/workspaces/{workspace_id}/test-connection:
     post:
       summary: Test storage connection
       parameters:
@@ -58,7 +58,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/notes:
+  /api/workspaces/{workspace_id}/notes:
     get:
       summary: List notes
       parameters:
@@ -82,7 +82,7 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/notes/{note_id}:
+  /api/workspaces/{workspace_id}/notes/{note_id}:
     get:
       summary: Get note
       parameters:
@@ -134,7 +134,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/query:
+  /api/workspaces/{workspace_id}/query:
     post:
       summary: Query notes
       parameters:
@@ -147,7 +147,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/search:
+  /api/workspaces/{workspace_id}/search:
     get:
       summary: Keyword search
       parameters:
@@ -165,7 +165,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/classes:
+  /api/workspaces/{workspace_id}/classes:
     get:
       summary: List classes
       parameters:
@@ -189,7 +189,7 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/classes/types:
+  /api/workspaces/{workspace_id}/classes/types:
     get:
       summary: List class column types
       parameters:
@@ -202,7 +202,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/attachments:
+  /api/workspaces/{workspace_id}/attachments:
     get:
       summary: List attachments
       parameters:
@@ -226,7 +226,7 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/attachments/{attachment_id}:
+  /api/workspaces/{workspace_id}/attachments/{attachment_id}:
     delete:
       summary: Delete attachment
       parameters:
@@ -244,7 +244,7 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/links:
+  /api/workspaces/{workspace_id}/links:
     get:
       summary: List links
       parameters:
@@ -268,7 +268,7 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/links/{link_id}:
+  /api/workspaces/{workspace_id}/links/{link_id}:
     delete:
       summary: Delete link
       parameters:

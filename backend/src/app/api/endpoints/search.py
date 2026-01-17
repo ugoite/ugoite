@@ -18,7 +18,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/workspaces/{workspace_id}/query")
+@router.post("/api/workspaces/{workspace_id}/query")
 async def query_endpoint(
     workspace_id: str,
     payload: QueryRequest,
@@ -42,7 +42,7 @@ async def query_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/search")
+@router.get("/api/workspaces/{workspace_id}/search")
 async def search_endpoint(
     workspace_id: str,
     q: Annotated[str, Query(..., min_length=1)],

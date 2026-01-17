@@ -18,8 +18,9 @@ Start here:
 ## Conventions
 
 - **"Class" is the user-facing term** (legacy term: schema).
-- **API paths**: Backend paths are canonical; frontend calls the same
-  path prefixed with `/api`.
+- **API paths**: Backend paths are canonical and include the `/api`
+  prefix; frontend calls the same path *without* `/api` (the client
+  adds the prefix).
 - **Machine-readable docs**: Stories, Requirements, and Features are expressed
   in YAML so we can validate doc↔code consistency in tests.
 

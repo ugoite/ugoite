@@ -446,7 +446,7 @@ stories:
       - Output (text/charts) is returned to AI context
     related_apis:
       - MCP resource: ieapp://{workspace_id}/notes/list
-      - REST: POST /workspaces/{ws_id}/query
+      - REST: POST /api/workspaces/{ws_id}/query
     requirements:
 ```
 

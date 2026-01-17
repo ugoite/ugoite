@@ -8,11 +8,11 @@ apis:
   - id: note.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/notes
+      path: /api/workspaces/{workspace_id}/notes
       file: backend/src/app/api/endpoints/note.py
       function: create_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
+      path: /workspaces/{workspace_id}/notes
       file: frontend/src/lib/note-api.ts
       function: noteApi.create
     ieapp_core:
@@ -26,11 +26,11 @@ apis:
   - id: note.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/notes
+      path: /api/workspaces/{workspace_id}/notes
       file: backend/src/app/api/endpoints/note.py
       function: list_notes_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
+      path: /workspaces/{workspace_id}/notes
       file: frontend/src/lib/note-api.ts
       function: noteApi.list
     ieapp_core:
@@ -44,11 +44,11 @@ apis:
   - id: note.get
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/note.py
       function: get_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/note-api.ts
       function: noteApi.get
     ieapp_core:
@@ -62,11 +62,11 @@ apis:
   - id: note.update
     method: PUT
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/note.py
       function: update_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/note-api.ts
       function: noteApi.update
     ieapp_core:
@@ -80,11 +80,11 @@ apis:
   - id: note.delete
     method: DELETE
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}
+      path: /api/workspaces/{workspace_id}/notes/{note_id}
       file: backend/src/app/api/endpoints/note.py
       function: delete_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
+      path: /workspaces/{workspace_id}/notes/{note_id}
       file: frontend/src/lib/note-api.ts
       function: noteApi.delete
     ieapp_core:
@@ -98,11 +98,11 @@ apis:
   - id: note.history
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}/history
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/history
       file: backend/src/app/api/endpoints/note.py
       function: get_note_history_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/history
+      path: /workspaces/{workspace_id}/notes/{note_id}/history
       file: frontend/src/lib/note-api.ts
       function: noteApi.history
     ieapp_core:
@@ -116,11 +116,11 @@ apis:
   - id: note.revision
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
       file: backend/src/app/api/endpoints/note.py
       function: get_note_revision_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
+      path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
       file: frontend/src/lib/note-api.ts
       function: noteApi.getRevision
     ieapp_core:
@@ -134,11 +134,11 @@ apis:
   - id: note.restore
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/notes/{note_id}/restore
+      path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
       file: backend/src/app/api/endpoints/note.py
       function: restore_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
+      path: /workspaces/{workspace_id}/notes/{note_id}/restore
       file: frontend/src/lib/note-api.ts
       function: noteApi.restore
     ieapp_core:

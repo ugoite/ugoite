@@ -8,11 +8,11 @@ apis:
   - id: link.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/links
+      path: /api/workspaces/{workspace_id}/links
       file: backend/src/app/api/endpoints/link.py
       function: create_link_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links
+      path: /workspaces/{workspace_id}/links
       file: frontend/src/lib/link-api.ts
       function: linkApi.create
     ieapp_core:
@@ -26,11 +26,11 @@ apis:
   - id: link.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/links
+      path: /api/workspaces/{workspace_id}/links
       file: backend/src/app/api/endpoints/link.py
       function: list_links_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links
+      path: /workspaces/{workspace_id}/links
       file: frontend/src/lib/link-api.ts
       function: linkApi.list
     ieapp_core:
@@ -44,11 +44,11 @@ apis:
   - id: link.delete
     method: DELETE
     backend:
-      path: /workspaces/{workspace_id}/links/{link_id}
+      path: /api/workspaces/{workspace_id}/links/{link_id}
       file: backend/src/app/api/endpoints/link.py
       function: delete_link_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links/{link_id}
+      path: /workspaces/{workspace_id}/links/{link_id}
       file: frontend/src/lib/link-api.ts
       function: linkApi.delete
     ieapp_core:

@@ -11,8 +11,9 @@ version: "0.2"
 updated: "2026-01"
 
 conventions:
-  canonical_path: Backend HTTP path.
-  frontend_path_prefix: /api
+  canonical_path: Backend HTTP path (includes /api prefix).
+  backend_path_prefix: /api
+  frontend_path_prefix: ""
   columns:
     - method
     - backend.path

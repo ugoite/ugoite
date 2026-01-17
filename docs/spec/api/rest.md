@@ -4,7 +4,7 @@
 
 The REST API is the primary interface for the frontend and external integrations.
 
-**Base URL**: `http://localhost:8000` (development)
+**Base URL**: `http://localhost:8000/api` (development)
 
 ## Authentication
 
@@ -17,7 +17,7 @@ When `IEAPP_ALLOW_REMOTE=true`, authentication is required (future milestone).
 
 #### List Workspaces
 ```http
-GET /workspaces
+GET /api/workspaces
 ```
 
 **Response**: `200 OK`
@@ -33,7 +33,7 @@ GET /workspaces
 
 #### Create Workspace
 ```http
-POST /workspaces
+POST /api/workspaces
 Content-Type: application/json
 
 {
@@ -46,14 +46,14 @@ Content-Type: application/json
 
 #### Get Workspace
 ```http
-GET /workspaces/{id}
+GET /api/workspaces/{id}
 ```
 
 **Response**: `200 OK`
 
 #### Update Workspace
 ```http
-PATCH /workspaces/{id}
+PATCH /api/workspaces/{id}
 Content-Type: application/json
 
 {
@@ -67,7 +67,7 @@ Content-Type: application/json
 
 #### Test Connection
 ```http
-POST /workspaces/{id}/test-connection
+POST /api/workspaces/{id}/test-connection
 Content-Type: application/json
 
 {
@@ -84,7 +84,7 @@ Content-Type: application/json
 
 #### List Notes
 ```http
-GET /workspaces/{ws_id}/notes
+GET /api/workspaces/{ws_id}/notes
 ```
 
 **Response**: `200 OK`
@@ -104,7 +104,7 @@ GET /workspaces/{ws_id}/notes
 
 #### Create Note
 ```http
-POST /workspaces/{ws_id}/notes
+POST /api/workspaces/{ws_id}/notes
 Content-Type: application/json
 
 {
@@ -124,7 +124,7 @@ Content-Type: application/json
 
 #### Get Note
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}
+GET /api/workspaces/{ws_id}/notes/{note_id}
 ```
 
 **Response**: `200 OK`
@@ -139,7 +139,7 @@ GET /workspaces/{ws_id}/notes/{note_id}
 
 #### Update Note
 ```http
-PUT /workspaces/{ws_id}/notes/{note_id}
+PUT /api/workspaces/{ws_id}/notes/{note_id}
 Content-Type: application/json
 
 {
@@ -160,14 +160,14 @@ Content-Type: application/json
 
 #### Delete Note
 ```http
-DELETE /workspaces/{ws_id}/notes/{note_id}
+DELETE /api/workspaces/{ws_id}/notes/{note_id}
 ```
 
 **Response**: `204 No Content`
 
 #### Get Note History
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}/history
+GET /api/workspaces/{ws_id}/notes/{note_id}/history
 ```
 
 **Response**: `200 OK`
@@ -183,14 +183,14 @@ GET /workspaces/{ws_id}/notes/{note_id}/history
 
 #### Get Revision
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
+GET /api/workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
 ```
 
 **Response**: `200 OK`
 
 #### Restore Revision
 ```http
-POST /workspaces/{ws_id}/notes/{note_id}/restore
+POST /api/workspaces/{ws_id}/notes/{note_id}/restore
 Content-Type: application/json
 
 {
@@ -206,7 +206,7 @@ Content-Type: application/json
 
 #### List Classes
 ```http
-GET /workspaces/{ws_id}/classes
+GET /api/workspaces/{ws_id}/classes
 ```
 
 **Response**: `200 OK`
@@ -222,14 +222,14 @@ GET /workspaces/{ws_id}/classes
 
 #### Get Class
 ```http
-GET /workspaces/{ws_id}/classes/{name}
+GET /api/workspaces/{ws_id}/classes/{name}
 ```
 
 **Response**: `200 OK`
 
 #### Create/Update Class
 ```http
-PUT /workspaces/{ws_id}/classes/{name}
+PUT /api/workspaces/{ws_id}/classes/{name}
 Content-Type: application/json
 
 {
@@ -247,14 +247,14 @@ Content-Type: application/json
 
 #### Delete Class
 ```http
-DELETE /workspaces/{ws_id}/classes/{name}
+DELETE /api/workspaces/{ws_id}/classes/{name}
 ```
 
 **Response**: `204 No Content` or `409 Conflict` if notes still reference it
 
 #### List Column Types
 ```http
-GET /workspaces/{ws_id}/classes/types
+GET /api/workspaces/{ws_id}/classes/types
 ```
 
 **Response**: `200 OK`
@@ -268,7 +268,7 @@ GET /workspaces/{ws_id}/classes/types
 
 #### Upload Attachment
 ```http
-POST /workspaces/{ws_id}/attachments
+POST /api/workspaces/{ws_id}/attachments
 Content-Type: multipart/form-data
 
 file=@audio.m4a
@@ -285,7 +285,7 @@ file=@audio.m4a
 
 #### Delete Attachment
 ```http
-DELETE /workspaces/{ws_id}/attachments/{id}
+DELETE /api/workspaces/{ws_id}/attachments/{id}
 ```
 
 **Response**: `204 No Content` or `409 Conflict` if still referenced
@@ -296,14 +296,14 @@ DELETE /workspaces/{ws_id}/attachments/{id}
 
 #### List Links
 ```http
-GET /workspaces/{ws_id}/links
+GET /api/workspaces/{ws_id}/links
 ```
 
 **Response**: `200 OK`
 
 #### Create Link
 ```http
-POST /workspaces/{ws_id}/links
+POST /api/workspaces/{ws_id}/links
 Content-Type: application/json
 
 {
@@ -317,7 +317,7 @@ Content-Type: application/json
 
 #### Delete Link
 ```http
-DELETE /workspaces/{ws_id}/links/{id}
+DELETE /api/workspaces/{ws_id}/links/{id}
 ```
 
 **Response**: `204 No Content`
@@ -328,7 +328,7 @@ DELETE /workspaces/{ws_id}/links/{id}
 
 #### Structured Query
 ```http
-POST /workspaces/{ws_id}/query
+POST /api/workspaces/{ws_id}/query
 Content-Type: application/json
 
 {
@@ -343,7 +343,7 @@ Content-Type: application/json
 
 #### Keyword Search
 ```http
-GET /workspaces/{ws_id}/search?q=project
+GET /api/workspaces/{ws_id}/search?q=project
 ```
 
 **Response**: `200 OK`

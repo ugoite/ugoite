@@ -8,11 +8,11 @@ apis:
   - id: class.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/classes
+      path: /api/workspaces/{workspace_id}/classes
       file: backend/src/app/api/endpoints/classes.py
       function: list_classes_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/classes
+      path: /workspaces/{workspace_id}/classes
       file: frontend/src/lib/class-api.ts
       function: classApi.list
     ieapp_core:
@@ -26,11 +26,11 @@ apis:
   - id: class.types
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/classes/types
+      path: /api/workspaces/{workspace_id}/classes/types
       file: backend/src/app/api/endpoints/classes.py
       function: list_class_types_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/classes/types
+      path: /workspaces/{workspace_id}/classes/types
       file: frontend/src/lib/class-api.ts
       function: classApi.listTypes
     ieapp_core:
@@ -44,11 +44,11 @@ apis:
   - id: class.get
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/classes/{class_name}
+      path: /api/workspaces/{workspace_id}/classes/{class_name}
       file: backend/src/app/api/endpoints/classes.py
       function: get_class_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/classes/{class_name}
+      path: /workspaces/{workspace_id}/classes/{class_name}
       file: frontend/src/lib/class-api.ts
       function: classApi.get
     ieapp_core:
@@ -62,11 +62,11 @@ apis:
   - id: class.upsert
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/classes
+      path: /api/workspaces/{workspace_id}/classes
       file: backend/src/app/api/endpoints/classes.py
       function: create_class_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/classes
+      path: /workspaces/{workspace_id}/classes
       file: frontend/src/lib/class-api.ts
       function: classApi.create
     ieapp_core:

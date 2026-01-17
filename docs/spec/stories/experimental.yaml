@@ -19,9 +19,9 @@ stories:
       - Invited users can view and edit notes based on permissions
       - Concurrent edits are handled with conflict resolution
     related_apis:
-      - rest: POST /workspaces/{ws_id}/members
-      - rest: GET /workspaces/{ws_id}/members
-      - rest: DELETE /workspaces/{ws_id}/members/{user_id}
+      - rest: POST /api/workspaces/{ws_id}/members
+      - rest: GET /api/workspaces/{ws_id}/members
+      - rest: DELETE /api/workspaces/{ws_id}/members/{user_id}
     requirements: []
     milestone: User Management
 
@@ -67,7 +67,7 @@ stories:
       - Semantic search returns notes by conceptual similarity
       - Combined with keyword search for best results
     related_apis:
-      - rest: GET /workspaces/{ws_id}/search?type=semantic&q=query
+      - rest: GET /api/workspaces/{ws_id}/search?type=semantic&q=query
     requirements: []
     milestone: AI-Enabled & AI-Used
 
@@ -82,7 +82,7 @@ stories:
       - Tasks invoke MCP resources/tools via schedules
       - Results logged and notifications sent
     related_apis:
-      - rest: POST /workspaces/{ws_id}/schedules
-      - rest: GET /workspaces/{ws_id}/schedules
+      - rest: POST /api/workspaces/{ws_id}/schedules
+      - rest: GET /api/workspaces/{ws_id}/schedules
     requirements: []
     milestone: AI-Enabled & AI-Used

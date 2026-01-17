@@ -22,13 +22,13 @@ describe("Class", () => {
 
 		// Create Class
 		const createRes = await client.postApi(
-			`/workspaces/${workspaceId}/classes`,
+			`/api/workspaces/${workspaceId}/classes`,
 			classDef,
 		);
 		expect(createRes.status).toBe(201);
 
 		// List Classes
-		const listRes = await client.getApi(`/workspaces/${workspaceId}/classes`);
+		const listRes = await client.getApi(`/api/workspaces/${workspaceId}/classes`);
 		expect(listRes.status).toBe(200);
 		const noteClasses = (await listRes.json()) as any[];
 		expect(Array.isArray(noteClasses)).toBe(true);
@@ -48,7 +48,7 @@ describe("Class", () => {
 		};
 
 		// Create Class
-		await client.postApi(`/workspaces/${workspaceId}/classes`, classDef);
+		await client.postApi(`/api/workspaces/${workspaceId}/classes`, classDef);
 
 		// Create Note with this class
 		const noteContent = `---
@@ -57,17 +57,17 @@ class: ${className}
 ## Status
 Active
 `;
-		const noteRes = await client.postApi(`/workspaces/${workspaceId}/notes`, {
+		const noteRes = await client.postApi(`/api/workspaces/${workspaceId}/notes`, {
 			content: noteContent,
 		});
 		expect(noteRes.status).toBe(201);
 		const note = (await noteRes.json()) as { id: string };
 
 		// Wait for indexing (search endpoint triggers run_once)
-		await client.getApi(`/workspaces/${workspaceId}/search?q=Active`);
+		await client.getApi(`/api/workspaces/${workspaceId}/search?q=Active`);
 
 		// Query
-		const queryRes = await client.postApi(`/workspaces/${workspaceId}/query`, {
+		const queryRes = await client.postApi(`/api/workspaces/${workspaceId}/query`, {
 			filter: { class: className },
 		});
 		expect(queryRes.status).toBe(200);
@@ -79,6 +79,6 @@ Active
 		expect(foundNote.properties.Status).toBe("Active");
 
 		// Cleanup
-		await client.deleteApi(`/workspaces/${workspaceId}/notes/${note.id}`);
+		await client.deleteApi(`/api/workspaces/${workspaceId}/notes/${note.id}`);
 	});
 });

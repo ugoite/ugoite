@@ -38,11 +38,11 @@ apis:
   - id: note.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/notes
+      path: /api/workspaces/{workspace_id}/notes
       file: backend/src/app/api/endpoints/note.py
       function: create_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
+      path: /workspaces/{workspace_id}/notes
       file: frontend/src/lib/note-api.ts
       function: noteApi.create
     ieapp_core:

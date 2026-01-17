@@ -42,9 +42,9 @@ describe("Smoke Tests", () => {
 			expect(body.toLowerCase()).toContain("<!doctype html>");
 		});
 
-		test("GET /notes/:id returns HTML", async () => {
+			test("GET /notes/:id returns HTML", async () => {
 			// Create a note first so we can navigate to a real detail route
-			const createRes = await client.postApi("/workspaces/default/notes", {
+				const createRes = await client.postApi("/api/workspaces/default/notes", {
 				content: `# E2E Detail Route Note\n\nCreated at ${new Date().toISOString()}`,
 			});
 			expect(createRes.status).toBe(201);
@@ -59,7 +59,7 @@ describe("Smoke Tests", () => {
 			expect(body.toLowerCase()).toContain("<!doctype html>");
 
 			// Cleanup
-			await client.deleteApi(`/workspaces/default/notes/${created.id}`);
+				await client.deleteApi(`/api/workspaces/default/notes/${created.id}`);
 		});
 
 		test("GET /about returns HTML", async () => {
@@ -72,16 +72,16 @@ describe("Smoke Tests", () => {
 	});
 
 	describe("API Workspaces", () => {
-		test("GET /workspaces returns list", async () => {
-			const res = await client.getApi("/workspaces");
+		test("GET /api/workspaces returns list", async () => {
+			const res = await client.getApi("/api/workspaces");
 			expect(res.ok).toBe(true);
 
 			const json = await res.json();
 			expect(Array.isArray(json)).toBe(true);
 		});
 
-		test("GET /workspaces includes default workspace", async () => {
-			const res = await client.getApi("/workspaces");
+		test("GET /api/workspaces includes default workspace", async () => {
+			const res = await client.getApi("/api/workspaces");
 			const workspaces = await res.json();
 
 			const defaultWs = workspaces.find(
@@ -92,8 +92,8 @@ describe("Smoke Tests", () => {
 	});
 
 	describe("API Notes", () => {
-		test("GET /workspaces/default/notes returns list", async () => {
-			const res = await client.getApi("/workspaces/default/notes");
+		test("GET /api/workspaces/default/notes returns list", async () => {
+			const res = await client.getApi("/api/workspaces/default/notes");
 			expect(res.ok).toBe(true);
 
 			const json = await res.json();

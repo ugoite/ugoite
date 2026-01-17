@@ -14,7 +14,6 @@ if (backendUrl) {
 		target: backendUrl,
 		changeOrigin: true,
 		secure: false,
-		rewrite: (path: string) => path.replace(/^\/api/, ""),
 	};
 } else if (env.NODE_ENV === "development") {
 	throw new Error(
