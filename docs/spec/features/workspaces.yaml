@@ -12,9 +12,9 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: list_workspaces_endpoint
     frontend:
-      path: /api/workspaces
-      file: frontend/src/lib/workspace-api.ts
-      function: workspaceApi.list
+      path: /workspaces
+      file: frontend/src/routes/workspaces/index.tsx
+      function: WorkspacesIndexRoute
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: list_workspaces
@@ -30,9 +30,9 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: create_workspace_endpoint
     frontend:
-      path: /api/workspaces
-      file: frontend/src/lib/workspace-api.ts
-      function: workspaceApi.create
+      path: /workspaces
+      file: frontend/src/routes/workspaces/index.tsx
+      function: WorkspacesIndexRoute
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: create_workspace
@@ -48,9 +48,9 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: get_workspace_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}
-      file: frontend/src/lib/workspace-api.ts
-      function: workspaceApi.get
+      path: /workspaces/{workspace_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/index.tsx
+      function: WorkspaceDetailRoute
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: get_workspace
@@ -66,9 +66,9 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: patch_workspace_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}
-      file: frontend/src/lib/workspace-api.ts
-      function: workspaceApi.patch
+      path: /workspaces/{workspace_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/index.tsx
+      function: WorkspaceDetailRoute
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: patch_workspace
@@ -84,9 +84,9 @@ apis:
       file: backend/src/app/api/endpoints/workspace.py
       function: test_connection_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/test-connection
-      file: frontend/src/lib/workspace-api.ts
-      function: workspaceApi.testConnection
+      path: /workspaces/{workspace_id}/test-connection
+      file: frontend/src/routes/workspaces/[workspace_id]/test-connection.tsx
+      function: WorkspaceTestConnectionRoute
     ieapp_core:
       file: ieapp-core/src/workspace.rs
       function: test_storage_connection

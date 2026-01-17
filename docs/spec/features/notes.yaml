@@ -12,9 +12,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: create_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.create
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes.tsx
+      function: WorkspaceNotesRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: create_note
@@ -30,9 +30,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: list_notes_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.list
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes.tsx
+      function: WorkspaceNotesRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: list_notes
@@ -48,9 +48,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: get_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.get
+      path: /workspaces/{workspace_id}/notes/{note_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note
@@ -66,9 +66,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: update_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.update
+      path: /workspaces/{workspace_id}/notes/{note_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: update_note
@@ -84,9 +84,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: delete_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.delete
+      path: /workspaces/{workspace_id}/notes/{note_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id].tsx
+      function: WorkspaceNoteDetailRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: delete_note
@@ -102,9 +102,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: get_note_history_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/history
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.history
+      path: /workspaces/{workspace_id}/notes/{note_id}/history
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/history.tsx
+      function: WorkspaceNoteHistoryRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_history
@@ -120,9 +120,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: get_note_revision_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.getRevision
+      path: /workspaces/{workspace_id}/notes/{note_id}/history/{revision_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/history/[revision_id].tsx
+      function: WorkspaceNoteRevisionRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: get_note_revision
@@ -138,9 +138,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: restore_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes/{note_id}/restore
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.restore
+      path: /workspaces/{workspace_id}/notes/{note_id}/restore
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/[note_id]/restore.tsx
+      function: WorkspaceNoteRestoreRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: restore_note

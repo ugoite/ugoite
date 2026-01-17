@@ -15,6 +15,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FEATURES_DIR = REPO_ROOT / "docs" / "spec" / "features"
 ENDPOINTS_DIR = REPO_ROOT / "backend" / "src" / "app" / "api" / "endpoints"
+ROUTES_DIR = REPO_ROOT / "frontend" / "src" / "routes"
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -51,6 +52,35 @@ def _function_exists_typescript(contents: str, name: str) -> bool:
         member_match = re.search(rf"\b{re.escape(member)}\s*[:(]", contents)
         return bool(obj_match and member_match)
     return bool(re.search(rf"\b{re.escape(name)}\b", contents))
+
+
+def _route_path_from_file(file_path: Path) -> str:
+    try:
+        relative = file_path.resolve().relative_to(ROUTES_DIR.resolve())
+    except ValueError as exc:
+        message = f"Frontend file {file_path} is not under {ROUTES_DIR}"
+        raise AssertionError(message) from exc
+
+    parts = list(relative.parts)
+    if not parts:
+        return "/"
+
+    last = parts[-1]
+    if last.endswith((".ts", ".tsx")):
+        parts[-1] = Path(last).stem
+
+    mapped: list[str] = []
+    for part in parts:
+        if part == "index":
+            continue
+        mapped_part = part
+        if mapped_part.startswith("[") and mapped_part.endswith("]"):
+            mapped_part = "{" + mapped_part[1:-1] + "}"
+        mapped.append(mapped_part)
+
+    if not mapped:
+        return "/"
+    return "/" + "/".join(mapped)
 
 
 def _assert_function_exists(file_path: Path, function_name: str) -> None:
@@ -147,3 +177,33 @@ def test_no_undeclared_feature_modules() -> None:
             f"Undeclared endpoint modules: {extras_list}",
             stacklevel=2,
         )
+
+
+def test_frontend_paths_match_routes() -> None:
+    """REQ-API-004: Frontend paths must match UI route files."""
+    entries = _iter_api_entries()
+    for api in entries:
+        api_id = api.get("id", "<unknown>")
+        frontend = api.get("frontend")
+        if not isinstance(frontend, dict):
+            message = f"Missing frontend section for {api_id}"
+            raise TypeError(message)
+
+        path_value = str(frontend.get("path") or "")
+        file_value = frontend.get("file")
+        if not file_value or not path_value:
+            message = f"Missing frontend path/file for {api_id}"
+            raise AssertionError(message)
+
+        if path_value.startswith("/api"):
+            message = f"Frontend path must not include /api for {api_id}"
+            raise AssertionError(message)
+
+        file_path = (REPO_ROOT / file_value).resolve()
+        expected_path = _route_path_from_file(file_path)
+        if expected_path != path_value:
+            message = (
+                f"Frontend path mismatch for {api_id}: "
+                f"expected {expected_path}, got {path_value}"
+            )
+            raise AssertionError(message)

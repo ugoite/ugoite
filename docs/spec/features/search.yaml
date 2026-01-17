@@ -12,9 +12,9 @@ apis:
       file: backend/src/app/api/endpoints/search.py
       function: query_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/query
-      file: frontend/src/lib/search-api.ts
-      function: searchApi.query
+      path: /workspaces/{workspace_id}/query
+      file: frontend/src/routes/workspaces/[workspace_id]/query.tsx
+      function: WorkspaceQueryRoute
     ieapp_core:
       file: ieapp-core/src/index.rs
       function: query_index
@@ -30,9 +30,9 @@ apis:
       file: backend/src/app/api/endpoints/search.py
       function: search_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/search
-      file: frontend/src/lib/search-api.ts
-      function: searchApi.keyword
+      path: /workspaces/{workspace_id}/search
+      file: frontend/src/routes/workspaces/[workspace_id]/search.tsx
+      function: WorkspaceSearchRoute
     ieapp_core:
       file: ieapp-core/src/search.rs
       function: search_notes

@@ -318,7 +318,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/routes/notes/index.test.tsx
+        - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
           tests:
             - selecting a note class navigates correctly
 
