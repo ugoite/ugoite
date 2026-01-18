@@ -23,13 +23,15 @@ describe("Notes CRUD", () => {
 
 	afterAll(async () => {
 		// Cleanup: delete all notes created during tests
-		for (const id of createdNoteIds) {
-			try {
-				await client.deleteApi(`/workspaces/default/notes/${id}`);
-			} catch {
-				// Ignore cleanup errors
-			}
-		}
+		await Promise.allSettled(
+			createdNoteIds.map(async (id) => {
+				try {
+					await client.deleteApi(`/workspaces/default/notes/${id}`);
+				} catch {
+					// Ignore cleanup errors
+				}
+			}),
+		);
 	});
 
 	describe("Create Notes", () => {
