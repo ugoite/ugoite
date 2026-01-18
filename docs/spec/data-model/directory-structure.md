@@ -8,10 +8,12 @@ workspaces/
   {workspace_id}/                     # Each workspace is self-contained
     meta.json                         # Workspace metadata
     settings.json                     # Editor preferences, defaults
-    classes/                          # Class definitions (note types)
-      Meeting.json
-      Task.json
-      Note.json                       # Default class
+    classes/                          # Class-first storage
+      {class_id}/                     # One directory per Class
+        class.json                    # Class definition (schema + template)
+        tables/                       # Parquet-backed storage
+          notes.parquet               # Current notes (one row per note)
+          revisions.parquet           # Revision history (one row per revision)
     index/                            # Materialized views (regeneratable)
       index.json                      # Structured note records
       inverted_index.json             # Keyword search index
@@ -19,13 +21,6 @@ workspaces/
       faiss.index                     # Vector embeddings (optional)
     attachments/                      # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
-    notes/
-      {note_id}/                      # Each note has its own directory
-        meta.json                     # Note metadata (title, tags, links)
-        content.json                  # Markdown content + frontmatter
-        history/                      # Revision history
-          index.json                  # List of all revisions
-          {revision_id}.json          # Individual revision (with diff)
 ```
 
 ## Root Level
@@ -76,10 +71,11 @@ Workspace registry and system configuration:
 
 ## Class Level
 
-### `classes/{name}.json`
+### `classes/{class_id}/class.json`
 
 ```json
 {
+  "id": "class-uuid",
   "name": "Meeting",
   "version": 1,
   "template": "# Meeting\n\n## Date\n## Attendees\n## Decisions\n",
@@ -94,76 +90,49 @@ Workspace registry and system configuration:
 }
 ```
 
-## Note Level
+## Class Tables (Parquet)
 
-### `notes/{id}/meta.json`
+### `classes/{class_id}/tables/notes.parquet`
 
-```json
-{
-  "id": "note-uuid",
-  "workspace_id": "ws-main",
-  "title": "Weekly Sync",
-  "class": "Meeting",
-  "tags": ["project-alpha"],
-  "links": [
-    { "id": "link-456", "target": "note-uuid-2", "kind": "related" }
-  ],
-  "canvas_position": { "x": 120, "y": 480 },
-  "created_at": "2025-11-20T09:00:00Z",
-  "updated_at": "2025-11-29T10:00:00Z",
-  "integrity": {
-    "checksum": "sha256-...",
-    "signature": "hmac-..."
-  }
-}
+One row per note. Columns include standard metadata plus **only** the Class-defined fields.
+
+Example logical schema:
+
+```text
+note_id: string
+title: string
+class_id: string
+tags: list<string>
+links: list<struct<id: string, target: string, kind: string>>
+canvas_position: struct<x: double, y: double>
+created_at: timestamp
+updated_at: timestamp
+fields: struct<
+  Date: date,
+  Attendees: list<string>,
+  Decisions: string
+>
 ```
 
-### `notes/{id}/content.json`
+### `classes/{class_id}/tables/revisions.parquet`
 
-```json
-{
-  "revision_id": "rev-0042",
-  "author": "frontend",
-  "markdown": "# Weekly Sync\n\n## Date\n2025-11-29\n\n## Attendees\n- Alice\n- Bob",
-  "frontmatter": {
-    "class": "Meeting",
-    "status": "open"
-  },
-  "attachments": [
-    { "id": "a1b2c3d4", "name": "audio.m4a", "path": "attachments/a1b2c3d4.m4a" }
-  ],
-  "computed": {
-    "word_count": 52
-  }
-}
-```
+One row per revision. Stores historical snapshots of Class-defined fields so full
+Markdown can be reconstructed deterministically.
 
-### `notes/{id}/history/index.json`
+Example logical schema:
 
-```json
-{
-  "note_id": "note-uuid",
-  "revisions": [
-    { "revision_id": "rev-0001", "timestamp": "2025-10-01T12:00:00Z" },
-    { "revision_id": "rev-0042", "timestamp": "2025-11-29T10:00:00Z" }
-  ]
-}
-```
-
-### `notes/{id}/history/{revision_id}.json`
-
-```json
-{
-  "revision_id": "rev-0042",
-  "parent_revision_id": "rev-0041",
-  "timestamp": "2025-11-29T10:00:00Z",
-  "author": "frontend",
-  "diff": "--- a/content.md\n+++ b/content.md\n@@ -1,3 +1,4 @@...",
-  "integrity": {
-    "checksum": "sha256-...",
-    "signature": "hmac-..."
-  }
-}
+```text
+revision_id: string
+note_id: string
+parent_revision_id: string
+timestamp: timestamp
+author: string
+fields: struct<
+  Date: date,
+  Attendees: list<string>,
+  Decisions: string
+>
+markdown_checksum: string
 ```
 
 ## Index Level
@@ -213,4 +182,4 @@ Each workspace directory is fully portable:
 - Move to different storage backend
 - Share with other IEapp instances
 
-The `index/` directory can be regenerated from notes, so it's safe to exclude from backups if needed.
+The `index/` directory can be regenerated from Parquet tables, so it's safe to exclude from backups if needed.

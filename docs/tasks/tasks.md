@@ -29,6 +29,12 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 - [ ] Keep backend and frontend API contracts unchanged.
 - [ ] Add/update tests in `ieapp-core` to validate Parquet round-trip.
 
+### Legacy → TOBE (directory-structure) Delta
+- **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
+- **Class-first layout**: `classes/` is now keyed by `class_id` (not by name), and each Class owns its storage.
+- **Parquet tables**: `classes/{class_id}/tables/notes.parquet` stores current note rows; `revisions.parquet` stores revision history.
+- **Reconstruction source**: Markdown is reconstructed from Class-defined fields stored in Parquet (no free-form H2 storage in Phase 1).
+
 ### Acceptance Criteria
 - [ ] Notes are stored in Parquet tables per Class.
 - [ ] Notes can be read back with identical Markdown content (current UI behavior preserved).
