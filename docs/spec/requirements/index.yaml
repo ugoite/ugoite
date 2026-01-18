@@ -45,8 +45,6 @@ requirements:
           tests:
             - test_validate_properties_missing_required
             - test_validate_properties_valid
-            - test_validate_properties_casting
-            - test_validate_properties_invalid_type
       rust:
         - file: ieapp-core/tests/test_index.rs
           tests:

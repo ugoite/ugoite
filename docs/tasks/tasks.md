@@ -348,8 +348,8 @@ def test_no_orphan_tests():
 - [x] Convert legacy requirements to YAML format
 - [x] Create `docs/spec/requirements/README.md` with format explanation
 - [x] Create `docs/tests/README.md` with test framework documentation
-- [ ] Implement `test_requirements.py` (requirement coverage verification)
-- [ ] Implement `test_features.py` (feature path verification)
+- [x] Implement `test_requirements.py` (requirement coverage verification)
+- [x] Implement `test_features.py` (feature path verification)
 - [ ] Add test name convention: `test_<feature>_<requirement_id>_<description>`
 - [ ] Update CI to run document verification tests
 

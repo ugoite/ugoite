@@ -286,10 +286,6 @@ requirements:
             - should upload file on selection
             - should display uploaded attachments with icons
             - should delete attachment
-      e2e:
-        - file: e2e/canvas.test.ts
-          tests:
-            - attachments - upload and delete
 
   - id: REQ-FE-017
     title: Workspace Storage Configuration

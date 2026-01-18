@@ -17,7 +17,7 @@ requirements:
       pytest:
         - file: ieapp-cli/tests/test_attachments.py
           tests:
-            - test_save_attachment
+            - test_attachment_lifecycle
       rust:
         - file: ieapp-core/tests/test_attachment.rs
           tests:
