@@ -66,7 +66,8 @@ Workspace registry and system configuration:
 All class storage is managed by Apache Iceberg using the official Rust crate with
 OpenDAL-backed IO. The filesystem layout **beneath this directory** is owned by
 Iceberg and is intentionally not specified here. Each Class is represented as an
-Iceberg namespace named by the Class name, which contains the tables below.
+Iceberg namespace named by the Class name. Each Class namespace contains its own
+`notes` and `revisions` tables (there is no shared cross-Class table).
 
 **Template convention (global):**
 ```

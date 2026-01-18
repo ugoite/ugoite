@@ -116,6 +116,7 @@ classes:
                 type: boolean
               default:
                 description: Default value for field
+                type: [string, number, boolean, array, object, null]
 
   # Note level
   note_meta:

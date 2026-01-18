@@ -35,7 +35,7 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 - **Iceberg-managed classes root**: `classes/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
 - **Table naming**: Class name is the Iceberg table name; no class_id directories are created.
 - **Class definitions in Iceberg**: Class fields and schemas live in Iceberg; no per-class JSON files.
-- **Fixed template**: Default note template is global (`# {table_name}` with H2 columns), not per class.
+- **Fixed template**: Default note template is global (`# {class_name}` with H2 columns), not per class.
 - **Reconstruction source**: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).
 - **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
