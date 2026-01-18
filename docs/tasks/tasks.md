@@ -350,15 +350,15 @@ def test_no_orphan_tests():
 - [x] Create `docs/tests/README.md` with test framework documentation
 - [x] Implement `test_requirements.py` (requirement coverage verification)
 - [x] Implement `test_features.py` (feature path verification)
-- [ ] Add test name convention: `test_<feature>_<requirement_id>_<description>`
-- [ ] Update CI to run document verification tests
+- [x] Add test name convention: `test_<feature>_<requirement_id>_<description>`
+- [x] Update CI to run document verification tests
 
 ### Acceptance Criteria
 
 - [x] All requirements converted to YAML format
-- [ ] Document tests verify 100% requirement coverage
-- [ ] Orphan tests (no requirement) are identified and reviewed
-- [ ] CI fails if requirements are not covered
+- [x] Document tests verify 100% requirement coverage
+- [x] Orphan tests (no requirement) are identified and reviewed
+- [x] CI fails if requirements are not covered
 
 ---
 

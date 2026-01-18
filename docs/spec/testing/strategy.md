@@ -137,6 +137,31 @@ def test_note_create_basic():
 
 Verification tests in `docs/tests/` ensure coverage.
 
+### Requirement-aware Naming Convention
+
+Requirement traceability is enforced through the requirements YAML and REQ
+references in tests. Python tests generally keep descriptive names and embed the
+REQ ID in docstrings or comments:
+
+```python
+def test_all_requirements_have_tests() -> None:
+    """REQ-API-005: Requirements must list tests and files must exist."""
+    ...
+```
+
+Rust tests in `ieapp-core/tests/` use a requirement-aware naming convention:
+
+```rust
+async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
+    // REQ-NOTE-001
+    ...
+}
+```
+
+When using this pattern, replace hyphens in `REQ-XXX-001` with underscores to
+form `req_xxx_001`. The `feature` segment should reflect the domain under test
+(e.g., api, workspace, note, class, core, cli).
+
 ## Mocking Strategy
 
 ### Backend
