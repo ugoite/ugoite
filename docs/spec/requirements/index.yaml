@@ -7,7 +7,7 @@ requirements:
   - id: REQ-IDX-001
     title: Structured Cache via Live Indexer
     description: |
-      Update index/index.json and index/stats.json on note changes.
+      Derive materialized indexes from Iceberg tables on note changes.
     related_spec:
       - architecture/overview.md#structure-from-text-engine
       - data-model/overview.md#indices
@@ -36,7 +36,7 @@ requirements:
       Validate properties against class definitions and generate warnings.
     related_spec:
       - stories/core.yaml#STORY-002
-      - data-model/file-schemas.yaml#class_definition
+      - data-model/overview.md#classes
     priority: medium
     status: implemented
     tests:
@@ -76,7 +76,7 @@ requirements:
   - id: REQ-IDX-004
     title: Inverted Index Generation
     description: |
-      Generate inverted index for keyword search.
+      Generate inverted index for keyword search from Iceberg data.
     related_spec:
       - data-model/overview.md#indices
     priority: medium
@@ -96,7 +96,7 @@ requirements:
     description: |
       Calculate word count as an automatic property.
     related_spec:
-      - data-model/file-schemas.yaml#note_content
+      - data-model/overview.md#properties-extraction
     priority: low
     status: implemented
     tests:
@@ -112,7 +112,7 @@ requirements:
   - id: REQ-IDX-006
     title: Indexing via Watch Loop
     description: |
-      Trigger indexer in response to filesystem events.
+      Trigger indexer in response to Iceberg table changes.
     related_spec:
       - architecture/overview.md#structure-from-text-engine
     priority: low

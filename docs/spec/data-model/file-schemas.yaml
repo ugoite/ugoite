@@ -1,9 +1,9 @@
-# File Schema Definitions
+# Storage Schema Definitions
 #
-# JSON schema definitions for all IEapp data files.
+# Logical schema definitions for file-based resources and Iceberg tables.
 # These schemas are used for validation and documentation.
 
-version: "0.1"
+version: "0.2"
 updated: "2026-01"
 
 classes:
@@ -89,23 +89,20 @@ classes:
         sync_interval_seconds:
           type: integer
 
-  # Class definitions
+  # Class definitions (Iceberg)
   class_definition:
-    description: Class (note type) definition
-    path: workspaces/{id}/classes/{name}.json
+    description: Class definition stored in Iceberg table metadata
+    path: iceberg://classes/{name}
     schema:
       type: object
       required: [name, version, fields]
       properties:
         name:
           type: string
-          description: Class name (e.g., Meeting, Task)
+          description: Class name (Iceberg table namespace)
         version:
           type: integer
           description: Schema version for migrations
-        template:
-          type: string
-          description: Default Markdown template
         fields:
           type: object
           additionalProperties:
@@ -119,27 +116,23 @@ classes:
                 type: boolean
               default:
                 description: Default value for field
-        defaults:
-          type: object
-          description: Default values for auto-fill
+                type: [string, number, boolean, array, object, null]
 
-  # Note level
-  note_meta:
-    description: Note metadata
-    path: workspaces/{ws_id}/notes/{id}/meta.json
+  # Iceberg tables
+  notes_table:
+    description: Notes table for a Class (current head rows)
+    path: iceberg://classes/{name}/notes
     schema:
       type: object
-      required: [id, workspace_id, title, created_at, updated_at]
+      required: [note_id, title, updated_at, fields]
       properties:
-        id:
-          type: string
-        workspace_id:
+        note_id:
           type: string
         title:
           type: string
         class:
           type: string
-          description: Associated class name
+          description: Associated class name (optional when implied by table)
         tags:
           type: array
           items:
@@ -171,75 +164,22 @@ classes:
         updated_at:
           type: string
           format: date-time
+        fields:
+          type: object
+          description: Class-defined fields
         integrity:
           $ref: "#/classes/integrity"
 
-  note_content:
-    description: Note content
-    path: workspaces/{ws_id}/notes/{id}/content.json
+  revisions_table:
+    description: Revision history table for a Class
+    path: iceberg://classes/{name}/revisions
     schema:
       type: object
-      required: [revision_id, markdown]
+      required: [revision_id, note_id, timestamp, fields]
       properties:
         revision_id:
           type: string
-        author:
-          type: string
-          description: Source of change (frontend, mcp, etc.)
-        markdown:
-          type: string
-          description: Full Markdown content
-        frontmatter:
-          type: object
-          description: Parsed YAML frontmatter
-        attachments:
-          type: array
-          items:
-            type: object
-            required: [id, name, path]
-            properties:
-              id:
-                type: string
-              name:
-                type: string
-              path:
-                type: string
-        computed:
-          type: object
-          properties:
-            word_count:
-              type: integer
-
-  # History
-  history_index:
-    description: Revision history index
-    path: workspaces/{ws_id}/notes/{id}/history/index.json
-    schema:
-      type: object
-      required: [note_id, revisions]
-      properties:
         note_id:
-          type: string
-        revisions:
-          type: array
-          items:
-            type: object
-            required: [revision_id, timestamp]
-            properties:
-              revision_id:
-                type: string
-              timestamp:
-                type: string
-                format: date-time
-
-  revision:
-    description: Individual revision
-    path: workspaces/{ws_id}/notes/{id}/history/{rev_id}.json
-    schema:
-      type: object
-      required: [revision_id, timestamp]
-      properties:
-        revision_id:
           type: string
         parent_revision_id:
           type: string
@@ -248,83 +188,13 @@ classes:
           format: date-time
         author:
           type: string
-        diff:
+        fields:
+          type: object
+          description: Class-defined fields snapshot
+        markdown_checksum:
           type: string
-          description: Unified diff against parent
         integrity:
           $ref: "#/classes/integrity"
-
-  # Index files
-  note_index:
-    description: Structured note cache
-    path: workspaces/{ws_id}/index/index.json
-    schema:
-      type: object
-      required: [notes]
-      properties:
-        notes:
-          type: object
-          additionalProperties:
-            $ref: "#/classes/note_record"
-        class_stats:
-          type: object
-          additionalProperties:
-            type: object
-            properties:
-              count:
-                type: integer
-              last_updated:
-                type: string
-                format: date-time
-
-  note_record:
-    description: Individual note record in index
-    schema:
-      type: object
-      required: [id, title, updated_at]
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        class:
-          type: string
-        updated_at:
-          type: string
-          format: date-time
-        properties:
-          type: object
-        tags:
-          type: array
-          items:
-            type: string
-        links:
-          type: array
-          items:
-            type: object
-        canvas_position:
-          type: object
-        embedding_id:
-          type: string
-        checksum:
-          type: string
-
-  stats:
-    description: Index statistics
-    path: workspaces/{ws_id}/index/stats.json
-    schema:
-      type: object
-      required: [last_indexed, note_count]
-      properties:
-        last_indexed:
-          type: number
-          description: Unix timestamp
-        note_count:
-          type: integer
-        tag_counts:
-          type: object
-          additionalProperties:
-            type: integer
 
   # Shared schemas
   integrity:

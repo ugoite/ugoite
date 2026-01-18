@@ -13,7 +13,7 @@ This roadmap outlines the major milestones planned for IEapp development.
 |---|-----------|--------|-------------|
 | 1 | **MVP** | ✅ Completed | Minimum Viable Product - Core functionality |
 | 2 | **Full Configuration** | ✅ Completed | Codebase unification and architecture refinement |
-| 3 | **Markdown as Table** | 📋 Planned | Store notes as Class-backed Parquet tables with SQL querying |
+| 3 | **Markdown as Table** | 📋 Planned | Store notes as Class-backed Iceberg tables with SQL querying |
 | 4 | **User Controlled View** | 📋 Planned | User-defined UI views driven by queries |
 | 5 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
 | 6 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
@@ -59,16 +59,16 @@ Focus on codebase quality, consistency, and architecture refinement:
 
 **Tasks**: [tasks.md](tasks.md)
 
-Focus on storing notes as Class-backed Parquet tables while preserving the current UI behavior:
+Focus on storing notes as Class-backed Iceberg tables while preserving the current UI behavior:
 
 ### Key Objectives
-1. **Parquet Storage** - Class-defined fields stored as Parquet tables per Class
+1. **Iceberg Storage** - Class-defined fields stored as Iceberg tables per Class
 2. **Class-First Notes** - Notes require a Class; no classless notes
 3. **Deterministic Reconstruction** - Markdown can be reconstructed from table rows
 4. **IEapp SQL** - Domain-specific SQL for flexible user queries
 
 ### Expected Deliverables
-- Parquet-backed storage in `ieapp-core`
+- Iceberg-backed storage in `ieapp-core`
 - Class validation for allowed fields
 - SQL query engine over Class data
 

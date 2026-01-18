@@ -34,7 +34,6 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
-- [File Schema Definitions](data-model/file-schemas.yaml) - JSON schema definitions
 - [Directory Structure](data-model/directory-structure.md) - Workspace layout conventions
 
 ### API Reference
@@ -74,17 +73,18 @@ IEapp is a knowledge management system built on three core principles:
 A **Class** defines the structure of a note type. Classes specify:
 - Required and optional fields (H2 headers)
 - Field types (string, number, date, list, markdown)
-- Default template for new notes
+- Fixed global template for new notes
 
 ### Note
-A **Note** is a Markdown document with:
-- YAML frontmatter (class, tags, metadata)
-- H2 sections as structured fields
-- Revision history for time travel
+A **Note** is stored as a row in an Iceberg table and can be reconstructed as Markdown:
+- H2 sections map to Class-defined fields
+- YAML frontmatter carries metadata (class, tags)
+- Revision history is stored in the Class `revisions` table
 
 ### Workspace
 A **Workspace** is a self-contained data directory with:
-- Notes, classes, attachments, and indices
+- Iceberg-managed Class tables and attachments
+- Derived indexes regenerated from Iceberg tables
 - Portable across storage backends (local, S3, etc.)
 
 ---

@@ -22,7 +22,7 @@ stories:
       - System parses H2 headers as property keys
       - Users can define Classes to enforce required headers and data types
       - Frontend provides validation warnings if a note violates its Class definition
-      - Creating a note from a Class pre-fills the template
+      - Creating a note from a Class uses the fixed global template
     related_apis:
       - rest: POST /workspaces/{ws_id}/notes
       - rest: PUT /workspaces/{ws_id}/notes/{note_id}

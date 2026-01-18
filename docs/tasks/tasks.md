@@ -1,9 +1,9 @@
 # Milestone 3: Markdown as Table
 
 **Status**: 📋 Planned  
-**Goal**: Store notes as Parquet-backed tables while preserving the current UI behavior
+**Goal**: Store notes as Iceberg-backed tables while preserving the current UI behavior
 
-This milestone replaces the current Markdown-based storage with a Parquet table model, while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
+This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
 
 ---
 
@@ -16,21 +16,31 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 
 ---
 
-## Phase 1: Parquet storage for class-defined fields only
+## Phase 1: Iceberg storage for class-defined fields only
 
-**Objective**: Replace note storage with Parquet in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
+**Objective**: Replace note storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
 
 ### Key Tasks
-- [ ] Design a Parquet layout for notes per Class (one table per Class).
-- [ ] Define storage location and directory structure for Parquet files in workspaces.
-- [ ] Update `ieapp-core` write path to persist note records to Parquet.
-- [ ] Update `ieapp-core` read path to reconstruct Markdown content from Parquet fields.
+- [ ] Define Iceberg table layout and schema per Class. Revision history is described as Iceberg snapshots so no need to store separately
+- [ ] Define `classes/` as the Iceberg-managed root and document ownership rules.
+- [ ] Standardize Class name → Iceberg table name mapping (no class_id directories).
+- [ ] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
+- [ ] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
 - [ ] Enforce “Class-defined H2 only” validation in `ieapp-core`.
 - [ ] Keep backend and frontend API contracts unchanged.
-- [ ] Add/update tests in `ieapp-core` to validate Parquet round-trip.
+- [ ] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
+
+### Legacy → TOBE (directory-structure) Delta
+- **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
+- **Iceberg-managed classes root**: `classes/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
+- **Table naming**: Class name is the Iceberg table name; no class_id directories are created.
+- **Class definitions in Iceberg**: Class fields and schemas live in Iceberg; no per-class JSON files.
+- **Fixed template**: Default note template is global (`# {class_name}` with H2 columns), not per class.
+- **Reconstruction source**: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).
+- **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
 ### Acceptance Criteria
-- [ ] Notes are stored in Parquet tables per Class.
+- [ ] Notes are stored in Iceberg tables per Class.
 - [ ] Notes can be read back with identical Markdown content (current UI behavior preserved).
 - [ ] Non-Class H2 sections are rejected by `ieapp-core`.
 
@@ -56,11 +66,11 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 
 ## Phase 3: IEapp SQL (Domain-Specific SQL)
 
-**Objective**: Define and implement an SQL dialect optimized for IEapp classes and Parquet storage.
+**Objective**: Define and implement an SQL dialect optimized for IEapp classes and Iceberg storage.
 
 ### Key Tasks
 - [ ] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
-- [ ] Map SQL queries to Parquet scans in `ieapp-core`.
+- [ ] Map SQL queries to Iceberg scans in `ieapp-core`.
 - [ ] Add query validation and error reporting.
 - [ ] Integrate with existing REST/MCP query endpoints without API changes.
 - [ ] Add tests for SQL parsing and execution.

@@ -7,8 +7,8 @@ requirements:
   - id: REQ-NOTE-001
     title: Note Creation
     description: |
-      Create note from Markdown content, generating meta.json, content.json,
-      and history/index.json files.
+      Create note from Markdown content by writing a row to the Class `notes`
+      table and appending a row to the Class `revisions` table in Iceberg.
     related_spec:
       - api/rest.md#create-note
     priority: high
@@ -199,7 +199,7 @@ requirements:
     title: Attachments Upload & Linking
     description: |
       Upload binary attachments, return a generated attachment ID, and allow
-      notes to reference attachments in content.json.
+      notes to reference attachments in stored note content.
     related_spec:
       - stories/advanced.yaml#STORY-006
       - api/rest.md#upload-attachment
