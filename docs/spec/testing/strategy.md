@@ -101,6 +101,23 @@ def test_workspace_create_duplicate_returns_409():
     ...
 ```
 
+### Requirement-aware Naming Convention
+
+For pytest tests that validate a specific requirement, use:
+
+```python
+# Pattern: test_<feature>_<requirement_id>_<description>
+# Example (REQ-API-001):
+def test_api_req_api_001_create_workspace():
+    """REQ-API-001: Workspace CRUD"""
+    ...
+```
+
+Notes:
+
+- Replace hyphens in `REQ-XXX-001` with underscores to form `req_xxx_001`.
+- `feature` should reflect the domain under test (e.g., api, note, sto, cls).
+
 ### Test Files
 
 ```
@@ -136,6 +153,31 @@ def test_note_create_basic():
 ```
 
 Verification tests in `docs/tests/` ensure coverage.
+
+### Requirement-aware Naming Convention
+
+Requirement traceability is enforced through the requirements YAML and REQ
+references in tests. Python tests generally keep descriptive names and embed the
+REQ ID in docstrings or comments:
+
+```python
+def test_all_requirements_have_tests() -> None:
+    """REQ-API-005: Requirements must list tests and files must exist."""
+    ...
+```
+
+Rust tests in `ieapp-core/tests/` use a requirement-aware naming convention:
+
+```rust
+async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
+    // REQ-NOTE-001
+    ...
+}
+```
+
+When using this pattern, replace hyphens in `REQ-XXX-001` with underscores to
+form `req_xxx_001`. The `feature` segment should reflect the domain under test
+(e.g., api, workspace, note, class, core, cli).
 
 ## Mocking Strategy
 
