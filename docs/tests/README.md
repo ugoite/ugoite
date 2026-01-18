@@ -34,6 +34,34 @@ python -m pytest -v
 
 ## Test Details
 
+### Requirement-aware Naming Convention
+
+Requirement traceability is enforced by:
+
+1. Listing test names in `docs/spec/requirements/*.yaml`
+2. Including `REQ-*` IDs in test docstrings or comments
+
+Python tests currently use descriptive names, with requirement IDs in docstrings:
+
+```python
+def test_all_requirements_have_tests() -> None:
+    """REQ-API-005: Requirements must list tests and files must exist."""
+    ...
+```
+
+Rust tests in `ieapp-core/tests/` follow a requirement-aware naming pattern:
+
+```rust
+async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
+    // REQ-NOTE-001
+    ...
+}
+```
+
+When adopting this pattern, replace hyphens in `REQ-XXX-001` with underscores to
+form `req_xxx_001`, and keep `feature` aligned to the domain under test (e.g.
+api, workspace, note, class, core, cli).
+
 ### test_requirements.py
 
 ```python
