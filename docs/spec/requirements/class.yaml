@@ -80,5 +80,5 @@ requirements:
       e2e:
         - file: e2e/classes.test.ts
           tests:
-            - Class > Create and List Classes
-            - Class > Query Notes by Class
+            - Create and List Classes
+            - Query Notes by Class

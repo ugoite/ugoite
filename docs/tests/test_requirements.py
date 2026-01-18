@@ -41,13 +41,6 @@ class Requirement:
     tests: tuple[RequirementTest, ...]
 
 
-TEST_ROOTS: dict[Path, tuple[str, ...]] = {
-    REPO_ROOT / "backend" / "tests": (".py",),
-    REPO_ROOT / "ieapp-cli" / "tests": (".py",),
-    REPO_ROOT / "ieapp-core" / "tests": (".rs",),
-    REPO_ROOT / "frontend" / "src": (".test.ts", ".test.tsx"),
-}
-
 TEST_SCAN_RULES: tuple[tuple[Path, tuple[str, ...]], ...] = (
     (REPO_ROOT / "backend" / "tests", ("test_*.py",)),
     (REPO_ROOT / "ieapp-cli" / "tests", ("test_*.py",)),
@@ -177,15 +170,14 @@ def _assert_tests_declared_exist(requirements: Iterable[Requirement]) -> None:
                     f"{test_entry.file.relative_to(REPO_ROOT)}"
                 )
                 raise AssertionError(message)
-            if test_entry.kind in {"pytest", "rust"}:
-                contents = _read_text(test_entry.file)
-                for test_name in test_entry.tests:
-                    if test_name not in contents:
-                        message = (
-                            f"Requirement {requirement.req_id} references missing test "
-                            f"'{test_name}' in {test_entry.file.relative_to(REPO_ROOT)}"
-                        )
-                        raise AssertionError(message)
+            contents = _read_text(test_entry.file)
+            for test_name in test_entry.tests:
+                if test_name not in contents:
+                    message = (
+                        f"Requirement {requirement.req_id} references missing test "
+                        f"'{test_name}' in {test_entry.file.relative_to(REPO_ROOT)}"
+                    )
+                    raise AssertionError(message)
 
 
 def test_requirement_ids_are_unique() -> None:
