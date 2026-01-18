@@ -12,10 +12,12 @@ This roadmap outlines the major milestones planned for IEapp development.
 | # | Milestone | Status | Description |
 |---|-----------|--------|-------------|
 | 1 | **MVP** | ✅ Completed | Minimum Viable Product - Core functionality |
-| 2 | **Full Configuration** | 🔄 In Progress | Codebase unification and architecture refinement |
-| 3 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
-| 4 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
-| 5 | **Native App** | 📋 Planned | Desktop application with Tauri |
+| 2 | **Full Configuration** | ✅ Completed | Codebase unification and architecture refinement |
+| 3 | **Markdown as Table** | 📋 Planned | Store notes as Class-backed Parquet tables with SQL querying |
+| 4 | **User Controlled View** | 📋 Planned | User-defined UI views driven by queries |
+| 5 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
+| 6 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
+| 7 | **Native App** | 📋 Planned | Desktop application with Tauri |
 
 ---
 
@@ -32,9 +34,9 @@ Delivered the foundational architecture and core features:
 
 ---
 
-## Milestone 2: Full Configuration 🔄
+## Milestone 2: Full Configuration ✅
 
-**Tasks**: [tasks.md](tasks.md)
+**Archive**: [archive/milestone-2-full-configuration.md](archive/milestone-2-full-configuration.md)
 
 Focus on codebase quality, consistency, and architecture refinement:
 
@@ -53,7 +55,42 @@ Focus on codebase quality, consistency, and architecture refinement:
 
 ---
 
-## Milestone 3: AI-Enabled & AI-Used 📋
+## Milestone 3: Markdown as Table 📋
+
+**Tasks**: [tasks.md](tasks.md)
+
+Focus on storing notes as Class-backed Parquet tables while preserving the current UI behavior:
+
+### Key Objectives
+1. **Parquet Storage** - Class-defined fields stored as Parquet tables per Class
+2. **Class-First Notes** - Notes require a Class; no classless notes
+3. **Deterministic Reconstruction** - Markdown can be reconstructed from table rows
+4. **IEapp SQL** - Domain-specific SQL for flexible user queries
+
+### Expected Deliverables
+- Parquet-backed storage in `ieapp-core`
+- Class validation for allowed fields
+- SQL query engine over Class data
+
+---
+
+## Milestone 4: User Controlled View 📋
+
+Focus on enabling user-defined UI views driven by queries:
+
+### Key Objectives
+1. **Query + UI Composition** - Users attach UI components to queries
+2. **Low-Code Views** - Views are expressed as UI-only definitions
+3. **Shareable View Specs** - Views stored in the workspace and reusable
+
+### Expected Deliverables
+- View definition format and renderer
+- Query-driven UI panels
+- Saved, shareable view definitions
+
+---
+
+## Milestone 5: AI-Enabled & AI-Used 📋
 
 Focus on complete AI integration and workflow automation:
 
@@ -72,7 +109,7 @@ Focus on complete AI integration and workflow automation:
 
 ---
 
-## Milestone 4: User Management 📋
+## Milestone 6: User Management 📋
 
 Focus on multi-user support and security:
 
@@ -91,7 +128,7 @@ Focus on multi-user support and security:
 
 ---
 
-## Milestone 5: Native App 📋
+## Milestone 7: Native App 📋
 
 Focus on desktop application using Tauri:
 
@@ -114,9 +151,11 @@ Focus on desktop application using Tauri:
 
 ```
 2026 Q1  |████████████████| Milestone 2: Full Configuration
-2026 Q2  |████████████████| Milestone 3: AI-Enabled & AI-Used
-2026 Q3  |████████████████| Milestone 4: User Management
-2026 Q4  |████████████████| Milestone 5: Native App
+2026 Q2  |████████████████| Milestone 3: Markdown as Table
+2026 Q3  |████████████████| Milestone 4: User Controlled View
+2026 Q4  |████████████████| Milestone 5: AI-Enabled & AI-Used
+2027 Q1  |████████████████| Milestone 6: User Management
+2027 Q2  |████████████████| Milestone 7: Native App
 ```
 
 ---
