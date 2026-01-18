@@ -33,8 +33,8 @@ requirements:
     description: |
       Workspace has the following structure:
       - meta.json, settings.json
-      - classes/, index/, attachments/, notes/
-      - index/index.json, index/stats.json
+      - classes/ (Iceberg-managed Class tables)
+      - attachments/
     related_spec:
       - data-model/directory-structure.md
     priority: high

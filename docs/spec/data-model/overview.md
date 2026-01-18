@@ -6,7 +6,7 @@ This document describes the high-level data model of IEapp, including its storag
 
 To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Classes**:
 
-- **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, HMAC integrity).
+- **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
 - **Note Classes**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
 ## Principles
@@ -15,9 +15,9 @@ IEapp's data model is built on these principles:
 
 | Principle | Description |
 |-----------|-------------|
-| **Filesystem = Database** | Workspaces are directory trees; storage is file-backed |
-| **Class-on-Read** | Notes are reconstructed from Class-defined fields |
-| **Append-Only Integrity** | Revisions are appended; history is immutable |
+| **Filesystem = Database** | Workspaces are directory trees; Iceberg tables are file-backed |
+| **Class-on-Read** | Notes are reconstructed from Class-defined fields in Iceberg |
+| **Append-Only Integrity** | Revisions are appended in Iceberg; history is immutable |
 | **Table-Backed Storage** | Notes live in Apache Iceberg tables via OpenDAL |
 
 ## Directory Structure
@@ -45,10 +45,10 @@ Classes define note types with:
 
 ### Properties Extraction
 
-The indexer extracts properties from notes:
+The write pipeline extracts properties from Markdown:
 
 1. **Frontmatter**: YAML block at top of Markdown
-2. **H2 Sections**: `## Field Name` headers
+2. **H2 Sections**: `## Field Name` headers (must be Class-defined)
 3. **Auto Properties**: Computed values (word_count, etc.)
 
 Precedence: Section > Frontmatter > Auto default
@@ -73,5 +73,5 @@ and can be regenerated. The Iceberg-managed layout is the only source of truth.
 
 All data is signed with HMAC:
 - Key stored in `global.json`
-- Signature in each file's `integrity.signature`
+- Signature stored alongside note and revision rows
 - Checksum (SHA-256) for tamper detection

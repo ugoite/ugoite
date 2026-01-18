@@ -4,7 +4,7 @@
 
 IEapp follows a **Local-First, Server-Relay** architecture. The system is designed for:
 
-- **Portability**: Data stored in standard formats (JSON, Markdown)
+- **Portability**: Iceberg tables (Parquet) with Markdown reconstruction
 - **AI Integration**: First-class support for AI agents via MCP
 - **Multi-Platform**: Core logic in Rust enables native apps and WebAssembly
 
@@ -54,7 +54,7 @@ The core library handles ALL data operations:
 | Component | Responsibility |
 |-----------|----------------|
 | `workspace.rs` | Workspace CRUD, directory scaffolding |
-| `note.rs` | Note CRUD, revision history, conflict detection |
+| `note.rs` | Note CRUD via Iceberg tables, revision history, conflict detection |
 | `class.rs` | Iceberg class schema management |
 | `index.rs` | Structured data extraction, derived indexes |
 | `attachment.rs` | Binary file storage, deduplication |
@@ -115,7 +115,7 @@ Frontend                 Backend              ieapp-core           Storage
    │───────────────────────>│                     │                   │
    │                        │ create_note()       │                   │
    │                        │────────────────────>│                   │
-   │                        │                     │ write Iceberg data│
+   │                        │                     │ write Iceberg rows│
    │                        │                     │──────────────────>│
    │                        │                     │ update indexes    │
    │                        │                     │──────────────────>│
@@ -133,7 +133,7 @@ Frontend                 Backend              ieapp-core           Storage
 | Principle | Implementation |
 |-----------|----------------|
 | **Local-First** | All data in user-controlled storage; no required cloud services |
-| **Portable** | Standard formats (JSON, Markdown); easy export/import |
+| **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
 | **AI-Native** | MCP protocol + MCP integration for AI agents |
 | **Layered** | Clear separation: Core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |

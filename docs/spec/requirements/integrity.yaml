@@ -32,7 +32,7 @@ requirements:
   - id: REQ-INT-002
     title: Checksum Verification
     description: |
-      Calculate and store checksums for note content.
+      Calculate and store checksums for reconstructed note content.
     related_spec:
       - data-model/overview.md#integrity
     priority: medium
