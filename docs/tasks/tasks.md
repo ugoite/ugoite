@@ -21,7 +21,7 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 **Objective**: Replace note storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
 
 ### Key Tasks
-- [ ] Define Iceberg table layout and schema per Class (`notes`, `revisions`).
+- [ ] Define Iceberg table layout and schema per Class. Revision history is described as Iceberg snapshots so no need to store separately
 - [ ] Define `classes/` as the Iceberg-managed root and document ownership rules.
 - [ ] Standardize Class name → Iceberg table name mapping (no class_id directories).
 - [ ] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
