@@ -127,6 +127,23 @@ def test_yaml_spec_references_valid():
 4. Use `pathlib` for cross-platform path handling
 5. Document test purpose in docstrings
 
+### Requirement-aware Naming
+
+For pytest tests that validate a specific requirement, use:
+
+```python
+# Pattern: test_<feature>_<requirement_id>_<description>
+# Example (REQ-API-005):
+def test_docs_req_api_005_all_requirements_have_tests():
+    """REQ-API-005: Requirements Traceability Automation"""
+    ...
+```
+
+Notes:
+
+- Replace hyphens in `REQ-XXX-001` with underscores to form `req_xxx_001`.
+- `feature` should reflect the domain under test (e.g., docs, api, note).
+
 ## Dependencies
 
 ```txt
