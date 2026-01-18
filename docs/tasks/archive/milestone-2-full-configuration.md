@@ -496,6 +496,6 @@ For this milestone to be considered complete:
 
 ## References
 
-- [Roadmap](roadmap.md) - Future milestones
-- [MVP Archive](archive/mvp-milestone.md) - Previous milestone
-- [Architecture Overview](../spec/architecture/overview.md) - System design (TO-BE)
+- [Roadmap](../roadmap.md) - Future milestones
+- [MVP Archive](mvp-milestone.md) - Previous milestone
+- [Architecture Overview](../../spec/architecture/overview.md) - System design (TO-BE)

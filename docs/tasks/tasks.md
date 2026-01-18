@@ -1,6 +1,6 @@
 # Milestone 3: Markdown as Table
 
-**Status**: 🔄 In Progress  
+**Status**: 📋 Planned  
 **Goal**: Store notes as Parquet-backed tables while preserving the current UI behavior
 
 This milestone replaces the current Markdown-based storage with a Parquet table model, while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.

@@ -150,7 +150,6 @@ Focus on desktop application using Tauri:
 ## Timeline (Tentative)
 
 ```
-2026 Q1  |████████████████| Milestone 2: Full Configuration
 2026 Q2  |████████████████| Milestone 3: Markdown as Table
 2026 Q3  |████████████████| Milestone 4: User Controlled View
 2026 Q4  |████████████████| Milestone 5: AI-Enabled & AI-Used
