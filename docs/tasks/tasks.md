@@ -194,7 +194,7 @@ Path patterns are inconsistent across modules:
 | Feature | ieapp-cli | backend | frontend |
 |---------|-----------|---------|----------|
 | Workspace | `workspace.py` | `api/endpoints/workspaces.py` | `workspace-store.ts` |
-| Notes | `notes.py` | `api/endpoints/workspaces.py` (mixed) | `store.ts`, `routes/notes/` |
+| Notes | `notes.py` | `api/endpoints/workspaces.py` (mixed) | `store.ts`, `routes/workspaces/[workspace_id]/notes` |
 | Classes | `schemas.py` | `api/endpoints/workspaces.py` (mixed) | `class-api.ts` (classApi) |
 | Attachments | `attachments.py` | `api/endpoints/workspaces.py` | (in store) |
 | Search | `search.py` | `api/endpoints/workspaces.py` | `search-api.ts` |

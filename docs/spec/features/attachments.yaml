@@ -12,9 +12,9 @@ apis:
       file: backend/src/app/api/endpoints/attachment.py
       function: upload_attachment_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments
-      file: frontend/src/lib/attachment-api.ts
-      function: attachmentApi.upload
+      path: /workspaces/{workspace_id}/attachments
+      file: frontend/src/routes/workspaces/[workspace_id]/attachments.tsx
+      function: WorkspaceAttachmentsRoute
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: save_attachment
@@ -30,9 +30,9 @@ apis:
       file: backend/src/app/api/endpoints/attachment.py
       function: list_attachments_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments
-      file: frontend/src/lib/attachment-api.ts
-      function: attachmentApi.list
+      path: /workspaces/{workspace_id}/attachments
+      file: frontend/src/routes/workspaces/[workspace_id]/attachments.tsx
+      function: WorkspaceAttachmentsRoute
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: list_attachments
@@ -48,9 +48,9 @@ apis:
       file: backend/src/app/api/endpoints/attachment.py
       function: delete_attachment_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/attachments/{attachment_id}
-      file: frontend/src/lib/attachment-api.ts
-      function: attachmentApi.delete
+      path: /workspaces/{workspace_id}/attachments/{attachment_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/attachments/[attachment_id].tsx
+      function: WorkspaceAttachmentDetailRoute
     ieapp_core:
       file: ieapp-core/src/attachment.rs
       function: delete_attachment

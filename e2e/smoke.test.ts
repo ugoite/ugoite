@@ -34,15 +34,15 @@ describe("Smoke Tests", () => {
 			expect(res.headers.get("content-type")).toContain("text/html");
 		});
 
-		test("GET /notes returns HTML", async () => {
-			const res = await client.getFrontend("/notes");
+		test("GET /workspaces returns HTML", async () => {
+			const res = await client.getFrontend("/workspaces");
 			expect(res.ok).toBe(true);
 
 			const body = await res.text();
 			expect(body.toLowerCase()).toContain("<!doctype html>");
 		});
 
-		test("GET /notes/:id returns HTML", async () => {
+		test("GET /workspaces/default/notes/:id returns HTML", async () => {
 			// Create a note first so we can navigate to a real detail route
 			const createRes = await client.postApi("/workspaces/default/notes", {
 				content: `# E2E Detail Route Note\n\nCreated at ${new Date().toISOString()}`,
@@ -52,7 +52,7 @@ describe("Smoke Tests", () => {
 			const created = (await createRes.json()) as { id: string };
 			expect(created).toHaveProperty("id");
 
-			const res = await client.getFrontend(`/notes/${created.id}`);
+			const res = await client.getFrontend(`/workspaces/default/notes/${created.id}`);
 			expect(res.ok).toBe(true);
 
 			const body = await res.text();

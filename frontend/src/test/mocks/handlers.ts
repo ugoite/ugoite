@@ -48,6 +48,10 @@ export const seedNote = (workspaceId: string, note: Note, record: NoteRecord) =>
 	mockNoteIndex.get(workspaceId)?.set(note.id, record);
 };
 
+export const seedClass = (workspaceId: string, noteClass: Class) => {
+	mockClasses.get(workspaceId)?.set(noteClass.name, noteClass);
+};
+
 export const handlers = [
 	// List workspaces
 	http.get("http://localhost:3000/api/workspaces", () => {

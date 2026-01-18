@@ -37,13 +37,13 @@ Each component has ONE clear responsibility:
 | `NoteList` | Display notes | `notes`, `loading`, `error` (Accessors) | `onSelect(noteId)` |
 | `MarkdownEditor` | Edit markdown | `content`, `isDirty` | `onChange(content)`, `onSave()` |
 | `CanvasPlaceholder` | Canvas preview | `notes[]` | `onSelect(noteId)` |
-| `notes.tsx` | Orchestration | - | Coordinates all components |
+| `workspaces/[workspace_id]/notes.tsx` | Orchestration | - | Coordinates all components |
 
 ### 📐 State Management Rules
 
 ```typescript
 // ✅ CORRECT: Route owns state, passes to components
-// routes/notes.tsx
+// routes/workspaces/[workspace_id]/notes.tsx
 const store = createNoteStore(workspaceId);
 <NoteList
   notes={store.notes}        // Accessor

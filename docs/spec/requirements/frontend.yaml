@@ -318,7 +318,7 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/routes/notes/index.test.tsx
+        - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
           tests:
             - selecting a note class navigates correctly
 
@@ -396,3 +396,76 @@ requirements:
           tests:
             - Edit Mode toggle and inline edit
             - keyboard copy shortcut
+
+  - id: REQ-FE-032
+    title: Legacy Notes Route Redirect
+    description: |
+      The legacy /notes UI route MUST redirect users to /workspaces.
+    related_spec:
+      - features/README.md
+    priority: low
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/routes/notes/index.test.tsx
+          tests:
+            - REQ-FE-032: legacy notes route redirects
+
+  - id: REQ-FE-033
+    title: Note Detail Navigation
+    description: |
+      Selecting a note from the list MUST navigate to the note detail view,
+      correctly handling special characters in note IDs.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
+          tests:
+            - REQ-FE-033: selecting a note navigates with encoded id
+        - file: frontend/src/routes/workspaces/[workspace_id]/classes/class-detail.test.tsx
+          tests:
+            - REQ-FE-033: class detail navigation encodes note id
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - REQ-FE-033: Retrieve note with special characters
+            - REQ-FE-033: frontend note detail route renders (not SolidJS Not Found)
+  - id: REQ-FE-034
+    title: Note Detail Loading State Management
+    description: |
+      When navigating between notes (from note list, class table, or any navigation),
+      the loading state MUST properly clear and display the note content.
+      The UI MUST NOT get stuck showing "Loading note..." indefinitely.
+      Rapid sequential navigation between multiple notes MUST work smoothly without
+      requiring page reloads.
+    rationale: |
+      SolidJS createResource can maintain loading=true even after data loads/fails,
+      especially during rapid navigation. The fix checks loading state in conjunction
+      with data presence to avoid infinite loading screens.
+    related_spec:
+      - architecture/frontend-backend-interface.md#interaction-patterns
+    priority: critical
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - REQ-FE-034: Multi-note navigation should not get stuck in loading state
+
+  - id: REQ-FE-035
+    title: Robust Note Navigation and Recovery
+    description: |
+      Navigation to note details must include fail-safes (e.g., timeouts) to prevent infinite loading states.
+      The UI must successfully transition from loading to content or error state within 10 seconds.
+      Users must be able to navigate away from a pending load without the UI becoming unresponsive.
+    type: non-functional
+    priority: critical
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - REQ-FE-035: Navigation timeout handling and recovery

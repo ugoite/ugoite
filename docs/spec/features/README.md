@@ -28,6 +28,9 @@ Each operation entry includes:
 
 - **ID & Method**: Unique identifier and HTTP method.
 - **Backend & Frontend**: URL path, implementation file, and function/component.
+
+**Frontend path semantics**: The frontend path is the UI route path (no `/api` prefix).
+It should mirror the backend path to keep functionality aligned and discoverable.
 - **ieapp-core**: Internal logic implementation (Rust).
 - **ieapp-cli**: Command-line interface usage and implementation.
 
@@ -42,9 +45,9 @@ apis:
       file: backend/src/app/api/endpoints/note.py
       function: create_note_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/notes
-      file: frontend/src/lib/note-api.ts
-      function: noteApi.create
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes.tsx
+      function: WorkspaceNotesRoute
     ieapp_core:
       file: ieapp-core/src/note.rs
       function: create_note

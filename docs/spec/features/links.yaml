@@ -12,9 +12,9 @@ apis:
       file: backend/src/app/api/endpoints/link.py
       function: create_link_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links
-      file: frontend/src/lib/link-api.ts
-      function: linkApi.create
+      path: /workspaces/{workspace_id}/links
+      file: frontend/src/routes/workspaces/[workspace_id]/links.tsx
+      function: WorkspaceLinksRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: create_link
@@ -30,9 +30,9 @@ apis:
       file: backend/src/app/api/endpoints/link.py
       function: list_links_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links
-      file: frontend/src/lib/link-api.ts
-      function: linkApi.list
+      path: /workspaces/{workspace_id}/links
+      file: frontend/src/routes/workspaces/[workspace_id]/links.tsx
+      function: WorkspaceLinksRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: list_links
@@ -48,9 +48,9 @@ apis:
       file: backend/src/app/api/endpoints/link.py
       function: delete_link_endpoint
     frontend:
-      path: /api/workspaces/{workspace_id}/links/{link_id}
-      file: frontend/src/lib/link-api.ts
-      function: linkApi.delete
+      path: /workspaces/{workspace_id}/links/{link_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/links/[link_id].tsx
+      function: WorkspaceLinkDetailRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: delete_link
