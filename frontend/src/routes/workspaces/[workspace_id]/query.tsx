@@ -71,7 +71,7 @@ export default function WorkspaceQueryRoute() {
 							{(result) => (
 								<li class="border rounded p-3">
 									<A
-										href={`/workspaces/${workspaceId()}/notes/${result.id}`}
+										href={`/workspaces/${workspaceId()}/notes/${encodeURIComponent(result.id)}`}
 										class="text-sm font-medium text-blue-600 hover:underline"
 									>
 										{result.title || result.id}

@@ -116,7 +116,7 @@ export default function WorkspaceLinksRoute() {
 									</div>
 									<div class="flex gap-2">
 										<A
-											href={`/workspaces/${workspaceId()}/links/${link.id}`}
+											href={`/workspaces/${workspaceId()}/links/${encodeURIComponent(link.id)}`}
 											class="text-sm text-blue-600 hover:underline"
 										>
 											Details

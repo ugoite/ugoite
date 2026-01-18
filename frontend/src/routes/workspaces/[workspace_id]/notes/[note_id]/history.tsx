@@ -46,7 +46,7 @@ export default function WorkspaceNoteHistoryRoute() {
 										<p class="text-xs text-gray-500">{revision.created_at}</p>
 									</div>
 									<A
-										href={`/workspaces/${workspaceId()}/notes/${encodedNoteId()}/history/${revision.revision_id}`}
+										href={`/workspaces/${workspaceId()}/notes/${encodedNoteId()}/history/${encodeURIComponent(revision.revision_id)}`}
 										class="text-sm text-blue-600 hover:underline"
 									>
 										View Revision

@@ -20,7 +20,7 @@ export default function WorkspaceNoteRevisionRoute() {
 					<p class="text-sm text-gray-500">Revision ID: {revisionId()}</p>
 				</div>
 				<A
-					href={`/workspaces/${workspaceId()}/notes/${noteId()}/history`}
+					href={`/workspaces/${workspaceId()}/notes/${encodeURIComponent(noteId())}/history`}
 					class="text-sm text-sky-700 hover:underline"
 				>
 					Back to History

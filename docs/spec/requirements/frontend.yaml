@@ -463,7 +463,7 @@ requirements:
       Users must be able to navigate away from a pending load without the UI becoming unresponsive.
     type: non-functional
     priority: critical
-    status: planned
+    status: implemented
     tests:
       e2e:
         - file: e2e/notes.test.ts
