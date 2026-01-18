@@ -71,7 +71,7 @@ requirements:
     description: |
       global.json maintains workspace registry and HMAC keys.
     related_spec:
-      - data-model/file-schemas.yaml#global
+      - data-model/overview.md#directory-structure
     priority: high
     status: implemented
     tests:

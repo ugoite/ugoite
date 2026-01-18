@@ -397,7 +397,6 @@ docs/spec/
 │   └── experimental.yaml         # Future features
 ├── data-model/
 │   ├── overview.md               # Data model explanation
-│   ├── file-schemas.yaml         # JSON schema definitions
 │   └── directory-structure.md    # Workspace layout
 ├── api/
 │   ├── rest.md                   # REST API documentation

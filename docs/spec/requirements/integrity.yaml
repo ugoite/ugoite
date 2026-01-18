@@ -10,7 +10,7 @@ requirements:
       Sign all data revisions with locally generated key to prevent tampering.
     related_spec:
       - security/overview.md
-      - data-model/file-schemas.yaml#integrity
+      - data-model/overview.md#integrity
     priority: high
     status: implemented
     tests:
@@ -34,7 +34,7 @@ requirements:
     description: |
       Calculate and store checksums for note content.
     related_spec:
-      - data-model/file-schemas.yaml#integrity
+      - data-model/overview.md#integrity
     priority: medium
     status: implemented
     tests:
