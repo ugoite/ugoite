@@ -1,3 +1,4 @@
+// REQ-FE-014: Search UI component
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { SearchBar } from "./SearchBar";

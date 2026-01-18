@@ -1,4 +1,7 @@
-"""Tests for integrity provider."""
+"""Tests for integrity provider.
+
+REQ-INT-001: HMAC signature.
+"""
 
 import json
 import re

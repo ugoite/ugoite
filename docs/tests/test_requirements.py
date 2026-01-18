@@ -6,7 +6,6 @@ REQ-API-005: Requirements must be mapped to tests across modules.
 from __future__ import annotations
 
 import re
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -48,6 +47,13 @@ TEST_ROOTS: dict[Path, tuple[str, ...]] = {
     REPO_ROOT / "ieapp-core" / "tests": (".rs",),
     REPO_ROOT / "frontend" / "src": (".test.ts", ".test.tsx"),
 }
+
+TEST_SCAN_RULES: tuple[tuple[Path, tuple[str, ...]], ...] = (
+    (REPO_ROOT / "backend" / "tests", ("test_*.py",)),
+    (REPO_ROOT / "ieapp-cli" / "tests", ("test_*.py",)),
+    (REPO_ROOT / "ieapp-core" / "tests", ("test_*.rs",)),
+    (REPO_ROOT / "frontend" / "src", ("*.test.ts", "*.test.tsx")),
+)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -140,22 +146,26 @@ def _find_req_ids(text: str) -> set[str]:
     return set(REQ_ID_PATTERN.findall(text))
 
 
+def _file_has_tests(file_path: Path) -> bool:
+    contents = _read_text(file_path)
+    suffix = file_path.suffix
+    if suffix == ".py":
+        return bool(re.search(r"^\s*def\s+test_", contents, re.MULTILINE))
+    if suffix == ".rs":
+        return "#[test]" in contents
+    if suffix in {".ts", ".tsx"}:
+        return bool(re.search(r"\b(it|test)\s*\(", contents))
+    return False
+
+
 def _iter_test_files() -> Iterable[Path]:
-    for root, suffixes in TEST_ROOTS.items():
+    for root, patterns in TEST_SCAN_RULES:
         if not root.exists():
             continue
-        is_simple_suffix = all(
-            suffix.startswith(".") and not suffix.endswith(".ts") for suffix in suffixes
-        )
-        if is_simple_suffix:
-            for file_path in root.rglob("*"):
-                if file_path.suffix in suffixes:
+        for pattern in patterns:
+            for file_path in root.rglob(pattern):
+                if _file_has_tests(file_path):
                     yield file_path
-            continue
-
-        for suffix in suffixes:
-            for file_path in root.rglob(f"*{suffix}"):
-                yield file_path
 
 
 def _assert_tests_declared_exist(requirements: Iterable[Requirement]) -> None:
@@ -225,12 +235,12 @@ def test_all_tests_reference_valid_requirements() -> None:
 
 
 def test_no_orphan_tests() -> None:
-    """REQ-API-005: Warn when test files lack requirement references."""
+    """REQ-API-005: Fail when test files lack requirement references."""
+    missing: list[str] = []
     for test_file in _iter_test_files():
         contents = _read_text(test_file)
         if not _find_req_ids(contents):
-            warnings.warn(
-                "Test file has no requirement references: "
-                f"{test_file.relative_to(REPO_ROOT)}",
-                stacklevel=2,
-            )
+            missing.append(str(test_file.relative_to(REPO_ROOT)))
+    if missing:
+        message = "Test files missing requirement references: " + ", ".join(missing)
+        raise AssertionError(message)

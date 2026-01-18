@@ -1,3 +1,6 @@
+// REQ-FE-001: Workspace selector
+// REQ-FE-002: Automatic default workspace creation
+// REQ-FE-003: Persist workspace selection
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { WorkspaceSelector } from "./WorkspaceSelector";

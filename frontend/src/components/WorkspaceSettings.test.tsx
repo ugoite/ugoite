@@ -1,3 +1,4 @@
+// REQ-FE-017: Workspace storage configuration
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import { WorkspaceSettings } from "./WorkspaceSettings";

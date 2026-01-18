@@ -1,3 +1,5 @@
+// REQ-API-001: Workspace CRUD
+// REQ-API-002: Note CRUD
 import { describe, it, expect, beforeEach } from "vitest";
 import { attachmentApi } from "./attachment-api";
 import { classApi } from "./class-api";

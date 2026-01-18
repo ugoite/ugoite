@@ -1,4 +1,14 @@
-"""Tests for notes management."""
+"""Tests for notes management.
+
+REQ-NOTE-001: Note creation.
+REQ-NOTE-002: Optimistic concurrency via revisions.
+REQ-NOTE-003: Note update.
+REQ-NOTE-004: Note deletion.
+REQ-NOTE-005: Note history.
+REQ-NOTE-006: Structured data extraction.
+REQ-NOTE-007: Properties and links in list response.
+REQ-NOTE-008: Attachments upload & linking.
+"""
 
 import hashlib
 import hmac

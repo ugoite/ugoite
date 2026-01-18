@@ -1,3 +1,4 @@
+// REQ-FE-015: Attachment upload UI
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import { AttachmentUploader } from "./AttachmentUploader";

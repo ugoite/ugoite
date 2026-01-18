@@ -1,3 +1,6 @@
+// REQ-FE-001: Workspace selector
+// REQ-FE-002: Automatic default workspace creation
+// REQ-FE-003: Persist workspace selection
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createRoot } from "solid-js";
 import { createWorkspaceStore } from "./workspace-store";

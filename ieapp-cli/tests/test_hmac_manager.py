@@ -1,4 +1,7 @@
-"""Tests for HMAC manager module with multiple fsspec implementations."""
+"""Tests for HMAC manager module with multiple fsspec implementations.
+
+REQ-INT-001: HMAC signature management.
+"""
 
 import json
 from pathlib import Path

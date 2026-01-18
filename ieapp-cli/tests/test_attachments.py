@@ -1,5 +1,7 @@
 """Attachment helpers must work across fsspec implementations.
 
+REQ-ATT-001: Attachment creation and lifecycle.
+
 These tests exercise saving, listing and deleting attachments and
 reference handling across multiple filesystem implementations.
 """

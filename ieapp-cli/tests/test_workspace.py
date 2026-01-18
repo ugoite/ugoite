@@ -1,4 +1,11 @@
-"""Tests for workspace management."""
+"""Tests for workspace management.
+
+REQ-STO-001: Storage abstraction using fsspec.
+REQ-STO-002: Workspace directory structure.
+REQ-STO-003: File permissions.
+REQ-STO-004: Workspace management via global.json.
+REQ-STO-005: Prevent duplicate workspace creation.
+"""
 
 import json
 
