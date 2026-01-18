@@ -32,8 +32,9 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 ### Legacy → TOBE (directory-structure) Delta
 - **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
 - **Class-first layout**: `classes/` is now keyed by `class_id` (not by name), and each Class owns its storage.
-- **Parquet tables**: `classes/{class_id}/tables/notes.parquet` stores current note rows; `revisions.parquet` stores revision history.
+- **Parquet shards**: `classes/{class_id}/notes/{idx}.parquet` stores current note rows; `revisions/{idx}.parquet` stores revision history.
 - **Reconstruction source**: Markdown is reconstructed from Class-defined fields stored in Parquet (no free-form H2 storage in Phase 1).
+- **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Parquet as needed.
 
 ### Acceptance Criteria
 - [ ] Notes are stored in Parquet tables per Class.

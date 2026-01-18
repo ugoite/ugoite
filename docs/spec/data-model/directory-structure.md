@@ -11,14 +11,10 @@ workspaces/
     classes/                          # Class-first storage
       {class_id}/                     # One directory per Class
         class.json                    # Class definition (schema + template)
-        tables/                       # Parquet-backed storage
-          notes.parquet               # Current notes (one row per note)
-          revisions.parquet           # Revision history (one row per revision)
-    index/                            # Materialized views (regeneratable)
-      index.json                      # Structured note records
-      inverted_index.json             # Keyword search index
-      stats.json                      # Aggregate statistics
-      faiss.index                     # Vector embeddings (optional)
+        notes/                        # Current notes (Parquet shards)
+          {idx}.parquet               # One row per note
+        revisions/                    # Revision history (Parquet shards)
+          {idx}.parquet               # One row per revision
     attachments/                      # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
 ```
@@ -92,9 +88,10 @@ Workspace registry and system configuration:
 
 ## Class Tables (Parquet)
 
-### `classes/{class_id}/tables/notes.parquet`
+### `classes/{class_id}/notes/{idx}.parquet`
 
-One row per note. Columns include standard metadata plus **only** the Class-defined fields.
+Sharded by `{idx}` to keep files manageable and append-friendly. One row per note.
+Columns include standard metadata plus **only** the Class-defined fields.
 
 Example logical schema:
 
@@ -114,10 +111,11 @@ fields: struct<
 >
 ```
 
-### `classes/{class_id}/tables/revisions.parquet`
+### `classes/{class_id}/revisions/{idx}.parquet`
 
-One row per revision. Stores historical snapshots of Class-defined fields so full
-Markdown can be reconstructed deterministically.
+Sharded by `{idx}` to keep files manageable and append-friendly. One row per revision.
+Stores historical snapshots of Class-defined fields so full Markdown can be
+reconstructed deterministically.
 
 Example logical schema:
 
@@ -182,4 +180,4 @@ Each workspace directory is fully portable:
 - Move to different storage backend
 - Share with other IEapp instances
 
-The `index/` directory can be regenerated from Parquet tables, so it's safe to exclude from backups if needed.
+Materialized indexes (search, embeddings) are derived from Parquet tables and can be regenerated.
