@@ -1,9 +1,9 @@
 # Milestone 3: Markdown as Table
 
 **Status**: 📋 Planned  
-**Goal**: Store notes as Parquet-backed tables while preserving the current UI behavior
+**Goal**: Store notes as Iceberg-backed tables while preserving the current UI behavior
 
-This milestone replaces the current Markdown-based storage with a Parquet table model, while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
+This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
 
 ---
 
@@ -16,28 +16,28 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 
 ---
 
-## Phase 1: Parquet storage for class-defined fields only
+## Phase 1: Iceberg storage for class-defined fields only
 
-**Objective**: Replace note storage with Parquet in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
+**Objective**: Replace note storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
 
 ### Key Tasks
-- [ ] Design a Parquet layout for notes per Class (one table per Class).
-- [ ] Define storage location and directory structure for Parquet files in workspaces.
-- [ ] Update `ieapp-core` write path to persist note records to Parquet.
-- [ ] Update `ieapp-core` read path to reconstruct Markdown content from Parquet fields.
+- [ ] Define Iceberg table layout and schema per Class (`notes`, `revisions`).
+- [ ] Define Iceberg storage location and management rules in workspaces.
+- [ ] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
+- [ ] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
 - [ ] Enforce “Class-defined H2 only” validation in `ieapp-core`.
 - [ ] Keep backend and frontend API contracts unchanged.
-- [ ] Add/update tests in `ieapp-core` to validate Parquet round-trip.
+- [ ] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
 
 ### Legacy → TOBE (directory-structure) Delta
 - **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
 - **Class-first layout**: `classes/` is now keyed by `class_id` (not by name), and each Class owns its storage.
-- **Parquet shards**: `classes/{class_id}/notes/{idx}.parquet` stores current note rows; `revisions/{idx}.parquet` stores revision history.
-- **Reconstruction source**: Markdown is reconstructed from Class-defined fields stored in Parquet (no free-form H2 storage in Phase 1).
-- **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Parquet as needed.
+- **Iceberg-managed storage**: `classes/{class_id}/iceberg/` is the root for Iceberg tables; physical layout is owned by Iceberg.
+- **Reconstruction source**: Markdown is reconstructed from Class-defined fields stored in Iceberg (no free-form H2 storage in Phase 1).
+- **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
 ### Acceptance Criteria
-- [ ] Notes are stored in Parquet tables per Class.
+- [ ] Notes are stored in Iceberg tables per Class.
 - [ ] Notes can be read back with identical Markdown content (current UI behavior preserved).
 - [ ] Non-Class H2 sections are rejected by `ieapp-core`.
 
@@ -63,11 +63,11 @@ This milestone replaces the current Markdown-based storage with a Parquet table 
 
 ## Phase 3: IEapp SQL (Domain-Specific SQL)
 
-**Objective**: Define and implement an SQL dialect optimized for IEapp classes and Parquet storage.
+**Objective**: Define and implement an SQL dialect optimized for IEapp classes and Iceberg storage.
 
 ### Key Tasks
 - [ ] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
-- [ ] Map SQL queries to Parquet scans in `ieapp-core`.
+- [ ] Map SQL queries to Iceberg scans in `ieapp-core`.
 - [ ] Add query validation and error reporting.
 - [ ] Integrate with existing REST/MCP query endpoints without API changes.
 - [ ] Add tests for SQL parsing and execution.

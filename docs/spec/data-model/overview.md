@@ -15,10 +15,10 @@ IEapp's data model is built on these principles:
 
 | Principle | Description |
 |-----------|-------------|
-| **Filesystem = Database** | Every workspace is a directory tree; no hidden RDB |
-| **Class-on-Read** | Markdown stays flexible; indexer projects it into typed objects |
-| **Append-Only Integrity** | Writes never mutate history; revisions are appended |
-| **Human-Readable** | JSON + Markdown format; easy to inspect and backup |
+| **Filesystem = Database** | Workspaces are directory trees; storage is file-backed |
+| **Class-on-Read** | Notes are reconstructed from Class-defined fields |
+| **Append-Only Integrity** | Revisions are appended; history is immutable |
+| **Table-Backed Storage** | Notes live in Apache Iceberg tables via OpenDAL |
 
 ## Directory Structure
 
@@ -30,20 +30,11 @@ workspaces/
   {workspace_id}/
     meta.json                  # Workspace metadata
     settings.json              # Workspace settings
-    classes/                   # Class definitions
-      {class_name}.json
-    index/                     # Materialized views
-      index.json
-      inverted_index.json
-      stats.json
+    classes/                   # Class definitions + Iceberg tables
+      {class_id}/
+        class.json
+        iceberg/               # Iceberg-managed storage (layout not specified)
     attachments/               # Binary files
-    notes/
-      {note_id}/
-        meta.json              # Note metadata
-        content.json           # Note content + frontmatter
-        history/
-          index.json           # Revision list
-          {revision_id}.json   # Each revision
 ```
 
 ## Key Concepts
@@ -69,22 +60,19 @@ Precedence: Section > Frontmatter > Auto default
 
 ### Versioning
 
-Every save creates a new revision:
+Every save creates a new revision row in the Iceberg `revisions` table:
 
 1. Client sends update with `parent_revision_id`
 2. Server validates parent matches current head
-3. New revision stored in `history/{revision_id}.json`
-4. `content.json` updated to new head
+3. New revision row is appended via Iceberg
+4. `notes` table updated to new head
 
 Conflicts return HTTP 409 with current revision.
 
 ## Indices
 
-| Index | Purpose | Used By |
-|-------|---------|---------|
-| `index.json` | Structured note records | List, query, MCP |
-| `inverted_index.json` | Keyword posting lists | Search |
-| `stats.json` | Aggregates (counts, etc.) | UI badges |
+Materialized indexes (search, embeddings, stats) are derived from Iceberg tables
+and can be regenerated. The Iceberg-managed layout is the only source of truth.
 
 ## Integrity
 

@@ -11,10 +11,7 @@ workspaces/
     classes/                          # Class-first storage
       {class_id}/                     # One directory per Class
         class.json                    # Class definition (schema + template)
-        notes/                        # Current notes (Parquet shards)
-          {idx}.parquet               # One row per note
-        revisions/                    # Revision history (Parquet shards)
-          {idx}.parquet               # One row per revision
+        iceberg/                      # Apache Iceberg table root (managed)
     attachments/                      # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
 ```
@@ -86,12 +83,27 @@ Workspace registry and system configuration:
 }
 ```
 
-## Class Tables (Parquet)
+## Class Tables (Iceberg)
 
-### `classes/{class_id}/notes/{idx}.parquet`
+### `classes/{class_id}/iceberg/`
 
-Sharded by `{idx}` to keep files manageable and append-friendly. One row per note.
-Columns include standard metadata plus **only** the Class-defined fields.
+All note storage is managed by Apache Iceberg using the official Rust crate with
+OpenDAL-backed IO. The filesystem layout **beneath this directory** is owned by
+Iceberg and is intentionally not specified here.
+
+**Required tables (logical names):**
+- `notes` (current note rows)
+- `revisions` (revision history rows)
+
+**Required operations:**
+- Append new note rows and update existing note rows via Iceberg writes.
+- Append revision rows for every save.
+- Support snapshot/time-travel reads for conflict resolution and history.
+- Allow compaction/maintenance via Iceberg without breaking logical access.
+
+### `notes` table (logical schema)
+
+One row per note. Columns include standard metadata plus **only** the Class-defined fields.
 
 Example logical schema:
 
@@ -111,11 +123,10 @@ fields: struct<
 >
 ```
 
-### `classes/{class_id}/revisions/{idx}.parquet`
+### `revisions` table (logical schema)
 
-Sharded by `{idx}` to keep files manageable and append-friendly. One row per revision.
-Stores historical snapshots of Class-defined fields so full Markdown can be
-reconstructed deterministically.
+One row per revision. Stores historical snapshots of Class-defined fields so full
+Markdown can be reconstructed deterministically.
 
 Example logical schema:
 
@@ -133,46 +144,6 @@ fields: struct<
 markdown_checksum: string
 ```
 
-## Index Level
-
-### `index/index.json`
-
-```json
-{
-  "notes": {
-    "note-uuid": {
-      "id": "note-uuid",
-      "title": "Weekly Sync",
-      "class": "Meeting",
-      "updated_at": "2025-11-29T10:00:00Z",
-      "properties": {
-        "Date": "2025-11-29",
-        "Attendees": ["Alice", "Bob"]
-      },
-      "tags": ["project-alpha"],
-      "links": [{ "id": "link-456", "target": "note-uuid-2", "kind": "related" }],
-      "checksum": "sha256-..."
-    }
-  },
-  "class_stats": {
-    "Meeting": { "count": 15, "last_updated": "2025-11-29T10:00:00Z" }
-  }
-}
-```
-
-### `index/stats.json`
-
-```json
-{
-  "last_indexed": 1732878000.0,
-  "note_count": 150,
-  "tag_counts": {
-    "project-alpha": 25,
-    "important": 10
-  }
-}
-```
-
 ## Portability
 
 Each workspace directory is fully portable:
@@ -180,4 +151,4 @@ Each workspace directory is fully portable:
 - Move to different storage backend
 - Share with other IEapp instances
 
-Materialized indexes (search, embeddings) are derived from Parquet tables and can be regenerated.
+Materialized indexes (search, embeddings) are derived from Iceberg tables and can be regenerated.
