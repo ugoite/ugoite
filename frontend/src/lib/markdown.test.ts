@@ -1,3 +1,4 @@
+// REQ-NOTE-006: Structured data extraction from markdown
 import { describe, it, expect } from "vitest";
 import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "./markdown";
 

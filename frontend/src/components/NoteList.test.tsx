@@ -1,3 +1,5 @@
+// REQ-FE-004: Note list display
+// REQ-FE-008: Note selection and highlight
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";

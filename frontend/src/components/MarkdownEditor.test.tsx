@@ -1,3 +1,6 @@
+// REQ-FE-005: Markdown editor
+// REQ-FE-005a: Editor content graceful handling
+// REQ-FE-009: Conflict message display
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";

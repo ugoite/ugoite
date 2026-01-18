@@ -1,4 +1,7 @@
-"""Tests for class management endpoints."""
+"""Tests for class management endpoints.
+
+REQ-CLS-003: Class CRUD via API.
+"""
 
 import uuid
 

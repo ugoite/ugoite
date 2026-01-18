@@ -1,6 +1,11 @@
 """Tests for the ieapp indexer utilities.
 
-These tests verify indexing, property extraction and validation logic.
+REQ-IDX-001: Structured cache via live indexer.
+REQ-IDX-002: Class validation warnings.
+REQ-IDX-003: Structured queries.
+REQ-IDX-004: Inverted index generation.
+REQ-IDX-005: Word count calculation.
+REQ-IDX-006: Indexing via watch loop.
 """
 
 import json

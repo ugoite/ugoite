@@ -1,4 +1,7 @@
-"""Tests for API using memory filesystem."""
+"""Tests for API using memory filesystem.
+
+REQ-STO-007: Backend IO separation & multi-fsspec coverage.
+"""
 
 import io
 from collections.abc import Generator

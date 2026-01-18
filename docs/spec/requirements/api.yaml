@@ -59,7 +59,10 @@ requirements:
       e2e:
         - file: e2e/notes.test.ts
           tests:
-            - Create/Read/Update/Delete Notes
+            - POST /workspaces/default/notes creates a new note
+            - GET /workspaces/default/notes returns note list
+            - PUT /workspaces/default/notes/:id updates note
+            - DELETE /workspaces/default/notes/:id removes note
 
   - id: REQ-API-004
     title: Feature Registry Consistency
@@ -77,3 +80,23 @@ requirements:
           tests:
             - test_feature_paths_exist
             - test_no_undeclared_feature_modules
+
+  - id: REQ-API-005
+    title: Requirements Traceability Automation
+    description: |
+      Requirements MUST be defined in YAML and validated against test references
+      in backend, frontend, ieapp-cli, and ieapp-core.
+    related_spec:
+      - requirements/README.md
+      - testing/strategy.md
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_requirements.py
+          tests:
+            - test_requirement_ids_are_unique
+            - test_required_fields_present
+            - test_all_requirements_have_tests
+            - test_all_tests_reference_valid_requirements
+            - test_no_orphan_tests

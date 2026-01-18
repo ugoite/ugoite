@@ -59,3 +59,26 @@ requirements:
         - file: ieapp-core/tests/test_class.rs
           tests:
             - test_class_req_cls_002_upsert_and_list_classes
+
+  - id: REQ-CLS-003
+    title: Class CRUD via API
+    description: |
+      Backend MUST allow creating, listing, and retrieving class definitions,
+      and validate note updates against missing class definitions.
+    related_spec:
+      - api/rest.md#classes
+      - data-model/overview.md#classes
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_classes.py
+          tests:
+            - test_create_and_get_class
+            - test_class_validation_in_note
+            - test_update_note_with_missing_class_rejected
+      e2e:
+        - file: e2e/classes.test.ts
+          tests:
+            - Create and List Classes
+            - Query Notes by Class
