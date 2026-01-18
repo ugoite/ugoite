@@ -22,7 +22,8 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 ### Key Tasks
 - [ ] Define Iceberg table layout and schema per Class (`notes`, `revisions`).
-- [ ] Define Iceberg storage location and management rules in workspaces.
+- [ ] Define `classes/` as the Iceberg-managed root and document ownership rules.
+- [ ] Standardize Class name → Iceberg table name mapping (no class_id directories).
 - [ ] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
 - [ ] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
 - [ ] Enforce “Class-defined H2 only” validation in `ieapp-core`.
@@ -31,9 +32,11 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 ### Legacy → TOBE (directory-structure) Delta
 - **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
-- **Class-first layout**: `classes/` is now keyed by `class_id` (not by name), and each Class owns its storage.
-- **Iceberg-managed storage**: `classes/{class_id}/iceberg/` is the root for Iceberg tables; physical layout is owned by Iceberg.
-- **Reconstruction source**: Markdown is reconstructed from Class-defined fields stored in Iceberg (no free-form H2 storage in Phase 1).
+- **Iceberg-managed classes root**: `classes/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
+- **Table naming**: Class name is the Iceberg table name; no class_id directories are created.
+- **Class definitions in Iceberg**: Class fields and schemas live in Iceberg; no per-class JSON files.
+- **Fixed template**: Default note template is global (`# {table_name}` with H2 columns), not per class.
+- **Reconstruction source**: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).
 - **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
 ### Acceptance Criteria

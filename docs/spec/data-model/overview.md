@@ -7,7 +7,7 @@ This document describes the high-level data model of IEapp, including its storag
 To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Classes**:
 
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, HMAC integrity).
-- **Note Classes**: User-defined templates and field definitions that add structure to notes. Formerly known as "Schemas".
+- **Note Classes**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
 ## Principles
 
@@ -30,10 +30,7 @@ workspaces/
   {workspace_id}/
     meta.json                  # Workspace metadata
     settings.json              # Workspace settings
-    classes/                   # Class definitions + Iceberg tables
-      {class_id}/
-        class.json
-        iceberg/               # Iceberg-managed storage (layout not specified)
+    classes/                   # Iceberg-managed Class tables (layout not specified)
     attachments/               # Binary files
 ```
 
@@ -42,11 +39,9 @@ workspaces/
 ### Classes
 
 Classes define note types with:
-- **Template**: Default Markdown content for new notes
-- **Fields**: Required and optional H2 headers
-- **Types**: string, number, date, list, markdown
-
-See [file-schemas.yaml](file-schemas.yaml) for the Class JSON definition.
+- **Template**: Fixed global template `# {class_name} + H2 columns`
+- **Fields**: Derived from the Iceberg table schema
+- **Types**: Iceberg column types mapped to note fields
 
 ### Properties Extraction
 

@@ -74,7 +74,7 @@ IEapp is a knowledge management system built on three core principles:
 A **Class** defines the structure of a note type. Classes specify:
 - Required and optional fields (H2 headers)
 - Field types (string, number, date, list, markdown)
-- Default template for new notes
+- Fixed global template for new notes
 
 ### Note
 A **Note** is a Markdown document with:

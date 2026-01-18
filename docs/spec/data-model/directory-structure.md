@@ -8,10 +8,7 @@ workspaces/
   {workspace_id}/                     # Each workspace is self-contained
     meta.json                         # Workspace metadata
     settings.json                     # Editor preferences, defaults
-    classes/                          # Class-first storage
-      {class_id}/                     # One directory per Class
-        class.json                    # Class definition (schema + template)
-        iceberg/                      # Apache Iceberg table root (managed)
+    classes/                          # Iceberg-managed root for Class tables
     attachments/                      # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
 ```
@@ -62,34 +59,25 @@ Workspace registry and system configuration:
 }
 ```
 
-## Class Level
-
-### `classes/{class_id}/class.json`
-
-```json
-{
-  "id": "class-uuid",
-  "name": "Meeting",
-  "version": 1,
-  "template": "# Meeting\n\n## Date\n## Attendees\n## Decisions\n",
-  "fields": {
-    "Date": { "type": "date", "required": true },
-    "Attendees": { "type": "list", "required": false },
-    "Decisions": { "type": "markdown", "required": false }
-  },
-  "defaults": {
-    "timezone": "UTC"
-  }
-}
-```
-
 ## Class Tables (Iceberg)
 
-### `classes/{class_id}/iceberg/`
+### `classes/`
 
-All note storage is managed by Apache Iceberg using the official Rust crate with
+All class storage is managed by Apache Iceberg using the official Rust crate with
 OpenDAL-backed IO. The filesystem layout **beneath this directory** is owned by
-Iceberg and is intentionally not specified here.
+Iceberg and is intentionally not specified here. Each Class is represented as an
+Iceberg namespace named by the Class name, which contains the tables below.
+
+**Template convention (global):**
+```
+# {class_name}
+
+## {column_1}
+## {column_2}
+...
+```
+The template is fixed across the service; Class-specific templates are not stored
+outside Iceberg.
 
 **Required tables (logical names):**
 - `notes` (current note rows)
@@ -103,24 +91,21 @@ Iceberg and is intentionally not specified here.
 
 ### `notes` table (logical schema)
 
-One row per note. Columns include standard metadata plus **only** the Class-defined fields.
+One row per note. Columns include standard metadata plus **only** the fields
+defined by the Iceberg schema for that Class. The Class identity is implied by
+the table name.
 
 Example logical schema:
 
 ```text
 note_id: string
 title: string
-class_id: string
 tags: list<string>
 links: list<struct<id: string, target: string, kind: string>>
 canvas_position: struct<x: double, y: double>
 created_at: timestamp
 updated_at: timestamp
-fields: struct<
-  Date: date,
-  Attendees: list<string>,
-  Decisions: string
->
+fields: struct<...>
 ```
 
 ### `revisions` table (logical schema)
@@ -136,11 +121,7 @@ note_id: string
 parent_revision_id: string
 timestamp: timestamp
 author: string
-fields: struct<
-  Date: date,
-  Attendees: list<string>,
-  Decisions: string
->
+fields: struct<...>
 markdown_checksum: string
 ```
 

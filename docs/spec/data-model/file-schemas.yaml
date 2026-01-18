@@ -89,23 +89,20 @@ classes:
         sync_interval_seconds:
           type: integer
 
-  # Class definitions
+  # Class definitions (Iceberg)
   class_definition:
-    description: Class (note type) definition
-    path: workspaces/{id}/classes/{name}.json
+    description: Class (note type) definition managed by Iceberg
+    path: iceberg://classes/{name}
     schema:
       type: object
       required: [name, version, fields]
       properties:
         name:
           type: string
-          description: Class name (e.g., Meeting, Task)
+          description: Class name (Iceberg table name)
         version:
           type: integer
           description: Schema version for migrations
-        template:
-          type: string
-          description: Default Markdown template
         fields:
           type: object
           additionalProperties:
@@ -119,9 +116,6 @@ classes:
                 type: boolean
               default:
                 description: Default value for field
-        defaults:
-          type: object
-          description: Default values for auto-fill
 
   # Note level
   note_meta:

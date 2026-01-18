@@ -235,13 +235,15 @@ Content-Type: application/json
 {
   "name": "Meeting",
   "version": 1,
-  "template": "# Meeting\n\n## Date\n## Attendees\n",
   "fields": {
     "Date": { "type": "date", "required": true },
     "Attendees": { "type": "list", "required": false }
   }
 }
 ```
+
+**Note**: The note template is fixed globally (`# {class_name}` + H2 columns) and is not
+customizable per class.
 
 **Response**: `200 OK`
 

@@ -55,8 +55,8 @@ The core library handles ALL data operations:
 |-----------|----------------|
 | `workspace.rs` | Workspace CRUD, directory scaffolding |
 | `note.rs` | Note CRUD, revision history, conflict detection |
-| `class.rs` | Class definitions, template generation |
-| `index.rs` | Structured data extraction, inverted index |
+| `class.rs` | Iceberg class schema management |
+| `index.rs` | Structured data extraction, derived indexes |
 | `attachment.rs` | Binary file storage, deduplication |
 | `link.rs` | Note-to-note relationships |
 | `integrity.rs` | HMAC signing, checksum verification |
@@ -100,7 +100,7 @@ IEapp bridges the gap between Markdown freedom and database structure:
 1. **Parse**: Scan Markdown for H2 headers (`## Key`)
 2. **Extract**: Convert headers + content to structured properties
 3. **Validate**: Check against Class definition (if assigned)
-4. **Index**: Update `index/index.json` for fast queries
+4. **Index**: Update derived indexes for fast queries
 
 This enables "Markdown sections as database fields" without complex forms.
 
@@ -115,9 +115,9 @@ Frontend                 Backend              ieapp-core           Storage
    │───────────────────────>│                     │                   │
    │                        │ create_note()       │                   │
    │                        │────────────────────>│                   │
-   │                        │                     │ write JSON files  │
+   │                        │                     │ write Iceberg data│
    │                        │                     │──────────────────>│
-   │                        │                     │ update index      │
+   │                        │                     │ update indexes    │
    │                        │                     │──────────────────>│
    │                        │                     │<──────────────────│
    │                        │<────────────────────│                   │
