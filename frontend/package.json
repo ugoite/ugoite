@@ -28,7 +28,7 @@
 		"msw": "^2.7.0",
 		"tailwindcss": "^4.1.18",
 		"vite": "^7.3.1",
-		"vite-plugin-solid": "^2.11.0",
+		"vite-plugin-solid": "^2.11.10",
 		"vitest": "^4.0.17"
 	},
 	"engines": {
