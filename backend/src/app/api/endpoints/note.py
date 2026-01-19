@@ -49,6 +49,11 @@ async def create_note_endpoint(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(e),
             ) from e
+        if "class" in str(e).lower() or "unknown" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(e),
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
@@ -169,6 +174,11 @@ async def update_note_endpoint(
         if "not found" in msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
+                detail=msg,
+            ) from e
+        if "class" in msg.lower() or "unknown" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=msg,
             ) from e
         raise HTTPException(

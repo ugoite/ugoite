@@ -1,17 +1,16 @@
+use crate::class;
 use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use futures::TryStreamExt;
-use opendal::Operator;
+use opendal::{EntryMode, Operator};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::HashSet;
 use uuid::Uuid;
-
-const DEFAULT_INITIAL_MESSAGE: &str = "Initial creation";
-const DEFAULT_UPDATE_MESSAGE: &str = "Update";
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct IntegrityPayload {
@@ -68,30 +67,48 @@ pub struct NoteMeta {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct HistoryIndex {
-    note_id: String,
-    revisions: Vec<RevisionEntry>,
+pub struct NoteRow {
+    pub note_id: String,
+    pub title: String,
+    pub class: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub links: Vec<Link>,
+    #[serde(default)]
+    pub canvas_position: Value,
+    pub created_at: f64,
+    pub updated_at: f64,
+    #[serde(default)]
+    pub fields: Value,
+    pub revision_id: String,
+    pub parent_revision_id: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<Value>,
+    #[serde(default)]
+    pub integrity: IntegrityPayload,
+    #[serde(default)]
+    pub deleted: bool,
+    #[serde(default)]
+    pub deleted_at: Option<f64>,
+    #[serde(default)]
+    pub author: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct RevisionEntry {
-    revision_id: String,
-    timestamp: f64,
-    checksum: String,
-    signature: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct RevisionRecord {
-    revision_id: String,
-    parent_revision_id: Option<String>,
-    timestamp: f64,
-    author: String,
-    diff: String,
-    integrity: IntegrityPayload,
-    message: String,
+pub struct RevisionRow {
+    pub revision_id: String,
+    pub note_id: String,
+    pub parent_revision_id: Option<String>,
+    pub timestamp: f64,
+    pub author: String,
+    #[serde(default)]
+    pub fields: Value,
+    pub markdown_checksum: String,
+    #[serde(default)]
+    pub integrity: IntegrityPayload,
     #[serde(skip_serializing_if = "Option::is_none")]
-    restored_from: Option<String>,
+    pub restored_from: Option<String>,
 }
 
 fn now_ts() -> f64 {
@@ -163,6 +180,215 @@ fn parse_markdown(content: &str) -> (Value, Value) {
     (frontmatter, sections)
 }
 
+fn class_dir(ws_path: &str, class_name: &str) -> String {
+    format!("{}/classes/{}", ws_path, class_name)
+}
+
+fn class_notes_dir(ws_path: &str, class_name: &str) -> String {
+    format!("{}/notes", class_dir(ws_path, class_name))
+}
+
+fn class_revisions_dir(ws_path: &str, class_name: &str) -> String {
+    format!("{}/revisions", class_dir(ws_path, class_name))
+}
+
+fn note_row_path(ws_path: &str, class_name: &str, note_id: &str) -> String {
+    format!("{}/{}.json", class_notes_dir(ws_path, class_name), note_id)
+}
+
+fn revision_row_path(ws_path: &str, class_name: &str, revision_id: &str) -> String {
+    format!(
+        "{}/{}.json",
+        class_revisions_dir(ws_path, class_name),
+        revision_id
+    )
+}
+
+fn class_field_names(class_def: &Value) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some(fields) = class_def.get("fields") {
+        match fields {
+            Value::Object(map) => {
+                for key in map.keys() {
+                    names.push(key.clone());
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
+                        names.push(name.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+fn render_frontmatter(class_name: &str, tags: &[String]) -> String {
+    let mut frontmatter = String::from("---\n");
+    frontmatter.push_str(&format!("class: {}\n", class_name));
+    if !tags.is_empty() {
+        frontmatter.push_str("tags:\n");
+        for tag in tags {
+            frontmatter.push_str(&format!("  - {}\n", tag));
+        }
+    }
+    frontmatter.push_str("---\n");
+    frontmatter
+}
+
+fn section_value_to_string(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::String(s) => format!("- {}", s),
+                Value::Number(n) => format!("- {}", n),
+                Value::Bool(b) => format!("- {}", b),
+                _ => "-".to_string(),
+            })
+            .collect::<Vec<String>>()
+            .join("\n"),
+        Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
+fn render_markdown(
+    title: &str,
+    class_name: &str,
+    tags: &[String],
+    fields: &Value,
+    field_order: &[String],
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str(&render_frontmatter(class_name, tags));
+    markdown.push_str(&format!("# {}\n\n", title));
+
+    let mut ordered_fields = Vec::new();
+    let field_map = fields.as_object();
+    if let Some(map) = field_map {
+        let mut seen = HashSet::new();
+        for name in field_order {
+            if let Some(value) = map.get(name) {
+                ordered_fields.push((name.clone(), value.clone()));
+                seen.insert(name.clone());
+            }
+        }
+        for (name, value) in map {
+            if !seen.contains(name) {
+                ordered_fields.push((name.clone(), value.clone()));
+            }
+        }
+    }
+
+    for (name, value) in ordered_fields {
+        markdown.push_str(&format!("## {}\n", name));
+        let rendered = section_value_to_string(&value);
+        if !rendered.is_empty() {
+            markdown.push_str(&rendered);
+            markdown.push('\n');
+        }
+        markdown.push('\n');
+    }
+
+    markdown.trim_end().to_string()
+}
+
+fn sections_from_fields(fields: &Value) -> Value {
+    let mut sections = Map::new();
+    if let Some(map) = fields.as_object() {
+        for (key, value) in map {
+            sections.insert(key.clone(), Value::String(section_value_to_string(value)));
+        }
+    }
+    Value::Object(sections)
+}
+
+async fn ensure_class_storage(op: &Operator, ws_path: &str, class_name: &str) -> Result<()> {
+    let base = class_dir(ws_path, class_name);
+    op.create_dir(&format!("{}/", base)).await?;
+    op.create_dir(&format!("{}/notes/", base)).await?;
+    op.create_dir(&format!("{}/revisions/", base)).await?;
+    Ok(())
+}
+
+pub(crate) async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    class::list_class_names(op, ws_path).await
+}
+
+pub(crate) async fn find_note_class(
+    op: &Operator,
+    ws_path: &str,
+    note_id: &str,
+) -> Result<Option<String>> {
+    for class_name in list_class_names(op, ws_path).await? {
+        let path = note_row_path(ws_path, &class_name, note_id);
+        if op.exists(&path).await? {
+            return Ok(Some(class_name));
+        }
+    }
+    Ok(None)
+}
+
+pub(crate) async fn read_note_row(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    note_id: &str,
+) -> Result<NoteRow> {
+    let path = note_row_path(ws_path, class_name, note_id);
+    let bytes = op.read(&path).await?;
+    Ok(serde_json::from_slice(&bytes.to_vec())?)
+}
+
+pub(crate) async fn write_note_row(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    note_id: &str,
+    row: &NoteRow,
+) -> Result<()> {
+    let path = note_row_path(ws_path, class_name, note_id);
+    let bytes = serde_json::to_vec_pretty(row)?;
+    op.write(&path, bytes).await?;
+    Ok(())
+}
+
+pub(crate) async fn list_note_rows(op: &Operator, ws_path: &str) -> Result<Vec<(String, NoteRow)>> {
+    let mut rows = Vec::new();
+    for class_name in list_class_names(op, ws_path).await? {
+        let notes_dir = format!("{}/", class_notes_dir(ws_path, &class_name));
+        if !op.exists(&notes_dir).await? {
+            continue;
+        }
+        let mut lister = op.lister(&notes_dir).await?;
+        while let Some(entry) = lister.try_next().await? {
+            if entry.metadata().mode() != EntryMode::FILE {
+                continue;
+            }
+            let note_id = entry
+                .name()
+                .trim_end_matches(".json")
+                .split('/')
+                .next_back()
+                .unwrap_or("");
+            if note_id.is_empty() {
+                continue;
+            }
+            if let Ok(row) = read_note_row(op, ws_path, &class_name, note_id).await {
+                rows.push((class_name.clone(), row));
+            }
+        }
+    }
+    Ok(rows)
+}
+
 fn extract_tags(frontmatter: &Value) -> Vec<String> {
     match frontmatter.get("tags") {
         Some(Value::Array(items)) => items
@@ -179,21 +405,6 @@ fn extract_class(frontmatter: &Value) -> Option<String> {
         .get("class")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-}
-
-fn build_diff(old_content: &str, new_content: &str) -> String {
-    if old_content == new_content {
-        return String::new();
-    }
-
-    let mut diff = String::from("--- previous\n+++ current\n");
-    for line in old_content.lines() {
-        diff.push_str(&format!("-{}\n", line));
-    }
-    for line in new_content.lines() {
-        diff.push_str(&format!("+{}\n", line));
-    }
-    diff
 }
 
 async fn read_json(op: &Operator, path: &str) -> Result<Value> {
@@ -216,73 +427,92 @@ pub async fn create_note<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<NoteMeta> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-
-    if op.exists(&format!("{}/", note_path)).await?
-        || op.exists(&format!("{}/meta.json", note_path)).await?
-    {
+    if find_note_class(op, ws_path, note_id).await?.is_some() {
         return Err(anyhow!("Note already exists: {}", note_id));
     }
 
-    op.create_dir(&format!("{}/", note_path)).await?;
-    op.create_dir(&format!("{}/history/", note_path)).await?;
-
     let (frontmatter, sections) = parse_markdown(content);
+    let class_name = extract_class(&frontmatter)
+        .ok_or_else(|| anyhow!("Class is required for note creation"))?;
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
+    ensure_class_storage(op, ws_path, &class_name).await?;
+
+    let class_fields = class_field_names(&class_def);
+    let class_set: HashSet<String> = class_fields.iter().cloned().collect();
+    if let Some(section_map) = sections.as_object() {
+        let extras: Vec<String> = section_map
+            .keys()
+            .filter(|key| !class_set.contains(*key))
+            .cloned()
+            .collect();
+        if !extras.is_empty() {
+            return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
+        }
+    }
+
+    let properties = index::extract_properties(content);
+    let (casted, warnings) = index::validate_properties(&properties, &class_def)?;
+    if !warnings.is_empty() {
+        return Err(anyhow!(
+            "Class validation failed: {}",
+            serde_json::to_string(&warnings)?
+        ));
+    }
+
+    let mut fields = Map::new();
+    for field in &class_fields {
+        if let Some(value) = casted.get(field) {
+            fields.insert(field.clone(), value.clone());
+        }
+    }
+
     let title = extract_title(content, note_id);
+    let tags = extract_tags(&frontmatter);
     let timestamp = now_ts();
     let revision_id = Uuid::new_v4().to_string();
     let checksum = integrity.checksum(content);
     let signature = integrity.signature(content);
 
-    let note_content = NoteContent {
+    let note_row = NoteRow {
+        note_id: note_id.to_string(),
+        title: title.clone(),
+        class: class_name.clone(),
+        tags,
+        links: Vec::new(),
+        canvas_position: Value::Object(Map::new()),
+        created_at: timestamp,
+        updated_at: timestamp,
+        fields: Value::Object(fields),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
-        author: author.to_string(),
-        markdown: content.to_string(),
-        frontmatter: frontmatter.clone(),
-        sections,
         attachments: Vec::new(),
-        computed: Value::Object(Map::new()),
-    };
-
-    write_json(op, &format!("{}/content.json", note_path), &note_content).await?;
-
-    let history_record = RevisionRecord {
-        revision_id: revision_id.clone(),
-        parent_revision_id: None,
-        timestamp,
-        author: author.to_string(),
-        diff: String::new(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
             signature: signature.clone(),
         },
-        message: DEFAULT_INITIAL_MESSAGE.to_string(),
-        restored_from: None,
+        deleted: false,
+        deleted_at: None,
+        author: author.to_string(),
     };
 
-    write_json(
-        op,
-        &format!("{}/history/{}.json", note_path, revision_id),
-        &history_record,
-    )
-    .await?;
+    write_note_row(op, ws_path, &class_name, note_id, &note_row).await?;
 
-    let history_index = HistoryIndex {
+    let revision = RevisionRow {
+        revision_id: revision_id.clone(),
         note_id: note_id.to_string(),
-        revisions: vec![RevisionEntry {
-            revision_id: revision_id.clone(),
-            timestamp,
+        parent_revision_id: None,
+        timestamp,
+        author: author.to_string(),
+        fields: note_row.fields.clone(),
+        markdown_checksum: checksum.clone(),
+        integrity: IntegrityPayload {
             checksum: checksum.clone(),
             signature: signature.clone(),
-        }],
+        },
+        restored_from: None,
     };
-    write_json(
-        op,
-        &format!("{}/history/index.json", note_path),
-        &history_index,
-    )
-    .await?;
+    let revision_path = revision_row_path(ws_path, &class_name, &revision_id);
+    write_json(op, &revision_path, &revision).await?;
 
     let ws_id = ws_path
         .trim_end_matches('/')
@@ -291,14 +521,14 @@ pub async fn create_note<I: IntegrityProvider>(
         .unwrap_or(ws_path)
         .to_string();
 
-    let meta = NoteMeta {
+    Ok(NoteMeta {
         id: note_id.to_string(),
         workspace_id: ws_id,
         title,
-        class: extract_class(&frontmatter),
-        tags: extract_tags(&frontmatter),
-        links: Vec::new(),
-        canvas_position: Value::Object(Map::new()),
+        class: Some(class_name),
+        tags: note_row.tags.clone(),
+        links: note_row.links.clone(),
+        canvas_position: note_row.canvas_position.clone(),
         created_at: timestamp,
         updated_at: timestamp,
         integrity: IntegrityPayload {
@@ -308,122 +538,100 @@ pub async fn create_note<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         properties: Value::Object(Map::new()),
-    };
-
-    write_json(op, &format!("{}/meta.json", note_path), &meta).await?;
-
-    index::update_note_index(op, ws_path, note_id).await?;
-
-    Ok(meta)
+    })
 }
 
 pub async fn list_notes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
-    let index_path = format!("{}/index/index.json", ws_path);
-    if op.exists(&index_path).await? {
-        if let Ok(index_json) = read_json(op, &index_path).await {
-            if let Some(notes) = index_json.get("notes").and_then(|v| v.as_object()) {
-                return Ok(notes.values().cloned().collect());
-            }
-        }
-    }
-
-    let notes_dir = format!("{}/notes/", ws_path);
-    if !op.exists(&notes_dir).await? {
-        return Ok(Vec::new());
-    }
-
-    let mut lister = op.lister(&notes_dir).await?;
     let mut notes = Vec::new();
-
-    while let Some(entry) = lister.try_next().await? {
-        let meta = entry.metadata();
-        if meta.mode() != opendal::EntryMode::DIR {
+    for (class_name, row) in list_note_rows(op, ws_path).await? {
+        if row.deleted {
             continue;
         }
-        let note_id = entry
-            .name()
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if note_id.is_empty() {
-            continue;
-        }
-        let note_dir = format!("{}/notes/{}", ws_path, note_id);
-        let meta_path = format!("{}/meta.json", note_dir);
-        if !op.exists(&meta_path).await? {
-            continue;
-        }
-        let meta_json = match read_json(op, &meta_path).await {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        if meta_json.get("deleted").and_then(|v| v.as_bool()) == Some(true) {
-            continue;
-        }
-        let summary = serde_json::json!({
-            "id": meta_json.get("id").cloned().unwrap_or(Value::Null),
-            "title": meta_json.get("title").cloned().unwrap_or(Value::Null),
-            "class": meta_json.get("class").cloned().unwrap_or(Value::Null),
-            "tags": meta_json.get("tags").cloned().unwrap_or(Value::Array(Vec::new())),
-            "properties": meta_json.get("properties").cloned().unwrap_or(Value::Object(Map::new())),
-            "links": meta_json.get("links").cloned().unwrap_or(Value::Array(Vec::new())),
-            "canvas_position": meta_json
-                .get("canvas_position")
-                .cloned()
-                .unwrap_or(Value::Object(Map::new())),
-            "created_at": meta_json.get("created_at").cloned().unwrap_or(Value::Null),
-            "updated_at": meta_json.get("updated_at").cloned().unwrap_or(Value::Null),
-        });
-        notes.push(summary);
+        notes.push(serde_json::json!({
+            "id": row.note_id,
+            "title": row.title,
+            "class": class_name,
+            "tags": row.tags,
+            "properties": row.fields,
+            "links": row.links,
+            "canvas_position": row.canvas_position,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }));
     }
-
     Ok(notes)
 }
 
 pub async fn get_note(op: &Operator, ws_path: &str, note_id: &str) -> Result<Value> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-    let meta_path = format!("{}/meta.json", note_path);
-    let content_path = format!("{}/content.json", note_path);
-
-    if !op.exists(&meta_path).await? || !op.exists(&content_path).await? {
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let row = read_note_row(op, ws_path, &class_name, note_id).await?;
+    if row.deleted {
         return Err(anyhow!("Note not found: {}", note_id));
     }
 
-    let meta = read_json(op, &meta_path).await?;
-    if meta.get("deleted").and_then(|v| v.as_bool()) == Some(true) {
-        return Err(anyhow!("Note not found: {}", note_id));
-    }
-
-    let content = read_json(op, &content_path).await?;
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
+    let field_order = class_field_names(&class_def);
+    let markdown = render_markdown(
+        &row.title,
+        &class_name,
+        &row.tags,
+        &row.fields,
+        &field_order,
+    );
+    let frontmatter = serde_json::json!({
+        "class": class_name,
+        "tags": row.tags,
+    });
+    let sections = sections_from_fields(&row.fields);
 
     Ok(serde_json::json!({
         "id": note_id,
-        "revision_id": content.get("revision_id").cloned().unwrap_or(Value::Null),
-        "content": content.get("markdown").cloned().unwrap_or(Value::Null),
-        "frontmatter": content.get("frontmatter").cloned().unwrap_or(Value::Object(Map::new())),
-        "sections": content.get("sections").cloned().unwrap_or(Value::Object(Map::new())),
-        "attachments": content.get("attachments").cloned().unwrap_or(Value::Array(Vec::new())),
-        "computed": content.get("computed").cloned().unwrap_or(Value::Object(Map::new())),
-        "title": meta.get("title").cloned().unwrap_or(Value::Null),
-        "class": meta.get("class").cloned().unwrap_or(Value::Null),
-        "tags": meta.get("tags").cloned().unwrap_or(Value::Array(Vec::new())),
-        "links": meta.get("links").cloned().unwrap_or(Value::Array(Vec::new())),
-        "canvas_position": meta.get("canvas_position").cloned().unwrap_or(Value::Object(Map::new())),
-        "created_at": meta.get("created_at").cloned().unwrap_or(Value::Null),
-        "updated_at": meta.get("updated_at").cloned().unwrap_or(Value::Null),
-        "integrity": meta.get("integrity").cloned().unwrap_or(Value::Object(Map::new())),
+        "revision_id": row.revision_id,
+        "content": markdown,
+        "frontmatter": frontmatter,
+        "sections": sections,
+        "attachments": row.attachments,
+        "computed": Value::Object(Map::new()),
+        "title": row.title,
+        "class": row.class,
+        "tags": row.tags,
+        "links": row.links,
+        "canvas_position": row.canvas_position,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "integrity": serde_json::to_value(row.integrity)?,
     }))
 }
 
 pub async fn get_note_content(op: &Operator, ws_path: &str, note_id: &str) -> Result<NoteContent> {
-    let path = format!("{}/notes/{}/content.json", ws_path, note_id);
-    if !op.exists(&path).await? {
-        return Err(anyhow!("Note content not found: {}", note_id));
-    }
-    let bytes = op.read(&path).await?;
-    let content: NoteContent = serde_json::from_slice(&bytes.to_vec())?;
-    Ok(content)
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note content not found: {}", note_id))?;
+    let row = read_note_row(op, ws_path, &class_name, note_id).await?;
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
+    let field_order = class_field_names(&class_def);
+    let markdown = render_markdown(
+        &row.title,
+        &class_name,
+        &row.tags,
+        &row.fields,
+        &field_order,
+    );
+    Ok(NoteContent {
+        revision_id: row.revision_id,
+        parent_revision_id: row.parent_revision_id,
+        author: row.author,
+        markdown,
+        frontmatter: serde_json::json!({
+            "class": class_name,
+            "tags": row.tags,
+        }),
+        sections: sections_from_fields(&row.fields),
+        attachments: row.attachments,
+        computed: Value::Object(Map::new()),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -437,113 +645,96 @@ pub async fn update_note<I: IntegrityProvider>(
     attachments: Option<Vec<Value>>,
     integrity: &I,
 ) -> Result<Value> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-
-    if !op.exists(&format!("{}/meta.json", note_path)).await? {
-        return Err(anyhow!("Note not found: {}", note_id));
-    }
-
-    let current_content_bytes = op.read(&format!("{}/content.json", note_path)).await?;
-    let current_content: NoteContent = serde_json::from_slice(&current_content_bytes.to_vec())?;
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let mut row = read_note_row(op, ws_path, &class_name, note_id).await?;
 
     if let Some(expected_parent) = parent_revision_id {
-        if current_content.revision_id != expected_parent {
+        if row.revision_id != expected_parent {
             return Err(anyhow!(
                 "Revision conflict: expected {}, got {}",
                 expected_parent,
-                current_content.revision_id
+                row.revision_id
             ));
         }
     }
 
     let (frontmatter, sections) = parse_markdown(content);
+    let updated_class =
+        extract_class(&frontmatter).ok_or_else(|| anyhow!("Class is required for note update"))?;
+    if updated_class != class_name {
+        return Err(anyhow!("Class change is not supported"));
+    }
+
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
+    let class_fields = class_field_names(&class_def);
+    let class_set: HashSet<String> = class_fields.iter().cloned().collect();
+    if let Some(section_map) = sections.as_object() {
+        let extras: Vec<String> = section_map
+            .keys()
+            .filter(|key| !class_set.contains(*key))
+            .cloned()
+            .collect();
+        if !extras.is_empty() {
+            return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
+        }
+    }
+
+    let properties = index::extract_properties(content);
+    let (casted, warnings) = index::validate_properties(&properties, &class_def)?;
+    if !warnings.is_empty() {
+        return Err(anyhow!(
+            "Class validation failed: {}",
+            serde_json::to_string(&warnings)?
+        ));
+    }
+
+    let mut fields = Map::new();
+    for field in &class_fields {
+        if let Some(value) = casted.get(field) {
+            fields.insert(field.clone(), value.clone());
+        }
+    }
+
     let timestamp = now_ts();
     let revision_id = Uuid::new_v4().to_string();
     let checksum = integrity.checksum(content);
     let signature = integrity.signature(content);
 
-    let diff = build_diff(&current_content.markdown, content);
-
-    let new_attachments = attachments.unwrap_or_else(|| current_content.attachments.clone());
-
-    let new_note_content = NoteContent {
-        revision_id: revision_id.clone(),
-        parent_revision_id: Some(current_content.revision_id.clone()),
-        author: author.to_string(),
-        markdown: content.to_string(),
-        frontmatter: frontmatter.clone(),
-        sections,
-        attachments: new_attachments,
-        computed: current_content.computed.clone(),
+    row.title = extract_title(content, &row.title);
+    row.updated_at = timestamp;
+    if frontmatter.get("tags").is_some() {
+        row.tags = extract_tags(&frontmatter);
+    }
+    row.fields = Value::Object(fields);
+    row.parent_revision_id = Some(row.revision_id.clone());
+    row.revision_id = revision_id.clone();
+    row.author = author.to_string();
+    row.integrity = IntegrityPayload {
+        checksum: checksum.clone(),
+        signature: signature.clone(),
     };
+    row.attachments = attachments.unwrap_or_else(|| row.attachments.clone());
 
-    write_json(
-        op,
-        &format!("{}/content.json", note_path),
-        &new_note_content,
-    )
-    .await?;
+    write_note_row(op, ws_path, &class_name, note_id, &row).await?;
 
-    let history_record = RevisionRecord {
+    let revision = RevisionRow {
         revision_id: revision_id.clone(),
-        parent_revision_id: Some(current_content.revision_id.clone()),
+        note_id: note_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
         author: author.to_string(),
-        diff,
+        fields: row.fields.clone(),
+        markdown_checksum: checksum.clone(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
             signature: signature.clone(),
         },
-        message: DEFAULT_UPDATE_MESSAGE.to_string(),
         restored_from: None,
     };
-
-    write_json(
-        op,
-        &format!("{}/history/{}.json", note_path, revision_id),
-        &history_record,
-    )
-    .await?;
-
-    let history_path = format!("{}/history/index.json", note_path);
-    let mut history: HistoryIndex = if op.exists(&history_path).await? {
-        let h_bytes = op.read(&history_path).await?;
-        serde_json::from_slice(&h_bytes.to_vec())?
-    } else {
-        HistoryIndex {
-            note_id: note_id.to_string(),
-            revisions: vec![],
-        }
-    };
-    history.revisions.push(RevisionEntry {
-        revision_id: revision_id.clone(),
-        timestamp,
-        checksum: checksum.clone(),
-        signature: signature.clone(),
-    });
-    write_json(op, &history_path, &history).await?;
-
-    let meta_path = format!("{}/meta.json", note_path);
-    let mut meta: NoteMeta = {
-        let meta_bytes = op.read(&meta_path).await?;
-        serde_json::from_slice(&meta_bytes.to_vec())?
-    };
-    meta.title = extract_title(content, &meta.title);
-    meta.updated_at = timestamp;
-    if frontmatter.get("class").is_some() {
-        meta.class = extract_class(&frontmatter);
-    }
-    if frontmatter.get("tags").is_some() {
-        meta.tags = extract_tags(&frontmatter);
-    }
-    meta.integrity = IntegrityPayload {
-        checksum,
-        signature,
-    };
-
-    write_json(op, &meta_path, &meta).await?;
-
-    index::update_note_index(op, ws_path, note_id).await?;
+    let revision_path = revision_row_path(ws_path, &class_name, &revision_id);
+    write_json(op, &revision_path, &revision).await?;
 
     get_note(op, ws_path, note_id).await
 }
@@ -554,45 +745,69 @@ pub async fn delete_note(
     note_id: &str,
     hard_delete: bool,
 ) -> Result<()> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-    if !op.exists(&format!("{}/", note_path)).await? {
-        return Err(anyhow!("Note not found: {}", note_id));
-    }
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let mut row = read_note_row(op, ws_path, &class_name, note_id).await?;
 
     if hard_delete {
-        op.remove_all(&format!("{}/", note_path)).await?;
-        index::update_note_index(op, ws_path, note_id).await?;
+        let path = note_row_path(ws_path, &class_name, note_id);
+        op.delete(&path).await?;
         return Ok(());
     }
 
-    let meta_path = format!("{}/meta.json", note_path);
-    let mut meta: NoteMeta = {
-        let bytes = op.read(&meta_path).await?;
-        serde_json::from_slice(&bytes.to_vec())?
-    };
-    meta.deleted = true;
-    meta.deleted_at = Some(now_ts());
-    write_json(op, &meta_path, &meta).await?;
-
-    index::update_note_index(op, ws_path, note_id).await?;
+    row.deleted = true;
+    row.deleted_at = Some(now_ts());
+    write_note_row(op, ws_path, &class_name, note_id, &row).await?;
     Ok(())
 }
 
 pub async fn get_note_history(op: &Operator, ws_path: &str, note_id: &str) -> Result<Value> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-    if !op.exists(&format!("{}/", note_path)).await? {
-        return Err(anyhow!("Note not found: {}", note_id));
-    }
-
-    let history_path = format!("{}/history/index.json", note_path);
-    if !op.exists(&history_path).await? {
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let revisions_dir = format!("{}/", class_revisions_dir(ws_path, &class_name));
+    if !op.exists(&revisions_dir).await? {
         return Ok(serde_json::json!({
             "note_id": note_id,
             "revisions": []
         }));
     }
 
-    read_json(op, &history_path).await
+    let mut revisions = Vec::new();
+    let mut lister = op.lister(&revisions_dir).await?;
+    while let Some(entry) = lister.try_next().await? {
+        if entry.metadata().mode() != EntryMode::FILE {
+            continue;
+        }
+        let revision_path = if entry.name().contains('/') {
+            entry.name().to_string()
+        } else {
+            format!("{}{}", revisions_dir, entry.name())
+        };
+        let bytes = op.read(&revision_path).await?;
+        if let Ok(revision) = serde_json::from_slice::<RevisionRow>(&bytes.to_vec()) {
+            if revision.note_id == note_id {
+                revisions.push(serde_json::json!({
+                    "revision_id": revision.revision_id,
+                    "timestamp": revision.timestamp,
+                    "checksum": revision.integrity.checksum,
+                    "signature": revision.integrity.signature,
+                }));
+            }
+        }
+    }
+
+    revisions.sort_by(|a, b| {
+        let a_ts = a.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let b_ts = b.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        a_ts.partial_cmp(&b_ts).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(serde_json::json!({
+        "note_id": note_id,
+        "revisions": revisions,
+    }))
 }
 
 pub async fn get_note_revision(
@@ -601,7 +816,10 @@ pub async fn get_note_revision(
     note_id: &str,
     revision_id: &str,
 ) -> Result<Value> {
-    let revision_path = format!("{}/notes/{}/history/{}.json", ws_path, note_id, revision_id);
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let revision_path = revision_row_path(ws_path, &class_name, revision_id);
     if !op.exists(&revision_path).await? {
         return Err(anyhow!(
             "Revision {} not found for note {}",
@@ -609,7 +827,15 @@ pub async fn get_note_revision(
             note_id
         ));
     }
-    read_json(op, &revision_path).await
+    let revision = read_json(op, &revision_path).await?;
+    if revision.get("note_id").and_then(|v| v.as_str()) != Some(note_id) {
+        return Err(anyhow!(
+            "Revision {} not found for note {}",
+            revision_id,
+            note_id
+        ));
+    }
+    Ok(revision)
 }
 
 pub async fn restore_note<I: IntegrityProvider>(
@@ -620,12 +846,10 @@ pub async fn restore_note<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
-    let note_path = format!("{}/notes/{}", ws_path, note_id);
-    if !op.exists(&format!("{}/", note_path)).await? {
-        return Err(anyhow!("Note not found: {}", note_id));
-    }
-
-    let revision_path = format!("{}/history/{}.json", note_path, revision_id);
+    let class_name = find_note_class(op, ws_path, note_id)
+        .await?
+        .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let revision_path = revision_row_path(ws_path, &class_name, revision_id);
     if !op.exists(&revision_path).await? {
         return Err(anyhow!(
             "Revision {} not found for note {}",
@@ -634,89 +858,61 @@ pub async fn restore_note<I: IntegrityProvider>(
         ));
     }
 
-    let content_path = format!("{}/content.json", note_path);
-    if !op.exists(&content_path).await? {
-        return Err(anyhow!("Note content not found: {}", note_id));
-    }
-
-    let current_content: NoteContent = {
-        let bytes = op.read(&content_path).await?;
+    let revision: RevisionRow = {
+        let bytes = op.read(&revision_path).await?;
         serde_json::from_slice(&bytes.to_vec())?
     };
-
-    let history_path = format!("{}/history/index.json", note_path);
-    let mut history: HistoryIndex = if op.exists(&history_path).await? {
-        let bytes = op.read(&history_path).await?;
-        serde_json::from_slice(&bytes.to_vec())?
-    } else {
-        return Err(anyhow!("History index missing for note {}", note_id));
-    };
-
-    let revision_order: Vec<String> = history
-        .revisions
-        .iter()
-        .map(|r| r.revision_id.clone())
-        .collect();
-    if !revision_order.contains(&revision_id.to_string()) {
+    if revision.note_id != note_id {
         return Err(anyhow!(
-            "Revision {} not found in history index",
-            revision_id
+            "Revision {} not found for note {}",
+            revision_id,
+            note_id
         ));
     }
 
+    let mut row = read_note_row(op, ws_path, &class_name, note_id).await?;
     let new_rev_id = Uuid::new_v4().to_string();
     let timestamp = now_ts();
-    let parent_revision = current_content.revision_id.clone();
-    let checksum = integrity.checksum(&current_content.markdown);
-    let signature = integrity.signature(&current_content.markdown);
 
-    let revision_record = RevisionRecord {
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
+    let field_order = class_field_names(&class_def);
+    let markdown = render_markdown(
+        &row.title,
+        &class_name,
+        &row.tags,
+        &revision.fields,
+        &field_order,
+    );
+    let checksum = integrity.checksum(&markdown);
+    let signature = integrity.signature(&markdown);
+
+    row.parent_revision_id = Some(row.revision_id.clone());
+    row.revision_id = new_rev_id.clone();
+    row.updated_at = timestamp;
+    row.fields = revision.fields.clone();
+    row.integrity = IntegrityPayload {
+        checksum: checksum.clone(),
+        signature: signature.clone(),
+    };
+    row.author = author.to_string();
+    write_note_row(op, ws_path, &class_name, note_id, &row).await?;
+
+    let restore_revision = RevisionRow {
         revision_id: new_rev_id.clone(),
-        parent_revision_id: Some(parent_revision.clone()),
+        note_id: note_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
         author: author.to_string(),
-        diff: String::new(),
+        fields: row.fields.clone(),
+        markdown_checksum: checksum.clone(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
             signature: signature.clone(),
         },
-        message: format!("Restored from revision {}", revision_id),
         restored_from: Some(revision_id.to_string()),
     };
-
-    write_json(
-        op,
-        &format!("{}/history/{}.json", note_path, new_rev_id),
-        &revision_record,
-    )
-    .await?;
-
-    history.revisions.push(RevisionEntry {
-        revision_id: new_rev_id.clone(),
-        timestamp,
-        checksum: checksum.clone(),
-        signature: signature.clone(),
-    });
-    write_json(op, &history_path, &history).await?;
-
-    let mut new_content = current_content;
-    new_content.revision_id = new_rev_id.clone();
-    new_content.parent_revision_id = Some(parent_revision);
-    write_json(op, &content_path, &new_content).await?;
-
-    let meta_path = format!("{}/meta.json", note_path);
-    let mut meta: NoteMeta = {
-        let bytes = op.read(&meta_path).await?;
-        serde_json::from_slice(&bytes.to_vec())?
-    };
-    meta.updated_at = timestamp;
-    meta.integrity = IntegrityPayload {
-        checksum,
-        signature,
-    };
-    write_json(op, &meta_path, &meta).await?;
-
-    index::update_note_index(op, ws_path, note_id).await?;
+    let restore_path = revision_row_path(ws_path, &class_name, &new_rev_id);
+    write_json(op, &restore_path, &restore_revision).await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,

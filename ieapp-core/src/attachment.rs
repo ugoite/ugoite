@@ -2,8 +2,9 @@ use anyhow::{anyhow, Result};
 use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
+
+use crate::note;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentInfo {
@@ -68,42 +69,17 @@ async fn is_attachment_referenced(
     ws_path: &str,
     attachment_id: &str,
 ) -> Result<bool> {
-    let notes_dir = format!("{}/notes/", ws_path);
-    if !op.exists(&notes_dir).await? {
-        return Ok(false);
-    }
-
-    let mut lister = op.lister(&notes_dir).await?;
-    while let Some(entry) = lister.try_next().await? {
-        let meta = entry.metadata();
-        if meta.mode() != EntryMode::DIR {
+    let rows = note::list_note_rows(op, ws_path).await?;
+    for (_class_name, row) in rows {
+        if row.deleted {
             continue;
         }
-        let note_id = entry
-            .name()
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if note_id.is_empty() {
-            continue;
-        }
-        let content_path = format!("{}/notes/{}/content.json", ws_path, note_id);
-        if !op.exists(&content_path).await? {
-            continue;
-        }
-        let bytes = op.read(&content_path).await?;
-        let content: Value = match serde_json::from_slice(&bytes.to_vec()) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        if let Some(attachments) = content.get("attachments").and_then(|v| v.as_array()) {
-            if attachments
-                .iter()
-                .any(|att| att.get("id").and_then(|v| v.as_str()) == Some(attachment_id))
-            {
-                return Ok(true);
-            }
+        if row
+            .attachments
+            .iter()
+            .any(|att| att.get("id").and_then(|v| v.as_str()) == Some(attachment_id))
+        {
+            return Ok(true);
         }
     }
 

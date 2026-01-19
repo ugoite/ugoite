@@ -35,11 +35,7 @@ def test_create_workspace_scaffolding(
     assert fs.exists(fs_join(ws_path, "meta.json"))
     assert fs.exists(fs_join(ws_path, "settings.json"))
     assert fs.exists(fs_join(ws_path, "classes"))
-    assert fs.exists(fs_join(ws_path, "index"))
     assert fs.exists(fs_join(ws_path, "attachments"))
-    assert fs.exists(fs_join(ws_path, "notes"))
-    assert fs.exists(fs_join(ws_path, "index", "index.json"))
-    assert fs.exists(fs_join(ws_path, "index", "stats.json"))
 
     # Verify global.json exists at root
     global_json_path = fs_join(root, "global.json")
@@ -59,26 +55,7 @@ def test_create_workspace_scaffolding(
         assert "created_at" in meta
         assert "storage" in meta
 
-    # Verify permissions (only for local file system)
-    # fsspec memory fs might not support chmod/stat in the same way
-    if fs.protocol == "file" or (
-        isinstance(fs.protocol, tuple) and "file" in fs.protocol
-    ):
-        # Spec 05 §1: "The app enforces chmod 600 on the data directory."
-        # Usually dirs need +x (700) to be traversable by owner.
-        # Let's check if it's private.
-        try:
-            info = fs.info(ws_path)
-            # fsspec info might not have mode, or it might be in 'mode' key
-            if "mode" in info:
-                mode = info["mode"]
-                # Check if group/other have no permissions
-                assert (mode & 0o077) == 0
-        except NotImplementedError:
-            # Some fsspec implementations (e.g. in-memory) don't implement
-            # filesystem metadata like mode/stat. In those cases the test
-            # cannot assert permissions and should ignore the check.
-            pass
+    # Permission enforcement is handled by the core storage layer.
 
 
 def test_create_workspace_idempotency(

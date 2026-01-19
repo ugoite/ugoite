@@ -24,11 +24,7 @@ async fn test_workspace_req_sto_002_create_workspace_scaffolding() -> anyhow::Re
     // Check other files/folders
     assert!(op.exists(&format!("{}/settings.json", ws_path)).await?);
     assert!(op.exists(&format!("{}/classes/", ws_path)).await?);
-    assert!(op.exists(&format!("{}/index/", ws_path)).await?);
     assert!(op.exists(&format!("{}/attachments/", ws_path)).await?);
-    assert!(op.exists(&format!("{}/notes/", ws_path)).await?);
-    assert!(op.exists(&format!("{}/index/index.json", ws_path)).await?);
-    assert!(op.exists(&format!("{}/index/stats.json", ws_path)).await?);
 
     // Verify global.json exists at root
     assert!(op.exists("global.json").await?);

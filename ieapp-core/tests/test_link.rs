@@ -1,5 +1,5 @@
 mod common;
-use _ieapp_core::{link, note, workspace};
+use _ieapp_core::{class, link, note, workspace};
 use common::setup_operator;
 use uuid::Uuid;
 
@@ -19,7 +19,14 @@ async fn create_test_note(
         }
     }
 
-    note::create_note(op, ws_path, note_id, "content", "author", &MockIntegrity).await?;
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "template": "# Note\n\n## Body\n",
+        "fields": {"Body": {"type": "markdown"}},
+    });
+    class::upsert_class(op, ws_path, &class_def).await?;
+    let content = "---\nclass: Note\n---\n# content\n";
+    note::create_note(op, ws_path, note_id, content, "author", &MockIntegrity).await?;
     Ok(())
 }
 
@@ -44,18 +51,18 @@ async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()>
     assert_eq!(link.id, link_id);
 
     // Verify persistence in note1
-    let meta1_path = format!("{}/notes/note1/meta.json", ws_path);
+    let meta1_path = format!("{}/classes/Note/notes/note1.json", ws_path);
     let bytes1 = op.read(&meta1_path).await?;
-    let meta1: note::NoteMeta = serde_json::from_slice(&bytes1.to_vec())?;
+    let meta1: note::NoteRow = serde_json::from_slice(&bytes1.to_vec())?;
     assert!(meta1
         .links
         .iter()
         .any(|l| l.id == link_id && l.target == "note2"));
 
     // Verify persistence in note2
-    let meta2_path = format!("{}/notes/note2/meta.json", ws_path);
+    let meta2_path = format!("{}/classes/Note/notes/note2.json", ws_path);
     let bytes2 = op.read(&meta2_path).await?;
-    let meta2: note::NoteMeta = serde_json::from_slice(&bytes2.to_vec())?;
+    let meta2: note::NoteRow = serde_json::from_slice(&bytes2.to_vec())?;
     assert!(meta2
         .links
         .iter()
@@ -112,9 +119,9 @@ async fn test_link_req_lnk_003_delete_link() -> anyhow::Result<()> {
     assert!(links_after.is_empty());
 
     // Check individual notes
-    let meta_x_path = format!("{}/notes/noteX/meta.json", ws_path);
+    let meta_x_path = format!("{}/classes/Note/notes/noteX.json", ws_path);
     let bytes_x = op.read(&meta_x_path).await?;
-    let meta_x: note::NoteMeta = serde_json::from_slice(&bytes_x.to_vec())?;
+    let meta_x: note::NoteRow = serde_json::from_slice(&bytes_x.to_vec())?;
     assert!(meta_x.links.is_empty());
 
     Ok(())

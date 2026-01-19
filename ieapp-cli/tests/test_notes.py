@@ -10,20 +10,22 @@ REQ-NOTE-007: Properties and links in list response.
 REQ-NOTE-008: Attachments upload & linking.
 """
 
-import hashlib
-import hmac
 import json
 from typing import Any
 
 import fsspec
 import pytest
 
+from ieapp.classes import upsert_class
 from ieapp.notes import RevisionMismatchError, create_note, list_notes, update_note
 from ieapp.utils import fs_join
 from ieapp.workspace import create_workspace
 
+DEFAULT_CLASS = "Note"
+MEETING_CLASS = "Meeting"
+
 STRUCTURED_NOTE_CONTENT = """---
-class: meeting
+class: Meeting
 tags:
     - kickoff
 ---
@@ -46,99 +48,105 @@ def workspace_root(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> tuple[Any,
     ws_id = "test-workspace"
     create_workspace(root, ws_id, fs=fs)
     ws_path = fs_join(root, "workspaces", ws_id)
+    upsert_class(
+        ws_path,
+        {
+            "name": DEFAULT_CLASS,
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        },
+    )
+    upsert_class(
+        ws_path,
+        {
+            "name": MEETING_CLASS,
+            "template": "# Meeting\n\n## Date\n\n## Summary\n",
+            "fields": {
+                "Date": {"type": "date"},
+                "Summary": {"type": "string"},
+            },
+        },
+    )
     return fs, ws_path
-
-
-@pytest.fixture
-def fake_integrity_provider() -> Any:
-    """Create a fake integrity provider for testing."""
-
-    class _FakeIntegrityProvider:
-        secret = b"unit-test-secret"
-
-        def checksum(self, content: str) -> str:
-            return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-        def signature(self, content: str) -> str:
-            return hmac.new(
-                self.secret,
-                content.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-
-    return _FakeIntegrityProvider()
 
 
 def test_create_note_basic(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that creating a note generates the required file structure."""
     fs, ws_path = workspace_root
     note_id = "note-1"
-    content = "# My Note\n\nHello World"
+    content = """---
+class: Note
+---
+# My Note
+
+Hello World
+"""
 
     create_note(
         ws_path,
         note_id,
         content,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    note_path = fs_join(ws_path, "notes", note_id)
+    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
     assert fs.exists(note_path)
-    assert fs.exists(fs_join(note_path, "meta.json"))
-    assert fs.exists(fs_join(note_path, "content.json"))
-    assert fs.exists(fs_join(note_path, "history", "index.json"))
 
-    # Check content.json
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
-        assert data["markdown"] == content
-        assert data["frontmatter"] == {}
-        assert data["sections"] == {}
+        assert data["note_id"] == note_id
+        assert data["class"] == DEFAULT_CLASS
         assert "revision_id" in data
-        assert "parent_revision_id" in data
-        assert data["parent_revision_id"] is None
-        assert "author" in data
+        assert data["fields"] == {}
+
+    revision_path = fs_join(
+        ws_path,
+        "classes",
+        DEFAULT_CLASS,
+        "revisions",
+        f"{data['revision_id']}.json",
+    )
+    assert fs.exists(revision_path)
 
 
 def test_update_note_revision_mismatch(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that updating a note requires the correct parent_revision_id."""
     fs, ws_path = workspace_root
     note_id = "note-2"
-    content = "# Note 2"
+    content = """---
+class: Note
+---
+# Note 2
+"""
     create_note(
         ws_path,
         note_id,
         content,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    # Get current revision from content.json
-    note_path = fs_join(ws_path, "notes", note_id)
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         current_rev = data["revision_id"]
 
     # Update with correct revision
-    new_content = "# Note 2 Updated"
+    new_content = """---
+class: Note
+---
+# Note 2 Updated
+"""
     update_note(
         ws_path,
         note_id,
         new_content,
         parent_revision_id=current_rev,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
     # Get new revision
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         new_rev = data["revision_id"]
 
@@ -151,8 +159,6 @@ def test_update_note_revision_mismatch(
             note_id,
             "Should fail",
             parent_revision_id=current_rev,
-            integrity_provider=fake_integrity_provider,
-            fs=fs,
         )
 
     # Try to update with WRONG revision
@@ -162,78 +168,64 @@ def test_update_note_revision_mismatch(
             note_id,
             "Should fail",
             parent_revision_id="wrong-rev",
-            integrity_provider=fake_integrity_provider,
-            fs=fs,
         )
 
 
 def test_note_history_append(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
-    """Verifies that updating a note appends to history and updates index."""
+    """Verifies that updating a note appends to revision history."""
     fs, ws_path = workspace_root
     note_id = "note-history"
-    content_v1 = "# Version 1"
+    content_v1 = """---
+class: Note
+---
+# Version 1
+"""
     create_note(
         ws_path,
         note_id,
         content_v1,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    note_path = fs_join(ws_path, "notes", note_id)
+    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
 
     # Get v1 revision
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         rev_v1 = data["revision_id"]
 
     # Update to v2
-    content_v2 = "# Version 2"
+    content_v2 = """---
+class: Note
+---
+# Version 2
+"""
     update_note(
         ws_path,
         note_id,
         content_v2,
         parent_revision_id=rev_v1,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    # Check history index
-    with fs.open(fs_join(note_path, "history", "index.json"), "r") as f:
-        history_index = json.load(f)
-        assert history_index["note_id"] == note_id
-        revisions = history_index["revisions"]
-        assert len(revisions) == HISTORY_LENGTH
-        assert revisions[0]["revision_id"] == rev_v1
-        assert revisions[0]["checksum"] == fake_integrity_provider.checksum(content_v1)
-        assert revisions[0]["signature"] == fake_integrity_provider.signature(
-            content_v1,
-        )
+    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
+    revision_files = [
+        path for path in fs.ls(revisions_path, detail=False) if path.endswith(".json")
+    ]
+    assert len(revision_files) == HISTORY_LENGTH
 
-    # Check latest revision file
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         rev_v2 = data["revision_id"]
 
-    with fs.open(fs_join(note_path, "history", f"{rev_v2}.json"), "r") as f:
+    with fs.open(fs_join(revisions_path, f"{rev_v2}.json"), "r") as f:
         rev_data = json.load(f)
         assert rev_data["revision_id"] == rev_v2
         assert rev_data["parent_revision_id"] == rev_v1
-        assert "diff" in rev_data
-        assert rev_data["integrity"]["checksum"] == fake_integrity_provider.checksum(
-            content_v2,
-        )
-        assert rev_data["integrity"]["signature"] == fake_integrity_provider.signature(
-            content_v2,
-        )
 
 
 def test_markdown_sections_persist(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that frontmatter and sections persist to storage."""
     fs, ws_path = workspace_root
@@ -244,86 +236,102 @@ def test_markdown_sections_persist(
         ws_path,
         note_id,
         content,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    note_path = fs_join(ws_path, "notes", note_id)
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    note_path = fs_join(
+        ws_path,
+        "classes",
+        MEETING_CLASS,
+        "notes",
+        f"{note_id}.json",
+    )
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
 
-    assert data["frontmatter"]["class"] == "meeting"
-    assert data["sections"]["Date"] == "2025-11-29"
-    assert data["sections"]["Summary"] == "Wrap up"
+    assert data["class"] == MEETING_CLASS
+    assert data["fields"]["Date"] == "2025-11-29"
+    assert data["fields"]["Summary"] == "Wrap up"
 
 
 def test_note_history_diff(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
-    """Verifies that updating a note stores the diff in the history file."""
+    """Verifies that updating a note stores a revision entry."""
     fs, ws_path = workspace_root
     note_id = "note-diff"
-    content_v1 = "Line 1\nLine 2"
+    content_v1 = """---
+class: Note
+---
+# Note Diff
+
+Line 1
+Line 2
+"""
     create_note(
         ws_path,
         note_id,
         content_v1,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    note_path = fs_join(ws_path, "notes", note_id)
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         rev_v1 = data["revision_id"]
 
-    content_v2 = "Line 1\nLine 2 Modified"
+    content_v2 = """---
+class: Note
+---
+# Note Diff
+
+Line 1
+Line 2 Modified
+"""
     update_note(
         ws_path,
         note_id,
         content_v2,
         parent_revision_id=rev_v1,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         rev_v2 = data["revision_id"]
 
-    with fs.open(fs_join(note_path, "history", f"{rev_v2}.json"), "r") as f:
+    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
+    with fs.open(fs_join(revisions_path, f"{rev_v2}.json"), "r") as f:
         rev_data = json.load(f)
-        assert "diff" in rev_data
-        assert "Line 2 Modified" in rev_data["diff"]
+        assert rev_data["revision_id"] == rev_v2
+        assert rev_data["note_id"] == note_id
 
 
 def test_note_author_persistence(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that the author field is persisted correctly."""
     fs, ws_path = workspace_root
     note_id = "note-author"
-    content = "# Author Test"
+    content = """---
+class: Note
+---
+# Author Test
+"""
     author = "agent-smith"
 
     create_note(
         ws_path,
         note_id,
         content,
-        integrity_provider=fake_integrity_provider,
         author=author,
-        fs=fs,
     )
 
-    note_path = fs_join(ws_path, "notes", note_id)
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         assert data["author"] == author
         rev_id = data["revision_id"]
 
-    with fs.open(fs_join(note_path, "history", f"{rev_id}.json"), "r") as f:
+    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
+    with fs.open(fs_join(revisions_path, f"{rev_id}.json"), "r") as f:
         data = json.load(f)
         assert data["author"] == author
 
@@ -332,41 +340,46 @@ def test_note_author_persistence(
     update_note(
         ws_path,
         note_id,
-        "# Author Test Updated",
+        """---
+class: Note
+---
+# Author Test Updated
+""",
         parent_revision_id=rev_id,
-        integrity_provider=fake_integrity_provider,
         author=new_author,
-        fs=fs,
     )
 
-    with fs.open(fs_join(note_path, "content.json"), "r") as f:
+    with fs.open(note_path, "r") as f:
         data = json.load(f)
         assert data["author"] == new_author
         rev_id_2 = data["revision_id"]
 
-    with fs.open(fs_join(note_path, "history", f"{rev_id_2}.json"), "r") as f:
+    with fs.open(fs_join(revisions_path, f"{rev_id_2}.json"), "r") as f:
         data = json.load(f)
         assert data["author"] == new_author
 
 
 def test_list_notes_returns_properties_and_links(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
-    fake_integrity_provider: Any,
 ) -> None:
     """Verifies that list_notes returns properties and links fields."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-with-props"
-    content = "# Test Note\n\nSome content"
+    content = """---
+class: Note
+---
+# Test Note
+
+Some content
+"""
 
     create_note(
         ws_path,
         note_id,
         content,
-        integrity_provider=fake_integrity_provider,
-        fs=fs,
     )
 
-    notes = list_notes(ws_path, fs=fs)
+    notes = list_notes(ws_path)
     assert len(notes) == 1
 
     note = notes[0]

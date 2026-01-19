@@ -1,5 +1,5 @@
 mod common;
-use _ieapp_core::{note, search, workspace};
+use _ieapp_core::{class, note, search, workspace};
 use common::setup_operator;
 
 async fn create_test_note(
@@ -19,7 +19,17 @@ async fn create_test_note(
         }
     }
 
-    note::create_note(op, ws_path, note_id, content, "author", &MockIntegrity).await?;
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "template": "# Note\n\n## Body\n",
+        "fields": {"Body": {"type": "markdown"}},
+    });
+    class::upsert_class(op, ws_path, &class_def).await?;
+    let markdown = format!(
+        "---\nclass: Note\n---\n# {}\n\n## Body\n{}",
+        note_id, content
+    );
+    note::create_note(op, ws_path, note_id, &markdown, "author", &MockIntegrity).await?;
     Ok(())
 }
 

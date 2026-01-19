@@ -54,9 +54,20 @@ def test_create_note_memory(memory_client: TestClient) -> None:
     # Create workspace first
     ws_id = "note-ws"
     memory_client.post("/workspaces", json={"name": ws_id})
+    memory_client.post(
+        f"/workspaces/{ws_id}/classes",
+        json={
+            "name": "Note",
+            "version": 1,
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        },
+    )
 
     # Create note
-    note_payload = {"content": "# Memory Note\n\nStored in RAM."}
+    note_payload = {
+        "content": "---\nclass: Note\n---\n# Memory Note\n\n## Body\nStored in RAM.",
+    }
     response = memory_client.post(f"/workspaces/{ws_id}/notes", json=note_payload)
     assert response.status_code == 201
     note_data = response.json()
@@ -72,10 +83,22 @@ def test_update_note_and_search_memory(memory_client: TestClient) -> None:
     """End-to-end note update and search on memory filesystem."""
     ws_id = "mem-search"
     memory_client.post("/workspaces", json={"name": ws_id})
+    memory_client.post(
+        f"/workspaces/{ws_id}/classes",
+        json={
+            "name": "Note",
+            "version": 1,
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        },
+    )
 
     create_res = memory_client.post(
         f"/workspaces/{ws_id}/notes",
-        json={"id": "m1", "content": "# Title\n\nrocket launch"},
+        json={
+            "id": "m1",
+            "content": "---\nclass: Note\n---\n# Title\n\n## Body\nrocket launch",
+        },
     )
     assert create_res.status_code == 201
     revision_id = create_res.json()["revision_id"]
@@ -83,7 +106,13 @@ def test_update_note_and_search_memory(memory_client: TestClient) -> None:
     update_res = memory_client.put(
         f"/workspaces/{ws_id}/notes/m1",
         json={
-            "markdown": "# Updated Title\n\nrocket launch scheduled",
+            "markdown": """---
+class: Note
+---
+# Updated Title
+
+## Body
+rocket launch scheduled""",
             "parent_revision_id": revision_id,
         },
     )
@@ -104,14 +133,23 @@ def test_attachments_and_links_memory(memory_client: TestClient) -> None:
     """Ensure attachments and links work over memory-backed fsspec."""
     ws_id = "mem-graph"
     memory_client.post("/workspaces", json={"name": ws_id})
+    memory_client.post(
+        f"/workspaces/{ws_id}/classes",
+        json={
+            "name": "Note",
+            "version": 1,
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        },
+    )
 
     note_a = memory_client.post(
         f"/workspaces/{ws_id}/notes",
-        json={"id": "a", "content": "# A"},
+        json={"id": "a", "content": "---\nclass: Note\n---\n# A\n\n## Body\nA body"},
     ).json()
     memory_client.post(
         f"/workspaces/{ws_id}/notes",
-        json={"id": "b", "content": "# B"},
+        json={"id": "b", "content": "---\nclass: Note\n---\n# B\n\n## Body\nB body"},
     )
 
     upload_res = memory_client.post(
@@ -124,7 +162,7 @@ def test_attachments_and_links_memory(memory_client: TestClient) -> None:
     update_res = memory_client.put(
         f"/workspaces/{ws_id}/notes/a",
         json={
-            "markdown": "# A\nwith attachment",
+            "markdown": "---\nclass: Note\n---\n# A\n\n## Body\nwith attachment",
             "parent_revision_id": note_a["revision_id"],
             "attachments": [attachment],
         },

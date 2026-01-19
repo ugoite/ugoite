@@ -12,8 +12,8 @@ async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<(
 
     index::reindex_all(&op, ws_path).await?;
 
-    // Verify index files exist
-    assert!(op.exists(&format!("{}/index/index.json", ws_path)).await?);
+    // Indexes are derived from Iceberg; no on-disk index files are created
+    assert!(!op.exists(&format!("{}/index/index.json", ws_path)).await?);
 
     Ok(())
 }
@@ -78,7 +78,7 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
 
     index::reindex_all(&op, ws_path).await?;
     assert!(
-        op.exists(&format!("{}/index/inverted_index.json", ws_path))
+        !op.exists(&format!("{}/index/inverted_index.json", ws_path))
             .await?
     );
     Ok(())
