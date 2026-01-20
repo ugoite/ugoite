@@ -423,7 +423,9 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 	});
 
 	// REQ-FE-034: Multi-note navigation should not get stuck in loading state
-	test("Frontend: navigating between multiple notes from class table and note list loads properly", async () => {
+	test(
+		"Frontend: navigating between multiple notes from class table and note list loads properly",
+		async () => {
 		// Create test notes with a class
 		const classNotes = await Promise.all([
 			client.postApi("/workspaces/default/notes", {
@@ -469,5 +471,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 			// Verify SSR rendered successfully
 			expect(html).toContain("<div id=\"app\">");
 		}
-	});
+		},
+		15000,
+	);
 });

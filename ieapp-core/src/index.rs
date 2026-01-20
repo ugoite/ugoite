@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use chrono::NaiveDate;
-use futures::TryStreamExt;
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
@@ -347,33 +346,10 @@ pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
 }
 
 async fn load_classes(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
-    let classes_path = format!("{}/classes/", ws_path);
-    if !op.exists(&classes_path).await? {
-        return Ok(HashMap::new());
-    }
-
     let mut classes = HashMap::new();
-    let mut lister = op.lister(&classes_path).await?;
-    while let Some(entry) = lister.try_next().await? {
-        if entry.metadata().mode() != opendal::EntryMode::DIR {
-            continue;
-        }
-        let name = entry
-            .name()
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if name.is_empty() {
-            continue;
-        }
-        let class_path = format!("{}/classes/{}/class.json", ws_path, name);
-        if !op.exists(&class_path).await? {
-            continue;
-        }
-        let bytes = op.read(&class_path).await?;
-        if let Ok(value) = serde_json::from_slice::<Value>(&bytes.to_vec()) {
-            classes.insert(name.to_string(), value);
+    for class_name in crate::class::list_class_names(op, ws_path).await? {
+        if let Ok(value) = crate::class::get_class(op, ws_path, &class_name).await {
+            classes.insert(class_name, value);
         }
     }
     Ok(classes)

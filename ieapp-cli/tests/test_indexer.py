@@ -12,23 +12,22 @@ import json
 from collections.abc import Callable
 
 import fsspec
+import ieapp_core
 import pytest
 
+import ieapp.indexer as indexer_module
 from ieapp.indexer import (
     Indexer,
     aggregate_stats,
+    build_inverted_index,
+    compute_word_count,
     extract_properties,
     query_index,
     validate_properties,
 )
 from ieapp.utils import fs_join
 
-EXPECTED_MEETING_COUNT = 2
 EXPECTED_TASK_COUNT = 1
-EXPECTED_UNCATEGORIZED_COUNT = 1
-EXPECTED_TAG_ALPHA_COUNT = 2
-EXPECTED_TOTAL_NOTES = 4
-EXPECTED_INDEXED_NOTES = 2
 EXPECTED_MEETING_RESULTS = 2
 EXPECTED_SINGLE_RESULT = 1
 EXPECTED_WATCH_CALLBACKS = 2
@@ -108,112 +107,64 @@ def test_validate_properties_valid() -> None:
     assert len(warnings) == 0
 
 
-def test_indexer_run_once(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
-    """Index all notes and persist stats in memory fs."""
+def test_indexer_run_once(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Index all notes and trigger core reindexing."""
     fs, root = fs_impl
-    workspace_path = fs_join(root, "test_workspace")
-    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "notes", "note2"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "classes"), exist_ok=True)
+    workspace_path = fs_join(root, "workspaces", "test-workspace")
+    calls: dict[str, object] = {}
 
-    # Create Class
-    note_class = {"fields": {"Date": {"type": "date", "required": True}}}
-    with fs.open(fs_join(workspace_path, "classes", "meeting.json"), "w") as f:
-        json.dump(note_class, f)
+    def fake_run_async(func: object, *args: object, **kwargs: object) -> None:
+        calls["func"] = func
+        calls["args"] = args
+        calls["kwargs"] = kwargs
 
-    # Create Note 1 (Valid Meeting)
-    note1_content = {
-        "markdown": "---\nclass: meeting\n---\n# Sync\n\n## Date\n2025-10-27",
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
-        json.dump(note1_content, f)
-    note1_meta = {
-        "id": "note1",
-        "title": "Sync",
-        "class": "meeting",
-        "updated_at": 111.0,
-        "tags": ["alpha"],
-        "links": [],
-        "canvas_position": {},
-        "integrity": {"checksum": "aaa"},
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
-        json.dump(note1_meta, f)
-
-    # Create Note 2 (Invalid Meeting)
-    note2_content = {"markdown": "---\nclass: meeting\n---\n# Sync\n"}
-    with fs.open(fs_join(workspace_path, "notes", "note2", "content.json"), "w") as f:
-        json.dump(note2_content, f)
-    note2_meta = {
-        "id": "note2",
-        "title": "Sync",
-        "class": "meeting",
-        "updated_at": 112.0,
-        "tags": [],
-        "links": [],
-        "canvas_position": {},
-        "integrity": {"checksum": "bbb"},
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note2", "meta.json"), "w") as f:
-        json.dump(note2_meta, f)
+    monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
     indexer = Indexer(workspace_path, fs=fs)
     indexer.run_once()
 
-    # Check index.json
-    with fs.open(fs_join(workspace_path, "index", "index.json"), "r") as f:
-        index_data = json.load(f)
-
-    assert "notes" in index_data
-    note1 = index_data["notes"]["note1"]
-    assert note1["class"] == "meeting"
-    assert note1["properties"]["Date"] == "2025-10-27"
-    assert note1["validation_warnings"] == []
-    assert note1["tags"] == ["alpha"]
-    assert note1["checksum"] == "aaa"
-
-    note2 = index_data["notes"]["note2"]
-    assert note2["class"] == "meeting"
-    assert len(note2["validation_warnings"]) > 0
-
-    # Check stats.json
-    with fs.open(fs_join(workspace_path, "index", "stats.json"), "r") as f:
-        stats_data = json.load(f)
-
-    assert stats_data["class_stats"]["meeting"]["count"] == EXPECTED_MEETING_COUNT
-    assert stats_data["note_count"] == EXPECTED_INDEXED_NOTES
-    assert "last_indexed" in stats_data
+    assert calls["func"] is ieapp_core.reindex_all
+    args = calls["args"]
+    assert isinstance(args, tuple)
+    assert args[1] == "test-workspace"
+    config = args[0]
+    assert isinstance(config, dict)
+    assert "uri" in config
 
 
-def test_query_index(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
+def test_query_index(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Filter cached index by class and derived properties."""
     fs, root = fs_impl
-    workspace_path = fs_join(root, "test_workspace")
-    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
+    workspace_path = fs_join(root, "workspaces", "test_workspace")
 
-    index_data = {
-        "notes": {
-            "note1": {
-                "id": "note1",
-                "class": "meeting",
-                "properties": {"Date": "2025-10-27"},
-            },
-            "note2": {
-                "id": "note2",
-                "class": "meeting",
-                "properties": {"Date": "2025-10-28"},
-            },
-            "note3": {
-                "id": "note3",
-                "class": "task",
-                "properties": {"status": "todo"},
-            },
-        },
-    }
+    def fake_run_async(
+        func: object,
+        config: dict[str, str],
+        workspace_id: str,
+        payload: str,
+    ) -> list[dict[str, object]]:
+        assert func is ieapp_core.query_index
+        assert workspace_id == "test_workspace"
+        assert "uri" in config
+        filters = json.loads(payload)
+        if filters == {"class": "meeting"}:
+            return [
+                {"id": "note1", "class": "meeting"},
+                {"id": "note2", "class": "meeting"},
+            ]
+        if filters == {"class": "task"}:
+            return [{"id": "note3", "class": "task"}]
+        if filters == {"status": "todo"}:
+            return [{"id": "note3", "class": "task"}]
+        return []
 
-    with fs.open(fs_join(workspace_path, "index", "index.json"), "w") as f:
-        json.dump(index_data, f)
+    monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
     results = query_index(workspace_path, {"class": "meeting"}, fs=fs)
     assert len(results) == EXPECTED_MEETING_RESULTS
@@ -230,37 +181,34 @@ def test_query_index(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
     assert results[0]["id"] == "note3"
 
 
-def test_query_index_by_tag(fs_impl: tuple[fsspec.AbstractFileSystem, str]) -> None:
+def test_query_index_by_tag(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Filter cached index by tag membership."""
     fs, root = fs_impl
-    workspace_path = fs_join(root, "test_workspace")
-    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
+    workspace_path = fs_join(root, "workspaces", "test_workspace")
 
-    index_data = {
-        "notes": {
-            "note1": {
-                "id": "note1",
-                "class": "meeting",
-                "tags": ["project-alpha", "urgent"],
-                "properties": {},
-            },
-            "note2": {
-                "id": "note2",
-                "class": "meeting",
-                "tags": ["project-beta"],
-                "properties": {},
-            },
-            "note3": {
-                "id": "note3",
-                "class": "task",
-                "tags": ["project-alpha"],
-                "properties": {},
-            },
-        },
-    }
+    def fake_run_async(
+        func: object,
+        config: dict[str, str],
+        workspace_id: str,
+        payload: str,
+    ) -> list[dict[str, object]]:
+        assert func is ieapp_core.query_index
+        assert workspace_id == "test_workspace"
+        assert "uri" in config
+        filters = json.loads(payload)
+        if filters == {"tag": "project-alpha"}:
+            return [
+                {"id": "note1", "tags": ["project-alpha", "urgent"]},
+                {"id": "note3", "tags": ["project-alpha"]},
+            ]
+        if filters == {"tag": "urgent"}:
+            return [{"id": "note1", "tags": ["project-alpha", "urgent"]}]
+        return []
 
-    with fs.open(fs_join(workspace_path, "index", "index.json"), "w") as f:
-        json.dump(index_data, f)
+    monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
     # Filter by tag
     results = query_index(workspace_path, {"tag": "project-alpha"}, fs=fs)
@@ -298,35 +246,12 @@ def test_indexer_watch_loop_triggers_run(
     assert len(calls) == EXPECTED_WATCH_CALLBACKS
 
 
-def test_indexer_computes_word_count(
-    fs_impl: tuple[fsspec.AbstractFileSystem, str],
-) -> None:
+def test_indexer_computes_word_count() -> None:
     """Ensure word_count is computed for indexed notes."""
-    fs, root = fs_impl
-    workspace_path = fs_join(root, "test_workspace")
-    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
-
-    # Create Note with some content
-    note1_content = {
-        "markdown": "# Hello World\n\nThis is a test note with some words.",
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
-        json.dump(note1_content, f)
-
-    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
-        json.dump({"id": "note1"}, f)
-
-    indexer = Indexer(workspace_path, fs=fs)
-    indexer.run_once()
-
-    with fs.open(fs_join(workspace_path, "index", "index.json"), "r") as f:
-        index_data = json.load(f)
-
-    note1 = index_data["notes"]["note1"]
+    content = "# Hello World\n\nThis is a test note with some words."
     # "Hello World" (2) + "This is a test note with some words." (8) = 10 words
     # Note: split() counts '#' as a word, so 11.
-    assert note1.get("word_count") == EXPECTED_WORD_COUNT
+    assert compute_word_count(content) == EXPECTED_WORD_COUNT
 
 
 def test_aggregate_stats_includes_field_usage() -> None:
@@ -362,47 +287,26 @@ def test_aggregate_stats_includes_field_usage() -> None:
 def test_indexer_generates_inverted_index(
     fs_impl: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
-    """Ensure run_once creates inverted_index.json with term-to-note mappings."""
-    fs, root = fs_impl
-    workspace_path = fs_join(root, "test_workspace")
-    fs.makedirs(fs_join(workspace_path, "notes", "note1"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "notes", "note2"), exist_ok=True)
-    fs.makedirs(fs_join(workspace_path, "index"), exist_ok=True)
-
-    # Create Note 1
-    note1_content = {"markdown": "# Meeting Notes\n\n## Agenda\nDiscuss project alpha."}
-    with fs.open(fs_join(workspace_path, "notes", "note1", "content.json"), "w") as f:
-        json.dump(note1_content, f)
-    note1_meta = {
-        "id": "note1",
-        "title": "Meeting Notes",
-        "class": "meeting",
-        "tags": ["project", "alpha"],
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note1", "meta.json"), "w") as f:
-        json.dump(note1_meta, f)
-
-    # Create Note 2
-    note2_content = {"markdown": "# Task List\n\n## Priority\nHigh priority task."}
-    with fs.open(fs_join(workspace_path, "notes", "note2", "content.json"), "w") as f:
-        json.dump(note2_content, f)
-    note2_meta = {
-        "id": "note2",
-        "title": "Task List",
-        "class": "task",
-        "tags": ["priority"],
-    }
-    with fs.open(fs_join(workspace_path, "notes", "note2", "meta.json"), "w") as f:
-        json.dump(note2_meta, f)
-
-    indexer = Indexer(workspace_path, fs=fs)
-    indexer.run_once()
-
-    # Verify inverted_index.json exists
-    assert fs.exists(fs_join(workspace_path, "index", "inverted_index.json"))
-
-    with fs.open(fs_join(workspace_path, "index", "inverted_index.json"), "r") as f:
-        inverted_index = json.load(f)
+    """Ensure inverted index contains term-to-note mappings."""
+    _fs, _root = fs_impl
+    inverted_index = build_inverted_index(
+        {
+            "note1": {
+                "id": "note1",
+                "title": "Meeting Notes",
+                "class": "meeting",
+                "tags": ["project", "alpha"],
+                "properties": {"Agenda": "Discuss project alpha."},
+            },
+            "note2": {
+                "id": "note2",
+                "title": "Task List",
+                "class": "task",
+                "tags": ["priority"],
+                "properties": {"Priority": "High priority task."},
+            },
+        },
+    )
 
     # Check that terms map to the correct notes
     assert "meeting" in inverted_index

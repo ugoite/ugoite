@@ -29,6 +29,9 @@ hmac = "0.12"
 hex = "0.4"
 iceberg = "0.8.0"
 iceberg-catalog-rest = "0.8.0"
+arrow-array = "57.0"
+arrow-schema = "57.0"
+parquet = "57.0"
 
 [dev-dependencies]
 pyo3 = { version = "0.23", features = ["auto-initialize"] }

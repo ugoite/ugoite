@@ -1,8 +1,8 @@
+use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
 use crate::note;
 use anyhow::{Context, Result};
-use futures::TryStreamExt;
-use opendal::{EntryMode, Operator};
+use opendal::Operator;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -32,19 +32,10 @@ pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result
 }
 
 pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Result<()> {
-    let name = class_def["name"]
+    class_def["name"]
         .as_str()
         .context("Class definition missing 'name' field")?;
-
-    let class_dir = format!("{}/classes/{}/", ws_path, name);
-    op.create_dir(&class_dir).await?;
-    op.create_dir(&format!("{}notes/", class_dir)).await?;
-    op.create_dir(&format!("{}revisions/", class_dir)).await?;
-
-    let class_path = format!("{}class.json", class_dir);
-    let content = serde_json::to_vec_pretty(class_def)?;
-    op.write(&class_path, content).await?;
-
+    iceberg_store::ensure_class_tables(op, ws_path, class_def).await?;
     Ok(())
 }
 
@@ -110,28 +101,7 @@ pub async fn migrate_class<I: IntegrityProvider>(
 }
 
 pub(crate) async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let classes_path = format!("{}/classes/", ws_path);
-    if !op.exists(&classes_path).await? {
-        return Ok(vec![]);
-    }
-
-    let mut class_names = Vec::new();
-    let mut lister = op.lister(&classes_path).await?;
-    while let Some(entry) = lister.try_next().await? {
-        if entry.metadata().mode() != EntryMode::DIR {
-            continue;
-        }
-        let class_name = entry
-            .name()
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if !class_name.is_empty() {
-            class_names.push(class_name.to_string());
-        }
-    }
-    Ok(class_names)
+    iceberg_store::list_class_names(op, ws_path).await
 }
 
 pub(crate) async fn read_class_definition(
@@ -139,13 +109,9 @@ pub(crate) async fn read_class_definition(
     ws_path: &str,
     class_name: &str,
 ) -> Result<Value> {
-    let class_path = format!("{}/classes/{}/class.json", ws_path, class_name);
-    let bytes = op
-        .read(&class_path)
+    iceberg_store::load_class_definition(op, ws_path, class_name)
         .await
-        .context(format!("Class {} not found", class_name))?;
-    let content: Value = serde_json::from_slice(&bytes.to_vec())?;
-    Ok(content)
+        .context(format!("Class {} not found", class_name))
 }
 
 fn apply_migration(markdown: &str, strategies: &serde_json::Map<String, Value>) -> String {

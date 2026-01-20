@@ -10,6 +10,7 @@ use serde_json::Value;
 
 pub mod attachment;
 pub mod class;
+pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
 pub mod link;

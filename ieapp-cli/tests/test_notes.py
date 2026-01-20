@@ -10,14 +10,21 @@ REQ-NOTE-007: Properties and links in list response.
 REQ-NOTE-008: Attachments upload & linking.
 """
 
-import json
 from typing import Any
 
 import fsspec
 import pytest
 
 from ieapp.classes import upsert_class
-from ieapp.notes import RevisionMismatchError, create_note, list_notes, update_note
+from ieapp.notes import (
+    RevisionMismatchError,
+    create_note,
+    get_note,
+    get_note_history,
+    get_note_revision,
+    list_notes,
+    update_note,
+)
 from ieapp.utils import fs_join
 from ieapp.workspace import create_workspace
 
@@ -74,7 +81,7 @@ def test_create_note_basic(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that creating a note generates the required file structure."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-1"
     content = """---
 class: Note
@@ -90,31 +97,18 @@ Hello World
         content,
     )
 
-    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
-    assert fs.exists(note_path)
-
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        assert data["note_id"] == note_id
-        assert data["class"] == DEFAULT_CLASS
-        assert "revision_id" in data
-        assert data["fields"] == {}
-
-    revision_path = fs_join(
-        ws_path,
-        "classes",
-        DEFAULT_CLASS,
-        "revisions",
-        f"{data['revision_id']}.json",
-    )
-    assert fs.exists(revision_path)
+    data = get_note(ws_path, note_id)
+    assert data["id"] == note_id
+    assert data["class"] == DEFAULT_CLASS
+    assert "revision_id" in data
+    assert "# My Note" in data["content"]
 
 
 def test_update_note_revision_mismatch(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that updating a note requires the correct parent_revision_id."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-2"
     content = """---
 class: Note
@@ -127,10 +121,8 @@ class: Note
         content,
     )
 
-    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        current_rev = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    current_rev = data["revision_id"]
 
     # Update with correct revision
     new_content = """---
@@ -146,9 +138,8 @@ class: Note
     )
 
     # Get new revision
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        new_rev = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    new_rev = data["revision_id"]
 
     assert new_rev != current_rev
 
@@ -175,7 +166,7 @@ def test_note_history_append(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that updating a note appends to revision history."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-history"
     content_v1 = """---
 class: Note
@@ -188,12 +179,8 @@ class: Note
         content_v1,
     )
 
-    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
-
-    # Get v1 revision
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        rev_v1 = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    rev_v1 = data["revision_id"]
 
     # Update to v2
     content_v2 = """---
@@ -208,27 +195,23 @@ class: Note
         parent_revision_id=rev_v1,
     )
 
-    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
-    revision_files = [
-        path for path in fs.ls(revisions_path, detail=False) if path.endswith(".json")
-    ]
-    assert len(revision_files) == HISTORY_LENGTH
+    history = get_note_history(ws_path, note_id)
+    revisions = history.get("revisions", [])
+    assert len(revisions) == HISTORY_LENGTH
 
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        rev_v2 = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    rev_v2 = data["revision_id"]
 
-    with fs.open(fs_join(revisions_path, f"{rev_v2}.json"), "r") as f:
-        rev_data = json.load(f)
-        assert rev_data["revision_id"] == rev_v2
-        assert rev_data["parent_revision_id"] == rev_v1
+    rev_data = get_note_revision(ws_path, note_id, rev_v2)
+    assert rev_data["revision_id"] == rev_v2
+    assert rev_data["parent_revision_id"] == rev_v1
 
 
 def test_markdown_sections_persist(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that frontmatter and sections persist to storage."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-structured"
     content = STRUCTURED_NOTE_CONTENT
 
@@ -238,26 +221,18 @@ def test_markdown_sections_persist(
         content,
     )
 
-    note_path = fs_join(
-        ws_path,
-        "classes",
-        MEETING_CLASS,
-        "notes",
-        f"{note_id}.json",
-    )
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
+    data = get_note(ws_path, note_id)
 
     assert data["class"] == MEETING_CLASS
-    assert data["fields"]["Date"] == "2025-11-29"
-    assert data["fields"]["Summary"] == "Wrap up"
+    assert data["sections"]["Date"] == "2025-11-29"
+    assert data["sections"]["Summary"] == "Wrap up"
 
 
 def test_note_history_diff(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that updating a note stores a revision entry."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-diff"
     content_v1 = """---
 class: Note
@@ -273,10 +248,8 @@ Line 2
         content_v1,
     )
 
-    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        rev_v1 = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    rev_v1 = data["revision_id"]
 
     content_v2 = """---
 class: Note
@@ -293,22 +266,23 @@ Line 2 Modified
         parent_revision_id=rev_v1,
     )
 
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        rev_v2 = data["revision_id"]
+    data = get_note(ws_path, note_id)
+    rev_v2 = data["revision_id"]
 
-    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
-    with fs.open(fs_join(revisions_path, f"{rev_v2}.json"), "r") as f:
-        rev_data = json.load(f)
-        assert rev_data["revision_id"] == rev_v2
-        assert rev_data["note_id"] == note_id
+    history = get_note_history(ws_path, note_id)
+    revisions = history.get("revisions", [])
+    assert len(revisions) == HISTORY_LENGTH
+
+    rev_data = get_note_revision(ws_path, note_id, rev_v2)
+    assert rev_data["revision_id"] == rev_v2
+    assert rev_data["note_id"] == note_id
 
 
 def test_note_author_persistence(
     workspace_root: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Verifies that the author field is persisted correctly."""
-    fs, ws_path = workspace_root
+    _fs, ws_path = workspace_root
     note_id = "note-author"
     content = """---
 class: Note
@@ -324,16 +298,12 @@ class: Note
         author=author,
     )
 
-    note_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "notes", f"{note_id}.json")
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        assert data["author"] == author
-        rev_id = data["revision_id"]
-
-    revisions_path = fs_join(ws_path, "classes", DEFAULT_CLASS, "revisions")
-    with fs.open(fs_join(revisions_path, f"{rev_id}.json"), "r") as f:
-        data = json.load(f)
-        assert data["author"] == author
+    history = get_note_history(ws_path, note_id)
+    revisions = history.get("revisions", [])
+    assert revisions
+    rev_id = revisions[-1]["revision_id"]
+    data = get_note_revision(ws_path, note_id, rev_id)
+    assert data["author"] == author
 
     # Update with different author
     new_author = "neo"
@@ -349,14 +319,11 @@ class: Note
         author=new_author,
     )
 
-    with fs.open(note_path, "r") as f:
-        data = json.load(f)
-        assert data["author"] == new_author
-        rev_id_2 = data["revision_id"]
-
-    with fs.open(fs_join(revisions_path, f"{rev_id_2}.json"), "r") as f:
-        data = json.load(f)
-        assert data["author"] == new_author
+    history = get_note_history(ws_path, note_id)
+    revisions = history.get("revisions", [])
+    rev_id_2 = revisions[-1]["revision_id"]
+    data = get_note_revision(ws_path, note_id, rev_id_2)
+    assert data["author"] == new_author
 
 
 def test_list_notes_returns_properties_and_links(

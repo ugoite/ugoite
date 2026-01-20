@@ -61,6 +61,7 @@ async fn update_note_links(
     let mut row = read_note_row(op, ws_path, class_name, note_id).await?;
     row.links.retain(|l| l.id != link.id);
     row.links.push(link);
+    row.updated_at = crate::note::now_ts();
     write_note_row(op, ws_path, class_name, note_id, &row).await?;
     Ok(())
 }
@@ -90,6 +91,7 @@ pub async fn delete_link(op: &Operator, ws_path: &str, link_id: &str) -> Result<
         row.links.retain(|l| l.id != link_id);
         if row.links.len() != initial_len {
             found = true;
+            row.updated_at = crate::note::now_ts();
             write_note_row(op, ws_path, &class_name, &row.note_id, &row).await?;
         }
     }

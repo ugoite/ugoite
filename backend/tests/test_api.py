@@ -110,17 +110,9 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
     assert "revision_id" in data  # Required for optimistic concurrency
     note_id = data["id"]
 
-    # Verify file system
-    note_path = (
-        temp_workspace_root
-        / "workspaces"
-        / "test-ws"
-        / "classes"
-        / "Note"
-        / "notes"
-        / f"{note_id}.json"
-    )
-    assert note_path.exists()
+    # Verify retrieval
+    get_response = test_client.get(f"/workspaces/test-ws/notes/{note_id}")
+    assert get_response.status_code == 200
 
 
 def test_create_note_conflict(

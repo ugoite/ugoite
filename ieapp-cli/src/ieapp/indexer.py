@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-import time
 from collections import Counter
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
@@ -15,10 +14,6 @@ import yaml
 from pydantic import BeforeValidator
 
 from .utils import (
-    fs_join,
-    fs_makedirs,
-    fs_read_json,
-    fs_write_json,
     run_async,
     split_workspace_path,
     storage_config_from_root,
@@ -109,6 +104,73 @@ def extract_properties(content: str) -> dict[str, Any]:
 
     """
     return run_async(ieapp_core.extract_properties, content)
+
+
+def compute_word_count(content: str) -> int:
+    """Return the word count for markdown content.
+
+    Args:
+        content: Markdown content string.
+
+    Returns:
+        The number of whitespace-delimited tokens.
+
+    """
+    return len(content.split())
+
+
+def _tokenize_text_for_index(text: str) -> set[str]:
+    return {
+        word.lower()
+        for word in re.findall(r"\w+", text)
+        if len(word) > 1 and not word.isnumeric()
+    }
+
+
+def _tokenize_record_for_index(record: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    tokens.update(_tokenize_text_for_index(record.get("title", "")))
+
+    for tag in record.get("tags") or []:
+        tokens.update(_tokenize_text_for_index(tag))
+
+    note_class = record.get("class")
+    if note_class:
+        tokens.update(_tokenize_text_for_index(note_class))
+
+    properties = record.get("properties") or {}
+    for key, value in properties.items():
+        tokens.update(_tokenize_text_for_index(key))
+        if isinstance(value, str):
+            tokens.update(_tokenize_text_for_index(value))
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    tokens.update(_tokenize_text_for_index(item))
+
+    return tokens
+
+
+def build_inverted_index(
+    notes: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Build an inverted index mapping terms to note IDs.
+
+    Args:
+        notes: Dictionary mapping note IDs to their record dictionaries.
+
+    Returns:
+        An inverted index mapping each token to a list of note IDs.
+
+    """
+    inverted: dict[str, list[str]] = {}
+    for note_id, record in notes.items():
+        for token in _tokenize_record_for_index(record):
+            inverted.setdefault(token, [])
+            if note_id not in inverted[token]:
+                inverted[token].append(note_id)
+
+    return inverted
 
 
 def parse_markdown_list(v: Any) -> Any:
@@ -242,45 +304,6 @@ class Indexer:
         Loads classes, collects note data, generates an inverted index for search,
         and persists index.json, inverted_index.json, and stats.json to the workspace.
         """
-        if self._use_fsspec:
-            classes_path = fs_join(self.workspace_path, "classes")
-            notes_path = fs_join(self.workspace_path, "notes")
-            index_path = fs_join(self.workspace_path, "index", "index.json")
-            inverted_path = fs_join(
-                self.workspace_path,
-                "index",
-                "inverted_index.json",
-            )
-            stats_path = fs_join(self.workspace_path, "index", "stats.json")
-
-            fs_makedirs(self.fs, fs_join(self.workspace_path, "index"), exist_ok=True)
-
-            classes = self._load_classes(classes_path)
-            notes = self._collect_notes(notes_path, classes)
-            stats = aggregate_stats(notes)
-            inverted = self._build_inverted_index(notes)
-
-            fs_write_json(
-                self.fs,
-                index_path,
-                {
-                    "notes": notes,
-                    "class_stats": stats.get("class_stats", {}),
-                },
-            )
-            fs_write_json(self.fs, inverted_path, inverted)
-            fs_write_json(
-                self.fs,
-                stats_path,
-                {
-                    "note_count": stats.get("note_count", 0),
-                    "class_stats": stats.get("class_stats", {}),
-                    "tag_counts": stats.get("tag_counts", {}),
-                    "last_indexed": time.time(),
-                },
-            )
-            return
-
         root_path, workspace_id = split_workspace_path(self.workspace_path)
         config = storage_config_from_root(root_path, self.fs)
         run_async(ieapp_core.reindex_all, config, workspace_id)
@@ -586,15 +609,6 @@ def query_index(
         A list of note records that match the filter criteria.
 
     """
-    if fs is not None:
-        index_path = fs_join(workspace_path, "index", "index.json")
-        if not fs.exists(index_path):
-            return []
-        index_data = fs_read_json(fs, index_path)
-        notes = index_data.get("notes", {}) or {}
-        filters = filter_dict or {}
-        return [note for note in notes.values() if _matches_filters(note, filters)]
-
     root_path, workspace_id = split_workspace_path(workspace_path)
     config = storage_config_from_root(root_path, fs)
     payload = json.dumps(filter_dict or {})

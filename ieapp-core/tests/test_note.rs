@@ -31,15 +31,11 @@ async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
 
     note::create_note(&op, ws_path, note_id, content, "test-author", &integrity).await?;
 
-    let note_path = format!("{}/classes/Note/notes/{}.json", ws_path, note_id);
-    assert!(op.exists(&note_path).await?);
-    let note_bytes = op.read(&note_path).await?;
-    let note_row: note::NoteRow = serde_json::from_slice(&note_bytes.to_vec())?;
-    let revision_path = format!(
-        "{}/classes/Note/revisions/{}.json",
-        ws_path, note_row.revision_id
-    );
-    assert!(op.exists(&revision_path).await?);
+    let content_info = note::get_note_content(&op, ws_path, note_id).await?;
+    assert!(!content_info.revision_id.is_empty());
+    let history = note::get_note_history(&op, ws_path, note_id).await?;
+    let revisions = history.get("revisions").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(revisions.len(), 1);
 
     Ok(())
 }
