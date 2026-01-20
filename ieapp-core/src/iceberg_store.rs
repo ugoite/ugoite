@@ -157,8 +157,105 @@ fn build_fields_struct(class_def: &Value, id_counter: &mut i32) -> Result<Type> 
     Ok(Type::Struct(StructType::new(nested_fields)))
 }
 
-fn build_notes_schema(_class_def: &Value) -> Result<Schema> {
+fn build_notes_schema(class_def: &Value) -> Result<Schema> {
     let mut counter = 1;
+
+    let tags_element_id = next_id(&mut counter);
+    let tags_type = Type::List(ListType::new(Arc::new(NestedField::new(
+        tags_element_id,
+        "element",
+        Type::Primitive(PrimitiveType::String),
+        false,
+    ))));
+
+    let links_struct = Type::Struct(StructType::new(vec![
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "id",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "target",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "kind",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+    ]));
+    let links_element_id = next_id(&mut counter);
+    let links_type = Type::List(ListType::new(Arc::new(NestedField::new(
+        links_element_id,
+        "element",
+        links_struct,
+        false,
+    ))));
+
+    let canvas_struct = Type::Struct(StructType::new(vec![
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "x",
+            Type::Primitive(PrimitiveType::Double),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "y",
+            Type::Primitive(PrimitiveType::Double),
+            false,
+        )),
+    ]));
+
+    let fields_struct = build_fields_struct(class_def, &mut counter)?;
+
+    let attachments_struct = Type::Struct(StructType::new(vec![
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "id",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "name",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "path",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+    ]));
+    let attachments_element_id = next_id(&mut counter);
+    let attachments_type = Type::List(ListType::new(Arc::new(NestedField::new(
+        attachments_element_id,
+        "element",
+        attachments_struct,
+        false,
+    ))));
+
+    let integrity_struct = Type::Struct(StructType::new(vec![
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "checksum",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "signature",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+    ]));
+
     let fields = vec![
         Arc::new(NestedField::new(
             next_id(&mut counter),
@@ -174,26 +271,20 @@ fn build_notes_schema(_class_def: &Value) -> Result<Schema> {
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
-            "class",
-            Type::Primitive(PrimitiveType::String),
-            false,
-        )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
             "tags",
-            Type::Primitive(PrimitiveType::String),
+            tags_type,
             false,
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "links",
-            Type::Primitive(PrimitiveType::String),
+            links_type,
             false,
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "canvas_position",
-            Type::Primitive(PrimitiveType::String),
+            canvas_struct,
             false,
         )),
         Arc::new(NestedField::new(
@@ -211,31 +302,19 @@ fn build_notes_schema(_class_def: &Value) -> Result<Schema> {
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "fields",
-            Type::Primitive(PrimitiveType::String),
-            false,
-        )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "revision_id",
-            Type::Primitive(PrimitiveType::String),
-            false,
-        )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "parent_revision_id",
-            Type::Primitive(PrimitiveType::String),
+            fields_struct,
             false,
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "attachments",
-            Type::Primitive(PrimitiveType::String),
+            attachments_type,
             false,
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "integrity",
-            Type::Primitive(PrimitiveType::String),
+            integrity_struct,
             false,
         )),
         Arc::new(NestedField::new(
@@ -250,12 +329,6 @@ fn build_notes_schema(_class_def: &Value) -> Result<Schema> {
             Type::Primitive(PrimitiveType::Timestamp),
             false,
         )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "author",
-            Type::Primitive(PrimitiveType::String),
-            false,
-        )),
     ];
 
     Schema::builder()
@@ -264,8 +337,24 @@ fn build_notes_schema(_class_def: &Value) -> Result<Schema> {
         .map_err(|e| e.into())
 }
 
-fn build_revisions_schema(_class_def: &Value) -> Result<Schema> {
+fn build_revisions_schema(class_def: &Value) -> Result<Schema> {
     let mut counter = 1;
+    let fields_struct = build_fields_struct(class_def, &mut counter)?;
+    let integrity_struct = Type::Struct(StructType::new(vec![
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "checksum",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "signature",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+    ]));
+
     let fields = vec![
         Arc::new(NestedField::new(
             next_id(&mut counter),
@@ -300,7 +389,7 @@ fn build_revisions_schema(_class_def: &Value) -> Result<Schema> {
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "fields",
-            Type::Primitive(PrimitiveType::String),
+            fields_struct,
             false,
         )),
         Arc::new(NestedField::new(
@@ -312,7 +401,7 @@ fn build_revisions_schema(_class_def: &Value) -> Result<Schema> {
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "integrity",
-            Type::Primitive(PrimitiveType::String),
+            integrity_struct,
             false,
         )),
         Arc::new(NestedField::new(
@@ -364,7 +453,22 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             .sort_order(SortOrder::unsorted_order())
             .properties(props)
             .build();
-        catalog.create_table(&namespace, creation).await?;
+        let created = catalog.create_table(&namespace, creation).await;
+        if let Err(err) = created {
+            let message = err.to_string();
+            if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
+                return Err(err.into());
+            }
+            let props = table_properties(class_def)?;
+            let table = catalog.load_table(&notes_ident).await?;
+            let tx = Transaction::new(&table);
+            let mut action = tx.update_table_properties();
+            for (key, value) in props {
+                action = action.set(key, value);
+            }
+            let tx = action.apply(tx)?;
+            tx.commit(catalog.as_ref()).await?;
+        }
     } else {
         let props = table_properties(class_def)?;
         let table = catalog.load_table(&notes_ident).await?;
@@ -388,7 +492,22 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             .sort_order(SortOrder::unsorted_order())
             .properties(props)
             .build();
-        catalog.create_table(&namespace, creation).await?;
+        let created = catalog.create_table(&namespace, creation).await;
+        if let Err(err) = created {
+            let message = err.to_string();
+            if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
+                return Err(err.into());
+            }
+            let props = table_properties(class_def)?;
+            let table = catalog.load_table(&revisions_ident).await?;
+            let tx = Transaction::new(&table);
+            let mut action = tx.update_table_properties();
+            for (key, value) in props {
+                action = action.set(key, value);
+            }
+            let tx = action.apply(tx)?;
+            tx.commit(catalog.as_ref()).await?;
+        }
     } else {
         let props = table_properties(class_def)?;
         let table = catalog.load_table(&revisions_ident).await?;
@@ -445,6 +564,22 @@ pub async fn load_revisions_table(
     let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
     let revisions = catalog.load_table(&revisions_ident).await?;
     Ok((catalog, revisions))
+}
+
+pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -> Result<()> {
+    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
+    let namespace = class_namespace(class_name);
+    let notes_ident = TableIdent::new(namespace.clone(), NOTES_TABLE_NAME.to_string());
+    let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
+
+    if catalog.table_exists(&notes_ident).await? {
+        catalog.drop_table(&notes_ident).await?;
+    }
+    if catalog.table_exists(&revisions_ident).await? {
+        catalog.drop_table(&revisions_ident).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {

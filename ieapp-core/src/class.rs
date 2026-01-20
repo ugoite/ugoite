@@ -35,6 +35,21 @@ pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Re
     class_def["name"]
         .as_str()
         .context("Class definition missing 'name' field")?;
+    let class_name = class_def
+        .get("name")
+        .and_then(|v| v.as_str())
+        .context("Class definition missing 'name' field")?;
+    let existing = iceberg_store::load_class_definition(op, ws_path, class_name)
+        .await
+        .ok();
+    if let Some(existing_def) = existing {
+        let fields_changed = existing_def.get("fields") != class_def.get("fields");
+        if fields_changed {
+            rebuild_class_tables(op, ws_path, class_name, &existing_def, class_def).await?;
+            return Ok(());
+        }
+    }
+
     iceberg_store::ensure_class_tables(op, ws_path, class_def).await?;
     Ok(())
 }
@@ -112,6 +127,31 @@ pub(crate) async fn read_class_definition(
     iceberg_store::load_class_definition(op, ws_path, class_name)
         .await
         .context(format!("Class {} not found", class_name))
+}
+
+async fn rebuild_class_tables(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    existing_def: &Value,
+    new_def: &Value,
+) -> Result<()> {
+    let note_rows = note::list_class_note_rows(op, ws_path, class_name, existing_def).await?;
+    let revision_rows =
+        note::list_class_revision_rows(op, ws_path, class_name, existing_def).await?;
+
+    iceberg_store::drop_class_tables(op, ws_path, class_name).await?;
+    iceberg_store::ensure_class_tables(op, ws_path, new_def).await?;
+
+    for row in note_rows {
+        note::write_note_row(op, ws_path, class_name, &row.note_id, &row).await?;
+    }
+
+    for rev in revision_rows {
+        note::append_revision_row_for_class(op, ws_path, class_name, &rev, new_def).await?;
+    }
+
+    Ok(())
 }
 
 fn apply_migration(markdown: &str, strategies: &serde_json::Map<String, Value>) -> String {

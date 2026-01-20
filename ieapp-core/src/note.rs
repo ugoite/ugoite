@@ -4,12 +4,12 @@ use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
 use anyhow::{anyhow, Result};
-use arrow_array::builder::{ListBuilder, StringBuilder};
+use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Date32Array, Float64Array, ListArray, RecordBatch, StringArray,
     StructArray, TimestampMicrosecondArray,
 };
-use arrow_schema::Fields;
+use arrow_schema::{DataType, Fields};
 use chrono::Utc;
 use futures::TryStreamExt;
 use iceberg::arrow::schema_to_arrow_schema;
@@ -137,13 +137,6 @@ fn to_timestamp_micros(ts: f64) -> i64 {
 
 fn from_timestamp_micros(micros: i64) -> f64 {
     micros as f64 / 1_000_000.0
-}
-
-fn parse_json_or_default<T>(value: &str, default: T) -> T
-where
-    T: serde::de::DeserializeOwned,
-{
-    serde_json::from_str(value).unwrap_or(default)
 }
 
 fn extract_title(content: &str, fallback: &str) -> String {
@@ -368,8 +361,32 @@ fn days_to_date(days: i32) -> Option<String> {
     Some(date.format("%Y-%m-%d").to_string())
 }
 
-fn list_array_from_values(values: Option<&Value>) -> ArrayRef {
-    let mut builder = ListBuilder::new(StringBuilder::new());
+fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::FieldRef> {
+    match list_field.data_type() {
+        DataType::List(inner) => Ok(inner.clone()),
+        _ => Err(anyhow!("Expected list field: {}", list_field.name())),
+    }
+}
+
+fn list_array_from_strings(
+    values: &[String],
+    list_field: &arrow_schema::Field,
+) -> Result<ArrayRef> {
+    let element_field = list_element_field(list_field)?;
+    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
+    for value in values {
+        builder.values().append_value(value);
+    }
+    builder.append(true);
+    Ok(Arc::new(builder.finish()))
+}
+
+fn list_array_from_values(
+    values: Option<&Value>,
+    list_field: &arrow_schema::Field,
+) -> Result<ArrayRef> {
+    let element_field = list_element_field(list_field)?;
+    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
     if let Some(Value::Array(items)) = values {
         for item in items {
             let rendered = match item {
@@ -384,7 +401,319 @@ fn list_array_from_values(values: Option<&Value>) -> ArrayRef {
     } else {
         builder.append(false);
     }
-    Arc::new(builder.finish())
+    Ok(Arc::new(builder.finish()))
+}
+
+fn list_struct_fields_from_field(list_field: &arrow_schema::Field) -> Result<Fields> {
+    let element_field = list_element_field(list_field)?;
+    match element_field.data_type() {
+        DataType::Struct(fields) => Ok(fields.clone()),
+        _ => Err(anyhow!(
+            "Expected list<struct> field: {}",
+            list_field.name()
+        )),
+    }
+}
+
+fn struct_fields_from_field(field: &arrow_schema::Field) -> Result<Fields> {
+    match field.data_type() {
+        DataType::Struct(fields) => Ok(fields.clone()),
+        _ => Err(anyhow!("Expected struct field: {}", field.name())),
+    }
+}
+
+fn list_links_array_from_links(
+    links: &[Link],
+    list_field: &arrow_schema::Field,
+) -> Result<ArrayRef> {
+    let element_field = list_element_field(list_field)?;
+    let struct_fields = list_struct_fields_from_field(list_field)?;
+    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), links.len());
+    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
+
+    for link in links {
+        let builder = list_builder.values();
+        for (idx, field) in struct_fields.iter().enumerate() {
+            let value = match field.name().as_str() {
+                "id" => link.id.as_str(),
+                "target" => link.target.as_str(),
+                "kind" => link.kind.as_str(),
+                other => {
+                    return Err(anyhow!("Unexpected link field: {}", other));
+                }
+            };
+            let field_builder = builder
+                .field_builder::<StringBuilder>(idx)
+                .ok_or_else(|| anyhow!("Invalid link field builder: {}", field.name()))?;
+            field_builder.append_value(value);
+        }
+        builder.append(true);
+    }
+    list_builder.append(true);
+    Ok(Arc::new(list_builder.finish()))
+}
+
+fn list_attachments_array_from_values(
+    attachments: &[Value],
+    list_field: &arrow_schema::Field,
+) -> Result<ArrayRef> {
+    let element_field = list_element_field(list_field)?;
+    let struct_fields = list_struct_fields_from_field(list_field)?;
+    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), attachments.len());
+    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
+
+    for attachment in attachments {
+        let builder = list_builder.values();
+        let attachment_obj = attachment.as_object();
+        for (idx, field) in struct_fields.iter().enumerate() {
+            let value = attachment_obj
+                .and_then(|obj| obj.get(field.name()))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let field_builder = builder
+                .field_builder::<StringBuilder>(idx)
+                .ok_or_else(|| anyhow!("Invalid attachment field builder: {}", field.name()))?;
+            field_builder.append_value(value);
+        }
+        builder.append(true);
+    }
+    list_builder.append(true);
+    Ok(Arc::new(list_builder.finish()))
+}
+
+fn struct_array_from_canvas(canvas: &Value, struct_fields: &Fields) -> Result<ArrayRef> {
+    let mut arrays = Vec::new();
+    for field in struct_fields {
+        let value = canvas.get(field.name()).and_then(|v| v.as_f64());
+        let array: ArrayRef = Arc::new(Float64Array::from(vec![value]));
+        arrays.push(array);
+    }
+    let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
+        .map_err(|e| anyhow!("Failed to build canvas struct array: {}", e))?;
+    Ok(Arc::new(struct_array))
+}
+
+fn struct_array_from_integrity(
+    integrity: &IntegrityPayload,
+    struct_fields: &Fields,
+) -> Result<ArrayRef> {
+    let mut arrays = Vec::new();
+    for field in struct_fields {
+        let value = match field.name().as_str() {
+            "checksum" => integrity.checksum.as_str(),
+            "signature" => integrity.signature.as_str(),
+            other => return Err(anyhow!("Unexpected integrity field: {}", other)),
+        };
+        let array: ArrayRef = Arc::new(StringArray::from(vec![Some(value)]));
+        arrays.push(array);
+    }
+    let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
+        .map_err(|e| anyhow!("Failed to build integrity struct array: {}", e))?;
+    Ok(Arc::new(struct_array))
+}
+
+fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
+    if list_array.is_null(row) {
+        return Vec::new();
+    }
+    let values = list_array.value(row);
+    let values = values.as_any().downcast_ref::<StringArray>().map(|array| {
+        let mut items = Vec::new();
+        for i in 0..array.len() {
+            if !array.is_null(i) {
+                items.push(array.value(i).to_string());
+            }
+        }
+        items
+    });
+    values.unwrap_or_default()
+}
+
+fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
+    if list_array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = list_array.value(row);
+    let struct_array = values
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .ok_or_else(|| anyhow!("Invalid links struct array"))?;
+
+    let id_col = struct_array
+        .column_by_name("id")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let target_col = struct_array
+        .column_by_name("target")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let kind_col = struct_array
+        .column_by_name("kind")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+
+    let mut links = Vec::new();
+    for idx in 0..struct_array.len() {
+        let id = id_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let target = target_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        let kind = kind_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        links.push(Link {
+            id: id.to_string(),
+            source: source.to_string(),
+            target: target.to_string(),
+            kind: kind.to_string(),
+        });
+    }
+
+    Ok(links)
+}
+
+fn list_attachments_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
+    if list_array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = list_array.value(row);
+    let struct_array = values
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .ok_or_else(|| anyhow!("Invalid attachments struct array"))?;
+
+    let id_col = struct_array
+        .column_by_name("id")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let name_col = struct_array
+        .column_by_name("name")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let path_col = struct_array
+        .column_by_name("path")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+
+    let mut attachments = Vec::new();
+    for idx in 0..struct_array.len() {
+        let id = id_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let name = name_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        let path = path_col
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
+        attachments.push(serde_json::json!({
+            "id": id,
+            "name": name,
+            "path": path,
+        }));
+    }
+
+    Ok(attachments)
+}
+
+fn canvas_from_struct_array(struct_array: &StructArray, row: usize) -> Value {
+    if struct_array.is_null(row) {
+        return Value::Object(Map::new());
+    }
+    let x_col = struct_array
+        .column_by_name("x")
+        .and_then(|col| col.as_any().downcast_ref::<Float64Array>());
+    let y_col = struct_array
+        .column_by_name("y")
+        .and_then(|col| col.as_any().downcast_ref::<Float64Array>());
+    let mut map = Map::new();
+    if let Some(col) = x_col {
+        if !col.is_null(row) {
+            map.insert(
+                "x".to_string(),
+                Value::Number(serde_json::Number::from_f64(col.value(row)).unwrap()),
+            );
+        }
+    }
+    if let Some(col) = y_col {
+        if !col.is_null(row) {
+            map.insert(
+                "y".to_string(),
+                Value::Number(serde_json::Number::from_f64(col.value(row)).unwrap()),
+            );
+        }
+    }
+    Value::Object(map)
+}
+
+fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> IntegrityPayload {
+    if struct_array.is_null(row) {
+        return IntegrityPayload::default();
+    }
+    let checksum = struct_array
+        .column_by_name("checksum")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
+        .and_then(|col| {
+            if col.is_null(row) {
+                None
+            } else {
+                Some(col.value(row))
+            }
+        })
+        .unwrap_or("");
+    let signature = struct_array
+        .column_by_name("signature")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
+        .and_then(|col| {
+            if col.is_null(row) {
+                None
+            } else {
+                Some(col.value(row))
+            }
+        })
+        .unwrap_or("");
+    IntegrityPayload {
+        checksum: checksum.to_string(),
+        signature: signature.to_string(),
+    }
 }
 
 fn struct_array_from_fields(
@@ -409,7 +738,7 @@ fn struct_array_from_fields(
                 let days = value.and_then(|v| v.as_str()).and_then(date_to_days);
                 Arc::new(Date32Array::from(vec![days]))
             }
-            "list" => list_array_from_values(value),
+            "list" => list_array_from_values(value, field.as_ref())?,
             _ => {
                 let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
                 Arc::new(StringArray::from(vec![string_value]))
@@ -434,6 +763,32 @@ async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordB
         batches.push(batch);
     }
     Ok(batches)
+}
+
+async fn latest_revision_for_note(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    class_def: &Value,
+    note_id: &str,
+) -> Result<Option<RevisionRow>> {
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, class_name).await?;
+    let batches = scan_table_batches(&table).await?;
+    let rows = revision_rows_from_batches(&batches, class_def)?;
+    let mut selected: Option<RevisionRow> = None;
+    for row in rows {
+        if row.note_id != note_id {
+            continue;
+        }
+        let replace = match &selected {
+            Some(existing) => row.timestamp >= existing.timestamp,
+            None => true,
+        };
+        if replace {
+            selected = Some(row);
+        }
+    }
+    Ok(selected)
 }
 
 fn column_as<'a, T: 'static>(batch: &'a RecordBatch, name: &str) -> Result<&'a T> {
@@ -514,67 +869,41 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
     Value::Object(map)
 }
 
-fn note_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<NoteRow>> {
+fn note_rows_from_batches(
+    batches: &[RecordBatch],
+    class_def: &Value,
+    class_name: &str,
+) -> Result<Vec<NoteRow>> {
     let mut rows = Vec::new();
     for batch in batches {
         let note_ids = column_as::<StringArray>(batch, "note_id")?;
         let titles = column_as::<StringArray>(batch, "title")?;
-        let class_names = column_as::<StringArray>(batch, "class")?;
-        let tags = column_as::<StringArray>(batch, "tags")?;
-        let links = column_as::<StringArray>(batch, "links")?;
-        let canvas_positions = column_as::<StringArray>(batch, "canvas_position")?;
+        let tags = column_as::<ListArray>(batch, "tags")?;
+        let links = column_as::<ListArray>(batch, "links")?;
+        let canvas_positions = column_as::<StructArray>(batch, "canvas_position")?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
-        let fields = column_as::<StringArray>(batch, "fields")?;
-        let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
-        let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
-        let attachments = column_as::<StringArray>(batch, "attachments")?;
-        let integrity = column_as::<StringArray>(batch, "integrity")?;
+        let fields = column_as::<StructArray>(batch, "fields")?;
+        let attachments = column_as::<ListArray>(batch, "attachments")?;
+        let integrity = column_as::<StructArray>(batch, "integrity")?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
         let deleted_at = column_as::<TimestampMicrosecondArray>(batch, "deleted_at")?;
-        let author = column_as::<StringArray>(batch, "author")?;
 
         for row_idx in 0..batch.num_rows() {
             if note_ids.is_null(row_idx) {
                 continue;
             }
-            let class_name = if class_names.is_null(row_idx) {
-                "".to_string()
-            } else {
-                class_names.value(row_idx).to_string()
-            };
 
-            let tags_value = if tags.is_null(row_idx) {
-                Vec::<String>::new()
-            } else {
-                parse_json_or_default(tags.value(row_idx), Vec::<String>::new())
-            };
-            let links_value = if links.is_null(row_idx) {
-                Vec::<Link>::new()
-            } else {
-                parse_json_or_default(links.value(row_idx), Vec::<Link>::new())
-            };
-            let canvas_value = if canvas_positions.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                parse_json_or_default(canvas_positions.value(row_idx), Value::Object(Map::new()))
-            };
-            let attachments_value = if attachments.is_null(row_idx) {
-                Vec::<Value>::new()
-            } else {
-                parse_json_or_default(attachments.value(row_idx), Vec::<Value>::new())
-            };
-            let integrity_value = if integrity.is_null(row_idx) {
-                IntegrityPayload::default()
-            } else {
-                parse_json_or_default(integrity.value(row_idx), IntegrityPayload::default())
-            };
+            let tags_value = list_strings_from_array(tags, row_idx);
+            let links_value = list_links_from_array(links, row_idx, note_ids.value(row_idx))?;
+            let canvas_value = canvas_from_struct_array(canvas_positions, row_idx);
+            let attachments_value = list_attachments_from_array(attachments, row_idx)?;
+            let integrity_value = integrity_from_struct_array(integrity, row_idx);
 
             let fields_value = if fields.is_null(row_idx) {
                 Value::Object(Map::new())
             } else {
-                serde_json::from_str(fields.value(row_idx))
-                    .unwrap_or_else(|_| Value::Object(Map::new()))
+                value_from_struct_array(fields, row_idx, class_def)
             };
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
@@ -590,7 +919,7 @@ fn note_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<NoteRow>> {
                 } else {
                     titles.value(row_idx).to_string()
                 },
-                class: class_name,
+                class: class_name.to_string(),
                 tags: tags_value,
                 links: links_value,
                 canvas_position: canvas_value,
@@ -605,32 +934,23 @@ fn note_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<NoteRow>> {
                     from_timestamp_micros(updated_at.value(row_idx))
                 },
                 fields: fields_value,
-                revision_id: if revision_ids.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    revision_ids.value(row_idx).to_string()
-                },
-                parent_revision_id: if parent_revision_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(parent_revision_ids.value(row_idx).to_string())
-                },
+                revision_id: "".to_string(),
+                parent_revision_id: None,
                 attachments: attachments_value,
                 integrity: integrity_value,
                 deleted: !deleted.is_null(row_idx) && deleted.value(row_idx),
                 deleted_at: deleted_at_value,
-                author: if author.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    author.value(row_idx).to_string()
-                },
+                author: "".to_string(),
             });
         }
     }
     Ok(rows)
 }
 
-fn revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow>> {
+fn revision_rows_from_batches(
+    batches: &[RecordBatch],
+    class_def: &Value,
+) -> Result<Vec<RevisionRow>> {
     let mut rows = Vec::new();
     for batch in batches {
         let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
@@ -638,9 +958,9 @@ fn revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow
         let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
         let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
         let authors = column_as::<StringArray>(batch, "author")?;
-        let fields = column_as::<StringArray>(batch, "fields")?;
+        let fields = column_as::<StructArray>(batch, "fields")?;
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
-        let integrity = column_as::<StringArray>(batch, "integrity")?;
+        let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
 
         for row_idx in 0..batch.num_rows() {
@@ -648,17 +968,12 @@ fn revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow
                 continue;
             }
 
-            let integrity_value = if integrity.is_null(row_idx) {
-                IntegrityPayload::default()
-            } else {
-                parse_json_or_default(integrity.value(row_idx), IntegrityPayload::default())
-            };
+            let integrity_value = integrity_from_struct_array(integrity, row_idx);
 
             let fields_value = if fields.is_null(row_idx) {
                 Value::Object(Map::new())
             } else {
-                serde_json::from_str(fields.value(row_idx))
-                    .unwrap_or_else(|_| Value::Object(Map::new()))
+                value_from_struct_array(fields, row_idx, class_def)
             };
 
             rows.push(RevisionRow {
@@ -703,6 +1018,7 @@ fn revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow
 
 fn note_row_to_record_batch(
     row: &NoteRow,
+    class_def: &Value,
     table_schema: &iceberg::spec::Schema,
 ) -> Result<RecordBatch> {
     let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
@@ -712,40 +1028,31 @@ fn note_row_to_record_batch(
         let array: ArrayRef = match field.name().as_str() {
             "note_id" => Arc::new(StringArray::from(vec![Some(row.note_id.clone())])),
             "title" => Arc::new(StringArray::from(vec![Some(row.title.clone())])),
-            "class" => Arc::new(StringArray::from(vec![Some(row.class.clone())])),
-            "tags" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.tags,
-            )?)])),
-            "links" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.links,
-            )?)])),
-            "canvas_position" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.canvas_position,
-            )?)])),
+            "tags" => list_array_from_strings(&row.tags, field.as_ref())?,
+            "links" => list_links_array_from_links(&row.links, field.as_ref())?,
+            "canvas_position" => {
+                let struct_fields = struct_fields_from_field(field.as_ref())?;
+                struct_array_from_canvas(&row.canvas_position, &struct_fields)?
+            }
             "created_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
                 to_timestamp_micros(row.created_at),
             )])),
             "updated_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
                 to_timestamp_micros(row.updated_at),
             )])),
-            "fields" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.fields,
-            )?)])),
-            "revision_id" => Arc::new(StringArray::from(vec![Some(row.revision_id.clone())])),
-            "parent_revision_id" => {
-                Arc::new(StringArray::from(vec![row.parent_revision_id.clone()]))
+            "fields" => {
+                let struct_fields = struct_fields_from_field(field.as_ref())?;
+                struct_array_from_fields(class_def, &row.fields, &struct_fields)?
             }
-            "attachments" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.attachments,
-            )?)])),
-            "integrity" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.integrity,
-            )?)])),
+            "attachments" => list_attachments_array_from_values(&row.attachments, field.as_ref())?,
+            "integrity" => {
+                let struct_fields = struct_fields_from_field(field.as_ref())?;
+                struct_array_from_integrity(&row.integrity, &struct_fields)?
+            }
             "deleted" => Arc::new(BooleanArray::from(vec![Some(row.deleted)])),
             "deleted_at" => Arc::new(TimestampMicrosecondArray::from(vec![row
                 .deleted_at
                 .map(to_timestamp_micros)])),
-            "author" => Arc::new(StringArray::from(vec![Some(row.author.clone())])),
             other => {
                 return Err(anyhow!("Unexpected column in notes schema: {}", other));
             }
@@ -758,6 +1065,7 @@ fn note_row_to_record_batch(
 
 fn revision_row_to_record_batch(
     row: &RevisionRow,
+    class_def: &Value,
     table_schema: &iceberg::spec::Schema,
 ) -> Result<RecordBatch> {
     let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
@@ -774,15 +1082,17 @@ fn revision_row_to_record_batch(
                 to_timestamp_micros(row.timestamp),
             )])),
             "author" => Arc::new(StringArray::from(vec![Some(row.author.clone())])),
-            "fields" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.fields,
-            )?)])),
+            "fields" => {
+                let struct_fields = struct_fields_from_field(field.as_ref())?;
+                struct_array_from_fields(class_def, &row.fields, &struct_fields)?
+            }
             "markdown_checksum" => {
                 Arc::new(StringArray::from(vec![Some(row.markdown_checksum.clone())]))
             }
-            "integrity" => Arc::new(StringArray::from(vec![Some(serde_json::to_string(
-                &row.integrity,
-            )?)])),
+            "integrity" => {
+                let struct_fields = struct_fields_from_field(field.as_ref())?;
+                struct_array_from_integrity(&row.integrity, &struct_fields)?
+            }
             "restored_from" => Arc::new(StringArray::from(vec![row.restored_from.clone()])),
             other => {
                 return Err(anyhow!("Unexpected column in revisions schema: {}", other));
@@ -826,8 +1136,9 @@ async fn append_note_row_to_table(
     catalog: &MemoryCatalog,
     table: &iceberg::table::Table,
     row: &NoteRow,
+    class_def: &Value,
 ) -> Result<()> {
-    let batch = note_row_to_record_batch(row, table.metadata().current_schema())?;
+    let batch = note_row_to_record_batch(row, class_def, table.metadata().current_schema())?;
     let data_file = write_record_batch(table, batch).await?;
     let tx = Transaction::new(table);
     let action = tx.fast_append().add_data_files(vec![data_file]);
@@ -840,8 +1151,9 @@ async fn append_revision_row_to_table(
     catalog: &MemoryCatalog,
     table: &iceberg::table::Table,
     row: &RevisionRow,
+    class_def: &Value,
 ) -> Result<()> {
-    let batch = revision_row_to_record_batch(row, table.metadata().current_schema())?;
+    let batch = revision_row_to_record_batch(row, class_def, table.metadata().current_schema())?;
     let data_file = write_record_batch(table, batch).await?;
     let tx = Transaction::new(table);
     let action = tx.fast_append().add_data_files(vec![data_file]);
@@ -872,9 +1184,10 @@ pub(crate) async fn read_note_row(
     class_name: &str,
     note_id: &str,
 ) -> Result<NoteRow> {
+    let class_def = class::read_class_definition(op, ws_path, class_name).await?;
     let (_, table) = iceberg_store::load_notes_table(op, ws_path, class_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = note_rows_from_batches(&batches)?;
+    let rows = note_rows_from_batches(&batches, &class_def, class_name)?;
     let mut selected: Option<NoteRow> = None;
     for row in rows {
         if row.note_id != note_id {
@@ -888,7 +1201,19 @@ pub(crate) async fn read_note_row(
             selected = Some(row);
         }
     }
-    selected.ok_or_else(|| anyhow!("Note not found: {}", note_id))
+    let mut selected = selected.ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    if let Some(latest) =
+        latest_revision_for_note(op, ws_path, class_name, &class_def, note_id).await?
+    {
+        selected.revision_id = latest.revision_id;
+        selected.parent_revision_id = latest.parent_revision_id;
+        selected.author = latest.author;
+        if selected.integrity.checksum.is_empty() {
+            selected.integrity = latest.integrity;
+        }
+    }
+
+    Ok(selected)
 }
 
 pub(crate) async fn write_note_row(
@@ -901,16 +1226,18 @@ pub(crate) async fn write_note_row(
     let _ = note_id;
     let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
         iceberg_store::load_notes_table(op, ws_path, class_name).await?;
-    append_note_row_to_table(catalog.as_ref(), &table, row).await
+    let class_def = class::read_class_definition(op, ws_path, class_name).await?;
+    append_note_row_to_table(catalog.as_ref(), &table, row, &class_def).await
 }
 
 pub(crate) async fn list_note_rows(op: &Operator, ws_path: &str) -> Result<Vec<(String, NoteRow)>> {
     let mut latest: std::collections::HashMap<String, (String, NoteRow)> =
         std::collections::HashMap::new();
     for class_name in list_class_names(op, ws_path).await? {
+        let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
         let (_, table) = iceberg_store::load_notes_table(op, ws_path, &class_name).await?;
         let batches = scan_table_batches(&table).await?;
-        let rows = note_rows_from_batches(&batches)?;
+        let rows = note_rows_from_batches(&batches, &class_def, &class_name)?;
         for row in rows {
             let entry = latest.get(&row.note_id);
             let should_replace = match entry {
@@ -923,6 +1250,52 @@ pub(crate) async fn list_note_rows(op: &Operator, ws_path: &str) -> Result<Vec<(
         }
     }
     Ok(latest.into_values().collect())
+}
+
+pub(crate) async fn list_class_note_rows(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    class_def: &Value,
+) -> Result<Vec<NoteRow>> {
+    let (_, table) = iceberg_store::load_notes_table(op, ws_path, class_name).await?;
+    let batches = scan_table_batches(&table).await?;
+    let rows = note_rows_from_batches(&batches, class_def, class_name)?;
+    let mut latest: std::collections::HashMap<String, NoteRow> = std::collections::HashMap::new();
+    for row in rows {
+        let entry = latest.get(&row.note_id);
+        let should_replace = match entry {
+            Some(existing) => row.updated_at >= existing.updated_at,
+            None => true,
+        };
+        if should_replace {
+            latest.insert(row.note_id.clone(), row);
+        }
+    }
+    Ok(latest.into_values().collect())
+}
+
+pub(crate) async fn list_class_revision_rows(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    class_def: &Value,
+) -> Result<Vec<RevisionRow>> {
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, class_name).await?;
+    let batches = scan_table_batches(&table).await?;
+    revision_rows_from_batches(&batches, class_def)
+}
+
+pub(crate) async fn append_revision_row_for_class(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+    row: &RevisionRow,
+    class_def: &Value,
+) -> Result<()> {
+    let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
+        iceberg_store::load_revisions_table(op, ws_path, class_name).await?;
+    append_revision_row_to_table(catalog.as_ref(), &table, row, class_def).await
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {
@@ -1036,7 +1409,7 @@ pub async fn create_note<I: IntegrityProvider>(
     };
     let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
         iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision).await?;
+    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &class_def).await?;
 
     let ws_id = ws_path
         .trim_end_matches('/')
@@ -1259,7 +1632,7 @@ pub async fn update_note<I: IntegrityProvider>(
     };
     let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
         iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision).await?;
+    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &class_def).await?;
 
     get_note(op, ws_path, note_id).await
 }
@@ -1294,9 +1667,10 @@ pub async fn get_note_history(op: &Operator, ws_path: &str, note_id: &str) -> Re
     let class_name = find_note_class(op, ws_path, note_id)
         .await?
         .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
     let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches)?;
+    let rows = revision_rows_from_batches(&batches, &class_def)?;
 
     let mut revisions = rows
         .into_iter()
@@ -1332,9 +1706,10 @@ pub async fn get_note_revision(
     let class_name = find_note_class(op, ws_path, note_id)
         .await?
         .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
+    let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
     let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches)?;
+    let rows = revision_rows_from_batches(&batches, &class_def)?;
     let revision = rows
         .into_iter()
         .find(|rev| rev.note_id == note_id && rev.revision_id == revision_id);
@@ -1359,7 +1734,7 @@ pub async fn restore_note<I: IntegrityProvider>(
     let (_, revisions_table) =
         iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
     let batches = scan_table_batches(&revisions_table).await?;
-    let revisions = revision_rows_from_batches(&batches)?;
+    let revisions = revision_rows_from_batches(&batches, &class_def)?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.note_id == note_id && rev.revision_id == revision_id)
@@ -1407,7 +1782,13 @@ pub async fn restore_note<I: IntegrityProvider>(
     };
     let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
         iceberg_store::load_revisions_table(op, ws_path, &class_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &restore_revision).await?;
+    append_revision_row_to_table(
+        rev_catalog.as_ref(),
+        &rev_table,
+        &restore_revision,
+        &class_def,
+    )
+    .await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,
