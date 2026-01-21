@@ -21,14 +21,14 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 **Objective**: Replace note storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
 
 ### Key Tasks
-- [ ] Define Iceberg table layout and schema per Class. Revision history is described as Iceberg snapshots so no need to store separately
-- [ ] Define `classes/` as the Iceberg-managed root and document ownership rules.
-- [ ] Standardize Class name → Iceberg table name mapping (no class_id directories).
-- [ ] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
-- [ ] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
-- [ ] Enforce “Class-defined H2 only” validation in `ieapp-core`.
-- [ ] Keep backend and frontend API contracts unchanged.
-- [ ] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
+- [x] Define Iceberg table layout and schema per Class (notes + revisions tables).
+- [x] Define `classes/` as the Iceberg-managed root and document ownership rules.
+- [x] Standardize Class name → Iceberg table name mapping (no class_id directories).
+- [x] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
+- [x] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
+- [x] Enforce “Class-defined H2 only” validation in `ieapp-core`.
+- [x] Keep backend and frontend API contracts unchanged.
+- [x] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
 
 ### Legacy → TOBE (directory-structure) Delta
 - **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
@@ -40,9 +40,9 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 - **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
 ### Acceptance Criteria
-- [ ] Notes are stored in Iceberg tables per Class.
-- [ ] Notes can be read back with identical Markdown content (current UI behavior preserved).
-- [ ] Non-Class H2 sections are rejected by `ieapp-core`.
+- [x] Notes are stored in Iceberg tables per Class.
+- [x] Notes can be read back with identical Markdown content (current UI behavior preserved).
+- [x] Non-Class H2 sections are rejected by `ieapp-core`.
 
 ---
 

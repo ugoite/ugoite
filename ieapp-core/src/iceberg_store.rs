@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Result};
+use futures::TryStreamExt;
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{ListType, NestedField, Schema, StructType, Type, UnboundPartitionSpec};
 use iceberg::spec::{PrimitiveType, SortOrder};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, TableCreation, TableIdent};
-use opendal::Operator;
+use opendal::{options, Operator};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 const NOTES_TABLE_NAME: &str = "notes";
@@ -15,9 +16,40 @@ const CLASS_DEF_PROP: &str = "ieapp.class_definition";
 const CLASS_VERSION_PROP: &str = "ieapp.class_version";
 
 static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
+static CLASS_REGISTRY: OnceLock<Mutex<HashMap<String, HashSet<String>>>> = OnceLock::new();
 
 fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
     CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn class_registry() -> &'static Mutex<HashMap<String, HashSet<String>>> {
+    CLASS_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn registry_key(op: &Operator, ws_path: &str) -> String {
+    format!(
+        "{}|{}|{}",
+        op.info().scheme(),
+        op.info().root(),
+        ws_path.trim_end_matches('/')
+    )
+}
+
+fn register_class_name(op: &Operator, ws_path: &str, class_name: &str) {
+    let key = registry_key(op, ws_path);
+    if let Ok(mut registry) = class_registry().lock() {
+        let entry = registry.entry(key.to_string()).or_default();
+        entry.insert(class_name.to_string());
+    }
+}
+
+fn unregister_class_name(op: &Operator, ws_path: &str, class_name: &str) {
+    let key = registry_key(op, ws_path);
+    if let Ok(mut registry) = class_registry().lock() {
+        if let Some(names) = registry.get_mut(&key) {
+            names.remove(class_name);
+        }
+    }
 }
 
 fn scheme_to_uri_prefix(scheme: &str) -> &'static str {
@@ -50,20 +82,134 @@ fn warehouse_uri(op: &Operator, ws_path: &str) -> Result<String> {
     Ok(format!("{}{}{}", prefix, warehouse_path, "/classes"))
 }
 
+fn table_location(warehouse: &str, class_name: &str, table_name: &str) -> String {
+    format!(
+        "{}/{}/{}",
+        warehouse.trim_end_matches('/'),
+        class_name,
+        table_name
+    )
+}
+
+fn metadata_location(
+    warehouse: &str,
+    class_name: &str,
+    table_name: &str,
+    file_name: &str,
+) -> String {
+    format!(
+        "{}/metadata/{}",
+        table_location(warehouse, class_name, table_name),
+        file_name
+    )
+}
+
+fn parse_metadata_version(file_name: &str) -> Option<i32> {
+    let file_name = file_name.split('/').next_back()?;
+    let base = file_name.strip_suffix(".metadata.json")?;
+    let (version, _) = base.split_once('-')?;
+    version.parse::<i32>().ok()
+}
+
+async fn latest_metadata_file(op: &Operator, metadata_path: &str) -> Result<Option<String>> {
+    let mut lister = match op
+        .lister_options(
+            metadata_path,
+            options::ListOptions {
+                recursive: true,
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(lister) => lister,
+        Err(_) => return Ok(None),
+    };
+    let mut latest: Option<(i32, String)> = None;
+
+    while let Some(entry) = lister.try_next().await? {
+        let name = entry.path();
+        let Some(version) = parse_metadata_version(name) else {
+            continue;
+        };
+        let file_name = name.split('/').next_back().unwrap_or("").to_string();
+        if file_name.is_empty() {
+            continue;
+        }
+        let replace = match latest {
+            Some((current, _)) => version > current,
+            None => true,
+        };
+        if replace {
+            latest = Some((version, file_name));
+        }
+    }
+
+    Ok(latest.map(|(_, name)| name))
+}
+
+async fn list_class_dirs(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
+    Ok(Vec::new())
+}
+
+async fn register_existing_tables(
+    op: &Operator,
+    ws_path: &str,
+    catalog: &MemoryCatalog,
+) -> Result<()> {
+    let class_names = list_class_dirs(op, ws_path).await?;
+    if class_names.is_empty() {
+        return Ok(());
+    }
+
+    let warehouse = warehouse_uri(op, ws_path)?;
+    for class_name in class_names {
+        let namespace = class_namespace(&class_name);
+        if !catalog.namespace_exists(&namespace).await? {
+            catalog.create_namespace(&namespace, HashMap::new()).await?;
+        }
+
+        for table_name in [NOTES_TABLE_NAME, REVISIONS_TABLE_NAME] {
+            let table_ident = TableIdent::new(namespace.clone(), table_name.to_string());
+            if catalog.table_exists(&table_ident).await? {
+                continue;
+            }
+
+            let metadata_path = format!(
+                "{}/classes/{}/{}/metadata/",
+                ws_path.trim_end_matches('/'),
+                class_name,
+                table_name
+            );
+            let Some(latest) = latest_metadata_file(op, &metadata_path).await? else {
+                continue;
+            };
+            let metadata_location = metadata_location(&warehouse, &class_name, table_name, &latest);
+            catalog
+                .register_table(&table_ident, metadata_location)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
 async fn catalog_for_workspace(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCatalog>> {
     let warehouse = warehouse_uri(op, ws_path)?;
-    {
+    if let Some(cached) = {
         let cache = catalog_cache()
             .lock()
             .map_err(|_| anyhow!("catalog cache lock poisoned"))?;
-        if let Some(catalog) = cache.get(&warehouse) {
-            return Ok(Arc::clone(catalog));
-        }
+        cache.get(&warehouse).cloned()
+    } {
+        register_existing_tables(op, ws_path, cached.as_ref()).await?;
+        return Ok(cached);
     }
 
     let mut props = HashMap::new();
     props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
     let catalog: MemoryCatalog = MemoryCatalogBuilder::default().load("ieapp", props).await?;
+    register_existing_tables(op, ws_path, &catalog).await?;
     let catalog = Arc::new(catalog);
     let mut cache = catalog_cache()
         .lock()
@@ -520,6 +666,7 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
         tx.commit(catalog.as_ref()).await?;
     }
 
+    register_class_name(op, ws_path, class_name);
     Ok(())
 }
 
@@ -579,16 +726,22 @@ pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -
         catalog.drop_table(&revisions_ident).await?;
     }
 
+    unregister_class_name(op, ws_path, class_name);
+
     Ok(())
 }
 
 pub async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespaces: Vec<NamespaceIdent> = catalog.list_namespaces(None).await?;
-    Ok(namespaces
-        .into_iter()
-        .map(|ns: NamespaceIdent| ns.to_string())
-        .collect())
+    if let Ok(registry) = class_registry().lock() {
+        let key = registry_key(op, ws_path);
+        if let Some(names) = registry.get(&key) {
+            if !names.is_empty() {
+                return Ok(names.iter().cloned().collect());
+            }
+        }
+    }
+
+    list_class_dirs(op, ws_path).await
 }
 
 pub async fn load_class_definition(

@@ -35,6 +35,7 @@ def test_create_and_get_class(workspace_id: str) -> None:
         },
         "defaults": None,
     }
+    expected_template = "# Meeting\n\n## Attendees\n\n## Date\n\n"
 
     # Create Class
     response = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
@@ -44,7 +45,10 @@ def test_create_and_get_class(workspace_id: str) -> None:
     # Get Class
     response = client.get(f"/workspaces/{workspace_id}/classes/{class_name}")
     assert response.status_code == 200
-    assert response.json() == class_def
+    payload = response.json()
+    assert payload["name"] == class_name
+    assert payload["fields"] == class_def["fields"]
+    assert payload["template"] == expected_template
 
     # List Classes
     response = client.get(f"/workspaces/{workspace_id}/classes")

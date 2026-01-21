@@ -4,14 +4,14 @@ use crate::note;
 use anyhow::{Context, Result};
 use opendal::Operator;
 use regex::Regex;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 
 pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let mut classes = Vec::new();
     for class_name in list_class_names(op, ws_path).await? {
         if let Ok(value) = read_class_definition(op, ws_path, &class_name).await {
-            classes.push(value);
+            classes.push(enrich_class_definition(&value)?);
         }
     }
     Ok(classes)
@@ -28,14 +28,13 @@ pub async fn list_column_types() -> Result<Vec<String>> {
 }
 
 pub async fn get_class(op: &Operator, ws_path: &str, class_name: &str) -> Result<Value> {
-    read_class_definition(op, ws_path, class_name).await
+    let class_def = read_class_definition(op, ws_path, class_name).await?;
+    enrich_class_definition(&class_def)
 }
 
 pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Result<()> {
-    class_def["name"]
-        .as_str()
-        .context("Class definition missing 'name' field")?;
-    let class_name = class_def
+    let normalized = normalize_class_definition(class_def)?;
+    let class_name = normalized
         .get("name")
         .and_then(|v| v.as_str())
         .context("Class definition missing 'name' field")?;
@@ -43,14 +42,14 @@ pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Re
         .await
         .ok();
     if let Some(existing_def) = existing {
-        let fields_changed = existing_def.get("fields") != class_def.get("fields");
+        let fields_changed = existing_def.get("fields") != normalized.get("fields");
         if fields_changed {
-            rebuild_class_tables(op, ws_path, class_name, &existing_def, class_def).await?;
+            rebuild_class_tables(op, ws_path, class_name, &existing_def, &normalized).await?;
             return Ok(());
         }
     }
 
-    iceberg_store::ensure_class_tables(op, ws_path, class_def).await?;
+    iceberg_store::ensure_class_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
 
@@ -61,8 +60,9 @@ pub async fn migrate_class<I: IntegrityProvider>(
     strategies: Option<Value>,
     integrity: &I,
 ) -> Result<usize> {
-    let class_name = class_def["name"].as_str().context("Class name required")?;
-    upsert_class(op, ws_path, class_def).await?;
+    let normalized = normalize_class_definition(class_def)?;
+    let class_name = normalized["name"].as_str().context("Class name required")?;
+    upsert_class(op, ws_path, &normalized).await?;
 
     let strategies = match strategies {
         Some(value) => value,
@@ -127,6 +127,77 @@ pub(crate) async fn read_class_definition(
     iceberg_store::load_class_definition(op, ws_path, class_name)
         .await
         .context(format!("Class {} not found", class_name))
+}
+
+fn normalize_class_definition(class_def: &Value) -> Result<Value> {
+    let name = class_def
+        .get("name")
+        .and_then(|v| v.as_str())
+        .context("Class definition missing 'name' field")?;
+    let version = class_def
+        .get("version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+    let fields = normalize_class_fields(class_def.get("fields"));
+
+    Ok(serde_json::json!({
+        "name": name,
+        "version": version,
+        "fields": fields,
+    }))
+}
+
+fn normalize_class_fields(fields: Option<&Value>) -> Value {
+    let mut normalized = Map::new();
+
+    match fields {
+        Some(Value::Object(map)) => {
+            for (name, def) in map {
+                normalized.insert(name.clone(), def.clone());
+            }
+        }
+        Some(Value::Array(items)) => {
+            for item in items {
+                let Some(name) = item.get("name").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let mut def = item.clone();
+                if let Some(obj) = def.as_object_mut() {
+                    obj.remove("name");
+                }
+                normalized.insert(name.to_string(), def);
+            }
+        }
+        _ => {}
+    }
+
+    Value::Object(normalized)
+}
+
+fn enrich_class_definition(class_def: &Value) -> Result<Value> {
+    let name = class_def
+        .get("name")
+        .and_then(|v| v.as_str())
+        .context("Class definition missing 'name' field")?;
+    let template = class_template_from_fields(name, class_def.get("fields"));
+
+    let mut enriched = class_def.clone();
+    if let Some(obj) = enriched.as_object_mut() {
+        obj.insert("template".to_string(), Value::String(template));
+    }
+    Ok(enriched)
+}
+
+fn class_template_from_fields(class_name: &str, fields: Option<&Value>) -> String {
+    let mut template = format!("# {}\n\n", class_name);
+    if let Some(Value::Object(map)) = fields {
+        let mut field_names: Vec<&String> = map.keys().collect();
+        field_names.sort();
+        for name in field_names {
+            template.push_str(&format!("## {}\n\n", name));
+        }
+    }
+    template
 }
 
 async fn rebuild_class_tables(
