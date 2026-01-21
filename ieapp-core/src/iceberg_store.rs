@@ -16,40 +16,16 @@ const CLASS_DEF_PROP: &str = "ieapp.class_definition";
 const CLASS_VERSION_PROP: &str = "ieapp.class_version";
 
 static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
-static CLASS_REGISTRY: OnceLock<Mutex<HashMap<String, HashSet<String>>>> = OnceLock::new();
-
 fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
     CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn class_registry() -> &'static Mutex<HashMap<String, HashSet<String>>> {
-    CLASS_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn registry_key(op: &Operator, ws_path: &str) -> String {
-    format!(
-        "{}|{}|{}",
-        op.info().scheme(),
-        op.info().root(),
-        ws_path.trim_end_matches('/')
-    )
-}
-
-fn register_class_name(op: &Operator, ws_path: &str, class_name: &str) {
-    let key = registry_key(op, ws_path);
-    if let Ok(mut registry) = class_registry().lock() {
-        let entry = registry.entry(key.to_string()).or_default();
-        entry.insert(class_name.to_string());
-    }
-}
-
-fn unregister_class_name(op: &Operator, ws_path: &str, class_name: &str) {
-    let key = registry_key(op, ws_path);
-    if let Ok(mut registry) = class_registry().lock() {
-        if let Some(names) = registry.get_mut(&key) {
-            names.remove(class_name);
-        }
-    }
+fn remove_catalog_cache(warehouse: &str) -> Result<()> {
+    let mut cache = catalog_cache()
+        .lock()
+        .map_err(|_| anyhow!("catalog cache lock poisoned"))?;
+    cache.remove(warehouse);
+    Ok(())
 }
 
 fn scheme_to_uri_prefix(scheme: &str) -> &'static str {
@@ -112,6 +88,32 @@ fn parse_metadata_version(file_name: &str) -> Option<i32> {
 }
 
 async fn latest_metadata_file(op: &Operator, metadata_path: &str) -> Result<Option<String>> {
+    let scheme = op.info().scheme();
+    if scheme == "fs" || scheme == "file" {
+        let root = normalize_root(op.info().root().as_str());
+        let fs_path = format!("{}/{}", root, metadata_path.trim_start_matches('/'));
+        if let Ok(entries) = std::fs::read_dir(&fs_path) {
+            let mut latest: Option<(i32, String)> = None;
+            for entry in entries.flatten() {
+                let file_name = match entry.file_name().to_str() {
+                    Some(name) => name.to_string(),
+                    None => continue,
+                };
+                let Some(version) = parse_metadata_version(&file_name) else {
+                    continue;
+                };
+                let replace = match latest {
+                    Some((current, _)) => version > current,
+                    None => true,
+                };
+                if replace {
+                    latest = Some((version, file_name));
+                }
+            }
+            return Ok(latest.map(|(_, name)| name));
+        }
+    }
+
     let mut lister = match op
         .lister_options(
             metadata_path,
@@ -148,8 +150,45 @@ async fn latest_metadata_file(op: &Operator, metadata_path: &str) -> Result<Opti
     Ok(latest.map(|(_, name)| name))
 }
 
-async fn list_class_dirs(_op: &Operator, _ws_path: &str) -> Result<Vec<String>> {
-    Ok(Vec::new())
+async fn list_class_dirs(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let classes_path = format!("{}/classes/", ws_path.trim_end_matches('/'));
+    let mut lister = match op
+        .lister_options(
+            &classes_path,
+            options::ListOptions {
+                recursive: false,
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(lister) => lister,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    let classes_prefix = classes_path.trim_end_matches('/');
+    while let Some(entry) = lister.try_next().await? {
+        if !entry.metadata().is_dir() {
+            continue;
+        }
+        let path = entry.path().trim_end_matches('/');
+        let relative = match path.strip_prefix(classes_prefix) {
+            Some(rest) => rest.trim_start_matches('/'),
+            None => continue,
+        };
+        if relative.is_empty() || relative.contains('/') {
+            continue;
+        }
+        if seen.contains(relative) {
+            continue;
+        }
+        seen.insert(relative.to_string());
+        names.push(relative.to_string());
+    }
+
+    Ok(names)
 }
 
 async fn register_existing_tables(
@@ -166,7 +205,14 @@ async fn register_existing_tables(
     for class_name in class_names {
         let namespace = class_namespace(&class_name);
         if !catalog.namespace_exists(&namespace).await? {
-            catalog.create_namespace(&namespace, HashMap::new()).await?;
+            if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
+                let message = err.to_string();
+                if !message.contains("NamespaceAlreadyExists")
+                    && !message.to_lowercase().contains("already exists")
+                {
+                    return Err(err.into());
+                }
+            }
         }
 
         for table_name in [NOTES_TABLE_NAME, REVISIONS_TABLE_NAME] {
@@ -585,7 +631,14 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
     let namespace = class_namespace(class_name);
 
     if !catalog.namespace_exists(&namespace).await? {
-        catalog.create_namespace(&namespace, HashMap::new()).await?;
+        if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
+            let message = err.to_string();
+            if !message.contains("NamespaceAlreadyExists")
+                && !message.to_lowercase().contains("already exists")
+            {
+                return Err(err.into());
+            }
+        }
     }
 
     let notes_ident = TableIdent::new(namespace.clone(), NOTES_TABLE_NAME.to_string());
@@ -666,7 +719,6 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
         tx.commit(catalog.as_ref()).await?;
     }
 
-    register_class_name(op, ws_path, class_name);
     Ok(())
 }
 
@@ -713,6 +765,63 @@ pub async fn load_revisions_table(
     Ok((catalog, revisions))
 }
 
+pub async fn load_class_schema_fields(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+) -> Result<Option<std::collections::HashSet<String>>> {
+    let metadata_dir = format!(
+        "{}/classes/{}/notes/metadata/",
+        ws_path.trim_end_matches('/'),
+        class_name
+    );
+    let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
+        return Ok(None);
+    };
+    let metadata_path = format!("{}{}", metadata_dir, latest);
+    let bytes = op.read(&metadata_path).await?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+    let schemas = value.get("schemas").and_then(|v| v.as_array());
+    let current_schema_id = value.get("current-schema-id").and_then(|v| v.as_i64());
+    let schema = schemas.and_then(|arr| {
+        if let Some(current_id) = current_schema_id {
+            arr.iter()
+                .find(|schema| schema.get("schema-id").and_then(|v| v.as_i64()) == Some(current_id))
+                .or_else(|| arr.first())
+        } else {
+            arr.first()
+        }
+    });
+    let Some(schema) = schema else {
+        return Ok(None);
+    };
+    let fields = schema.get("fields").and_then(|v| v.as_array());
+    let Some(fields) = fields else {
+        return Ok(None);
+    };
+    for field in fields {
+        if field.get("name").and_then(|v| v.as_str()) == Some("fields") {
+            let struct_fields = field
+                .get("type")
+                .and_then(|v| v.get("fields"))
+                .and_then(|v| v.as_array());
+            let Some(struct_fields) = struct_fields else {
+                return Ok(None);
+            };
+            let names = struct_fields
+                .iter()
+                .filter_map(|f| {
+                    f.get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(Some(names));
+        }
+    }
+    Ok(None)
+}
+
 pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -> Result<()> {
     let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
     let namespace = class_namespace(class_name);
@@ -726,22 +835,41 @@ pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -
         catalog.drop_table(&revisions_ident).await?;
     }
 
-    unregister_class_name(op, ws_path, class_name);
+    let namespace = class_namespace(class_name);
+    if catalog.namespace_exists(&namespace).await? {
+        let _ = catalog.drop_namespace(&namespace).await;
+    }
+
+    let class_root = format!("{}/classes/{}/", ws_path.trim_end_matches('/'), class_name);
+    let scheme = op.info().scheme();
+    if scheme == "fs" || scheme == "file" {
+        let root = normalize_root(op.info().root().as_str());
+        let ws_path = ws_path.trim_start_matches('/');
+        let fs_root = format!("{}/{}/classes/{}", root, ws_path, class_name);
+        let _ = std::fs::remove_dir_all(&fs_root);
+    } else {
+        let _ = op.remove_all(&class_root).await;
+    }
+
+    let warehouse = warehouse_uri(op, ws_path)?;
+    remove_catalog_cache(&warehouse)?;
 
     Ok(())
 }
 
 pub async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    if let Ok(registry) = class_registry().lock() {
-        let key = registry_key(op, ws_path);
-        if let Some(names) = registry.get(&key) {
-            if !names.is_empty() {
-                return Ok(names.iter().cloned().collect());
-            }
+    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
+    let namespaces = catalog.list_namespaces(None).await?;
+    let mut names = Vec::new();
+    for namespace in namespaces {
+        if let Some(first) = namespace.as_ref().first() {
+            names.push(first.clone());
         }
     }
-
-    list_class_dirs(op, ws_path).await
+    if names.is_empty() {
+        return list_class_dirs(op, ws_path).await;
+    }
+    Ok(names)
 }
 
 pub async fn load_class_definition(
@@ -757,4 +885,31 @@ pub async fn load_class_definition(
     };
     let class_def = serde_json::from_str::<Value>(definition)?;
     Ok(class_def)
+}
+
+pub async fn load_class_definition_from_metadata(
+    op: &Operator,
+    ws_path: &str,
+    class_name: &str,
+) -> Result<Option<Value>> {
+    let metadata_dir = format!(
+        "{}/classes/{}/notes/metadata/",
+        ws_path.trim_end_matches('/'),
+        class_name
+    );
+    let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
+        return Ok(None);
+    };
+    let metadata_path = format!("{}{}", metadata_dir, latest);
+    let bytes = op.read(&metadata_path).await?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+    let props = value.get("properties").and_then(|v| v.as_object());
+    let Some(props) = props else {
+        return Ok(None);
+    };
+    let Some(definition) = props.get(CLASS_DEF_PROP).and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+    let class_def = serde_json::from_str::<Value>(definition)?;
+    Ok(Some(class_def))
 }

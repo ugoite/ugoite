@@ -259,7 +259,7 @@ fn section_value_to_string(value: &Value) -> String {
     }
 }
 
-fn render_markdown(
+pub(crate) fn render_markdown(
     title: &str,
     class_name: &str,
     tags: &[String],
@@ -308,6 +308,17 @@ fn sections_from_fields(fields: &Value) -> Value {
         }
     }
     Value::Object(sections)
+}
+
+pub(crate) fn render_markdown_for_class(
+    title: &str,
+    class_name: &str,
+    tags: &[String],
+    fields: &Value,
+    class_def: &Value,
+) -> String {
+    let field_order = class_field_names(class_def);
+    render_markdown(title, class_name, tags, fields, &field_order)
 }
 
 fn class_field_defs(class_def: &Value) -> Vec<(String, String)> {
@@ -1356,9 +1367,18 @@ pub async fn create_note<I: IntegrityProvider>(
     }
 
     let mut fields = Map::new();
-    for field in &class_fields {
-        if let Some(value) = casted.get(field) {
-            fields.insert(field.clone(), value.clone());
+    if let Some(obj) = properties.as_object() {
+        for (key, value) in obj {
+            if class_set.contains(key) {
+                fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    if let Some(obj) = casted.as_object() {
+        for (key, value) in obj {
+            if class_set.contains(key) {
+                fields.insert(key.clone(), value.clone());
+            }
         }
     }
 
@@ -1588,13 +1608,25 @@ pub async fn update_note<I: IntegrityProvider>(
     }
 
     let mut fields = Map::new();
-    for field in &class_fields {
-        if let Some(value) = casted.get(field) {
-            fields.insert(field.clone(), value.clone());
+    if let Some(obj) = properties.as_object() {
+        for (key, value) in obj {
+            if class_set.contains(key) {
+                fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    if let Some(obj) = casted.as_object() {
+        for (key, value) in obj {
+            if class_set.contains(key) {
+                fields.insert(key.clone(), value.clone());
+            }
         }
     }
 
-    let timestamp = now_ts();
+    let mut timestamp = now_ts();
+    if timestamp <= row.updated_at {
+        timestamp = row.updated_at + 0.001;
+    }
     let revision_id = Uuid::new_v4().to_string();
     let checksum = integrity.checksum(content);
     let signature = integrity.signature(content);
@@ -1648,17 +1680,21 @@ pub async fn delete_note(
         .ok_or_else(|| anyhow!("Note not found: {}", note_id))?;
     let mut row = read_note_row(op, ws_path, &class_name, note_id).await?;
 
+    let mut delete_ts = now_ts();
+    if delete_ts <= row.updated_at {
+        delete_ts = row.updated_at + 0.001;
+    }
     if hard_delete {
         row.deleted = true;
-        row.deleted_at = Some(now_ts());
-        row.updated_at = now_ts();
+        row.deleted_at = Some(delete_ts);
+        row.updated_at = delete_ts;
         write_note_row(op, ws_path, &class_name, note_id, &row).await?;
         return Ok(());
     }
 
     row.deleted = true;
-    row.deleted_at = Some(now_ts());
-    row.updated_at = now_ts();
+    row.deleted_at = Some(delete_ts);
+    row.updated_at = delete_ts;
     write_note_row(op, ws_path, &class_name, note_id, &row).await?;
     Ok(())
 }
@@ -1742,7 +1778,10 @@ pub async fn restore_note<I: IntegrityProvider>(
 
     let mut row = read_note_row(op, ws_path, &class_name, note_id).await?;
     let new_rev_id = Uuid::new_v4().to_string();
-    let timestamp = now_ts();
+    let mut timestamp = now_ts();
+    if timestamp <= row.updated_at {
+        timestamp = row.updated_at + 0.001;
+    }
 
     let field_order = class_field_names(&class_def);
     let markdown = render_markdown(
