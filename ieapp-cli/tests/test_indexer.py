@@ -288,7 +288,7 @@ def test_indexer_generates_inverted_index(
     fs_impl: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Ensure inverted index contains term-to-note mappings."""
-    _fs, _root = fs_impl
+    _ = fs_impl
     inverted_index = build_inverted_index(
         {
             "note1": {
