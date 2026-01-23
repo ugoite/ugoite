@@ -10,7 +10,7 @@ import re
 from collections.abc import Awaitable, Callable
 from collections.abc import Awaitable as AwaitableABC
 from pathlib import Path
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast, overload
 
 import fsspec
 from fsspec.core import url_to_fs
@@ -214,6 +214,30 @@ _T = TypeVar("_T")
 # ---------------------------------------------------------------------------
 # ieapp-core bridge helpers
 # ---------------------------------------------------------------------------
+
+
+@overload
+def run_async(
+    awaitable_or_factory: Awaitable[_T],
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _T: ...
+
+
+@overload
+def run_async(
+    awaitable_or_factory: Callable[_P, Awaitable[_T]],
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _T: ...
+
+
+@overload
+def run_async(
+    awaitable_or_factory: Callable[_P, _T],
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _T: ...
 
 
 def run_async(
