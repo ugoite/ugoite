@@ -11,11 +11,12 @@ REQ-IDX-006: Indexing via watch loop.
 import json
 from collections.abc import Callable
 
+import importlib
 import fsspec
 import ieapp_core
 import pytest
 
-import ieapp.indexer as indexer_module
+indexer_module = importlib.import_module("ieapp.indexer")
 from ieapp.indexer import (
     Indexer,
     aggregate_stats,
