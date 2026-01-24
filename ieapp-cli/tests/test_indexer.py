@@ -11,12 +11,11 @@ REQ-IDX-006: Indexing via watch loop.
 import json
 from collections.abc import Callable
 
-import importlib
 import fsspec
 import ieapp_core
 import pytest
 
-indexer_module = importlib.import_module("ieapp.indexer")
+import ieapp.indexer as indexer_module
 from ieapp.indexer import (
     Indexer,
     aggregate_stats,
@@ -289,7 +288,7 @@ def test_indexer_generates_inverted_index(
     fs_impl: tuple[fsspec.AbstractFileSystem, str],
 ) -> None:
     """Ensure inverted index contains term-to-note mappings."""
-    _ = fs_impl
+    _fs, _root = fs_impl
     inverted_index = build_inverted_index(
         {
             "note1": {
