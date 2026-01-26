@@ -1,0 +1,6 @@
+{
+  "extends": ["config:base"],
+  "enabledManagers": ["mise"],
+  "labels": ["dependencies", "mise"],
+  "schedule": ["every weekday"]
+}
