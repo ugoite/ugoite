@@ -87,7 +87,7 @@ def _load_hmac_material_impl(
 
 
 def _write_default_global(
-    fs: fsspec.AbstractFileSystem,  # type: ignore[name-defined]
+    fs: fsspec.AbstractFileSystem,
     root_path: str,
 ) -> None:
     """Write a default global.json with a random HMAC key using fsspec.

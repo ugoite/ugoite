@@ -26,7 +26,7 @@ from ieapp.workspace import create_workspace
 
 
 @pytest.fixture
-def fake_integrity_provider() -> Any:  # type: ignore[override]
+def fake_integrity_provider() -> Any:
     """Create a simple integrity provider for tests."""
 
     class _FakeIntegrityProvider:
