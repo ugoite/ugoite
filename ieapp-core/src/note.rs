@@ -732,6 +732,20 @@ fn canvas_from_struct_array(struct_array: &StructArray, row: usize) -> Value {
     Value::Object(map)
 }
 
+fn canvas_from_array(array: &dyn Array, row: usize) -> Result<Value> {
+    match array.data_type() {
+        DataType::Struct(_) => {
+            let struct_array = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| anyhow!("Invalid canvas struct array"))?;
+            Ok(canvas_from_struct_array(struct_array, row))
+        }
+        DataType::Null => Ok(Value::Object(Map::new())),
+        other => Err(anyhow!("Invalid canvas_position type: {:?}", other)),
+    }
+}
+
 fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> IntegrityPayload {
     if struct_array.is_null(row) {
         return IntegrityPayload::default();
@@ -932,7 +946,9 @@ fn note_rows_from_batches(
         let links = batch
             .column_by_name("links")
             .ok_or_else(|| anyhow!("Missing column: links"))?;
-        let canvas_positions = column_as::<StructArray>(batch, "canvas_position")?;
+        let canvas_positions = batch
+            .column_by_name("canvas_position")
+            .ok_or_else(|| anyhow!("Missing column: canvas_position"))?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
@@ -951,7 +967,7 @@ fn note_rows_from_batches(
             let tags_value = list_strings_from_array(tags.as_ref(), row_idx)?;
             let links_value =
                 list_links_from_array(links.as_ref(), row_idx, note_ids.value(row_idx))?;
-            let canvas_value = canvas_from_struct_array(canvas_positions, row_idx);
+            let canvas_value = canvas_from_array(canvas_positions.as_ref(), row_idx)?;
             let attachments_value = list_attachments_from_array(attachments.as_ref(), row_idx)?;
             let integrity_value = integrity_from_struct_array(integrity, row_idx);
 
