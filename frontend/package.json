@@ -22,7 +22,7 @@
 		"@tailwindcss/vite": "^4.1.18",
 		"@testing-library/dom": "^10.4.0",
 		"@testing-library/jest-dom": "^6.6.3",
-		"baseline-browser-mapping": "^2.9.17",
+		"baseline-browser-mapping": "^2.9.18",
 		"browserslist": "^4.28.1",
 		"jsdom": "^27.4.0",
 		"msw": "^2.7.0",
