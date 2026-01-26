@@ -931,6 +931,24 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
     Value::Object(map)
 }
 
+fn value_from_array(array: &dyn Array, row: usize, class_def: &Value) -> Result<Value> {
+    match array.data_type() {
+        DataType::Struct(_) => {
+            let struct_array = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| anyhow!("Invalid fields struct array"))?;
+            if struct_array.is_null(row) {
+                Ok(Value::Object(Map::new()))
+            } else {
+                Ok(value_from_struct_array(struct_array, row, class_def))
+            }
+        }
+        DataType::Null => Ok(Value::Object(Map::new())),
+        other => Err(anyhow!("Invalid fields type: {:?}", other)),
+    }
+}
+
 fn note_rows_from_batches(
     batches: &[RecordBatch],
     class_def: &Value,
@@ -951,7 +969,9 @@ fn note_rows_from_batches(
             .ok_or_else(|| anyhow!("Missing column: canvas_position"))?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
-        let fields = column_as::<StructArray>(batch, "fields")?;
+        let fields = batch
+            .column_by_name("fields")
+            .ok_or_else(|| anyhow!("Missing column: fields"))?;
         let attachments = batch
             .column_by_name("attachments")
             .ok_or_else(|| anyhow!("Missing column: attachments"))?;
@@ -970,12 +990,7 @@ fn note_rows_from_batches(
             let canvas_value = canvas_from_array(canvas_positions.as_ref(), row_idx)?;
             let attachments_value = list_attachments_from_array(attachments.as_ref(), row_idx)?;
             let integrity_value = integrity_from_struct_array(integrity, row_idx);
-
-            let fields_value = if fields.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                value_from_struct_array(fields, row_idx, class_def)
-            };
+            let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
                 None
@@ -1029,7 +1044,9 @@ fn revision_rows_from_batches(
         let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
         let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
         let authors = column_as::<StringArray>(batch, "author")?;
-        let fields = column_as::<StructArray>(batch, "fields")?;
+        let fields = batch
+            .column_by_name("fields")
+            .ok_or_else(|| anyhow!("Missing column: fields"))?;
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
@@ -1040,12 +1057,7 @@ fn revision_rows_from_batches(
             }
 
             let integrity_value = integrity_from_struct_array(integrity, row_idx);
-
-            let fields_value = if fields.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                value_from_struct_array(fields, row_idx, class_def)
-            };
+            let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
 
             rows.push(RevisionRow {
                 revision_id: revision_ids.value(row_idx).to_string(),
