@@ -6,8 +6,8 @@ use crate::link::Link;
 use anyhow::{anyhow, Result};
 use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Float64Array, ListArray, RecordBatch, StringArray,
-    StructArray, TimestampMicrosecondArray,
+    Array, ArrayRef, BooleanArray, Date32Array, Float64Array, LargeListArray, LargeStringArray,
+    ListArray, RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow_schema::{DataType, Fields};
 use chrono::Utc;
@@ -523,28 +523,65 @@ fn struct_array_from_integrity(
     Ok(Arc::new(struct_array))
 }
 
-fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
-    if list_array.is_null(row) {
-        return Vec::new();
+fn list_values_from_array(list_array: &dyn Array, row: usize) -> Result<Option<ArrayRef>> {
+    match list_array.data_type() {
+        DataType::List(_) => {
+            let list_array = list_array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| anyhow!("Invalid list array"))?;
+            if list_array.is_null(row) {
+                Ok(None)
+            } else {
+                Ok(Some(list_array.value(row)))
+            }
+        }
+        DataType::LargeList(_) => {
+            let list_array = list_array
+                .as_any()
+                .downcast_ref::<LargeListArray>()
+                .ok_or_else(|| anyhow!("Invalid large list array"))?;
+            if list_array.is_null(row) {
+                Ok(None)
+            } else {
+                Ok(Some(list_array.value(row)))
+            }
+        }
+        other => Err(anyhow!("Invalid list type: {:?}", other)),
     }
-    let values = list_array.value(row);
-    let values = values.as_any().downcast_ref::<StringArray>().map(|array| {
+}
+
+fn list_strings_from_array(list_array: &dyn Array, row: usize) -> Result<Vec<String>> {
+    let values = match list_values_from_array(list_array, row)? {
+        Some(values) => values,
+        None => return Ok(Vec::new()),
+    };
+    if let Some(array) = values.as_any().downcast_ref::<StringArray>() {
         let mut items = Vec::new();
         for i in 0..array.len() {
             if !array.is_null(i) {
                 items.push(array.value(i).to_string());
             }
         }
-        items
-    });
-    values.unwrap_or_default()
+        Ok(items)
+    } else if let Some(array) = values.as_any().downcast_ref::<LargeStringArray>() {
+        let mut items = Vec::new();
+        for i in 0..array.len() {
+            if !array.is_null(i) {
+                items.push(array.value(i).to_string());
+            }
+        }
+        Ok(items)
+    } else {
+        Err(anyhow!("Invalid list string array"))
+    }
 }
 
-fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
-    if list_array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = list_array.value(row);
+fn list_links_from_array(list_array: &dyn Array, row: usize, source: &str) -> Result<Vec<Link>> {
+    let values = match list_values_from_array(list_array, row)? {
+        Some(values) => values,
+        None => return Ok(Vec::new()),
+    };
     let struct_array = values
         .as_any()
         .downcast_ref::<StructArray>()
@@ -603,11 +640,11 @@ fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Re
     Ok(links)
 }
 
-fn list_attachments_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
-    if list_array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = list_array.value(row);
+fn list_attachments_from_array(list_array: &dyn Array, row: usize) -> Result<Vec<Value>> {
+    let values = match list_values_from_array(list_array, row)? {
+        Some(values) => values,
+        None => return Ok(Vec::new()),
+    };
     let struct_array = values
         .as_any()
         .downcast_ref::<StructArray>()
@@ -889,13 +926,19 @@ fn note_rows_from_batches(
     for batch in batches {
         let note_ids = column_as::<StringArray>(batch, "note_id")?;
         let titles = column_as::<StringArray>(batch, "title")?;
-        let tags = column_as::<ListArray>(batch, "tags")?;
-        let links = column_as::<ListArray>(batch, "links")?;
+        let tags = batch
+            .column_by_name("tags")
+            .ok_or_else(|| anyhow!("Missing column: tags"))?;
+        let links = batch
+            .column_by_name("links")
+            .ok_or_else(|| anyhow!("Missing column: links"))?;
         let canvas_positions = column_as::<StructArray>(batch, "canvas_position")?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
-        let attachments = column_as::<ListArray>(batch, "attachments")?;
+        let attachments = batch
+            .column_by_name("attachments")
+            .ok_or_else(|| anyhow!("Missing column: attachments"))?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
         let deleted_at = column_as::<TimestampMicrosecondArray>(batch, "deleted_at")?;
@@ -905,10 +948,11 @@ fn note_rows_from_batches(
                 continue;
             }
 
-            let tags_value = list_strings_from_array(tags, row_idx);
-            let links_value = list_links_from_array(links, row_idx, note_ids.value(row_idx))?;
+            let tags_value = list_strings_from_array(tags.as_ref(), row_idx)?;
+            let links_value =
+                list_links_from_array(links.as_ref(), row_idx, note_ids.value(row_idx))?;
             let canvas_value = canvas_from_struct_array(canvas_positions, row_idx);
-            let attachments_value = list_attachments_from_array(attachments, row_idx)?;
+            let attachments_value = list_attachments_from_array(attachments.as_ref(), row_idx)?;
             let integrity_value = integrity_from_struct_array(integrity, row_idx);
 
             let fields_value = if fields.is_null(row_idx) {
