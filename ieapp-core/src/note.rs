@@ -778,6 +778,20 @@ fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> Integr
     }
 }
 
+fn integrity_from_array(array: &dyn Array, row: usize) -> Result<IntegrityPayload> {
+    match array.data_type() {
+        DataType::Struct(_) => {
+            let struct_array = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| anyhow!("Invalid integrity struct array"))?;
+            Ok(integrity_from_struct_array(struct_array, row))
+        }
+        DataType::Null => Ok(IntegrityPayload::default()),
+        other => Err(anyhow!("Invalid integrity type: {:?}", other)),
+    }
+}
+
 fn struct_array_from_fields(
     class_def: &Value,
     fields_value: &Value,
@@ -975,7 +989,9 @@ fn note_rows_from_batches(
         let attachments = batch
             .column_by_name("attachments")
             .ok_or_else(|| anyhow!("Missing column: attachments"))?;
-        let integrity = column_as::<StructArray>(batch, "integrity")?;
+        let integrity = batch
+            .column_by_name("integrity")
+            .ok_or_else(|| anyhow!("Missing column: integrity"))?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
         let deleted_at = column_as::<TimestampMicrosecondArray>(batch, "deleted_at")?;
 
@@ -989,7 +1005,7 @@ fn note_rows_from_batches(
                 list_links_from_array(links.as_ref(), row_idx, note_ids.value(row_idx))?;
             let canvas_value = canvas_from_array(canvas_positions.as_ref(), row_idx)?;
             let attachments_value = list_attachments_from_array(attachments.as_ref(), row_idx)?;
-            let integrity_value = integrity_from_struct_array(integrity, row_idx);
+            let integrity_value = integrity_from_array(integrity.as_ref(), row_idx)?;
             let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
@@ -1048,7 +1064,9 @@ fn revision_rows_from_batches(
             .column_by_name("fields")
             .ok_or_else(|| anyhow!("Missing column: fields"))?;
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
-        let integrity = column_as::<StructArray>(batch, "integrity")?;
+        let integrity = batch
+            .column_by_name("integrity")
+            .ok_or_else(|| anyhow!("Missing column: integrity"))?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
 
         for row_idx in 0..batch.num_rows() {
@@ -1056,7 +1074,7 @@ fn revision_rows_from_batches(
                 continue;
             }
 
-            let integrity_value = integrity_from_struct_array(integrity, row_idx);
+            let integrity_value = integrity_from_array(integrity.as_ref(), row_idx)?;
             let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
 
             rows.push(RevisionRow {
