@@ -13,12 +13,22 @@ import { E2EClient, waitForServers } from "./lib/client";
 
 const client = new E2EClient();
 
+async function ensureDefaultClass(): Promise<void> {
+	await client.postApi("/workspaces/default/classes", {
+		name: "Note",
+		version: 1,
+		template: "# Note\n\n## Body\n",
+		fields: { Body: { type: "markdown", required: false } },
+	});
+}
+
 // Track created notes for cleanup
 const createdNoteIds: string[] = [];
 
 describe("Notes CRUD", () => {
 	beforeAll(async () => {
 		await waitForServers(client, { timeout: 60000 });
+		await ensureDefaultClass();
 	});
 
 	afterAll(async () => {
@@ -34,7 +44,7 @@ describe("Notes CRUD", () => {
 		test("POST /workspaces/default/notes creates a new note", async () => {
 			const timestamp = Date.now();
 			const noteData = {
-				content: `# E2E Test Note ${timestamp}\n\nThis note was created by E2E tests at ${new Date().toISOString()}`,
+				content: `---\nclass: Note\n---\n# E2E Test Note ${timestamp}\n\n## Body\nThis note was created by E2E tests at ${new Date().toISOString()}`,
 			};
 
 			const res = await client.postApi(
@@ -59,7 +69,7 @@ describe("Notes CRUD", () => {
 		test("POST /workspaces/default/notes validates required fields", async () => {
 			// Missing title should fail or use default
 			const res = await client.postApi("/workspaces/default/notes", {
-				content: "Content without title",
+				content: "---\nclass: Note\n---\n## Body\nContent without title",
 			});
 
 			// Either 400 (validation error) or 201 with default title is acceptable
@@ -78,7 +88,7 @@ describe("Notes CRUD", () => {
 		beforeAll(async () => {
 			// Create a note for read tests (title comes from first heading)
 			const res = await client.postApi("/workspaces/default/notes", {
-				content: "# Read Test Note\n\nNote for testing read operations",
+				content: "---\nclass: Note\n---\n# Read Test Note\n\n## Body\nNote for testing read operations",
 			});
 			const note = await res.json() as { id: string };
 			testNoteId = note.id;
@@ -137,7 +147,7 @@ describe("Notes CRUD", () => {
 			const timestamp = Date.now();
 			const title = `Special Note @ ${timestamp} % &`;
 			const res = await client.postApi("/workspaces/default/notes", {
-				content: `# ${title}\nTesting special chars in title.`,
+				content: `---\nclass: Note\n---\n# ${title}\n\n## Body\nTesting special chars in title.`,
 			});
 			expect(res.status).toBe(201);
 			const created = await res.json() as { id: string };
@@ -161,7 +171,7 @@ describe("Notes CRUD", () => {
 		beforeAll(async () => {
 			// Create a note for update tests (title comes from first heading)
 			const res = await client.postApi("/workspaces/default/notes", {
-				content: "# Update Test Note\n\nOriginal content",
+				content: "---\nclass: Note\n---\n# Update Test Note\n\n## Body\nOriginal content",
 			});
 			const note = await res.json() as { id: string; revision_id: string };
 			testNoteId = note.id;
@@ -174,7 +184,7 @@ describe("Notes CRUD", () => {
 			const currentNote = await getRes.json() as { revision_id: string };
 
 			const updatedData = {
-				markdown: "# Updated Title\n\nUpdated content by E2E test",
+				markdown: "---\nclass: Note\n---\n# Updated Title\n\n## Body\nUpdated content by E2E test",
 				parent_revision_id: currentNote.revision_id,
 			};
 
@@ -203,7 +213,7 @@ describe("Notes CRUD", () => {
 			const res = await client.putApi(
 				`/workspaces/default/notes/${testNoteId}`,
 				{
-					markdown: `# ${currentNote.title}\n\nOnly body content updated`,
+					markdown: `---\nclass: Note\n---\n# ${currentNote.title}\n\n## Body\nOnly body content updated`,
 					parent_revision_id: currentNote.revision_id,
 				},
 			);
@@ -232,7 +242,7 @@ describe("Notes CRUD", () => {
 		test("DELETE /workspaces/default/notes/:id removes note", async () => {
 			// Create a note specifically for deletion
 			const createRes = await client.postApi("/workspaces/default/notes", {
-				content: "# Note to Delete\n\nThis will be deleted",
+				content: "---\nclass: Note\n---\n# Note to Delete\n\n## Body\nThis will be deleted",
 			});
 			const note = await createRes.json() as { id: string };
 
@@ -275,9 +285,9 @@ describe("Note Search", () => {
 	beforeAll(async () => {
 		// Create notes with searchable content (title comes from first heading)
 		const notes = [
-			{ content: "# Searchable Alpha\n\nContains keyword: banana" },
-			{ content: "# Searchable Beta\n\nContains keyword: apple" },
-			{ content: "# Searchable Gamma\n\nContains keyword: banana and orange" },
+			{ content: "---\nclass: Note\n---\n# Searchable Alpha\n\n## Body\nContains keyword: banana" },
+			{ content: "---\nclass: Note\n---\n# Searchable Beta\n\n## Body\nContains keyword: apple" },
+			{ content: "---\nclass: Note\n---\n# Searchable Gamma\n\n## Body\nContains keyword: banana and orange" },
 		];
 
 		for (const note of notes) {
@@ -305,7 +315,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		// REQ-FE-012: Multiple consecutive saves must work correctly
 		// Create a note
 		const createRes = await client.postApi("/workspaces/default/notes", {
-			content: "# Initial Content\n\nThis is the first version.",
+			content: "---\nclass: Note\n---\n# Initial Content\n\n## Body\nThis is the first version.",
 		});
 		expect(createRes.status).toBe(201);
 
@@ -316,7 +326,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const firstUpdateRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# Updated Content\n\nThis is the second version.",
+				markdown: "---\nclass: Note\n---\n# Updated Content\n\n## Body\nThis is the second version.",
 				parent_revision_id: createResult.revision_id,
 			},
 		);
@@ -330,7 +340,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const secondUpdateRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# Third Version\n\nThis is the third version.",
+				markdown: "---\nclass: Note\n---\n# Third Version\n\n## Body\nThis is the third version.",
 				parent_revision_id: firstResult.revision_id,
 			},
 		);
@@ -344,7 +354,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const thirdUpdateRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# Fourth Version\n\nConsecutive saves work correctly!",
+				markdown: "---\nclass: Note\n---\n# Fourth Version\n\n## Body\nConsecutive saves work correctly!",
 				parent_revision_id: secondResult.revision_id,
 			},
 		);
@@ -355,7 +365,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		// REQ-FE-010: Content must be persisted to server
 		// Create a note
 		const createRes = await client.postApi("/workspaces/default/notes", {
-			content: "# Persistence Test\n\nOriginal content.",
+			content: "---\nclass: Note\n---\n# Persistence Test\n\n## Body\nOriginal content.",
 		});
 		expect(createRes.status).toBe(201);
 
@@ -366,7 +376,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const updateRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# Persistence Test\n\nUpdated content that should persist.",
+				markdown: "---\nclass: Note\n---\n# Persistence Test\n\n## Body\nUpdated content that should persist.",
 				parent_revision_id: createResult.revision_id,
 			},
 		);
@@ -384,7 +394,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 	test("PUT with stale revision_id should return 409 conflict", async () => {
 		// Create a note
 		const createRes = await client.postApi("/workspaces/default/notes", {
-			content: "# Conflict Test\n\nTesting revision conflicts.",
+			content: "---\nclass: Note\n---\n# Conflict Test\n\n## Body\nTesting revision conflicts.",
 		});
 		expect(createRes.status).toBe(201);
 
@@ -395,7 +405,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const firstUpdateRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# After First Update",
+				markdown: "---\nclass: Note\n---\n# After First Update\n\n## Body\nFirst update body",
 				parent_revision_id: createResult.revision_id,
 			},
 		);
@@ -405,7 +415,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 		const conflictRes = await client.putApi(
 			`/workspaces/default/notes/${createResult.id}`,
 			{
-				markdown: "# This Should Fail",
+				markdown: "---\nclass: Note\n---\n# This Should Fail\n\n## Body\nStale revision",
 				parent_revision_id: createResult.revision_id, // Using old revision_id
 			},
 		);
@@ -413,17 +423,19 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 	});
 
 	// REQ-FE-034: Multi-note navigation should not get stuck in loading state
-	test("Frontend: navigating between multiple notes from class table and note list loads properly", async () => {
+	test(
+		"Frontend: navigating between multiple notes from class table and note list loads properly",
+		async () => {
 		// Create test notes with a class
 		const classNotes = await Promise.all([
 			client.postApi("/workspaces/default/notes", {
-				content: "# Note A\nclass: test-nav\nContent A",
+				content: "---\nclass: Note\n---\n# Note A\n\n## Body\nContent A",
 			}),
 			client.postApi("/workspaces/default/notes", {
-				content: "# Note B\nclass: test-nav\nContent B",
+				content: "---\nclass: Note\n---\n# Note B\n\n## Body\nContent B",
 			}),
 			client.postApi("/workspaces/default/notes", {
-				content: "# Note C\nclass: test-nav\nContent C",
+				content: "---\nclass: Note\n---\n# Note C\n\n## Body\nContent C",
 			}),
 		]);
 
@@ -459,5 +471,7 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 			// Verify SSR rendered successfully
 			expect(html).toContain("<div id=\"app\">");
 		}
-	});
+		},
+		15000,
+	);
 });

@@ -1,5 +1,5 @@
 mod common;
-use _ieapp_core::{link, note, workspace};
+use _ieapp_core::{class, link, note, workspace};
 use common::setup_operator;
 use uuid::Uuid;
 
@@ -19,7 +19,14 @@ async fn create_test_note(
         }
     }
 
-    note::create_note(op, ws_path, note_id, "content", "author", &MockIntegrity).await?;
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "template": "# Note\n\n## Body\n",
+        "fields": {"Body": {"type": "markdown"}},
+    });
+    class::upsert_class(op, ws_path, &class_def).await?;
+    let content = "---\nclass: Note\n---\n# content\n";
+    note::create_note(op, ws_path, note_id, content, "author", &MockIntegrity).await?;
     Ok(())
 }
 
@@ -44,22 +51,20 @@ async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()>
     assert_eq!(link.id, link_id);
 
     // Verify persistence in note1
-    let meta1_path = format!("{}/notes/note1/meta.json", ws_path);
-    let bytes1 = op.read(&meta1_path).await?;
-    let meta1: note::NoteMeta = serde_json::from_slice(&bytes1.to_vec())?;
-    assert!(meta1
-        .links
-        .iter()
-        .any(|l| l.id == link_id && l.target == "note2"));
+    let note1 = note::get_note(&op, &ws_path, "note1").await?;
+    let links1 = note1.get("links").and_then(|v| v.as_array()).unwrap();
+    assert!(links1.iter().any(|l| {
+        l.get("id").and_then(|v| v.as_str()) == Some(link_id.as_str())
+            && l.get("target").and_then(|v| v.as_str()) == Some("note2")
+    }));
 
     // Verify persistence in note2
-    let meta2_path = format!("{}/notes/note2/meta.json", ws_path);
-    let bytes2 = op.read(&meta2_path).await?;
-    let meta2: note::NoteMeta = serde_json::from_slice(&bytes2.to_vec())?;
-    assert!(meta2
-        .links
-        .iter()
-        .any(|l| l.id == link_id && l.target == "note1")); // Reciprocal
+    let note2 = note::get_note(&op, &ws_path, "note2").await?;
+    let links2 = note2.get("links").and_then(|v| v.as_array()).unwrap();
+    assert!(links2.iter().any(|l| {
+        l.get("id").and_then(|v| v.as_str()) == Some(link_id.as_str())
+            && l.get("target").and_then(|v| v.as_str()) == Some("note1")
+    })); // Reciprocal
 
     Ok(())
 }
@@ -112,10 +117,9 @@ async fn test_link_req_lnk_003_delete_link() -> anyhow::Result<()> {
     assert!(links_after.is_empty());
 
     // Check individual notes
-    let meta_x_path = format!("{}/notes/noteX/meta.json", ws_path);
-    let bytes_x = op.read(&meta_x_path).await?;
-    let meta_x: note::NoteMeta = serde_json::from_slice(&bytes_x.to_vec())?;
-    assert!(meta_x.links.is_empty());
+    let note_x = note::get_note(&op, &ws_path, "noteX").await?;
+    let links_x = note_x.get("links").and_then(|v| v.as_array()).unwrap();
+    assert!(links_x.is_empty());
 
     Ok(())
 }

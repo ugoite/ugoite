@@ -1,5 +1,6 @@
 """Integration tests for Python bindings."""
 
+import json
 import pathlib
 
 import pytest
@@ -52,26 +53,38 @@ async def test_bindings_file_backend(tmp_path: pathlib.Path) -> None:
     workspaces = await ieapp_core.list_workspaces(config)
     assert "ws-1" in workspaces
 
+    # List Classes (Empty)
+    classes = await ieapp_core.list_classes(config, "ws-1")
+    assert classes == []
+
+    # Upsert Class
+    class_def = json.dumps(
+        {
+            "name": "Note",
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+        },
+    )
+    await ieapp_core.upsert_class(config, "ws-1", class_def)
+
+    classes = await ieapp_core.list_classes(config, "ws-1")
+    assert len(classes) == 1
+    assert classes[0]["name"] == "Note"
+
     # Create Note
     # Expects "Author" to be passed optional? Signature says Option<String>.
     note = await ieapp_core.create_note(
         config,
         "ws-1",
         "note-1",
-        "# Content",
+        """---
+class: Note
+---
+# Content
+
+## Body
+Body text""",
         author="tester",
     )
     assert note["id"] == "note-1"
     assert note["created_at"]
-
-    # List Classes (Empty)
-    classes = await ieapp_core.list_classes(config, "ws-1")
-    assert classes == []
-
-    # Upsert Class
-    class_def = '{"name": "person", "fields": []}'
-    await ieapp_core.upsert_class(config, "ws-1", class_def)
-
-    classes = await ieapp_core.list_classes(config, "ws-1")
-    assert len(classes) == 1
-    assert classes[0]["name"] == "person"

@@ -29,6 +29,7 @@ def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
     # Define initial class
     initial_class = {
         "name": "project",
+        "template": "# Project\n\n## title\n\n## status\n",
         "fields": {
             "title": {"type": "string"},
             "status": {"type": "string"},
@@ -52,6 +53,7 @@ def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
     # Define new class (adding 'priority')
     new_class = {
         "name": "project",
+        "template": "# Project\n\n## title\n\n## status\n\n## priority\n",
         "fields": {
             "title": {"type": "string"},
             "status": {"type": "string"},
@@ -87,6 +89,7 @@ def test_migrate_class_remove_column(tmp_path: Path) -> None:
     # Initial class with extra field
     initial_class = {
         "name": "task",
+        "template": "# Task\n\n## title\n\n## old_field\n",
         "fields": {
             "title": {"type": "string"},
             "old_field": {"type": "string"},
@@ -109,6 +112,7 @@ def test_migrate_class_remove_column(tmp_path: Path) -> None:
     # New class without old_field
     new_class = {
         "name": "task",
+        "template": "# Task\n\n## title\n",
         "fields": {
             "title": {"type": "string"},
         },

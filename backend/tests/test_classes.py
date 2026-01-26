@@ -35,6 +35,7 @@ def test_create_and_get_class(workspace_id: str) -> None:
         },
         "defaults": None,
     }
+    expected_template = "# Meeting\n\n## Attendees\n\n## Date\n\n"
 
     # Create Class
     response = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
@@ -44,7 +45,10 @@ def test_create_and_get_class(workspace_id: str) -> None:
     # Get Class
     response = client.get(f"/workspaces/{workspace_id}/classes/{class_name}")
     assert response.status_code == 200
-    assert response.json() == class_def
+    payload = response.json()
+    assert payload["name"] == class_name
+    assert payload["fields"] == class_def["fields"]
+    assert payload["template"] == expected_template
 
     # List Classes
     response = client.get(f"/workspaces/{workspace_id}/classes")
@@ -60,6 +64,7 @@ def test_class_validation_in_note(workspace_id: str) -> None:
     class_name = "Task"
     class_def = {
         "name": class_name,
+        "template": "# Task",
         "fields": {
             "Priority": {"type": "string", "required": True},
         },
@@ -100,9 +105,18 @@ def test_update_note_with_missing_class_rejected(workspace_id: str) -> None:
 
     This should fail.
     """
-    # Create a note that references a non-existent class
+    # Create a valid class and note first
+    class_def = {
+        "name": "Task",
+        "template": "# Task",
+        "fields": {
+            "Field": {"type": "string", "required": False},
+        },
+    }
+    client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
+
     note_content = """---
-class: MissingClass
+class: Task
 ---
 ## Field
 Value
@@ -115,8 +129,13 @@ Value
     note_id = create_resp.json()["id"]
     revision_id = create_resp.json()["revision_id"]
 
-    # Attempt to update the note (this triggers class validation)
-    updated_md = note_content + "\n## Another\nX"
+    # Attempt to update with a missing class
+    updated_md = """---
+class: MissingClass
+---
+## Field
+Value
+"""
     upd_resp = client.put(
         f"/workspaces/{workspace_id}/notes/{note_id}",
         json={

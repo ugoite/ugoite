@@ -1,25 +1,16 @@
 use anyhow::{anyhow, Result};
-use chrono::{NaiveDate, Utc};
-use futures::TryStreamExt;
+use chrono::NaiveDate;
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+use crate::note;
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
-    let index_path = format!("{}/index/index.json", ws_path);
-    if !op.exists(&index_path).await? {
-        return Ok(vec![]);
-    }
-
-    let bytes = op.read(&index_path).await?;
-    let index_data: Value = serde_json::from_slice(&bytes.to_vec()).unwrap_or(Value::Null);
-    let notes_map = index_data
-        .get("notes")
-        .and_then(|v| v.as_object())
-        .cloned()
-        .unwrap_or_default();
+    let classes = load_classes(op, ws_path).await?;
+    let notes_map = collect_notes(op, ws_path, &classes).await?;
 
     let filters: Option<Map<String, Value>> = if query.trim().is_empty() {
         None
@@ -85,107 +76,16 @@ fn matches_filters(note: &Value, filters: &Map<String, Value>) -> Result<bool> {
 }
 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
-    let index_dir = format!("{}/index/", ws_path);
-    op.create_dir(&index_dir).await?;
-
-    let classes = load_classes(op, ws_path).await?;
-    let notes = collect_notes(op, ws_path, &classes).await?;
-    let stats = aggregate_stats(&notes);
-    let inverted = build_inverted_index(&notes);
-
-    let index_path = format!("{}/index/index.json", ws_path);
-    let stats_path = format!("{}/index/stats.json", ws_path);
-    let inverted_path = format!("{}/index/inverted_index.json", ws_path);
-
-    let index_payload = serde_json::json!({
-        "notes": notes,
-        "class_stats": stats.get("class_stats").cloned().unwrap_or(Value::Object(Map::new()))
-    });
-    op.write(&index_path, serde_json::to_vec_pretty(&index_payload)?)
-        .await?;
-
-    op.write(&inverted_path, serde_json::to_vec_pretty(&inverted)?)
-        .await?;
-
-    let stats_payload = serde_json::json!({
-        "note_count": stats.get("note_count").cloned().unwrap_or(Value::Number(0.into())),
-        "class_stats": stats.get("class_stats").cloned().unwrap_or(Value::Object(Map::new())),
-        "tag_counts": stats.get("tag_counts").cloned().unwrap_or(Value::Object(Map::new())),
-        "last_indexed": Utc::now().timestamp_millis() as f64 / 1000.0
-    });
-    op.write(&stats_path, serde_json::to_vec_pretty(&stats_payload)?)
-        .await?;
-
+    let _ = op;
+    let _ = ws_path;
     Ok(())
 }
 
 pub async fn update_note_index(op: &Operator, ws_path: &str, note_id: &str) -> Result<()> {
-    let index_path = format!("{}/index/index.json", ws_path);
-    let stats_path = format!("{}/index/stats.json", ws_path);
-    let inverted_path = format!("{}/index/inverted_index.json", ws_path);
-
-    if !op.exists(&index_path).await?
-        || !op.exists(&stats_path).await?
-        || !op.exists(&inverted_path).await?
-    {
-        return reindex_all(op, ws_path).await;
-    }
-
-    let classes = load_classes(op, ws_path).await?;
-    let mut index_data: Value = {
-        let bytes = op.read(&index_path).await?;
-        serde_json::from_slice(&bytes.to_vec()).unwrap_or(Value::Null)
-    };
-
-    if index_data
-        .get("notes")
-        .and_then(|v| v.as_object())
-        .is_none()
-    {
-        index_data["notes"] = Value::Object(Map::new());
-    }
-
-    let notes_obj = index_data
-        .get_mut("notes")
-        .and_then(|v| v.as_object_mut())
-        .expect("notes should be an object after initialization");
-
-    let record = build_record(op, ws_path, note_id, &classes).await?;
-    if let Some(rec) = record {
-        notes_obj.insert(note_id.to_string(), rec);
-    } else {
-        notes_obj.remove(note_id);
-    }
-
-    let notes_map = notes_obj.clone();
-    let stats = aggregate_stats(&notes_map);
-    index_data["class_stats"] = stats
-        .get("class_stats")
-        .cloned()
-        .unwrap_or(Value::Object(Map::new()));
-
-    op.write(&index_path, serde_json::to_vec_pretty(&index_data)?)
-        .await?;
-
-    let inverted = build_inverted_index(&notes_map);
-    op.write(&inverted_path, serde_json::to_vec_pretty(&inverted)?)
-        .await?;
-
-    let stats_payload = serde_json::json!({
-        "note_count": stats.get("note_count").cloned().unwrap_or(Value::Number(0.into())),
-        "class_stats": stats.get("class_stats").cloned().unwrap_or(Value::Object(Map::new())),
-        "tag_counts": stats.get("tag_counts").cloned().unwrap_or(Value::Object(Map::new())),
-        "last_indexed": Utc::now().timestamp_millis() as f64 / 1000.0
-    });
-    op.write(&stats_path, serde_json::to_vec_pretty(&stats_payload)?)
-        .await?;
-
+    let _ = op;
+    let _ = ws_path;
+    let _ = note_id;
     Ok(())
-}
-
-async fn read_json(op: &Operator, path: &str) -> Result<Value> {
-    let bytes = op.read(path).await?;
-    Ok(serde_json::from_slice(&bytes.to_vec())?)
 }
 
 pub fn extract_properties(markdown: &str) -> Value {
@@ -446,35 +346,10 @@ pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
 }
 
 async fn load_classes(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
-    let classes_path = format!("{}/classes/", ws_path);
-    if !op.exists(&classes_path).await? {
-        return Ok(HashMap::new());
-    }
-
     let mut classes = HashMap::new();
-    let mut lister = op.lister(&classes_path).await?;
-    while let Some(entry) = lister.try_next().await? {
-        if entry.metadata().mode() != opendal::EntryMode::FILE {
-            continue;
-        }
-        let name = entry
-            .name()
-            .trim_end_matches(".json")
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if name.is_empty() {
-            continue;
-        }
-        let entry_name = entry.name();
-        let entry_path = if entry_name.contains('/') {
-            entry_name.to_string()
-        } else {
-            format!("{}{}", classes_path, entry_name)
-        };
-        let bytes = op.read(&entry_path).await?;
-        if let Ok(value) = serde_json::from_slice::<Value>(&bytes.to_vec()) {
-            classes.insert(name.to_string(), value);
+    for class_name in crate::class::list_class_names(op, ws_path).await? {
+        if let Ok(value) = crate::class::get_class(op, ws_path, &class_name).await {
+            classes.insert(class_name, value);
         }
     }
     Ok(classes)
@@ -485,181 +360,50 @@ async fn collect_notes(
     ws_path: &str,
     classes: &HashMap<String, Value>,
 ) -> Result<Map<String, Value>> {
-    let notes_path = format!("{}/notes/", ws_path);
-    if !op.exists(&notes_path).await? {
-        return Ok(Map::new());
-    }
-
     let mut notes = Map::new();
-    let mut lister = op.lister(&notes_path).await?;
-    while let Some(entry) = lister.try_next().await? {
-        if entry.metadata().mode() != opendal::EntryMode::DIR {
-            continue;
-        }
-        let note_id = entry
-            .name()
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if note_id.is_empty() {
-            continue;
-        }
-        if let Some(record) = build_record(op, ws_path, note_id, classes).await? {
-            notes.insert(note_id.to_string(), record);
+    let rows = note::list_note_rows(op, ws_path).await?;
+    for (class_name, row) in rows {
+        if let Some(record) = build_record(ws_path, &class_name, &row, classes).await? {
+            notes.insert(row.note_id.clone(), record);
         }
     }
     Ok(notes)
 }
 
 async fn build_record(
-    op: &Operator,
     ws_path: &str,
-    note_id: &str,
+    class_name: &str,
+    row: &note::NoteRow,
     classes: &HashMap<String, Value>,
 ) -> Result<Option<Value>> {
-    let note_dir = format!("{}/notes/{}", ws_path, note_id);
-    let content_path = format!("{}/content.json", note_dir);
-    let meta_path = format!("{}/meta.json", note_dir);
-
-    if !op.exists(&content_path).await? {
+    if row.deleted {
         return Ok(None);
     }
-
-    let content_bytes = op.read(&content_path).await?;
-    let content_json: Value =
-        serde_json::from_slice(&content_bytes.to_vec()).unwrap_or(Value::Null);
-    let markdown = content_json
-        .get("markdown")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let mut properties = extract_properties(markdown);
-
-    let mut meta_json = Value::Object(Map::new());
-    if op.exists(&meta_path).await? {
-        if let Ok(value) = read_json(op, &meta_path).await {
-            meta_json = value;
-        }
-    }
-
-    if meta_json.get("deleted").and_then(|v| v.as_bool()) == Some(true) {
-        return Ok(None);
-    }
-
-    let note_class = meta_json
-        .get("class")
-        .or_else(|| properties.get("class"))
-        .or_else(|| content_json.get("frontmatter").and_then(|v| v.get("class")))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
 
     let mut warnings = Vec::new();
-    if let Some(class_name) = note_class.as_ref() {
-        if let Some(class_def) = classes.get(class_name) {
-            if let Ok((casted, warns)) = validate_properties(&properties, class_def) {
-                properties = casted;
-                warnings = warns;
-            }
+    let mut properties = row.fields.clone();
+    if let Some(class_def) = classes.get(class_name) {
+        if let Ok((casted, warns)) = validate_properties(&properties, class_def) {
+            properties = casted;
+            warnings = warns;
         }
     }
 
-    let word_count = compute_word_count(markdown);
+    let word_count = compute_word_count(&serde_json::to_string(&properties)?);
     let record = serde_json::json!({
-        "id": note_id,
-        "title": meta_json.get("title").cloned().unwrap_or(Value::String(note_id.to_string())),
-        "class": note_class,
-        "updated_at": meta_json.get("updated_at").cloned().unwrap_or(Value::Null),
-        "workspace_id": meta_json
-            .get("workspace_id")
-            .cloned()
-            .unwrap_or(Value::String(
-                ws_path.split('/').next_back().unwrap_or("").to_string(),
-            )),
+        "id": row.note_id,
+        "title": row.title,
+        "class": class_name,
+        "updated_at": row.updated_at,
+        "workspace_id": ws_path.split('/').next_back().unwrap_or("").to_string(),
         "properties": properties,
         "word_count": word_count,
-        "tags": meta_json.get("tags").cloned().unwrap_or(Value::Array(Vec::new())),
-        "links": meta_json.get("links").cloned().unwrap_or(Value::Array(Vec::new())),
-        "canvas_position": meta_json
-            .get("canvas_position")
-            .cloned()
-            .unwrap_or(Value::Object(Map::new())),
-        "checksum": meta_json
-            .get("integrity")
-            .and_then(|v| v.get("checksum"))
-            .cloned()
-            .unwrap_or(Value::Null),
+        "tags": row.tags,
+        "links": row.links,
+        "canvas_position": row.canvas_position,
+        "checksum": row.integrity.checksum,
         "validation_warnings": Value::Array(warnings),
     });
 
     Ok(Some(record))
-}
-
-fn build_inverted_index(notes: &Map<String, Value>) -> Value {
-    let mut inverted: HashMap<String, HashSet<String>> = HashMap::new();
-
-    for (note_id, record) in notes {
-        let tokens = tokenize_record(record);
-        for token in tokens {
-            inverted
-                .entry(token)
-                .or_default()
-                .insert(note_id.to_string());
-        }
-    }
-
-    let mut inverted_json = Map::new();
-    for (token, ids) in inverted {
-        let ids_arr = ids.into_iter().map(Value::String).collect();
-        inverted_json.insert(token, Value::Array(ids_arr));
-    }
-
-    Value::Object(inverted_json)
-}
-
-fn tokenize_record(record: &Value) -> HashSet<String> {
-    let mut tokens = HashSet::new();
-
-    if let Some(title) = record.get("title").and_then(|v| v.as_str()) {
-        tokens.extend(tokenize_text(title));
-    }
-
-    if let Some(tags) = record.get("tags").and_then(|v| v.as_array()) {
-        for tag in tags {
-            if let Some(tag_str) = tag.as_str() {
-                tokens.extend(tokenize_text(tag_str));
-            }
-        }
-    }
-
-    if let Some(class) = record.get("class").and_then(|v| v.as_str()) {
-        tokens.extend(tokenize_text(class));
-    }
-
-    if let Some(props) = record.get("properties").and_then(|v| v.as_object()) {
-        for (key, value) in props {
-            tokens.extend(tokenize_text(key));
-            match value {
-                Value::String(text) => tokens.extend(tokenize_text(text)),
-                Value::Array(items) => {
-                    for item in items {
-                        if let Some(item_str) = item.as_str() {
-                            tokens.extend(tokenize_text(item_str));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    tokens
-}
-
-fn tokenize_text(text: &str) -> HashSet<String> {
-    Regex::new(r"\w+")
-        .unwrap()
-        .find_iter(text)
-        .map(|m| m.as_str().to_lowercase())
-        .filter(|token| token.len() > 1 && !token.chars().all(|c| c.is_ascii_digit()))
-        .collect()
 }

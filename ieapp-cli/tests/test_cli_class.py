@@ -5,7 +5,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from ieapp.classes import upsert_class
 from ieapp.cli import app
+from ieapp.notes import get_note
 
 runner = CliRunner()
 
@@ -28,6 +30,17 @@ def test_cli_class_update(tmp_path: Path) -> None:
 
     ws_path = ws_root / "workspaces" / "test-ws"
 
+    upsert_class(
+        str(ws_path),
+        {
+            "name": "Task",
+            "template": "# Task\n\n## Field\n",
+            "fields": {
+                "Field": {"type": "string", "required": False},
+            },
+        },
+    )
+
     # 2. Create Note
     res = runner.invoke(
         app,
@@ -47,6 +60,7 @@ def test_cli_class_update(tmp_path: Path) -> None:
     class_file = tmp_path / "class.json"
     class_data = {
         "name": "Task",
+        "template": "# Task\n\n## NewField\n",
         "fields": {
             "NewField": {"type": "string", "required": False},
         },
@@ -72,9 +86,8 @@ def test_cli_class_update(tmp_path: Path) -> None:
     assert "Migrated 1 note" in result.stdout
 
     # 5. Verify Note Content
-    note_path = ws_path / "notes" / "note-1" / "content.json"
-    content_json = json.loads(note_path.read_text())
-    content = content_json["markdown"]
+    note = get_note(str(ws_path), "note-1")
+    content = note["content"]
 
     # Verify "Field" is gone (strategy=None)
     assert "## Field" not in content

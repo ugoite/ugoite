@@ -18,6 +18,12 @@ describe("Smoke Tests", () => {
 	beforeAll(async () => {
 		// Wait for servers to be ready with a longer timeout
 		await waitForServers(client, { timeout: 60000 });
+		await client.postApi("/workspaces/default/classes", {
+			name: "Note",
+			version: 1,
+			template: "# Note\n\n## Body\n",
+			fields: { Body: { type: "markdown", required: false } },
+		});
 	});
 
 	describe("Frontend Accessibility", () => {
@@ -45,7 +51,7 @@ describe("Smoke Tests", () => {
 		test("GET /workspaces/default/notes/:id returns HTML", async () => {
 			// Create a note first so we can navigate to a real detail route
 			const createRes = await client.postApi("/workspaces/default/notes", {
-				content: `# E2E Detail Route Note\n\nCreated at ${new Date().toISOString()}`,
+				content: `---\nclass: Note\n---\n# E2E Detail Route Note\n\n## Body\nCreated at ${new Date().toISOString()}`,
 			});
 			expect(createRes.status).toBe(201);
 

@@ -24,7 +24,6 @@ except ImportError:  # pragma: no cover - platform specific
 from .utils import (
     fs_exists,
     fs_join,
-    fs_makedirs,
     fs_read_json,
     fs_write_json,
     get_fs_and_path,
@@ -125,81 +124,9 @@ def create_workspace(
 ) -> None:
     """Create a new workspace with the required directory structure."""
     safe_workspace_id = validate_id(workspace_id, "workspace_id")
-    if fs is not None:
-        fs_obj, workspaces_dir, workspace_path = _resolve_workspace_paths(
-            root_path,
-            safe_workspace_id,
-            fs=fs,
-        )
-        if fs_exists(fs_obj, workspace_path):
-            msg = f"Workspace {safe_workspace_id} already exists"
-            raise WorkspaceExistsError(msg)
-
-        fs_makedirs(fs_obj, workspaces_dir, mode=0o700, exist_ok=True)
-        fs_makedirs(fs_obj, workspace_path, mode=0o700, exist_ok=False)
-
-        for directory in ("classes", "index", "attachments", "notes"):
-            fs_makedirs(
-                fs_obj,
-                fs_join(workspace_path, directory),
-                mode=0o700,
-                exist_ok=True,
-            )
-
-        created_at = datetime.now(UTC).timestamp()
-        protocol = getattr(fs_obj, "protocol", "file") or "file"
-        if isinstance(protocol, (list, tuple)):
-            protocol = protocol[0]
-
-        meta_payload = {
-            "id": safe_workspace_id,
-            "name": safe_workspace_id,
-            "created_at": created_at,
-            "storage": {
-                "type": protocol,
-                "root": str(root_path),
-            },
-        }
-        fs_write_json(
-            fs_obj,
-            fs_join(workspace_path, "meta.json"),
-            meta_payload,
-            mode=0o600,
-            exclusive=True,
-        )
-
-        settings_payload = {"default_class": "Note"}
-        fs_write_json(
-            fs_obj,
-            fs_join(workspace_path, "settings.json"),
-            settings_payload,
-            mode=0o600,
-            exclusive=True,
-        )
-
-        fs_write_json(
-            fs_obj,
-            fs_join(workspace_path, "index", "index.json"),
-            EMPTY_INDEX_DATA,
-            mode=0o600,
-            exclusive=True,
-        )
-        stats_payload = {
-            **EMPTY_STATS_DATA,
-            "last_indexed": created_at,
-        }
-        fs_write_json(
-            fs_obj,
-            fs_join(workspace_path, "index", "stats.json"),
-            stats_payload,
-            mode=0o600,
-            exclusive=True,
-        )
-
-        global_json_path = _ensure_global_json(fs_obj, str(root_path))
-        _append_workspace_to_global(fs_obj, global_json_path, safe_workspace_id)
-        logger.info("Workspace %s created successfully", workspace_id)
-        return
+    if str(root_path).startswith("s3://"):
+        msg = "Protocol not supported in current runtime"
+        raise NotImplementedError(msg)
 
     config = storage_config_from_root(root_path, fs)
     try:
@@ -235,21 +162,7 @@ def get_workspace(
         FileNotFoundError: If the workspace does not exist.
 
     """
-    if fs is not None:
-        fs_obj, _workspaces_dir, workspace_path = _resolve_workspace_paths(
-            root_path,
-            workspace_id,
-            fs=fs,
-            must_exist=True,
-        )
-        meta_path = fs_join(workspace_path, "meta.json")
-        try:
-            return fs_read_json(fs_obj, meta_path)
-        except (json.JSONDecodeError, OSError) as exc:
-            msg = f"Invalid workspace metadata: {workspace_id}"
-            raise ValueError(msg) from exc
-
-    config = storage_config_from_root(root_path)
+    config = storage_config_from_root(root_path, fs)
     try:
         return run_async(ieapp_core.get_workspace, config, workspace_id)
     except RuntimeError as exc:

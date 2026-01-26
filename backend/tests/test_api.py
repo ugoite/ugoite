@@ -10,6 +10,23 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 
+def _create_class(
+    client: TestClient,
+    workspace_id: str,
+    class_name: str = "Note",
+    fields: dict[str, dict[str, object]] | None = None,
+) -> None:
+    resolved_fields = fields or {"Body": {"type": "markdown"}}
+    class_def = {
+        "name": class_name,
+        "version": 1,
+        "template": f"# {class_name}\n\n## Body\n",
+        "fields": resolved_fields,
+    }
+    res = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
+    assert res.status_code == 201
+
+
 def test_create_workspace(test_client: TestClient, temp_workspace_root: Path) -> None:
     """Test creating a new workspace."""
     response = test_client.post("/workspaces", json={"name": "test-ws"})
@@ -80,9 +97,10 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
     """Test creating a note in a workspace."""
     # Create workspace first
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
 
     note_payload = {
-        "content": "# My Note\n\nSome content",
+        "content": "---\nclass: Note\n---\n# My Note\n\n## Body\nSome content",
     }
 
     response = test_client.post("/workspaces/test-ws/notes", json=note_payload)
@@ -92,10 +110,9 @@ def test_create_note(test_client: TestClient, temp_workspace_root: Path) -> None
     assert "revision_id" in data  # Required for optimistic concurrency
     note_id = data["id"]
 
-    # Verify file system
-    note_path = temp_workspace_root / "workspaces" / "test-ws" / "notes" / note_id
-    assert note_path.exists()
-    assert (note_path / "content.json").exists()
+    # Verify retrieval
+    get_response = test_client.get(f"/workspaces/test-ws/notes/{note_id}")
+    assert get_response.status_code == 200
 
 
 def test_create_note_conflict(
@@ -104,12 +121,13 @@ def test_create_note_conflict(
 ) -> None:
     """Test creating a note with an existing ID (if ID is provided)."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
 
     # Create note with specific ID
     note_id = "my-note"
     note_payload = {
         "id": note_id,
-        "content": "# My Note",
+        "content": "---\nclass: Note\n---\n# My Note\n\n## Body\n",
     }
 
     test_client.post("/workspaces/test-ws/notes", json=note_payload)
@@ -125,13 +143,32 @@ def test_list_notes(
 ) -> None:
     """Test listing notes in a workspace."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note1", "content": "# Note 1"},
+        json={
+            "id": "note1",
+            "content": """---
+class: Note
+---
+# Note 1
+
+## Body
+One""",
+        },
     )
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note2", "content": "# Note 2"},
+        json={
+            "id": "note2",
+            "content": """---
+class: Note
+---
+# Note 2
+
+## Body
+Two""",
+        },
     )
 
     response = test_client.get("/workspaces/test-ws/notes")
@@ -171,9 +208,13 @@ def test_get_note(
 ) -> None:
     """Test getting a specific note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Test Note\n\nContent here"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# Test Note\n\n## Body\nContent here",
+        },
     )
 
     response = test_client.get("/workspaces/test-ws/notes/test-note")
@@ -202,9 +243,19 @@ def test_update_note(
 ) -> None:
     """Test updating a note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Original Title"},
+        json={
+            "id": "test-note",
+            "content": """---
+class: Note
+---
+# Original Title
+
+## Body
+Original body""",
+        },
     )
 
     # Get the note to get the revision_id
@@ -213,7 +264,7 @@ def test_update_note(
 
     # Update the note
     update_payload = {
-        "markdown": "# Updated Title\n\nNew content",
+        "markdown": "---\nclass: Note\n---\n# Updated Title\n\n## Body\nNew content",
         "parent_revision_id": revision_id,
     }
 
@@ -252,14 +303,14 @@ def test_update_note_class_validation_error_returns_422_and_does_not_update(
     res = test_client.post("/workspaces/test-ws/classes", json=class_def)
     assert res.status_code == 201
 
-    # Create a note with class Meeting but missing required Date property
+    # Create a note with class Meeting and required Date property
     note_content = """---
 class: Meeting
 ---
 # Meeting notes
 
-## Agenda
-Discuss stuff
+## Date
+2025-01-01
 """
     res = test_client.post(
         "/workspaces/test-ws/notes",
@@ -275,12 +326,22 @@ Discuss stuff
     update_res = test_client.put(
         "/workspaces/test-ws/notes/meeting-1",
         json={
-            "markdown": note_content,
+            "markdown": """---
+class: Meeting
+---
+# Meeting notes
+
+## Date
+2025-01-01
+
+## Extra
+Nope
+""",
             "parent_revision_id": original_revision_id,
         },
     )
     assert update_res.status_code == 422
-    assert "Missing required field" in update_res.json()["detail"]
+    assert "Unknown class fields" in update_res.json()["detail"]
 
     # Ensure it did not update the revision
     get_res = test_client.get("/workspaces/test-ws/notes/meeting-1")
@@ -295,9 +356,13 @@ def test_update_note_conflict(
 ) -> None:
     """Test updating a note with a stale parent_revision_id returns 409."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Original"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# Original\n\n## Body\nOriginal",
+        },
     )
 
     # Get the original revision_id
@@ -308,7 +373,7 @@ def test_update_note_conflict(
     test_client.put(
         "/workspaces/test-ws/notes/test-note",
         json={
-            "markdown": "# Update 1",
+            "markdown": "---\nclass: Note\n---\n# Update 1\n\n## Body\nUpdate one",
             "parent_revision_id": original_revision_id,
         },
     )
@@ -317,7 +382,7 @@ def test_update_note_conflict(
     response = test_client.put(
         "/workspaces/test-ws/notes/test-note",
         json={
-            "markdown": "# Update 2",
+            "markdown": "---\nclass: Note\n---\n# Update 2\n\n## Body\nUpdate two",
             "parent_revision_id": original_revision_id,  # Stale!
         },
     )
@@ -336,9 +401,13 @@ def test_delete_note(
 ) -> None:
     """Test deleting (tombstoning) a note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# To Delete"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# To Delete\n\n## Body\nDelete me",
+        },
     )
 
     response = test_client.delete("/workspaces/test-ws/notes/test-note")
@@ -359,9 +428,13 @@ def test_get_note_history(
 ) -> None:
     """Test getting note history."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Original"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# Original\n\n## Body\nOriginal",
+        },
     )
 
     # Get initial revision
@@ -372,7 +445,7 @@ def test_get_note_history(
     test_client.put(
         "/workspaces/test-ws/notes/test-note",
         json={
-            "markdown": "# Updated",
+            "markdown": "---\nclass: Note\n---\n# Updated\n\n## Body\nUpdated",
             "parent_revision_id": revision_id,
         },
     )
@@ -391,9 +464,13 @@ def test_get_note_revision(
 ) -> None:
     """Test getting a specific revision."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Original"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# Original\n\n## Body\nOriginal",
+        },
     )
 
     # Get the revision_id
@@ -415,9 +492,13 @@ def test_restore_note(
 ) -> None:
     """Test restoring a note to a previous revision."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "test-note", "content": "# Original"},
+        json={
+            "id": "test-note",
+            "content": "---\nclass: Note\n---\n# Original\n\n## Body\nOriginal",
+        },
     )
 
     # Get original revision
@@ -428,7 +509,7 @@ def test_restore_note(
     test_client.put(
         "/workspaces/test-ws/notes/test-note",
         json={
-            "markdown": "# Updated",
+            "markdown": "---\nclass: Note\n---\n# Updated\n\n## Body\nUpdated",
             "parent_revision_id": original_revision_id,
         },
     )
@@ -473,9 +554,13 @@ def test_upload_attachment_and_link_to_note(
 ) -> None:
     """Attachments can be uploaded, returned with id, and linked to a note."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     note_res = test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-1", "content": "# Attach Note"},
+        json={
+            "id": "note-1",
+            "content": "---\nclass: Note\n---\n# Attach Note\n\n## Body\nAttach",
+        },
     )
     assert note_res.status_code == 201
 
@@ -492,7 +577,7 @@ def test_upload_attachment_and_link_to_note(
     update_res = test_client.put(
         "/workspaces/test-ws/notes/note-1",
         json={
-            "markdown": "# Attach Note\ncontent",
+            "markdown": "---\nclass: Note\n---\n# Attach Note\n\n## Body\ncontent",
             "parent_revision_id": note_res.json()["revision_id"],
             "attachments": [attachment],
         },
@@ -512,9 +597,13 @@ def test_delete_attachment_referenced_fails(
 ) -> None:
     """Deleting an attachment referenced by a note should fail."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     note_res = test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-1", "content": "# Attach Note"},
+        json={
+            "id": "note-1",
+            "content": "---\nclass: Note\n---\n# Attach Note\n\n## Body\nAttach",
+        },
     )
 
     response = test_client.post(
@@ -526,7 +615,7 @@ def test_delete_attachment_referenced_fails(
     test_client.put(
         "/workspaces/test-ws/notes/note-1",
         json={
-            "markdown": "# Attach Note\nupdated",
+            "markdown": "---\nclass: Note\n---\n# Attach Note\n\n## Body\nupdated",
             "parent_revision_id": note_res.json()["revision_id"],
             "attachments": [attachment],
         },
@@ -545,13 +634,20 @@ def test_create_and_list_links(
 ) -> None:
     """Links are created bi-directionally and listed at workspace level."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-a", "content": "# A"},
+        json={
+            "id": "note-a",
+            "content": "---\nclass: Note\n---\n# A\n\n## Body\nA body",
+        },
     )
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-b", "content": "# B"},
+        json={
+            "id": "note-b",
+            "content": "---\nclass: Note\n---\n# B\n\n## Body\nB body",
+        },
     )
 
     create_res = test_client.post(
@@ -580,13 +676,20 @@ def test_delete_link_updates_notes(
 ) -> None:
     """Deleting a link should remove it from both notes."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-a", "content": "# A"},
+        json={
+            "id": "note-a",
+            "content": "---\nclass: Note\n---\n# A\n\n## Body\nA body",
+        },
     )
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "note-b", "content": "# B"},
+        json={
+            "id": "note-b",
+            "content": "---\nclass: Note\n---\n# B\n\n## Body\nB body",
+        },
     )
 
     create_res = test_client.post(
@@ -610,9 +713,13 @@ def test_search_returns_matches(
 ) -> None:
     """Hybrid search returns notes containing the keyword via inverted index."""
     test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
     test_client.post(
         "/workspaces/test-ws/notes",
-        json={"id": "alpha", "content": "# Alpha\nProject rocket"},
+        json={
+            "id": "alpha",
+            "content": "---\nclass: Note\n---\n# Alpha\n\n## Body\nProject rocket",
+        },
     )
 
     search_res = test_client.get("/workspaces/test-ws/search", params={"q": "rocket"})

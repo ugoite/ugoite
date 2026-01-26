@@ -115,7 +115,7 @@ pub async fn create_workspace(op: &Operator, name: &str, root_path: &str) -> Res
     op.create_dir(&format!("{}/", ws_path)).await?;
 
     // 1. Create directory structure
-    for dir in &["classes", "index", "attachments", "notes"] {
+    for dir in &["classes", "attachments"] {
         op.create_dir(&format!("{}/{}/", ws_path, dir)).await?;
     }
 
@@ -146,29 +146,7 @@ pub async fn create_workspace(op: &Operator, name: &str, root_path: &str) -> Res
     )
     .await?;
 
-    // 4. Create index files
-    let index_data = serde_json::json!({
-        "notes": {},
-        "class_stats": {}
-    });
-    op.write(
-        &format!("{}/index/index.json", ws_path),
-        serde_json::to_vec_pretty(&index_data)?,
-    )
-    .await?;
-
-    let stats_data = serde_json::json!({
-        "last_indexed": created_at,
-        "note_count": 0,
-        "tag_counts": {}
-    });
-    op.write(
-        &format!("{}/index/stats.json", ws_path),
-        serde_json::to_vec_pretty(&stats_data)?,
-    )
-    .await?;
-
-    // 5. Update global.json
+    // 4. Update global.json
     let default_storage = if scheme == "file" || scheme == "fs" {
         format!("fs://{}", storage_root)
     } else {
