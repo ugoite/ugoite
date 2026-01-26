@@ -9,7 +9,7 @@
     "mise"
   ],
   "labels": ["dependencies"],
-  "schedule": ["every weekday"],
+  "pruneStaleBranches": false,
   "packageRules": [
     {
       "groupName": "github-actions",
