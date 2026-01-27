@@ -1,0 +1,63 @@
+{
+  "extends": ["config:base"],
+  "enabledManagers": [
+    "github-actions",
+    "bun",
+    "uv",
+    "cargo",
+    "dockerfile",
+    "mise"
+  ],
+  "labels": ["dependencies"],
+  "pruneStaleBranches": false,
+  "packageRules": [
+    {
+      "groupName": "github-actions",
+      "matchManagers": ["github-actions"]
+    },
+    {
+      "groupName": "bun-frontend",
+      "matchManagers": ["bun"],
+      "matchFileNames": ["frontend/package.json", "frontend/bun.lockb"]
+    },
+    {
+      "groupName": "bun-e2e",
+      "matchManagers": ["bun"],
+      "matchFileNames": ["e2e/package.json", "e2e/bun.lockb"]
+    },
+    {
+      "groupName": "uv-backend",
+      "matchManagers": ["uv"],
+      "matchFileNames": ["backend/pyproject.toml", "backend/uv.lock"]
+    },
+    {
+      "groupName": "uv-ieapp-cli",
+      "matchManagers": ["uv"],
+      "matchFileNames": ["ieapp-cli/pyproject.toml", "ieapp-cli/uv.lock"]
+    },
+    {
+      "groupName": "uv-ieapp-core",
+      "matchManagers": ["uv"],
+      "matchFileNames": ["ieapp-core/pyproject.toml", "ieapp-core/uv.lock"]
+    },
+    {
+      "groupName": "cargo-ieapp-core",
+      "matchManagers": ["cargo"],
+      "matchFileNames": ["ieapp-core/Cargo.toml", "ieapp-core/Cargo.lock"]
+    },
+    {
+      "groupName": "docker-backend",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["backend/Dockerfile"]
+    },
+    {
+      "groupName": "docker-frontend",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["frontend/Dockerfile"]
+    },
+    {
+      "groupName": "mise-tools",
+      "matchManagers": ["mise"]
+    }
+  ]
+}
