@@ -6,8 +6,8 @@ use crate::link::Link;
 use anyhow::{anyhow, Result};
 use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Float64Array, LargeListArray, LargeStringArray,
-    ListArray, RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
+    Array, ArrayRef, BooleanArray, Date32Array, Float64Array, ListArray, RecordBatch, StringArray,
+    StructArray, TimestampMicrosecondArray,
 };
 use arrow_schema::{DataType, Fields};
 use chrono::Utc;
@@ -523,154 +523,138 @@ fn struct_array_from_integrity(
     Ok(Arc::new(struct_array))
 }
 
-fn list_values_from_array(list_array: &dyn Array, row: usize) -> Result<Option<ArrayRef>> {
-    match list_array.data_type() {
-        DataType::List(_) => {
-            let list_array = list_array
-                .as_any()
-                .downcast_ref::<ListArray>()
-                .ok_or_else(|| anyhow!("Invalid list array"))?;
-            if list_array.is_null(row) {
-                Ok(None)
-            } else {
-                Ok(Some(list_array.value(row)))
-            }
-        }
-        DataType::LargeList(_) => {
-            let list_array = list_array
-                .as_any()
-                .downcast_ref::<LargeListArray>()
-                .ok_or_else(|| anyhow!("Invalid large list array"))?;
-            if list_array.is_null(row) {
-                Ok(None)
-            } else {
-                Ok(Some(list_array.value(row)))
-            }
-        }
-        DataType::Null => Ok(None),
-        other => Err(anyhow!("Invalid list type: {:?}", other)),
+fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
+    if list_array.is_null(row) {
+        return Vec::new();
     }
-}
-
-fn string_value_from_array(array: &dyn Array, row: usize) -> Option<String> {
-    match array.data_type() {
-        DataType::Utf8 => array
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .and_then(|col| {
-                if col.is_null(row) {
-                    None
-                } else {
-                    Some(col.value(row).to_string())
-                }
-            }),
-        DataType::LargeUtf8 => array
-            .as_any()
-            .downcast_ref::<LargeStringArray>()
-            .and_then(|col| {
-                if col.is_null(row) {
-                    None
-                } else {
-                    Some(col.value(row).to_string())
-                }
-            }),
-        _ => None,
-    }
-}
-
-fn list_strings_from_array(list_array: &dyn Array, row: usize) -> Result<Vec<String>> {
-    let values = match list_values_from_array(list_array, row)? {
-        Some(values) => values,
-        None => return Ok(Vec::new()),
-    };
-    if let Some(array) = values.as_any().downcast_ref::<StringArray>() {
+    let values = list_array.value(row);
+    let values = values.as_any().downcast_ref::<StringArray>().map(|array| {
         let mut items = Vec::new();
         for i in 0..array.len() {
             if !array.is_null(i) {
                 items.push(array.value(i).to_string());
             }
         }
-        Ok(items)
-    } else if let Some(array) = values.as_any().downcast_ref::<LargeStringArray>() {
-        let mut items = Vec::new();
-        for i in 0..array.len() {
-            if !array.is_null(i) {
-                items.push(array.value(i).to_string());
-            }
-        }
-        Ok(items)
-    } else {
-        Err(anyhow!("Invalid list string array"))
-    }
+        items
+    });
+    values.unwrap_or_default()
 }
 
-fn list_links_from_array(list_array: &dyn Array, row: usize, source: &str) -> Result<Vec<Link>> {
-    let values = match list_values_from_array(list_array, row)? {
-        Some(values) => values,
-        None => return Ok(Vec::new()),
-    };
+fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
+    if list_array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = list_array.value(row);
     let struct_array = values
         .as_any()
         .downcast_ref::<StructArray>()
         .ok_or_else(|| anyhow!("Invalid links struct array"))?;
 
-    let id_col = struct_array.column_by_name("id");
-    let target_col = struct_array.column_by_name("target");
-    let kind_col = struct_array.column_by_name("kind");
+    let id_col = struct_array
+        .column_by_name("id")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let target_col = struct_array
+        .column_by_name("target")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let kind_col = struct_array
+        .column_by_name("kind")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
 
     let mut links = Vec::new();
     for idx in 0..struct_array.len() {
         let id = id_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         if id.is_empty() {
             continue;
         }
         let target = target_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         let kind = kind_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         links.push(Link {
-            id,
+            id: id.to_string(),
             source: source.to_string(),
-            target,
-            kind,
+            target: target.to_string(),
+            kind: kind.to_string(),
         });
     }
 
     Ok(links)
 }
 
-fn list_attachments_from_array(list_array: &dyn Array, row: usize) -> Result<Vec<Value>> {
-    let values = match list_values_from_array(list_array, row)? {
-        Some(values) => values,
-        None => return Ok(Vec::new()),
-    };
+fn list_attachments_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
+    if list_array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = list_array.value(row);
     let struct_array = values
         .as_any()
         .downcast_ref::<StructArray>()
         .ok_or_else(|| anyhow!("Invalid attachments struct array"))?;
 
-    let id_col = struct_array.column_by_name("id");
-    let name_col = struct_array.column_by_name("name");
-    let path_col = struct_array.column_by_name("path");
+    let id_col = struct_array
+        .column_by_name("id")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let name_col = struct_array
+        .column_by_name("name")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+    let path_col = struct_array
+        .column_by_name("path")
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
 
     let mut attachments = Vec::new();
     for idx in 0..struct_array.len() {
         let id = id_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         if id.is_empty() {
             continue;
         }
         let name = name_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         let path = path_col
-            .and_then(|col| string_value_from_array(col.as_ref(), idx))
-            .unwrap_or_default();
+            .and_then(|col| {
+                if col.is_null(idx) {
+                    None
+                } else {
+                    Some(col.value(idx))
+                }
+            })
+            .unwrap_or("");
         attachments.push(serde_json::json!({
             "id": id,
             "name": name,
@@ -711,49 +695,35 @@ fn canvas_from_struct_array(struct_array: &StructArray, row: usize) -> Value {
     Value::Object(map)
 }
 
-fn canvas_from_array(array: &dyn Array, row: usize) -> Result<Value> {
-    match array.data_type() {
-        DataType::Struct(_) => {
-            let struct_array = array
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or_else(|| anyhow!("Invalid canvas struct array"))?;
-            Ok(canvas_from_struct_array(struct_array, row))
-        }
-        DataType::Null => Ok(Value::Object(Map::new())),
-        other => Err(anyhow!("Invalid canvas_position type: {:?}", other)),
-    }
-}
-
 fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> IntegrityPayload {
     if struct_array.is_null(row) {
         return IntegrityPayload::default();
     }
     let checksum = struct_array
         .column_by_name("checksum")
-        .and_then(|col| string_value_from_array(col.as_ref(), row))
-        .unwrap_or_default();
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
+        .and_then(|col| {
+            if col.is_null(row) {
+                None
+            } else {
+                Some(col.value(row))
+            }
+        })
+        .unwrap_or("");
     let signature = struct_array
         .column_by_name("signature")
-        .and_then(|col| string_value_from_array(col.as_ref(), row))
-        .unwrap_or_default();
+        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
+        .and_then(|col| {
+            if col.is_null(row) {
+                None
+            } else {
+                Some(col.value(row))
+            }
+        })
+        .unwrap_or("");
     IntegrityPayload {
-        checksum,
-        signature,
-    }
-}
-
-fn integrity_from_array(array: &dyn Array, row: usize) -> Result<IntegrityPayload> {
-    match array.data_type() {
-        DataType::Struct(_) => {
-            let struct_array = array
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or_else(|| anyhow!("Invalid integrity struct array"))?;
-            Ok(integrity_from_struct_array(struct_array, row))
-        }
-        DataType::Null => Ok(IntegrityPayload::default()),
-        other => Err(anyhow!("Invalid integrity type: {:?}", other)),
+        checksum: checksum.to_string(),
+        signature: signature.to_string(),
     }
 }
 
@@ -872,29 +842,22 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         days_to_date(array.value(row)).map(Value::String)
                     }
                 }),
-            "list" => list_values_from_array(column.as_ref(), row)
-                .ok()
-                .and_then(|values| values)
-                .and_then(|values| {
-                    if let Some(values) = values.as_any().downcast_ref::<StringArray>() {
-                        let mut items = Vec::new();
-                        for i in 0..values.len() {
-                            if !values.is_null(i) {
-                                items.push(Value::String(values.value(i).to_string()));
-                            }
-                        }
-                        Some(Value::Array(items))
-                    } else if let Some(values) = values.as_any().downcast_ref::<LargeStringArray>()
-                    {
-                        let mut items = Vec::new();
-                        for i in 0..values.len() {
-                            if !values.is_null(i) {
-                                items.push(Value::String(values.value(i).to_string()));
-                            }
-                        }
-                        Some(Value::Array(items))
-                    } else {
+            "list" => column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
                         None
+                    } else {
+                        let values = array.value(row);
+                        let values = values.as_any().downcast_ref::<StringArray>()?;
+                        let mut items = Vec::new();
+                        for i in 0..values.len() {
+                            if !values.is_null(i) {
+                                items.push(Value::String(values.value(i).to_string()));
+                            }
+                        }
+                        Some(Value::Array(items))
                     }
                 }),
             _ => column
@@ -906,18 +869,6 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                     } else {
                         Some(Value::String(array.value(row).to_string()))
                     }
-                })
-                .or_else(|| {
-                    column
-                        .as_any()
-                        .downcast_ref::<LargeStringArray>()
-                        .and_then(|array| {
-                            if array.is_null(row) {
-                                None
-                            } else {
-                                Some(Value::String(array.value(row).to_string()))
-                            }
-                        })
                 }),
         };
 
@@ -929,24 +880,6 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
     Value::Object(map)
 }
 
-fn value_from_array(array: &dyn Array, row: usize, class_def: &Value) -> Result<Value> {
-    match array.data_type() {
-        DataType::Struct(_) => {
-            let struct_array = array
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or_else(|| anyhow!("Invalid fields struct array"))?;
-            if struct_array.is_null(row) {
-                Ok(Value::Object(Map::new()))
-            } else {
-                Ok(value_from_struct_array(struct_array, row, class_def))
-            }
-        }
-        DataType::Null => Ok(Value::Object(Map::new())),
-        other => Err(anyhow!("Invalid fields type: {:?}", other)),
-    }
-}
-
 fn note_rows_from_batches(
     batches: &[RecordBatch],
     class_def: &Value,
@@ -956,26 +889,14 @@ fn note_rows_from_batches(
     for batch in batches {
         let note_ids = column_as::<StringArray>(batch, "note_id")?;
         let titles = column_as::<StringArray>(batch, "title")?;
-        let tags = batch
-            .column_by_name("tags")
-            .ok_or_else(|| anyhow!("Missing column: tags"))?;
-        let links = batch
-            .column_by_name("links")
-            .ok_or_else(|| anyhow!("Missing column: links"))?;
-        let canvas_positions = batch
-            .column_by_name("canvas_position")
-            .ok_or_else(|| anyhow!("Missing column: canvas_position"))?;
+        let tags = column_as::<ListArray>(batch, "tags")?;
+        let links = column_as::<ListArray>(batch, "links")?;
+        let canvas_positions = column_as::<StructArray>(batch, "canvas_position")?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
-        let fields = batch
-            .column_by_name("fields")
-            .ok_or_else(|| anyhow!("Missing column: fields"))?;
-        let attachments = batch
-            .column_by_name("attachments")
-            .ok_or_else(|| anyhow!("Missing column: attachments"))?;
-        let integrity = batch
-            .column_by_name("integrity")
-            .ok_or_else(|| anyhow!("Missing column: integrity"))?;
+        let fields = column_as::<StructArray>(batch, "fields")?;
+        let attachments = column_as::<ListArray>(batch, "attachments")?;
+        let integrity = column_as::<StructArray>(batch, "integrity")?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
         let deleted_at = column_as::<TimestampMicrosecondArray>(batch, "deleted_at")?;
 
@@ -984,13 +905,17 @@ fn note_rows_from_batches(
                 continue;
             }
 
-            let tags_value = list_strings_from_array(tags.as_ref(), row_idx)?;
-            let links_value =
-                list_links_from_array(links.as_ref(), row_idx, note_ids.value(row_idx))?;
-            let canvas_value = canvas_from_array(canvas_positions.as_ref(), row_idx)?;
-            let attachments_value = list_attachments_from_array(attachments.as_ref(), row_idx)?;
-            let integrity_value = integrity_from_array(integrity.as_ref(), row_idx)?;
-            let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
+            let tags_value = list_strings_from_array(tags, row_idx);
+            let links_value = list_links_from_array(links, row_idx, note_ids.value(row_idx))?;
+            let canvas_value = canvas_from_struct_array(canvas_positions, row_idx);
+            let attachments_value = list_attachments_from_array(attachments, row_idx)?;
+            let integrity_value = integrity_from_struct_array(integrity, row_idx);
+
+            let fields_value = if fields.is_null(row_idx) {
+                Value::Object(Map::new())
+            } else {
+                value_from_struct_array(fields, row_idx, class_def)
+            };
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
                 None
@@ -1044,13 +969,9 @@ fn revision_rows_from_batches(
         let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
         let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
         let authors = column_as::<StringArray>(batch, "author")?;
-        let fields = batch
-            .column_by_name("fields")
-            .ok_or_else(|| anyhow!("Missing column: fields"))?;
+        let fields = column_as::<StructArray>(batch, "fields")?;
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
-        let integrity = batch
-            .column_by_name("integrity")
-            .ok_or_else(|| anyhow!("Missing column: integrity"))?;
+        let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
 
         for row_idx in 0..batch.num_rows() {
@@ -1058,8 +979,13 @@ fn revision_rows_from_batches(
                 continue;
             }
 
-            let integrity_value = integrity_from_array(integrity.as_ref(), row_idx)?;
-            let fields_value = value_from_array(fields.as_ref(), row_idx, class_def)?;
+            let integrity_value = integrity_from_struct_array(integrity, row_idx);
+
+            let fields_value = if fields.is_null(row_idx) {
+                Value::Object(Map::new())
+            } else {
+                value_from_struct_array(fields, row_idx, class_def)
+            };
 
             rows.push(RevisionRow {
                 revision_id: revision_ids.value(row_idx).to_string(),
@@ -1908,263 +1834,4 @@ pub async fn restore_note<I: IntegrityProvider>(
         "restored_from": revision_id,
         "timestamp": timestamp,
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use arrow_array::builder::{
-        ArrayBuilder, LargeListBuilder, LargeStringBuilder, ListBuilder, StructBuilder,
-    };
-    use arrow_array::{BooleanArray, NullArray, RecordBatch, TimestampMicrosecondArray};
-    use arrow_schema::{Field, Schema, TimeUnit};
-
-    fn build_large_list_strings(values: &[&[&str]], element_field: Field) -> ArrayRef {
-        let mut builder =
-            LargeListBuilder::new(LargeStringBuilder::new()).with_field(Arc::new(element_field));
-        for entry in values {
-            for item in *entry {
-                builder.values().append_value(*item);
-            }
-            builder.append(true);
-        }
-        Arc::new(builder.finish())
-    }
-
-    fn build_struct_list_with_large_strings(
-        field_names: &[&str],
-        values: &[&[&str]],
-        list_field: Field,
-    ) -> ArrayRef {
-        let struct_fields: Fields = field_names
-            .iter()
-            .map(|name| Field::new(*name, DataType::LargeUtf8, false))
-            .collect::<Vec<_>>()
-            .into();
-        let struct_builders: Vec<Box<dyn ArrayBuilder>> = field_names
-            .iter()
-            .map(|_| Box::new(LargeStringBuilder::new()) as Box<dyn ArrayBuilder>)
-            .collect();
-        let struct_builder = StructBuilder::new(struct_fields.clone(), struct_builders);
-        let mut list_builder = ListBuilder::new(struct_builder).with_field(Arc::new(list_field));
-
-        for entry in values {
-            let builder = list_builder.values();
-            for (idx, value) in entry.iter().enumerate() {
-                builder
-                    .field_builder::<LargeStringBuilder>(idx)
-                    .expect("missing struct builder")
-                    .append_value(*value);
-            }
-            builder.append(true);
-        }
-        list_builder.append(true);
-        Arc::new(list_builder.finish())
-    }
-
-    #[test]
-    /// REQ-NOTE-007
-    fn test_note_req_note_007_large_list_columns() -> anyhow::Result<()> {
-        let class_def = serde_json::json!({
-            "name": "Note",
-            "fields": {"Tags": {"type": "list"}},
-        });
-
-        let list_element_field = Field::new("element", DataType::LargeUtf8, true);
-        let tags = build_large_list_strings(&[&["tag-a"]], list_element_field.clone());
-        let links = Arc::new(NullArray::new(1)) as ArrayRef;
-        let attachments_element_field = Field::new(
-            "element",
-            DataType::Struct(
-                vec![
-                    Field::new("id", DataType::LargeUtf8, false),
-                    Field::new("name", DataType::LargeUtf8, false),
-                    Field::new("path", DataType::LargeUtf8, false),
-                ]
-                .into(),
-            ),
-            true,
-        );
-        let attachments = build_struct_list_with_large_strings(
-            &["id", "name", "path"],
-            &[&["att-1", "Attachment", "/tmp/att-1"]],
-            attachments_element_field.clone(),
-        );
-
-        let fields_list = build_large_list_strings(&[&["field-tag"]], list_element_field.clone());
-        let fields_struct_fields: Fields = vec![Field::new(
-            "Tags",
-            DataType::LargeList(Arc::new(list_element_field.clone())),
-            true,
-        )]
-        .into();
-        let fields = Arc::new(StructArray::try_new(
-            fields_struct_fields.clone(),
-            vec![fields_list],
-            None,
-        )?) as ArrayRef;
-
-        let integrity_fields: Fields = vec![
-            Field::new("checksum", DataType::LargeUtf8, false),
-            Field::new("signature", DataType::LargeUtf8, false),
-        ]
-        .into();
-        let integrity = Arc::new(StructArray::try_new(
-            integrity_fields.clone(),
-            vec![
-                Arc::new(LargeStringArray::from(vec![Some("sum")])) as ArrayRef,
-                Arc::new(LargeStringArray::from(vec![Some("sig")])) as ArrayRef,
-            ],
-            None,
-        )?) as ArrayRef;
-
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("note_id", DataType::Utf8, false),
-            Field::new("title", DataType::Utf8, false),
-            Field::new(
-                "tags",
-                DataType::LargeList(Arc::new(list_element_field.clone())),
-                true,
-            ),
-            Field::new("links", DataType::Null, true),
-            Field::new("canvas_position", DataType::Null, true),
-            Field::new(
-                "created_at",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
-                true,
-            ),
-            Field::new(
-                "updated_at",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
-                true,
-            ),
-            Field::new(
-                "fields",
-                DataType::Struct(fields_struct_fields.clone()),
-                true,
-            ),
-            Field::new(
-                "attachments",
-                DataType::List(Arc::new(attachments_element_field.clone())),
-                true,
-            ),
-            Field::new(
-                "integrity",
-                DataType::Struct(integrity_fields.clone()),
-                true,
-            ),
-            Field::new("deleted", DataType::Boolean, true),
-            Field::new(
-                "deleted_at",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
-                true,
-            ),
-        ]));
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(StringArray::from(vec!["note-1"])) as ArrayRef,
-                Arc::new(StringArray::from(vec!["Title"])) as ArrayRef,
-                tags,
-                links,
-                Arc::new(NullArray::new(1)) as ArrayRef,
-                Arc::new(TimestampMicrosecondArray::from(vec![Some(0)])) as ArrayRef,
-                Arc::new(TimestampMicrosecondArray::from(vec![Some(0)])) as ArrayRef,
-                fields,
-                attachments,
-                integrity,
-                Arc::new(BooleanArray::from(vec![Some(false)])) as ArrayRef,
-                Arc::new(TimestampMicrosecondArray::from(vec![None])) as ArrayRef,
-            ],
-        )?;
-
-        let rows = note_rows_from_batches(&[batch], &class_def, "Note")?;
-        let row = rows.first().expect("missing note row");
-        assert_eq!(row.tags, vec!["tag-a".to_string()]);
-        assert!(row.links.is_empty());
-        assert_eq!(row.attachments.len(), 1);
-        assert_eq!(
-            row.attachments[0].get("id").and_then(|v| v.as_str()),
-            Some("att-1")
-        );
-        assert_eq!(row.integrity.checksum, "sum");
-        assert_eq!(
-            row.fields
-                .get("Tags")
-                .and_then(|v| v.as_array())
-                .and_then(|v| v.first())
-                .and_then(|v| v.as_str()),
-            Some("field-tag")
-        );
-
-        let rev_schema = Arc::new(Schema::new(vec![
-            Field::new("revision_id", DataType::Utf8, false),
-            Field::new("note_id", DataType::Utf8, false),
-            Field::new("parent_revision_id", DataType::Utf8, true),
-            Field::new(
-                "timestamp",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
-                true,
-            ),
-            Field::new("author", DataType::Utf8, false),
-            Field::new("fields", DataType::Struct(fields_struct_fields), true),
-            Field::new("markdown_checksum", DataType::Utf8, false),
-            Field::new("integrity", DataType::Struct(integrity_fields), true),
-            Field::new("restored_from", DataType::Utf8, true),
-        ]));
-
-        let rev_batch = RecordBatch::try_new(
-            rev_schema,
-            vec![
-                Arc::new(StringArray::from(vec!["rev-1"])) as ArrayRef,
-                Arc::new(StringArray::from(vec!["note-1"])) as ArrayRef,
-                Arc::new(StringArray::from(vec!["parent-1"])) as ArrayRef,
-                Arc::new(TimestampMicrosecondArray::from(vec![Some(0)])) as ArrayRef,
-                Arc::new(StringArray::from(vec!["author"])) as ArrayRef,
-                Arc::new(StructArray::try_new(
-                    vec![Field::new(
-                        "Tags",
-                        DataType::LargeList(Arc::new(list_element_field.clone())),
-                        true,
-                    )]
-                    .into(),
-                    vec![build_large_list_strings(
-                        &[&["field-tag"]],
-                        list_element_field,
-                    )],
-                    None,
-                )?) as ArrayRef,
-                Arc::new(StringArray::from(vec!["checksum"])) as ArrayRef,
-                Arc::new(StructArray::try_new(
-                    vec![
-                        Field::new("checksum", DataType::LargeUtf8, false),
-                        Field::new("signature", DataType::LargeUtf8, false),
-                    ]
-                    .into(),
-                    vec![
-                        Arc::new(LargeStringArray::from(vec![Some("sum")])) as ArrayRef,
-                        Arc::new(LargeStringArray::from(vec![Some("sig")])) as ArrayRef,
-                    ],
-                    None,
-                )?) as ArrayRef,
-                Arc::new(StringArray::from(vec![None::<&str>])) as ArrayRef,
-            ],
-        )?;
-
-        let revisions = revision_rows_from_batches(&[rev_batch], &class_def)?;
-        let revision = revisions.first().expect("missing revision row");
-        assert_eq!(revision.integrity.checksum, "sum");
-        assert_eq!(
-            revision
-                .fields
-                .get("Tags")
-                .and_then(|v| v.as_array())
-                .and_then(|v| v.first())
-                .and_then(|v| v.as_str()),
-            Some("field-tag")
-        );
-
-        Ok(())
-    }
 }
