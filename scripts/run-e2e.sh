@@ -6,6 +6,7 @@
 # Environment variables:
 #   BUN_TEST_TIMEOUT_MS: per-test timeout passed to `bun test --timeout`
 #   E2E_TIMEOUT: per-request timeout used by the E2E client
+#   E2E_FRONTEND_MODE: "dev" (default) or "prod" to use build+start for SSR speed
 
 set -e
 
@@ -28,7 +29,17 @@ sleep 1
 # Create default workspace for tests
 echo "Creating default workspace..."
 cd "$ROOT_DIR/backend"
-uv run python - <<'PY'
+E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
+if [ -z "$E2E_STORAGE_ROOT" ]; then
+    E2E_STORAGE_ROOT="/tmp/ieapp-e2e"
+    CLEANUP_E2E_STORAGE=true
+else
+    CLEANUP_E2E_STORAGE=false
+fi
+
+mkdir -p "$E2E_STORAGE_ROOT"
+
+IEAPP_ROOT="$E2E_STORAGE_ROOT" uv run python - <<'PY'
 import asyncio
 
 import ieapp_core
@@ -52,13 +63,21 @@ PY
 # Start backend in background
 echo "Starting backend server..."
 cd "$ROOT_DIR/backend"
-IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+IEAPP_ROOT="$E2E_STORAGE_ROOT" IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Start frontend in background
 echo "Starting frontend server..."
 cd "$ROOT_DIR/frontend"
-BACKEND_URL=http://localhost:8000 bun run dev &
+FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
+if [ "$FRONTEND_MODE" = "prod" ]; then
+    echo "Building frontend for production..."
+    BACKEND_URL=http://localhost:8000 bun run build
+    echo "Starting production frontend server..."
+    BACKEND_URL=http://localhost:8000 NODE_ENV=production bun run start &
+else
+    BACKEND_URL=http://localhost:8000 bun run dev &
+fi
 FRONTEND_PID=$!
 
 # Cleanup function
@@ -68,6 +87,9 @@ cleanup() {
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
     wait $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
     echo "Servers stopped."
+    if [ "$CLEANUP_E2E_STORAGE" = true ]; then
+        rm -rf "$E2E_STORAGE_ROOT"
+    fi
 }
 trap cleanup EXIT INT TERM
 

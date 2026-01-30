@@ -29,8 +29,9 @@
 	],
 	"remoteUser": "vscode",
 	"containerEnv": {
-		"BUN_TEST_TIMEOUT_MS": "30000",
-		"E2E_TIMEOUT": "30000"
+		"BUN_TEST_TIMEOUT_MS": "15000",
+		"E2E_TIMEOUT": "15000",
+		"E2E_FRONTEND_MODE": "prod"
 	},
 	"remoteEnv": {
 		"MISE_EXPERIMENTAL": "1"
