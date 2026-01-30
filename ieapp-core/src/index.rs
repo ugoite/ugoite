@@ -381,7 +381,7 @@ async fn build_record(
     }
 
     let mut warnings = Vec::new();
-    let mut properties = row.fields.clone();
+    let mut properties = note::merge_note_fields(&row.fields, &row.extra_attributes);
     if let Some(class_def) = classes.get(class_name) {
         if let Ok((casted, warns)) = validate_properties(&properties, class_def) {
             properties = casted;

@@ -97,6 +97,8 @@ pub struct NoteRow {
     pub updated_at: f64,
     #[serde(default)]
     pub fields: Value,
+    #[serde(default)]
+    pub extra_attributes: Value,
     pub revision_id: String,
     pub parent_revision_id: Option<String>,
     #[serde(default)]
@@ -120,6 +122,8 @@ pub struct RevisionRow {
     pub author: String,
     #[serde(default)]
     pub fields: Value,
+    #[serde(default)]
+    pub extra_attributes: Value,
     pub markdown_checksum: String,
     #[serde(default)]
     pub integrity: IntegrityPayload,
@@ -204,6 +208,63 @@ fn parse_markdown(content: &str) -> (Value, Value) {
     (frontmatter, sections)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExtraAttributesPolicy {
+    Deny,
+    AllowJson,
+    AllowColumns,
+}
+
+fn extra_attributes_policy(class_def: &Value) -> ExtraAttributesPolicy {
+    match class_def
+        .get("allow_extra_attributes")
+        .and_then(|v| v.as_str())
+    {
+        Some("allow_json") => ExtraAttributesPolicy::AllowJson,
+        Some("allow_columns") => ExtraAttributesPolicy::AllowColumns,
+        _ => ExtraAttributesPolicy::Deny,
+    }
+}
+
+fn collect_extra_attributes(sections: &Value, class_set: &HashSet<String>) -> (Vec<String>, Value) {
+    let mut extras = Vec::new();
+    let mut entries = Vec::new();
+
+    if let Some(section_map) = sections.as_object() {
+        for (key, value) in section_map {
+            if !class_set.contains(key) {
+                extras.push(key.clone());
+                entries.push((key.clone(), value.clone()));
+            }
+        }
+    }
+
+    extras.sort();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut map = Map::new();
+    for (key, value) in entries {
+        map.insert(key, value);
+    }
+
+    (extras, Value::Object(map))
+}
+
+pub(crate) fn merge_note_fields(fields: &Value, extra_attributes: &Value) -> Value {
+    let mut merged = Map::new();
+    if let Some(map) = fields.as_object() {
+        for (key, value) in map {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    if let Some(map) = extra_attributes.as_object() {
+        for (key, value) in map {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
+}
+
 fn class_field_names(class_def: &Value) -> Vec<String> {
     let mut names = Vec::new();
     if let Some(fields) = class_def.get("fields") {
@@ -280,11 +341,14 @@ pub(crate) fn render_markdown(
                 seen.insert(name.clone());
             }
         }
+        let mut remaining = Vec::new();
         for (name, value) in map {
             if !seen.contains(name) {
-                ordered_fields.push((name.clone(), value.clone()));
+                remaining.push((name.clone(), value.clone()));
             }
         }
+        remaining.sort_by(|a, b| a.0.cmp(&b.0));
+        ordered_fields.extend(remaining);
     }
 
     for (name, value) in ordered_fields {
@@ -315,10 +379,12 @@ pub(crate) fn render_markdown_for_class(
     class_name: &str,
     tags: &[String],
     fields: &Value,
+    extra_attributes: &Value,
     class_def: &Value,
 ) -> String {
     let field_order = class_field_names(class_def);
-    render_markdown(title, class_name, tags, fields, &field_order)
+    let merged_fields = merge_note_fields(fields, extra_attributes);
+    render_markdown(title, class_name, tags, &merged_fields, &field_order)
 }
 
 fn class_field_defs(class_def: &Value) -> Vec<(String, String)> {
@@ -521,6 +587,39 @@ fn struct_array_from_integrity(
     let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
         .map_err(|e| anyhow!("Failed to build integrity struct array: {}", e))?;
     Ok(Arc::new(struct_array))
+}
+
+fn normalize_extra_attributes(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> =
+                map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut normalized = Map::new();
+            for (key, value) in entries {
+                normalized.insert(key, value);
+            }
+            Value::Object(normalized)
+        }
+        _ => value.clone(),
+    }
+}
+
+fn extra_attributes_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::Object(map) if map.is_empty() => None,
+        _ => serde_json::to_string(&normalize_extra_attributes(value)).ok(),
+    }
+}
+
+fn extra_attributes_from_string(raw: Option<&str>) -> Value {
+    match raw {
+        Some(value) if !value.trim().is_empty() => {
+            serde_json::from_str(value).unwrap_or_else(|_| Value::Object(Map::new()))
+        }
+        _ => Value::Object(Map::new()),
+    }
 }
 
 fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
@@ -895,6 +994,7 @@ fn note_rows_from_batches(
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
+        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
         let attachments = column_as::<ListArray>(batch, "attachments")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
@@ -915,6 +1015,11 @@ fn note_rows_from_batches(
                 Value::Object(Map::new())
             } else {
                 value_from_struct_array(fields, row_idx, class_def)
+            };
+            let extra_attributes_value = if extra_attributes.is_null(row_idx) {
+                Value::Object(Map::new())
+            } else {
+                extra_attributes_from_string(Some(extra_attributes.value(row_idx)))
             };
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
@@ -945,6 +1050,7 @@ fn note_rows_from_batches(
                     from_timestamp_micros(updated_at.value(row_idx))
                 },
                 fields: fields_value,
+                extra_attributes: extra_attributes_value,
                 revision_id: "".to_string(),
                 parent_revision_id: None,
                 attachments: attachments_value,
@@ -970,6 +1076,7 @@ fn revision_rows_from_batches(
         let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
         let authors = column_as::<StringArray>(batch, "author")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
+        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
@@ -985,6 +1092,11 @@ fn revision_rows_from_batches(
                 Value::Object(Map::new())
             } else {
                 value_from_struct_array(fields, row_idx, class_def)
+            };
+            let extra_attributes_value = if extra_attributes.is_null(row_idx) {
+                Value::Object(Map::new())
+            } else {
+                extra_attributes_from_string(Some(extra_attributes.value(row_idx)))
             };
 
             rows.push(RevisionRow {
@@ -1010,6 +1122,7 @@ fn revision_rows_from_batches(
                     authors.value(row_idx).to_string()
                 },
                 fields: fields_value,
+                extra_attributes: extra_attributes_value,
                 markdown_checksum: if checksums.is_null(row_idx) {
                     "".to_string()
                 } else {
@@ -1055,6 +1168,10 @@ fn note_row_to_record_batch(
                 let struct_fields = struct_fields_from_field(field.as_ref())?;
                 struct_array_from_fields(class_def, &row.fields, &struct_fields)?
             }
+            "extra_attributes" => {
+                let json_value = extra_attributes_to_string(&row.extra_attributes);
+                Arc::new(StringArray::from(vec![json_value]))
+            }
             "attachments" => list_attachments_array_from_values(&row.attachments, field.as_ref())?,
             "integrity" => {
                 let struct_fields = struct_fields_from_field(field.as_ref())?;
@@ -1096,6 +1213,10 @@ fn revision_row_to_record_batch(
             "fields" => {
                 let struct_fields = struct_fields_from_field(field.as_ref())?;
                 struct_array_from_fields(class_def, &row.fields, &struct_fields)?
+            }
+            "extra_attributes" => {
+                let json_value = extra_attributes_to_string(&row.extra_attributes);
+                Arc::new(StringArray::from(vec![json_value]))
             }
             "markdown_checksum" => {
                 Arc::new(StringArray::from(vec![Some(row.markdown_checksum.clone())]))
@@ -1346,15 +1467,10 @@ pub async fn create_note<I: IntegrityProvider>(
 
     let class_fields = class_field_names(&class_def);
     let class_set: HashSet<String> = class_fields.iter().cloned().collect();
-    if let Some(section_map) = sections.as_object() {
-        let extras: Vec<String> = section_map
-            .keys()
-            .filter(|key| !class_set.contains(*key))
-            .cloned()
-            .collect();
-        if !extras.is_empty() {
-            return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
-        }
+    let policy = extra_attributes_policy(&class_def);
+    let (extras, extra_attributes) = collect_extra_attributes(&sections, &class_set);
+    if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
+        return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
     }
 
     let properties = index::extract_properties(content);
@@ -1399,6 +1515,7 @@ pub async fn create_note<I: IntegrityProvider>(
         created_at: timestamp,
         updated_at: timestamp,
         fields: Value::Object(fields),
+        extra_attributes: extra_attributes.clone(),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
         attachments: Vec::new(),
@@ -1420,6 +1537,7 @@ pub async fn create_note<I: IntegrityProvider>(
         timestamp,
         author: author.to_string(),
         fields: note_row.fields.clone(),
+        extra_attributes: note_row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
@@ -1464,12 +1582,13 @@ pub async fn list_notes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
         if row.deleted {
             continue;
         }
+        let merged_fields = merge_note_fields(&row.fields, &row.extra_attributes);
         notes.push(serde_json::json!({
             "id": row.note_id,
             "title": row.title,
             "class": class_name,
             "tags": row.tags,
-            "properties": row.fields,
+            "properties": merged_fields,
             "links": row.links,
             "canvas_position": row.canvas_position,
             "created_at": row.created_at,
@@ -1490,18 +1609,19 @@ pub async fn get_note(op: &Operator, ws_path: &str, note_id: &str) -> Result<Val
 
     let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
     let field_order = class_field_names(&class_def);
+    let merged_fields = merge_note_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(
         &row.title,
         &class_name,
         &row.tags,
-        &row.fields,
+        &merged_fields,
         &field_order,
     );
     let frontmatter = serde_json::json!({
         "class": class_name,
         "tags": row.tags,
     });
-    let sections = sections_from_fields(&row.fields);
+    let sections = sections_from_fields(&merged_fields);
 
     Ok(serde_json::json!({
         "id": note_id,
@@ -1529,11 +1649,12 @@ pub async fn get_note_content(op: &Operator, ws_path: &str, note_id: &str) -> Re
     let row = read_note_row(op, ws_path, &class_name, note_id).await?;
     let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
     let field_order = class_field_names(&class_def);
+    let merged_fields = merge_note_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(
         &row.title,
         &class_name,
         &row.tags,
-        &row.fields,
+        &merged_fields,
         &field_order,
     );
     Ok(NoteContent {
@@ -1545,7 +1666,7 @@ pub async fn get_note_content(op: &Operator, ws_path: &str, note_id: &str) -> Re
             "class": class_name,
             "tags": row.tags,
         }),
-        sections: sections_from_fields(&row.fields),
+        sections: sections_from_fields(&merged_fields),
         attachments: row.attachments,
         computed: Value::Object(Map::new()),
     })
@@ -1587,15 +1708,10 @@ pub async fn update_note<I: IntegrityProvider>(
     let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
     let class_fields = class_field_names(&class_def);
     let class_set: HashSet<String> = class_fields.iter().cloned().collect();
-    if let Some(section_map) = sections.as_object() {
-        let extras: Vec<String> = section_map
-            .keys()
-            .filter(|key| !class_set.contains(*key))
-            .cloned()
-            .collect();
-        if !extras.is_empty() {
-            return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
-        }
+    let policy = extra_attributes_policy(&class_def);
+    let (extras, extra_attributes) = collect_extra_attributes(&sections, &class_set);
+    if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
+        return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
     }
 
     let properties = index::extract_properties(content);
@@ -1637,6 +1753,7 @@ pub async fn update_note<I: IntegrityProvider>(
         row.tags = extract_tags(&frontmatter);
     }
     row.fields = Value::Object(fields);
+    row.extra_attributes = extra_attributes.clone();
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
     row.author = author.to_string();
@@ -1655,6 +1772,7 @@ pub async fn update_note<I: IntegrityProvider>(
         timestamp,
         author: author.to_string(),
         fields: row.fields.clone(),
+        extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
@@ -1784,11 +1902,12 @@ pub async fn restore_note<I: IntegrityProvider>(
     }
 
     let field_order = class_field_names(&class_def);
+    let merged_fields = merge_note_fields(&revision.fields, &revision.extra_attributes);
     let markdown = render_markdown(
         &row.title,
         &class_name,
         &row.tags,
-        &revision.fields,
+        &merged_fields,
         &field_order,
     );
     let checksum = integrity.checksum(&markdown);
@@ -1798,6 +1917,7 @@ pub async fn restore_note<I: IntegrityProvider>(
     row.revision_id = new_rev_id.clone();
     row.updated_at = timestamp;
     row.fields = revision.fields.clone();
+    row.extra_attributes = revision.extra_attributes.clone();
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),
@@ -1812,6 +1932,7 @@ pub async fn restore_note<I: IntegrityProvider>(
         timestamp,
         author: author.to_string(),
         fields: row.fields.clone(),
+        extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
