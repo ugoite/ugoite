@@ -994,7 +994,9 @@ fn note_rows_from_batches(
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
-        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
+        let extra_attributes = batch
+            .column_by_name("extra_attributes")
+            .and_then(|col| col.as_any().downcast_ref::<StringArray>());
         let attachments = column_as::<ListArray>(batch, "attachments")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let deleted = column_as::<BooleanArray>(batch, "deleted")?;
@@ -1016,10 +1018,15 @@ fn note_rows_from_batches(
             } else {
                 value_from_struct_array(fields, row_idx, class_def)
             };
-            let extra_attributes_value = if extra_attributes.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                extra_attributes_from_string(Some(extra_attributes.value(row_idx)))
+            let extra_attributes_value = match extra_attributes {
+                Some(array) => {
+                    if array.is_null(row_idx) {
+                        Value::Object(Map::new())
+                    } else {
+                        extra_attributes_from_string(Some(array.value(row_idx)))
+                    }
+                }
+                None => Value::Object(Map::new()),
             };
 
             let deleted_at_value = if deleted_at.is_null(row_idx) {
@@ -1076,7 +1083,9 @@ fn revision_rows_from_batches(
         let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
         let authors = column_as::<StringArray>(batch, "author")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
-        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
+        let extra_attributes = batch
+            .column_by_name("extra_attributes")
+            .and_then(|col| col.as_any().downcast_ref::<StringArray>());
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
@@ -1093,10 +1102,15 @@ fn revision_rows_from_batches(
             } else {
                 value_from_struct_array(fields, row_idx, class_def)
             };
-            let extra_attributes_value = if extra_attributes.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                extra_attributes_from_string(Some(extra_attributes.value(row_idx)))
+            let extra_attributes_value = match extra_attributes {
+                Some(array) => {
+                    if array.is_null(row_idx) {
+                        Value::Object(Map::new())
+                    } else {
+                        extra_attributes_from_string(Some(array.value(row_idx)))
+                    }
+                }
+                None => Value::Object(Map::new()),
             };
 
             rows.push(RevisionRow {
