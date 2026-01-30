@@ -38,5 +38,5 @@
 	"remoteEnv": {
 		"MISE_EXPERIMENTAL": "1"
 	},
-	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install",
+	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install",
 }
