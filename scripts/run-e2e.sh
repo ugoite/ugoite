@@ -4,6 +4,8 @@
 #   test-type: "smoke", "notes", or "full" (runs all tests)
 #
 # Environment variables:
+#   BUN_TEST_TIMEOUT_MS: per-test timeout passed to `bun test --timeout`
+#   E2E_TIMEOUT: per-request timeout used by the E2E client
 
 set -e
 
@@ -105,15 +107,20 @@ echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
 
+TEST_TIMEOUT_ARGS=()
+if [ -n "${BUN_TEST_TIMEOUT_MS:-}" ]; then
+    TEST_TIMEOUT_ARGS=(--timeout "${BUN_TEST_TIMEOUT_MS}")
+fi
+
 case "$TEST_TYPE" in
     smoke)
-        bun test smoke.test.ts
+        bun test "${TEST_TIMEOUT_ARGS[@]}" smoke.test.ts
         ;;
     notes)
-        bun test notes.test.ts
+        bun test "${TEST_TIMEOUT_ARGS[@]}" notes.test.ts
         ;;
     full)
-        bun test
+        bun test "${TEST_TIMEOUT_ARGS[@]}"
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"
