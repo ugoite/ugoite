@@ -30,13 +30,7 @@
 		"source=backend_venv,target=/workspace/backend/.venv,type=volume"
 	],
 	"remoteUser": "vscode",
-	"containerEnv": {
-		"BUN_TEST_TIMEOUT_MS": "15000",
-		"E2E_TIMEOUT": "15000",
-		"E2E_FRONTEND_MODE": "prod"
-	},
-	"remoteEnv": {
-		"MISE_EXPERIMENTAL": "1"
-	},
+	"containerEnv": {},
+	"remoteEnv": { "MISE_EXPERIMENTAL": "1" },
 	"postAttachCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install",
 }

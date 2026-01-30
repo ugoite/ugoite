@@ -12,7 +12,6 @@ import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { E2EClient, waitForServers } from "./lib/client";
 
 const client = new E2EClient();
-const navigationTimeoutMs = Number(process.env.BUN_TEST_TIMEOUT_MS) || 15000;
 
 async function ensureDefaultClass(): Promise<void> {
 	await client.postApi("/workspaces/default/classes", {
@@ -473,6 +472,6 @@ describe("Consecutive Saves (REQ-FE-012)", () => {
 			expect(html).toContain("<div id=\"app\">");
 		}
 		},
-		navigationTimeoutMs,
+		15000,
 	);
 });
