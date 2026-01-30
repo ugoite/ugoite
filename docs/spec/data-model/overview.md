@@ -42,6 +42,7 @@ Classes define note types with:
 - **Template**: Fixed global template `# {class_name} + H2 columns`
 - **Fields**: Derived from the Iceberg table schema
 - **Types**: Iceberg column types mapped to note fields
+- **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
 
 ### Properties Extraction
 
@@ -52,6 +53,11 @@ The write pipeline extracts properties from Markdown:
 3. **Auto Properties**: Computed values (word_count, etc.)
 
 Precedence: Section > Frontmatter > Auto default
+
+Extra H2 sections are handled by the Class policy:
+- `deny`: reject notes with unknown H2 sections
+- `allow_json`: store unknown sections in `extra_attributes`
+- `allow_columns`: accept unknown sections and store in `extra_attributes`
 
 ### Versioning
 
@@ -75,3 +81,9 @@ All data is signed with HMAC:
 - Key stored in `global.json`
 - Signature stored alongside note and revision rows
 - Checksum (SHA-256) for tamper detection
+
+## Extra Attributes Storage
+
+When allowed, unknown H2 sections are persisted in the `extra_attributes` column
+as a deterministic JSON object. On read, `fields` and `extra_attributes` are
+merged to reconstruct Markdown and properties.

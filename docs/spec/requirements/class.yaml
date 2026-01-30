@@ -82,3 +82,21 @@ requirements:
           tests:
             - Create and List Classes
             - Query Notes by Class
+
+  - id: REQ-CLS-004
+    title: Extra Attributes Policy
+    description: |
+      Class definitions MUST declare how extra attributes (non-registered H2
+      sections) are handled, and the system MUST enforce the policy on note
+      creation and update.
+    related_spec:
+      - data-model/overview.md#classes
+      - data-model/file-schemas.yaml#class_definition
+    priority: medium
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_cls_004_deny_extra_attributes
+            - test_note_req_cls_004_allow_extra_attributes
