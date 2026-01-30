@@ -159,6 +159,25 @@ Focus on desktop application using Tauri:
 
 ---
 
+## Issue Backlog (Security, Docs, Trends, UX)
+
+### Security Bugfixes
+- [ ] **Document remote deployment safeguards**: Add guidance for HTTPS reverse proxy, rate limiting, and recommended auth until M6 (see `docs/spec/security/overview.md`).
+- [ ] **Clarify CORS policy**: Document allowed origins, expected `FRONTEND_URL` behavior, and error cases (see `docs/spec/security/overview.md`).
+- [ ] **Storage credential hygiene**: Add best practices for S3 credential rotation and audit logging (see `docs/spec/security/overview.md`).
+
+### Documentation Contradictions
+- [ ] **Sandbox removal visibility**: Surface the M2 removal of `run_script` in `README.md` to avoid stale expectations (see `docs/spec/security/sandbox.md`).
+- [ ] **Milestone numbering mismatch**: Align `README.md` "Known Issues & Future Work" with the M1–M7 roadmap labels (see `docs/tasks/roadmap.md`).
+- [ ] **Iceberg timeline clarity**: Clarify that Iceberg storage is planned (M3) even though architecture mentions it as a design target (see `docs/spec/architecture/overview.md`).
+
+### Trend & UX Feature Requests
+- [ ] **Accessibility baseline**: Add a11y requirements (keyboard navigation, focus states, contrast) to specs and UI tests.
+- [ ] **Responsive & mobile-first layout**: Add requirements for mobile-friendly navigation and touch targets.
+- [ ] **Dark mode support**: Add requirement for theme toggle and persisted preference.
+- [ ] **Error recovery UX**: Define UI behavior for timeouts, partial writes, and offline transitions (align with REQ-FE-035).
+- [ ] **Performance SLOs**: Define front-end list/search latency targets and testing strategy.
+
 ## Contributing
 
 Contributions are welcome! For each milestone:
