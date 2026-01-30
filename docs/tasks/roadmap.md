@@ -161,7 +161,7 @@ Focus on desktop application using Tauri:
 
 ## Issue Backlog (Security, Docs, Trends, UX)
 
-### Security Bugfixes
+### Security Documentation Gaps
 - [ ] **Document remote deployment safeguards**: Add guidance for HTTPS reverse proxy, rate limiting, and recommended auth until M6 (see `docs/spec/security/overview.md`).
 - [ ] **Clarify CORS policy**: Document allowed origins, expected `FRONTEND_URL` behavior, and error cases (see `docs/spec/security/overview.md`).
 - [ ] **Storage credential hygiene**: Add best practices for S3 credential rotation and audit logging (see `docs/spec/security/overview.md`).
