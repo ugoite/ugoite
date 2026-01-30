@@ -252,6 +252,79 @@ async fn test_note_req_note_006_extract_h2_headers() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-CLS-004
+async fn test_note_req_cls_004_deny_extra_attributes() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-extra-deny", "/tmp").await?;
+    let ws_path = "workspaces/test-extra-deny";
+    let integrity = FakeIntegrityProvider;
+
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "template": "# Note\n\n## Body\n",
+        "fields": {"Body": {"type": "markdown"}},
+        "allow_extra_attributes": "deny",
+    });
+    class::upsert_class(&op, ws_path, &class_def).await?;
+
+    let content = "---\nclass: Note\n---\n# Title\n\n## Body\nContent\n\n## Extra\nValue";
+    let result = note::create_note(
+        &op,
+        ws_path,
+        "note-extra-deny",
+        content,
+        "author",
+        &integrity,
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Unknown class fields"));
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-CLS-004
+async fn test_note_req_cls_004_allow_extra_attributes() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-extra-allow", "/tmp").await?;
+    let ws_path = "workspaces/test-extra-allow";
+    let integrity = FakeIntegrityProvider;
+
+    for policy in ["allow_json", "allow_columns"] {
+        let class_def = serde_json::json!({
+            "name": "Note",
+            "template": "# Note\n\n## Body\n",
+            "fields": {"Body": {"type": "markdown"}},
+            "allow_extra_attributes": policy,
+        });
+        class::upsert_class(&op, ws_path, &class_def).await?;
+
+        let note_id = format!("note-extra-{}", policy);
+        let content = "---\nclass: Note\n---\n# Title\n\n## Body\nContent\n\n## Extra\nValue";
+        note::create_note(&op, ws_path, &note_id, content, "author", &integrity).await?;
+
+        let content_info = note::get_note_content(&op, ws_path, &note_id).await?;
+        assert!(content_info.markdown.contains("## Extra"));
+        assert!(content_info.markdown.contains("Value"));
+
+        let list = note::list_notes(&op, ws_path).await?;
+        let extra_prop = list
+            .iter()
+            .find(|note| note.get("id").and_then(|v| v.as_str()) == Some(note_id.as_str()))
+            .and_then(|note| note.get("properties"))
+            .and_then(|props| props.get("Extra"));
+        assert!(extra_prop.is_some());
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-NOTE-008
 async fn test_note_req_note_008_attachments_linking() -> anyhow::Result<()> {
     let op = setup_operator()?;

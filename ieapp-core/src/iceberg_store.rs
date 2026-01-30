@@ -499,6 +499,12 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
+            "extra_attributes",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
             "attachments",
             attachments_type,
             false,
@@ -582,6 +588,12 @@ fn build_revisions_schema(class_def: &Value) -> Result<Schema> {
             next_id(&mut counter),
             "fields",
             fields_struct,
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "extra_attributes",
+            Type::Primitive(PrimitiveType::String),
             false,
         )),
         Arc::new(NestedField::new(

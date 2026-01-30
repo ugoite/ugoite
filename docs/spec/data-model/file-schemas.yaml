@@ -103,6 +103,10 @@ classes:
         version:
           type: integer
           description: Schema version for migrations
+        allow_extra_attributes:
+          type: string
+          enum: [deny, allow_json, allow_columns]
+          description: Policy for non-registered H2 sections
         fields:
           type: object
           additionalProperties:
@@ -167,6 +171,9 @@ classes:
         fields:
           type: object
           description: Class-defined fields
+        extra_attributes:
+          type: object
+          description: Extra attributes stored as JSON when allowed
         integrity:
           $ref: "#/classes/integrity"
 
@@ -191,6 +198,9 @@ classes:
         fields:
           type: object
           description: Class-defined fields snapshot
+        extra_attributes:
+          type: object
+          description: Extra attributes snapshot when allowed
         markdown_checksum:
           type: string
         integrity:

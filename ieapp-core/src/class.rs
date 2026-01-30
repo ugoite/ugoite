@@ -1,7 +1,7 @@
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
 use crate::note;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -180,6 +180,7 @@ pub async fn migrate_class<I: IntegrityProvider>(
             class_name,
             &row.tags,
             &row.fields,
+            &row.extra_attributes,
             &normalized,
         );
         let checksum = integrity.checksum(&markdown);
@@ -198,6 +199,7 @@ pub async fn migrate_class<I: IntegrityProvider>(
             timestamp,
             author: row.author.clone(),
             fields: row.fields.clone(),
+            extra_attributes: row.extra_attributes.clone(),
             markdown_checksum: checksum,
             integrity: row.integrity.clone(),
             restored_from: None,
@@ -235,11 +237,25 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
     let fields = normalize_class_fields(class_def.get("fields"));
+    let allow_extra_attributes = class_def
+        .get("allow_extra_attributes")
+        .and_then(|v| v.as_str())
+        .unwrap_or("deny");
+    if !matches!(
+        allow_extra_attributes,
+        "deny" | "allow_json" | "allow_columns"
+    ) {
+        return Err(anyhow!(
+            "Invalid allow_extra_attributes value: {}",
+            allow_extra_attributes
+        ));
+    }
 
     Ok(serde_json::json!({
         "name": name,
         "version": version,
         "fields": fields,
+        "allow_extra_attributes": allow_extra_attributes,
     }))
 }
 
