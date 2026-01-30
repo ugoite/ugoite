@@ -1,6 +1,6 @@
 """Pydantic models for the application."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -74,5 +74,6 @@ class ClassCreate(BaseModel):
     version: int = 1
     template: str
     fields: dict[str, dict[str, Any]]
+    allow_extra_attributes: Literal["deny", "allow_json", "allow_columns"] = "deny"
     defaults: dict[str, Any] | None = None
     strategies: dict[str, Any] | None = None
