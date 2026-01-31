@@ -16,6 +16,11 @@ export const searchApi = {
 		return (await res.json()) as NoteRecord[];
 	},
 
+	/** Query workspace index via IEapp SQL */
+	async querySql(workspaceId: string, sql: string): Promise<NoteRecord[]> {
+		return searchApi.query(workspaceId, { $sql: sql });
+	},
+
 	/** Search notes by keyword */
 	async keyword(workspaceId: string, query: string): Promise<SearchResult[]> {
 		const params = new URLSearchParams({ q: query });

@@ -11,6 +11,11 @@
 		"format": "biome format --write ."
 	},
 	"dependencies": {
+		"@codemirror/basic-setup": "^0.20.0",
+		"@codemirror/lang-sql": "^6.9.0",
+		"@codemirror/lint": "^6.5.0",
+		"@codemirror/state": "^6.5.1",
+		"@codemirror/view": "^6.28.0",
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.1",
 		"solid-js": "^1.9.11",
