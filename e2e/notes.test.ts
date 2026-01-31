@@ -44,6 +44,51 @@ test.describe("Notes CRUD", () => {
 		expect(Array.isArray(notes)).toBe(true);
 	});
 
+	test("consecutive PUT should succeed with updated revision_id", async ({ request }) => {
+		const createRes = await request.post(
+			getBackendUrl("/workspaces/default/notes"),
+			{
+				data: {
+					content:
+						"---\nclass: Note\n---\n# Initial Content\n\n## Body\nThis is the first version.",
+				},
+			},
+		);
+		expect(createRes.status()).toBe(201);
+		const created = (await createRes.json()) as { id: string; revision_id: string };
+
+		const firstUpdateRes = await request.put(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+			{
+				data: {
+					markdown:
+						"---\nclass: Note\n---\n# Updated Content\n\n## Body\nThis is the second version.",
+					parent_revision_id: created.revision_id,
+				},
+			},
+		);
+		expect(firstUpdateRes.ok()).toBeTruthy();
+		const firstResult = (await firstUpdateRes.json()) as {
+			revision_id: string;
+		};
+
+		const secondUpdateRes = await request.put(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+			{
+				data: {
+					markdown:
+						"---\nclass: Note\n---\n# Third Version\n\n## Body\nThis is the third version.",
+					parent_revision_id: firstResult.revision_id,
+				},
+			},
+		);
+		expect(secondUpdateRes.ok()).toBeTruthy();
+
+		await request.delete(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+		);
+	});
+
 	test("PUT /workspaces/default/notes/:id updates note", async ({ request }) => {
 		const createRes = await request.post(
 			getBackendUrl("/workspaces/default/notes"),
