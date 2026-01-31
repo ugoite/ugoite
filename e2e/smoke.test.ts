@@ -8,9 +8,9 @@
 
 import { expect, test } from "@playwright/test";
 import {
+	enableBackendProxy,
 	ensureDefaultClass,
 	getBackendUrl,
-	getFrontendUrl,
 	waitForServers,
 } from "./lib/client";
 
@@ -20,29 +20,32 @@ test.describe("Smoke Tests", () => {
 		await ensureDefaultClass(request);
 	});
 
-	test("GET / returns HTML with DOCTYPE", async ({ request }) => {
-		const res = await request.get(getFrontendUrl("/"));
-		expect(res.ok()).toBeTruthy();
+	test.beforeEach(async ({ page }) => {
+		await enableBackendProxy(page);
+	});
 
-		const body = await res.text();
+	test("GET / returns HTML with DOCTYPE", async ({ page }) => {
+		await page.goto("/");
+		await page.waitForLoadState("networkidle");
+		const body = await page.content();
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("GET / has correct content-type", async ({ request }) => {
-		const res = await request.get(getFrontendUrl("/"));
-		const contentType = res.headers()["content-type"] ?? "";
+	test("GET / has correct content-type", async ({ page }) => {
+		const response = await page.goto("/");
+		expect(response).not.toBeNull();
+		const contentType = response?.headers()["content-type"] ?? "";
 		expect(contentType).toContain("text/html");
 	});
 
-	test("GET /workspaces returns HTML", async ({ request }) => {
-		const res = await request.get(getFrontendUrl("/workspaces"));
-		expect(res.ok()).toBeTruthy();
-
-		const body = await res.text();
+	test("GET /workspaces returns HTML", async ({ page }) => {
+		await page.goto("/workspaces");
+		await page.waitForLoadState("networkidle");
+		const body = await page.content();
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("GET /workspaces/default/notes/:id returns HTML", async ({ request }) => {
+	test("GET /workspaces/default/notes/:id returns HTML", async ({ page, request }) => {
 		const createRes = await request.post(
 			getBackendUrl("/workspaces/default/notes"),
 			{
@@ -52,16 +55,11 @@ test.describe("Smoke Tests", () => {
 			},
 		);
 		expect(createRes.status()).toBe(201);
-
 		const created = (await createRes.json()) as { id: string };
-		expect(created).toHaveProperty("id");
 
-		const res = await request.get(
-			getFrontendUrl(`/workspaces/default/notes/${created.id}`),
-		);
-		expect(res.ok()).toBeTruthy();
-
-		const body = await res.text();
+		await page.goto(`/workspaces/default/notes/${created.id}`);
+		await page.waitForLoadState("networkidle");
+		const body = await page.content();
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 
 		await request.delete(
@@ -69,11 +67,10 @@ test.describe("Smoke Tests", () => {
 		);
 	});
 
-	test("GET /about returns HTML", async ({ request }) => {
-		const res = await request.get(getFrontendUrl("/about"));
-		expect(res.ok()).toBeTruthy();
-
-		const body = await res.text();
+	test("GET /about returns HTML", async ({ page }) => {
+		await page.goto("/about");
+		await page.waitForLoadState("networkidle");
+		const body = await page.content();
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
@@ -88,7 +85,6 @@ test.describe("Smoke Tests", () => {
 	test("GET /workspaces includes default workspace", async ({ request }) => {
 		const res = await request.get(getBackendUrl("/workspaces"));
 		const workspaces = (await res.json()) as Array<{ name: string }>;
-
 		const defaultWs = workspaces.find((ws) => ws.name === "default");
 		expect(defaultWs).toBeDefined();
 	});

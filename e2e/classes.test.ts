@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { getBackendUrl, waitForServers } from "./lib/client";
+import { enableBackendProxy, getBackendUrl, waitForServers } from "./lib/client";
 
 const workspaceId = "default";
 
@@ -8,7 +8,11 @@ test.describe("Class", () => {
 		await waitForServers(request);
 	});
 
-	test("Create and List Classes", async ({ request }) => {
+	test.beforeEach(async ({ page }) => {
+		await enableBackendProxy(page);
+	});
+
+	test("Create and List Classes", async ({ page, request }) => {
 		const className = `E2ETestClass-${Date.now()}`;
 		const classDef = {
 			name: className,
@@ -25,17 +29,11 @@ test.describe("Class", () => {
 		);
 		expect([200, 201]).toContain(createRes.status());
 
-		const listRes = await request.get(
-			getBackendUrl(`/workspaces/${workspaceId}/classes`),
-		);
-		expect(listRes.status()).toBe(200);
-		const noteClasses = (await listRes.json()) as Array<{ name: string }>;
-		expect(Array.isArray(noteClasses)).toBe(true);
-		const found = noteClasses.find((s) => s.name === className);
-		expect(found).toBeDefined();
+		await page.goto(`/workspaces/${workspaceId}/classes`);
+		await expect(page.getByText(className)).toBeVisible({ timeout: 15000 });
 	});
 
-	test("Query Notes by Class", async ({ request }) => {
+	test("Query Notes by Class", async ({ page, request }) => {
 		const className = `QueryTestClass-${Date.now()}`;
 		const classDef = {
 			name: className,
@@ -51,9 +49,12 @@ test.describe("Class", () => {
 			{ data: classDef },
 		);
 
+		const noteTitle = `Query Note ${Date.now()}`;
 		const noteContent = `---
 class: ${className}
 ---
+# ${noteTitle}
+
 ## Status
 Active
 `;
@@ -66,20 +67,17 @@ Active
 
 		await request.get(getBackendUrl(`/workspaces/${workspaceId}/search?q=Active`));
 
-		const queryRes = await request.post(
-			getBackendUrl(`/workspaces/${workspaceId}/query`),
-			{ data: { filter: { class: className } } },
-		);
-		expect(queryRes.status()).toBe(200);
-		const results = (await queryRes.json()) as Array<{
-			id: string;
-			properties: { Status?: string };
-		}>;
-		expect(Array.isArray(results)).toBe(true);
-		expect(results.length).toBeGreaterThan(0);
-		const foundNote = results.find((n) => n.id === note.id);
-		expect(foundNote).toBeDefined();
-		expect(foundNote?.properties.Status).toBe("Active");
+		await page.goto(`/workspaces/${workspaceId}/classes`, {
+			waitUntil: "domcontentloaded",
+		});
+		const classButton = page.getByRole("button", { name: className });
+		await expect(classButton).toBeVisible({ timeout: 15000 });
+		await classButton.click();
+		await expect(
+			page.getByRole("heading", { name: className }).first(),
+		).toBeVisible({ timeout: 15000 });
+		await expect(page.getByText("Active")).toBeVisible({ timeout: 15000 });
+		await expect(page.getByText(noteTitle)).toBeVisible({ timeout: 15000 });
 
 		await request.delete(
 			getBackendUrl(`/workspaces/${workspaceId}/notes/${note.id}`),

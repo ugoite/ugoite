@@ -1,5 +1,5 @@
 [tasks.install]
-run = "npm install"
+run = "npm install && npx playwright install"
 
 [tasks.test]
 run = "npm run test"
