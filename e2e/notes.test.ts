@@ -89,6 +89,48 @@ test.describe("Notes CRUD", () => {
 		);
 	});
 
+	test("PUT with stale revision_id should return 409 conflict", async ({ request }) => {
+		const createRes = await request.post(
+			getBackendUrl("/workspaces/default/notes"),
+			{
+				data: {
+					content:
+						"---\nclass: Note\n---\n# Conflict Test\n\n## Body\nTesting revision conflicts.",
+				},
+			},
+		);
+		expect(createRes.status()).toBe(201);
+		const created = (await createRes.json()) as { id: string; revision_id: string };
+
+		const firstUpdateRes = await request.put(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+			{
+				data: {
+					markdown:
+						"---\nclass: Note\n---\n# After First Update\n\n## Body\nFirst update body",
+					parent_revision_id: created.revision_id,
+				},
+			},
+		);
+		expect(firstUpdateRes.ok()).toBeTruthy();
+
+		const conflictRes = await request.put(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+			{
+				data: {
+					markdown:
+						"---\nclass: Note\n---\n# This Should Fail\n\n## Body\nStale revision",
+					parent_revision_id: created.revision_id,
+				},
+			},
+		);
+		expect(conflictRes.status()).toBe(409);
+
+		await request.delete(
+			getBackendUrl(`/workspaces/default/notes/${created.id}`),
+		);
+	});
+
 	test("PUT /workspaces/default/notes/:id updates note", async ({ request }) => {
 		const createRes = await request.post(
 			getBackendUrl("/workspaces/default/notes"),
