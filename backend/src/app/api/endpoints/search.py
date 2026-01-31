@@ -14,6 +14,13 @@ from app.api.endpoints.workspace import (
 )
 from app.models.classes import QueryRequest
 
+SQL_ERROR_PREFIX = "IEAPP_SQL_ERROR"
+
+
+def _is_sql_error(detail: str) -> bool:
+    return detail.strip().startswith(f"{SQL_ERROR_PREFIX}:")
+
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,7 @@ async def query_endpoint(
         detail = str(e)
         status_code = (
             status.HTTP_400_BAD_REQUEST
-            if "SQL" in detail or "SELECT" in detail or "FROM" in detail
+            if _is_sql_error(detail)
             else status.HTTP_500_INTERNAL_SERVER_ERROR
         )
         raise HTTPException(

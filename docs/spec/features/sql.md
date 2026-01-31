@@ -11,6 +11,8 @@ It is designed for filtering and sorting note records without changing API paths
 - **Supported**: `SELECT *` with `FROM`, `WHERE`, `ORDER BY`, `LIMIT`.
 - **Not supported**: `JOIN`, `GROUP BY`, `SELECT field projection`, subqueries.
 - **Execution**: In-memory evaluation over note records derived from Iceberg tables.
+- **Safety limits**: Implementations MUST cap results to a server-side maximum
+  (default 1000 rows) even when `LIMIT` is omitted.
 
 ## Tables
 
@@ -40,6 +42,7 @@ SELECT * FROM notes WHERE properties.Owner = 'alice'
 
 Invalid syntax or unsupported clauses must return an error from `ieapp-core` and
 surface as a `400` or `500` response depending on the caller context.
+Limits that exceed the server-side maximum must return a validation error.
 
 ## Lint & Completion Rules
 

@@ -7,6 +7,8 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone)]
 pub struct SqlQuery {
@@ -17,20 +19,28 @@ pub struct SqlQuery {
     pub limit: Option<usize>,
 }
 
+const SQL_ERROR_PREFIX: &str = "IEAPP_SQL_ERROR";
+const MAX_QUERY_LIMIT: usize = 1000;
+const LIKE_REGEX_CACHE_LIMIT: usize = 256;
+
+fn sql_error(message: impl std::fmt::Display) -> anyhow::Error {
+    anyhow!("{SQL_ERROR_PREFIX}: {message}")
+}
+
 pub fn parse_sql(query: &str) -> Result<SqlQuery> {
     let dialect = GenericDialect {};
-    let statements =
-        Parser::parse_sql(&dialect, query).map_err(|e| anyhow!("SQL parse error: {e}"))?;
+    let statements = Parser::parse_sql(&dialect, query)
+        .map_err(|e| sql_error(format!("SQL parse error: {e}")))?;
     if statements.len() != 1 {
-        return Err(anyhow!("Only a single SQL statement is supported"));
+        return Err(sql_error("Only a single SQL statement is supported"));
     }
 
     let Statement::Query(boxed) = &statements[0] else {
-        return Err(anyhow!("Only SELECT queries are supported"));
+        return Err(sql_error("Only SELECT queries are supported"));
     };
 
     let SetExpr::Select(select) = boxed.body.as_ref() else {
-        return Err(anyhow!("Only SELECT queries are supported"));
+        return Err(sql_error("Only SELECT queries are supported"));
     };
 
     if select.projection.is_empty()
@@ -41,28 +51,23 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
             )
         })
     {
-        return Err(anyhow!("Only SELECT * is supported in IEapp SQL"));
+        return Err(sql_error("Only SELECT * is supported in IEapp SQL"));
     }
 
     if select.from.len() != 1 {
-        return Err(anyhow!("Exactly one FROM target is required"));
+        return Err(sql_error("Exactly one FROM target is required"));
     }
 
     let relation = &select.from[0].relation;
     let (table, table_alias) = match relation {
         TableFactor::Table { name, alias, .. } => (object_name_to_string(name), alias.clone()),
-        _ => return Err(anyhow!("Unsupported FROM clause (expected a table name)")),
+        _ => return Err(sql_error("Unsupported FROM clause (expected a table name)")),
     };
 
     let selection = select.selection.clone();
     let order_by = boxed.order_by.clone();
     let limit = match &boxed.limit {
-        Some(Expr::Value(SqlValue::Number(num, _))) => num.parse::<usize>().ok(),
-        Some(Expr::UnaryOp { op, expr }) => match (&**expr, op.to_string().as_str()) {
-            (Expr::Value(SqlValue::Number(num, _)), "-") => num.parse::<usize>().ok(),
-            _ => None,
-        },
-        Some(_) => None,
+        Some(expr) => Some(parse_limit(expr)?),
         None => None,
     };
 
@@ -76,37 +81,77 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
 }
 
 pub fn filter_notes_by_sql(notes: Vec<Value>, query: &SqlQuery) -> Result<Vec<Value>> {
-    let mut filtered: Vec<Value> = notes
+    let mut filtered: Vec<Value> = Vec::new();
+    for note in notes
         .into_iter()
         .filter(|note| match_class_filter(note, &query.table))
-        .filter(|note| {
-            if let Some(expr) = &query.selection {
-                matches_expr(note, expr, &query.table, query.table_alias.as_deref())
-                    .unwrap_or(false)
-            } else {
-                true
+    {
+        if let Some(expr) = &query.selection {
+            if !matches_expr(&note, expr, &query.table, query.table_alias.as_deref())? {
+                continue;
             }
-        })
-        .collect();
+        }
+        filtered.push(note);
+    }
 
     if !query.order_by.is_empty() {
+        let mut sort_error: Option<anyhow::Error> = None;
         filtered.sort_by(|a, b| {
-            compare_notes(
+            if sort_error.is_some() {
+                return Ordering::Equal;
+            }
+            match compare_notes(
                 a,
                 b,
                 &query.order_by,
                 &query.table,
                 query.table_alias.as_deref(),
-            )
-            .unwrap_or(Ordering::Equal)
+            ) {
+                Ok(ordering) => ordering,
+                Err(err) => {
+                    sort_error = Some(err);
+                    Ordering::Equal
+                }
+            }
         });
+        if let Some(err) = sort_error {
+            return Err(err);
+        }
     }
 
-    if let Some(limit) = query.limit {
-        filtered.truncate(limit);
-    }
+    let effective_limit = query.limit.unwrap_or(MAX_QUERY_LIMIT);
+    filtered.truncate(effective_limit);
 
     Ok(filtered)
+}
+
+fn parse_limit(expr: &Expr) -> Result<usize> {
+    let raw = match expr {
+        Expr::Value(SqlValue::Number(num, _)) => num
+            .parse::<i64>()
+            .map_err(|_| sql_error("LIMIT must be an integer literal"))?,
+        Expr::UnaryOp { op, expr } if op.to_string() == "-" => {
+            let inner = match &**expr {
+                Expr::Value(SqlValue::Number(num, _)) => num
+                    .parse::<i64>()
+                    .map_err(|_| sql_error("LIMIT must be an integer literal"))?,
+                _ => return Err(sql_error("LIMIT must be an integer literal")),
+            };
+            -inner
+        }
+        _ => return Err(sql_error("LIMIT must be an integer literal")),
+    };
+
+    if raw < 0 {
+        return Err(sql_error("LIMIT must be greater than or equal to 0"));
+    }
+    let limit = usize::try_from(raw).map_err(|_| sql_error("LIMIT exceeds platform size"))?;
+    if limit > MAX_QUERY_LIMIT {
+        return Err(sql_error(format!(
+            "LIMIT exceeds maximum of {MAX_QUERY_LIMIT}"
+        )));
+    }
+    Ok(limit)
 }
 
 fn object_name_to_string(name: &ObjectName) -> String {
@@ -143,7 +188,7 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
                 let right_value = resolve_operand(note, right, table, table_alias)?;
                 compare_values(&left_value, &right_value, op)
             }
-            _ => Err(anyhow!("Unsupported SQL operator: {op}")),
+            _ => Err(sql_error(format!("Unsupported SQL operator: {op}"))),
         },
         Expr::Nested(inner) => matches_expr(note, inner, table, table_alias),
         Expr::UnaryOp { op, expr } if op.to_string().to_lowercase() == "not" => {
@@ -213,7 +258,7 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
             let matches = lower_ok && upper_ok;
             Ok(if *negated { !matches } else { matches })
         }
-        _ => Err(anyhow!("Unsupported SQL expression: {expr:?}")),
+        _ => Err(sql_error(format!("Unsupported SQL expression: {expr:?}"))),
     }
 }
 
@@ -242,7 +287,7 @@ fn resolve_operand(
                 Ok(Value::Null)
             }
         }
-        _ => Err(anyhow!("Unsupported SQL operand: {expr:?}")),
+        _ => Err(sql_error(format!("Unsupported SQL operand: {expr:?}"))),
     }
 }
 
@@ -343,7 +388,7 @@ fn compare_values(left: &Value, right: &Value, op: &BinaryOperator) -> Result<bo
             compare_order(left, right),
             Some(Ordering::Less | Ordering::Equal)
         )),
-        _ => Err(anyhow!("Unsupported SQL comparison operator")),
+        _ => Err(sql_error("Unsupported SQL comparison operator")),
     }
 }
 
@@ -375,11 +420,38 @@ fn like_match(value: &str, pattern: &str) -> bool {
     if pattern == "%" {
         return true;
     }
-    let escaped = regex::escape(pattern).replace('%', ".*");
-    let re = format!("^{}$", escaped);
-    regex::Regex::new(&re)
+    like_regex(pattern)
         .map(|regex| regex.is_match(value))
         .unwrap_or(false)
+}
+
+fn like_regex(pattern: &str) -> Option<regex::Regex> {
+    static LIKE_CACHE: OnceLock<Mutex<HashMap<String, regex::Regex>>> = OnceLock::new();
+    let cache = LIKE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut cache) = cache.lock() {
+        if let Some(existing) = cache.get(pattern) {
+            return Some(existing.clone());
+        }
+
+        let mut regex = String::from("^");
+        for ch in pattern.chars() {
+            match ch {
+                '%' => regex.push_str(".*"),
+                '_' => regex.push('.'),
+                _ => regex.push_str(&regex::escape(&ch.to_string())),
+            }
+        }
+        regex.push('$');
+
+        if let Ok(compiled) = regex::Regex::new(&regex) {
+            if cache.len() >= LIKE_REGEX_CACHE_LIMIT {
+                cache.clear();
+            }
+            cache.insert(pattern.to_string(), compiled.clone());
+            return Some(compiled);
+        }
+    }
+    None
 }
 
 fn compare_notes(
@@ -392,7 +464,7 @@ fn compare_notes(
     for order in order_by {
         let (Expr::Identifier(_) | Expr::CompoundIdentifier(_) | Expr::Value(_)) = &order.expr
         else {
-            return Err(anyhow!("Unsupported ORDER BY expression"));
+            return Err(sql_error("Unsupported ORDER BY expression"));
         };
         let left_value = resolve_operand(left, &order.expr, table, table_alias)?;
         let right_value = resolve_operand(right, &order.expr, table, table_alias)?;

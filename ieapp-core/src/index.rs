@@ -46,16 +46,7 @@ fn extract_sql_query(value: &Value) -> Option<String> {
             .get("$sql")
             .or_else(|| map.get("sql"))
             .and_then(|v| v.as_str())
-            .map(|text| text.to_string())
-            .or_else(|| {
-                map.iter().find_map(|(key, val)| {
-                    if key.to_lowercase().contains("sql") {
-                        val.as_str().map(|text| text.to_string())
-                    } else {
-                        None
-                    }
-                })
-            }),
+            .map(|text| text.to_string()),
         _ => None,
     }
 }

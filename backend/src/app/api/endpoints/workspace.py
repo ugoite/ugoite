@@ -126,9 +126,15 @@ async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     storage_config = _storage_config()
     try:
         workspace_ids = await ieapp_core.list_workspaces(storage_config)
-    except Exception:
-        logger.exception("Failed to list workspaces")
+    except RuntimeError as exc:
+        logger.warning("Failed to list workspaces, returning empty list: %s", exc)
         return []
+    except Exception as exc:
+        logger.exception("Failed to list workspaces")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
 
     results: list[dict[str, Any]] = []
     for ws_id in workspace_ids:

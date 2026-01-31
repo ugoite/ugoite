@@ -22,6 +22,9 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 	let view: EditorView | undefined;
 	const schemaCompartment = new Compartment();
 	const readonlyCompartment = new Compartment();
+	const setHost = (el: HTMLDivElement) => {
+		host = el;
+	};
 
 	onMount(() => {
 		if (!host) return;
@@ -79,5 +82,5 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 		view?.destroy();
 	});
 
-	return <div ref={host} id={props.id} class="border rounded-md text-sm" />;
+	return <div ref={setHost} id={props.id} class="border rounded-md text-sm" />;
 }
