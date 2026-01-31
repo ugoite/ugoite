@@ -34,6 +34,16 @@ test.describe("Notes CRUD", () => {
 		await request.delete(getBackendUrl(`/workspaces/default/notes/${note.id}`));
 	});
 
+	test("GET /workspaces/default/notes returns note list", async ({ request }) => {
+		const res = await request.get(
+			getBackendUrl("/workspaces/default/notes"),
+		);
+		expect(res.ok()).toBeTruthy();
+
+		const notes = await res.json();
+		expect(Array.isArray(notes)).toBe(true);
+	});
+
 	test("PUT /workspaces/default/notes/:id updates note", async ({ request }) => {
 		const createRes = await request.post(
 			getBackendUrl("/workspaces/default/notes"),
