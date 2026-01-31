@@ -1,13 +1,17 @@
 [env]
 _.python.venv = { path = ".venv" }
 UV_PYTHON = "3.13"
+CARGO_TARGET_DIR = "{{env.HOME}}/.cache/ieapp/ieapp-core/target"
 
 [tasks.install]
 run = "uv sync"
 description = "Install dependencies"
 
 [tasks.build]
-run = "PYO3_PYTHON=\"$(command -v python)\" uv run maturin develop"
+run = [
+	"python -c \"import pathlib; [p.unlink() for p in pathlib.Path('ieapp_core').glob('_ieapp_core.*.so')]\"",
+	"PYO3_PYTHON=\"$(command -v python)\" uv run maturin develop",
+]
 description = "Build Rust extension for local development"
 
 [tasks.test]
