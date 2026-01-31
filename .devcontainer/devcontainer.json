@@ -2,7 +2,8 @@
 	"name": "mise",
 	"image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
 	"features": {
-		"ghcr.io/devcontainers-extra/features/mise:1": {}
+		"ghcr.io/devcontainers-extra/features/mise:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
 	},
 	"customizations": {
 		"vscode": {
@@ -36,7 +37,9 @@
 		"E2E_FRONTEND_MODE": "prod"
 	},
 	"remoteEnv": {
-		"MISE_EXPERIMENTAL": "1"
+		"MISE_EXPERIMENTAL": "1",
+		"GH_TOKEN": "${localEnv:GH_TOKEN}",
+		"GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
 	},
 	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install",
 }
