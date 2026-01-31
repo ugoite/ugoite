@@ -1,6 +1,6 @@
 # Milestone 3: Markdown as Table
 
-**Status**: 📋 Planned  
+**Status**: ✅ Done  
 **Goal**: Store notes as Iceberg-backed tables while preserving the current UI behavior
 
 This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
@@ -51,16 +51,16 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 **Objective**: Allow Classes to declare whether extra attributes (non-registered H2 sections) are allowed, and how they are stored.
 
 ### Key Tasks
-- [ ] Extend Class definition to include `allow_extra_attributes` with options (e.g., `deny`, `allow_json`, `allow_columns`).
-- [ ] Update validation to enforce the new Class policy.
-- [ ] Implement storage for extra attributes (JSON column or dynamic columns, as specified).
-- [ ] Update documentation in `docs/spec/data-model/` for the new Class rules.
-- [ ] Add tests that cover both “deny” and “allow” modes.
+- [x] Extend Class definition to include `allow_extra_attributes` with options (e.g., `deny`, `allow_json`, `allow_columns`).
+- [x] Update validation to enforce the new Class policy.
+- [x] Implement storage for extra attributes (JSON column or dynamic columns, as specified).
+- [x] Update documentation in `docs/spec/data-model/` for the new Class rules.
+- [x] Add tests that cover both “deny” and “allow” modes.
 
 ### Acceptance Criteria
-- [ ] Class schema can explicitly allow or deny extra attributes.
-- [ ] Extra attributes are stored deterministically.
-- [ ] Validation behavior matches the Class policy.
+- [x] Class schema can explicitly allow or deny extra attributes.
+- [x] Extra attributes are stored deterministically.
+- [x] Validation behavior matches the Class policy.
 
 ---
 
@@ -69,24 +69,24 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 **Objective**: Define and implement an SQL dialect optimized for IEapp classes and Iceberg storage.
 
 ### Key Tasks
-- [ ] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
-- [ ] Map SQL queries to Iceberg scans in `ieapp-core`.
-- [ ] Add query validation and error reporting.
-- [ ] Integrate with existing REST/MCP query endpoints without API changes.
-- [ ] Add tests for SQL parsing and execution.
+- [x] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
+- [x] Map SQL queries to Iceberg scans in `ieapp-core`.
+- [x] Add query validation and error reporting.
+- [x] Integrate with existing REST/MCP query endpoints without API changes.
+- [x] Add tests for SQL parsing and execution.
 
 ### Acceptance Criteria
-- [ ] Users can query Class data via IEapp SQL.
-- [ ] SQL execution returns consistent, deterministic results.
-- [ ] Query errors are clear and actionable.
+- [x] Users can query Class data via IEapp SQL.
+- [x] SQL execution returns consistent, deterministic results.
+- [x] Query errors are clear and actionable.
 
 ---
 
 ## Definition of Done
 
-- [ ] All phases completed with acceptance criteria met.
-- [ ] Tests pass (unit, integration, e2e).
-- [ ] Documentation updated and consistent with the new storage model.
+- [x] All phases completed with acceptance criteria met.
+- [x] Tests pass (unit, integration, e2e).
+- [x] Documentation updated and consistent with the new storage model.
 
 ---
 
