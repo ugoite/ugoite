@@ -204,6 +204,8 @@ requirements:
     description: |
       The query UI MUST provide an IEapp SQL editor with syntax highlighting,
       lint feedback, and completion for tables/fields.
+      The editor MUST load shared SQL rules from shared/sql/ieapp-sql-rules.json
+      and MUST render without CodeMirror extension errors.
     related_spec:
       - features/sql.md
       - stories/core.yaml#STORY-005
@@ -217,6 +219,9 @@ requirements:
             - should accept valid select queries
             - should include notes table in schema
             - should include class fields in schema
+        - file: frontend/src/components/SqlQueryEditor.test.tsx
+          tests:
+            - should render without runtime errors
 
   - id: REQ-FE-011
     title: Editor Content Sync on Note Switch Only

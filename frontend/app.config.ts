@@ -33,5 +33,14 @@ export default defineConfig({
 				allow: [sharedDir],
 			},
 		},
+		resolve: {
+			dedupe: [
+				"@codemirror/basic-setup",
+				"@codemirror/lang-sql",
+				"@codemirror/lint",
+				"@codemirror/state",
+				"@codemirror/view",
+			],
+		},
 	},
 });
