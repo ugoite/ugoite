@@ -185,7 +185,16 @@ pub async fn list_workspaces(op: &Operator) -> Result<Vec<String>> {
     }
 
     let bytes = op.read(global_path).await?;
-    let config: GlobalConfig = serde_json::from_slice(&bytes.to_vec())?;
+    let config: GlobalConfig = match serde_json::from_slice(&bytes.to_vec()) {
+        Ok(config) => config,
+        Err(_) => {
+            let fallback = default_global_config("");
+            if let Ok(json_bytes) = serde_json::to_vec_pretty(&fallback) {
+                let _ = op.write(global_path, json_bytes).await;
+            }
+            return Ok(vec![]);
+        }
+    };
 
     Ok(config.workspaces)
 }

@@ -83,3 +83,21 @@ async fn test_workspace_req_sto_004_list_workspaces_from_global_json() -> anyhow
 
     Ok(())
 }
+
+#[tokio::test]
+/// REQ-STO-008
+async fn test_workspace_req_sto_008_list_workspaces_recovers_from_corrupt_global(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+
+    op.write("global.json", b"{invalid json".to_vec()).await?;
+
+    let listed = workspace::list_workspaces(&op).await?;
+    assert!(listed.is_empty());
+
+    let global_bytes = op.read("global.json").await?.to_vec();
+    let global_json: Value = serde_json::from_slice(&global_bytes)?;
+    assert!(global_json.get("workspaces").is_some());
+
+    Ok(())
+}
