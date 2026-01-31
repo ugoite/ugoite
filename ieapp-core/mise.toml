@@ -1,12 +1,13 @@
 [env]
 _.python.venv = { path = ".venv" }
+UV_PYTHON = "3.13"
 
 [tasks.install]
 run = "uv sync"
 description = "Install dependencies"
 
 [tasks.build]
-run = "uv run maturin develop"
+run = "PYO3_PYTHON=\"$(command -v python)\" uv run maturin develop"
 description = "Build Rust extension for local development"
 
 [tasks.test]

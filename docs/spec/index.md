@@ -29,6 +29,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Features & Stories
 - [Features Registry](features/README.md) - API-level feature registry across modules
+- [IEapp SQL](features/sql.md) - SQL dialect for structured queries
 - [Core Stories](stories/core.yaml) - Essential user scenarios
 - [Advanced Stories](stories/advanced.yaml) - Power user and experimental features
 

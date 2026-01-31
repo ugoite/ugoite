@@ -34,6 +34,13 @@ from ._ieapp_core import (
     upsert_class,
     validate_properties,
 )
+from .sql_rules import (
+    SqlLintDiagnostic,
+    build_sql_schema,
+    lint_sql,
+    load_sql_rules,
+    sql_completions,
+)
 
 # Export the docstring from the native module
 try:
@@ -45,7 +52,9 @@ except ImportError:
     pass
 
 __all__ = [
+    "SqlLintDiagnostic",
     "build_response_signature",
+    "build_sql_schema",
     "create_link",
     "create_note",
     "create_workspace",
@@ -58,6 +67,7 @@ __all__ = [
     "get_note_history",
     "get_note_revision",
     "get_workspace",
+    "lint_sql",
     "list_attachments",
     "list_classes",
     "list_column_types",
@@ -65,6 +75,7 @@ __all__ = [
     "list_notes",
     "list_workspaces",
     "load_hmac_material",
+    "load_sql_rules",
     "migrate_class",
     "patch_workspace",
     "query_index",
@@ -72,6 +83,7 @@ __all__ = [
     "restore_note",
     "save_attachment",
     "search_notes",
+    "sql_completions",
     "test_storage_connection",
     "update_note",
     "update_note_index",

@@ -198,10 +198,30 @@ requirements:
         - file: frontend/src/lib/store.test.ts
           tests:
             - legacy placeholder delegates to note-store tests
-      e2e:
-        - file: e2e/notes.test.ts
+
+  - id: REQ-FE-036
+    title: SQL Query Editor
+    description: |
+      The query UI MUST provide an IEapp SQL editor with syntax highlighting,
+      lint feedback, and completion for tables/fields.
+      The editor MUST load shared SQL rules from shared/sql/ieapp-sql-rules.json
+      and MUST render without CodeMirror extension errors.
+    related_spec:
+      - features/sql.md
+      - stories/core.yaml#STORY-005
+    priority: high
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/sql.test.ts
           tests:
-            - saved content should persist after reload
+            - should flag missing select clause
+            - should accept valid select queries
+            - should include notes table in schema
+            - should include class fields in schema
+        - file: frontend/src/components/SqlQueryEditor.test.tsx
+          tests:
+            - should render without runtime errors
 
   - id: REQ-FE-011
     title: Editor Content Sync on Note Switch Only

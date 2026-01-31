@@ -7,7 +7,11 @@ import io
 import json
 from pathlib import Path
 
+import ieapp_core
+import pytest
 from fastapi.testclient import TestClient
+
+from app.main import app
 
 
 def _create_class(
@@ -69,6 +73,40 @@ def test_list_workspaces(
     data = response.json()
     assert isinstance(data, list)
     assert len(data) == 2
+
+
+def test_list_workspaces_missing_root_creates_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """REQ-STO-009: /workspaces succeeds with missing root path."""
+    root = tmp_path / "missing-root"
+    monkeypatch.setenv("IEAPP_ROOT", str(root))
+
+    with TestClient(app) as client:
+        response = client.get("/workspaces")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert any(ws["id"] == "default" for ws in data)
+    assert root.exists()
+
+
+def test_list_workspaces_handles_core_failure(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-009: /workspaces returns empty list on core failure."""
+
+    async def _raise(_config: dict[str, str]) -> list[str]:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(ieapp_core, "list_workspaces", _raise)
+
+    response = test_client.get("/workspaces")
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_get_workspace(
@@ -546,6 +584,39 @@ def test_query_notes(
     response = test_client.post("/workspaces/test-ws/query", json={"filter": {}})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_query_notes_sql(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """REQ-IDX-008: IEapp SQL queries should return matching notes."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
+
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={
+            "id": "note-sql-1",
+            "content": "---\nclass: Note\n---\n# Alpha\n\n## Body\nalpha topic",
+        },
+    )
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={
+            "id": "note-sql-2",
+            "content": "---\nclass: Note\n---\n# Beta\n\n## Body\nbeta topic",
+        },
+    )
+
+    response = test_client.post(
+        "/workspaces/test-ws/query",
+        json={"filter": {"$sql": "SELECT * FROM notes WHERE title = 'Alpha'"}},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "note-sql-1"
 
 
 def test_upload_attachment_and_link_to_note(

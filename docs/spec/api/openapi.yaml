@@ -143,6 +143,20 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filter:
+                  type: object
+                  additionalProperties: true
+                  description: |-
+                    Filter object or IEapp SQL payload via `$sql`.
+              required:
+                - filter
       responses:
         "200":
           description: OK

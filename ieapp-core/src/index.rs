@@ -7,17 +7,24 @@ use serde_yaml;
 use std::collections::HashMap;
 
 use crate::note;
+use crate::sql;
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
     let classes = load_classes(op, ws_path).await?;
     let notes_map = collect_notes(op, ws_path, &classes).await?;
 
-    let filters: Option<Map<String, Value>> = if query.trim().is_empty() {
-        None
+    let query_value = if query.trim().is_empty() {
+        Value::Null
     } else {
-        let parsed: Value = serde_json::from_str(query).unwrap_or(Value::Null);
-        parsed.as_object().cloned()
+        serde_json::from_str(query).unwrap_or(Value::Null)
     };
+
+    if let Some(sql_query) = extract_sql_query(&query_value) {
+        let parsed = sql::parse_sql(&sql_query)?;
+        return sql::filter_notes_by_sql(notes_map.values().cloned().collect(), &parsed);
+    }
+
+    let filters: Option<Map<String, Value>> = query_value.as_object().cloned();
 
     let mut results = Vec::new();
     for note in notes_map.values() {
@@ -30,6 +37,18 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     }
 
     Ok(results)
+}
+
+fn extract_sql_query(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.to_string()),
+        Value::Object(map) => map
+            .get("$sql")
+            .or_else(|| map.get("sql"))
+            .and_then(|v| v.as_str())
+            .map(|text| text.to_string()),
+        _ => None,
+    }
 }
 
 fn matches_filters(note: &Value, filters: &Map<String, Value>) -> Result<bool> {

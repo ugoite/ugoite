@@ -24,5 +24,12 @@ export default defineConfig({
 		alias: {
 			"~": "/src",
 		},
+		dedupe: [
+			"@codemirror/autocomplete",
+			"@codemirror/lang-sql",
+			"@codemirror/lint",
+			"@codemirror/state",
+			"@codemirror/view",
+		],
 	},
 });
