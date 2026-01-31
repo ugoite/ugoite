@@ -26,6 +26,7 @@ const filterHeaders = (headers: Headers): Headers => {
 const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
+	// When the path is exactly /api, fallback to / so we proxy to the backend root.
 	const targetPath = path.length > 0 ? path : "/";
 	return new URL(`${targetPath}${url.search}`, baseUrl);
 };
@@ -51,13 +52,17 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 		}
 	}
 
-	const response = await fetch(targetUrl, init);
-	const responseHeaders = filterHeaders(response.headers);
-	return new Response(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers: responseHeaders,
-	});
+	try {
+		const response = await fetch(targetUrl, init);
+		const responseHeaders = filterHeaders(response.headers);
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: responseHeaders,
+		});
+	} catch {
+		return new Response("Backend service unavailable", { status: 502 });
+	}
 };
 
 export const GET = proxyRequest;
