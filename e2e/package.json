@@ -9,8 +9,8 @@
 		"test:classes": "playwright test classes.test.ts"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.50.1",
-		"@types/node": "^20.11.30",
-		"typescript": "^5.7.3"
+		"@playwright/test": "^1.58.1",
+		"@types/node": "^20.19.30",
+		"typescript": "^5.9.3"
 	}
 }
