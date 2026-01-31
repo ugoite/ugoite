@@ -39,7 +39,7 @@ IEapp follows **Test-Driven Development (TDD)**:
 
 | Framework | Location | Description |
 |-----------|----------|-------------|
-| bun:test | `e2e/` | TypeScript HTTP tests against live servers |
+| Playwright | `e2e/` | TypeScript tests against live servers |
 
 ## Running Tests
 
@@ -76,7 +76,7 @@ mise run //backend:dev
 mise run //frontend:dev
 
 # Terminal 3: Run E2E tests
-cd e2e && bun test
+cd e2e && npm run test
 ```
 
 ## Coverage Requirements

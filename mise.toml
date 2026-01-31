@@ -15,6 +15,7 @@ BROWSERSLIST_IGNORE_OLD_DATA = "true"
 [tools]
 biome = "latest"
 bun = "latest"
+node = "lts"
 python = "latest"
 rust = "latest"
 uv = "latest"

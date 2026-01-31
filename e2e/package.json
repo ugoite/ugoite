@@ -3,14 +3,14 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"test": "bun test",
-		"test:smoke": "bun test smoke.test.ts",
-		"test:notes": "bun test notes.test.ts"
+		"test": "playwright test",
+		"test:smoke": "playwright test smoke.test.ts",
+		"test:notes": "playwright test notes.test.ts",
+		"test:classes": "playwright test classes.test.ts"
 	},
 	"devDependencies": {
-		"@types/bun": "latest"
-	},
-	"engines": {
-		"bun": ">=1.3.0"
+		"@playwright/test": "^1.58.1",
+		"@types/node": "^20.19.30",
+		"typescript": "^5.9.3"
 	}
 }
