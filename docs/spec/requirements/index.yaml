@@ -158,10 +158,3 @@ requirements:
         - file: ieapp-core/tests/test_index.rs
           tests:
             - test_index_req_idx_008_query_sql
-        - file: ieapp-core/tests/test_sql.rs
-          tests:
-            - test_sql_req_idx_008_parse_table_notes
-            - test_sql_req_idx_008_parse_where_clause
-        - file: ieapp-core/tests/test_sql.rs
-          tests:
-            - test_sql_req_idx_008_parse_table_notes
