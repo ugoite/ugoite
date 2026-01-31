@@ -7,6 +7,8 @@ const env =
 
 const backendUrl = env.BACKEND_URL;
 
+const sharedDir = new URL("../shared", import.meta.url).pathname;
+
 const proxyRule: Record<string, ProxyOptions> = {};
 
 if (backendUrl) {
@@ -27,6 +29,9 @@ export default defineConfig({
 		plugins: [tailwindcss()],
 		server: {
 			proxy: proxyRule,
+			fs: {
+				allow: [sharedDir],
+			},
 		},
 	},
 });
