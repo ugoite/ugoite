@@ -3,3 +3,6 @@ global.json
 workspaces/
 !frontend/src/routes/workspaces/
 !frontend/src/routes/workspaces/**
+
+# OS metadata
+.DS_Store
