@@ -41,7 +41,7 @@ jobs:
     - Start backend (background)
     - Start frontend (background)
     - Wait for servers
-    - cd e2e && bun test
+    - cd e2e && npm run test
     timeout: 30 minutes
 ```
 
