@@ -1,14 +1,18 @@
 [tasks.install]
-run = "bun install"
+run = "npm install"
 
 [tasks.test]
-run = "bun test"
+run = "npm run test"
 description = "Run all E2E tests"
 
 [tasks."test:smoke"]
-run = "bun test smoke.test.ts"
+run = "npm run test:smoke"
 description = "Run smoke E2E tests only"
 
 [tasks."test:notes"]
-run = "bun test notes.test.ts"
+run = "npm run test:notes"
 description = "Run notes E2E tests only"
+
+[tasks."test:classes"]
+run = "npm run test:classes"
+description = "Run class E2E tests only"

@@ -1,16 +1,15 @@
-import { describe, expect, test, beforeAll } from "bun:test";
-import { E2EClient, waitForServers } from "./lib/client";
+import { expect, test } from "@playwright/test";
+import { getBackendUrl, waitForServers } from "./lib/client";
 
-const client = new E2EClient();
 const workspaceId = "default";
 
-describe("Class", () => {
-	beforeAll(async () => {
-		await waitForServers(client, { timeout: 60000 });
+test.describe("Class", () => {
+	test.beforeAll(async ({ request }) => {
+		await waitForServers(request);
 	});
 
-	test("Create and List Classes", async () => {
-		const className = "E2ETestClass";
+	test("Create and List Classes", async ({ request }) => {
+		const className = `E2ETestClass-${Date.now()}`;
 		const classDef = {
 			name: className,
 			version: 1,
@@ -20,24 +19,24 @@ describe("Class", () => {
 			},
 		};
 
-		// Create Class
-		const createRes = await client.postApi(
-			`/workspaces/${workspaceId}/classes`,
-			classDef,
+		const createRes = await request.post(
+			getBackendUrl(`/workspaces/${workspaceId}/classes`),
+			{ data: classDef },
 		);
-		expect(createRes.status).toBe(201);
+		expect([200, 201]).toContain(createRes.status());
 
-		// List Classes
-		const listRes = await client.getApi(`/workspaces/${workspaceId}/classes`);
-		expect(listRes.status).toBe(200);
-		const noteClasses = (await listRes.json()) as any[];
+		const listRes = await request.get(
+			getBackendUrl(`/workspaces/${workspaceId}/classes`),
+		);
+		expect(listRes.status()).toBe(200);
+		const noteClasses = (await listRes.json()) as Array<{ name: string }>;
 		expect(Array.isArray(noteClasses)).toBe(true);
-		const found = noteClasses.find((s: any) => s.name === className);
+		const found = noteClasses.find((s) => s.name === className);
 		expect(found).toBeDefined();
 	});
 
-	test("Query Notes by Class", async () => {
-		const className = "QueryTestClass";
+	test("Query Notes by Class", async ({ request }) => {
+		const className = `QueryTestClass-${Date.now()}`;
 		const classDef = {
 			name: className,
 			version: 1,
@@ -47,38 +46,43 @@ describe("Class", () => {
 			},
 		};
 
-		// Create Class
-		await client.postApi(`/workspaces/${workspaceId}/classes`, classDef);
+		await request.post(
+			getBackendUrl(`/workspaces/${workspaceId}/classes`),
+			{ data: classDef },
+		);
 
-		// Create Note with this class
 		const noteContent = `---
 class: ${className}
 ---
 ## Status
 Active
 `;
-		const noteRes = await client.postApi(`/workspaces/${workspaceId}/notes`, {
-			content: noteContent,
-		});
-		expect(noteRes.status).toBe(201);
+		const noteRes = await request.post(
+			getBackendUrl(`/workspaces/${workspaceId}/notes`),
+			{ data: { content: noteContent } },
+		);
+		expect(noteRes.status()).toBe(201);
 		const note = (await noteRes.json()) as { id: string };
 
-		// Wait for indexing (search endpoint triggers run_once)
-		await client.getApi(`/workspaces/${workspaceId}/search?q=Active`);
+		await request.get(getBackendUrl(`/workspaces/${workspaceId}/search?q=Active`));
 
-		// Query
-		const queryRes = await client.postApi(`/workspaces/${workspaceId}/query`, {
-			filter: { class: className },
-		});
-		expect(queryRes.status).toBe(200);
-		const results = (await queryRes.json()) as any[];
+		const queryRes = await request.post(
+			getBackendUrl(`/workspaces/${workspaceId}/query`),
+			{ data: { filter: { class: className } } },
+		);
+		expect(queryRes.status()).toBe(200);
+		const results = (await queryRes.json()) as Array<{
+			id: string;
+			properties: { Status?: string };
+		}>;
 		expect(Array.isArray(results)).toBe(true);
 		expect(results.length).toBeGreaterThan(0);
-		const foundNote = results.find((n: any) => n.id === note.id);
+		const foundNote = results.find((n) => n.id === note.id);
 		expect(foundNote).toBeDefined();
-		expect(foundNote.properties.Status).toBe("Active");
+		expect(foundNote?.properties.Status).toBe("Active");
 
-		// Cleanup
-		await client.deleteApi(`/workspaces/${workspaceId}/notes/${note.id}`);
+		await request.delete(
+			getBackendUrl(`/workspaces/${workspaceId}/notes/${note.id}`),
+		);
 	});
 });

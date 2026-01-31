@@ -4,8 +4,7 @@
 #   test-type: "smoke", "notes", or "full" (runs all tests)
 #
 # Environment variables:
-#   BUN_TEST_TIMEOUT_MS: per-test timeout passed to `bun test --timeout`
-#   E2E_TIMEOUT: per-request timeout used by the E2E client
+#   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
 #   E2E_FRONTEND_MODE: "dev" (default) or "prod" to use build+start for SSR speed
 
 set -e
@@ -121,7 +120,7 @@ for i in {1..60}; do
     sleep 1
 done
 
-# Run tests using Bun's native test runner
+# Run tests using Playwright
 echo ""
 echo "=========================================="
 echo "Running E2E tests (type: $TEST_TYPE)..."
@@ -130,19 +129,19 @@ echo "=========================================="
 cd "$ROOT_DIR/e2e"
 
 TEST_TIMEOUT_ARGS=()
-if [ -n "${BUN_TEST_TIMEOUT_MS:-}" ]; then
-    TEST_TIMEOUT_ARGS=(--timeout "${BUN_TEST_TIMEOUT_MS}")
+if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
+    TEST_TIMEOUT_ARGS=(--timeout "${E2E_TEST_TIMEOUT_MS}")
 fi
 
 case "$TEST_TYPE" in
     smoke)
-        bun test "${TEST_TIMEOUT_ARGS[@]}" smoke.test.ts
+            npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]}"
         ;;
     notes)
-        bun test "${TEST_TIMEOUT_ARGS[@]}" notes.test.ts
+            npm run test:notes -- "${TEST_TIMEOUT_ARGS[@]}"
         ;;
     full)
-        bun test "${TEST_TIMEOUT_ARGS[@]}"
+            npm run test -- "${TEST_TIMEOUT_ARGS[@]}"
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"
