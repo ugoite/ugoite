@@ -1,4 +1,4 @@
-import { basicSetup } from "@codemirror/basic-setup";
+import { autocompletion } from "@codemirror/autocomplete";
 import type { Diagnostic } from "@codemirror/lint";
 import { linter, lintGutter } from "@codemirror/lint";
 import { sql } from "@codemirror/lang-sql";
@@ -34,7 +34,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 		const state = EditorState.create({
 			doc: props.value,
 			extensions: [
-				basicSetup,
+				autocompletion(),
 				lintGutter(),
 				schemaCompartment.of(sql({ schema: props.schema })),
 				readonlyCompartment.of(EditorState.readOnly.of(Boolean(props.disabled))),

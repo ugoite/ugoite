@@ -35,7 +35,7 @@ export default defineConfig({
 		},
 		resolve: {
 			dedupe: [
-				"@codemirror/basic-setup",
+				"@codemirror/autocomplete",
 				"@codemirror/lang-sql",
 				"@codemirror/lint",
 				"@codemirror/state",
