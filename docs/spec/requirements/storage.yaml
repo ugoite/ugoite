@@ -166,3 +166,20 @@ requirements:
         - file: ieapp-core/tests/test_workspace.rs
           tests:
             - test_workspace_req_sto_008_list_workspaces_recovers_from_corrupt_global
+
+  - id: REQ-STO-009
+    title: Resilient workspace listing API
+    description: |
+      The backend MUST return a successful response for workspace listing
+      even if storage roots are missing or core workspace listing fails.
+      Local filesystem roots MUST be created automatically when absent.
+    related_spec:
+      - api/rest.md#list-workspaces
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_list_workspaces_missing_root_creates_default
+            - test_list_workspaces_handles_core_failure

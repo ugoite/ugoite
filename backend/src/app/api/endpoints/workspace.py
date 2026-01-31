@@ -123,23 +123,21 @@ def _workspace_uri(workspace_id: str) -> str:
 @router.get("/workspaces")
 async def list_workspaces_endpoint() -> list[dict[str, Any]]:
     """List all workspaces."""
+    storage_config = _storage_config()
     try:
-        storage_config = _storage_config()
         workspace_ids = await ieapp_core.list_workspaces(storage_config)
-        results: list[dict[str, Any]] = []
-        for ws_id in workspace_ids:
-            try:
-                results.append(await ieapp_core.get_workspace(storage_config, ws_id))
-            except RuntimeError as exc:
-                logger.warning("Failed to read workspace meta %s: %s", ws_id, exc)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to list workspaces")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
-    else:
-        return results
+        return []
+
+    results: list[dict[str, Any]] = []
+    for ws_id in workspace_ids:
+        try:
+            results.append(await ieapp_core.get_workspace(storage_config, ws_id))
+        except Exception:
+            logger.exception("Failed to read workspace meta %s", ws_id)
+
+    return results
 
 
 @router.post("/workspaces", status_code=status.HTTP_201_CREATED)

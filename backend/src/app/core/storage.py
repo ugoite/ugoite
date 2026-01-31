@@ -3,6 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+
+def _ensure_local_root(root_path: Path | str) -> None:
+    """Ensure the local workspace root directory exists."""
+    root_str = str(root_path)
+    parsed = urlparse(root_str)
+    if parsed.scheme:
+        if parsed.scheme in {"file", "fs"}:
+            local_path = Path(unquote(parsed.path))
+            if str(local_path):
+                local_path.mkdir(parents=True, exist_ok=True)
+        return
+    Path(root_str).mkdir(parents=True, exist_ok=True)
 
 
 def storage_uri_from_root(root_path: Path | str) -> str:
@@ -15,6 +29,7 @@ def storage_uri_from_root(root_path: Path | str) -> str:
 
 def storage_config_from_root(root_path: Path | str) -> dict[str, str]:
     """Build storage_config for ieapp-core bindings."""
+    _ensure_local_root(root_path)
     return {"uri": storage_uri_from_root(root_path)}
 
 
