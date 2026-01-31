@@ -11,6 +11,7 @@ export default defineConfig({
 	testDir: ".",
 	testMatch: ["**/*.test.ts"],
 	timeout: e2eTestTimeoutMs,
+	// E2E tests share backend state; run serially to avoid cross-test interference.
 	fullyParallel: false,
 	workers: 1,
 	reporter: "list",
