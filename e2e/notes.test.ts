@@ -8,21 +8,12 @@
  */
 
 import { expect, test } from "@playwright/test";
-import {
-	enableBackendProxy,
-	ensureDefaultClass,
-	getBackendUrl,
-	waitForServers,
-} from "./lib/client";
+import { ensureDefaultClass, getBackendUrl, waitForServers } from "./lib/client";
 
 test.describe("Notes CRUD", () => {
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
 		await ensureDefaultClass(request);
-	});
-
-	test.beforeEach(async ({ page }) => {
-		await enableBackendProxy(page);
 	});
 
 	test("POST /workspaces/default/notes creates a new note", async ({ request }) => {

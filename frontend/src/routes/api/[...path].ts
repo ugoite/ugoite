@@ -1,6 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 
-const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8000";
+const backendUrl = process.env.BACKEND_URL;
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -23,11 +23,11 @@ const filterHeaders = (headers: Headers): Headers => {
 	return filtered;
 };
 
-const buildTargetUrl = (requestUrl: string): URL => {
+const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
 	const targetPath = path.length > 0 ? path : "/";
-	return new URL(`${targetPath}${url.search}`, backendUrl);
+	return new URL(`${targetPath}${url.search}`, baseUrl);
 };
 
 const proxyRequest = async (event: APIEvent): Promise<Response> => {
@@ -36,7 +36,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	}
 
 	const request = event.request;
-	const targetUrl = buildTargetUrl(request.url);
+	const targetUrl = buildTargetUrl(request.url, backendUrl);
 	const headers = filterHeaders(request.headers);
 	const init: RequestInit = {
 		method: request.method,
@@ -51,7 +51,13 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 		}
 	}
 
-	return fetch(targetUrl, init);
+	const response = await fetch(targetUrl, init);
+	const responseHeaders = filterHeaders(response.headers);
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: responseHeaders,
+	});
 };
 
 export const GET = proxyRequest;

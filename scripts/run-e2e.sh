@@ -135,13 +135,13 @@ fi
 
 case "$TEST_TYPE" in
     smoke)
-            npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]}"
+        npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     notes)
-            npm run test:notes -- "${TEST_TIMEOUT_ARGS[@]}"
+        npm run test:notes -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     full)
-            npm run test -- "${TEST_TIMEOUT_ARGS[@]}"
+        npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"

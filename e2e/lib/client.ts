@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8000";
@@ -57,15 +57,3 @@ export async function ensureDefaultClass(
 	}
 }
 
-export async function enableBackendProxy(page: Page): Promise<void> {
-	await page.route("**/api/**", async (route) => {
-		if (route.request().isNavigationRequest()) {
-			await route.continue();
-			return;
-		}
-		const url = new URL(route.request().url());
-		const targetPath = url.pathname.replace(/^\/api/, "");
-		const target = new URL(`${targetPath}${url.search}`, backendUrl);
-		await route.continue({ url: target.toString() });
-	});
-}

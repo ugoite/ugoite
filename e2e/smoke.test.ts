@@ -7,21 +7,12 @@
  */
 
 import { expect, test } from "@playwright/test";
-import {
-	enableBackendProxy,
-	ensureDefaultClass,
-	getBackendUrl,
-	waitForServers,
-} from "./lib/client";
+import { ensureDefaultClass, getBackendUrl, waitForServers } from "./lib/client";
 
 test.describe("Smoke Tests", () => {
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
 		await ensureDefaultClass(request);
-	});
-
-	test.beforeEach(async ({ page }) => {
-		await enableBackendProxy(page);
 	});
 
 	test("GET / returns HTML with DOCTYPE", async ({ page }) => {

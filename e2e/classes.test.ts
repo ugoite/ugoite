@@ -1,15 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { enableBackendProxy, getBackendUrl, waitForServers } from "./lib/client";
+import { getBackendUrl, waitForServers } from "./lib/client";
 
 const workspaceId = "default";
 
 test.describe("Class", () => {
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
-	});
-
-	test.beforeEach(async ({ page }) => {
-		await enableBackendProxy(page);
 	});
 
 	test("Create and List Classes", async ({ page, request }) => {
