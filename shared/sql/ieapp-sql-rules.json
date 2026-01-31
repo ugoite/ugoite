@@ -1,0 +1,30 @@
+{
+  "version": "0.1",
+  "keywords": [
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "ORDER",
+    "BY",
+    "LIMIT",
+    "AND",
+    "OR",
+    "NOT"
+  ],
+  "base_tables": ["notes"],
+  "base_columns": [
+    "id",
+    "title",
+    "class",
+    "updated_at",
+    "workspace_id",
+    "word_count",
+    "tags"
+  ],
+  "lint": {
+    "require_select": true,
+    "require_from": true,
+    "single_statement_only": true,
+    "limit_requires_number": true
+  }
+}

@@ -41,6 +41,16 @@ SELECT * FROM notes WHERE properties.Owner = 'alice'
 Invalid syntax or unsupported clauses must return an error from `ieapp-core` and
 surface as a `400` or `500` response depending on the caller context.
 
+## Lint & Completion Rules
+
+Linting and completion rules are defined in the shared configuration file:
+
+- `shared/sql/ieapp-sql-rules.json`
+
+`ieapp-core` reads this file to provide CLI linting/completion behavior, while
+the frontend uses the same file for editor hints without requiring runtime API
+calls.
+
 ## Integration
 
 Clients send SQL via the existing structured query payload:

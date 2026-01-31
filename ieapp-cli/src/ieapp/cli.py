@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from ieapp_core import build_sql_schema, lint_sql, sql_completions
 
 from ieapp.attachments import (
     AttachmentReferencedError,
@@ -46,6 +47,7 @@ workspace_app = typer.Typer(help="Workspace management commands")
 attachment_app = typer.Typer(help="Attachment management commands")
 link_app = typer.Typer(help="Link management commands")
 search_app = typer.Typer(help="Search commands")
+sql_app = typer.Typer(help="SQL linting and completion commands")
 
 app.add_typer(note_app, name="note")
 app.add_typer(index_app, name="index")
@@ -54,6 +56,7 @@ app.add_typer(workspace_app, name="workspace")
 app.add_typer(attachment_app, name="attachment")
 app.add_typer(link_app, name="link")
 app.add_typer(search_app, name="search")
+app.add_typer(sql_app, name="sql")
 
 DEFAULT_NOTE_CONTENT = "# New Note\n"
 
@@ -363,6 +366,65 @@ def cmd_query(
     else:
         for note in results:
             typer.echo(f"- {note.get('id')}: {note.get('title')}")
+
+
+@sql_app.command("lint")
+@handle_cli_errors
+def cmd_sql_lint(
+    sql: Annotated[str, typer.Argument(help="IEapp SQL query")],
+    json_output: Annotated[
+        bool | None,
+        typer.Option("--json", help="Output diagnostics as JSON"),
+    ] = None,
+) -> None:
+    """Lint an IEapp SQL query using shared rules."""
+    diagnostics = lint_sql(sql)
+    if json_output:
+        payload = [diag.__dict__ for diag in diagnostics]
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    if not diagnostics:
+        typer.echo("No lint issues.")
+        return
+
+    has_error = False
+    for diag in diagnostics:
+        if diag.severity.lower() == "error":
+            has_error = True
+        typer.echo(f"{diag.severity.upper()}: {diag.message}")
+
+    if has_error:
+        raise typer.Exit(code=1)
+
+
+@sql_app.command("schema")
+@handle_cli_errors
+def cmd_sql_schema(
+    workspace_path: Annotated[
+        str | None,
+        typer.Option("--workspace", help="Full path to workspace for class fields"),
+    ] = None,
+) -> None:
+    """Output the SQL completion schema as JSON."""
+    classes = list_classes(workspace_path) if workspace_path else []
+    schema = build_sql_schema(classes)
+    typer.echo(json.dumps(schema, indent=2))
+
+
+@sql_app.command("complete")
+@handle_cli_errors
+def cmd_sql_complete(
+    sql: Annotated[str, typer.Argument(help="IEapp SQL query prefix")],
+    workspace_path: Annotated[
+        str | None,
+        typer.Option("--workspace", help="Full path to workspace for class fields"),
+    ] = None,
+) -> None:
+    """Provide SQL completion suggestions."""
+    classes = list_classes(workspace_path) if workspace_path else []
+    suggestions = sql_completions(sql, classes)
+    typer.echo(json.dumps(suggestions, indent=2))
 
 
 def main() -> None:
