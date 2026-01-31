@@ -341,6 +341,18 @@ Content-Type: application/json
 }
 ```
 
+IEapp SQL (via `filter.$sql`):
+```http
+POST /workspaces/{ws_id}/query
+Content-Type: application/json
+
+{
+  "filter": {
+    "$sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50"
+  }
+}
+```
+
 **Response**: `200 OK`
 
 #### Keyword Search

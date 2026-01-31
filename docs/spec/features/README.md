@@ -11,6 +11,7 @@ This directory contains the feature definitions for IEapp.
 - [attachments.yaml](attachments.yaml) - Attachment APIs
 - [links.yaml](links.yaml) - Link APIs
 - [search.yaml](search.yaml) - Search + structured query APIs
+- [sql.md](sql.md) - IEapp SQL dialect
 
 ## Purpose
 

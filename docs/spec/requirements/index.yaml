@@ -138,3 +138,30 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_search_returns_matches
+
+  - id: REQ-IDX-008
+    title: IEapp SQL Query Execution
+    description: |
+      Execute IEapp SQL queries against Iceberg-derived note records via the
+      existing /workspaces/{ws_id}/query endpoint.
+    related_spec:
+      - features/sql.md
+      - api/rest.md#structured-query
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_query_notes_sql
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_008_query_sql
+        - file: ieapp-core/tests/test_sql.rs
+          tests:
+            - test_sql_req_idx_008_parse_table_notes
+            - test_sql_req_idx_008_parse_where_clause
+        - file: ieapp-core/tests/test_sql.rs
+          tests:
+            - test_sql_req_idx_008_parse_table_notes
