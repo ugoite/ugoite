@@ -331,6 +331,10 @@ def cmd_query(
         str,
         typer.Argument(help="Full path to the workspace directory"),
     ],
+    sql: Annotated[
+        str | None,
+        typer.Option("--sql", help="IEapp SQL query"),
+    ] = None,
     note_class: Annotated[
         str | None,
         typer.Option("--class", help="Filter by class"),
@@ -343,7 +347,9 @@ def cmd_query(
     """Query the index for notes."""
     setup_logging()
     filter_dict: dict[str, Any] | None = None
-    if note_class or tag:
+    if sql:
+        filter_dict = {"$sql": sql}
+    elif note_class or tag:
         filter_dict = {}
         if note_class:
             filter_dict["class"] = note_class

@@ -29,16 +29,28 @@ async def query_endpoint(
     await _ensure_workspace_exists(storage_config, workspace_id)
 
     try:
+        sql_payload = payload.filter.get("$sql") or payload.filter.get("sql")
+        query_payload = (
+            json.dumps(sql_payload)
+            if isinstance(sql_payload, str) and sql_payload.strip()
+            else json.dumps(payload.filter)
+        )
         return await ieapp_core.query_index(
             storage_config,
             workspace_id,
-            json.dumps(payload.filter),
+            query_payload,
         )
     except Exception as e:
         logger.exception("Query failed")
+        detail = str(e)
+        status_code = (
+            status.HTTP_400_BAD_REQUEST
+            if "SQL" in detail or "SELECT" in detail or "FROM" in detail
+            else status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            status_code=status_code,
+            detail=detail,
         ) from e
 
 

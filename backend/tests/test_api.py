@@ -548,6 +548,39 @@ def test_query_notes(
     assert isinstance(response.json(), list)
 
 
+def test_query_notes_sql(
+    test_client: TestClient,
+    temp_workspace_root: Path,
+) -> None:
+    """REQ-IDX-008: IEapp SQL queries should return matching notes."""
+    test_client.post("/workspaces", json={"name": "test-ws"})
+    _create_class(test_client, "test-ws")
+
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={
+            "id": "note-sql-1",
+            "content": "---\nclass: Note\n---\n# Alpha\n\n## Body\nalpha topic",
+        },
+    )
+    test_client.post(
+        "/workspaces/test-ws/notes",
+        json={
+            "id": "note-sql-2",
+            "content": "---\nclass: Note\n---\n# Beta\n\n## Body\nbeta topic",
+        },
+    )
+
+    response = test_client.post(
+        "/workspaces/test-ws/query",
+        json={"filter": {"$sql": "SELECT * FROM notes WHERE title = 'Alpha'"}},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "note-sql-1"
+
+
 def test_upload_attachment_and_link_to_note(
     test_client: TestClient,
     temp_workspace_root: Path,

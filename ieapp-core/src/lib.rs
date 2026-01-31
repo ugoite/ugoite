@@ -16,6 +16,7 @@ pub mod integrity;
 pub mod link;
 pub mod note;
 pub mod search;
+pub mod sql;
 pub mod storage;
 pub mod workspace;
 
@@ -687,8 +688,17 @@ fn query_index<'a>(
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     let ws_path = format!("workspaces/{}", workspace_id);
+    let adjusted_query = match serde_json::from_str::<serde_json::Value>(&query) {
+        Ok(parsed) => parsed
+            .get("$sql")
+            .or_else(|| parsed.get("sql"))
+            .and_then(|val| val.as_str())
+            .and_then(|sql| serde_json::to_string(sql).ok())
+            .unwrap_or(query.clone()),
+        Err(_) => query.clone(),
+    };
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let res = index::query_index(&op, &ws_path, &query)
+        let res = index::query_index(&op, &ws_path, &adjusted_query)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let val = serde_json::Value::Array(res);
