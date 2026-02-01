@@ -343,6 +343,32 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
             ));
             Type::List(ListType::new(element))
         }
+        "object_list" => {
+            let element_id = next_id(id_counter);
+            let struct_fields = vec![
+                Arc::new(NestedField::new(
+                    next_id(id_counter),
+                    "type",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+                Arc::new(NestedField::new(
+                    next_id(id_counter),
+                    "name",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+                Arc::new(NestedField::new(
+                    next_id(id_counter),
+                    "description",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+            ];
+            let struct_type = Type::Struct(StructType::new(struct_fields));
+            let element = Arc::new(NestedField::new(element_id, "element", struct_type, false));
+            Type::List(ListType::new(element))
+        }
         "markdown" | "string" => Type::Primitive(PrimitiveType::String),
         _ => Type::Primitive(PrimitiveType::String),
     })

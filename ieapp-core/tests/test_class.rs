@@ -75,3 +75,25 @@ async fn test_class_req_cls_005_reject_reserved_metadata_columns() -> anyhow::Re
 
     Ok(())
 }
+
+#[tokio::test]
+/// REQ-CLS-006
+async fn test_class_req_cls_006_reject_reserved_metadata_class() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-meta-class", "/tmp").await?;
+    let ws_path = "workspaces/test-meta-class";
+
+    let class_def = serde_json::json!({
+        "name": "SQL",
+        "fields": {
+            "sql": {"type": "string"}
+        }
+    });
+
+    let result = class::upsert_class(&op, ws_path, &class_def).await;
+    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("reserved"));
+
+    Ok(())
+}

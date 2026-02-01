@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import type { Class, ClassCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
+import { RESERVED_METADATA_CLASSES, isReservedMetadataClass } from "~/lib/metadata-classes";
 
 export interface CreateNoteDialogProps {
 	open: boolean;
@@ -247,6 +248,10 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 		return issues;
 	});
 
+	const nameIssue = createMemo(() =>
+		isReservedMetadataClass(name()) ? "Reserved metadata class name" : "",
+	);
+
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 
 	// Handle escape key
@@ -277,7 +282,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
 		const className = name().trim();
-		if (!className || hasFieldIssues()) return;
+		if (!className || hasFieldIssues() || nameIssue()) return;
 
 		const fieldRecord: Record<string, { type: string; required: boolean }> = {};
 		let template = `# ${className}\n\n`;
@@ -352,9 +357,14 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 								value={name()}
 								onInput={(e) => setName(e.currentTarget.value)}
 								placeholder="e.g. Meeting, Task"
-								class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+								class={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+									nameIssue() ? "border-red-300 bg-red-50" : "border-gray-300"
+								}`}
 								autofocus
 							/>
+							<Show when={nameIssue()}>
+								<span class="text-xs text-red-600">{nameIssue()}</span>
+							</Show>
 						</div>
 
 						<div class="space-y-2">
@@ -417,6 +427,9 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 									{RESERVED_METADATA_COLUMNS.join(", ")}
 								</p>
 								<p>
+									Reserved metadata classes cannot be used: {RESERVED_METADATA_CLASSES.join(", ")}
+								</p>
+								<p>
 									List fields accept Markdown bullets (e.g. <code>- item</code>) or one value per
 									line.
 								</p>
@@ -434,7 +447,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 							</button>
 							<button
 								type="submit"
-								disabled={!name().trim() || hasFieldIssues()}
+								disabled={!name().trim() || hasFieldIssues() || Boolean(nameIssue())}
 								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Create Class
@@ -508,6 +521,9 @@ export function EditClassDialog(props: EditClassDialogProps) {
 	});
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
+	const nameIssue = createMemo(() =>
+		props.noteClass ? isReservedMetadataClass(props.noteClass.name) : false,
+	);
 
 	const handleKeyDown = (e: KeyboardEvent) => {
 		if (e.key === "Escape" && props.open) {
@@ -547,7 +563,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		if (hasFieldIssues()) return;
+		if (hasFieldIssues() || nameIssue()) return;
 
 		const { fieldRecord, strategies } = processFields(fields(), props.noteClass.fields);
 
@@ -689,6 +705,12 @@ export function EditClassDialog(props: EditClassDialogProps) {
 									Reserved metadata columns are system-owned and cannot be used:{" "}
 									{RESERVED_METADATA_COLUMNS.join(", ")}
 								</p>
+								<Show when={nameIssue()}>
+									<p>
+										Reserved metadata classes cannot be edited:{" "}
+										{RESERVED_METADATA_CLASSES.join(", ")}
+									</p>
+								</Show>
 								<p>
 									List fields accept Markdown bullets (e.g. <code>- item</code>) or one value per
 									line.
@@ -707,7 +729,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 							</button>
 							<button
 								type="submit"
-								disabled={hasFieldIssues()}
+								disabled={hasFieldIssues() || Boolean(nameIssue())}
 								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Save Changes

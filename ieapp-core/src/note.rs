@@ -342,16 +342,25 @@ fn section_value_to_string(value: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| match item {
-                Value::String(s) => format!("- {}", s),
-                Value::Number(n) => format!("- {}", n),
-                Value::Bool(b) => format!("- {}", b),
-                _ => "-".to_string(),
-            })
-            .collect::<Vec<String>>()
-            .join("\n"),
+        Value::Array(items) => {
+            let has_complex = items
+                .iter()
+                .any(|item| matches!(item, Value::Object(_) | Value::Array(_)));
+            if has_complex {
+                serde_json::to_string(value).unwrap_or_default()
+            } else {
+                items
+                    .iter()
+                    .map(|item| match item {
+                        Value::String(s) => format!("- {}", s),
+                        Value::Number(n) => format!("- {}", n),
+                        Value::Bool(b) => format!("- {}", b),
+                        _ => "-".to_string(),
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            }
+        }
         Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
     }
 }
@@ -590,6 +599,43 @@ fn list_array_from_values(
         builder.append(false);
     }
     Ok(Arc::new(builder.finish()))
+}
+
+fn object_list_array_from_values(
+    values: Option<&Value>,
+    list_field: &arrow_schema::Field,
+) -> Result<ArrayRef> {
+    let element_field = list_element_field(list_field)?;
+    let struct_fields = list_struct_fields_from_field(list_field)?;
+    let count = values
+        .and_then(|value| value.as_array().map(|items| items.len()))
+        .unwrap_or(0);
+    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), count);
+    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
+
+    if let Some(Value::Array(items)) = values {
+        for item in items {
+            let builder = list_builder.values();
+            let obj = item.as_object();
+            for (idx, field) in struct_fields.iter().enumerate() {
+                let value = obj
+                    .and_then(|map| map.get(field.name()))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let field_builder =
+                    builder.field_builder::<StringBuilder>(idx).ok_or_else(|| {
+                        anyhow!("Invalid object_list field builder: {}", field.name())
+                    })?;
+                field_builder.append_value(value);
+            }
+            builder.append(true);
+        }
+        list_builder.append(true);
+    } else {
+        list_builder.append(false);
+    }
+
+    Ok(Arc::new(list_builder.finish()))
 }
 
 fn list_struct_fields_from_field(list_field: &arrow_schema::Field) -> Result<Fields> {
@@ -1027,6 +1073,7 @@ fn struct_array_from_fields(
                 Arc::new(LargeBinaryArray::from_opt_vec(vec![bytes.as_deref()]))
             }
             "list" => list_array_from_values(value, field.as_ref())?,
+            "object_list" => object_list_array_from_values(value, field.as_ref())?,
             "markdown" | "string" => {
                 let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
                 Arc::new(StringArray::from(vec![string_value]))
@@ -1254,6 +1301,62 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         }
                         Some(Value::Array(items))
                     }
+                }),
+            "object_list" => column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        return None;
+                    }
+                    let values = array.value(row);
+                    let struct_array = values.as_any().downcast_ref::<StructArray>()?;
+                    let type_col = struct_array
+                        .column_by_name("type")
+                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+                    let name_col = struct_array
+                        .column_by_name("name")
+                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+                    let desc_col = struct_array
+                        .column_by_name("description")
+                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
+
+                    let mut items = Vec::new();
+                    for idx in 0..struct_array.len() {
+                        let var_type = type_col
+                            .and_then(|col| {
+                                if col.is_null(idx) {
+                                    None
+                                } else {
+                                    Some(col.value(idx))
+                                }
+                            })
+                            .unwrap_or("");
+                        let name = name_col
+                            .and_then(|col| {
+                                if col.is_null(idx) {
+                                    None
+                                } else {
+                                    Some(col.value(idx))
+                                }
+                            })
+                            .unwrap_or("");
+                        let description = desc_col
+                            .and_then(|col| {
+                                if col.is_null(idx) {
+                                    None
+                                } else {
+                                    Some(col.value(idx))
+                                }
+                            })
+                            .unwrap_or("");
+                        items.push(serde_json::json!({
+                            "type": var_type,
+                            "name": name,
+                            "description": description,
+                        }));
+                    }
+                    Some(Value::Array(items))
                 }),
             "markdown" | "string" => {
                 column

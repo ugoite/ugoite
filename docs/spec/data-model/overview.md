@@ -63,6 +63,16 @@ The metadata column list is treated as an internal system contract and may expan
 over time; Class creation MUST reject any field name that conflicts with a
 reserved metadata column name.
 
+### Metadata Classes
+
+IEapp also reserves **metadata Class names** for system-owned tables. Users cannot
+create or update Classes with these names. The reserved metadata Class list is
+case-insensitive and may expand over time.
+
+Reserved metadata Class names include:
+
+`SQL`
+
 ### Properties Extraction
 
 The write pipeline extracts properties from Markdown:
@@ -98,6 +108,8 @@ using Markdown-friendly rules:
 - **uuid** → parsed as a canonical UUID string
 - **binary** → parsed from `base64:` or `hex:` strings and stored as canonical `base64:`
 - **list** → parsed from Markdown bullet lists (e.g. `- item`)
+- **object_list** → parsed from a JSON array of objects (each object must include
+  `type`, `name`, and `description` as strings)
 
 If a list is provided as plain lines, each non-empty line becomes an item.
 Type casting errors are reported during validation.

@@ -272,6 +272,30 @@ fn parse_markdown_list(value: &str) -> Vec<Value> {
     items
 }
 
+fn parse_object_list(value: &Value) -> Option<Value> {
+    let items = match value {
+        Value::Array(items) => items.clone(),
+        Value::String(raw) => serde_json::from_str::<Value>(raw)
+            .ok()
+            .and_then(|parsed| parsed.as_array().cloned())?,
+        _ => return None,
+    };
+
+    let mut normalized = Vec::new();
+    for item in items {
+        let obj = item.as_object()?;
+        let var_type = obj.get("type").and_then(|v| v.as_str())?;
+        let name = obj.get("name").and_then(|v| v.as_str())?;
+        let description = obj.get("description").and_then(|v| v.as_str())?;
+        normalized.push(serde_json::json!({
+            "type": var_type,
+            "name": name,
+            "description": description,
+        }));
+    }
+    Some(Value::Array(normalized))
+}
+
 pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Value, Vec<Value>)> {
     let mut warnings = Vec::new();
     let mut casted = properties.clone();
@@ -391,6 +415,7 @@ pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Va
                 Value::String(ref s) => Some(Value::Array(parse_markdown_list(s))),
                 _ => None,
             },
+            "object_list" => parse_object_list(&raw_value),
             "boolean" => match raw_value {
                 Value::Bool(_) => Some(raw_value.clone()),
                 Value::String(ref s) => parse_boolean(s).map(Value::Bool),

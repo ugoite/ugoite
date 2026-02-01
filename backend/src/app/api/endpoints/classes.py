@@ -105,6 +105,17 @@ async def create_class_endpoint(
             )
 
         return await ieapp_core.get_class(storage_config, workspace_id, payload.name)
+    except RuntimeError as e:
+        msg = str(e)
+        if "reserved" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=msg,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        ) from e
     except Exception as e:
         logger.exception("Failed to upsert class")
         raise HTTPException(

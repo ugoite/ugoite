@@ -259,10 +259,103 @@ DELETE /workspaces/{ws_id}/classes/{name}
 GET /workspaces/{ws_id}/classes/types
 ```
 
+---
+
+### SQL (Saved Queries)
+
+#### List SQL
+```http
+GET /workspaces/{ws_id}/sql
+```
+
 **Response**: `200 OK`
 ```json
-["string", "markdown", "number", "double", "float", "integer", "long", "boolean", "date", "time", "timestamp", "timestamp_tz", "timestamp_ns", "timestamp_tz_ns", "uuid", "binary", "list"]
+[
+  {
+    "id": "sql-uuid",
+    "name": "Recent Meetings",
+    "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
+    "variables": [
+      { "type": "date", "name": "since", "description": "Lower bound date" }
+    ],
+    "created_at": "2026-02-01T00:00:00Z",
+    "updated_at": "2026-02-01T00:00:00Z",
+    "revision_id": "rev-0001"
+  }
+]
 ```
+
+#### Create SQL
+```http
+POST /workspaces/{ws_id}/sql
+Content-Type: application/json
+
+{
+  "name": "Recent Meetings",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
+  "variables": [
+    { "type": "date", "name": "since", "description": "Lower bound date" }
+  ]
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "id": "sql-uuid",
+  "revision_id": "rev-0001"
+}
+```
+
+#### Get SQL
+```http
+GET /workspaces/{ws_id}/sql/{sql_id}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "sql-uuid",
+  "name": "Recent Meetings",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
+  "variables": [
+    { "type": "date", "name": "since", "description": "Lower bound date" }
+  ],
+  "created_at": "2026-02-01T00:00:00Z",
+  "updated_at": "2026-02-01T00:00:00Z",
+  "revision_id": "rev-0001"
+}
+```
+
+#### Update SQL
+```http
+PUT /workspaces/{ws_id}/sql/{sql_id}
+Content-Type: application/json
+
+{
+  "name": "Recent Meetings",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}}",
+  "variables": [
+    { "type": "date", "name": "since", "description": "Lower bound date" }
+  ],
+  "parent_revision_id": "rev-0001"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "sql-uuid",
+  "revision_id": "rev-0002"
+}
+```
+
+#### Delete SQL
+```http
+DELETE /workspaces/{ws_id}/sql/{sql_id}
+```
+
+**Response**: `204 No Content`
 
 ---
 

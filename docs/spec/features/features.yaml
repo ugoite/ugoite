@@ -40,3 +40,5 @@ files:
     file: links.yaml
   - kind: search
     file: search.yaml
+  - kind: sql
+    file: sql.yaml

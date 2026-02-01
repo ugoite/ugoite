@@ -45,6 +45,32 @@ class QueryRequest(BaseModel):
     filter: dict[str, Any]
 
 
+class SqlVariable(BaseModel):
+    """SQL variable definition."""
+
+    type: str
+    name: str
+    description: str
+
+
+class SqlCreate(BaseModel):
+    """Saved SQL creation payload."""
+
+    id: str | None = None
+    name: str
+    sql: str
+    variables: list[SqlVariable]
+
+
+class SqlUpdate(BaseModel):
+    """Saved SQL update payload."""
+
+    name: str
+    sql: str
+    variables: list[SqlVariable]
+    parent_revision_id: str | None = None
+
+
 class WorkspacePatch(BaseModel):
     """Workspace patch payload for storage connectors/settings."""
 

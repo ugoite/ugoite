@@ -1,0 +1,96 @@
+# Saved SQL APIs
+
+version: "0.1"
+updated: "2026-02"
+kind: sql
+
+apis:
+  - id: sql.list
+    method: GET
+    backend:
+      path: /workspaces/{workspace_id}/sql
+      file: backend/src/app/api/endpoints/sql.py
+      function: list_sql_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/sql
+      file: frontend/src/routes/workspaces/[workspace_id]/sql.tsx
+      function: WorkspaceSqlRoute
+    ieapp_core:
+      file: ieapp-core/src/saved_sql.rs
+      function: list_sql
+    ieapp_cli:
+      command: ieapp sql saved-list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_sql_saved_list
+
+  - id: sql.create
+    method: POST
+    backend:
+      path: /workspaces/{workspace_id}/sql
+      file: backend/src/app/api/endpoints/sql.py
+      function: create_sql_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/sql
+      file: frontend/src/routes/workspaces/[workspace_id]/sql.tsx
+      function: WorkspaceSqlRoute
+    ieapp_core:
+      file: ieapp-core/src/saved_sql.rs
+      function: create_sql
+    ieapp_cli:
+      command: ieapp sql saved-create
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_sql_saved_create
+
+  - id: sql.get
+    method: GET
+    backend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: backend/src/app/api/endpoints/sql.py
+      function: get_sql_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
+      function: WorkspaceSqlDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/saved_sql.rs
+      function: get_sql
+    ieapp_cli:
+      command: ieapp sql saved-get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_sql_saved_get
+
+  - id: sql.update
+    method: PUT
+    backend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: backend/src/app/api/endpoints/sql.py
+      function: update_sql_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
+      function: WorkspaceSqlDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/saved_sql.rs
+      function: update_sql
+    ieapp_cli:
+      command: ieapp sql saved-update
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_sql_saved_update
+
+  - id: sql.delete
+    method: DELETE
+    backend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: backend/src/app/api/endpoints/sql.py
+      function: delete_sql_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/sql/{sql_id}
+      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
+      function: WorkspaceSqlDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/saved_sql.rs
+      function: delete_sql
+    ieapp_cli:
+      command: ieapp sql saved-delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_sql_saved_delete
