@@ -90,7 +90,13 @@ using Markdown-friendly rules:
 - **long** → parsed as $i64$
 - **boolean** → parsed from `true/false`, `yes/no`, `on/off`, `1/0`
 - **date** → parsed as `YYYY-MM-DD`
+- **time** → parsed as `HH:MM:SS` or `HH:MM:SS.ssssss`
 - **timestamp** → parsed as RFC3339 (`2025-01-01T12:34:56Z`)
+- **timestamp_tz** → parsed as RFC3339 and normalized to UTC
+- **timestamp_ns** → parsed as RFC3339 with nanosecond precision
+- **timestamp_tz_ns** → parsed as RFC3339 with nanosecond precision and normalized to UTC
+- **uuid** → parsed as a canonical UUID string
+- **binary** → parsed from `base64:` or `hex:` strings and stored as canonical `base64:`
 - **list** → parsed from Markdown bullet lists (e.g. `- item`)
 
 If a list is provided as plain lines, each non-empty line becomes an item.
@@ -104,9 +110,9 @@ kind determines the link target and is designed to be extensible:
 - `ieapp://note/{note_id}`
 - `ieapp://attachment/{attachment_id}`
 
-IEapp normalizes equivalent forms (e.g. `ieapp://notes/{id}`) to canonical
-URIs on write. This keeps Markdown stable while allowing new link kinds in
-future milestones.
+IEapp normalizes equivalent forms (e.g. `ieapp://notes/{id}`,
+`ieapp://attachments/{id}`, `ieapp://note?id=...`) to canonical URIs on write.
+This keeps Markdown stable while allowing new link kinds in future milestones.
 
 ### Versioning
 

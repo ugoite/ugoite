@@ -89,20 +89,21 @@ rich content column types with Markdown-friendly parsing, canonical IEapp link U
 and broadened IEapp SQL join capabilities.
 
 ### Key Tasks
-- [ ] Define metadata vs content column ownership rules and reserved names.
-- [ ] Prevent user-defined class fields from using metadata column names.
-- [ ] Expand content column types to additional Iceberg primitives (boolean, integer, float, double, timestamp, etc.).
-- [ ] Update Markdown parsing to produce typed values (including list parsing from bullet Markdown).
-- [ ] Introduce IEapp URI scheme for in-note links (note, attachment, extensible kinds) and normalize links on write/read.
-- [ ] Extend IEapp SQL to support JOIN clauses and expose additional base tables (links, attachments).
-- [ ] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
-- [ ] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
+- [x] Define metadata vs content column ownership rules and reserved names.
+- [x] Prevent user-defined class fields from using metadata column names.
+- [x] Make metadata column list extensible for future system-owned fields.
+- [x] Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).
+- [x] Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).
+- [x] Introduce IEapp URI scheme for in-note links (note, attachment, extensible kinds) and normalize links on write/read.
+- [x] Extend IEapp SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
+- [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
+- [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
 
 ### Acceptance Criteria
-- [ ] Metadata columns are reserved and cannot be used as user-defined Class fields.
-- [ ] Content columns support expanded Iceberg types with deterministic Markdown parsing.
-- [ ] IEapp link URIs are normalized and persisted consistently.
-- [ ] IEapp SQL supports JOIN queries across notes, links, and attachments.
+- [x] Metadata columns are reserved and cannot be used as user-defined Class fields.
+- [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
+- [x] IEapp link URIs are normalized and persisted consistently.
+- [x] IEapp SQL supports JOIN queries across notes, links, and attachments.
 
 ---
 

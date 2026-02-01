@@ -116,7 +116,7 @@ classes:
               type:
                 type: string
                 enum:
-                  [string, markdown, number, double, float, integer, long, boolean, date, timestamp, list]
+                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, binary, list]
               required:
                 type: boolean
               default:

@@ -44,7 +44,7 @@ requirements:
       Markdown content MUST normalize IEapp link URIs (e.g. note and attachment
       links) into canonical ieapp:// forms during create/update.
     priority: medium
-    status: planned
+    status: implemented
     tests:
       rust:
         - file: ieapp-core/tests/test_note.rs

@@ -105,12 +105,13 @@ requirements:
     title: Reserved Metadata Columns
     description: |
       Class definitions MUST reject field names that collide with
-      system-owned metadata columns (e.g., title, class, tags).
+      system-owned metadata columns (e.g., title, class, tags). The
+      reserved list is system-owned and may expand over time.
     related_spec:
       - data-model/overview.md#metadata-vs-content-columns
       - data-model/file-schemas.yaml#class_definition
     priority: high
-    status: planned
+    status: implemented
     tests:
       rust:
         - file: ieapp-core/tests/test_class.rs
