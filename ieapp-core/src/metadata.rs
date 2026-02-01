@@ -41,7 +41,7 @@ fn metadata_classes_store() -> &'static Mutex<HashSet<String>> {
     METADATA_CLASSES.get_or_init(|| {
         let mut set = HashSet::new();
         for name in DEFAULT_METADATA_CLASSES {
-            set.insert(name.to_string());
+            set.insert(name.trim().to_lowercase());
         }
         Mutex::new(set)
     })

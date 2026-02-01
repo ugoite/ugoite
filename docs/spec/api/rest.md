@@ -357,11 +357,6 @@ DELETE /workspaces/{ws_id}/sql/{sql_id}
 
 **Response**: `204 No Content`
 
-**Response**: `200 OK`
-```json
-["string", "markdown", "number", "double", "float", "integer", "long", "boolean", "date", "time", "timestamp", "timestamp_tz", "timestamp_ns", "timestamp_tz_ns", "uuid", "binary", "list"]
-```
-
 ---
 
 ### Attachments

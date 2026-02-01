@@ -12,6 +12,11 @@ use std::sync::OnceLock;
 use uuid::Uuid;
 
 const SQL_CLASS_NAME: &str = "SQL";
+const SQL_VALIDATION_PREFIX: &str = "IEAPP_SQL_VALIDATION";
+
+fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
+    anyhow!("{SQL_VALIDATION_PREFIX}: {message}")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlVariable {
@@ -52,26 +57,26 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
         None => Vec::new(),
         Some(Value::Null) => Vec::new(),
         Some(Value::Array(items)) => items.clone(),
-        Some(_) => return Err(anyhow!("variables must be an array")),
+        Some(_) => return Err(validation_error("variables must be an array")),
     };
 
     let mut normalized = Vec::new();
     for item in items {
         let obj = item
             .as_object()
-            .context("variables items must be objects")?;
+            .ok_or_else(|| validation_error("variables items must be objects"))?;
         let var_type = obj
             .get("type")
             .and_then(|v| v.as_str())
-            .context("variables.type must be a string")?;
+            .ok_or_else(|| validation_error("variables.type must be a string"))?;
         let name = obj
             .get("name")
             .and_then(|v| v.as_str())
-            .context("variables.name must be a string")?;
+            .ok_or_else(|| validation_error("variables.name must be a string"))?;
         let description = obj
             .get("description")
             .and_then(|v| v.as_str())
-            .context("variables.description must be a string")?;
+            .ok_or_else(|| validation_error("variables.description must be a string"))?;
         normalized.push(serde_json::json!({
             "type": var_type,
             "name": name,
@@ -90,7 +95,9 @@ fn sql_placeholder_regex() -> &'static Regex {
 }
 
 fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
-    let items = variables.as_array().context("variables must be an array")?;
+    let items = variables
+        .as_array()
+        .ok_or_else(|| validation_error("variables must be an array"))?;
     let mut var_names = BTreeSet::new();
     for item in items {
         let name = item
@@ -98,7 +105,9 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         if name.is_empty() {
-            return Err(anyhow!("variables.name must be a non-empty string"));
+            return Err(validation_error(
+                "variables.name must be a non-empty string",
+            ));
         }
         var_names.insert(name.to_string());
     }
@@ -113,7 +122,7 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
 
     for name in &var_names {
         if !embedded_names.contains(name) {
-            return Err(anyhow!(
+            return Err(validation_error(
                 "variables must be embedded in sql: missing {{{{{name}}}}}",
             ));
         }
@@ -121,12 +130,15 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
 
     for name in &embedded_names {
         if !var_names.contains(name) {
-            return Err(anyhow!("sql contains undefined variables: {name}",));
+            return Err(validation_error(format!(
+                "sql contains undefined variables: {name}",
+            )));
         }
     }
 
     let sanitized = regex.replace_all(sql_text, "1");
-    sql::parse_sql(&sanitized).map_err(|err| anyhow!("sql must be valid: {err}"))?;
+    sql::parse_sql(&sanitized)
+        .map_err(|err| validation_error(format!("sql must be valid: {err}")))?;
     Ok(())
 }
 
