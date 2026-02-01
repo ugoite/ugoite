@@ -117,3 +117,19 @@ requirements:
         - file: ieapp-core/tests/test_class.rs
           tests:
             - test_class_req_cls_005_reject_reserved_metadata_columns
+
+  - id: REQ-CLS-006
+    title: Reserved Metadata Classes
+    description: |
+      System-owned metadata Classes (e.g., SQL) MUST be reserved and rejected
+      when users attempt to create or update Classes with those names.
+    related_spec:
+      - data-model/overview.md#metadata-classes
+      - features/sql.md#saved-sql-class
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_class.rs
+          tests:
+            - test_class_req_cls_006_reject_reserved_metadata_class

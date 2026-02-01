@@ -116,12 +116,42 @@ classes:
               type:
                 type: string
                 enum:
-                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, binary, list]
+                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, binary, list, object_list]
               required:
                 type: boolean
               default:
                 description: Default value for field
                 type: [string, number, boolean, array, object, null]
+
+  sql_variable:
+    description: SQL variable definition stored in the SQL Class
+    schema:
+      type: object
+      required: [type, name, description]
+      properties:
+        type:
+          type: string
+          description: Variable type (string, number, date, etc.)
+        name:
+          type: string
+          description: Variable name used in SQL
+        description:
+          type: string
+          description: Human-readable description
+
+  sql_record:
+    description: SQL record stored in the SQL Class
+    schema:
+      type: object
+      required: [sql, variables]
+      properties:
+        sql:
+          type: string
+          description: SQL query text
+        variables:
+          type: array
+          items:
+            $ref: "#/classes/sql_variable"
 
   # Iceberg tables
   notes_table:

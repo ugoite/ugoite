@@ -31,6 +31,18 @@ It is designed for filtering and sorting note records without changing API paths
 - Join columns: Use table-qualified names when joining (e.g., `n.id`, `l.target`).
 - Complex join predicates (AND/OR, nested conditions) are supported.
 
+## Saved SQL Class
+
+IEapp defines a system-owned **SQL** Class for persisting saved queries.
+The SQL Class is a **metadata Class**; users cannot create Classes with the
+reserved name `SQL`.
+
+SQL Class fields:
+
+- `sql` (markdown/string): SQL query text
+- `variables` (object_list): JSON array of objects with `type`, `name`, and
+  `description`
+
 ## Examples
 
 ```sql
