@@ -43,10 +43,19 @@ SQL Class fields:
 - `variables` (object_list): JSON array of objects with `type`, `name`, and
   `description`
 
+Saved SQL entries MUST embed every variable in the `sql` text using
+`{{variable_name}}` placeholders. Placeholders MUST correspond to entries in
+`variables`, and the SQL must be valid IEapp SQL after substituting placeholders
+with literal values.
+
 ## Examples
 
 ```sql
-SELECT * FROM notes WHERE class = 'Meeting' ORDER BY updated_at DESC LIMIT 50
+SELECT *
+FROM notes
+WHERE class = 'Meeting' AND updated_at >= {{since}}
+ORDER BY updated_at DESC
+LIMIT 50
 ```
 
 ```sql

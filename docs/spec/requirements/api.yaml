@@ -116,3 +116,20 @@ requirements:
         - file: backend/tests/test_sql.py
           tests:
             - test_sql_req_api_006_crud
+
+  - id: REQ-API-007
+    title: Saved SQL variable embedding and SQL validity
+    description: |
+      Saved SQL entries MUST embed each declared variable in the SQL text using
+      {{variable_name}} placeholders, and the SQL must be valid IEapp SQL after
+      substituting placeholders with literal values.
+    related_spec:
+      - api/rest.md#sql-saved-queries
+      - features/sql.md#saved-sql-class
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_sql.py
+          tests:
+            - test_sql_req_api_007_validation

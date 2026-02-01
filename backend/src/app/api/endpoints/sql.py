@@ -72,7 +72,11 @@ async def create_sql_endpoint(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=msg,
             ) from e
-        if "variables" in msg.lower() or "reserved" in msg.lower():
+        if (
+            "variables" in msg.lower()
+            or "reserved" in msg.lower()
+            or "sql" in msg.lower()
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=msg,
@@ -158,7 +162,7 @@ async def update_sql_endpoint(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=msg,
             ) from e
-        if "variables" in msg.lower():
+        if "variables" in msg.lower() or "sql" in msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=msg,

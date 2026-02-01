@@ -274,7 +274,7 @@ GET /workspaces/{ws_id}/sql
   {
     "id": "sql-uuid",
     "name": "Recent Meetings",
-    "sql": "SELECT * FROM Meeting ORDER BY updated_at DESC LIMIT 50",
+    "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
     "variables": [
       { "type": "date", "name": "since", "description": "Lower bound date" }
     ],
@@ -292,7 +292,7 @@ Content-Type: application/json
 
 {
   "name": "Recent Meetings",
-  "sql": "SELECT * FROM Meeting ORDER BY updated_at DESC LIMIT 50",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
   "variables": [
     { "type": "date", "name": "since", "description": "Lower bound date" }
   ]
@@ -317,7 +317,7 @@ GET /workspaces/{ws_id}/sql/{sql_id}
 {
   "id": "sql-uuid",
   "name": "Recent Meetings",
-  "sql": "SELECT * FROM Meeting ORDER BY updated_at DESC LIMIT 50",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}} ORDER BY updated_at DESC LIMIT 50",
   "variables": [
     { "type": "date", "name": "since", "description": "Lower bound date" }
   ],
@@ -334,7 +334,7 @@ Content-Type: application/json
 
 {
   "name": "Recent Meetings",
-  "sql": "SELECT * FROM Meeting WHERE Date >= :since",
+  "sql": "SELECT * FROM Meeting WHERE Date >= {{since}}",
   "variables": [
     { "type": "date", "name": "since", "description": "Lower bound date" }
   ],

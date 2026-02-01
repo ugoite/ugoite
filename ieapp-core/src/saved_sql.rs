@@ -1,10 +1,14 @@
 use crate::class;
 use crate::integrity::IntegrityProvider;
 use crate::note;
+use crate::sql;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 const SQL_CLASS_NAME: &str = "SQL";
@@ -75,6 +79,55 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
         }));
     }
     Ok(Value::Array(normalized))
+}
+
+fn sql_placeholder_regex() -> &'static Regex {
+    static SQL_PLACEHOLDER_REGEX: OnceLock<Regex> = OnceLock::new();
+    SQL_PLACEHOLDER_REGEX.get_or_init(|| {
+        Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+            .expect("sql placeholder regex must compile")
+    })
+}
+
+fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
+    let items = variables.as_array().context("variables must be an array")?;
+    let mut var_names = BTreeSet::new();
+    for item in items {
+        let name = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return Err(anyhow!("variables.name must be a non-empty string"));
+        }
+        var_names.insert(name.to_string());
+    }
+
+    let regex = sql_placeholder_regex();
+    let mut embedded_names = BTreeSet::new();
+    for capture in regex.captures_iter(sql_text) {
+        if let Some(matched) = capture.get(1) {
+            embedded_names.insert(matched.as_str().to_string());
+        }
+    }
+
+    for name in &var_names {
+        if !embedded_names.contains(name) {
+            return Err(anyhow!(
+                "variables must be embedded in sql: missing {{{{{name}}}}}",
+            ));
+        }
+    }
+
+    for name in &embedded_names {
+        if !var_names.contains(name) {
+            return Err(anyhow!("sql contains undefined variables: {name}",));
+        }
+    }
+
+    let sanitized = regex.replace_all(sql_text, "1");
+    sql::parse_sql(&sanitized).map_err(|err| anyhow!("sql must be valid: {err}"))?;
+    Ok(())
 }
 
 fn sql_integrity_payload(
@@ -153,6 +206,7 @@ pub async fn create_sql<I: IntegrityProvider>(
 
     let class_def = ensure_sql_class(op, ws_path).await?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
+    validate_sql_payload(&payload.sql, &variables)?;
 
     let timestamp = note::now_ts();
     let revision_id = Uuid::new_v4().to_string();
@@ -228,6 +282,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     }
 
     let variables = normalize_sql_variables(Some(&payload.variables))?;
+    validate_sql_payload(&payload.sql, &variables)?;
     let mut timestamp = note::now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
