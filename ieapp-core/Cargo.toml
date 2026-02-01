@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.24.1", features = ["extension-module"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-opendal = { version = "0.55", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
+opendal = { version = "0.55", default-features = false, features = ["executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 anyhow = "1.0"
 chrono = { version = "0.4.43", features = ["serde"] }
@@ -27,7 +27,7 @@ regex = "1.12.2"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
-iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory"] }
+iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
 arrow-array = "57.0"
 arrow-schema = "57.0"
 parquet = { version = "57.0", default-features = false, features = ["arrow", "async"] }
