@@ -11,8 +11,8 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.24.1", features = ["extension-module"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-opendal = { version = "0.55", features = ["services-fs", "services-memory"] }
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+opendal = { version = "0.55", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 anyhow = "1.0"
 chrono = { version = "0.4.43", features = ["serde"] }
 url = "2.5.0"
@@ -27,11 +27,10 @@ regex = "1.12.2"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
-iceberg = "0.8.0"
-iceberg-catalog-rest = "0.8.0"
+iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory"] }
 arrow-array = "57.0"
 arrow-schema = "57.0"
-parquet = "57.0"
+parquet = { version = "57.0", default-features = false, features = ["arrow", "async"] }
 sqlparser = "0.44.0"
 
 [dev-dependencies]
