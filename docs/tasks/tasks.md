@@ -82,6 +82,35 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 ---
 
+## Phase 4: Metadata Columns, Rich Types, Link URIs, SQL Joins
+
+**Objective**: Expand the Iceberg-backed data model with reserved metadata columns,
+rich content column types with Markdown-friendly parsing, canonical IEapp link URIs,
+and broadened IEapp SQL join capabilities.
+
+### Key Tasks
+- [x] Define metadata vs content column ownership rules and reserved names.
+- [x] Prevent user-defined class fields from using metadata column names.
+- [x] Make metadata column list extensible for future system-owned fields.
+- [x] Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).
+- [x] Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).
+- [x] Introduce IEapp URI scheme for in-note links (note, attachment, extensible kinds) and normalize links on write/read.
+- [x] Extend IEapp SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
+- [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
+- [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
+- [x] Update frontend UX to enforce class-first note creation and surface class validation warnings.
+- [x] Add frontend guardrails for reserved metadata column names and list-friendly field types.
+
+### Acceptance Criteria
+- [x] Metadata columns are reserved and cannot be used as user-defined Class fields.
+- [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
+- [x] IEapp link URIs are normalized and persisted consistently.
+- [x] IEapp SQL supports JOIN queries across notes, links, and attachments.
+- [x] Frontend note creation is class-first, and validation feedback is visible in the editor UX.
+- [x] Class creation/editing UI blocks reserved metadata column names.
+
+---
+
 ## Definition of Done
 
 - [x] All phases completed with acceptance criteria met.

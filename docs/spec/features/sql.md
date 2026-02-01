@@ -8,9 +8,12 @@ It is designed for filtering and sorting note records without changing API paths
 
 ## Scope
 
-- **Supported**: `SELECT *` with `FROM`, `WHERE`, `ORDER BY`, `LIMIT`.
-- **Not supported**: `JOIN`, `GROUP BY`, `SELECT field projection`, subqueries.
-- **Execution**: In-memory evaluation over note records derived from Iceberg tables.
+- **Supported**: `SELECT *` with `FROM`, `WHERE`, `ORDER BY`, `LIMIT`, and `JOIN`.
+- **Join support**: `INNER`, `LEFT`, `RIGHT`, `FULL`, and `CROSS` joins with
+  `ON`, `USING`, and `NATURAL` constraints.
+- **Not supported**: `GROUP BY`, `SELECT field projection`, subqueries,
+  correlated subqueries.
+- **Execution**: In-memory evaluation over records derived from Iceberg tables.
 - **Safety limits**: Implementations MUST cap results to a server-side maximum
   (default 1000 rows) even when `LIMIT` is omitted.
 
@@ -18,11 +21,15 @@ It is designed for filtering and sorting note records without changing API paths
 
 - `notes` — All notes across classes.
 - `<ClassName>` — Notes scoped to a specific class.
+- `links` — Link rows (id, source, target, kind, source_class, target_class).
+- `attachments` — Attachment rows (id, note_id, name, path).
 
 ## Columns
 
 - Standard columns: `id`, `title`, `class`, `updated_at`, `workspace_id`, `word_count`, `tags`.
 - Class fields: Use field names directly (e.g., `Date`, `Owner`) or `properties.<field>`.
+- Join columns: Use table-qualified names when joining (e.g., `n.id`, `l.target`).
+- Complex join predicates (AND/OR, nested conditions) are supported.
 
 ## Examples
 
@@ -36,6 +43,29 @@ SELECT * FROM Meeting WHERE Date >= '2025-01-01' AND tags = 'project'
 
 ```sql
 SELECT * FROM notes WHERE properties.Owner = 'alice'
+```
+
+```sql
+SELECT *
+FROM notes n
+JOIN links l ON n.id = l.source
+WHERE l.kind = 'reference'
+ORDER BY n.updated_at DESC
+LIMIT 100
+```
+
+```sql
+SELECT *
+FROM notes n
+RIGHT JOIN links l ON n.id = l.source
+WHERE l.target = 'note-2'
+```
+
+```sql
+SELECT *
+FROM notes n
+FULL JOIN notes m USING (id)
+WHERE n.id IS NOT NULL
 ```
 
 ## Errors

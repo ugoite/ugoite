@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use sqlparser::ast::{
-    BinaryOperator, Expr, Ident, ObjectName, OrderByExpr, SelectItem, SetExpr, Statement,
-    TableFactor, Value as SqlValue,
+    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, OrderByExpr,
+    SelectItem, SetExpr, Statement, TableFactor, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -12,11 +12,33 @@ use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone)]
 pub struct SqlQuery {
-    pub table: String,
-    pub table_alias: Option<String>,
+    pub from: SqlTableRef,
+    pub joins: Vec<SqlJoin>,
     pub selection: Option<Expr>,
     pub order_by: Vec<OrderByExpr>,
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SqlTableRef {
+    pub name: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SqlJoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+    Cross,
+}
+
+#[derive(Debug, Clone)]
+pub struct SqlJoin {
+    pub join_type: SqlJoinType,
+    pub table: SqlTableRef,
+    pub constraint: JoinConstraint,
 }
 
 const SQL_ERROR_PREFIX: &str = "IEAPP_SQL_ERROR";
@@ -58,11 +80,13 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
         return Err(sql_error("Exactly one FROM target is required"));
     }
 
-    let relation = &select.from[0].relation;
-    let (table, table_alias) = match relation {
-        TableFactor::Table { name, alias, .. } => (object_name_to_string(name), alias.clone()),
-        _ => return Err(sql_error("Unsupported FROM clause (expected a table name)")),
-    };
+    let from = &select.from[0];
+    let from_table = parse_table_ref(&from.relation)?;
+    let joins = from
+        .joins
+        .iter()
+        .map(parse_join)
+        .collect::<Result<Vec<_>>>()?;
 
     let selection = select.selection.clone();
     let order_by = boxed.order_by.clone();
@@ -72,26 +96,88 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
     };
 
     Ok(SqlQuery {
-        table,
-        table_alias: table_alias.map(|alias| alias.name.value),
+        from: from_table,
+        joins,
         selection,
         order_by,
         limit,
     })
 }
 
-pub fn filter_notes_by_sql(notes: Vec<Value>, query: &SqlQuery) -> Result<Vec<Value>> {
-    let mut filtered: Vec<Value> = Vec::new();
-    for note in notes
-        .into_iter()
-        .filter(|note| match_class_filter(note, &query.table))
-    {
+pub fn filter_notes_by_sql(
+    tables: &HashMap<String, Vec<Value>>,
+    query: &SqlQuery,
+) -> Result<Vec<Value>> {
+    let base_rows = table_rows(tables, &query.from.name)?;
+
+    let mut contexts: Vec<RowContext> = base_rows
+        .iter()
+        .map(|row| RowContext::new(&query.from, row.clone()))
+        .collect();
+
+    for join in &query.joins {
+        let join_rows = table_rows(tables, &join.table.name)?;
+        let mut joined = Vec::new();
+        let mut right_matched = vec![false; join_rows.len()];
+        let context_templates: Vec<RowContext> = contexts.into_iter().collect();
+
+        for context in context_templates.iter() {
+            let mut matched = false;
+            for (idx, row) in join_rows.iter().enumerate() {
+                let mut next = context.clone();
+                next.add_table(&join.table, row.clone());
+
+                let matches = match &join.constraint {
+                    JoinConstraint::On(expr) => matches_expr(&next, expr)?,
+                    JoinConstraint::Using(idents) => matches_using_constraint(context, row, idents),
+                    JoinConstraint::Natural => matches_natural_constraint(context, row),
+                    JoinConstraint::None => true,
+                };
+
+                if matches {
+                    matched = true;
+                    right_matched[idx] = true;
+                    joined.push(next);
+                }
+            }
+
+            if !matched && matches!(join.join_type, SqlJoinType::Left | SqlJoinType::Full) {
+                let mut next = context.clone();
+                next.add_table(&join.table, Value::Null);
+                joined.push(next);
+            }
+        }
+
+        if matches!(join.join_type, SqlJoinType::Right | SqlJoinType::Full) {
+            let template = if let Some(first) = context_templates.first() {
+                first.clone()
+            } else {
+                RowContext::new(&query.from, Value::Null)
+            };
+            for (idx, row) in join_rows.iter().enumerate() {
+                if right_matched[idx] {
+                    continue;
+                }
+                let mut next = template.clone();
+                for value in next.tables.values_mut() {
+                    *value = Value::Null;
+                }
+                next.add_table(&join.table, row.clone());
+                joined.push(next);
+            }
+        }
+
+        contexts = joined;
+    }
+
+    let mut filtered: Vec<RowContext> = Vec::new();
+    for context in contexts.into_iter() {
         if let Some(expr) = &query.selection {
-            if !matches_expr(&note, expr, &query.table, query.table_alias.as_deref())? {
+            if !matches_expr(&context, expr)? {
                 continue;
             }
         }
-        filtered.push(note);
+        filtered.push(context);
     }
 
     if !query.order_by.is_empty() {
@@ -100,13 +186,7 @@ pub fn filter_notes_by_sql(notes: Vec<Value>, query: &SqlQuery) -> Result<Vec<Va
             if sort_error.is_some() {
                 return Ordering::Equal;
             }
-            match compare_notes(
-                a,
-                b,
-                &query.order_by,
-                &query.table,
-                query.table_alias.as_deref(),
-            ) {
+            match compare_rows(a, b, &query.order_by) {
                 Ok(ordering) => ordering,
                 Err(err) => {
                     sort_error = Some(err);
@@ -122,7 +202,10 @@ pub fn filter_notes_by_sql(notes: Vec<Value>, query: &SqlQuery) -> Result<Vec<Va
     let effective_limit = query.limit.unwrap_or(MAX_QUERY_LIMIT);
     filtered.truncate(effective_limit);
 
-    Ok(filtered)
+    Ok(filtered
+        .into_iter()
+        .map(|context| context.to_value())
+        .collect())
 }
 
 fn parse_limit(expr: &Expr) -> Result<usize> {
@@ -154,52 +237,154 @@ fn parse_limit(expr: &Expr) -> Result<usize> {
     Ok(limit)
 }
 
+fn parse_table_ref(relation: &TableFactor) -> Result<SqlTableRef> {
+    match relation {
+        TableFactor::Table { name, alias, .. } => Ok(SqlTableRef {
+            name: object_name_to_string(name),
+            alias: alias.clone().map(|alias| alias.name.value),
+        }),
+        _ => Err(sql_error("Unsupported FROM clause (expected a table name)")),
+    }
+}
+
+fn parse_join(join: &Join) -> Result<SqlJoin> {
+    let table = parse_table_ref(&join.relation)?;
+    let (join_type, constraint) = match &join.join_operator {
+        JoinOperator::Inner(constraint) => (SqlJoinType::Inner, constraint.clone()),
+        JoinOperator::LeftOuter(constraint) => (SqlJoinType::Left, constraint.clone()),
+        JoinOperator::RightOuter(constraint) => (SqlJoinType::Right, constraint.clone()),
+        JoinOperator::FullOuter(constraint) => (SqlJoinType::Full, constraint.clone()),
+        JoinOperator::CrossJoin => (SqlJoinType::Cross, JoinConstraint::None),
+        _ => {
+            return Err(sql_error(
+                "Only INNER, LEFT, RIGHT, FULL, and CROSS joins are supported",
+            ))
+        }
+    };
+    Ok(SqlJoin {
+        join_type,
+        table,
+        constraint,
+    })
+}
+
+fn table_rows<'a>(tables: &'a HashMap<String, Vec<Value>>, name: &str) -> Result<&'a Vec<Value>> {
+    let key = name.to_lowercase();
+    tables
+        .get(&key)
+        .ok_or_else(|| sql_error(format!("Unknown table: {}", name)))
+}
+
 fn object_name_to_string(name: &ObjectName) -> String {
     name.0
         .last()
         .map(|ident| ident.value.clone())
         .unwrap_or_else(|| "notes".to_string())
 }
-
-fn match_class_filter(note: &Value, table: &str) -> bool {
-    if table.eq_ignore_ascii_case("notes") {
-        return true;
-    }
-    note.get("class")
-        .and_then(|v| v.as_str())
-        .map(|class| class.eq_ignore_ascii_case(table))
-        .unwrap_or(false)
+#[derive(Debug, Clone)]
+struct RowContext {
+    tables: HashMap<String, Value>,
+    id_map: HashMap<String, String>,
+    output_names: HashMap<String, String>,
+    base_key: String,
 }
 
-fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str>) -> Result<bool> {
+impl RowContext {
+    fn new(table: &SqlTableRef, row: Value) -> Self {
+        let canonical = canonical_table_key(table);
+        let mut tables = HashMap::new();
+        tables.insert(canonical.clone(), row);
+
+        let mut id_map = HashMap::new();
+        id_map.insert(table.name.to_lowercase(), canonical.clone());
+        if let Some(alias) = &table.alias {
+            id_map.insert(alias.to_lowercase(), canonical.clone());
+        }
+
+        let mut output_names = HashMap::new();
+        output_names.insert(
+            canonical.clone(),
+            table.alias.clone().unwrap_or(table.name.clone()),
+        );
+
+        RowContext {
+            tables,
+            id_map,
+            output_names,
+            base_key: canonical,
+        }
+    }
+
+    fn add_table(&mut self, table: &SqlTableRef, row: Value) {
+        let canonical = canonical_table_key(table);
+        self.tables.insert(canonical.clone(), row);
+        let table_key = table.name.to_lowercase();
+        self.id_map
+            .entry(table_key)
+            .or_insert_with(|| canonical.clone());
+        if let Some(alias) = &table.alias {
+            self.id_map.insert(alias.to_lowercase(), canonical.clone());
+        }
+        self.output_names.insert(
+            canonical.clone(),
+            table.alias.clone().unwrap_or(table.name.clone()),
+        );
+    }
+
+    fn to_value(&self) -> Value {
+        if self.tables.len() == 1 {
+            return self
+                .tables
+                .get(&self.base_key)
+                .cloned()
+                .unwrap_or(Value::Null);
+        }
+        let mut map = serde_json::Map::new();
+        for (key, value) in &self.tables {
+            let name = self
+                .output_names
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| key.clone());
+            map.insert(name, value.clone());
+        }
+        Value::Object(map)
+    }
+}
+
+fn canonical_table_key(table: &SqlTableRef) -> String {
+    table.alias.as_deref().unwrap_or(&table.name).to_lowercase()
+}
+
+fn matches_expr(context: &RowContext, expr: &Expr) -> Result<bool> {
     match expr {
         Expr::BinaryOp { left, op, right } => match op {
-            BinaryOperator::And => Ok(matches_expr(note, left, table, table_alias)?
-                && matches_expr(note, right, table, table_alias)?),
-            BinaryOperator::Or => Ok(matches_expr(note, left, table, table_alias)?
-                || matches_expr(note, right, table, table_alias)?),
+            BinaryOperator::And => {
+                Ok(matches_expr(context, left)? && matches_expr(context, right)?)
+            }
+            BinaryOperator::Or => Ok(matches_expr(context, left)? || matches_expr(context, right)?),
             BinaryOperator::Eq
             | BinaryOperator::NotEq
             | BinaryOperator::Gt
             | BinaryOperator::GtEq
             | BinaryOperator::Lt
             | BinaryOperator::LtEq => {
-                let left_value = resolve_operand(note, left, table, table_alias)?;
-                let right_value = resolve_operand(note, right, table, table_alias)?;
+                let left_value = resolve_operand(context, left)?;
+                let right_value = resolve_operand(context, right)?;
                 compare_values(&left_value, &right_value, op)
             }
             _ => Err(sql_error(format!("Unsupported SQL operator: {op}"))),
         },
-        Expr::Nested(inner) => matches_expr(note, inner, table, table_alias),
+        Expr::Nested(inner) => matches_expr(context, inner),
         Expr::UnaryOp { op, expr } if op.to_string().to_lowercase() == "not" => {
-            Ok(!matches_expr(note, expr, table, table_alias)?)
+            Ok(!matches_expr(context, expr)?)
         }
         Expr::IsNull(expr) => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
             Ok(value.is_null())
         }
         Expr::IsNotNull(expr) => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
             Ok(!value.is_null())
         }
         Expr::InList {
@@ -207,10 +392,10 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
             list,
             negated,
         } => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
             let mut matches = false;
             for item in list {
-                let expected = resolve_operand(note, item, table, table_alias)?;
+                let expected = resolve_operand(context, item)?;
                 if compare_values(&value, &expected, &BinaryOperator::Eq)? {
                     matches = true;
                     break;
@@ -224,8 +409,8 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
             pattern,
             ..
         } => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
-            let pattern_value = resolve_operand(note, pattern, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
+            let pattern_value = resolve_operand(context, pattern)?;
             let candidate = value.as_str().unwrap_or_default();
             let pattern_str = pattern_value.as_str().unwrap_or_default();
             let matches = like_match(candidate, pattern_str);
@@ -237,8 +422,8 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
             pattern,
             ..
         } => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
-            let pattern_value = resolve_operand(note, pattern, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
+            let pattern_value = resolve_operand(context, pattern)?;
             let candidate = value.as_str().unwrap_or_default().to_lowercase();
             let pattern_str = pattern_value.as_str().unwrap_or_default().to_lowercase();
             let matches = like_match(&candidate, &pattern_str);
@@ -250,9 +435,9 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
             high,
             negated,
         } => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
-            let low_value = resolve_operand(note, low, table, table_alias)?;
-            let high_value = resolve_operand(note, high, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
+            let low_value = resolve_operand(context, low)?;
+            let high_value = resolve_operand(context, high)?;
             let lower_ok = compare_values(&value, &low_value, &BinaryOperator::GtEq)?;
             let upper_ok = compare_values(&value, &high_value, &BinaryOperator::LtEq)?;
             let matches = lower_ok && upper_ok;
@@ -262,25 +447,13 @@ fn matches_expr(note: &Value, expr: &Expr, table: &str, table_alias: Option<&str
     }
 }
 
-fn resolve_operand(
-    note: &Value,
-    expr: &Expr,
-    table: &str,
-    table_alias: Option<&str>,
-) -> Result<Value> {
+fn resolve_operand(context: &RowContext, expr: &Expr) -> Result<Value> {
     match expr {
-        Expr::Identifier(ident) => Ok(resolve_identifier(
-            note,
-            std::slice::from_ref(ident),
-            table,
-            table_alias,
-        )),
-        Expr::CompoundIdentifier(idents) => {
-            Ok(resolve_identifier(note, idents, table, table_alias))
-        }
+        Expr::Identifier(ident) => Ok(resolve_identifier(context, std::slice::from_ref(ident))),
+        Expr::CompoundIdentifier(idents) => Ok(resolve_identifier(context, idents)),
         Expr::Value(value) => Ok(sql_value_to_json(value)),
         Expr::UnaryOp { op, expr } if op.to_string() == "-" => {
-            let value = resolve_operand(note, expr, table, table_alias)?;
+            let value = resolve_operand(context, expr)?;
             if let Some(n) = value.as_f64() {
                 Ok(Value::Number(serde_json::Number::from_f64(-n).unwrap()))
             } else {
@@ -291,30 +464,44 @@ fn resolve_operand(
     }
 }
 
-fn resolve_identifier(
-    note: &Value,
-    idents: &[Ident],
-    table: &str,
-    table_alias: Option<&str>,
-) -> Value {
+fn resolve_identifier(context: &RowContext, idents: &[Ident]) -> Value {
     if idents.is_empty() {
         return Value::Null;
     }
 
-    let mut parts: Vec<String> = idents.iter().map(|i| i.value.clone()).collect();
-    if let Some(first) = parts.first() {
-        if first.eq_ignore_ascii_case(table)
-            || table_alias
-                .map(|alias| alias.eq_ignore_ascii_case(first))
-                .unwrap_or(false)
-        {
-            parts.remove(0);
+    let parts: Vec<String> = idents.iter().map(|i| i.value.clone()).collect();
+    let (row, remaining) = if let Some(first) = parts.first() {
+        let key = first.to_lowercase();
+        if let Some(canonical) = context.id_map.get(&key) {
+            let row = context
+                .tables
+                .get(canonical)
+                .cloned()
+                .unwrap_or(Value::Null);
+            (row, &parts[1..])
+        } else {
+            let row = context
+                .tables
+                .get(&context.base_key)
+                .cloned()
+                .unwrap_or(Value::Null);
+            (row, parts.as_slice())
         }
+    } else {
+        return Value::Null;
+    };
+
+    resolve_value_in_row(&row, remaining)
+}
+
+fn resolve_value_in_row(row: &Value, parts: &[String]) -> Value {
+    if parts.is_empty() {
+        return Value::Null;
     }
 
     if parts.len() >= 2 && parts[0].eq_ignore_ascii_case("properties") {
         let key = parts[1..].join(".");
-        if let Some(props) = note.get("properties").and_then(|v| v.as_object()) {
+        if let Some(props) = row.get("properties").and_then(|v| v.as_object()) {
             if let Some(value) = props.get(&key) {
                 return value.clone();
             }
@@ -327,7 +514,7 @@ fn resolve_identifier(
 
     if parts.len() == 1 {
         let key = &parts[0];
-        if let Some(obj) = note.as_object() {
+        if let Some(obj) = row.as_object() {
             if let Some(value) = obj.get(key) {
                 return value.clone();
             }
@@ -335,7 +522,7 @@ fn resolve_identifier(
                 return value.clone();
             }
         }
-        if let Some(props) = note.get("properties").and_then(|v| v.as_object()) {
+        if let Some(props) = row.get("properties").and_then(|v| v.as_object()) {
             if let Some(value) = props.get(key) {
                 return value.clone();
             }
@@ -346,6 +533,41 @@ fn resolve_identifier(
     }
 
     Value::Null
+}
+
+fn matches_using_constraint(context: &RowContext, join_row: &Value, idents: &[Ident]) -> bool {
+    for ident in idents {
+        let key = ident.value.clone();
+        let left_value = resolve_identifier(context, std::slice::from_ref(ident));
+        let right_value = resolve_value_in_row(join_row, &[key]);
+        if !values_equal(&left_value, &right_value) {
+            return false;
+        }
+    }
+    true
+}
+
+fn matches_natural_constraint(context: &RowContext, join_row: &Value) -> bool {
+    let Some(left_obj) = context
+        .tables
+        .get(&context.base_key)
+        .and_then(|row| row.as_object())
+    else {
+        return false;
+    };
+    let Some(right_obj) = join_row.as_object() else {
+        return false;
+    };
+
+    for (key, left_value) in left_obj {
+        if let Some(right_value) = right_obj.get(key) {
+            if !values_equal(left_value, right_value) {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 fn find_case_insensitive<'a>(
@@ -454,20 +676,18 @@ fn like_regex(pattern: &str) -> Option<regex::Regex> {
     None
 }
 
-fn compare_notes(
-    left: &Value,
-    right: &Value,
+fn compare_rows(
+    left: &RowContext,
+    right: &RowContext,
     order_by: &[OrderByExpr],
-    table: &str,
-    table_alias: Option<&str>,
 ) -> Result<Ordering> {
     for order in order_by {
         let (Expr::Identifier(_) | Expr::CompoundIdentifier(_) | Expr::Value(_)) = &order.expr
         else {
             return Err(sql_error("Unsupported ORDER BY expression"));
         };
-        let left_value = resolve_operand(left, &order.expr, table, table_alias)?;
-        let right_value = resolve_operand(right, &order.expr, table, table_alias)?;
+        let left_value = resolve_operand(left, &order.expr)?;
+        let right_value = resolve_operand(right, &order.expr)?;
         let ordering = compare_order(&left_value, &right_value).unwrap_or(Ordering::Equal);
         if ordering != Ordering::Equal {
             return Ok(if order.asc.unwrap_or(true) {

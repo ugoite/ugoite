@@ -37,7 +37,41 @@ async fn test_class_req_cls_001_list_column_types() -> anyhow::Result<()> {
     assert!(types.contains(&"string".to_string()));
     assert!(types.contains(&"markdown".to_string()));
     assert!(types.contains(&"number".to_string()));
+    assert!(types.contains(&"double".to_string()));
+    assert!(types.contains(&"float".to_string()));
+    assert!(types.contains(&"integer".to_string()));
+    assert!(types.contains(&"long".to_string()));
+    assert!(types.contains(&"boolean".to_string()));
     assert!(types.contains(&"date".to_string()));
+    assert!(types.contains(&"time".to_string()));
+    assert!(types.contains(&"timestamp".to_string()));
+    assert!(types.contains(&"timestamp_tz".to_string()));
+    assert!(types.contains(&"timestamp_ns".to_string()));
+    assert!(types.contains(&"timestamp_tz_ns".to_string()));
+    assert!(types.contains(&"uuid".to_string()));
+    assert!(types.contains(&"binary".to_string()));
     assert!(types.contains(&"list".to_string()));
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-CLS-005
+async fn test_class_req_cls_005_reject_reserved_metadata_columns() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-meta-cols", "/tmp").await?;
+    let ws_path = "workspaces/test-meta-cols";
+
+    let class_def = serde_json::json!({
+        "name": "BadClass",
+        "fields": {
+            "title": {"type": "string"}
+        }
+    });
+
+    let result = class::upsert_class(&op, ws_path, &class_def).await;
+    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("reserved"));
+
     Ok(())
 }

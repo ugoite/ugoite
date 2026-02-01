@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
-use chrono::NaiveDate;
+use base64::Engine as _;
+use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::note;
 use crate::sql;
@@ -21,7 +23,8 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
 
     if let Some(sql_query) = extract_sql_query(&query_value) {
         let parsed = sql::parse_sql(&sql_query)?;
-        return sql::filter_notes_by_sql(notes_map.values().cloned().collect(), &parsed);
+        let tables = build_sql_tables(op, ws_path, &classes, &notes_map).await?;
+        return sql::filter_notes_by_sql(&tables, &parsed);
     }
 
     let filters: Option<Map<String, Value>> = query_value.as_object().cloned();
@@ -182,6 +185,93 @@ pub fn compute_word_count(content: &str) -> usize {
     content.split_whitespace().count()
 }
 
+fn parse_boolean(value: &str) -> Option<bool> {
+    match value.trim().to_lowercase().as_str() {
+        "true" | "yes" | "on" | "1" => Some(true),
+        "false" | "no" | "off" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+fn normalize_timestamp(value: &str) -> Option<String> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
+}
+
+fn normalize_timestamp_ns(value: &str) -> Option<String> {
+    DateTime::parse_from_rfc3339(value).ok().map(|dt| {
+        dt.with_timezone(&Utc)
+            .to_rfc3339_opts(SecondsFormat::Nanos, false)
+    })
+}
+
+fn normalize_time(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let formats = ["%H:%M:%S%.f", "%H:%M:%S", "%H:%M"];
+    for format in formats {
+        if let Ok(time) = NaiveTime::parse_from_str(trimmed, format) {
+            let micros = time.nanosecond() / 1_000;
+            if micros == 0 {
+                return Some(time.format("%H:%M:%S").to_string());
+            }
+            return Some(format!("{}.{:06}", time.format("%H:%M:%S"), micros));
+        }
+    }
+    None
+}
+
+fn normalize_binary(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let bytes = if let Some(rest) = trimmed.strip_prefix("base64:") {
+        base64::engine::general_purpose::STANDARD
+            .decode(rest.trim())
+            .ok()?
+    } else if let Some(rest) = trimmed.strip_prefix("hex:") {
+        hex::decode(rest.trim()).ok()?
+    } else if let Some(rest) = trimmed.strip_prefix("0x") {
+        hex::decode(rest.trim()).ok()?
+    } else {
+        base64::engine::general_purpose::STANDARD
+            .decode(trimmed)
+            .ok()?
+    };
+
+    Some(format!(
+        "base64:{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+fn parse_markdown_list(value: &str) -> Vec<Value> {
+    let mut items = Vec::new();
+    for line in value.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let item = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("- [x] ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("- [X] ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("- ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("* ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("+ ") {
+            rest
+        } else {
+            trimmed
+        };
+        if !item.is_empty() {
+            items.push(Value::String(item.to_string()));
+        }
+    }
+    items
+}
+
 pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Value, Vec<Value>)> {
     let mut warnings = Vec::new();
     let mut casted = properties.clone();
@@ -228,7 +318,7 @@ pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Va
         let Some(raw_value) = value else { continue };
 
         let casted_value = match field_type {
-            "number" => match raw_value {
+            "number" | "double" => match raw_value {
                 Value::Number(_) => Some(raw_value.clone()),
                 Value::String(ref s) => s
                     .parse::<f64>()
@@ -236,41 +326,77 @@ pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Va
                     .map(|n| Value::Number(serde_json::Number::from_f64(n).unwrap())),
                 _ => None,
             },
+            "float" => match raw_value {
+                Value::Number(_) => Some(raw_value.clone()),
+                Value::String(ref s) => s
+                    .parse::<f32>()
+                    .ok()
+                    .and_then(|n| serde_json::Number::from_f64(f64::from(n)))
+                    .map(Value::Number),
+                _ => None,
+            },
+            "integer" => match raw_value {
+                Value::Number(num) => num
+                    .as_i64()
+                    .and_then(|v| i32::try_from(v).ok())
+                    .map(serde_json::Number::from),
+                Value::String(ref s) => s.parse::<i32>().ok().map(serde_json::Number::from),
+                _ => None,
+            }
+            .map(Value::Number),
+            "long" => match raw_value {
+                Value::Number(num) => num.as_i64().map(serde_json::Number::from),
+                Value::String(ref s) => s.parse::<i64>().ok().map(serde_json::Number::from),
+                _ => None,
+            }
+            .map(Value::Number),
             "date" => match raw_value {
                 Value::String(ref s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
                     .ok()
                     .map(|d| Value::String(d.format("%Y-%m-%d").to_string())),
                 _ => None,
             },
+            "time" => match raw_value {
+                Value::String(ref s) => normalize_time(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp" => match raw_value {
+                Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_tz" => match raw_value {
+                Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_ns" => match raw_value {
+                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_tz_ns" => match raw_value {
+                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                _ => None,
+            },
+            "uuid" => match raw_value {
+                Value::String(ref s) => Uuid::parse_str(s)
+                    .ok()
+                    .map(|u| Value::String(u.to_string())),
+                _ => None,
+            },
+            "binary" => match raw_value {
+                Value::String(ref s) => normalize_binary(s).map(Value::String),
+                _ => None,
+            },
             "list" => match raw_value {
                 Value::Array(_) => Some(raw_value.clone()),
-                Value::String(ref s) => {
-                    let items: Vec<Value> = s
-                        .lines()
-                        .filter_map(|line| {
-                            let trimmed = line.trim();
-                            if trimmed.is_empty() {
-                                None
-                            } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                                Some(Value::String(trimmed[2..].to_string()))
-                            } else {
-                                Some(Value::String(trimmed.to_string()))
-                            }
-                        })
-                        .collect();
-                    Some(Value::Array(items))
-                }
+                Value::String(ref s) => Some(Value::Array(parse_markdown_list(s))),
                 _ => None,
             },
             "boolean" => match raw_value {
                 Value::Bool(_) => Some(raw_value.clone()),
-                Value::String(ref s) => match s.to_lowercase().as_str() {
-                    "true" => Some(Value::Bool(true)),
-                    "false" => Some(Value::Bool(false)),
-                    _ => None,
-                },
+                Value::String(ref s) => parse_boolean(s).map(Value::Bool),
                 _ => None,
             },
+            "markdown" | "string" => Some(raw_value.clone()),
             _ => Some(raw_value.clone()),
         };
 
@@ -419,10 +545,80 @@ async fn build_record(
         "word_count": word_count,
         "tags": row.tags,
         "links": row.links,
+        "attachments": row.attachments,
         "canvas_position": row.canvas_position,
         "checksum": row.integrity.checksum,
         "validation_warnings": Value::Array(warnings),
     });
 
     Ok(Some(record))
+}
+
+async fn build_sql_tables(
+    op: &Operator,
+    ws_path: &str,
+    classes: &HashMap<String, Value>,
+    notes_map: &Map<String, Value>,
+) -> Result<HashMap<String, Vec<Value>>> {
+    let mut tables: HashMap<String, Vec<Value>> = HashMap::new();
+    tables.insert(
+        "notes".to_string(),
+        notes_map.values().cloned().collect::<Vec<_>>(),
+    );
+
+    for class_name in classes.keys() {
+        let rows: Vec<Value> = notes_map
+            .values()
+            .filter(|note| {
+                note.get("class")
+                    .and_then(|v| v.as_str())
+                    .map(|class| class.eq_ignore_ascii_case(class_name))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        tables.insert(class_name.to_lowercase(), rows);
+    }
+
+    let mut note_class_map: HashMap<String, String> = HashMap::new();
+    for (note_id, note_value) in notes_map {
+        if let Some(class) = note_value.get("class").and_then(|v| v.as_str()) {
+            note_class_map.insert(note_id.to_string(), class.to_string());
+        }
+    }
+
+    let mut attachment_rows = Vec::new();
+    let note_rows = note::list_note_rows(op, ws_path).await?;
+    let mut link_rows = Vec::new();
+    for (_class_name, row) in note_rows {
+        if row.deleted {
+            continue;
+        }
+        for link_item in row.links {
+            let source_class = note_class_map.get(&link_item.source).cloned();
+            let target_class = note_class_map.get(&link_item.target).cloned();
+            link_rows.push(serde_json::json!({
+                "id": link_item.id,
+                "source": link_item.source,
+                "target": link_item.target,
+                "kind": link_item.kind,
+                "source_class": source_class,
+                "target_class": target_class,
+            }));
+        }
+        for attachment in row.attachments {
+            if let Some(obj) = attachment.as_object() {
+                attachment_rows.push(serde_json::json!({
+                    "id": obj.get("id").cloned().unwrap_or(Value::Null),
+                    "note_id": row.note_id,
+                    "name": obj.get("name").cloned().unwrap_or(Value::Null),
+                    "path": obj.get("path").cloned().unwrap_or(Value::Null),
+                }));
+            }
+        }
+    }
+    tables.insert("links".to_string(), link_rows);
+    tables.insert("attachments".to_string(), attachment_rows);
+
+    Ok(tables)
 }

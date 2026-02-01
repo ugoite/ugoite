@@ -37,3 +37,16 @@ requirements:
         - file: ieapp-core/tests/test_link.rs
           tests:
             - test_link_req_lnk_003_delete_link
+
+  - id: REQ-LNK-004
+    title: Normalize IEapp Link URIs
+    description: |
+      Markdown content MUST normalize IEapp link URIs (e.g. note and attachment
+      links) into canonical ieapp:// forms during create/update.
+    priority: medium
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_note.rs
+          tests:
+            - test_note_req_lnk_004_normalize_ieapp_link_uris

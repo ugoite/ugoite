@@ -158,3 +158,35 @@ requirements:
         - file: ieapp-core/tests/test_index.rs
           tests:
             - test_index_req_idx_008_query_sql
+
+  - id: REQ-IDX-009
+    title: IEapp SQL JOIN Support
+    description: |
+      IEapp SQL MUST support JOIN queries across notes, links, and attachments
+      using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
+      constraints.
+    related_spec:
+      - features/sql.md
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_009_query_sql_joins
+
+  - id: REQ-IDX-010
+    title: Rich Content Column Parsing
+    description: |
+      Validation MUST parse Markdown into expanded content column types,
+      including lists, booleans, integers, floats, timestamps, time, UUIDs,
+      and binary payloads.
+    related_spec:
+      - data-model/overview.md#content-column-types--markdown-parsing
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_index.rs
+          tests:
+            - test_index_req_idx_010_rich_content_parsing

@@ -261,7 +261,7 @@ GET /workspaces/{ws_id}/classes/types
 
 **Response**: `200 OK`
 ```json
-["string", "number", "date", "list", "markdown"]
+["string", "markdown", "number", "double", "float", "integer", "long", "boolean", "date", "time", "timestamp", "timestamp_tz", "timestamp_ns", "timestamp_tz_ns", "uuid", "binary", "list"]
 ```
 
 ---

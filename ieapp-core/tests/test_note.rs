@@ -252,6 +252,33 @@ async fn test_note_req_note_006_extract_h2_headers() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-LNK-004
+async fn test_note_req_lnk_004_normalize_ieapp_link_uris() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    workspace::create_workspace(&op, "test-links", "/tmp").await?;
+    let ws_path = "workspaces/test-links";
+    let integrity = FakeIntegrityProvider;
+
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "fields": {
+            "Body": {"type": "markdown"}
+        }
+    });
+    class::upsert_class(&op, ws_path, &class_def).await?;
+
+    let content = "---\nclass: Note\n---\n# Title\n\n## Body\nSee [ref](ieapp://notes/note-123), [file](ieapp://attachments/att-456), and [query](ieapp://note?id=note-789).";
+    note::create_note(&op, ws_path, "note-links", content, "author", &integrity).await?;
+
+    let content_info = note::get_note_content(&op, ws_path, "note-links").await?;
+    assert!(content_info.markdown.contains("ieapp://note/note-123"));
+    assert!(content_info.markdown.contains("ieapp://attachment/att-456"));
+    assert!(content_info.markdown.contains("ieapp://note/note-789"));
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-CLS-004
 async fn test_note_req_cls_004_deny_extra_attributes() -> anyhow::Result<()> {
     let op = setup_operator()?;

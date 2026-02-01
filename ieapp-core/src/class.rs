@@ -1,5 +1,6 @@
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
+use crate::metadata;
 use crate::note;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
@@ -20,10 +21,22 @@ pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
 pub async fn list_column_types() -> Result<Vec<String>> {
     Ok(vec![
         "string".to_string(),
-        "number".to_string(),
-        "date".to_string(),
-        "list".to_string(),
         "markdown".to_string(),
+        "number".to_string(),
+        "double".to_string(),
+        "float".to_string(),
+        "integer".to_string(),
+        "long".to_string(),
+        "boolean".to_string(),
+        "date".to_string(),
+        "time".to_string(),
+        "timestamp".to_string(),
+        "timestamp_tz".to_string(),
+        "timestamp_ns".to_string(),
+        "timestamp_tz_ns".to_string(),
+        "uuid".to_string(),
+        "binary".to_string(),
+        "list".to_string(),
     ])
 }
 
@@ -237,6 +250,16 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
     let fields = normalize_class_fields(class_def.get("fields"));
+    if let Some(field_map) = fields.as_object() {
+        for name in field_map.keys() {
+            if is_reserved_metadata_column(name) {
+                return Err(anyhow!(
+                    "Field name '{}' is reserved for metadata columns",
+                    name
+                ));
+            }
+        }
+    }
     let allow_extra_attributes = class_def
         .get("allow_extra_attributes")
         .and_then(|v| v.as_str())
@@ -257,6 +280,10 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
         "fields": fields,
         "allow_extra_attributes": allow_extra_attributes,
     }))
+}
+
+fn is_reserved_metadata_column(name: &str) -> bool {
+    metadata::is_reserved_metadata_column(name)
 }
 
 fn normalize_class_fields(fields: Option<&Value>) -> Value {

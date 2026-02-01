@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, onCleanup, Show, For } from "solid-js";
 import type { Accessor } from "solid-js";
 import { AttachmentUploader } from "~/components/AttachmentUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
@@ -11,6 +11,49 @@ export interface NoteDetailPaneProps {
 	noteId: Accessor<string>;
 	onDeleted: () => void;
 	onAfterSave?: () => void;
+}
+
+const CLASS_VALIDATION_MARKER = "Class validation failed:";
+const UNKNOWN_FIELDS_MARKER = "Unknown class fields:";
+
+function parseClassValidationError(message: string) {
+	if (!message.includes(CLASS_VALIDATION_MARKER)) return null;
+	const payload = message.split(CLASS_VALIDATION_MARKER)[1]?.trim();
+	if (!payload) return null;
+	try {
+		const parsed = JSON.parse(payload) as Array<{ field?: string; message?: string }>;
+		const items = parsed
+			.map((entry) => entry.message || entry.field)
+			.filter((item): item is string => Boolean(item));
+		return {
+			title: "Class validation failed",
+			items: items.length > 0 ? items : ["Please review the class requirements."],
+		};
+	} catch {
+		return {
+			title: "Class validation failed",
+			items: [payload],
+		};
+	}
+}
+
+function parseUnknownFieldsError(message: string) {
+	if (!message.includes(UNKNOWN_FIELDS_MARKER)) return null;
+	const payload = message.split(UNKNOWN_FIELDS_MARKER)[1]?.trim();
+	const items = payload
+		? payload
+				.split(",")
+				.map((item) => item.trim())
+				.filter(Boolean)
+		: [];
+	return {
+		title: "Unknown class fields",
+		items: items.length > 0 ? items : [payload || "Unknown fields found."],
+	};
+}
+
+function parseValidationErrorMessage(message: string) {
+	return parseClassValidationError(message) || parseUnknownFieldsError(message);
 }
 
 async function fetchWithTimeout<T>(
@@ -36,6 +79,10 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 	const [isDirty, setIsDirty] = createSignal(false);
 	const [isSaving, setIsSaving] = createSignal(false);
 	const [conflictMessage, setConflictMessage] = createSignal<string | null>(null);
+	const [validationError, setValidationError] = createSignal<{
+		title: string;
+		items: string[];
+	} | null>(null);
 	const [currentRevisionId, setCurrentRevisionId] = createSignal<string | null>(null);
 	const [lastLoadedNoteId, setLastLoadedNoteId] = createSignal<string | null>(null);
 	const [noteError, setNoteError] = createSignal<string | null>(null);
@@ -91,6 +138,7 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 			setEditorContent(n.content ?? "");
 			setIsDirty(false);
 			setConflictMessage(null);
+			setValidationError(null);
 		}
 	});
 
@@ -98,37 +146,59 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 		setEditorContent(content);
 		setIsDirty(true);
 		setConflictMessage(null);
+		setValidationError(null);
 	};
 
-	const handleSave = async () => {
+	const resolveSaveContext = () => {
 		const wsId = props.workspaceId();
 		const noteId = props.noteId();
 		const revisionId = currentRevisionId() || note()?.revision_id;
-
 		if (!wsId || !noteId || !revisionId) {
-			setConflictMessage("Cannot save: note not properly loaded. Please try refreshing.");
+			return {
+				ok: false,
+				reason: "Cannot save: note not properly loaded. Please try refreshing.",
+			};
+		}
+		return { ok: true, wsId, noteId, revisionId };
+	};
+
+	const handleSaveError = (error: unknown) => {
+		if (error instanceof RevisionConflictError) {
+			setConflictMessage(
+				"This note was modified elsewhere. Please refresh to see the latest version.",
+			);
+			return;
+		}
+		const message = error instanceof Error ? error.message : "Failed to save";
+		const parsed = parseValidationErrorMessage(message);
+		if (parsed) {
+			setValidationError(parsed);
+		} else {
+			setConflictMessage(message);
+		}
+	};
+
+	const handleSave = async () => {
+		const context = resolveSaveContext();
+		if (!context.ok) {
+			setConflictMessage(context.reason);
 			return;
 		}
 
 		setIsSaving(true);
 		setConflictMessage(null);
+		setValidationError(null);
 
 		try {
-			const result = await noteApi.update(wsId, noteId, {
+			const result = await noteApi.update(context.wsId, context.noteId, {
 				markdown: editorContent(),
-				parent_revision_id: revisionId,
+				parent_revision_id: context.revisionId,
 			});
 			setCurrentRevisionId(result.revision_id);
 			setIsDirty(false);
 			props.onAfterSave?.();
 		} catch (e) {
-			if (e instanceof RevisionConflictError) {
-				setConflictMessage(
-					"This note was modified elsewhere. Please refresh to see the latest version.",
-				);
-			} else {
-				setConflictMessage(e instanceof Error ? e.message : "Failed to save");
-			}
+			handleSaveError(e);
 		} finally {
 			setIsSaving(false);
 		}
@@ -264,6 +334,16 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 						</div>
 
 						<div class="flex-1 bg-white overflow-hidden flex flex-col">
+							<Show when={validationError()}>
+								{(error) => (
+									<div class="mx-4 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+										<p class="font-semibold">{error().title}</p>
+										<ul class="mt-2 list-disc pl-5 space-y-1">
+											<For each={error().items}>{(item) => <li>{item}</li>}</For>
+										</ul>
+									</div>
+								)}
+							</Show>
 							<MarkdownEditor
 								content={editorContent()}
 								onChange={handleContentChange}

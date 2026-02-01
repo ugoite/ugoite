@@ -54,6 +54,7 @@ def build_sql_schema(
     rules = rules or load_sql_rules()
     base_columns = list(rules.get("base_columns", []))
     base_tables = list(rules.get("base_tables", ["notes"]))
+    table_columns = rules.get("table_columns", {})
 
     class_field_set: set[str] = set()
     for item in classes:
@@ -65,7 +66,13 @@ def build_sql_schema(
 
     tables: dict[str, list[str]] = {}
     for table in base_tables:
-        tables[table] = union_fields
+        columns = None
+        if isinstance(table_columns, dict):
+            columns = table_columns.get(table)
+        if isinstance(columns, list):
+            tables[table] = list(columns)
+        else:
+            tables[table] = union_fields
 
     for item in classes:
         name = item.get("name")
