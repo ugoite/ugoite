@@ -116,6 +116,13 @@ requirements:
         - file: backend/tests/test_sql.py
           tests:
             - test_sql_req_api_006_crud
+        - file: ieapp-cli/tests/test_saved_sql.py
+          tests:
+            - test_saved_sql_req_api_006_crud
+      rust:
+        - file: ieapp-core/tests/test_saved_sql.rs
+          tests:
+            - test_saved_sql_req_api_006_crud
 
   - id: REQ-API-007
     title: Saved SQL variable embedding and SQL validity
@@ -133,3 +140,10 @@ requirements:
         - file: backend/tests/test_sql.py
           tests:
             - test_sql_req_api_007_validation
+        - file: ieapp-cli/tests/test_saved_sql.py
+          tests:
+            - test_saved_sql_req_api_007_validation
+      rust:
+        - file: ieapp-core/tests/test_saved_sql.rs
+          tests:
+            - test_saved_sql_req_api_007_validation_errors
