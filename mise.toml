@@ -21,7 +21,13 @@ rust = "latest"
 uv = "latest"
 
 [tasks.setup]
-depends = ["//backend:install", "//frontend:install", "//ieapp-cli:install", "//ieapp-core:install", "//e2e:install"]
+run = [
+	"mise run //backend:install",
+	"mise run //frontend:install",
+	"mise run //ieapp-cli:install",
+	"mise run //ieapp-core:install",
+	"mise run //e2e:install",
+]
 
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev"]
