@@ -326,7 +326,13 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
         "long" => Type::Primitive(PrimitiveType::Long),
         "boolean" => Type::Primitive(PrimitiveType::Boolean),
         "date" => Type::Primitive(PrimitiveType::Date),
+        "time" => Type::Primitive(PrimitiveType::Time),
         "timestamp" => Type::Primitive(PrimitiveType::Timestamp),
+        "timestamp_tz" => Type::Primitive(PrimitiveType::Timestamptz),
+        "timestamp_ns" => Type::Primitive(PrimitiveType::TimestampNs),
+        "timestamp_tz_ns" => Type::Primitive(PrimitiveType::TimestamptzNs),
+        "uuid" => Type::Primitive(PrimitiveType::Uuid),
+        "binary" => Type::Primitive(PrimitiveType::Binary),
         "list" => {
             let element_id = next_id(id_counter);
             let element = Arc::new(NestedField::new(

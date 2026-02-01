@@ -21,7 +21,13 @@ def test_list_column_types() -> None:
     assert "long" in types
     assert "boolean" in types
     assert "date" in types
+    assert "time" in types
     assert "timestamp" in types
+    assert "timestamp_tz" in types
+    assert "timestamp_ns" in types
+    assert "timestamp_tz_ns" in types
+    assert "uuid" in types
+    assert "binary" in types
     assert "list" in types
     assert "markdown" in types
 

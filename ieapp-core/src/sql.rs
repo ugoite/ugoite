@@ -29,6 +29,8 @@ pub struct SqlTableRef {
 pub enum SqlJoinType {
     Inner,
     Left,
+    Right,
+    Full,
     Cross,
 }
 
@@ -116,30 +118,55 @@ pub fn filter_notes_by_sql(
     for join in &query.joins {
         let join_rows = table_rows(tables, &join.table.name)?;
         let mut joined = Vec::new();
-        for context in contexts.into_iter() {
+        let mut right_matched = vec![false; join_rows.len()];
+        let context_templates: Vec<RowContext> = contexts.into_iter().collect();
+
+        for context in context_templates.iter() {
             let mut matched = false;
-            for row in join_rows {
+            for (idx, row) in join_rows.iter().enumerate() {
                 let mut next = context.clone();
                 next.add_table(&join.table, row.clone());
 
                 let matches = match &join.constraint {
                     JoinConstraint::On(expr) => matches_expr(&next, expr)?,
+                    JoinConstraint::Using(idents) => matches_using_constraint(context, row, idents),
+                    JoinConstraint::Natural => matches_natural_constraint(context, row),
                     JoinConstraint::None => true,
-                    _ => return Err(sql_error("Only JOIN ... ON and CROSS JOIN are supported")),
                 };
 
                 if matches {
                     matched = true;
+                    right_matched[idx] = true;
                     joined.push(next);
                 }
             }
 
-            if !matched && join.join_type == SqlJoinType::Left {
+            if !matched && matches!(join.join_type, SqlJoinType::Left | SqlJoinType::Full) {
                 let mut next = context.clone();
                 next.add_table(&join.table, Value::Null);
                 joined.push(next);
             }
         }
+
+        if matches!(join.join_type, SqlJoinType::Right | SqlJoinType::Full) {
+            let template = if let Some(first) = context_templates.first() {
+                first.clone()
+            } else {
+                RowContext::new(&query.from, Value::Null)
+            };
+            for (idx, row) in join_rows.iter().enumerate() {
+                if right_matched[idx] {
+                    continue;
+                }
+                let mut next = template.clone();
+                for value in next.tables.values_mut() {
+                    *value = Value::Null;
+                }
+                next.add_table(&join.table, row.clone());
+                joined.push(next);
+            }
+        }
+
         contexts = joined;
     }
 
@@ -225,8 +252,14 @@ fn parse_join(join: &Join) -> Result<SqlJoin> {
     let (join_type, constraint) = match &join.join_operator {
         JoinOperator::Inner(constraint) => (SqlJoinType::Inner, constraint.clone()),
         JoinOperator::LeftOuter(constraint) => (SqlJoinType::Left, constraint.clone()),
+        JoinOperator::RightOuter(constraint) => (SqlJoinType::Right, constraint.clone()),
+        JoinOperator::FullOuter(constraint) => (SqlJoinType::Full, constraint.clone()),
         JoinOperator::CrossJoin => (SqlJoinType::Cross, JoinConstraint::None),
-        _ => return Err(sql_error("Only INNER, LEFT, and CROSS joins are supported")),
+        _ => {
+            return Err(sql_error(
+                "Only INNER, LEFT, RIGHT, FULL, and CROSS joins are supported",
+            ))
+        }
     };
     Ok(SqlJoin {
         join_type,
@@ -285,8 +318,10 @@ impl RowContext {
     fn add_table(&mut self, table: &SqlTableRef, row: Value) {
         let canonical = canonical_table_key(table);
         self.tables.insert(canonical.clone(), row);
+        let table_key = table.name.to_lowercase();
         self.id_map
-            .insert(table.name.to_lowercase(), canonical.clone());
+            .entry(table_key)
+            .or_insert_with(|| canonical.clone());
         if let Some(alias) = &table.alias {
             self.id_map.insert(alias.to_lowercase(), canonical.clone());
         }
@@ -498,6 +533,41 @@ fn resolve_value_in_row(row: &Value, parts: &[String]) -> Value {
     }
 
     Value::Null
+}
+
+fn matches_using_constraint(context: &RowContext, join_row: &Value, idents: &[Ident]) -> bool {
+    for ident in idents {
+        let key = ident.value.clone();
+        let left_value = resolve_identifier(context, std::slice::from_ref(ident));
+        let right_value = resolve_value_in_row(join_row, &[key]);
+        if !values_equal(&left_value, &right_value) {
+            return false;
+        }
+    }
+    true
+}
+
+fn matches_natural_constraint(context: &RowContext, join_row: &Value) -> bool {
+    let Some(left_obj) = context
+        .tables
+        .get(&context.base_key)
+        .and_then(|row| row.as_object())
+    else {
+        return false;
+    };
+    let Some(right_obj) = join_row.as_object() else {
+        return false;
+    };
+
+    for (key, left_value) in left_obj {
+        if let Some(right_value) = right_obj.get(key) {
+            if !values_equal(left_value, right_value) {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 fn find_case_insensitive<'a>(

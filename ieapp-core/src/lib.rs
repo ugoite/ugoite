@@ -14,6 +14,7 @@ pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
 pub mod link;
+pub mod metadata;
 pub mod note;
 pub mod search;
 pub mod sql;

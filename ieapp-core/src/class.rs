@@ -1,32 +1,12 @@
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
+use crate::metadata;
 use crate::note;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use uuid::Uuid;
-
-const METADATA_COLUMNS: &[&str] = &[
-    "id",
-    "note_id",
-    "title",
-    "class",
-    "tags",
-    "links",
-    "attachments",
-    "created_at",
-    "updated_at",
-    "revision_id",
-    "parent_revision_id",
-    "deleted",
-    "deleted_at",
-    "author",
-    "canvas_position",
-    "integrity",
-    "workspace_id",
-    "word_count",
-];
 
 pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let mut classes = Vec::new();
@@ -49,7 +29,13 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "long".to_string(),
         "boolean".to_string(),
         "date".to_string(),
+        "time".to_string(),
         "timestamp".to_string(),
+        "timestamp_tz".to_string(),
+        "timestamp_ns".to_string(),
+        "timestamp_tz_ns".to_string(),
+        "uuid".to_string(),
+        "binary".to_string(),
         "list".to_string(),
     ])
 }
@@ -297,9 +283,7 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
 }
 
 fn is_reserved_metadata_column(name: &str) -> bool {
-    METADATA_COLUMNS
-        .iter()
-        .any(|reserved| reserved.eq_ignore_ascii_case(name))
+    metadata::is_reserved_metadata_column(name)
 }
 
 fn normalize_class_fields(fields: Option<&Value>) -> Value {

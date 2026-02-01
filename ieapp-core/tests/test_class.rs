@@ -43,7 +43,13 @@ async fn test_class_req_cls_001_list_column_types() -> anyhow::Result<()> {
     assert!(types.contains(&"long".to_string()));
     assert!(types.contains(&"boolean".to_string()));
     assert!(types.contains(&"date".to_string()));
+    assert!(types.contains(&"time".to_string()));
     assert!(types.contains(&"timestamp".to_string()));
+    assert!(types.contains(&"timestamp_tz".to_string()));
+    assert!(types.contains(&"timestamp_ns".to_string()));
+    assert!(types.contains(&"timestamp_tz_ns".to_string()));
+    assert!(types.contains(&"uuid".to_string()));
+    assert!(types.contains(&"binary".to_string()));
     assert!(types.contains(&"list".to_string()));
     Ok(())
 }

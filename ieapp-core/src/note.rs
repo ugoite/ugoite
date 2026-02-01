@@ -4,13 +4,15 @@ use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
 use anyhow::{anyhow, Result};
-use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
+use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Float32Array, Float64Array, Int32Array, Int64Array,
-    ListArray, RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
+    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
+    Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray, StructArray,
+    Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Fields};
-use chrono::{DateTime, Utc};
+use base64::Engine as _;
+use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use futures::TryStreamExt;
 use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::arrow::ArrowReaderBuilder;
@@ -26,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
+use url::Url;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -209,21 +212,36 @@ fn parse_markdown(content: &str) -> (Value, Value) {
 }
 
 fn normalize_ieapp_links(content: &str) -> String {
-    let re = Regex::new(r"ieapp://(?P<kind>[A-Za-z0-9_-]+)(?P<path>/[^\s)]+)").unwrap();
+    let re = Regex::new(r"ieapp://[^\s)]+").unwrap();
     re.replace_all(content, |caps: &regex::Captures| {
-        let kind = caps.name("kind").unwrap().as_str().to_lowercase();
-        let canonical_kind = match kind.as_str() {
-            "notes" => "note",
-            "attachments" => "attachment",
-            _ => kind.as_str(),
-        };
-        format!(
-            "ieapp://{}{}",
-            canonical_kind,
-            caps.name("path").unwrap().as_str()
-        )
+        normalize_ieapp_link(caps.get(0).map(|m| m.as_str()).unwrap_or(""))
     })
     .to_string()
+}
+
+fn normalize_ieapp_link(raw: &str) -> String {
+    let Ok(url) = Url::parse(raw) else {
+        return raw.to_string();
+    };
+    let kind = url.host_str().unwrap_or("").to_lowercase();
+    let canonical_kind = match kind.as_str() {
+        "notes" | "note" => "note",
+        "attachments" | "attachment" => "attachment",
+        _ => kind.as_str(),
+    };
+    let mut path = url.path().trim_start_matches('/').to_string();
+    if path.is_empty() {
+        for (key, value) in url.query_pairs() {
+            if key.eq_ignore_ascii_case("id") && !value.is_empty() {
+                path = value.to_string();
+                break;
+            }
+        }
+    }
+    if path.is_empty() || canonical_kind.is_empty() {
+        return raw.to_string();
+    }
+    format!("ieapp://{}/{}", canonical_kind, path)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -464,6 +482,71 @@ fn parse_timestamp_to_micros(value: &str) -> Option<i64> {
 
 fn timestamp_micros_to_string(micros: i64) -> Option<String> {
     DateTime::<Utc>::from_timestamp_micros(micros).map(|dt| dt.to_rfc3339())
+}
+
+fn parse_time_to_micros(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    let formats = ["%H:%M:%S%.f", "%H:%M:%S", "%H:%M"];
+    for format in formats {
+        if let Ok(time) = NaiveTime::parse_from_str(trimmed, format) {
+            let secs = i64::from(time.num_seconds_from_midnight());
+            let micros = i64::from(time.nanosecond() / 1_000);
+            return Some(secs * 1_000_000 + micros);
+        }
+    }
+    None
+}
+
+fn time_micros_to_string(micros: i64) -> Option<String> {
+    if micros < 0 {
+        return None;
+    }
+    let secs = (micros / 1_000_000) as u32;
+    let sub_micros = (micros % 1_000_000) as u32;
+    let nanos = sub_micros * 1_000;
+    let time = NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos)?;
+    if sub_micros == 0 {
+        Some(time.format("%H:%M:%S").to_string())
+    } else {
+        Some(format!("{}.{:06}", time.format("%H:%M:%S"), sub_micros))
+    }
+}
+
+fn parse_timestamp_to_nanos(value: &str) -> Option<i64> {
+    let dt = DateTime::parse_from_rfc3339(value).ok()?;
+    let secs = dt.timestamp();
+    let nanos = i64::from(dt.timestamp_subsec_nanos());
+    Some(secs.saturating_mul(1_000_000_000) + nanos)
+}
+
+fn timestamp_nanos_to_string(nanos: i64) -> Option<String> {
+    let secs = nanos.div_euclid(1_000_000_000);
+    let sub_nanos = nanos.rem_euclid(1_000_000_000) as u32;
+    let dt = DateTime::<Utc>::from_timestamp(secs, sub_nanos)?;
+    Some(dt.to_rfc3339_opts(SecondsFormat::Nanos, false))
+}
+
+fn parse_binary_string(value: &str) -> Option<Vec<u8>> {
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix("base64:") {
+        return base64::engine::general_purpose::STANDARD
+            .decode(rest.trim())
+            .ok();
+    }
+    if let Some(rest) = trimmed.strip_prefix("hex:") {
+        return hex::decode(rest.trim()).ok();
+    }
+    if let Some(rest) = trimmed.strip_prefix("0x") {
+        return hex::decode(rest.trim()).ok();
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(trimmed)
+        .ok()
+}
+
+fn binary_to_base64(value: &[u8]) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(value);
+    format!("base64:{}", encoded)
 }
 
 fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::FieldRef> {
@@ -894,11 +977,54 @@ fn struct_array_from_fields(
                 let days = value.and_then(|v| v.as_str()).and_then(date_to_days);
                 Arc::new(Date32Array::from(vec![days]))
             }
+            "time" => {
+                let micros = value
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_time_to_micros);
+                Arc::new(Time64MicrosecondArray::from(vec![micros]))
+            }
             "timestamp" => {
                 let micros = value
                     .and_then(|v| v.as_str())
                     .and_then(parse_timestamp_to_micros);
                 Arc::new(TimestampMicrosecondArray::from(vec![micros]))
+            }
+            "timestamp_tz" => {
+                let micros = value
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_timestamp_to_micros);
+                Arc::new(TimestampMicrosecondArray::from(vec![micros]))
+            }
+            "timestamp_ns" => {
+                let nanos = value
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_timestamp_to_nanos);
+                Arc::new(TimestampNanosecondArray::from(vec![nanos]))
+            }
+            "timestamp_tz_ns" => {
+                let nanos = value
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_timestamp_to_nanos);
+                Arc::new(TimestampNanosecondArray::from(vec![nanos]))
+            }
+            "uuid" => {
+                let bytes = value
+                    .and_then(|v| v.as_str())
+                    .and_then(|v| Uuid::parse_str(v).ok())
+                    .map(|uuid| uuid.into_bytes());
+                let mut builder = FixedSizeBinaryBuilder::with_capacity(1, 16);
+                if let Some(bytes) = bytes {
+                    builder
+                        .append_value(bytes)
+                        .map_err(|e| anyhow!("Failed to build uuid array: {}", e))?;
+                } else {
+                    builder.append_null();
+                }
+                Arc::new(builder.finish())
+            }
+            "binary" => {
+                let bytes = value.and_then(|v| v.as_str()).and_then(parse_binary_string);
+                Arc::new(LargeBinaryArray::from_opt_vec(vec![bytes.as_deref()]))
             }
             "list" => list_array_from_values(value, field.as_ref())?,
             "markdown" | "string" => {
@@ -1039,6 +1165,16 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         days_to_date(array.value(row)).map(Value::String)
                     }
                 }),
+            "time" => column
+                .as_any()
+                .downcast_ref::<Time64MicrosecondArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        time_micros_to_string(array.value(row)).map(Value::String)
+                    }
+                }),
             "timestamp" => column
                 .as_any()
                 .downcast_ref::<TimestampMicrosecondArray>()
@@ -1047,6 +1183,58 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         None
                     } else {
                         timestamp_micros_to_string(array.value(row)).map(Value::String)
+                    }
+                }),
+            "timestamp_tz" => column
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        timestamp_micros_to_string(array.value(row)).map(Value::String)
+                    }
+                }),
+            "timestamp_ns" => column
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        timestamp_nanos_to_string(array.value(row)).map(Value::String)
+                    }
+                }),
+            "timestamp_tz_ns" => column
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        timestamp_nanos_to_string(array.value(row)).map(Value::String)
+                    }
+                }),
+            "uuid" => column
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        Uuid::from_slice(array.value(row))
+                            .ok()
+                            .map(|uuid| Value::String(uuid.to_string()))
+                    }
+                }),
+            "binary" => column
+                .as_any()
+                .downcast_ref::<LargeBinaryArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        Some(Value::String(binary_to_base64(array.value(row))))
                     }
                 }),
             "list" => column

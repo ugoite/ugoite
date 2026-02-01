@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, NaiveDate, Utc};
+use base64::Engine as _;
+use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::note;
 use crate::sql;
@@ -197,6 +199,50 @@ fn normalize_timestamp(value: &str) -> Option<String> {
         .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
 }
 
+fn normalize_timestamp_ns(value: &str) -> Option<String> {
+    DateTime::parse_from_rfc3339(value).ok().map(|dt| {
+        dt.with_timezone(&Utc)
+            .to_rfc3339_opts(SecondsFormat::Nanos, false)
+    })
+}
+
+fn normalize_time(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let formats = ["%H:%M:%S%.f", "%H:%M:%S", "%H:%M"];
+    for format in formats {
+        if let Ok(time) = NaiveTime::parse_from_str(trimmed, format) {
+            let micros = time.nanosecond() / 1_000;
+            if micros == 0 {
+                return Some(time.format("%H:%M:%S").to_string());
+            }
+            return Some(format!("{}.{:06}", time.format("%H:%M:%S"), micros));
+        }
+    }
+    None
+}
+
+fn normalize_binary(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let bytes = if let Some(rest) = trimmed.strip_prefix("base64:") {
+        base64::engine::general_purpose::STANDARD
+            .decode(rest.trim())
+            .ok()?
+    } else if let Some(rest) = trimmed.strip_prefix("hex:") {
+        hex::decode(rest.trim()).ok()?
+    } else if let Some(rest) = trimmed.strip_prefix("0x") {
+        hex::decode(rest.trim()).ok()?
+    } else {
+        base64::engine::general_purpose::STANDARD
+            .decode(trimmed)
+            .ok()?
+    };
+
+    Some(format!(
+        "base64:{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
 fn parse_markdown_list(value: &str) -> Vec<Value> {
     let mut items = Vec::new();
     for line in value.lines() {
@@ -310,8 +356,34 @@ pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Va
                     .map(|d| Value::String(d.format("%Y-%m-%d").to_string())),
                 _ => None,
             },
+            "time" => match raw_value {
+                Value::String(ref s) => normalize_time(s).map(Value::String),
+                _ => None,
+            },
             "timestamp" => match raw_value {
                 Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_tz" => match raw_value {
+                Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_ns" => match raw_value {
+                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                _ => None,
+            },
+            "timestamp_tz_ns" => match raw_value {
+                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                _ => None,
+            },
+            "uuid" => match raw_value {
+                Value::String(ref s) => Uuid::parse_str(s)
+                    .ok()
+                    .map(|u| Value::String(u.to_string())),
+                _ => None,
+            },
+            "binary" => match raw_value {
+                Value::String(ref s) => normalize_binary(s).map(Value::String),
                 _ => None,
             },
             "list" => match raw_value {

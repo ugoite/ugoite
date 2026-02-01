@@ -267,12 +267,13 @@ async fn test_note_req_lnk_004_normalize_ieapp_link_uris() -> anyhow::Result<()>
     });
     class::upsert_class(&op, ws_path, &class_def).await?;
 
-    let content = "---\nclass: Note\n---\n# Title\n\n## Body\nSee [ref](ieapp://notes/note-123) and [file](ieapp://attachments/att-456).";
+    let content = "---\nclass: Note\n---\n# Title\n\n## Body\nSee [ref](ieapp://notes/note-123), [file](ieapp://attachments/att-456), and [query](ieapp://note?id=note-789).";
     note::create_note(&op, ws_path, "note-links", content, "author", &integrity).await?;
 
     let content_info = note::get_note_content(&op, ws_path, "note-links").await?;
     assert!(content_info.markdown.contains("ieapp://note/note-123"));
     assert!(content_info.markdown.contains("ieapp://attachment/att-456"));
+    assert!(content_info.markdown.contains("ieapp://note/note-789"));
 
     Ok(())
 }
