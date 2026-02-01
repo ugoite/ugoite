@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use sqlparser::ast::{
-    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, ObjectName, OrderByExpr,
-    SelectItem, SetExpr, Statement, TableFactor, Value as SqlValue,
+    BinaryOperator, Expr, Ident, Join, JoinConstraint, JoinOperator, LimitClause, ObjectName,
+    ObjectNamePart, OrderBy, OrderByExpr, OrderByKind, SelectItem, SetExpr, Statement, TableFactor,
+    Value as SqlValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -89,9 +90,9 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
         .collect::<Result<Vec<_>>>()?;
 
     let selection = select.selection.clone();
-    let order_by = boxed.order_by.clone();
-    let limit = match &boxed.limit {
-        Some(expr) => Some(parse_limit(expr)?),
+    let order_by = parse_order_by(boxed.order_by.as_ref())?;
+    let limit = match &boxed.limit_clause {
+        Some(limit_clause) => parse_limit_clause(limit_clause)?,
         None => None,
     };
 
@@ -210,12 +211,18 @@ pub fn filter_notes_by_sql(
 
 fn parse_limit(expr: &Expr) -> Result<usize> {
     let raw = match expr {
-        Expr::Value(SqlValue::Number(num, _)) => num
+        Expr::Value(ValueWithSpan {
+            value: SqlValue::Number(num, _),
+            ..
+        }) => num
             .parse::<i64>()
             .map_err(|_| sql_error("LIMIT must be an integer literal"))?,
         Expr::UnaryOp { op, expr } if op.to_string() == "-" => {
             let inner = match &**expr {
-                Expr::Value(SqlValue::Number(num, _)) => num
+                Expr::Value(ValueWithSpan {
+                    value: SqlValue::Number(num, _),
+                    ..
+                }) => num
                     .parse::<i64>()
                     .map_err(|_| sql_error("LIMIT must be an integer literal"))?,
                 _ => return Err(sql_error("LIMIT must be an integer literal")),
@@ -237,6 +244,40 @@ fn parse_limit(expr: &Expr) -> Result<usize> {
     Ok(limit)
 }
 
+fn parse_limit_clause(limit_clause: &LimitClause) -> Result<Option<usize>> {
+    match limit_clause {
+        LimitClause::LimitOffset {
+            limit,
+            offset,
+            limit_by,
+        } => {
+            if offset.is_some() {
+                return Err(sql_error("OFFSET is not supported in IEapp SQL"));
+            }
+            if !limit_by.is_empty() {
+                return Err(sql_error("LIMIT BY is not supported in IEapp SQL"));
+            }
+            match limit {
+                Some(expr) => parse_limit(expr).map(Some),
+                None => Ok(None),
+            }
+        }
+        LimitClause::OffsetCommaLimit { .. } => Err(sql_error(
+            "LIMIT with comma offset is not supported in IEapp SQL",
+        )),
+    }
+}
+
+fn parse_order_by(order_by: Option<&OrderBy>) -> Result<Vec<OrderByExpr>> {
+    match order_by {
+        None => Ok(Vec::new()),
+        Some(order_by) => match &order_by.kind {
+            OrderByKind::Expressions(exprs) => Ok(exprs.clone()),
+            OrderByKind::All(_) => Err(sql_error("ORDER BY ALL is not supported in IEapp SQL")),
+        },
+    }
+}
+
 fn parse_table_ref(relation: &TableFactor) -> Result<SqlTableRef> {
     match relation {
         TableFactor::Table { name, alias, .. } => Ok(SqlTableRef {
@@ -250,11 +291,17 @@ fn parse_table_ref(relation: &TableFactor) -> Result<SqlTableRef> {
 fn parse_join(join: &Join) -> Result<SqlJoin> {
     let table = parse_table_ref(&join.relation)?;
     let (join_type, constraint) = match &join.join_operator {
-        JoinOperator::Inner(constraint) => (SqlJoinType::Inner, constraint.clone()),
-        JoinOperator::LeftOuter(constraint) => (SqlJoinType::Left, constraint.clone()),
-        JoinOperator::RightOuter(constraint) => (SqlJoinType::Right, constraint.clone()),
+        JoinOperator::Join(constraint) | JoinOperator::Inner(constraint) => {
+            (SqlJoinType::Inner, constraint.clone())
+        }
+        JoinOperator::Left(constraint) | JoinOperator::LeftOuter(constraint) => {
+            (SqlJoinType::Left, constraint.clone())
+        }
+        JoinOperator::Right(constraint) | JoinOperator::RightOuter(constraint) => {
+            (SqlJoinType::Right, constraint.clone())
+        }
         JoinOperator::FullOuter(constraint) => (SqlJoinType::Full, constraint.clone()),
-        JoinOperator::CrossJoin => (SqlJoinType::Cross, JoinConstraint::None),
+        JoinOperator::CrossJoin(constraint) => (SqlJoinType::Cross, constraint.clone()),
         _ => {
             return Err(sql_error(
                 "Only INNER, LEFT, RIGHT, FULL, and CROSS joins are supported",
@@ -278,6 +325,7 @@ fn table_rows<'a>(tables: &'a HashMap<String, Vec<Value>>, name: &str) -> Result
 fn object_name_to_string(name: &ObjectName) -> String {
     name.0
         .last()
+        .and_then(ObjectNamePart::as_ident)
         .map(|ident| ident.value.clone())
         .unwrap_or_else(|| "notes".to_string())
 }
@@ -535,10 +583,11 @@ fn resolve_value_in_row(row: &Value, parts: &[String]) -> Value {
     Value::Null
 }
 
-fn matches_using_constraint(context: &RowContext, join_row: &Value, idents: &[Ident]) -> bool {
-    for ident in idents {
-        let key = ident.value.clone();
-        let left_value = resolve_identifier(context, std::slice::from_ref(ident));
+fn matches_using_constraint(context: &RowContext, join_row: &Value, idents: &[ObjectName]) -> bool {
+    for name in idents {
+        let key = object_name_to_string(name);
+        let ident = Ident::new(key.clone());
+        let left_value = resolve_identifier(context, std::slice::from_ref(&ident));
         let right_value = resolve_value_in_row(join_row, &[key]);
         if !values_equal(&left_value, &right_value) {
             return false;
@@ -579,8 +628,8 @@ fn find_case_insensitive<'a>(
         .map(|(_, v)| v)
 }
 
-fn sql_value_to_json(value: &SqlValue) -> Value {
-    match value {
+fn sql_value_to_json(value: &ValueWithSpan) -> Value {
+    match &value.value {
         SqlValue::Number(num, _) => num
             .parse::<f64>()
             .ok()
@@ -690,7 +739,7 @@ fn compare_rows(
         let right_value = resolve_operand(right, &order.expr)?;
         let ordering = compare_order(&left_value, &right_value).unwrap_or(Ordering::Equal);
         if ordering != Ordering::Equal {
-            return Ok(if order.asc.unwrap_or(true) {
+            return Ok(if order.options.asc.unwrap_or(true) {
                 ordering
             } else {
                 ordering.reverse()

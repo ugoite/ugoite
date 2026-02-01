@@ -31,7 +31,7 @@ iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs
 arrow-array = "57.0"
 arrow-schema = "57.0"
 parquet = { version = "57.0", default-features = false, features = ["arrow", "async"] }
-sqlparser = "0.44.0"
+sqlparser = "0.60.0"
 
 [dev-dependencies]
 pyo3 = { version = "0.24.1", features = ["auto-initialize"] }
