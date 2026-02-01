@@ -40,9 +40,28 @@ workspaces/
 
 Classes define note types with:
 - **Template**: Fixed global template `# {class_name} + H2 columns`
-- **Fields**: Derived from the Iceberg table schema
+- **Fields**: Content columns derived from the Iceberg table schema
 - **Types**: Iceberg column types mapped to note fields
 - **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
+
+### Metadata vs Content Columns
+
+IEapp separates columns into two ownership categories:
+
+- **Metadata columns (system-owned)**: Reserved fields created and managed by IEapp.
+  Users **cannot** define Class fields with these names.
+- **Content columns (user-owned)**: Class-defined fields stored in the Iceberg `fields` struct.
+
+Reserved metadata column names include (case-insensitive):
+
+`id`, `note_id`, `title`, `class`, `tags`, `links`, `attachments`,
+`created_at`, `updated_at`, `revision_id`, `parent_revision_id`,
+`deleted`, `deleted_at`, `author`, `canvas_position`, `integrity`,
+`workspace_id`, `word_count`.
+
+The metadata column list is treated as an internal system contract and may expand
+over time; Class creation MUST reject any field name that conflicts with a
+reserved metadata column name.
 
 ### Properties Extraction
 
@@ -58,6 +77,36 @@ Extra H2 sections are handled by the Class policy:
 - `deny`: reject notes with unknown H2 sections
 - `allow_json`: store unknown sections in `extra_attributes`
 - `allow_columns`: accept unknown sections and store in `extra_attributes`
+
+### Content Column Types & Markdown Parsing
+
+Content column types map to Iceberg primitives and are parsed from Markdown
+using Markdown-friendly rules:
+
+- **string**, **markdown** → stored as strings
+- **number**, **double** → parsed as $f64$
+- **float** → parsed as $f32$
+- **integer** → parsed as $i32$
+- **long** → parsed as $i64$
+- **boolean** → parsed from `true/false`, `yes/no`, `on/off`, `1/0`
+- **date** → parsed as `YYYY-MM-DD`
+- **timestamp** → parsed as RFC3339 (`2025-01-01T12:34:56Z`)
+- **list** → parsed from Markdown bullet lists (e.g. `- item`)
+
+If a list is provided as plain lines, each non-empty line becomes an item.
+Type casting errors are reported during validation.
+
+### Link URIs
+
+Notes can contain IEapp-internal links using the `ieapp://` scheme. The URI
+kind determines the link target and is designed to be extensible:
+
+- `ieapp://note/{note_id}`
+- `ieapp://attachment/{attachment_id}`
+
+IEapp normalizes equivalent forms (e.g. `ieapp://notes/{id}`) to canonical
+URIs on write. This keeps Markdown stable while allowing new link kinds in
+future milestones.
 
 ### Versioning
 

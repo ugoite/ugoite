@@ -115,7 +115,8 @@ classes:
             properties:
               type:
                 type: string
-                enum: [string, number, date, list, markdown]
+                enum:
+                  [string, markdown, number, double, float, integer, long, boolean, date, timestamp, list]
               required:
                 type: boolean
               default:

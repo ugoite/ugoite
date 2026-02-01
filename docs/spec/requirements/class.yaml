@@ -100,3 +100,19 @@ requirements:
           tests:
             - test_note_req_cls_004_deny_extra_attributes
             - test_note_req_cls_004_allow_extra_attributes
+
+  - id: REQ-CLS-005
+    title: Reserved Metadata Columns
+    description: |
+      Class definitions MUST reject field names that collide with
+      system-owned metadata columns (e.g., title, class, tags).
+    related_spec:
+      - data-model/overview.md#metadata-vs-content-columns
+      - data-model/file-schemas.yaml#class_definition
+    priority: high
+    status: planned
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_class.rs
+          tests:
+            - test_class_req_cls_005_reject_reserved_metadata_columns

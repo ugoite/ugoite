@@ -82,6 +82,30 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 ---
 
+## Phase 4: Metadata Columns, Rich Types, Link URIs, SQL Joins
+
+**Objective**: Expand the Iceberg-backed data model with reserved metadata columns,
+rich content column types with Markdown-friendly parsing, canonical IEapp link URIs,
+and broadened IEapp SQL join capabilities.
+
+### Key Tasks
+- [ ] Define metadata vs content column ownership rules and reserved names.
+- [ ] Prevent user-defined class fields from using metadata column names.
+- [ ] Expand content column types to additional Iceberg primitives (boolean, integer, float, double, timestamp, etc.).
+- [ ] Update Markdown parsing to produce typed values (including list parsing from bullet Markdown).
+- [ ] Introduce IEapp URI scheme for in-note links (note, attachment, extensible kinds) and normalize links on write/read.
+- [ ] Extend IEapp SQL to support JOIN clauses and expose additional base tables (links, attachments).
+- [ ] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
+- [ ] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
+
+### Acceptance Criteria
+- [ ] Metadata columns are reserved and cannot be used as user-defined Class fields.
+- [ ] Content columns support expanded Iceberg types with deterministic Markdown parsing.
+- [ ] IEapp link URIs are normalized and persisted consistently.
+- [ ] IEapp SQL supports JOIN queries across notes, links, and attachments.
+
+---
+
 ## Definition of Done
 
 - [x] All phases completed with acceptance criteria met.
