@@ -518,6 +518,57 @@ requirements:
       The UI must successfully transition from loading to content or error state within 10 seconds.
       Users must be able to navigate away from a pending load without the UI becoming unresponsive.
     type: non-functional
+
+  - id: REQ-FE-037
+    title: Class-first Note Creation UI
+    description: |
+      Creating a new note MUST require selecting a Class. The create dialog
+      MUST show the selected Class fields and generate the note from the
+      Class template with the correct frontmatter.
+    related_spec:
+      - data-model/overview.md#classes
+      - stories/core.yaml#STORY-002
+    priority: high
+    status: planned
+    tests:
+      vitest:
+        - file: frontend/src/components/create-dialogs.test.tsx
+          tests:
+            - "REQ-FE-037: requires class selection before creating a note"
+        - file: frontend/src/components/ListPanel.test.tsx
+          tests:
+            - "REQ-FE-037: disables new note when no classes exist"
+
+  - id: REQ-FE-038
+    title: Class Validation Feedback in Editor
+    description: |
+      When a save fails due to Class validation, the editor MUST surface the
+      validation messages in a readable warning panel.
+    related_spec:
+      - stories/core.yaml#STORY-002
+    priority: high
+    status: planned
+    tests:
+      vitest:
+        - file: frontend/src/components/NoteDetailPane.test.tsx
+          tests:
+            - "REQ-FE-038: renders class validation warnings"
+
+  - id: REQ-FE-039
+    title: Reserved Metadata Column Guardrails
+    description: |
+      Class creation/editing UI MUST prevent users from defining fields that
+      collide with reserved metadata column names (e.g., title, class, tags).
+    related_spec:
+      - data-model/overview.md#metadata-vs-content-columns
+      - requirements/class.yaml#REQ-CLS-005
+    priority: high
+    status: planned
+    tests:
+      vitest:
+        - file: frontend/src/components/create-dialogs.test.tsx
+          tests:
+            - "REQ-FE-039: blocks reserved metadata column names"
     priority: critical
     status: implemented
     tests:

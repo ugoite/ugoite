@@ -98,12 +98,16 @@ and broadened IEapp SQL join capabilities.
 - [x] Extend IEapp SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
 - [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
 - [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
+- [ ] Update frontend UX to enforce class-first note creation and surface class validation warnings.
+- [ ] Add frontend guardrails for reserved metadata column names and list-friendly field types.
 
 ### Acceptance Criteria
 - [x] Metadata columns are reserved and cannot be used as user-defined Class fields.
 - [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
 - [x] IEapp link URIs are normalized and persisted consistently.
 - [x] IEapp SQL supports JOIN queries across notes, links, and attachments.
+- [ ] Frontend note creation is class-first, and validation feedback is visible in the editor UX.
+- [ ] Class creation/editing UI blocks reserved metadata column names.
 
 ---
 
