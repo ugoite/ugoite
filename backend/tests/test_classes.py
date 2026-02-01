@@ -144,3 +144,21 @@ Value
         },
     )
     assert upd_resp.status_code == 422
+
+
+def test_create_reserved_metadata_class_rejected(workspace_id: str) -> None:
+    """REQ-CLS-006: Reserved metadata classes are rejected via API."""
+    class_def = {
+        "name": "SQL",
+        "version": 1,
+        "template": "# SQL\n\n## sql\n\n## variables\n",
+        "fields": {
+            "sql": {"type": "string", "required": True},
+            "variables": {"type": "object_list", "required": False},
+        },
+    }
+
+    response = client.post(f"/workspaces/{workspace_id}/classes", json=class_def)
+    assert response.status_code == 422
+    detail = response.json().get("detail", "")
+    assert "reserved" in detail.lower()
