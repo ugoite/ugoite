@@ -15,7 +15,13 @@ def test_list_column_types() -> None:
     assert isinstance(types, list)
     assert "string" in types
     assert "number" in types
+    assert "double" in types
+    assert "float" in types
+    assert "integer" in types
+    assert "long" in types
+    assert "boolean" in types
     assert "date" in types
+    assert "timestamp" in types
     assert "list" in types
     assert "markdown" in types
 
@@ -29,9 +35,9 @@ def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
     # Define initial class
     initial_class = {
         "name": "project",
-        "template": "# Project\n\n## title\n\n## status\n",
+        "template": "# Project\n\n## summary\n\n## status\n",
         "fields": {
-            "title": {"type": "string"},
+            "summary": {"type": "string"},
             "status": {"type": "string"},
         },
     }
@@ -40,7 +46,7 @@ def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
     # Create a note
     note_id = str(uuid.uuid4())
     content = (
-        "---\nclass: project\n---\n# Project Alpha\n\n## title\nAlpha\n\n"
+        "---\nclass: project\n---\n# Project Alpha\n\n## summary\nAlpha\n\n"
         "## status\nActive\n"
     )
 
@@ -53,9 +59,9 @@ def test_migrate_class_add_column_with_default(tmp_path: Path) -> None:
     # Define new class (adding 'priority')
     new_class = {
         "name": "project",
-        "template": "# Project\n\n## title\n\n## status\n\n## priority\n",
+        "template": "# Project\n\n## summary\n\n## status\n\n## priority\n",
         "fields": {
-            "title": {"type": "string"},
+            "summary": {"type": "string"},
             "status": {"type": "string"},
             "priority": {"type": "string"},
         },
@@ -89,9 +95,9 @@ def test_migrate_class_remove_column(tmp_path: Path) -> None:
     # Initial class with extra field
     initial_class = {
         "name": "task",
-        "template": "# Task\n\n## title\n\n## old_field\n",
+        "template": "# Task\n\n## summary\n\n## old_field\n",
         "fields": {
-            "title": {"type": "string"},
+            "summary": {"type": "string"},
             "old_field": {"type": "string"},
         },
     }
@@ -99,7 +105,7 @@ def test_migrate_class_remove_column(tmp_path: Path) -> None:
 
     note_id = str(uuid.uuid4())
     content = (
-        "---\nclass: task\n---\n# Task 1\n\n## title\nDo it\n\n"
+        "---\nclass: task\n---\n# Task 1\n\n## summary\nDo it\n\n"
         "## old_field\nDelete me\n"
     )
 
@@ -112,9 +118,9 @@ def test_migrate_class_remove_column(tmp_path: Path) -> None:
     # New class without old_field
     new_class = {
         "name": "task",
-        "template": "# Task\n\n## title\n",
+        "template": "# Task\n\n## summary\n",
         "fields": {
-            "title": {"type": "string"},
+            "summary": {"type": "string"},
         },
     }
 
