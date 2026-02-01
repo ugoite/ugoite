@@ -7,6 +7,27 @@ use serde_json::{Map, Value};
 use std::collections::HashSet;
 use uuid::Uuid;
 
+const METADATA_COLUMNS: &[&str] = &[
+    "id",
+    "note_id",
+    "title",
+    "class",
+    "tags",
+    "links",
+    "attachments",
+    "created_at",
+    "updated_at",
+    "revision_id",
+    "parent_revision_id",
+    "deleted",
+    "deleted_at",
+    "author",
+    "canvas_position",
+    "integrity",
+    "workspace_id",
+    "word_count",
+];
+
 pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let mut classes = Vec::new();
     for class_name in list_class_names(op, ws_path).await? {
@@ -20,10 +41,16 @@ pub async fn list_classes(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
 pub async fn list_column_types() -> Result<Vec<String>> {
     Ok(vec![
         "string".to_string(),
-        "number".to_string(),
-        "date".to_string(),
-        "list".to_string(),
         "markdown".to_string(),
+        "number".to_string(),
+        "double".to_string(),
+        "float".to_string(),
+        "integer".to_string(),
+        "long".to_string(),
+        "boolean".to_string(),
+        "date".to_string(),
+        "timestamp".to_string(),
+        "list".to_string(),
     ])
 }
 
@@ -237,6 +264,16 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
     let fields = normalize_class_fields(class_def.get("fields"));
+    if let Some(field_map) = fields.as_object() {
+        for name in field_map.keys() {
+            if is_reserved_metadata_column(name) {
+                return Err(anyhow!(
+                    "Field name '{}' is reserved for metadata columns",
+                    name
+                ));
+            }
+        }
+    }
     let allow_extra_attributes = class_def
         .get("allow_extra_attributes")
         .and_then(|v| v.as_str())
@@ -257,6 +294,12 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
         "fields": fields,
         "allow_extra_attributes": allow_extra_attributes,
     }))
+}
+
+fn is_reserved_metadata_column(name: &str) -> bool {
+    METADATA_COLUMNS
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(name))
 }
 
 fn normalize_class_fields(fields: Option<&Value>) -> Value {

@@ -320,8 +320,13 @@ fn next_id(counter: &mut i32) -> i32 {
 
 fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type> {
     Ok(match field_type {
-        "number" => Type::Primitive(PrimitiveType::Double),
+        "number" | "double" => Type::Primitive(PrimitiveType::Double),
+        "float" => Type::Primitive(PrimitiveType::Float),
+        "integer" => Type::Primitive(PrimitiveType::Int),
+        "long" => Type::Primitive(PrimitiveType::Long),
+        "boolean" => Type::Primitive(PrimitiveType::Boolean),
         "date" => Type::Primitive(PrimitiveType::Date),
+        "timestamp" => Type::Primitive(PrimitiveType::Timestamp),
         "list" => {
             let element_id = next_id(id_counter);
             let element = Arc::new(NestedField::new(
@@ -332,6 +337,7 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
             ));
             Type::List(ListType::new(element))
         }
+        "markdown" | "string" => Type::Primitive(PrimitiveType::String),
         _ => Type::Primitive(PrimitiveType::String),
     })
 }

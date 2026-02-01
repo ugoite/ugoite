@@ -4,6 +4,11 @@
     "SELECT",
     "FROM",
     "WHERE",
+    "JOIN",
+    "LEFT",
+    "INNER",
+    "CROSS",
+    "ON",
     "ORDER",
     "BY",
     "LIMIT",
@@ -11,7 +16,7 @@
     "OR",
     "NOT"
   ],
-  "base_tables": ["notes"],
+  "base_tables": ["notes", "links", "attachments"],
   "base_columns": [
     "id",
     "title",
@@ -21,6 +26,22 @@
     "word_count",
     "tags"
   ],
+  "table_columns": {
+    "notes": [
+      "id",
+      "title",
+      "class",
+      "updated_at",
+      "workspace_id",
+      "word_count",
+      "tags",
+      "properties",
+      "links",
+      "attachments"
+    ],
+    "links": ["id", "source", "target", "kind", "source_class", "target_class"],
+    "attachments": ["id", "note_id", "name", "path"]
+  },
   "lint": {
     "require_select": true,
     "require_from": true,

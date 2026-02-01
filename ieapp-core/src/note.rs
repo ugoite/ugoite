@@ -6,11 +6,11 @@ use crate::link::Link;
 use anyhow::{anyhow, Result};
 use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, Float64Array, ListArray, RecordBatch, StringArray,
-    StructArray, TimestampMicrosecondArray,
+    Array, ArrayRef, BooleanArray, Date32Array, Float32Array, Float64Array, Int32Array, Int64Array,
+    ListArray, RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow_schema::{DataType, Fields};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::arrow::ArrowReaderBuilder;
@@ -206,6 +206,24 @@ fn parse_markdown(content: &str) -> (Value, Value) {
     let (frontmatter, body) = extract_frontmatter(content);
     let sections = extract_sections(&body);
     (frontmatter, sections)
+}
+
+fn normalize_ieapp_links(content: &str) -> String {
+    let re = Regex::new(r"ieapp://(?P<kind>[A-Za-z0-9_-]+)(?P<path>/[^\s)]+)").unwrap();
+    re.replace_all(content, |caps: &regex::Captures| {
+        let kind = caps.name("kind").unwrap().as_str().to_lowercase();
+        let canonical_kind = match kind.as_str() {
+            "notes" => "note",
+            "attachments" => "attachment",
+            _ => kind.as_str(),
+        };
+        format!(
+            "ieapp://{}{}",
+            canonical_kind,
+            caps.name("path").unwrap().as_str()
+        )
+    })
+    .to_string()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -436,6 +454,16 @@ fn days_to_date(days: i32) -> Option<String> {
     let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
     let date = epoch.checked_add_signed(chrono::Duration::days(days as i64))?;
     Some(date.format("%Y-%m-%d").to_string())
+}
+
+fn parse_timestamp_to_micros(value: &str) -> Option<i64> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| dt.timestamp_micros())
+}
+
+fn timestamp_micros_to_string(micros: i64) -> Option<String> {
+    DateTime::<Utc>::from_timestamp_micros(micros).map(|dt| dt.to_rfc3339())
 }
 
 fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::FieldRef> {
@@ -840,15 +868,43 @@ fn struct_array_from_fields(
         let value = fields_value.get(name);
 
         let array: ArrayRef = match field_type {
-            "number" => {
+            "number" | "double" => {
                 let number = value.and_then(|v| v.as_f64());
                 Arc::new(Float64Array::from(vec![number]))
+            }
+            "float" => {
+                let number = value.and_then(|v| v.as_f64()).map(|n| n as f32);
+                Arc::new(Float32Array::from(vec![number]))
+            }
+            "integer" => {
+                let number = value
+                    .and_then(|v| v.as_i64())
+                    .and_then(|v| i32::try_from(v).ok());
+                Arc::new(Int32Array::from(vec![number]))
+            }
+            "long" => {
+                let number = value.and_then(|v| v.as_i64());
+                Arc::new(Int64Array::from(vec![number]))
+            }
+            "boolean" => {
+                let bool_value = value.and_then(|v| v.as_bool());
+                Arc::new(BooleanArray::from(vec![bool_value]))
             }
             "date" => {
                 let days = value.and_then(|v| v.as_str()).and_then(date_to_days);
                 Arc::new(Date32Array::from(vec![days]))
             }
+            "timestamp" => {
+                let micros = value
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_timestamp_to_micros);
+                Arc::new(TimestampMicrosecondArray::from(vec![micros]))
+            }
             "list" => list_array_from_values(value, field.as_ref())?,
+            "markdown" | "string" => {
+                let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
+                Arc::new(StringArray::from(vec![string_value]))
+            }
             _ => {
                 let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
                 Arc::new(StringArray::from(vec![string_value]))
@@ -921,14 +977,56 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
         let column = struct_array.column(idx);
 
         let value = match field_type {
-            "number" => column
+            "number" | "double" => {
+                column
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .and_then(|array| {
+                        if array.is_null(row) {
+                            None
+                        } else {
+                            serde_json::Number::from_f64(array.value(row)).map(Value::Number)
+                        }
+                    })
+            }
+            "float" => column
                 .as_any()
-                .downcast_ref::<Float64Array>()
+                .downcast_ref::<Float32Array>()
                 .and_then(|array| {
                     if array.is_null(row) {
                         None
                     } else {
-                        serde_json::Number::from_f64(array.value(row)).map(Value::Number)
+                        serde_json::Number::from_f64(f64::from(array.value(row))).map(Value::Number)
+                    }
+                }),
+            "integer" => column
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        Some(Value::Number(array.value(row).into()))
+                    }
+                }),
+            "long" => column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        Some(Value::Number(array.value(row).into()))
+                    }
+                }),
+            "boolean" => column
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        Some(Value::Bool(array.value(row)))
                     }
                 }),
             "date" => column
@@ -939,6 +1037,16 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         None
                     } else {
                         days_to_date(array.value(row)).map(Value::String)
+                    }
+                }),
+            "timestamp" => column
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .and_then(|array| {
+                    if array.is_null(row) {
+                        None
+                    } else {
+                        timestamp_micros_to_string(array.value(row)).map(Value::String)
                     }
                 }),
             "list" => column
@@ -959,6 +1067,18 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, class_def: &V
                         Some(Value::Array(items))
                     }
                 }),
+            "markdown" | "string" => {
+                column
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .and_then(|array| {
+                        if array.is_null(row) {
+                            None
+                        } else {
+                            Some(Value::String(array.value(row).to_string()))
+                        }
+                    })
+            }
             _ => column
                 .as_any()
                 .downcast_ref::<StringArray>()
@@ -1474,7 +1594,8 @@ pub async fn create_note<I: IntegrityProvider>(
         return Err(anyhow!("Note already exists: {}", note_id));
     }
 
-    let (frontmatter, sections) = parse_markdown(content);
+    let normalized_content = normalize_ieapp_links(content);
+    let (frontmatter, sections) = parse_markdown(&normalized_content);
     let class_name = extract_class(&frontmatter)
         .ok_or_else(|| anyhow!("Class is required for note creation"))?;
     let class_def = class::read_class_definition(op, ws_path, &class_name).await?;
@@ -1487,7 +1608,7 @@ pub async fn create_note<I: IntegrityProvider>(
         return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
     }
 
-    let properties = index::extract_properties(content);
+    let properties = index::extract_properties(&normalized_content);
     let (casted, warnings) = index::validate_properties(&properties, &class_def)?;
     if !warnings.is_empty() {
         return Err(anyhow!(
@@ -1512,12 +1633,12 @@ pub async fn create_note<I: IntegrityProvider>(
         }
     }
 
-    let title = extract_title(content, note_id);
+    let title = extract_title(&normalized_content, note_id);
     let tags = extract_tags(&frontmatter);
     let timestamp = now_ts();
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(content);
-    let signature = integrity.signature(content);
+    let checksum = integrity.checksum(&normalized_content);
+    let signature = integrity.signature(&normalized_content);
 
     let note_row = NoteRow {
         note_id: note_id.to_string(),
@@ -1712,7 +1833,8 @@ pub async fn update_note<I: IntegrityProvider>(
         }
     }
 
-    let (frontmatter, sections) = parse_markdown(content);
+    let normalized_content = normalize_ieapp_links(content);
+    let (frontmatter, sections) = parse_markdown(&normalized_content);
     let updated_class =
         extract_class(&frontmatter).ok_or_else(|| anyhow!("Class is required for note update"))?;
     if updated_class != class_name {
@@ -1728,7 +1850,7 @@ pub async fn update_note<I: IntegrityProvider>(
         return Err(anyhow!("Unknown class fields: {}", extras.join(", ")));
     }
 
-    let properties = index::extract_properties(content);
+    let properties = index::extract_properties(&normalized_content);
     let (casted, warnings) = index::validate_properties(&properties, &class_def)?;
     if !warnings.is_empty() {
         return Err(anyhow!(
@@ -1758,10 +1880,10 @@ pub async fn update_note<I: IntegrityProvider>(
         timestamp = row.updated_at + 0.001;
     }
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(content);
-    let signature = integrity.signature(content);
+    let checksum = integrity.checksum(&normalized_content);
+    let signature = integrity.signature(&normalized_content);
 
-    row.title = extract_title(content, &row.title);
+    row.title = extract_title(&normalized_content, &row.title);
     row.updated_at = timestamp;
     if frontmatter.get("tags").is_some() {
         row.tags = extract_tags(&frontmatter);
