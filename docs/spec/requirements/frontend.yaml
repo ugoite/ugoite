@@ -522,7 +522,7 @@ requirements:
       e2e:
         - file: e2e/notes.test.ts
           tests:
-            - "REQ-FE-035: note detail timeout recovers gracefully"
+            - "REQ-FE-035: Navigation timeout handling and recovery"
 
   - id: REQ-FE-037
     title: Class-first Note Creation UI
