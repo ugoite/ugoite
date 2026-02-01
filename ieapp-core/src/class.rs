@@ -37,6 +37,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "uuid".to_string(),
         "binary".to_string(),
         "list".to_string(),
+        "object_list".to_string(),
     ])
 }
 
@@ -81,6 +82,16 @@ pub async fn upsert_class(op: &Operator, ws_path: &str, class_def: &Value) -> Re
         }
     }
 
+    iceberg_store::ensure_class_tables(op, ws_path, &normalized).await?;
+    Ok(())
+}
+
+pub(crate) async fn upsert_metadata_class(
+    op: &Operator,
+    ws_path: &str,
+    class_def: &Value,
+) -> Result<()> {
+    let normalized = normalize_class_definition_with_options(class_def, true)?;
     iceberg_store::ensure_class_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
@@ -241,10 +252,23 @@ pub(crate) async fn read_class_definition(
 }
 
 fn normalize_class_definition(class_def: &Value) -> Result<Value> {
+    normalize_class_definition_with_options(class_def, false)
+}
+
+fn normalize_class_definition_with_options(
+    class_def: &Value,
+    allow_reserved_metadata_class: bool,
+) -> Result<Value> {
     let name = class_def
         .get("name")
         .and_then(|v| v.as_str())
         .context("Class definition missing 'name' field")?;
+    if !allow_reserved_metadata_class && is_reserved_metadata_class(name) {
+        return Err(anyhow!(
+            "Class name '{}' is reserved for metadata classes",
+            name
+        ));
+    }
     let version = class_def
         .get("version")
         .and_then(|v| v.as_i64())
@@ -284,6 +308,10 @@ fn normalize_class_definition(class_def: &Value) -> Result<Value> {
 
 fn is_reserved_metadata_column(name: &str) -> bool {
     metadata::is_reserved_metadata_column(name)
+}
+
+fn is_reserved_metadata_class(name: &str) -> bool {
+    metadata::is_reserved_metadata_class(name)
 }
 
 fn normalize_class_fields(fields: Option<&Value>) -> Value {

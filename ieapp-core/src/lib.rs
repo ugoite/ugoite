@@ -16,6 +16,7 @@ pub mod integrity;
 pub mod link;
 pub mod metadata;
 pub mod note;
+pub mod saved_sql;
 pub mod search;
 pub mod sql;
 pub mod storage;
@@ -159,10 +160,10 @@ fn create_note<'a>(
     })
 }
 
-// Class
+// Saved SQL
 
 #[pyfunction]
-fn list_classes<'a>(
+fn list_sql<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
     workspace_id: String,
@@ -170,83 +171,106 @@ fn list_classes<'a>(
     let op = get_operator(py, &storage_config)?;
     let ws_path = format!("workspaces/{}", workspace_id);
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let classes = class::list_classes(&op, &ws_path)
+        let entries = saved_sql::list_sql(&op, &ws_path)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let val =
-            serde_json::to_value(classes).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            serde_json::to_value(entries).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Python::with_gil(|py| json_to_py(py, val))
     })
 }
 
 #[pyfunction]
-fn upsert_class<'a>(
+fn get_sql<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
     workspace_id: String,
-    class_def: String,
+    sql_id: String,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     let ws_path = format!("workspaces/{}", workspace_id);
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let parsed: serde_json::Value =
-            serde_json::from_str(&class_def).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        class::upsert_class(&op, &ws_path, &parsed)
+        let entry = saved_sql::get_sql(&op, &ws_path, &sql_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    })
-}
-
-// Attachment
-
-#[pyfunction]
-fn save_attachment<'a>(
-    py: Python<'a>,
-    storage_config: Bound<'a, PyDict>,
-    workspace_id: String,
-    filename: String,
-    content: Vec<u8>,
-) -> PyResult<Bound<'a, PyAny>> {
-    let op = get_operator(py, &storage_config)?;
-    let ws_path = format!("workspaces/{}", workspace_id);
-    pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let info = attachment::save_attachment(&op, &ws_path, &filename, &content)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let val = serde_json::to_value(info).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Python::with_gil(|py| json_to_py(py, val))
+        Python::with_gil(|py| json_to_py(py, entry))
     })
 }
 
 #[pyfunction]
-fn list_attachments<'a>(
+#[pyo3(signature = (storage_config, workspace_id, sql_id, payload_json, author=None))]
+fn create_sql<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
     workspace_id: String,
+    sql_id: String,
+    payload_json: String,
+    author: Option<String>,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     let ws_path = format!("workspaces/{}", workspace_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+    let payload: saved_sql::SqlPayload =
+        serde_json::from_str(&payload_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let list = attachment::list_attachments(&op, &ws_path)
+        let integrity = RealIntegrityProvider::from_workspace(&op, &workspace_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let val = serde_json::to_value(list).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Python::with_gil(|py| json_to_py(py, val))
+        let entry = saved_sql::create_sql(&op, &ws_path, &sql_id, &payload, &author, &integrity)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, entry))
     })
 }
 
 #[pyfunction]
-fn delete_attachment<'a>(
+#[pyo3(signature = (storage_config, workspace_id, sql_id, payload_json, parent_revision_id=None, author=None))]
+fn update_sql<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
     workspace_id: String,
-    attachment_id: String,
+    sql_id: String,
+    payload_json: String,
+    parent_revision_id: Option<String>,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+    let payload: saved_sql::SqlPayload =
+        serde_json::from_str(&payload_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_workspace(&op, &workspace_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let entry = saved_sql::update_sql(
+            &op,
+            &ws_path,
+            &sql_id,
+            &payload,
+            parent_revision_id.as_deref(),
+            &author,
+            &integrity,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, entry))
+    })
+}
+
+#[pyfunction]
+fn delete_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    sql_id: String,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     let ws_path = format!("workspaces/{}", workspace_id);
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        attachment::delete_attachment(&op, &ws_path, &attachment_id)
+        saved_sql::delete_sql(&op, &ws_path, &sql_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
@@ -519,6 +543,98 @@ fn load_hmac_material<'a>(
 }
 
 #[pyfunction]
+fn list_classes<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let classes = class::list_classes(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(classes).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn upsert_class<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    class_def: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&class_def).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        class::upsert_class(&op, &ws_path, &parsed)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+// Attachment
+
+#[pyfunction]
+fn save_attachment<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    filename: String,
+    content: Vec<u8>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let info = attachment::save_attachment(&op, &ws_path, &filename, &content)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(info).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_attachments<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let list = attachment::list_attachments(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(list).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn delete_attachment<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    workspace_id: String,
+    attachment_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("workspaces/{}", workspace_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        attachment::delete_attachment(&op, &ws_path, &attachment_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
 fn get_class<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
@@ -724,6 +840,11 @@ fn _ieapp_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list_notes, m)?)?;
     m.add_function(wrap_pyfunction!(restore_note, m)?)?;
     m.add_function(wrap_pyfunction!(update_note, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(update_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_sql, m)?)?;
     m.add_function(wrap_pyfunction!(extract_properties_py, m)?)?;
     m.add_function(wrap_pyfunction!(validate_properties_py, m)?)?;
 

@@ -118,16 +118,16 @@ and variables with full CRUD support, while preventing user-defined Classes from
 using the reserved SQL class name.
 
 ### Key Tasks
-- [ ] Define the SQL Class schema as a metadata Class with reserved name protection.
-- [ ] Add SQL variable object-list type and validation rules in the data model spec.
-- [ ] Extend REST API and ieapp-core with SQL CRUD operations.
-- [ ] Add tests covering SQL CRUD and reserved SQL Class name rejection.
+- [x] Define the SQL Class schema as a metadata Class with reserved name protection.
+- [x] Add SQL variable object-list type and validation rules in the data model spec.
+- [x] Extend REST API and ieapp-core with SQL CRUD operations.
+- [x] Add tests covering SQL CRUD and reserved SQL Class name rejection.
 
 ### Acceptance Criteria
-- [ ] SQL Class is system-owned; users cannot create a Class with the SQL name.
-- [ ] SQL records store SQL text and a list of typed variables (type, name, description).
-- [ ] SQL CRUD operations are available via API and core bindings.
-- [ ] Tests confirm reserved class name enforcement and SQL CRUD behavior.
+- [x] SQL Class is system-owned; users cannot create a Class with the SQL name.
+- [x] SQL records store SQL text and a list of typed variables (type, name, description).
+- [x] SQL CRUD operations are available via API and core bindings.
+- [x] Tests confirm reserved class name enforcement and SQL CRUD behavior.
 
 ---
 

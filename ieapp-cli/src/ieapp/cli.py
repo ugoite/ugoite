@@ -30,6 +30,21 @@ from ieapp.notes import (
     restore_note,
     update_note,
 )
+from ieapp.saved_sql import (
+    create_sql as create_saved_sql,
+)
+from ieapp.saved_sql import (
+    delete_sql as delete_saved_sql,
+)
+from ieapp.saved_sql import (
+    get_sql as get_saved_sql,
+)
+from ieapp.saved_sql import (
+    list_sql as list_saved_sql,
+)
+from ieapp.saved_sql import (
+    update_sql as update_saved_sql,
+)
 from ieapp.search import search_notes
 from ieapp.workspace import (
     create_workspace,
@@ -96,6 +111,24 @@ def _parse_json_payload(value: str | None, label: str) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         msg = f"{label} must be a JSON object"
         raise typer.BadParameter(msg)
+    return payload
+
+
+def _parse_json_list(value: str | None, label: str) -> list[dict[str, Any]] | None:
+    if value is None:
+        return None
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        msg = f"Invalid JSON for {label}: {exc}"
+        raise typer.BadParameter(msg) from exc
+    if not isinstance(payload, list):
+        msg = f"{label} must be a JSON array"
+        raise typer.BadParameter(msg)
+    for item in payload:
+        if not isinstance(item, dict):
+            msg = f"{label} must contain JSON objects"
+            raise typer.BadParameter(msg)
     return payload
 
 
@@ -425,6 +458,120 @@ def cmd_sql_complete(
     classes = list_classes(workspace_path) if workspace_path else []
     suggestions = sql_completions(sql, classes)
     typer.echo(json.dumps(suggestions, indent=2))
+
+
+@sql_app.command("saved-list")
+@handle_cli_errors
+def cmd_sql_saved_list(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+) -> None:
+    """List saved SQL entries in a workspace."""
+    setup_logging()
+    entries = list_saved_sql(workspace_path)
+    typer.echo(json.dumps(entries, indent=2))
+
+
+@sql_app.command("saved-get")
+@handle_cli_errors
+def cmd_sql_saved_get(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
+) -> None:
+    """Get a saved SQL entry by ID."""
+    setup_logging()
+    entry = get_saved_sql(workspace_path, sql_id)
+    typer.echo(json.dumps(entry, indent=2))
+
+
+@sql_app.command("saved-create")
+@handle_cli_errors
+def cmd_sql_saved_create(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    name: Annotated[str, typer.Argument(help="Saved SQL name")],
+    sql: Annotated[str, typer.Argument(help="SQL text")],
+    variables: Annotated[
+        str,
+        typer.Option(help="JSON array of SQL variables"),
+    ] = "[]",
+    sql_id: Annotated[
+        str | None,
+        typer.Option(help="Optional saved SQL ID"),
+    ] = None,
+    author: Annotated[
+        str,
+        typer.Option(help="Author name"),
+    ] = "user",
+) -> None:
+    """Create a saved SQL entry."""
+    setup_logging()
+    variable_list = _parse_json_list(variables, "variables") or []
+    payload = {
+        "name": name,
+        "sql": sql,
+        "variables": variable_list,
+    }
+    entry = create_saved_sql(workspace_path, payload, sql_id=sql_id, author=author)
+    typer.echo(json.dumps(entry, indent=2))
+
+
+@sql_app.command("saved-update")
+@handle_cli_errors
+def cmd_sql_saved_update(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
+    name: Annotated[str, typer.Argument(help="Saved SQL name")],
+    sql: Annotated[str, typer.Argument(help="SQL text")],
+    variables: Annotated[
+        str,
+        typer.Option(help="JSON array of SQL variables"),
+    ] = "[]",
+    parent_revision_id: Annotated[
+        str | None,
+        typer.Option(help="Parent revision ID"),
+    ] = None,
+    author: Annotated[
+        str,
+        typer.Option(help="Author name"),
+    ] = "user",
+) -> None:
+    """Update a saved SQL entry."""
+    setup_logging()
+    variable_list = _parse_json_list(variables, "variables") or []
+    payload = {
+        "name": name,
+        "sql": sql,
+        "variables": variable_list,
+        "parent_revision_id": parent_revision_id,
+    }
+    entry = update_saved_sql(workspace_path, sql_id, payload, author=author)
+    typer.echo(json.dumps(entry, indent=2))
+
+
+@sql_app.command("saved-delete")
+@handle_cli_errors
+def cmd_sql_saved_delete(
+    workspace_path: Annotated[
+        str,
+        typer.Argument(help="Full path to the workspace directory"),
+    ],
+    sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
+) -> None:
+    """Delete a saved SQL entry."""
+    setup_logging()
+    delete_saved_sql(workspace_path, sql_id)
+    typer.echo(f"Saved SQL '{sql_id}' deleted successfully.")
 
 
 def main() -> None:
