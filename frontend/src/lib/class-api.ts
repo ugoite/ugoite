@@ -19,7 +19,8 @@ export const classApi = {
 		return (await res.json()) as Class[];
 	},
 	async get(workspaceId: string, className: string): Promise<Class> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/classes/${className}`);
+		const encodedName = encodeURIComponent(className);
+		const res = await apiFetch(`/workspaces/${workspaceId}/classes/${encodedName}`);
 		if (!res.ok) throw new Error(`Failed to get class: ${res.statusText}`);
 		return (await res.json()) as Class;
 	},

@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "@solidjs/router";
-import { Show, createMemo, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createResource, createSignal } from "solid-js";
 import { ClassTable } from "~/components/ClassTable";
 import { EditClassDialog } from "~/components/create-dialogs";
 import { useNotesRouteContext } from "~/lib/notes-route-context";
@@ -11,10 +11,43 @@ export default function WorkspaceClassDetailRoute() {
 	const navigate = useNavigate();
 	const ctx = useNotesRouteContext();
 	const [showEditDialog, setShowEditDialog] = createSignal(false);
+	const [didRefetchClasses, setDidRefetchClasses] = createSignal(false);
+
+	const decodedClassName = createMemo(() => {
+		const raw = params.class_name;
+		if (!raw) return "";
+		try {
+			return decodeURIComponent(raw);
+		} catch {
+			return raw;
+		}
+	});
 
 	const classDef = createMemo(() => {
-		const name = params.class_name;
+		const name = decodedClassName();
 		return ctx.classes().find((s) => s.name === name);
+	});
+
+	const [fetchedClass] = createResource(
+		() => {
+			const name = decodedClassName();
+			const workspaceId = ctx.workspaceId();
+			if (!workspaceId || !name) return null;
+			if (classDef()) return null;
+			return { workspaceId, name };
+		},
+		async ({ workspaceId, name }) => classApi.get(workspaceId, name),
+	);
+
+	const resolvedClass = createMemo(() => classDef() ?? fetchedClass());
+	const loadingClass = createMemo(() => ctx.loadingClasses() || fetchedClass.loading);
+
+	createEffect(() => {
+		if (loadingClass()) return;
+		if (resolvedClass()) return;
+		if (didRefetchClasses()) return;
+		setDidRefetchClasses(true);
+		ctx.refetchClasses();
 	});
 
 	const handleUpdateClass = async (payload: ClassCreatePayload) => {
@@ -29,11 +62,11 @@ export default function WorkspaceClassDetailRoute() {
 
 	return (
 		<Show
-			when={classDef()}
+			when={resolvedClass()}
 			keyed
 			fallback={
 				<div class="p-8 text-center text-gray-500">
-					{ctx.loadingClasses() ? "Loading classes..." : "Class not found"}
+					{loadingClass() ? "Loading class..." : "Class not found"}
 				</div>
 			}
 		>
