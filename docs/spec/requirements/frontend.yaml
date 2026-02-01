@@ -518,6 +518,11 @@ requirements:
       The UI must successfully transition from loading to content or error state within 10 seconds.
       Users must be able to navigate away from a pending load without the UI becoming unresponsive.
     type: non-functional
+    tests:
+      e2e:
+        - file: e2e/notes.test.ts
+          tests:
+            - "REQ-FE-035: note detail timeout recovers gracefully"
 
   - id: REQ-FE-037
     title: Class-first Note Creation UI
