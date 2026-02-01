@@ -10,6 +10,10 @@ export interface ListPanelProps {
 	showCreate?: boolean;
 	/** Label for create button */
 	createLabel?: string;
+	/** Whether the create button is disabled */
+	createDisabled?: boolean;
+	/** Optional helper text when create is disabled */
+	createDisabledReason?: string;
 	/** Callback when create button is clicked */
 	onCreate?: () => void;
 	/** List of classes for filter dropdown */
@@ -53,7 +57,13 @@ export function ListPanel(props: ListPanelProps) {
 					<button
 						type="button"
 						onClick={props.onCreate}
-						class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2"
+						disabled={props.createDisabled}
+						title={props.createDisabled ? props.createDisabledReason : undefined}
+						class={`w-full px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+							props.createDisabled
+								? "bg-gray-200 text-gray-400 cursor-not-allowed"
+								: "bg-blue-500 text-white hover:bg-blue-600"
+						}`}
 					>
 						<svg
 							class="w-5 h-5"
@@ -71,6 +81,9 @@ export function ListPanel(props: ListPanelProps) {
 						</svg>
 						{props.createLabel || (props.mode === "notes" ? "New Note" : "New Class")}
 					</button>
+					<Show when={props.createDisabled && props.createDisabledReason}>
+						<p class="mt-2 text-xs text-gray-500">{props.createDisabledReason}</p>
+					</Show>
 				</div>
 			</Show>
 
@@ -198,7 +211,12 @@ function NoteListContent(props: NoteListContentProps) {
 							/>
 						</svg>
 						<p class="text-gray-600 font-medium mb-1">No notes yet</p>
-						<p class="text-sm text-gray-400">Create your first note to get started</p>
+						<Show
+							when={props.mode === "notes" && props.classes.length === 0}
+							fallback={<p class="text-sm text-gray-400">Create your first note to get started</p>}
+						>
+							<p class="text-sm text-gray-400">Create a class first to start writing notes</p>
+						</Show>
 					</div>
 				</div>
 			</Show>

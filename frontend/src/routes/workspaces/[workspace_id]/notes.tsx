@@ -178,11 +178,19 @@ export default function WorkspaceNotesRoute(props: RouteSectionProps) {
 
 	// Create note
 	const handleCreateNote = async (title: string, className: string) => {
-		const classDef = (classes() || []).find((s) => s.name === className);
-		let initialContent = `# ${title}\n\nStart writing here...`;
-		if (className && classDef) {
-			initialContent = ensureClassFrontmatter(replaceFirstH1(classDef.template, title), className);
+		if (!className) {
+			alert("Please select a class to create a note.");
+			return;
 		}
+		const classDef = (classes() || []).find((s) => s.name === className);
+		if (!classDef) {
+			alert("Selected class was not found. Please refresh and try again.");
+			return;
+		}
+		const initialContent = ensureClassFrontmatter(
+			replaceFirstH1(classDef.template, title),
+			className,
+		);
 
 		try {
 			const result = await noteStore.createNote(initialContent);
@@ -269,6 +277,12 @@ export default function WorkspaceNotesRoute(props: RouteSectionProps) {
 								? setShowCreateNoteDialog(true)
 								: setShowCreateClassDialog(true)
 						}
+						createDisabled={viewMode() === "notes" && (classes() || []).length === 0}
+						createDisabledReason={
+							viewMode() === "notes" && (classes() || []).length === 0
+								? "Create a class before adding notes."
+								: undefined
+						}
 						onSearch={viewMode() === "notes" ? handleSearch : undefined}
 						isSearching={isSearching()}
 						searchResultsCount={searchResults().length}
@@ -299,6 +313,7 @@ export default function WorkspaceNotesRoute(props: RouteSectionProps) {
 				<CreateNoteDialog
 					open={showCreateNoteDialog()}
 					classes={classes() || []}
+					defaultClass={filterClass() || undefined}
 					onClose={() => setShowCreateNoteDialog(false)}
 					onSubmit={handleCreateNote}
 				/>

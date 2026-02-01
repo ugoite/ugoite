@@ -10,10 +10,11 @@ describe("ListPanel", () => {
 	const mockClasses: Class[] = [
 		{
 			name: "Meeting",
+			version: 1,
 			fields: { date: { type: "date" }, attendees: { type: "string" } },
 			template: "",
 		},
-		{ name: "Task", fields: { status: { type: "string" } }, template: "" },
+		{ name: "Task", version: 1, fields: { status: { type: "string" } }, template: "" },
 	];
 
 	const mockNotes: NoteRecord[] = [
@@ -66,6 +67,23 @@ describe("ListPanel", () => {
 			));
 			fireEvent.click(screen.getByText("New Note"));
 			expect(onCreate).toHaveBeenCalled();
+		});
+
+		it("REQ-FE-037: disables new note when no classes exist", () => {
+			const [filterClass, setFilterClass] = createSignal("");
+			render(() => (
+				<ListPanel
+					mode="notes"
+					classes={[]}
+					filterClass={filterClass}
+					onFilterClassChange={setFilterClass}
+					createDisabled={true}
+					createDisabledReason="Create a class before adding notes."
+				/>
+			));
+			const button = screen.getByRole("button", { name: "New Note" });
+			expect(button).toBeDisabled();
+			expect(screen.getByText("Create a class before adding notes.")).toBeInTheDocument();
 		});
 
 		it("should render class filter dropdown", () => {

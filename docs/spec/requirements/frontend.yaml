@@ -529,7 +529,7 @@ requirements:
       - data-model/overview.md#classes
       - stories/core.yaml#STORY-002
     priority: high
-    status: planned
+    status: implemented
     tests:
       vitest:
         - file: frontend/src/components/create-dialogs.test.tsx
@@ -547,7 +547,7 @@ requirements:
     related_spec:
       - stories/core.yaml#STORY-002
     priority: high
-    status: planned
+    status: implemented
     tests:
       vitest:
         - file: frontend/src/components/NoteDetailPane.test.tsx
@@ -563,7 +563,7 @@ requirements:
       - data-model/overview.md#metadata-vs-content-columns
       - requirements/class.yaml#REQ-CLS-005
     priority: high
-    status: planned
+    status: implemented
     tests:
       vitest:
         - file: frontend/src/components/create-dialogs.test.tsx
