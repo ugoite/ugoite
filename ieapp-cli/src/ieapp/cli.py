@@ -10,6 +10,7 @@ from typing import Annotated, Any
 import typer
 from ieapp_core import build_sql_schema, lint_sql, sql_completions
 
+from ieapp import saved_sql
 from ieapp.attachments import (
     AttachmentReferencedError,
     delete_attachment,
@@ -29,21 +30,6 @@ from ieapp.notes import (
     list_notes,
     restore_note,
     update_note,
-)
-from ieapp.saved_sql import (
-    create_sql as create_saved_sql,
-)
-from ieapp.saved_sql import (
-    delete_sql as delete_saved_sql,
-)
-from ieapp.saved_sql import (
-    get_sql as get_saved_sql,
-)
-from ieapp.saved_sql import (
-    list_sql as list_saved_sql,
-)
-from ieapp.saved_sql import (
-    update_sql as update_saved_sql,
 )
 from ieapp.search import search_notes
 from ieapp.workspace import (
@@ -470,7 +456,7 @@ def cmd_sql_saved_list(
 ) -> None:
     """List saved SQL entries in a workspace."""
     setup_logging()
-    entries = list_saved_sql(workspace_path)
+    entries = saved_sql.list_sql(workspace_path)
     typer.echo(json.dumps(entries, indent=2))
 
 
@@ -485,7 +471,7 @@ def cmd_sql_saved_get(
 ) -> None:
     """Get a saved SQL entry by ID."""
     setup_logging()
-    entry = get_saved_sql(workspace_path, sql_id)
+    entry = saved_sql.get_sql(workspace_path, sql_id)
     typer.echo(json.dumps(entry, indent=2))
 
 
@@ -519,7 +505,12 @@ def cmd_sql_saved_create(
         "sql": sql,
         "variables": variable_list,
     }
-    entry = create_saved_sql(workspace_path, payload, sql_id=sql_id, author=author)
+    entry = saved_sql.create_sql(
+        workspace_path,
+        payload,
+        sql_id=sql_id,
+        author=author,
+    )
     typer.echo(json.dumps(entry, indent=2))
 
 
@@ -555,7 +546,7 @@ def cmd_sql_saved_update(
         "variables": variable_list,
         "parent_revision_id": parent_revision_id,
     }
-    entry = update_saved_sql(workspace_path, sql_id, payload, author=author)
+    entry = saved_sql.update_sql(workspace_path, sql_id, payload, author=author)
     typer.echo(json.dumps(entry, indent=2))
 
 
@@ -570,7 +561,7 @@ def cmd_sql_saved_delete(
 ) -> None:
     """Delete a saved SQL entry."""
     setup_logging()
-    delete_saved_sql(workspace_path, sql_id)
+    saved_sql.delete_sql(workspace_path, sql_id)
     typer.echo(f"Saved SQL '{sql_id}' deleted successfully.")
 
 
