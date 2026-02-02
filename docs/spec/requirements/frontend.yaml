@@ -524,6 +524,23 @@ requirements:
           tests:
             - "REQ-FE-035: Navigation timeout handling and recovery"
 
+  - id: REQ-FE-040
+    title: UI Spec YAML Registry Validation
+    description: |
+      Frontend tests MUST load all UI page YAML specs under docs/spec/ui/pages
+      and validate page links, shared chrome, and component type registry.
+    related_spec:
+      - ui/README.md
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/spec/ui-pages.test.ts
+          tests:
+            - "REQ-FE-040: loads UI page specs"
+            - "REQ-FE-040: validates page links"
+            - "REQ-FE-040: validates component types"
+
   - id: REQ-FE-037
     title: Class-first Note Creation UI
     description: |

@@ -84,6 +84,9 @@
 			"includes": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/test/**"],
 			"linter": {
 				"rules": {
+					"correctness": {
+						"noNodejsModules": "off"
+					},
 					"suspicious": {
 						"noExplicitAny": "off",
 						"noConsole": "off"
