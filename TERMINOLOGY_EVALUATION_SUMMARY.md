@@ -1,12 +1,36 @@
 # 用語変更提案の評価結果 / Terminology Change Proposal Evaluation Results
 
+## 🔄 更新情報 / Update Information
+
+**初回評価 (2026-02-02 初期)**: ドキュメントモデルを前提に評価 → 変更を推奨しない  
+**再評価 (2026-02-02 更新)**: Milestone 3 "Markdown as Table" 完了後のデータベース行モデルを考慮 → **変更を推奨**
+
+---
+
 ## 📋 評価サマリー / Summary
 
 **提案内容 / Proposal**: 
 - `Note` → `object`
 - `Attachment` → `asset`
 
-**評価結果 / Result**: ❌ **推奨しない / NOT RECOMMENDED**
+**初回評価結果 / Initial Result**: ❌ **推奨しない / NOT RECOMMENDED** (ドキュメントモデル前提)  
+**再評価結果 / Reevaluation Result**: ✅ **変更を推奨 / RECOMMENDED** (データベース行モデルを考慮)
+
+---
+
+## 🔑 重要な背景 / Critical Context
+
+### アーキテクチャの変化 / Architectural Shift
+
+**Milestone 3 "Markdown as Table" により、データモデルが根本的に変化:**
+- Note は Markdown ファイル → **Iceberg テーブルの行（row）**
+- Markdown はソース → **Markdown は再構築されるビュー**
+- Document-centric → **Row-centric データモデル**
+
+**With Milestone 3 "Markdown as Table", the data model fundamentally changed:**
+- Note is Markdown file → **Row in Iceberg table**
+- Markdown as source → **Markdown as reconstructed view**
+- Document-centric → **Row-centric data model**
 
 ---
 
@@ -14,147 +38,208 @@
 
 ### 日本語
 
-現在の用語（"Note" と "Attachment"）を**維持することを強く推奨します**。
+**初回評価（ドキュメントモデル前提）**: 
+- Note と Attachment を維持 ❌
+
+**再評価（データベース行モデルを考慮）**:
+- **用語の変更を推奨** ✅
+- Note → **record** または **object** 
+- Attachment → **asset**
+
+**推奨順位**:
+1. **"record" + "asset"** ⭐⭐⭐⭐⭐ (最も正確、業界標準)
+2. **"object" + "asset"** ⭐⭐⭐⭐ (提案者の意図に最も近い、キャッチー)
+3. **"entry" + "asset"** ⭐⭐⭐⭐ (バランス型)
 
 **理由**:
-1. ✅ **一貫性**: 全5コンポーネント（フロントエンド、バックエンド、CLI、コア、ドキュメント）で統一
-2. ✅ **明確性**: 文脈で意味が明確で、業界標準に準拠
-3. ❌ **"object" の問題**: 意味的に曖昧で、Class システムと概念的に衝突
-4. ❌ **"asset" の問題**: 多義的で、バイナリファイルという性質が不明確
-5. ⚠️ **変更コスト**: 1000箇所以上の変更、公開API契約の破壊、マイグレーションが必要
+1. ✅ **パラダイムシフト**: Note はもはやドキュメントではなく、データベースの行
+2. ✅ **"row" の問題**: 技術的すぎて退屈、ユーザーフレンドリーではない
+3. ✅ **"object" の妥当性**: ORM的理解と整合、Class のインスタンスとして自然
+4. ✅ **"asset" の明確性**: Object（構造化）と Asset（非構造化）の対比が明確
+5. ⚠️ **変更コスト**: 3-4ヶ月の移行期間、API バージョニング必要
 
 ### English
 
-We **strongly recommend maintaining** the current terminology ("Note" and "Attachment").
+**Initial Evaluation (Document model assumption)**:
+- Maintain Note and Attachment ❌
+
+**Reevaluation (Considering database row model)**:
+- **Recommend terminology change** ✅
+- Note → **record** or **object**
+- Attachment → **asset**
+
+**Priority ranking**:
+1. **"record" + "asset"** ⭐⭐⭐⭐⭐ (Most accurate, industry standard)
+2. **"object" + "asset"** ⭐⭐⭐⭐ (Closest to proposer's intent, catchy)
+3. **"entry" + "asset"** ⭐⭐⭐⭐ (Balanced)
 
 **Reasons**:
-1. ✅ **Consistency**: Unified across all 5 components (frontend, backend, CLI, core, docs)
-2. ✅ **Clarity**: Clear in context and follows industry standards
-3. ❌ **"object" issues**: Semantically ambiguous and conflicts conceptually with Class system
-4. ❌ **"asset" issues**: Polysemous and doesn't clearly convey binary file nature
-5. ⚠️ **Change cost**: 1000+ locations affected, breaks public API contracts, requires migration
+1. ✅ **Paradigm shift**: Note is no longer a document, but a database row
+2. ✅ **"row" issues**: Too technical and boring, not user-friendly
+3. ✅ **"object" validity**: Consistent with ORM understanding, natural as Class instance
+4. ✅ **"asset" clarity**: Clear contrast between Object (structured) and Asset (unstructured)
+5. ⚠️ **Change cost**: 3-4 month migration period, API versioning required
 
 ---
 
 ## 📚 作成されたドキュメント / Created Documents
 
-### 1. 詳細評価レポート / Detailed Evaluation Reports
+### 1. 初回評価レポート / Initial Evaluation Reports
 
 - **日本語**: [`docs/terminology-evaluation.md`](docs/terminology-evaluation.md)
 - **English**: [`docs/terminology-evaluation-en.md`](docs/terminology-evaluation-en.md)
 
 内容 / Contents:
-- 現在の用語使用状況の詳細分析
-- 提案された変更の問題点
-- より良い代替案
-- 段階的移行プラン（変更が必須の場合）
-- コスト見積もり
+- ドキュメントモデルを前提とした評価
+- Initial evaluation assuming document-centric model
+- 「Note を維持」という結論
+- Concluded to "maintain Note"
 
-### 2. 用語ガイド / Terminology Guide
+### 2. 再評価レポート / Reevaluation Reports ⭐ NEW
+
+- **日本語**: [`docs/terminology-reevaluation.md`](docs/terminology-reevaluation.md) 
+- **English**: [`docs/terminology-reevaluation-en.md`](docs/terminology-reevaluation-en.md)
+
+内容 / Contents:
+- Milestone 3 "Markdown as Table" のパラダイムシフトを考慮
+- Considers Milestone 3 "Markdown as Table" paradigm shift
+- データベース行モデルでの再評価
+- Reevaluation in database row model context
+- **「用語変更を推奨」**という更新結論
+- **Updated conclusion: "Recommend terminology change"**
+- 推奨順位：record > object > entry
+- Priority: record > object > entry
+
+### 3. 用語ガイド / Terminology Guide
 
 - **Path**: [`docs/concepts/terminology.md`](docs/concepts/terminology.md)
 
 内容 / Contents:
 - 全主要概念の定義（Workspace, Class, Note, Attachment, Revision, Link, Field）
+- Definitions of all core concepts
 - 関係図とデータモデル
-- 比較表
-- FAQ
-- ベストプラクティス
+- Relationship diagrams and data model
+- 比較表、FAQ
+- Comparison tables, FAQ
 
 ---
 
 ## 🔍 重要な発見 / Key Findings
 
-### 現在の用語は優れている / Current Terminology is Excellent
+### データベース行モデルの文脈で / In Database Row Model Context
 
-| 側面 | 評価 | 詳細 |
-|------|------|------|
-| 一貫性 | ⭐⭐⭐⭐⭐ | 全コンポーネントで統一 |
-| 明確性 | ⭐⭐⭐⭐⭐ | 文脈で意味が明確 |
-| 業界標準 | ⭐⭐⭐⭐⭐ | Notion、Obsidian等と同じ |
-| 学習コスト | ⭐⭐⭐⭐⭐ | 新しいコントリビューターにも分かりやすい |
+| 用語 / Term | 技術的正確さ / Technical Accuracy | キャッチーさ / Catchiness | 推奨度 / Rating |
+|------------|--------------------------------|-------------------------|----------------|
+| **record** | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **object** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **entry** | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **row** | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐ (退屈 / boring) |
+| **note** | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ (ドキュメントモデルと混同 / confusing with document model) |
 
-### 提案された用語の問題 / Issues with Proposed Terms
+### "object" の妥当性（データベース行として）/ Validity of "object" (as database row)
 
-#### "object" の問題 / Issues with "object"
+**肯定的側面 / Positive aspects**:
+- ✅ ORM (Object-Relational Mapping) での標準的な用語
+- ✅ Standard term in ORM (Object-Relational Mapping)
+- ✅ Class のインスタンスとして自然
+- ✅ Natural as instance of Class
+- ✅ キャッチーでモダン
+- ✅ Catchy and modern
+- ✅ ビジネスオブジェクト、ドメインオブジェクトの概念と整合
+- ✅ Consistent with business object, domain object concepts
 
-```typescript
-// 現在（明確）/ Current (clear)
-interface Note { ... }
-const note: Note = { ... };
+**否定的側面 / Negative aspects**:
+- ⚠️ JavaScript/TypeScript の組み込み Object との名前衝突
+- ⚠️ Name collision with built-in Object in JavaScript/TypeScript
+- ⚠️ 回避可能（namespace、型エイリアス）
+- ⚠️ Avoidable (namespace, type alias)
 
-// 提案後（曖昧）/ Proposed (ambiguous)
-interface Object { ... }  // 何のオブジェクト？/ What kind of object?
-const object: Object = { ... };  // TypeScriptの組み込みObjectと紛らわしい / Conflicts with built-in Object
-```
+### "asset" の妥当性（非構造化データとして）/ Validity of "asset" (as unstructured data)
 
-**主な問題 / Main Issues**:
-- プログラミング用語として汎用的すぎる / Too generic as programming term
-- Class との関係が不明確になる / Obscures relationship with Class
-- 技術用語と衝突 / Conflicts with technical terms
+**構造化データ vs 非構造化データの対比 / Structured vs Unstructured data contrast**:
 
-#### "asset" の問題 / Issues with "asset"
+| 側面 / Aspect | Object (構造化 / structured) | Asset (非構造化 / unstructured) |
+|--------------|-----------------------------|---------------------------------|
+| ストレージ / Storage | Iceberg テーブル / Iceberg tables | ファイルシステム / Filesystem |
+| 構造 / Structure | Class定義の列 / Class-defined columns | バイナリ blob / Binary blob |
+| クエリ / Query | SQL可能 / SQL-able | メタデータのみ / Metadata only |
 
-**多義的 / Polysemous**:
-- Web アセット / Web assets (CSS, JS, images)
-- 金融資産 / Financial assets
-- ゲームアセット / Game assets
-- デジタル資産全般 / Digital assets in general
-
-**不明確性 / Ambiguity**:
-- バイナリファイルという性質が伝わらない / Doesn't convey binary file nature
-- Note も資産の一種では？/ Aren't Notes also a type of asset?
+**結論 / Conclusion**: Object-Asset の対比は明確で妥当 / Object-Asset contrast is clear and valid ✅
 
 ---
 
 ## 💡 推奨アクション / Recommended Actions
 
-### オプション 1: 現在の用語を維持（推奨）/ Option 1: Maintain Current Terms (Recommended)
+### オプション 1: "record" + "asset" を採用（最も安全）/ Option 1: Adopt "record" + "asset" (Safest)
 
-**即座に実施可能な改善 / Immediate Improvements**:
-1. ✅ 用語ガイドを作成済み / Terminology guide created
-2. ✅ 評価レポートを作成済み / Evaluation reports created
-3. ✅ 概念図を追加済み / Concept diagrams added
-4. 📝 既存ドキュメントへのリンク追加を検討 / Consider adding links to existing docs
+**推奨度 / Rating**: ⭐⭐⭐⭐⭐
 
-**コスト / Cost**: 1週間以内に完了済み / Completed within 1 week
+```
+Note → Record
+Attachment → Asset
+```
 
-**効果 / Benefits**:
-- 破壊的変更なし / No breaking changes
-- コードベースの安定性維持 / Maintains codebase stability
-- 用語の理解度向上 / Improves terminology understanding
+**理由 / Reasons**:
+- ✅ データベース行として技術的に最も正確
+- ✅ Most technically accurate as database row
+- ✅ Notion、Airtable も使用（業界標準）
+- ✅ Used by Notion, Airtable (industry standard)
+- ✅ Class-Record の関係が明確
+- ✅ Clear Class-Record relationship
+- ✅ Record-Asset の対比が自然
+- ✅ Natural Record-Asset contrast
+
+**コスト / Cost**: 3-4ヶ月の段階的移行 / 3-4 month phased migration
 
 ---
 
-### オプション 2: 変更が必須の場合 / Option 2: If Change is Mandatory
+### オプション 2: "object" + "asset" を採用（提案者の意図に最も近い）/ Option 2: Adopt "object" + "asset" (Closest to proposer's intent)
 
-**より良い代替案 / Better Alternatives**:
+**推奨度 / Rating**: ⭐⭐⭐⭐
 
-#### Note の代替候補 / Alternatives for Note
+```
+Note → Object
+Attachment → Asset
+```
 
-| 候補 | 推奨度 | 理由 |
-|------|--------|------|
-| Document | ⭐⭐⭐⭐ | Markdown文書という性質が明確 / Clear Markdown document nature |
-| Entry | ⭐⭐⭐ | 軽量で自然 / Lightweight and natural |
-| Record | ⭐⭐⭐ | インスタンスの性質が明確 / Clear instance nature |
-| object | ❌ | 上記の問題点 / Issues described above |
+**理由 / Reasons**:
+- ✅ **提案者の意図に最も合致** / **Best matches proposer's intent**
+- ✅ キャッチーでモダン / Catchy and modern
+- ✅ ORM的理解と整合 / Consistent with ORM understanding
+- ✅ Object-Asset の対比が明確 / Clear Object-Asset contrast
+- ⚠️ JavaScript/TypeScript との衝突（回避可能）/ Collision with JS/TS (avoidable)
 
-#### Attachment の代替候補 / Alternatives for Attachment
+**衝突回避策 / Collision avoidance**:
+```typescript
+// namespace を使用
+namespace IEapp {
+  export interface Object { /* ... */ }
+}
 
-| 候補 | 推奨度 | 理由 |
-|------|--------|------|
-| File | ⭐⭐⭐⭐ | シンプルで直接的 / Simple and direct |
-| Resource | ⭐⭐⭐ | 再利用可能な性質 / Suggests reusable nature |
-| Attachment | ⭐⭐⭐⭐⭐ | 既に明確 / Already clear |
-| asset | ⭐ | 上記の問題点 / Issues described above |
+// または型エイリアス
+import { Object as IEappObject } from '@ieapp/types';
+```
 
-**段階的移行プラン / Phased Migration Plan**:
-1. Phase 1: 内部リファクタリング（6-8週間）/ Internal refactoring (6-8 weeks)
-2. Phase 2: APIバージョニング（4-6週間）/ API versioning (4-6 weeks)
-3. Phase 3: ストレージマイグレーション（8-12週間）/ Storage migration (8-12 weeks)
-4. Phase 4: 旧バージョン廃止（12ヶ月後）/ Deprecate old version (after 12 months)
+**コスト / Cost**: 3-4ヶ月の段階的移行 + 名前空間管理 / 3-4 month migration + namespace management
 
-**総コスト見積もり / Total Cost Estimate**: 約6-8人月 / ~6-8 person-months
+---
+
+### オプション 3: "entry" + "asset" を採用（バランス型）/ Option 3: Adopt "entry" + "asset" (Balanced)
+
+**推奨度 / Rating**: ⭐⭐⭐⭐
+
+```
+Note → Entry
+Attachment → Asset
+```
+
+**理由 / Reasons**:
+- ✅ バランスが良い / Well-balanced
+- ✅ 親しみやすい / Friendly
+- ✅ Entry-Asset の対比が自然 / Natural Entry-Asset contrast
+- ⚠️ やや汎用的 / Somewhat generic
+
+**コスト / Cost**: 3-4ヶ月の段階的移行 / 3-4 month phased migration
 
 ---
 
