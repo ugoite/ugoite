@@ -1,0 +1,30 @@
+version: "0.1"
+updated: "2026-02-02"
+page:
+  id: workspace-settings
+  title: Workspace Settings
+  route: /workspaces/{workspace_id}/settings
+  implementation: unimplemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+      tabs:
+        - id: dashboard
+          label: dashboard
+          target_page: workspace-dashboard
+        - id: search
+          label: search
+          target_page: workspace-search
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+      target_page: workspace-settings
+  body:
+    - id: settings-panel
+      type: settings-panel
+      sections:
+        - workspace
+        - storage
