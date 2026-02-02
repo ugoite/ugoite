@@ -105,7 +105,7 @@ Link → Link (リンク)
 - データベース行モデルでの再評価
 - **「用語変更を推奨」**という更新結論（record/object/entry）
 
-### 3. 統一的探求レポート / Holistic Exploration ⭐ NEW
+### 3. 統一的探求レポート / Holistic Exploration
 
 - **詳細版**: [`docs/terminology-holistic-exploration.md`](docs/terminology-holistic-exploration.md)
 - **クイック比較**: [`docs/terminology-quick-comparison.md`](docs/terminology-quick-comparison.md)
@@ -114,10 +114,20 @@ Link → Link (リンク)
 - **5つの包括的な用語体系**を提案
 - Note/Attachment だけでなく、Workspace, Class, Link なども含む全体設計
 - 各体系のメンタルモデルと評価
-- **推奨: Card-Based System** (Space/Template/Card/File/Connection)
-- 代替: Simple System (Space/Type/Item/File)
 
-### 4. 用語ガイド / Terminology Guide
+### 4. IEapp ネイティブ提案 / IEapp-Native Proposals ⭐ LATEST
+
+- **6つの哲学的アプローチ**: [`docs/terminology-ieapp-native.md`](docs/terminology-ieapp-native.md)
+- **Entry-Based 詳細ガイド**: [`docs/terminology-entry-based-detail.md`](docs/terminology-entry-based-detail.md)
+
+内容 / Contents:
+- IEapp の本質（Local-First, AI-Native, Structure-from-Text）から生まれた独自提案
+- **推奨: Entry-Based with Form** (Space/Form/Entry/Asset)
+- Class → Form への変更が鍵（プログラミング用語を避ける）
+- 6つの哲学: Structure-First, Entry-Based, Knowledge-First, Flow-Based, Unit-Based, Mark-Based
+- 他サービスを模倣しない IEapp 独自のアイデンティティ
+
+### 5. 用語ガイド / Terminology Guide
 
 - **Path**: [`docs/concepts/terminology.md`](docs/concepts/terminology.md)
 
@@ -351,50 +361,53 @@ If you have feedback or improvement suggestions, please create an issue or PR.
 
 ## 🎯 最新の推奨 / Latest Recommendation
 
-### 包括的アプローチ / Holistic Approach
+### IEapp 独自のアプローチ / IEapp-Native Approach ⭐ NEW
 
-Note/Attachment だけでなく、**すべての用語を統一的に再設計**することを推奨します。
+IEapp の本質（Local-First, AI-Native, Structure-from-Text）から生まれた独自の用語体系を提案します。
 
-**第1推奨: Card-Based System** ⭐⭐⭐⭐⭐
-
-```
-Workspace → Space
-Class → Template
-Note → Card
-Attachment → File
-Link → Connection
-Revision → Version
-```
-
-**メンタルモデル**:
-- Space に Template を定義
-- Template に基づいて Card を作成
-- Card に File を添付
-- Card 同士を Connection で繋ぐ
-
-**特徴**:
-- ✅ 視覚的で直感的（物理的なカードのイメージ）
-- ✅ 統一感がある（Space-Template-Card-Connection）
-- ✅ 親しみやすい（Trello/Notion で馴染み深い）
-- ✅ データベース行としても自然
-
-**第2推奨: Simple Universal System** ⭐⭐⭐⭐
+**第1推奨: Entry-Based System (改良版)**
 
 ```
 Workspace → Space
-Class → Type
-Note → Item
-Attachment → File
+Class → Form (フォーム) ⭐ 独自性
+Note → Entry (エントリー)
+Attachment → Asset (アセット)
+Field → Field
 Link → Link
 Revision → Version
 ```
 
-**特徴**:
-- ✅ 最もシンプル
-- ✅ 非技術者にも理解しやすい
-- ✅ 柔軟で汎用的
+**なぜこれが IEapp に最適か**:
+1. ✅ **Form が独自かつ直感的** - Class（プログラミング用語）を避け、誰でも理解できる「記入用紙」
+2. ✅ **Entry が自然** - 「記入する」という行為は IEapp の Markdown 記入の本質
+3. ✅ **Asset が洗練** - Entry（構造化）と Asset（非構造化）の対比が明確
+4. ✅ **他サービスと差別化** - Trello/Notion (Card), Airtable (Record) とは異なる独自のアイデンティティ
 
-詳細は [`docs/terminology-holistic-exploration.md`](docs/terminology-holistic-exploration.md) を参照してください。
+**メンタルモデル**:
+```
+Space に Form を定義
+Form に従って Entry を記入
+Entry に Asset を添付
+Entry 同士を Link で繋ぐ
+```
+
+**使用例**:
+```
+"Meeting Form の Entry を作成して、
+ 音声 Asset を添付し、
+ 前回の Entry に Link する"
+```
+
+### 代替案: 他の IEapp ネイティブシステム
+
+**Unit-Based**: Space/Format/Unit/File - 中立的で柔軟  
+**Knowledge-First**: Space/Pattern/Knowledge/Material - 知識管理の本質  
+**Structure-First**: Space/Schema/Record/Resource - 構造化の中心  
+**Mark-Based**: Space/Markup/Mark/Media - Markdown の本質
+
+詳細は以下を参照:
+- [`docs/terminology-ieapp-native.md`](docs/terminology-ieapp-native.md) - 6つの哲学的アプローチ
+- [`docs/terminology-entry-based-detail.md`](docs/terminology-entry-based-detail.md) - Entry-Based の詳細ガイド
 
 ---
 
