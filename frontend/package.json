@@ -2,7 +2,7 @@
 	"name": "ieapp-frontend",
 	"type": "module",
 	"scripts": {
-		"dev": "vinxi dev",
+		"dev": "node scripts/patch-vinxi-dev-error.js && vinxi dev",
 		"build": "vinxi build",
 		"start": "vinxi start",
 		"test": "vitest",
