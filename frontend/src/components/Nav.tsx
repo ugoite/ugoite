@@ -6,8 +6,7 @@ export default function Nav() {
 		path === location.pathname ? "border-sky-600" : "border-transparent hover:border-sky-600";
 
 	const isWorkspaceExplorer =
-		location.pathname.includes("/workspaces/") &&
-		(location.pathname.includes("/notes") || location.pathname.includes("/classes"));
+		location.pathname.includes("/workspaces/") && !location.pathname.endsWith("/workspaces");
 
 	// Hide nav on workspace explorer pages (they have their own navigation)
 	if (isWorkspaceExplorer) {

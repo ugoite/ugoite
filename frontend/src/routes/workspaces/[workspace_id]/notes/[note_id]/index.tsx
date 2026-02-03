@@ -1,28 +1,25 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { useContext } from "solid-js";
 import { NoteDetailPane } from "~/components/NoteDetailPane";
-import { NotesRouteContext } from "~/lib/notes-route-context";
-import { createNoteStore } from "~/lib/note-store";
+import { WorkspaceShell } from "~/components/WorkspaceShell";
 
 export default function WorkspaceNoteDetailRoute() {
 	const navigate = useNavigate();
 	const params = useParams<{ workspace_id: string; note_id: string }>();
-	const fallbackWorkspaceId = () => params.workspace_id || "";
-	const ctx = useContext(NotesRouteContext);
-	const workspaceId = ctx?.workspaceId ?? fallbackWorkspaceId;
-	const noteStore = ctx?.noteStore ?? createNoteStore(fallbackWorkspaceId);
+	const workspaceId = () => params.workspace_id || "";
 	// SolidJS router already decodes URL parameters
 	const noteId = () => params.note_id ?? "";
 
 	return (
-		<NoteDetailPane
-			workspaceId={workspaceId}
-			noteId={noteId}
-			onAfterSave={() => noteStore.loadNotes()}
-			onDeleted={() => {
-				noteStore.loadNotes();
-				navigate(`/workspaces/${workspaceId()}/notes`, { replace: true });
-			}}
-		/>
+		<WorkspaceShell workspaceId={workspaceId()}>
+			<div class="mx-auto max-w-6xl h-[calc(100vh-8rem)]">
+				<NoteDetailPane
+					workspaceId={workspaceId}
+					noteId={noteId}
+					onDeleted={() => {
+						navigate(`/workspaces/${workspaceId()}/notes`, { replace: true });
+					}}
+				/>
+			</div>
+		</WorkspaceShell>
 	);
 }

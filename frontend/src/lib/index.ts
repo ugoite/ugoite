@@ -7,6 +7,7 @@ export * from "./note-api";
 export * from "./attachment-api";
 export * from "./link-api";
 export * from "./search-api";
+export * from "./sql-api";
 export * from "./class-store";
 export * from "./attachment-store";
 export * from "./link-store";

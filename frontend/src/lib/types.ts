@@ -125,6 +125,38 @@ export interface QueryRequest {
 	filter: Record<string, unknown>;
 }
 
+/** SQL variable definition */
+export interface SqlVariable {
+	type: string;
+	name: string;
+	description: string;
+}
+
+/** Saved SQL entry */
+export interface SqlEntry {
+	id: string;
+	name: string;
+	sql: string;
+	variables: SqlVariable[];
+	created_at: string;
+	updated_at: string;
+	revision_id: string;
+}
+
+export interface SqlCreatePayload {
+	id?: string;
+	name: string;
+	sql: string;
+	variables: SqlVariable[];
+}
+
+export interface SqlUpdatePayload {
+	name: string;
+	sql: string;
+	variables: SqlVariable[];
+	parent_revision_id?: string | null;
+}
+
 /** API error response */
 export interface ApiError {
 	detail: string;

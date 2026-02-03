@@ -351,7 +351,7 @@ export function NoteDetailPane(props: NoteDetailPaneProps) {
 								isDirty={isDirty()}
 								isSaving={isSaving()}
 								conflictMessage={conflictMessage() || undefined}
-								showPreview
+								mode="split"
 								placeholder="Start writing in Markdown..."
 							/>
 

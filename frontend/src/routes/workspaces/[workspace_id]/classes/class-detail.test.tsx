@@ -15,6 +15,11 @@ const paramsMock: { class_name?: string; workspace_id?: string } = {};
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
 	useParams: () => paramsMock,
+	A: (props: { href: string; class?: string; children: unknown }) => (
+		<a href={props.href} class={props.class}>
+			{props.children}
+		</a>
+	),
 }));
 
 vi.mock("~/lib/search-api", () => ({

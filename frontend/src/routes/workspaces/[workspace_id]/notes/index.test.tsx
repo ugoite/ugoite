@@ -1,23 +1,36 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import WorkspaceNotesRoute from "../notes";
+import WorkspaceNotesIndexPane from "./index";
 import { resetMockData, seedNote, seedWorkspace } from "~/test/mocks/handlers";
 import type { Note, NoteRecord, Workspace } from "~/lib/types";
+import { NotesRouteContext } from "~/lib/notes-route-context";
+import { createNoteStore } from "~/lib/note-store";
+import { createWorkspaceStore } from "~/lib/workspace-store";
+import { createMemo, createSignal } from "solid-js";
+import type { Class } from "~/lib/types";
 
 const navigateMock = vi.fn();
-const paramsMock: { note_id?: string; workspace_id?: string } = {};
+const searchParamsMock: Record<string, string> = {};
+const setSearchParamsMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
-	useParams: () => paramsMock,
+	useSearchParams: () => [searchParamsMock, setSearchParamsMock],
+	A: (props: { href: string; class?: string; children: unknown }) => (
+		<a href={props.href} class={props.class}>
+			{props.children}
+		</a>
+	),
 }));
 
-describe("/workspaces/:workspace_id/notes (layout route)", () => {
+describe("/workspaces/:workspace_id/notes", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
-		paramsMock.note_id = undefined;
-		paramsMock.workspace_id = "default";
+		for (const key of Object.keys(searchParamsMock)) {
+			delete searchParamsMock[key];
+		}
+		setSearchParamsMock.mockReset();
 		resetMockData();
 		const ws: Workspace = {
 			id: "default",
@@ -44,11 +57,28 @@ describe("/workspaces/:workspace_id/notes (layout route)", () => {
 	});
 
 	it("REQ-FE-033: selecting a note navigates with encoded id", async () => {
-		render(() => (
-			<WorkspaceNotesRoute>
-				<div data-testid="route-children" />
-			</WorkspaceNotesRoute>
-		));
+		render(() => {
+			const noteStore = createNoteStore(() => "default");
+			const workspaceStore = createWorkspaceStore();
+			const [classes] = createSignal<Class[]>([]);
+			const [loadingClasses] = createSignal(false);
+			const [columnTypes] = createSignal<string[]>([]);
+			return (
+				<NotesRouteContext.Provider
+					value={{
+						workspaceStore,
+						workspaceId: () => "default",
+						noteStore,
+						classes: createMemo(() => classes()),
+						loadingClasses,
+						columnTypes,
+						refetchClasses: () => undefined,
+					}}
+				>
+					<WorkspaceNotesIndexPane />
+				</NotesRouteContext.Provider>
+			);
+		});
 
 		await waitFor(() => {
 			expect(screen.getByText("Test Note")).toBeInTheDocument();
@@ -58,18 +88,31 @@ describe("/workspaces/:workspace_id/notes (layout route)", () => {
 		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/notes/note%2Fwith%20space");
 	});
 
-	it("REQ-FE-018: selecting a note class navigates correctly", async () => {
-		render(() => (
-			<WorkspaceNotesRoute>
-				<div data-testid="route-children" />
-			</WorkspaceNotesRoute>
-		));
-
-		await waitFor(() => {
-			expect(screen.getByText("Classes")).toBeInTheDocument();
+	it("selecting a note class navigates correctly", async () => {
+		render(() => {
+			const noteStore = createNoteStore(() => "default");
+			const workspaceStore = createWorkspaceStore();
+			const [classes] = createSignal<Class[]>([]);
+			const [loadingClasses] = createSignal(false);
+			const [columnTypes] = createSignal<string[]>([]);
+			return (
+				<NotesRouteContext.Provider
+					value={{
+						workspaceStore,
+						workspaceId: () => "default",
+						noteStore,
+						classes: createMemo(() => classes()),
+						loadingClasses,
+						columnTypes,
+						refetchClasses: () => undefined,
+					}}
+				>
+					<WorkspaceNotesIndexPane />
+				</NotesRouteContext.Provider>
+			);
 		});
 
-		fireEvent.click(screen.getByText("Classes"));
-		expect(navigateMock).toHaveBeenCalledWith("/workspaces/default/classes");
+		const gridTab = await screen.findByRole("link", { name: "grid" });
+		expect(gridTab).toHaveAttribute("href", "/workspaces/default/classes");
 	});
 });

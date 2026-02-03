@@ -9,11 +9,15 @@ export interface MarkdownEditorProps {
 	isSaving?: boolean;
 	conflictMessage?: string;
 	showPreview?: boolean;
+	mode?: "edit" | "preview" | "split";
 	placeholder?: string;
 }
 
 export function MarkdownEditor(props: MarkdownEditorProps) {
 	const [isPreviewMode, setIsPreviewMode] = createSignal(false);
+
+	const isSplitMode = () => props.mode === "split";
+	const isForcedPreview = () => props.mode === "preview";
 
 	const handleInput = (e: Event) => {
 		const target = e.target as HTMLTextAreaElement;
@@ -49,7 +53,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 			{/* Toolbar */}
 			<div class="toolbar flex items-center justify-between p-2 border-b bg-gray-50">
 				<div class="flex items-center gap-2">
-					<Show when={props.showPreview}>
+					<Show when={props.showPreview && !props.mode}>
 						<button
 							type="button"
 							class={`px-3 py-1 rounded text-sm ${
@@ -103,11 +107,10 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 
 			{/* Editor / Preview */}
 			<div class="flex-1 overflow-hidden">
-				<Show
-					when={isPreviewMode()}
-					fallback={
+				<Show when={isSplitMode()}>
+					<div class="flex h-full">
 						<textarea
-							class="w-full h-full p-4 resize-none font-mono text-sm border-0 focus:outline-none focus:ring-0"
+							class="w-1/2 h-full p-4 resize-none font-mono text-sm border-r border-gray-200 focus:outline-none focus:ring-0"
 							value={props.content ?? ""}
 							onInput={handleInput}
 							onKeyDown={handleKeyDown}
@@ -115,12 +118,32 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 							placeholder={props.placeholder || "Start writing in Markdown..."}
 							spellcheck={false}
 						/>
-					}
-				>
-					<div
-						class="preview p-4 prose prose-sm max-w-none overflow-auto h-full"
-						innerHTML={renderMarkdown(props.content ?? "")}
-					/>
+						<div
+							class="preview w-1/2 p-4 prose prose-sm max-w-none overflow-auto h-full"
+							innerHTML={renderMarkdown(props.content ?? "")}
+						/>
+					</div>
+				</Show>
+				<Show when={!isSplitMode()}>
+					<Show
+						when={isPreviewMode() || isForcedPreview()}
+						fallback={
+							<textarea
+								class="w-full h-full p-4 resize-none font-mono text-sm border-0 focus:outline-none focus:ring-0"
+								value={props.content ?? ""}
+								onInput={handleInput}
+								onKeyDown={handleKeyDown}
+								disabled={props.disabled}
+								placeholder={props.placeholder || "Start writing in Markdown..."}
+								spellcheck={false}
+							/>
+						}
+					>
+						<div
+							class="preview p-4 prose prose-sm max-w-none overflow-auto h-full"
+							innerHTML={renderMarkdown(props.content ?? "")}
+						/>
+					</Show>
 				</Show>
 			</div>
 		</div>

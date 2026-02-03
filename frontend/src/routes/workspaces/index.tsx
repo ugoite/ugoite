@@ -21,7 +21,7 @@ export default function WorkspacesIndexRoute() {
 			const created = await workspaceApi.create(name);
 			await refetch();
 			setNewWorkspaceName("");
-			navigate(`/workspaces/${created.id}/notes`);
+			navigate(`/workspaces/${created.id}/dashboard`);
 		} catch (err) {
 			setCreateError(err instanceof Error ? err.message : "Failed to create workspace");
 		} finally {
@@ -86,16 +86,16 @@ export default function WorkspacesIndexRoute() {
 								</div>
 								<div class="flex gap-2">
 									<A
-										href={`/workspaces/${workspace.id}`}
+										href={`/workspaces/${workspace.id}/settings`}
 										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
 									>
 										Settings
 									</A>
 									<A
-										href={`/workspaces/${workspace.id}/notes`}
+										href={`/workspaces/${workspace.id}/dashboard`}
 										class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
 									>
-										Open Notes
+										Open Workspace
 									</A>
 								</div>
 							</li>

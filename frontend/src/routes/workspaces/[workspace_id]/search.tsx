@@ -1,92 +1,133 @@
-import { A, useParams } from "@solidjs/router";
-import { createSignal, For, Show } from "solid-js";
-import { searchApi } from "~/lib/search-api";
-import type { SearchResult } from "~/lib/types";
+import { A, useNavigate, useParams } from "@solidjs/router";
+import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { sqlApi } from "~/lib/sql-api";
+import type { SqlEntry } from "~/lib/types";
 
 export default function WorkspaceSearchRoute() {
 	const params = useParams<{ workspace_id: string }>();
+	const navigate = useNavigate();
 	const workspaceId = () => params.workspace_id;
 	const [query, setQuery] = createSignal("");
-	const [results, setResults] = createSignal<SearchResult[]>([]);
-	const [isSearching, setIsSearching] = createSignal(false);
-	const [error, setError] = createSignal<string | null>(null);
+	const [showFilters, setShowFilters] = createSignal(false);
 
-	const handleSearch = async () => {
-		const q = query().trim();
-		if (!q) return;
-		setIsSearching(true);
-		setError(null);
-		try {
-			const data = await searchApi.keyword(workspaceId(), q);
-			setResults(data);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Search failed");
-		} finally {
-			setIsSearching(false);
+	const [queries, { refetch }] = createResource(async () => sqlApi.list(workspaceId()));
+
+	const filteredQueries = createMemo(() => {
+		const q = query().trim().toLowerCase();
+		if (!q) return queries() || [];
+		return (queries() || []).filter((entry) => entry.name.toLowerCase().includes(q));
+	});
+
+	const handleSelect = (entry: SqlEntry) => {
+		if (entry.variables && entry.variables.length > 0) {
+			navigate(`/workspaces/${workspaceId()}/queries/${encodeURIComponent(entry.id)}/variables`);
+			return;
 		}
+		navigate(`/workspaces/${workspaceId()}/notes?sql=${encodeURIComponent(entry.sql)}`);
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
-			<div class="max-w-4xl mx-auto p-6">
-				<div class="flex items-center justify-between mb-6">
-					<h1 class="text-2xl font-bold text-gray-900">Search Notes</h1>
+		<WorkspaceShell workspaceId={workspaceId()} activeTopTab="search">
+			<div class="mx-auto max-w-4xl">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<h1 class="text-2xl font-semibold text-slate-900">Queries</h1>
 					<A
-						href={`/workspaces/${workspaceId()}/notes`}
-						class="text-sm text-sky-700 hover:underline"
+						href={`/workspaces/${workspaceId()}/queries/new`}
+						class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
 					>
-						Back to Notes
+						<span class="text-lg">+</span>
+						Create query
 					</A>
 				</div>
 
-				<div class="bg-white border rounded-lg p-4 mb-6">
-					<div class="flex flex-col sm:flex-row gap-3">
-						<input
-							type="text"
-							class="flex-1 px-3 py-2 border rounded"
-							placeholder="Search query"
-							value={query()}
-							onInput={(e) => setQuery(e.currentTarget.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") handleSearch();
-							}}
-						/>
-						<button
-							type="button"
-							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-							onClick={handleSearch}
-							disabled={isSearching()}
-						>
-							{isSearching() ? "Searching..." : "Search"}
-						</button>
-					</div>
-					<Show when={error()}>
-						<p class="text-sm text-red-600 mt-2">{error()}</p>
-					</Show>
+				<div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+					<input
+						type="text"
+						class="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						placeholder="Search queries"
+						value={query()}
+						onInput={(e) => setQuery(e.currentTarget.value)}
+					/>
+					<button
+						type="button"
+						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						onClick={() => setShowFilters(true)}
+					>
+						Filter
+					</button>
+					<button
+						type="button"
+						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						onClick={() => refetch()}
+					>
+						Refresh
+					</button>
 				</div>
 
-				<div class="bg-white border rounded-lg p-4">
-					<h2 class="text-lg font-semibold mb-3">Results</h2>
-					<Show when={results().length === 0}>
-						<p class="text-sm text-gray-500">No results yet.</p>
+				<div class="mt-6 space-y-3">
+					<Show when={queries.loading}>
+						<p class="text-sm text-slate-500">Loading queries...</p>
 					</Show>
-					<ul class="space-y-2">
-						<For each={results()}>
-							{(result) => (
-								<li class="border rounded p-3">
-									<A
-										href={`/workspaces/${workspaceId()}/notes/${encodeURIComponent(result.id)}`}
-										class="text-sm font-medium text-blue-600 hover:underline"
-									>
-										{result.title || result.id}
-									</A>
-									<p class="text-xs text-gray-500">Updated: {result.updated_at}</p>
-								</li>
-							)}
-						</For>
-					</ul>
+					<Show when={queries.error}>
+						<p class="text-sm text-red-600">Failed to load queries.</p>
+					</Show>
+					<Show when={!queries.loading && filteredQueries().length === 0}>
+						<p class="text-sm text-slate-500">No queries yet.</p>
+					</Show>
+					<For each={filteredQueries()}>
+						{(entry) => (
+							<button
+								type="button"
+								class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:shadow-md"
+								onClick={() => handleSelect(entry)}
+							>
+								<div class="flex items-center justify-between gap-2">
+									<h2 class="text-base font-semibold text-slate-900">{entry.name}</h2>
+									<span class="text-xs text-slate-500">
+										{entry.variables?.length ? "Variables" : "Ready"}
+									</span>
+								</div>
+								<p class="mt-2 text-xs text-slate-500">Updated {entry.updated_at}</p>
+							</button>
+						)}
+					</For>
 				</div>
 			</div>
-		</main>
+
+			<Show when={showFilters()}>
+				<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+					<div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+						<h2 class="text-lg font-semibold text-slate-900">Filters</h2>
+						<div class="mt-4 space-y-3">
+							<input
+								type="text"
+								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+								placeholder="Class"
+							/>
+							<input
+								type="text"
+								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+								placeholder="Tags"
+							/>
+							<input
+								type="text"
+								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+								placeholder="Updated range"
+							/>
+						</div>
+						<div class="mt-6 flex justify-end gap-2">
+							<button
+								type="button"
+								class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+								onClick={() => setShowFilters(false)}
+							>
+								Close
+							</button>
+						</div>
+					</div>
+				</div>
+			</Show>
+		</WorkspaceShell>
 	);
 }
