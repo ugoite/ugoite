@@ -590,7 +590,7 @@ def test_query_notes_sql(
     test_client: TestClient,
     temp_workspace_root: Path,
 ) -> None:
-    """REQ-IDX-008: IEapp SQL queries should return matching notes."""
+    """REQ-API-008: SQL session queries should return matching notes."""
     test_client.post("/workspaces", json={"name": "test-ws"})
     _create_class(test_client, "test-ws")
 
@@ -610,13 +610,30 @@ def test_query_notes_sql(
     )
 
     response = test_client.post(
-        "/workspaces/test-ws/query",
-        json={"filter": {"$sql": "SELECT * FROM notes WHERE title = 'Alpha'"}},
+        "/workspaces/test-ws/sql-sessions",
+        json={"sql": "SELECT * FROM notes WHERE title = 'Alpha'"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == "note-sql-1"
+    assert response.status_code == 201
+    session = response.json()
+    assert session["status"] == "completed"
+    session_id = session["id"]
+
+    count_res = test_client.get(
+        f"/workspaces/test-ws/sql-sessions/{session_id}/count",
+    )
+    assert count_res.status_code == 200
+    assert count_res.json()["count"] == 1
+
+    rows_res = test_client.get(
+        f"/workspaces/test-ws/sql-sessions/{session_id}/rows",
+        params={"offset": 0, "limit": 50},
+    )
+    assert rows_res.status_code == 200
+    rows_payload = rows_res.json()
+    assert rows_payload["total_count"] == 1
+    rows = rows_payload["rows"]
+    assert len(rows) == 1
+    assert rows[0]["id"] == "note-sql-1"
 
 
 def test_upload_attachment_and_link_to_note(

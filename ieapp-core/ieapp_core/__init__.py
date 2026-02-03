@@ -56,6 +56,11 @@ delete_sql = _core_any.delete_sql
 get_sql = _core_any.get_sql
 list_sql = _core_any.list_sql
 update_sql = _core_any.update_sql
+create_sql_session = _core_any.create_sql_session
+get_sql_session_status = _core_any.get_sql_session_status
+get_sql_session_count = _core_any.get_sql_session_count
+get_sql_session_rows = _core_any.get_sql_session_rows
+get_sql_session_rows_all = _core_any.get_sql_session_rows_all
 
 __all__ = [
     "SqlLintDiagnostic",
@@ -64,6 +69,7 @@ __all__ = [
     "create_link",
     "create_note",
     "create_sql",
+    "create_sql_session",
     "create_workspace",
     "delete_attachment",
     "delete_link",
@@ -75,6 +81,10 @@ __all__ = [
     "get_note_history",
     "get_note_revision",
     "get_sql",
+    "get_sql_session_count",
+    "get_sql_session_rows",
+    "get_sql_session_rows_all",
+    "get_sql_session_status",
     "get_workspace",
     "lint_sql",
     "list_attachments",

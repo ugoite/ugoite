@@ -613,3 +613,34 @@ def query_index(
     config = storage_config_from_root(root_path, fs)
     payload = json.dumps(filter_dict or {})
     return run_async(ieapp_core.query_index, config, workspace_id, payload)
+
+
+def create_sql_session(
+    workspace_path: str,
+    sql: str,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Create a SQL session for the given query."""
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    return run_async(ieapp_core.create_sql_session, config, workspace_id, sql)
+
+
+def get_sql_session_rows(
+    workspace_path: str,
+    session_id: str,
+    offset: int = 0,
+    limit: int = 50,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Retrieve paged rows from a SQL session."""
+    root_path, workspace_id = split_workspace_path(workspace_path)
+    config = storage_config_from_root(root_path, fs)
+    return run_async(
+        ieapp_core.get_sql_session_rows,
+        config,
+        workspace_id,
+        session_id,
+        offset,
+        limit,
+    )

@@ -18,7 +18,7 @@ from ieapp.attachments import (
     save_attachment,
 )
 from ieapp.classes import get_class, list_classes, list_column_types, migrate_class
-from ieapp.indexer import Indexer, query_index
+from ieapp.indexer import Indexer, create_sql_session, get_sql_session_rows, query_index
 from ieapp.links import create_link, delete_link, list_links
 from ieapp.logging_utils import setup_logging
 from ieapp.notes import (
@@ -357,6 +357,14 @@ def cmd_query(
         str | None,
         typer.Option("--sql", help="IEapp SQL query"),
     ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Maximum rows to return"),
+    ] = 50,
+    offset: Annotated[
+        int,
+        typer.Option("--offset", help="Row offset for pagination"),
+    ] = 0,
     note_class: Annotated[
         str | None,
         typer.Option("--class", help="Filter by class"),
@@ -370,8 +378,28 @@ def cmd_query(
     setup_logging()
     filter_dict: dict[str, Any] | None = None
     if sql:
-        filter_dict = {"$sql": sql}
-    elif note_class or tag:
+        session = create_sql_session(workspace_path, sql)
+        if session.get("status") == "failed":
+            error = session.get("error") or "SQL query failed"
+            typer.echo(error)
+            raise typer.Exit(code=1)
+
+        rows_payload = get_sql_session_rows(
+            workspace_path,
+            session.get("id", ""),
+            offset=offset,
+            limit=limit,
+        )
+        results = rows_payload.get("rows", [])
+        total = rows_payload.get("total_count", len(results))
+        if not results:
+            typer.echo("No notes found.")
+        else:
+            typer.echo(f"Total results: {total}")
+            for note in results:
+                typer.echo(f"- {note.get('id')}: {note.get('title')}")
+        return
+    if note_class or tag:
         filter_dict = {}
         if note_class:
             filter_dict["class"] = note_class

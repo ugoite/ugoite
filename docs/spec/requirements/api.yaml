@@ -147,3 +147,22 @@ requirements:
         - file: ieapp-core/tests/test_saved_sql.rs
           tests:
             - test_saved_sql_req_api_007_validation_errors
+
+  - id: REQ-API-008
+    title: SQL session query API
+    description: |
+      The API MUST create SQL query sessions and provide status, count, rows,
+      and stream endpoints for paged retrieval.
+    related_spec:
+      - api/rest.md#sql-sessions
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_query_notes_sql
+      rust:
+        - file: ieapp-core/tests/test_sql_sessions.rs
+          tests:
+            - test_sql_sessions_req_api_008_end_to_end

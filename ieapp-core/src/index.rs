@@ -42,6 +42,18 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     Ok(results)
 }
 
+pub async fn execute_sql_query(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+) -> Result<Vec<Value>> {
+    let classes = load_classes(op, ws_path).await?;
+    let notes_map = collect_notes(op, ws_path, &classes).await?;
+    let parsed = sql::parse_sql(sql_query)?;
+    let tables = build_sql_tables(op, ws_path, &classes, &notes_map).await?;
+    sql::filter_notes_by_sql(&tables, &parsed)
+}
+
 fn extract_sql_query(value: &Value) -> Option<String> {
     match value {
         Value::String(text) if !text.trim().is_empty() => Some(text.to_string()),

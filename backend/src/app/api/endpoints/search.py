@@ -35,18 +35,15 @@ async def query_endpoint(
     storage_config = _storage_config()
     await _ensure_workspace_exists(storage_config, workspace_id)
 
+    if payload.filter.get("$sql") or payload.filter.get("sql"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SQL queries must use SQL session endpoints.",
+        )
+
     try:
-        sql_payload = payload.filter.get("$sql") or payload.filter.get("sql")
-        query_payload = (
-            json.dumps(sql_payload)
-            if isinstance(sql_payload, str) and sql_payload.strip()
-            else json.dumps(payload.filter)
-        )
-        return await ieapp_core.query_index(
-            storage_config,
-            workspace_id,
-            query_payload,
-        )
+        query_payload = json.dumps(payload.filter)
+        return await ieapp_core.query_index(storage_config, workspace_id, query_payload)
     except Exception as e:
         logger.exception("Query failed")
         detail = str(e)

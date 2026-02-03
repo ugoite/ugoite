@@ -434,19 +434,77 @@ Content-Type: application/json
 }
 ```
 
-IEapp SQL (via `filter.$sql`):
+**Response**: `200 OK`
+
+#### SQL Sessions
+
+SQL queries run through session-based endpoints. Creating a session executes
+the query and stores results under `sql_sessions/` in the workspace.
+
+##### Create SQL Session
 ```http
-POST /workspaces/{ws_id}/query
+POST /workspaces/{ws_id}/sql-sessions
 Content-Type: application/json
 
 {
-  "filter": {
-    "$sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50"
-  }
+  "sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50"
 }
 ```
 
+**Response**: `201 Created`
+```json
+{
+  "id": "session-uuid",
+  "sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50",
+  "status": "completed",
+  "created_at": "2026-02-03T12:00:00Z",
+  "updated_at": "2026-02-03T12:00:01Z",
+  "progress": {"processed": 42, "total": 42},
+  "row_count": 42,
+  "error": null
+}
+```
+
+##### Get SQL Session Status
+```http
+GET /workspaces/{ws_id}/sql-sessions/{session_id}
+```
+
 **Response**: `200 OK`
+
+##### Get SQL Session Count
+```http
+GET /workspaces/{ws_id}/sql-sessions/{session_id}/count
+```
+
+**Response**: `200 OK`
+```json
+{
+  "count": 42
+}
+```
+
+##### Get SQL Session Rows (paged)
+```http
+GET /workspaces/{ws_id}/sql-sessions/{session_id}/rows?offset=0&limit=50
+```
+
+**Response**: `200 OK`
+```json
+{
+  "rows": [/* note records */],
+  "offset": 0,
+  "limit": 50,
+  "total_count": 42
+}
+```
+
+##### Stream SQL Session Rows
+```http
+GET /workspaces/{ws_id}/sql-sessions/{session_id}/stream
+```
+
+**Response**: `200 OK` (NDJSON stream)
 
 #### Keyword Search
 ```http

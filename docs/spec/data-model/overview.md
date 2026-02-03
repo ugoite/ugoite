@@ -32,6 +32,7 @@ workspaces/
     settings.json              # Workspace settings
     classes/                   # Iceberg-managed Class tables (layout not specified)
     attachments/               # Binary files
+    sql_sessions/              # SQL query sessions (results + progress)
 ```
 
 ## Key Concepts

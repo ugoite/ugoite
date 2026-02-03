@@ -11,6 +11,10 @@ workspaces/
     classes/                          # Iceberg-managed root for Class tables
     attachments/                      # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
+    sql_sessions/                     # SQL query sessions
+      {session_id}/                   # Session directory
+        meta.json                     # Session metadata (status, progress)
+        rows.json                     # Stored result rows
 ```
 
 ## Root Level

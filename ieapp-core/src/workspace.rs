@@ -115,7 +115,7 @@ pub async fn create_workspace(op: &Operator, name: &str, root_path: &str) -> Res
     op.create_dir(&format!("{}/", ws_path)).await?;
 
     // 1. Create directory structure
-    for dir in &["classes", "attachments"] {
+    for dir in &["classes", "attachments", "sql_sessions"] {
         op.create_dir(&format!("{}/{}/", ws_path, dir)).await?;
     }
 

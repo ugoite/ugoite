@@ -45,6 +45,12 @@ class QueryRequest(BaseModel):
     filter: dict[str, Any]
 
 
+class SqlSessionCreate(BaseModel):
+    """SQL session creation payload."""
+
+    sql: str
+
+
 class SqlVariable(BaseModel):
     """SQL variable definition."""
 
