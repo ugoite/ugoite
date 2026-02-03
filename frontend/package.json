@@ -2,7 +2,7 @@
 	"name": "ieapp-frontend",
 	"type": "module",
 	"scripts": {
-		"dev": "node scripts/patch-vinxi-dev-error.js && vinxi dev",
+		"dev": "vinxi dev",
 		"build": "vinxi build",
 		"start": "vinxi start",
 		"test": "vitest",
@@ -40,6 +40,6 @@
 		"bun": ">=1.3.0"
 	},
 	"overrides": {
-		"baseline-browser-mapping": "2.9.14"
+		"undici": "7.20.0"
 	}
 }
