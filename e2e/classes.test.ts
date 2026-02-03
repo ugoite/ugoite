@@ -63,10 +63,17 @@ Active
 
 		await request.get(getBackendUrl(`/workspaces/${workspaceId}/search?q=Active`));
 
-		await page.goto(
-			`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
-			{ waitUntil: "domcontentloaded" },
-		);
+		await page.goto(`/workspaces/${workspaceId}/classes`, {
+			waitUntil: "domcontentloaded",
+		});
+		const classButton = page.getByRole("button", { name: className });
+		await expect(classButton).toBeVisible({ timeout: 15000 });
+		await Promise.all([
+			page.waitForURL(
+				`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
+			),
+			classButton.click(),
+		]);
 		await expect(
 			page.getByRole("heading", { name: className }).first(),
 		).toBeVisible({ timeout: 15000 });
