@@ -103,8 +103,8 @@ async def get_sql_session_count_endpoint(
 async def get_sql_session_rows_endpoint(
     workspace_id: str,
     session_id: str,
-    offset: Annotated[int, Query(0, ge=0)],
-    limit: Annotated[int, Query(50, ge=1, le=500)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> dict[str, object]:
     """Get paged SQL session rows."""
     _validate_path_id(workspace_id, "workspace_id")
