@@ -4,7 +4,7 @@ page:
   id: workspace-settings
   title: Workspace Settings
   route: /workspaces/{workspace_id}/settings
-  implementation: unimplemented
+  implementation: implemented
 components:
   shared:
     - id: top-tabs

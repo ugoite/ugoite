@@ -4,7 +4,7 @@ page:
   id: workspace-search
   title: Query Search
   route: /workspaces/{workspace_id}/search
-  implementation: unimplemented
+  implementation: implemented
 components:
   shared:
     - id: top-tabs

@@ -26,7 +26,10 @@ test.describe("Class", () => {
 		expect([200, 201]).toContain(createRes.status());
 
 		await page.goto(`/workspaces/${workspaceId}/classes`);
-		await expect(page.getByText(className)).toBeVisible({ timeout: 15000 });
+		const classSelect = page.getByRole("combobox");
+		await expect(classSelect).toBeVisible({ timeout: 15000 });
+		await classSelect.selectOption({ label: className });
+		await expect(page.getByRole("heading", { name: className })).toBeVisible({ timeout: 15000 });
 	});
 
 	test("Query Notes by Class", async ({ page, request }) => {
@@ -66,17 +69,10 @@ Active
 		await page.goto(`/workspaces/${workspaceId}/classes`, {
 			waitUntil: "domcontentloaded",
 		});
-		const classButton = page.getByRole("button", { name: className });
-		await expect(classButton).toBeVisible({ timeout: 15000 });
-		await Promise.all([
-			page.waitForURL(
-				`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
-			),
-			classButton.click(),
-		]);
-		await expect(
-			page.getByRole("heading", { name: className }).first(),
-		).toBeVisible({ timeout: 15000 });
+		const classSelect = page.getByRole("combobox");
+		await expect(classSelect).toBeVisible({ timeout: 15000 });
+		await classSelect.selectOption({ label: className });
+		await expect(page.getByRole("heading", { name: className })).toBeVisible({ timeout: 15000 });
 		await expect(page.getByText("Active")).toBeVisible({ timeout: 15000 });
 		await expect(page.getByText(noteTitle)).toBeVisible({ timeout: 15000 });
 

@@ -4,7 +4,7 @@ page:
   id: workspace-query-variables
   title: Query Variables
   route: /workspaces/{workspace_id}/queries/{query_id}/variables
-  implementation: unimplemented
+  implementation: implemented
 components:
   shared:
     - id: top-tabs

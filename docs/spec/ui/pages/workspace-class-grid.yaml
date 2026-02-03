@@ -4,7 +4,7 @@ page:
   id: workspace-class-grid
   title: Class Grid View
   route: /workspaces/{workspace_id}/classes
-  implementation: unimplemented
+  implementation: implemented
 components:
   shared:
     - id: top-tabs

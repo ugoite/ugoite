@@ -4,7 +4,7 @@ page:
   id: workspace-note-detail
   title: Note Detail
   route: /workspaces/{workspace_id}/notes/{note_id}
-  implementation: unimplemented
+  implementation: implemented
 components:
   shared:
     - id: top-tabs

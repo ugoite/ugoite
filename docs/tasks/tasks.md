@@ -154,17 +154,17 @@ and add automated validation that frontend tests load and verify the spec.
 **Objective**: Implement the new UI described in the page-level YAML specs.
 
 ### Key Tasks
-- [ ] Build the new workspace-wide layout with floating top tabs and settings button.
-- [ ] Implement the dashboard view with prominent workspace name.
-- [ ] Implement query list, query create, and query variable input flows.
-- [ ] Implement object (notes) view with grid list and note detail navigation.
-- [ ] Implement class grid view with search/sort/filter, copy-paste grid, and CSV export.
-- [ ] Wire bottom view tabs between object and grid.
-- [ ] Connect UI components to existing APIs without changing backend contracts.
+- [x] Build the new workspace-wide layout with floating top tabs and settings button.
+- [x] Implement the dashboard view with prominent workspace name.
+- [x] Implement query list, query create, and query variable input flows.
+- [x] Implement object (notes) view with grid list and note detail navigation.
+- [x] Implement class grid view with search/sort/filter, copy-paste grid, and CSV export.
+- [x] Wire bottom view tabs between object and grid.
+- [x] Connect UI components to existing APIs without changing backend contracts.
 
 ### Acceptance Criteria
-- [ ] UI matches the new simplified layout and navigation model.
-- [ ] All workflows are functional with existing backend APIs.
+- [x] UI matches the new simplified layout and navigation model.
+- [x] All workflows are functional with existing backend APIs.
 
 ---
 
