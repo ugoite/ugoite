@@ -65,7 +65,7 @@ Active
 
 		await page.goto(
 			`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
-			{ waitUntil: "networkidle" },
+			{ waitUntil: "domcontentloaded" },
 		);
 		await expect(
 			page.getByRole("heading", { name: className }).first(),
