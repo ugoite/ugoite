@@ -25,6 +25,9 @@ if (backendUrl) {
 }
 
 export default defineConfig({
+	server: {
+		errorHandler: "~/error-handler",
+	},
 	vite: {
 		plugins: [tailwindcss()],
 		server: {
