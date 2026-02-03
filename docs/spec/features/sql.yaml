@@ -94,3 +94,75 @@ apis:
       command: ieapp sql saved-delete
       file: ieapp-cli/src/ieapp/cli.py
       function: cmd_sql_saved_delete
+
+  - id: sql.session.create
+    method: POST
+    backend:
+      path: /workspaces/{workspace_id}/sql-sessions
+      file: backend/src/app/api/endpoints/sql_sessions.py
+      function: create_sql_session_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/search
+      file: frontend/src/routes/workspaces/[workspace_id]/search.tsx
+      function: WorkspaceSearchRoute
+    ieapp_core:
+      file: ieapp-core/src/sql_session.rs
+      function: create_sql_session
+    ieapp_cli:
+      command: ieapp query --sql
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_query
+
+  - id: sql.session.status
+    method: GET
+    backend:
+      path: /workspaces/{workspace_id}/sql-sessions/{session_id}
+      file: backend/src/app/api/endpoints/sql_sessions.py
+      function: get_sql_session_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
+      function: WorkspaceNotesIndexPane
+    ieapp_core:
+      file: ieapp-core/src/sql_session.rs
+      function: get_sql_session_status
+    ieapp_cli:
+      command: ieapp query --sql
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_query
+
+  - id: sql.session.count
+    method: GET
+    backend:
+      path: /workspaces/{workspace_id}/sql-sessions/{session_id}/count
+      file: backend/src/app/api/endpoints/sql_sessions.py
+      function: get_sql_session_count_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
+      function: WorkspaceNotesIndexPane
+    ieapp_core:
+      file: ieapp-core/src/sql_session.rs
+      function: get_sql_session_count
+    ieapp_cli:
+      command: ieapp query --sql
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_query
+
+  - id: sql.session.rows
+    method: GET
+    backend:
+      path: /workspaces/{workspace_id}/sql-sessions/{session_id}/rows
+      file: backend/src/app/api/endpoints/sql_sessions.py
+      function: get_sql_session_rows_endpoint
+    frontend:
+      path: /workspaces/{workspace_id}/notes
+      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
+      function: WorkspaceNotesIndexPane
+    ieapp_core:
+      file: ieapp-core/src/sql_session.rs
+      function: get_sql_session_rows
+    ieapp_cli:
+      command: ieapp query --sql
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_query
