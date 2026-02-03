@@ -540,6 +540,8 @@ requirements:
             - "REQ-FE-040: loads UI page specs"
             - "REQ-FE-040: validates page links"
             - "REQ-FE-040: validates component types"
+            - "REQ-FE-040: validates shared workspace chrome"
+            - "REQ-FE-040: validates object/grid tabs"
 
   - id: REQ-FE-037
     title: Class-first Note Creation UI
