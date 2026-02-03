@@ -63,12 +63,10 @@ Active
 
 		await request.get(getBackendUrl(`/workspaces/${workspaceId}/search?q=Active`));
 
-		await page.goto(`/workspaces/${workspaceId}/classes`, {
-			waitUntil: "domcontentloaded",
-		});
-		const classButton = page.getByRole("button", { name: className });
-		await expect(classButton).toBeVisible({ timeout: 15000 });
-		await classButton.click();
+		await page.goto(
+			`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
+			{ waitUntil: "networkidle" },
+		);
 		await expect(
 			page.getByRole("heading", { name: className }).first(),
 		).toBeVisible({ timeout: 15000 });
