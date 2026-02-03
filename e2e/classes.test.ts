@@ -68,7 +68,12 @@ Active
 		});
 		const classButton = page.getByRole("button", { name: className });
 		await expect(classButton).toBeVisible({ timeout: 15000 });
-		await classButton.click();
+		await Promise.all([
+			page.waitForURL(
+				`/workspaces/${workspaceId}/classes/${encodeURIComponent(className)}`,
+			),
+			classButton.click(),
+		]);
 		await expect(
 			page.getByRole("heading", { name: className }).first(),
 		).toBeVisible({ timeout: 15000 });

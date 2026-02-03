@@ -33,6 +33,9 @@ IEapp is a knowledge management system built on three core principles:
 - [Core Stories](stories/core.yaml) - Essential user scenarios
 - [Advanced Stories](stories/advanced.yaml) - Power user and experimental features
 
+### UI Specifications
+- [UI Overview](ui/README.md) - Page-level UI specifications (YAML)
+
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
 - [Directory Structure](data-model/directory-structure.md) - Workspace layout conventions

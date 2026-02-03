@@ -131,6 +131,43 @@ using the reserved SQL class name.
 
 ---
 
+## Phase 6: UI Redesign Spec + Validation
+
+**Objective**: Define page-level UI specs for the new simplified workspace UI,
+and add automated validation that frontend tests load and verify the spec.
+
+### Key Tasks
+- [x] Define page-level YAML specs under `docs/spec/ui/pages/`.
+- [x] Add an implementation status flag to each page spec (default: unimplemented).
+- [x] Document the UI spec entry point in the spec index.
+- [x] Add frontend tests that load all UI spec YAML files and validate links and component types.
+
+### Acceptance Criteria
+- [x] Each workspace UI page is defined in a YAML spec.
+- [x] Specs include shared workspace UI chrome (top tabs + settings button).
+- [x] Frontend tests validate page links and component type registry.
+
+---
+
+## Phase 7: UI Redesign Implementation (Planned)
+
+**Objective**: Implement the new UI described in the page-level YAML specs.
+
+### Key Tasks
+- [ ] Build the new workspace-wide layout with floating top tabs and settings button.
+- [ ] Implement the dashboard view with prominent workspace name.
+- [ ] Implement query list, query create, and query variable input flows.
+- [ ] Implement object (notes) view with grid list and note detail navigation.
+- [ ] Implement class grid view with search/sort/filter, copy-paste grid, and CSV export.
+- [ ] Wire bottom view tabs between object and grid.
+- [ ] Connect UI components to existing APIs without changing backend contracts.
+
+### Acceptance Criteria
+- [ ] UI matches the new simplified layout and navigation model.
+- [ ] All workflows are functional with existing backend APIs.
+
+---
+
 ## Definition of Done
 
 - [x] All phases completed with acceptance criteria met.
