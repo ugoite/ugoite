@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { sqlSessionApi } from "~/lib/sql-session-api";
 import { sqlApi } from "~/lib/sql-api";
 import type { SqlVariable } from "~/lib/types";
 
@@ -53,13 +54,18 @@ export default function WorkspaceQueryVariablesRoute() {
 		setValues((prev) => ({ ...prev, [name]: value }));
 	};
 
-	const handleRun = () => {
+	const handleRun = async () => {
 		setError(null);
 		const current = entry();
 		if (!current) return;
 		try {
 			const sql = substituteSql(current.sql, current.variables, values());
-			navigate(`/workspaces/${workspaceId()}/notes?sql=${encodeURIComponent(sql)}`);
+			const session = await sqlSessionApi.create(workspaceId(), sql);
+			if (session.status === "failed") {
+				setError(session.error || "Query failed.");
+				return;
+			}
+			navigate(`/workspaces/${workspaceId()}/notes?session=${encodeURIComponent(session.id)}`);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to run query");
 		}

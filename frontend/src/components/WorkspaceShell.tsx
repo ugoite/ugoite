@@ -1,5 +1,7 @@
 import { A } from "@solidjs/router";
 import type { JSX } from "solid-js";
+import { Show } from "solid-js";
+import { loadingState } from "~/lib/loading";
 
 export type WorkspaceTopTab = "dashboard" | "search";
 export type WorkspaceBottomTab = "object" | "grid";
@@ -9,6 +11,7 @@ interface WorkspaceShellProps {
 	activeTopTab?: WorkspaceTopTab;
 	activeBottomTab?: WorkspaceBottomTab;
 	showBottomTabs?: boolean;
+	bottomTabHrefSuffix?: string;
 	children: JSX.Element;
 }
 
@@ -28,6 +31,11 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
 
 	return (
 		<main class="min-h-screen bg-slate-50 text-slate-900 relative">
+			<Show when={loadingState.isLoading()}>
+				<div class="fixed top-0 left-0 right-0 z-50">
+					<div class="h-1 w-full bg-sky-500 animate-pulse" />
+				</div>
+			</Show>
 			<div class="fixed top-5 left-1/2 -translate-x-1/2 z-50">
 				<div class="flex items-center gap-2 rounded-full bg-white/90 shadow-lg ring-1 ring-slate-200 px-2 py-2 backdrop-blur">
 					<A href={`/workspaces/${props.workspaceId}/dashboard`} class={topTabClass("dashboard")}>
@@ -65,10 +73,16 @@ export function WorkspaceShell(props: WorkspaceShellProps) {
 			{props.showBottomTabs && (
 				<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
 					<div class="flex items-center gap-2 rounded-full bg-white/90 shadow-lg ring-1 ring-slate-200 px-2 py-2 backdrop-blur">
-						<A href={`/workspaces/${props.workspaceId}/notes`} class={bottomTabClass("object")}>
+						<A
+							href={`/workspaces/${props.workspaceId}/notes${props.bottomTabHrefSuffix || ""}`}
+							class={bottomTabClass("object")}
+						>
 							object
 						</A>
-						<A href={`/workspaces/${props.workspaceId}/classes`} class={bottomTabClass("grid")}>
+						<A
+							href={`/workspaces/${props.workspaceId}/classes${props.bottomTabHrefSuffix || ""}`}
+							class={bottomTabClass("grid")}
+						>
 							grid
 						</A>
 					</div>

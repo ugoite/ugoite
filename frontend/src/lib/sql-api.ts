@@ -36,7 +36,7 @@ export const sqlApi = {
 			throw new Error(error.detail || `Failed to create saved SQL: ${res.statusText}`);
 		}
 		const data = (await res.json()) as Record<string, string>;
-		return { id: data.id, revisionId: data["revision_id"] };
+		return { id: data.id, revisionId: data.revision_id };
 	},
 
 	async update(
@@ -57,7 +57,7 @@ export const sqlApi = {
 			throw new Error(error.detail || `Failed to update saved SQL: ${res.statusText}`);
 		}
 		const data = (await res.json()) as Record<string, string>;
-		return { id: data.id, revisionId: data["revision_id"] };
+		return { id: data.id, revisionId: data.revision_id };
 	},
 
 	async delete(workspaceId: string, sqlId: string): Promise<void> {

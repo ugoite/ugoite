@@ -157,6 +157,29 @@ export interface SqlUpdatePayload {
 	parent_revision_id?: string | null;
 }
 
+export interface SqlSessionProgress {
+	processed: number;
+	total?: number | null;
+}
+
+export interface SqlSession {
+	id: string;
+	sql: string;
+	status: "running" | "completed" | "failed";
+	created_at: string;
+	updated_at: string;
+	progress?: SqlSessionProgress;
+	row_count?: number | null;
+	error?: string | null;
+}
+
+export interface SqlSessionRows {
+	rows: NoteRecord[];
+	offset: number;
+	limit: number;
+	totalCount: number;
+}
+
 /** API error response */
 export interface ApiError {
 	detail: string;

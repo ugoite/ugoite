@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { sqlSessionApi } from "~/lib/sql-session-api";
 import { sqlApi } from "~/lib/sql-api";
 import type { SqlEntry } from "~/lib/types";
 
@@ -10,6 +11,8 @@ export default function WorkspaceSearchRoute() {
 	const workspaceId = () => params.workspace_id;
 	const [query, setQuery] = createSignal("");
 	const [showFilters, setShowFilters] = createSignal(false);
+	const [error, setError] = createSignal<string | null>(null);
+	const [runningId, setRunningId] = createSignal<string | null>(null);
 
 	const [queries, { refetch }] = createResource(async () => sqlApi.list(workspaceId()));
 
@@ -19,12 +22,25 @@ export default function WorkspaceSearchRoute() {
 		return (queries() || []).filter((entry) => entry.name.toLowerCase().includes(q));
 	});
 
-	const handleSelect = (entry: SqlEntry) => {
+	const handleSelect = async (entry: SqlEntry) => {
 		if (entry.variables && entry.variables.length > 0) {
 			navigate(`/workspaces/${workspaceId()}/queries/${encodeURIComponent(entry.id)}/variables`);
 			return;
 		}
-		navigate(`/workspaces/${workspaceId()}/notes?sql=${encodeURIComponent(entry.sql)}`);
+		setError(null);
+		setRunningId(entry.id);
+		try {
+			const session = await sqlSessionApi.create(workspaceId(), entry.sql);
+			if (session.status === "failed") {
+				setError(session.error || "Query failed.");
+				return;
+			}
+			navigate(`/workspaces/${workspaceId()}/notes?session=${encodeURIComponent(session.id)}`);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to run query");
+		} finally {
+			setRunningId(null);
+		}
 	};
 
 	return (
@@ -69,6 +85,9 @@ export default function WorkspaceSearchRoute() {
 					<Show when={queries.loading}>
 						<p class="text-sm text-slate-500">Loading queries...</p>
 					</Show>
+					<Show when={error()}>
+						<p class="text-sm text-red-600">{error()}</p>
+					</Show>
 					<Show when={queries.error}>
 						<p class="text-sm text-red-600">Failed to load queries.</p>
 					</Show>
@@ -85,7 +104,11 @@ export default function WorkspaceSearchRoute() {
 								<div class="flex items-center justify-between gap-2">
 									<h2 class="text-base font-semibold text-slate-900">{entry.name}</h2>
 									<span class="text-xs text-slate-500">
-										{entry.variables?.length ? "Variables" : "Ready"}
+										{runningId() === entry.id
+											? "Running"
+											: entry.variables?.length
+												? "Variables"
+												: "Ready"}
 									</span>
 								</div>
 								<p class="mt-2 text-xs text-slate-500">Updated {entry.updated_at}</p>

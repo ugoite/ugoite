@@ -1,10 +1,18 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createResource,
+	createSignal,
+	For,
+	Show,
+	onCleanup,
+} from "solid-js";
 import { CreateNoteDialog } from "~/components/create-dialogs";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
 import { ensureClassFrontmatter, replaceFirstH1 } from "~/lib/markdown";
 import { useNotesRouteContext } from "~/lib/notes-route-context";
-import { searchApi } from "~/lib/search-api";
+import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { NoteRecord } from "~/lib/types";
 
 export default function WorkspaceNotesIndexPane() {
@@ -14,36 +22,73 @@ export default function WorkspaceNotesIndexPane() {
 	const workspaceId = () => ctx.workspaceId();
 	const [showCreateNoteDialog, setShowCreateNoteDialog] = createSignal(false);
 
-	const sqlQuery = createMemo(() => (searchParams.sql ? String(searchParams.sql) : ""));
+	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
+	const [page, setPage] = createSignal(1);
+	const [pageSize] = createSignal(24);
 
-	const [queryResults] = createResource(
+	const [session, { refetch: refetchSession }] = createResource(
+		() => sessionId().trim() || null,
+		async (id) => sqlSessionApi.get(workspaceId(), id),
+	);
+
+	const [sessionRows] = createResource(
 		() => {
-			const sql = sqlQuery().trim();
-			const wsId = workspaceId();
-			if (!sql || !wsId) return null;
-			return { wsId, sql };
+			const id = sessionId().trim();
+			if (!id || session()?.status !== "completed") return null;
+			return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
 		},
-		async ({ wsId, sql }) => searchApi.querySql(wsId, sql),
+		async ({ id, offset, limit }) => sqlSessionApi.rows(workspaceId(), id, offset, limit),
 	);
 
 	createEffect(() => {
-		if (workspaceId()) {
+		if (workspaceId() && !sessionId().trim()) {
 			ctx.noteStore.loadNotes();
 		}
 	});
 
+	createEffect(() => {
+		const id = sessionId().trim();
+		if (!id) return;
+		const interval = setInterval(() => {
+			if (session()?.status === "running") {
+				refetchSession();
+			}
+		}, 1000);
+		onCleanup(() => clearInterval(interval));
+	});
+
+	createEffect(() => {
+		if (sessionId().trim()) {
+			setPage(1);
+		}
+	});
+
 	const displayNotes = createMemo<NoteRecord[]>(() => {
-		if (sqlQuery().trim()) {
-			return queryResults() || [];
+		if (sessionId().trim()) {
+			return sessionRows()?.rows || [];
 		}
 		return ctx.noteStore.notes() || [];
 	});
 
-	const isLoading = createMemo(() =>
-		sqlQuery().trim() ? queryResults.loading : ctx.noteStore.loading(),
+	const totalCount = createMemo(
+		() => sessionRows()?.totalCount ?? session()?.row_count ?? displayNotes().length,
 	);
 
-	const error = createMemo(() => (sqlQuery().trim() ? queryResults.error : ctx.noteStore.error()));
+	const totalPages = createMemo(() => Math.max(1, Math.ceil(totalCount() / pageSize())));
+
+	const isLoading = createMemo(() => {
+		if (sessionId().trim()) {
+			return session.loading || sessionRows.loading;
+		}
+		return ctx.noteStore.loading();
+	});
+
+	const error = createMemo(() => {
+		if (sessionId().trim()) {
+			return session.error || sessionRows.error;
+		}
+		return ctx.noteStore.error();
+	});
 
 	const errorMessage = createMemo(() => {
 		const err = error();
@@ -80,19 +125,24 @@ export default function WorkspaceNotesIndexPane() {
 	};
 
 	return (
-		<WorkspaceShell workspaceId={workspaceId()} showBottomTabs activeBottomTab="object">
+		<WorkspaceShell
+			workspaceId={workspaceId()}
+			showBottomTabs
+			activeBottomTab="object"
+			bottomTabHrefSuffix={sessionId().trim() ? `?session=${encodeURIComponent(sessionId())}` : ""}
+		>
 			<div class="mx-auto max-w-6xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
 						<h1 class="text-2xl font-semibold text-slate-900">
-							{sqlQuery().trim() ? "Query Results" : "Notes"}
+							{sessionId().trim() ? "Query Results" : "Notes"}
 						</h1>
-						<Show when={sqlQuery().trim()}>
-							<p class="text-sm text-slate-500">Showing results for saved query.</p>
+						<Show when={sessionId().trim()}>
+							<p class="text-sm text-slate-500">Showing results for this query session.</p>
 						</Show>
 					</div>
 					<div class="flex items-center gap-2">
-						<Show when={sqlQuery().trim()}>
+						<Show when={sessionId().trim()}>
 							<button
 								type="button"
 								class="px-3 py-1.5 text-sm rounded border border-slate-300 bg-white hover:bg-slate-50"
@@ -112,6 +162,21 @@ export default function WorkspaceNotesIndexPane() {
 				</div>
 
 				<div class="mt-6">
+					<Show when={sessionId().trim() && session()?.status === "running"}>
+						<p class="text-sm text-slate-500">
+							Running query...
+							<Show when={session()?.progress}>
+								{(progress) => (
+									<span class="ml-2 text-xs text-slate-400">
+										{progress().processed} / {progress().total ?? "?"}
+									</span>
+								)}
+							</Show>
+						</p>
+					</Show>
+					<Show when={session()?.status === "failed"}>
+						<p class="text-sm text-red-600">{session()?.error || "Query failed."}</p>
+					</Show>
 					<Show when={isLoading()}>
 						<p class="text-sm text-slate-500">Loading notes...</p>
 					</Show>
@@ -146,6 +211,31 @@ export default function WorkspaceNotesIndexPane() {
 							)}
 						</For>
 					</div>
+					<Show when={sessionId().trim() && totalCount() > 0}>
+						<div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+							<div>
+								Page {page()} of {totalPages()} · {totalCount()} results
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+									disabled={page() <= 1}
+									onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+								>
+									Previous
+								</button>
+								<button
+									type="button"
+									class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+									disabled={page() >= totalPages()}
+									onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
+								>
+									Next
+								</button>
+							</div>
+						</div>
+					</Show>
 				</div>
 			</div>
 
