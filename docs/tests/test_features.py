@@ -97,7 +97,7 @@ def _assert_function_exists(file_path: Path, function_name: str) -> None:
         if not _function_exists_typescript(contents, function_name):
             message = f"Missing TypeScript symbol {function_name} in {file_path}"
             raise AssertionError(message)
-    elif suffix in {".rs"}:
+    elif suffix == ".rs":
         if not _function_exists_rust(contents, function_name):
             message = f"Missing Rust function {function_name} in {file_path}"
             raise AssertionError(message)

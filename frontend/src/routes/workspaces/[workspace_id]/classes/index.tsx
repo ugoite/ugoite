@@ -241,15 +241,13 @@ export default function WorkspaceClassesIndexPane() {
 					</Show>
 					<Show when={!sessionId().trim()}>
 						<Show when={selectedClass()}>
-							{(cls) => (
-								<ClassTable
-									workspaceId={ctx.workspaceId()}
-									noteClass={cls()}
-									onNoteClick={(noteId) =>
-										navigate(`/workspaces/${ctx.workspaceId()}/notes/${encodeURIComponent(noteId)}`)
-									}
-								/>
-							)}
+							<ClassTable
+								workspaceId={ctx.workspaceId()}
+								noteClass={selectedClass()}
+								onNoteClick={(noteId) =>
+									navigate(`/workspaces/${ctx.workspaceId()}/notes/${encodeURIComponent(noteId)}`)
+								}
+							/>
 						</Show>
 						<Show when={!selectedClass()}>
 							<p class="text-sm text-slate-500">Create a class to get started.</p>
