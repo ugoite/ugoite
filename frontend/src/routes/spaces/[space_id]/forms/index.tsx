@@ -24,6 +24,7 @@ export default function SpaceFormsIndexPane() {
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
 	const [pageSize] = createSignal(25);
+	const [selectedFormLabel, setSelectedFormLabel] = createSignal("");
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
 			await formApi.create(ctx.spaceId(), payload);
@@ -51,6 +52,10 @@ export default function SpaceFormsIndexPane() {
 	);
 
 	createEffect(() => {
+		setSelectedFormLabel(selectedFormName());
+	});
+
+	createEffect(() => {
 		if (sessionId().trim()) {
 			setPage(1);
 			return;
@@ -76,6 +81,12 @@ export default function SpaceFormsIndexPane() {
 	const selectedForm = createMemo(() =>
 		ctx.forms().find((entry) => entry.name === selectedFormName()),
 	);
+
+	const selectedHeading = createMemo(() => {
+		if (selectedFormLabel().trim()) return selectedFormLabel();
+		if (selectedFormName().trim()) return selectedFormName();
+		return selectedForm()?.name || "";
+	});
 
 	const sessionEntries = createMemo(() => sessionRows()?.rows || []);
 	const sessionFields = createMemo(() => {
@@ -118,7 +129,11 @@ export default function SpaceFormsIndexPane() {
 							<select
 								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
 								value={selectedFormName()}
-								onChange={(e) => setSearchParams({ form: e.currentTarget.value })}
+								onChange={(e) => {
+									const value = e.currentTarget.value;
+									setSelectedFormLabel(value);
+									setSearchParams({ form: value });
+								}}
 							>
 								<option value="" disabled>
 									Select form
@@ -238,9 +253,9 @@ export default function SpaceFormsIndexPane() {
 						</div>
 					</Show>
 					<Show when={!sessionId().trim()}>
-						<Show when={selectedFormName()}>
+						<Show when={selectedHeading()}>
 							<div class="mb-4">
-								<h2 class="text-xl font-semibold text-slate-900">{selectedFormName()}</h2>
+								<h2 class="text-xl font-semibold text-slate-900">{selectedHeading()}</h2>
 								<p class="text-sm text-slate-500">Query results for the selected form.</p>
 							</div>
 						</Show>
