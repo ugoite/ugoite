@@ -239,6 +239,7 @@ export default function SpaceFormsIndexPane() {
 					</Show>
 					<Show when={!sessionId().trim()}>
 						<Show when={selectedForm()}>
+							<h2 class="mb-3 text-xl font-semibold text-slate-900">{selectedForm()?.name}</h2>
 							<FormTable
 								spaceId={ctx.spaceId()}
 								entryForm={selectedForm()}
