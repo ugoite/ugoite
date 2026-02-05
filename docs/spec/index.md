@@ -38,7 +38,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
-- [Directory Structure](data-model/directory-structure.md) - Workspace layout conventions
+- [Directory Structure](data-model/directory-structure.md) - Space layout conventions
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
@@ -47,7 +47,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Requirements
 - [Requirements Overview](requirements/README.md) - How requirements are tracked
-- Requirements by category: [storage](requirements/storage.yaml) | [note](requirements/note.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [class](requirements/class.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
+- Requirements by category: [storage](requirements/storage.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
 
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model
@@ -73,21 +73,21 @@ IEapp is a knowledge management system built on three core principles:
 
 ## Key Concepts
 
-### Class
-A **Class** defines the structure of a note type. Classes specify:
+### Form
+A **Form** defines the structure of an entry type. Forms specify:
 - Required and optional fields (H2 headers)
 - Field types (string, number, date, list, markdown)
-- Fixed global template for new notes
+- Fixed global template for new entries
 
-### Note
-A **Note** is stored as a row in an Iceberg table and can be reconstructed as Markdown:
-- H2 sections map to Class-defined fields
-- YAML frontmatter carries metadata (class, tags)
-- Revision history is stored in the Class `revisions` table
+### Entry
+An **Entry** is stored as a row in an Iceberg table and can be reconstructed as Markdown:
+- H2 sections map to Form-defined fields
+- YAML frontmatter carries metadata (form, tags)
+- Revision history is stored in the Form `revisions` table
 
-### Workspace
-A **Workspace** is a self-contained data directory with:
-- Iceberg-managed Class tables and attachments
+### Space
+A **Space** is a self-contained data directory with:
+- Iceberg-managed Form tables and assets
 - Derived indexes regenerated from Iceberg tables
 - Portable across storage backends (local, S3, etc.)
 
@@ -105,5 +105,5 @@ A **Workspace** is a self-contained data directory with:
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-01 | 2.0.0 | Restructured for Full Configuration milestone; unified terminology to "Class" |
+| 2026-01 | 2.0.0 | Restructured for Full Configuration milestone; unified terminology to "Form" |
 | 2025-12 | 1.0.0 | Initial MVP specification |

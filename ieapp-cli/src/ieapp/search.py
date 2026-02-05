@@ -16,29 +16,29 @@ from .utils import (
     fs_read_json,
     get_fs_and_path,
     run_async,
-    split_workspace_path,
+    split_space_path,
     storage_config_from_root,
 )
 
 
-def _workspace_context(
-    workspace_path: str,
+def _space_context(
+    space_path: str,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> tuple[fsspec.AbstractFileSystem, str]:
-    fs_obj, ws_path = get_fs_and_path(workspace_path, fs)
+    fs_obj, ws_path = get_fs_and_path(space_path, fs)
     if not fs_exists(fs_obj, ws_path):
-        msg = f"Workspace not found: {workspace_path}"
+        msg = f"Space not found: {space_path}"
         raise FileNotFoundError(msg)
     return fs_obj, ws_path
 
 
-def _load_notes_map(
+def _load_entries_map(
     fs_obj: fsspec.AbstractFileSystem,
     index_path: str,
 ) -> dict[str, Any]:
     try:
         index_data = fs_read_json(fs_obj, index_path)
-        return index_data.get("notes", {}) if isinstance(index_data, dict) else {}
+        return index_data.get("entries", {}) if isinstance(index_data, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -54,18 +54,18 @@ def _search_inverted(
         return set()
 
     matches: set[str] = set()
-    for term, note_ids in inverted.items():
+    for term, entry_ids in inverted.items():
         if token in term:
-            matches.update(note_ids)
+            matches.update(entry_ids)
     return matches
 
 
-def _search_index_records(notes_map: dict[str, Any], token: str) -> set[str]:
+def _search_index_records(entries_map: dict[str, Any], token: str) -> set[str]:
     matches: set[str] = set()
-    for note_id, record in notes_map.items():
+    for entry_id, record in entries_map.items():
         haystack = json.dumps(record).lower()
         if token in haystack:
-            matches.add(note_id)
+            matches.add(entry_id)
     return matches
 
 
@@ -75,16 +75,16 @@ def _search_content_files(
     token: str,
 ) -> set[str]:
     matches: set[str] = set()
-    notes_dir = fs_join(ws_path, "notes")
-    if not fs_exists(fs_obj, notes_dir):
+    entries_dir = fs_join(ws_path, "entries")
+    if not fs_exists(fs_obj, entries_dir):
         return matches
     try:
-        note_dirs = fs_obj.ls(notes_dir, detail=False)
+        entry_dirs = fs_obj.ls(entries_dir, detail=False)
     except FileNotFoundError:
         return matches
 
-    for note_dir in note_dirs:
-        content_path = fs_join(note_dir, "content.json")
+    for entry_dir in entry_dirs:
+        content_path = fs_join(entry_dir, "content.json")
         if not fs_exists(fs_obj, content_path):
             continue
         try:
@@ -92,17 +92,17 @@ def _search_content_files(
         except (json.JSONDecodeError, OSError):
             continue
         if token in json.dumps(content_json).lower():
-            matches.add(str(note_dir).split("/")[-1])
+            matches.add(str(entry_dir).split("/")[-1])
     return matches
 
 
-def search_notes(
-    workspace_path: str,
+def search_entries(
+    space_path: str,
     token: str,
     *,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid keyword search using index and content fallback."""
-    root_path, workspace_id = split_workspace_path(workspace_path)
+    root_path, space_id = split_space_path(space_path)
     config = storage_config_from_root(root_path, fs)
-    return run_async(ieapp_core.search_notes, config, workspace_id, token)
+    return run_async(ieapp_core.search_entries, config, space_id, token)

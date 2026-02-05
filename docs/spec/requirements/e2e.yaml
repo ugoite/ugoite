@@ -18,8 +18,8 @@ requirements:
           tests:
             - GET / returns HTML with DOCTYPE
             - GET / has correct content-type
-            - GET /workspaces returns HTML
-            - GET /workspaces/default/notes/:id returns HTML
+            - GET /spaces returns HTML
+            - GET /spaces/default/entries/:id returns HTML
             - GET /about returns HTML
 
   - id: REQ-E2E-002
@@ -34,11 +34,11 @@ requirements:
       e2e:
         - file: e2e/smoke.test.ts
           tests:
-            - GET /workspaces returns list
-            - GET /workspaces includes default workspace
-            - GET /workspaces/default/notes returns list
-        - file: e2e/notes.test.ts
+            - GET /spaces returns list
+            - GET /spaces includes default space
+            - GET /spaces/default/entries returns list
+        - file: e2e/entries.test.ts
           tests:
-            - POST /workspaces/default/notes creates a new note
-            - PUT /workspaces/default/notes/:id updates note
-            - DELETE /workspaces/default/notes/:id removes note
+            - POST /spaces/default/entries creates a new entry
+            - PUT /spaces/default/entries/:id updates entry
+            - DELETE /spaces/default/entries/:id removes entry

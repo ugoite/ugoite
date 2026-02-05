@@ -33,7 +33,7 @@ impl RealIntegrityProvider {
         Self { secret }
     }
 
-    pub async fn from_workspace(op: &Operator, _ws_name: &str) -> Result<Self> {
+    pub async fn from_space(op: &Operator, _space_name: &str) -> Result<Self> {
         let (_key_id, secret) = load_hmac_material(op).await?;
         Ok(Self::new(secret))
     }
@@ -68,7 +68,7 @@ async fn ensure_global_json(op: &Operator) -> Result<()> {
     let payload = serde_json::json!({
         "version": 1,
         "default_storage": "",
-        "workspaces": [],
+        "spaces": [],
         "hmac_key_id": key_id,
         "hmac_key": hmac_key,
         "last_rotation": Utc::now().to_rfc3339(),

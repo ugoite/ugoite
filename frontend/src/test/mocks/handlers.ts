@@ -1,167 +1,164 @@
 import { http, HttpResponse } from "msw";
 import type {
-	Attachment,
-	Note,
-	NoteCreatePayload,
-	NoteRecord,
-	NoteUpdatePayload,
-	Class,
-	ClassCreatePayload,
-	Workspace,
-	WorkspaceLink,
+	Asset,
+	Entry,
+	EntryCreatePayload,
+	EntryRecord,
+	EntryUpdatePayload,
+	Form,
+	FormCreatePayload,
+	Space,
+	SpaceLink,
 } from "~/lib/types";
 
 // In-memory mock data store
-let mockWorkspaces: Map<string, Workspace> = new Map();
-let mockNotes: Map<string, Map<string, Note>> = new Map();
-let mockNoteIndex: Map<string, Map<string, NoteRecord>> = new Map();
-let mockAttachments: Map<string, Map<string, Attachment>> = new Map();
-let mockLinks: Map<string, Map<string, WorkspaceLink>> = new Map();
-let mockClasses: Map<string, Map<string, Class>> = new Map();
+let mockSpaces: Map<string, Space> = new Map();
+let mockEntries: Map<string, Map<string, Entry>> = new Map();
+let mockEntryIndex: Map<string, Map<string, EntryRecord>> = new Map();
+let mockAssets: Map<string, Map<string, Asset>> = new Map();
+let mockLinks: Map<string, Map<string, SpaceLink>> = new Map();
+let mockForms: Map<string, Map<string, Form>> = new Map();
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
 // Reset function for tests
 export const resetMockData = () => {
-	mockWorkspaces = new Map();
-	mockNotes = new Map();
-	mockNoteIndex = new Map();
-	mockAttachments = new Map();
+	mockSpaces = new Map();
+	mockEntries = new Map();
+	mockEntryIndex = new Map();
+	mockAssets = new Map();
 	mockLinks = new Map();
-	mockClasses = new Map();
+	mockForms = new Map();
 	revisionCounter = 0;
 };
 
 // Seed data helpers
-export const seedWorkspace = (workspace: Workspace) => {
-	mockWorkspaces.set(workspace.id, workspace);
-	mockNotes.set(workspace.id, new Map());
-	mockNoteIndex.set(workspace.id, new Map());
-	mockAttachments.set(workspace.id, new Map());
-	mockLinks.set(workspace.id, new Map());
-	mockClasses.set(workspace.id, new Map());
+export const seedSpace = (space: Space) => {
+	mockSpaces.set(space.id, space);
+	mockEntries.set(space.id, new Map());
+	mockEntryIndex.set(space.id, new Map());
+	mockAssets.set(space.id, new Map());
+	mockLinks.set(space.id, new Map());
+	mockForms.set(space.id, new Map());
 };
 
-export const seedNote = (workspaceId: string, note: Note, record: NoteRecord) => {
-	mockNotes.get(workspaceId)?.set(note.id, note);
-	mockNoteIndex.get(workspaceId)?.set(note.id, record);
+export const seedEntry = (spaceId: string, entry: Entry, record: EntryRecord) => {
+	mockEntries.get(spaceId)?.set(entry.id, entry);
+	mockEntryIndex.get(spaceId)?.set(entry.id, record);
 };
 
-export const seedClass = (workspaceId: string, noteClass: Class) => {
-	mockClasses.get(workspaceId)?.set(noteClass.name, noteClass);
+export const seedForm = (spaceId: string, entryForm: Form) => {
+	mockForms.get(spaceId)?.set(entryForm.name, entryForm);
 };
 
 export const handlers = [
-	// List workspaces
-	http.get("http://localhost:3000/api/workspaces", () => {
-		const workspaces = Array.from(mockWorkspaces.values());
-		return HttpResponse.json(workspaces);
+	// List spaces
+	http.get("http://localhost:3000/api/spaces", () => {
+		const spaces = Array.from(mockSpaces.values());
+		return HttpResponse.json(spaces);
 	}),
 
-	// Create workspace
-	http.post("http://localhost:3000/api/workspaces", async ({ request }) => {
+	// Create space
+	http.post("http://localhost:3000/api/spaces", async ({ request }) => {
 		const body = (await request.json()) as { name: string };
 		const id = body.name;
 
-		if (mockWorkspaces.has(id)) {
-			return HttpResponse.json({ detail: "Workspace already exists" }, { status: 409 });
+		if (mockSpaces.has(id)) {
+			return HttpResponse.json({ detail: "Space already exists" }, { status: 409 });
 		}
 
-		const workspace: Workspace = {
+		const space: Space = {
 			id,
 			name: body.name,
 			created_at: new Date().toISOString(),
 		};
-		mockWorkspaces.set(id, workspace);
-		mockNotes.set(id, new Map());
-		mockNoteIndex.set(id, new Map());
-		mockAttachments.set(id, new Map());
+		mockSpaces.set(id, space);
+		mockEntries.set(id, new Map());
+		mockEntryIndex.set(id, new Map());
+		mockAssets.set(id, new Map());
 		mockLinks.set(id, new Map());
-		mockClasses.set(id, new Map());
+		mockForms.set(id, new Map());
 
 		return HttpResponse.json({ id, name: body.name }, { status: 201 });
 	}),
 
-	// List classes
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/classes", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// List forms
+	http.get("http://localhost:3000/api/spaces/:spaceId/forms", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		const classes = Array.from(mockClasses.get(workspaceId)?.values() || []);
-		return HttpResponse.json(classes);
+		const forms = Array.from(mockForms.get(spaceId)?.values() || []);
+		return HttpResponse.json(forms);
 	}),
 
-	// Get class
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/classes/:className", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		const className = params.className as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// Get form
+	http.get("http://localhost:3000/api/spaces/:spaceId/forms/:formName", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const formName = params.formName as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		const noteClass = mockClasses.get(workspaceId)?.get(className);
-		if (!noteClass) {
-			return HttpResponse.json({ detail: "Class not found" }, { status: 404 });
+		const entryForm = mockForms.get(spaceId)?.get(formName);
+		if (!entryForm) {
+			return HttpResponse.json({ detail: "Form not found" }, { status: 404 });
 		}
-		return HttpResponse.json(noteClass);
+		return HttpResponse.json(entryForm);
 	}),
 
-	// Create class
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/classes",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
-			}
-			const body = (await request.json()) as ClassCreatePayload;
-			const noteClass: Class = {
-				name: body.name,
-				version: body.version ?? 1,
-				template: body.template,
-				fields: body.fields,
-				defaults: body.defaults,
-			};
-			mockClasses.get(workspaceId)?.set(noteClass.name, noteClass);
-			return HttpResponse.json(noteClass, { status: 201 });
-		},
-	),
-
-	// Get workspace
-	http.get("http://localhost:3000/api/workspaces/:workspaceId", ({ params }) => {
-		const workspace = mockWorkspaces.get(params.workspaceId as string);
-		if (!workspace) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// Create form
+	http.post("http://localhost:3000/api/spaces/:spaceId/forms", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		return HttpResponse.json(workspace);
-	}),
-
-	// Patch workspace
-	http.patch("http://localhost:3000/api/workspaces/:workspaceId", async ({ params, request }) => {
-		const workspaceId = params.workspaceId as string;
-		const workspace = mockWorkspaces.get(workspaceId);
-		if (!workspace) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
-		}
-		const body = (await request.json()) as Partial<Workspace>;
-		const updated: Workspace = {
-			...workspace,
-			...body,
-			storage_config: body.storage_config ?? workspace.storage_config,
-			settings: body.settings ?? workspace.settings,
+		const body = (await request.json()) as FormCreatePayload;
+		const entryForm: Form = {
+			name: body.name,
+			version: body.version ?? 1,
+			template: body.template,
+			fields: body.fields,
+			defaults: body.defaults,
 		};
-		mockWorkspaces.set(workspaceId, updated);
+		mockForms.get(spaceId)?.set(entryForm.name, entryForm);
+		return HttpResponse.json(entryForm, { status: 201 });
+	}),
+
+	// Get space
+	http.get("http://localhost:3000/api/spaces/:spaceId", ({ params }) => {
+		const space = mockSpaces.get(params.spaceId as string);
+		if (!space) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+		}
+		return HttpResponse.json(space);
+	}),
+
+	// Patch space
+	http.patch("http://localhost:3000/api/spaces/:spaceId", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const space = mockSpaces.get(spaceId);
+		if (!space) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+		}
+		const body = (await request.json()) as Partial<Space>;
+		const updated: Space = {
+			...space,
+			...body,
+			storage_config: body.storage_config ?? space.storage_config,
+			settings: body.settings ?? space.settings,
+		};
+		mockSpaces.set(spaceId, updated);
 		return HttpResponse.json(updated);
 	}),
 
 	// Test connection
 	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/test-connection",
+		"http://localhost:3000/api/spaces/:spaceId/test-connection",
 		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+			const spaceId = params.spaceId as string;
+			if (!mockSpaces.has(spaceId)) {
+				return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 			}
 			const body = (await request.json()) as { storage_config?: { uri?: string } };
 			if (!body.storage_config?.uri) {
@@ -171,102 +168,99 @@ export const handlers = [
 		},
 	),
 
-	// List notes in workspace
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/notes", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// List entries in space
+	http.get("http://localhost:3000/api/spaces/:spaceId/entries", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		const notes = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
-		return HttpResponse.json(notes);
+		const entries = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
+		return HttpResponse.json(entries);
 	}),
 
-	// Create note
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/notes",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
-			}
-
-			const body = (await request.json()) as NoteCreatePayload;
-			const noteId = body.id || crypto.randomUUID();
-			const revisionId = generateRevisionId();
-			const now = new Date().toISOString();
-
-			// Extract title from markdown (first H1 or first line)
-			const titleMatch = body.content.match(/^#\s+(.+)$/m);
-			const title = titleMatch ? titleMatch[1] : body.content.split("\n")[0] || "Untitled";
-
-			// Extract properties from H2 headers
-			const properties: Record<string, string> = {};
-			const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-			for (const match of body.content.matchAll(h2Regex)) {
-				const key = match[1].trim();
-				const value = match[2].trim();
-				properties[key] = value;
-			}
-
-			const note: Note = {
-				id: noteId,
-				content: body.content,
-				revision_id: revisionId,
-				created_at: now,
-				updated_at: now,
-				attachments: [],
-				links: [],
-			};
-
-			const record: NoteRecord = {
-				id: noteId,
-				title,
-				updated_at: now,
-				properties,
-				tags: [],
-				links: [],
-				attachments: [],
-			};
-
-			mockNotes.get(workspaceId)?.set(noteId, note);
-			mockNoteIndex.get(workspaceId)?.set(noteId, record);
-
-			return HttpResponse.json({ id: noteId, revision_id: revisionId }, { status: 201 });
-		},
-	),
-
-	// Get note
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		const noteId = params.noteId as string;
-
-		const note = mockNotes.get(workspaceId)?.get(noteId);
-		if (!note) {
-			return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+	// Create entry
+	http.post("http://localhost:3000/api/spaces/:spaceId/entries", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		return HttpResponse.json(note);
+
+		const body = (await request.json()) as EntryCreatePayload;
+		const entryId = body.id || crypto.randomUUID();
+		const revisionId = generateRevisionId();
+		const now = new Date().toISOString();
+
+		// Extract title from markdown (first H1 or first line)
+		const titleMatch = body.content.match(/^#\s+(.+)$/m);
+		const title = titleMatch ? titleMatch[1] : body.content.split("\n")[0] || "Untitled";
+
+		// Extract properties from H2 headers
+		const properties: Record<string, string> = {};
+		const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
+		for (const match of body.content.matchAll(h2Regex)) {
+			const key = match[1].trim();
+			const value = match[2].trim();
+			properties[key] = value;
+		}
+
+		const entry: Entry = {
+			id: entryId,
+			content: body.content,
+			revision_id: revisionId,
+			created_at: now,
+			updated_at: now,
+			assets: [],
+			links: [],
+		};
+
+		const record: EntryRecord = {
+			id: entryId,
+			title,
+			updated_at: now,
+			properties,
+			tags: [],
+			links: [],
+			assets: [],
+		};
+
+		mockEntries.get(spaceId)?.set(entryId, entry);
+		mockEntryIndex.get(spaceId)?.set(entryId, record);
+
+		return HttpResponse.json({ id: entryId, revision_id: revisionId }, { status: 201 });
 	}),
 
-	// Update note
+	// Get entry
+	http.get("http://localhost:3000/api/spaces/:spaceId/entries/:entryId", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const entryId = params.entryId as string;
+
+		const entry = mockEntries.get(spaceId)?.get(entryId);
+		if (!entry) {
+			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
+		}
+		return HttpResponse.json(entry);
+	}),
+
+	// Update entry
 	http.put(
-		"http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId",
+		"http://localhost:3000/api/spaces/:spaceId/entries/:entryId",
 		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			const noteId = params.noteId as string;
+			const spaceId = params.spaceId as string;
+			const entryId = params.entryId as string;
 
-			const note = mockNotes.get(workspaceId)?.get(noteId);
-			if (!note) {
-				return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+			const entry = mockEntries.get(spaceId)?.get(entryId);
+			if (!entry) {
+				return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
 			}
 
-			const body = (await request.json()) as NoteUpdatePayload;
+			const body = (await request.json()) as EntryUpdatePayload;
 
 			// Check revision (optimistic concurrency)
-			if (body.parent_revision_id !== note.revision_id) {
+			if (body.parent_revision_id !== entry.revision_id) {
 				return HttpResponse.json(
 					{
 						detail: "Revision mismatch",
-						current_revision_id: note.revision_id,
+						current_revision_id: entry.revision_id,
 					},
 					{ status: 409 },
 				);
@@ -288,14 +282,14 @@ export const handlers = [
 				properties[key] = value;
 			}
 
-			// Update note
-			note.content = body.markdown;
-			note.revision_id = newRevisionId;
-			note.updated_at = now;
-			note.attachments = body.attachments ?? note.attachments ?? [];
+			// Update entry
+			entry.content = body.markdown;
+			entry.revision_id = newRevisionId;
+			entry.updated_at = now;
+			entry.assets = body.assets ?? entry.assets ?? [];
 
 			// Update index
-			const record = mockNoteIndex.get(workspaceId)?.get(noteId);
+			const record = mockEntryIndex.get(spaceId)?.get(entryId);
 			if (record) {
 				record.title = title;
 				record.updated_at = now;
@@ -303,185 +297,173 @@ export const handlers = [
 				if (body.canvas_position) {
 					record.canvas_position = body.canvas_position;
 				}
-				if (body.attachments) {
-					record.attachments = body.attachments;
+				if (body.assets) {
+					record.assets = body.assets;
 				}
 			}
 
 			return HttpResponse.json({
-				id: noteId,
+				id: entryId,
 				revision_id: newRevisionId,
 			});
 		},
 	),
 
-	// Delete note
-	http.delete("http://localhost:3000/api/workspaces/:workspaceId/notes/:noteId", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		const noteId = params.noteId as string;
+	// Delete entry
+	http.delete("http://localhost:3000/api/spaces/:spaceId/entries/:entryId", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const entryId = params.entryId as string;
 
-		if (!mockNotes.get(workspaceId)?.has(noteId)) {
-			return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+		if (!mockEntries.get(spaceId)?.has(entryId)) {
+			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
 		}
 
-		mockNotes.get(workspaceId)?.delete(noteId);
-		mockNoteIndex.get(workspaceId)?.delete(noteId);
+		mockEntries.get(spaceId)?.delete(entryId);
+		mockEntryIndex.get(spaceId)?.delete(entryId);
 
 		return HttpResponse.json({ success: true });
 	}),
 
-	// Query notes
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/query",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			if (!mockWorkspaces.has(workspaceId)) {
-				return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// Query entries
+	http.post("http://localhost:3000/api/spaces/:spaceId/query", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+		}
+
+		const body = (await request.json()) as { filter: Record<string, unknown> };
+		const entries = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
+
+		// Simple filtering
+		const filtered = entries.filter((entry) => {
+			for (const [key, value] of Object.entries(body.filter)) {
+				if (key === "form" && entry.form !== value) return false;
+				if (entry.properties[key] !== value) return false;
 			}
+			return true;
+		});
 
-			const body = (await request.json()) as { filter: Record<string, unknown> };
-			const notes = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
+		return HttpResponse.json(filtered);
+	}),
 
-			// Simple filtering
-			const filtered = notes.filter((note) => {
-				for (const [key, value] of Object.entries(body.filter)) {
-					if (key === "class" && note.class !== value) return false;
-					if (note.properties[key] !== value) return false;
-				}
-				return true;
-			});
-
-			return HttpResponse.json(filtered);
-		},
-	),
-
-	// Search notes
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/search", ({ params, request }) => {
-		const workspaceId = params.workspaceId as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// Search entries
+	http.get("http://localhost:3000/api/spaces/:spaceId/search", ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
 		const url = new URL(request.url);
 		const q = url.searchParams.get("q")?.toLowerCase() ?? "";
-		const notes = Array.from(mockNotes.get(workspaceId)?.values() || []);
-		const index = Array.from(mockNoteIndex.get(workspaceId)?.values() || []);
+		const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
+		const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
 		const matches = index.filter((record) => {
-			const noteContent = notes.find((n) => n.id === record.id)?.content ?? "";
+			const entryContent = entries.find((n) => n.id === record.id)?.content ?? "";
 			const haystack =
-				`${record.title}\n${JSON.stringify(record.properties)}\n${noteContent}`.toLowerCase();
+				`${record.title}\n${JSON.stringify(record.properties)}\n${entryContent}`.toLowerCase();
 			return haystack.includes(q);
 		});
 		return HttpResponse.json(matches);
 	}),
 
-	// Upload attachment
-	http.post("http://localhost:3000/api/workspaces/:workspaceId/attachments", async ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	// Upload asset
+	http.post("http://localhost:3000/api/spaces/:spaceId/assets", async ({ params }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
 		// In mock tests, we don't actually need to parse FormData which can hang in CI
 		// The file name is not critical for these tests
 		const name = "test-file.bin";
 		const id = crypto.randomUUID();
-		const attachment: Attachment = { id, name, path: `attachments/${id}_${name}` };
-		const store = mockAttachments.get(workspaceId);
-		store?.set(id, attachment);
-		return HttpResponse.json(attachment, { status: 201 });
+		const asset: Asset = { id, name, path: `assets/${id}_${name}` };
+		const store = mockAssets.get(spaceId);
+		store?.set(id, asset);
+		return HttpResponse.json(asset, { status: 201 });
 	}),
 
-	// Delete attachment
-	http.delete(
-		"http://localhost:3000/api/workspaces/:workspaceId/attachments/:attachmentId",
-		({ params }) => {
-			const workspaceId = params.workspaceId as string;
-			const attachmentId = params.attachmentId as string;
-			const store = mockAttachments.get(workspaceId);
-			if (!store || !store.has(attachmentId)) {
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			}
+	// Delete asset
+	http.delete("http://localhost:3000/api/spaces/:spaceId/assets/:assetId", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const assetId = params.assetId as string;
+		const store = mockAssets.get(spaceId);
+		if (!store || !store.has(assetId)) {
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		}
 
-			// Check references
-			const notes = mockNotes.get(workspaceId) || new Map();
-			for (const note of notes.values()) {
-				if ((note.attachments || []).some((a) => a.id === attachmentId)) {
-					return HttpResponse.json(
-						{ detail: "Attachment is referenced by a note" },
-						{ status: 409 },
-					);
-				}
+		// Check references
+		const entries = mockEntries.get(spaceId) || new Map();
+		for (const entry of entries.values()) {
+			if ((entry.assets || []).some((a) => a.id === assetId)) {
+				return HttpResponse.json({ detail: "Asset is referenced by a entry" }, { status: 409 });
 			}
+		}
 
-			store.delete(attachmentId);
-			return HttpResponse.json({ status: "deleted", id: attachmentId });
-		},
-	),
+		store.delete(assetId);
+		return HttpResponse.json({ status: "deleted", id: assetId });
+	}),
 
 	// Create link
-	http.post(
-		"http://localhost:3000/api/workspaces/:workspaceId/links",
-		async ({ params, request }) => {
-			const workspaceId = params.workspaceId as string;
-			const { source, target, kind } = (await request.json()) as WorkspaceLink;
-			const notesStore = mockNotes.get(workspaceId);
-			if (!notesStore?.has(source) || !notesStore?.has(target)) {
-				return HttpResponse.json({ detail: "Note not found" }, { status: 404 });
+	http.post("http://localhost:3000/api/spaces/:spaceId/links", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const { source, target, kind } = (await request.json()) as SpaceLink;
+		const entriesStore = mockEntries.get(spaceId);
+		if (!entriesStore?.has(source) || !entriesStore?.has(target)) {
+			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
+		}
+		const id = crypto.randomUUID();
+		const link: SpaceLink = { id, source, target, kind };
+		mockLinks.get(spaceId)?.set(id, link);
+
+		const updateLinks = (entryId: string, linkEntry: SpaceLink) => {
+			const entry = entriesStore.get(entryId);
+			if (entry) {
+				entry.links = [...(entry.links || []), linkEntry];
 			}
-			const id = crypto.randomUUID();
-			const link: WorkspaceLink = { id, source, target, kind };
-			mockLinks.get(workspaceId)?.set(id, link);
+			const record = mockEntryIndex.get(spaceId)?.get(entryId);
+			if (record) {
+				record.links = [
+					...record.links,
+					{
+						id: linkEntry.id,
+						target: linkEntry.target,
+						kind: linkEntry.kind,
+						source: linkEntry.source,
+					},
+				];
+			}
+		};
 
-			const updateLinks = (noteId: string, linkEntry: WorkspaceLink) => {
-				const note = notesStore.get(noteId);
-				if (note) {
-					note.links = [...(note.links || []), linkEntry];
-				}
-				const record = mockNoteIndex.get(workspaceId)?.get(noteId);
-				if (record) {
-					record.links = [
-						...record.links,
-						{
-							id: linkEntry.id,
-							target: linkEntry.target,
-							kind: linkEntry.kind,
-							source: linkEntry.source,
-						},
-					];
-				}
-			};
+		updateLinks(source, link);
+		updateLinks(target, { ...link, source: target, target: source });
 
-			updateLinks(source, link);
-			updateLinks(target, { ...link, source: target, target: source });
-
-			return HttpResponse.json(link, { status: 201 });
-		},
-	),
+		return HttpResponse.json(link, { status: 201 });
+	}),
 
 	// List links
-	http.get("http://localhost:3000/api/workspaces/:workspaceId/links", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
-		if (!mockWorkspaces.has(workspaceId)) {
-			return HttpResponse.json({ detail: "Workspace not found" }, { status: 404 });
+	http.get("http://localhost:3000/api/spaces/:spaceId/links", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
 		}
-		const links = Array.from(mockLinks.get(workspaceId)?.values() || []);
+		const links = Array.from(mockLinks.get(spaceId)?.values() || []);
 		return HttpResponse.json(links);
 	}),
 
 	// Delete link
-	http.delete("http://localhost:3000/api/workspaces/:workspaceId/links/:linkId", ({ params }) => {
-		const workspaceId = params.workspaceId as string;
+	http.delete("http://localhost:3000/api/spaces/:spaceId/links/:linkId", ({ params }) => {
+		const spaceId = params.spaceId as string;
 		const linkId = params.linkId as string;
-		const linksStore = mockLinks.get(workspaceId);
+		const linksStore = mockLinks.get(spaceId);
 		if (!linksStore?.has(linkId)) {
 			return HttpResponse.json({ detail: "Link not found" }, { status: 404 });
 		}
 		linksStore.delete(linkId);
 
-		const notesStore = mockNotes.get(workspaceId) || new Map();
-		for (const note of notesStore.values()) {
-			note.links = (note.links || []).filter((l) => l.id !== linkId);
+		const entriesStore = mockEntries.get(spaceId) || new Map();
+		for (const entry of entriesStore.values()) {
+			entry.links = (entry.links || []).filter((l) => l.id !== linkId);
 		}
-		const indexStore = mockNoteIndex.get(workspaceId) || new Map();
+		const indexStore = mockEntryIndex.get(spaceId) || new Map();
 		for (const record of indexStore.values()) {
 			record.links = record.links.filter((l) => l.id !== linkId);
 		}

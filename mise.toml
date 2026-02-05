@@ -48,6 +48,6 @@ run = "bash scripts/run-e2e.sh full"
 description = "Run only smoke E2E tests (fast verification)"
 run = "bash scripts/run-e2e.sh smoke"
 
-[tasks."e2e:notes"]
-description = "Run notes E2E tests"
-run = "bash scripts/run-e2e.sh notes"
+[tasks."e2e:entries"]
+description = "Run entries E2E tests"
+run = "bash scripts/run-e2e.sh entries"

@@ -3,12 +3,12 @@ use std::sync::{Mutex, OnceLock};
 
 const DEFAULT_METADATA_COLUMNS: &[&str] = &[
     "id",
-    "note_id",
+    "entry_id",
     "title",
-    "class",
+    "form",
     "tags",
     "links",
-    "attachments",
+    "assets",
     "created_at",
     "updated_at",
     "revision_id",
@@ -18,14 +18,14 @@ const DEFAULT_METADATA_COLUMNS: &[&str] = &[
     "author",
     "canvas_position",
     "integrity",
-    "workspace_id",
+    "space_id",
     "word_count",
 ];
 
-const DEFAULT_METADATA_CLASSES: &[&str] = &["SQL"];
+const DEFAULT_METADATA_FORMS: &[&str] = &["SQL"];
 
 static METADATA_COLUMNS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-static METADATA_CLASSES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static METADATA_FORMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn metadata_columns_store() -> &'static Mutex<HashSet<String>> {
     METADATA_COLUMNS.get_or_init(|| {
@@ -37,10 +37,10 @@ fn metadata_columns_store() -> &'static Mutex<HashSet<String>> {
     })
 }
 
-fn metadata_classes_store() -> &'static Mutex<HashSet<String>> {
-    METADATA_CLASSES.get_or_init(|| {
+fn metadata_forms_store() -> &'static Mutex<HashSet<String>> {
+    METADATA_FORMS.get_or_init(|| {
         let mut set = HashSet::new();
-        for name in DEFAULT_METADATA_CLASSES {
+        for name in DEFAULT_METADATA_FORMS {
             set.insert(name.trim().to_lowercase());
         }
         Mutex::new(set)
@@ -64,15 +64,15 @@ pub fn is_reserved_metadata_column(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn metadata_classes() -> HashSet<String> {
-    metadata_classes_store()
+pub fn metadata_forms() -> HashSet<String> {
+    metadata_forms_store()
         .lock()
         .map(|set| set.clone())
         .unwrap_or_default()
 }
 
-pub fn is_reserved_metadata_class(name: &str) -> bool {
-    metadata_classes_store()
+pub fn is_reserved_metadata_form(name: &str) -> bool {
+    metadata_forms_store()
         .lock()
         .map(|set| {
             set.iter()
@@ -92,12 +92,12 @@ where
     }
 }
 
-pub fn register_metadata_classes<I>(classes: I)
+pub fn register_metadata_forms<I>(forms: I)
 where
     I: IntoIterator<Item = String>,
 {
-    if let Ok(mut store) = metadata_classes_store().lock() {
-        for name in classes {
+    if let Ok(mut store) = metadata_forms_store().lock() {
+        for name in forms {
             store.insert(name.trim().to_lowercase());
         }
     }

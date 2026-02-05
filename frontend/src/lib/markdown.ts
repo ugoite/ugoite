@@ -1,5 +1,5 @@
 /**
- * Markdown utilities used by notes route.
+ * Markdown utilities used by entries route.
  */
 
 /**
@@ -18,10 +18,10 @@ export function replaceFirstH1(template: string, title: string): string {
 }
 
 /**
- * Ensure the markdown has frontmatter with a `class:` entry set to the provided className.
- * Preserves existing frontmatter if present and replaces or inserts the class field.
+ * Ensure the markdown has frontmatter with a `form:` entry set to the provided formName.
+ * Preserves existing frontmatter if present and replaces or inserts the form field.
  */
-export function ensureClassFrontmatter(markdown: string, className: string): string {
+export function ensureFormFrontmatter(markdown: string, formName: string): string {
 	const trimmed = markdown.trimStart();
 	const lines = markdown.split(/\r?\n/);
 
@@ -48,16 +48,16 @@ export function ensureClassFrontmatter(markdown: string, className: string): str
 		if (range) {
 			const [startIdx, endIdx] = range;
 			const fmLines = lines.slice(startIdx + 1, endIdx);
-			const hasClass = fmLines.some((l) => l.trimStart().startsWith("class:"));
-			const nextFmLines = hasClass
-				? fmLines.map((l) => (l.trimStart().startsWith("class:") ? `class: ${className}` : l))
-				: [`class: ${className}`, ...fmLines];
+			const hasForm = fmLines.some((l) => l.trimStart().startsWith("form:"));
+			const nextFmLines = hasForm
+				? fmLines.map((l) => (l.trimStart().startsWith("form:") ? `form: ${formName}` : l))
+				: [`form: ${formName}`, ...fmLines];
 			return [lines[startIdx], ...nextFmLines, lines[endIdx], ...lines.slice(endIdx + 1)].join(
 				"\n",
 			);
 		}
 	}
-	return `---\nclass: ${className}\n---\n\n${markdown}`;
+	return `---\nform: ${formName}\n---\n\n${markdown}`;
 }
 
 /**

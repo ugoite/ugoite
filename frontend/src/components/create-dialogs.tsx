@@ -8,30 +8,30 @@ import {
 	onMount,
 	onCleanup,
 } from "solid-js";
-import type { Class, ClassCreatePayload } from "~/lib/types";
+import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
-import { RESERVED_METADATA_CLASSES, isReservedMetadataClass } from "~/lib/metadata-classes";
+import { RESERVED_METADATA_CLASSES, isReservedMetadataForm } from "~/lib/metadata-forms";
 
-export interface CreateNoteDialogProps {
+export interface CreateEntryDialogProps {
 	open: boolean;
-	classes: Class[];
-	defaultClass?: string;
+	forms: Form[];
+	defaultForm?: string;
 	onClose: () => void;
-	onSubmit: (title: string, className: string) => void;
+	onSubmit: (title: string, formName: string) => void;
 }
 
 /**
- * Dialog for creating a new note with optional class selection.
+ * Dialog for creating a new entry with optional form selection.
  */
-export function CreateNoteDialog(props: CreateNoteDialogProps) {
+export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [title, setTitle] = createSignal("");
-	const [selectedClass, setSelectedClass] = createSignal("");
+	const [selectedForm, setSelectedForm] = createSignal("");
 	const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 
-	const selectedClassDef = createMemo(() =>
-		props.classes.find((noteClass) => noteClass.name === selectedClass()),
+	const selectedFormDef = createMemo(() =>
+		props.forms.find((entryForm) => entryForm.name === selectedForm()),
 	);
 
 	// Handle escape key and click outside
@@ -65,28 +65,28 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 		if (!props.open) return;
 		setErrorMessage(null);
 		setTitle("");
-		const defaultClass = props.defaultClass?.trim();
-		if (defaultClass && props.classes.some((noteClass) => noteClass.name === defaultClass)) {
-			setSelectedClass(defaultClass);
-		} else if (props.classes.length === 1) {
-			setSelectedClass(props.classes[0].name);
+		const defaultForm = props.defaultForm?.trim();
+		if (defaultForm && props.forms.some((entryForm) => entryForm.name === defaultForm)) {
+			setSelectedForm(defaultForm);
+		} else if (props.forms.length === 1) {
+			setSelectedForm(props.forms[0].name);
 		} else {
-			setSelectedClass("");
+			setSelectedForm("");
 		}
 		setTimeout(() => inputRef?.focus(), 50);
 	});
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		const noteTitle = title().trim();
-		const className = selectedClass().trim();
-		if (!noteTitle || !className) {
-			setErrorMessage("Please provide a title and select a class.");
+		const entryTitle = title().trim();
+		const formName = selectedForm().trim();
+		if (!entryTitle || !formName) {
+			setErrorMessage("Please provide a title and select a form.");
 			return;
 		}
-		props.onSubmit(noteTitle, className);
+		props.onSubmit(entryTitle, formName);
 		setTitle("");
-		setSelectedClass("");
+		setSelectedForm("");
 	};
 
 	return (
@@ -106,63 +106,63 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Note</h2>
+					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Entry</h2>
 
 					<form onSubmit={handleSubmit} class="space-y-4">
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1" for="note-title">
+							<label class="block text-sm font-medium text-gray-700 mb-1" for="entry-title">
 								Title
 							</label>
 							<input
 								ref={inputRef}
-								id="note-title"
+								id="entry-title"
 								type="text"
 								value={title()}
 								onInput={(e) => setTitle(e.currentTarget.value)}
-								placeholder="Enter note title..."
+								placeholder="Enter entry title..."
 								class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
 								autofocus
 							/>
 						</div>
 
 						<Show
-							when={props.classes.length > 0}
+							when={props.forms.length > 0}
 							fallback={
 								<div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-									Create a class first to start writing notes.
+									Create a form first to start writing entries.
 								</div>
 							}
 						>
 							<div>
-								<label class="block text-sm font-medium text-gray-700 mb-1" for="note-class">
-									Class <span class="text-red-500">*</span>
+								<label class="block text-sm font-medium text-gray-700 mb-1" for="entry-form">
+									Form <span class="text-red-500">*</span>
 								</label>
 								<select
-									id="note-class"
+									id="entry-form"
 									class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
-									value={selectedClass()}
+									value={selectedForm()}
 									onChange={(e) => {
-										setSelectedClass(e.currentTarget.value);
+										setSelectedForm(e.currentTarget.value);
 										setErrorMessage(null);
 									}}
 								>
 									<option value="" disabled>
-										Select a class
+										Select a form
 									</option>
-									<For each={props.classes}>{(s) => <option value={s.name}>{s.name}</option>}</For>
+									<For each={props.forms}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 								</select>
-								<Show when={selectedClassDef()}>
-									{(noteClass) => (
+								<Show when={selectedFormDef()}>
+									{(entryForm) => (
 										<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
 											<p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
 												Fields
 											</p>
 											<div class="mt-2 flex flex-wrap gap-2">
 												<Show
-													when={Object.keys(noteClass().fields || {}).length > 0}
+													when={Object.keys(entryForm().fields || {}).length > 0}
 													fallback={<span class="text-xs text-gray-500">No fields defined.</span>}
 												>
-													<For each={Object.entries(noteClass().fields)}>
+													<For each={Object.entries(entryForm().fields)}>
 														{([name, def]) => (
 															<span class="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-xs text-gray-700 border border-gray-200">
 																<span class="font-medium">{name}</span>
@@ -197,7 +197,7 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 							</button>
 							<button
 								type="submit"
-								disabled={!title().trim() || !selectedClass().trim() || props.classes.length === 0}
+								disabled={!title().trim() || !selectedForm().trim() || props.forms.length === 0}
 								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Create
@@ -210,17 +210,17 @@ export function CreateNoteDialog(props: CreateNoteDialogProps) {
 	);
 }
 
-export interface CreateClassDialogProps {
+export interface CreateFormDialogProps {
 	open: boolean;
 	columnTypes: string[];
 	onClose: () => void;
-	onSubmit: (payload: ClassCreatePayload) => void;
+	onSubmit: (payload: FormCreatePayload) => void;
 }
 
 /**
- * Dialog for creating a new class.
+ * Dialog for creating a new form.
  */
-export function CreateClassDialog(props: CreateClassDialogProps) {
+export function CreateFormDialog(props: CreateFormDialogProps) {
 	const [name, setName] = createSignal("");
 	const [fields, setFields] = createSignal<
 		Array<{ name: string; type: string; required: boolean }>
@@ -249,7 +249,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 	});
 
 	const nameIssue = createMemo(() =>
-		isReservedMetadataClass(name()) ? "Reserved metadata class name" : "",
+		isReservedMetadataForm(name()) ? "Reserved metadata form name" : "",
 	);
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
@@ -281,11 +281,11 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		const className = name().trim();
-		if (!className || hasFieldIssues() || nameIssue()) return;
+		const formName = name().trim();
+		if (!formName || hasFieldIssues() || nameIssue()) return;
 
 		const fieldRecord: Record<string, { type: string; required: boolean }> = {};
-		let template = `# ${className}\n\n`;
+		let template = `# ${formName}\n\n`;
 
 		for (const f of fields()) {
 			const trimmedName = f.name.trim();
@@ -296,7 +296,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 		}
 
 		props.onSubmit({
-			name: className,
+			name: formName,
 			template,
 			fields: fieldRecord,
 		});
@@ -343,16 +343,16 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Class</h2>
+					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Form</h2>
 
 					<form onSubmit={handleSubmit} class="space-y-4 flex-1 overflow-auto">
 						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1" for="class-name">
+							<label class="block text-sm font-medium text-gray-700 mb-1" for="form-name">
 								Name
 							</label>
 							<input
 								ref={inputRef}
-								id="class-name"
+								id="form-name"
 								type="text"
 								value={name()}
 								onInput={(e) => setName(e.currentTarget.value)}
@@ -427,7 +427,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 									{RESERVED_METADATA_COLUMNS.join(", ")}
 								</p>
 								<p>
-									Reserved metadata classes cannot be used: {RESERVED_METADATA_CLASSES.join(", ")}
+									Reserved metadata forms cannot be used: {RESERVED_METADATA_CLASSES.join(", ")}
 								</p>
 								<p>
 									List fields accept Markdown bullets (e.g. <code>- item</code>) or one value per
@@ -450,7 +450,7 @@ export function CreateClassDialog(props: CreateClassDialogProps) {
 								disabled={!name().trim() || hasFieldIssues() || Boolean(nameIssue())}
 								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Create Class
+								Create Form
 							</button>
 						</div>
 					</form>
@@ -486,15 +486,15 @@ function processFields(
 	return { fieldRecord, strategies };
 }
 
-export interface EditClassDialogProps {
+export interface EditFormDialogProps {
 	open: boolean;
-	noteClass: Class;
+	entryForm: Form;
 	columnTypes: string[];
 	onClose: () => void;
-	onSubmit: (payload: ClassCreatePayload) => void;
+	onSubmit: (payload: FormCreatePayload) => void;
 }
 
-export function EditClassDialog(props: EditClassDialogProps) {
+export function EditFormDialog(props: EditFormDialogProps) {
 	const [fields, setFields] = createSignal<
 		Array<{ name: string; type: string; required: boolean; defaultValue?: string; isNew?: boolean }>
 	>([]);
@@ -522,7 +522,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 	const nameIssue = createMemo(() =>
-		props.noteClass ? isReservedMetadataClass(props.noteClass.name) : false,
+		props.entryForm ? isReservedMetadataForm(props.entryForm.name) : false,
 	);
 
 	const handleKeyDown = (e: KeyboardEvent) => {
@@ -544,8 +544,8 @@ export function EditClassDialog(props: EditClassDialogProps) {
 	});
 
 	createEffect(() => {
-		if (props.open && props.noteClass) {
-			const initialFields = Object.entries(props.noteClass.fields).map(([name, def]) => ({
+		if (props.open && props.entryForm) {
+			const initialFields = Object.entries(props.entryForm.fields).map(([name, def]) => ({
 				name,
 				type: def.type,
 				required: def.required,
@@ -565,15 +565,15 @@ export function EditClassDialog(props: EditClassDialogProps) {
 		e.preventDefault();
 		if (hasFieldIssues() || nameIssue()) return;
 
-		const { fieldRecord, strategies } = processFields(fields(), props.noteClass.fields);
+		const { fieldRecord, strategies } = processFields(fields(), props.entryForm.fields);
 
-		let template = `# ${props.noteClass.name}\n\n`;
+		let template = `# ${props.entryForm.name}\n\n`;
 		for (const f of fields()) {
 			if (f.name.trim()) template += `## ${f.name.trim()}\n\n`;
 		}
 
 		props.onSubmit({
-			name: props.noteClass.name,
+			name: props.entryForm.name,
 			template,
 			fields: fieldRecord,
 			strategies: Object.keys(strategies).length > 0 ? strategies : undefined,
@@ -620,12 +620,12 @@ export function EditClassDialog(props: EditClassDialogProps) {
 					onKeyDown={(e) => e.stopPropagation()}
 				>
 					<h2 class="text-lg font-semibold text-gray-900 mb-4">
-						Edit Class: {props.noteClass?.name}
+						Edit Form: {props.entryForm?.name}
 					</h2>
 					<div class="mb-4 text-sm text-gray-600 bg-yellow-50 p-2 rounded border border-yellow-200">
 						<p>
 							<strong>Warning:</strong> Removing or renaming columns will delete associated data in
-							existing notes.
+							existing entries.
 						</p>
 					</div>
 
@@ -649,7 +649,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 											<input
 												type="text"
 												placeholder="Column Name"
-												disabled={!field().isNew && !!props.noteClass.fields[field().name]}
+												disabled={!field().isNew && !!props.entryForm.fields[field().name]}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 												class={`flex-1 px-2 py-1 text-sm border rounded disabled:bg-gray-100 disabled:text-gray-500 ${
@@ -680,7 +680,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 										<Show when={fieldIssues().has(i) && field().isNew}>
 											<span class="text-xs text-red-600">{fieldIssues().get(i)}</span>
 										</Show>
-										<Show when={!props.noteClass.fields[field().name] || field().isNew}>
+										<Show when={!props.entryForm.fields[field().name] || field().isNew}>
 											<div class="ml-1 flex items-center gap-2">
 												<span class="text-xs text-gray-500">Default Value:</span>
 												<input
@@ -707,8 +707,7 @@ export function EditClassDialog(props: EditClassDialogProps) {
 								</p>
 								<Show when={nameIssue()}>
 									<p>
-										Reserved metadata classes cannot be edited:{" "}
-										{RESERVED_METADATA_CLASSES.join(", ")}
+										Reserved metadata forms cannot be edited: {RESERVED_METADATA_CLASSES.join(", ")}
 									</p>
 								</Show>
 								<p>

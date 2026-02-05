@@ -7,14 +7,14 @@ This directory contains machine-readable requirement definitions for IEapp.
 | File | Category | Prefix |
 |------|----------|--------|
 | [storage.yaml](storage.yaml) | Storage & Data Model | REQ-STO-* |
-| [note.yaml](note.yaml) | Note Management | REQ-NOTE-* |
+| [entry.yaml](entry.yaml) | Entry Management | REQ-ENTRY-* |
 | [index.yaml](index.yaml) | Indexer | REQ-IDX-* |
 | [integrity.yaml](integrity.yaml) | Data Integrity | REQ-INT-* |
 | [security.yaml](security.yaml) | Security | REQ-SEC-* |
 | [api.yaml](api.yaml) | REST API | REQ-API-* |
 | [frontend.yaml](frontend.yaml) | Frontend UI | REQ-FE-* |
 | [e2e.yaml](e2e.yaml) | End-to-End | REQ-E2E-* |
-| [class.yaml](class.yaml) | Class Management | REQ-CLS-* |
+| [form.yaml](form.yaml) | Form Management | REQ-FORM-* |
 | [links.yaml](links.yaml) | Link Management | REQ-LNK-* |
 | [search.yaml](search.yaml) | Search | REQ-SRCH-* |
 
@@ -54,14 +54,14 @@ requirements:
 ## Requirement ID Convention
 
 - `REQ-STO-###` - Storage & data model requirements
-- `REQ-NOTE-###` - Note management requirements
+- `REQ-ENTRY-###` - Entry management requirements
 - `REQ-IDX-###` - Indexer requirements
 - `REQ-INT-###` - Integrity requirements
 - `REQ-SEC-###` - Security requirements
 - `REQ-API-###` - API requirements
 - `REQ-FE-###` - Frontend requirements
 - `REQ-E2E-###` - End-to-end requirements
-- `REQ-CLS-###` - Class management requirements
+- `REQ-FORM-###` - Form management requirements
 - `REQ-LNK-###` - Link requirements
 - `REQ-SRCH-###` - Search requirements
 
@@ -101,7 +101,7 @@ def test_required_fields_present():
 
 ## Adding New Requirements
 
-1. Determine the appropriate category (storage, note, etc.)
+1. Determine the appropriate category (storage, entry, etc.)
 2. Find the next available ID number in that file
 3. Add the requirement with all required fields
 4. Add tests that verify the requirement

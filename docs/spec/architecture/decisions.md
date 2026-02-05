@@ -20,13 +20,13 @@ Extract core logic into a Rust crate (`ieapp-core`) with:
 **Consequences**:
 - (+) Single source of truth for core logic
 - (+) Enables native desktop app without Python runtime
-- (+) Better performance for large workspaces
+- (+) Better performance for large spaces
 - (-) Additional build complexity
 - (-) Learning curve for Rust
 
 ---
 
-## ADR-002: Class-based Note Typing
+## ADR-002: Form-based Entry Typing
 
 **Status**: Accepted
 
@@ -36,14 +36,14 @@ Extract core logic into a Rust crate (`ieapp-core`) with:
 - Traditional forms are cumbersome for knowledge work
 
 **Decision**: 
-Use "Classes" to define note types:
-- Class definitions stored as JSON in `classes/{name}.json`
-- Notes reference a class via frontmatter: `class: Meeting`
+Use "Forms" to define entry types:
+- Form definitions stored as JSON in `forms/{name}.json`
+- Entries reference a form via frontmatter: `form: Meeting`
 - H2 headers (`## Field`) become typed properties
 - Live indexer extracts and validates properties
 
 **Consequences**:
-- (+) Flexible: users can ignore classes entirely
+- (+) Flexible: users can ignore forms entirely
 - (+) Structured: when needed, data is queryable
 - (+) Portable: standard Markdown with metadata
 - (-) Complexity: indexer must parse Markdown
@@ -99,13 +99,13 @@ Use fsspec/OpenDAL for storage abstraction:
 **Status**: Accepted
 
 **Context**: 
-- Multiple clients may edit the same note
+- Multiple clients may edit the same entry
 - Traditional locking is too restrictive
 - Users expect responsive UI
 
 **Decision**: 
 Use revision-based optimistic concurrency:
-- Every note has a `revision_id`
+- Every entry has a `revision_id`
 - Updates include `parent_revision_id`
 - Server rejects if parent doesn't match current
 - Client handles 409 Conflict with merge UI
@@ -142,7 +142,7 @@ Backend should be a pure API layer:
 - (-) More abstraction layers
 - (-) Slightly more latency
 
-**Note**: `ieapp-cli` is a separate tool for direct command-line interaction with `ieapp-core`.
+**Info**: `ieapp-cli` is a separate tool for direct command-line interaction with `ieapp-core`.
 
 ---
 

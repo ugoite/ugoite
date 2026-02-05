@@ -28,14 +28,14 @@ conventions:
     - ieapp_cli.function
 
 files:
-  - kind: workspaces
-    file: workspaces.yaml
-  - kind: notes
-    file: notes.yaml
-  - kind: classes
-    file: classes.yaml
-  - kind: attachments
-    file: attachments.yaml
+  - kind: spaces
+    file: spaces.yaml
+  - kind: entries
+    file: entries.yaml
+  - kind: forms
+    file: forms.yaml
+  - kind: assets
+    file: assets.yaml
   - kind: links
     file: links.yaml
   - kind: search

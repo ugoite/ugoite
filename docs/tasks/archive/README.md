@@ -6,7 +6,7 @@ This directory contains completed milestones for the IEapp project.
 
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| [mvp-milestone.md](mvp-milestone.md) | ✅ Completed | Minimum Viable Product - Core functionality with local-first storage, note management, and AI sandbox |
+| [mvp-milestone.md](mvp-milestone.md) | ✅ Completed | Minimum Viable Product - Core functionality with local-first storage, entry management, and AI sandbox |
 
 ## Archive Naming Convention
 

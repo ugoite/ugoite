@@ -9,7 +9,7 @@ category: Advanced User Stories
 
 stories:
   - id: STORY-006
-    title: Voice-to-Class
+    title: Voice-to-Form
     type: BYOAI
     as_a: mobile user
     i_want: to record a voice memo and have my chosen AI assistant structure it
@@ -17,60 +17,60 @@ stories:
       I can use the best AI model available (Claude, GPT-4, etc.)
       without being locked into the app's built-in model.
     acceptance_criteria:
-      - User records audio; app saves it as a note attachment
-      - User invokes their connected MCP Agent (e.g., "Format this voice note")
-      - Agent reads the transcript (via MCP), extracts fields, and updates the note with H2 headers
+      - User records audio; app saves it as an entry asset
+      - User invokes their connected MCP Agent (e.g., "Format this voice entry")
+      - Agent reads the transcript (via MCP), extracts fields, and updates the entry with H2 headers
     related_apis:
-      - rest: POST /workspaces/{ws_id}/attachments
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
-      - mcp: ieapp://{workspace_id}/notes/{note_id}
+      - rest: POST /spaces/{space_id}/assets
+      - rest: PUT /spaces/{space_id}/entries/{entry_id}
+      - mcp: ieapp://{space_id}/entries/{entry_id}
     requirements:
-      - REQ-NOTE-008
+      - REQ-ENTRY-008
 
   - id: STORY-007
-    title: Computational Notebooks
+    title: Computational Workbooks
     type: Live Code
     as_a: data-driven user
-    i_want: to embed JavaScript code blocks in my notes that execute and render results
+    i_want: to embed JavaScript code blocks in my entries that execute and render results
     so_that: I can create live reports or analyze my own knowledge base within the app.
     acceptance_criteria:
       - Markdown code blocks tagged `javascript` can be executed
       - Code execution is handled by explicit tooling (future)
       - Output (text, tables, charts) is rendered interactively below the code block
     related_apis:
-      - rest: POST /workspaces/{ws_id}/notes/{note_id}/blocks/{block_id}/execute
+      - rest: POST /spaces/{space_id}/entries/{entry_id}/blocks/{block_id}/execute
     requirements: []
 
   - id: STORY-008
     title: Agentic Refactoring
     type: BYOAI
-    as_a: user with a messy workspace
+    as_a: user with a messy space
     i_want: to ask my AI agent to "clean up this folder"
     so_that: I can leverage external intelligence to organize my knowledge base on demand.
     acceptance_criteria:
-      - App exposes MCP resources for note discovery and updates
+      - App exposes MCP resources for entry discovery and updates
       - User asks Agent: "Find duplicates in Project X and merge them."
       - Agent executes the logic and presents the result for confirmation
     related_apis:
-      - mcp: ieapp://{workspace_id}/notes/list
-      - rest: GET/PUT /workspaces/{ws_id}/notes/{note_id}
+      - mcp: ieapp://{space_id}/entries/list
+      - rest: GET/PUT /spaces/{space_id}/entries/{entry_id}
     requirements: []
 
   - id: STORY-009
     title: Data Grid
-    type: Class
+    type: Form
     as_a: power user
-    i_want: to view and edit my class data in a spreadsheet-like grid
+    i_want: to view and edit my form data in a spreadsheet-like grid
     so_that: I can bulk edit, copy-paste to/from Excel, and manage data efficiently.
     acceptance_criteria:
-      - Class Detail view presents a data grid
+      - Form Detail view presents a data grid
       - Drag Select: Users can drag to select multiple cells (rectangular selection) and copy
       - Inline Edit: Users can toggle Edit Mode and edit cells in place
-      - Quick Add: Users can add a new row (Note) directly from the grid view
+      - Quick Add: Users can add a new row (Entry) directly from the grid view
       - Changes are saved immediately or on blur
     related_apis:
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
-      - rest: POST /workspaces/{ws_id}/notes
+      - rest: PUT /spaces/{space_id}/entries/{entry_id}
+      - rest: POST /spaces/{space_id}/entries
     requirements:
       - REQ-FE-030
       - REQ-FE-031

@@ -237,7 +237,7 @@ With multiple developers:
 
 ---
 
-## Notes
+## Details
 
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability

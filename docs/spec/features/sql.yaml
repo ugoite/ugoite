@@ -8,13 +8,13 @@ apis:
   - id: sql.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/sql
+      path: /spaces/{space_id}/sql
       file: backend/src/app/api/endpoints/sql.py
       function: list_sql_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/sql
-      file: frontend/src/routes/workspaces/[workspace_id]/sql.tsx
-      function: WorkspaceSqlRoute
+      path: /spaces/{space_id}/sql
+      file: frontend/src/routes/spaces/[space_id]/sql.tsx
+      function: SpaceSqlRoute
     ieapp_core:
       file: ieapp-core/src/saved_sql.rs
       function: list_sql
@@ -26,13 +26,13 @@ apis:
   - id: sql.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/sql
+      path: /spaces/{space_id}/sql
       file: backend/src/app/api/endpoints/sql.py
       function: create_sql_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/sql
-      file: frontend/src/routes/workspaces/[workspace_id]/sql.tsx
-      function: WorkspaceSqlRoute
+      path: /spaces/{space_id}/sql
+      file: frontend/src/routes/spaces/[space_id]/sql.tsx
+      function: SpaceSqlRoute
     ieapp_core:
       file: ieapp-core/src/saved_sql.rs
       function: create_sql
@@ -44,13 +44,13 @@ apis:
   - id: sql.get
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
+      path: /spaces/{space_id}/sql/{sql_id}
       file: backend/src/app/api/endpoints/sql.py
       function: get_sql_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
-      function: WorkspaceSqlDetailRoute
+      path: /spaces/{space_id}/sql/{sql_id}
+      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+      function: SpaceSqlDetailRoute
     ieapp_core:
       file: ieapp-core/src/saved_sql.rs
       function: get_sql
@@ -62,13 +62,13 @@ apis:
   - id: sql.update
     method: PUT
     backend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
+      path: /spaces/{space_id}/sql/{sql_id}
       file: backend/src/app/api/endpoints/sql.py
       function: update_sql_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
-      function: WorkspaceSqlDetailRoute
+      path: /spaces/{space_id}/sql/{sql_id}
+      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+      function: SpaceSqlDetailRoute
     ieapp_core:
       file: ieapp-core/src/saved_sql.rs
       function: update_sql
@@ -80,13 +80,13 @@ apis:
   - id: sql.delete
     method: DELETE
     backend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
+      path: /spaces/{space_id}/sql/{sql_id}
       file: backend/src/app/api/endpoints/sql.py
       function: delete_sql_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/sql/{sql_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/sql/[sql_id].tsx
-      function: WorkspaceSqlDetailRoute
+      path: /spaces/{space_id}/sql/{sql_id}
+      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
+      function: SpaceSqlDetailRoute
     ieapp_core:
       file: ieapp-core/src/saved_sql.rs
       function: delete_sql
@@ -98,13 +98,13 @@ apis:
   - id: sql.session.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/sql-sessions
+      path: /spaces/{space_id}/sql-sessions
       file: backend/src/app/api/endpoints/sql_sessions.py
       function: create_sql_session_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/search
-      file: frontend/src/routes/workspaces/[workspace_id]/search.tsx
-      function: WorkspaceSearchRoute
+      path: /spaces/{space_id}/search
+      file: frontend/src/routes/spaces/[space_id]/search.tsx
+      function: SpaceSearchRoute
     ieapp_core:
       file: ieapp-core/src/sql_session.rs
       function: create_sql_session
@@ -116,13 +116,13 @@ apis:
   - id: sql.session.status
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/sql-sessions/{session_id}
+      path: /spaces/{space_id}/sql-sessions/{session_id}
       file: backend/src/app/api/endpoints/sql_sessions.py
       function: get_sql_session_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/notes
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
-      function: WorkspaceNotesIndexPane
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+      function: SpaceEntriesIndexPane
     ieapp_core:
       file: ieapp-core/src/sql_session.rs
       function: get_sql_session_status
@@ -134,13 +134,13 @@ apis:
   - id: sql.session.count
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/sql-sessions/{session_id}/count
+      path: /spaces/{space_id}/sql-sessions/{session_id}/count
       file: backend/src/app/api/endpoints/sql_sessions.py
       function: get_sql_session_count_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/notes
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
-      function: WorkspaceNotesIndexPane
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+      function: SpaceEntriesIndexPane
     ieapp_core:
       file: ieapp-core/src/sql_session.rs
       function: get_sql_session_count
@@ -152,13 +152,13 @@ apis:
   - id: sql.session.rows
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/sql-sessions/{session_id}/rows
+      path: /spaces/{space_id}/sql-sessions/{session_id}/rows
       file: backend/src/app/api/endpoints/sql_sessions.py
       function: get_sql_session_rows_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/notes
-      file: frontend/src/routes/workspaces/[workspace_id]/notes/index.tsx
-      function: WorkspaceNotesIndexPane
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
+      function: SpaceEntriesIndexPane
     ieapp_core:
       file: ieapp-core/src/sql_session.rs
       function: get_sql_session_rows

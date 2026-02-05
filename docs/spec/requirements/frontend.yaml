@@ -5,87 +5,87 @@ prefix: REQ-FE
 
 requirements:
   - id: REQ-FE-001
-    title: Workspace Selector
+    title: Space Selector
     description: |
-      Select, switch, and create workspaces.
+      Select, switch, and create spaces.
     related_spec:
       - stories/core.yaml#STORY-003
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/WorkspaceSelector.test.tsx
+        - file: frontend/src/components/SpaceSelector.test.tsx
           tests:
-            - should render workspace options
+            - should render space options
             - should show loading state
             - should show error message
-            - should call onSelect when workspace changes
+            - should call onSelect when space changes
             - should show create form when add button clicked
             - should call onCreate when form submitted
             - should hide create form when cancel clicked
-        - file: frontend/src/lib/workspace-store.test.ts
+        - file: frontend/src/lib/space-store.test.ts
           tests:
-            - should create default workspace when none exist
-            - should select existing default workspace
-            - should restore persisted workspace selection
-            - should create new workspace
-            - should select workspace and persist choice
-            - should not select non-existent workspace
+            - should create default space when none exist
+            - should select existing default space
+            - should restore persisted space selection
+            - should create new space
+            - should select space and persist choice
+            - should not select non-existent space
 
   - id: REQ-FE-002
-    title: Automatic Default Workspace Creation
+    title: Automatic Default Space Creation
     description: |
-      Automatically create "default" workspace when none exist.
+      Automatically create "default" space when none exist.
     related_spec:
       - architecture/overview.md
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/workspace-store.test.ts
+        - file: frontend/src/lib/space-store.test.ts
           tests:
-            - should create default workspace when none exist
+            - should create default space when none exist
 
   - id: REQ-FE-003
-    title: Persist Workspace Selection
+    title: Persist Space Selection
     description: |
-      Save selected workspace to localStorage and maintain across sessions.
+      Save selected space to localStorage and maintain across sessions.
     related_spec:
       - architecture/overview.md
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/workspace-store.test.ts
+        - file: frontend/src/lib/space-store.test.ts
           tests:
-            - should restore persisted workspace selection
-            - should select workspace and persist choice
+            - should restore persisted space selection
+            - should select space and persist choice
 
   - id: REQ-FE-004
-    title: Note List Display
+    title: Entry List Display
     description: |
-      Display note list with titles and properties.
+      Display entry list with titles and properties.
     related_spec:
       - stories/core.yaml
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/NoteList.test.tsx
+        - file: frontend/src/components/EntryList.test.tsx
           tests:
-            - should render empty state when no notes exist
-            - should render list of notes with titles
-            - should display extracted properties in note cards
-            - should handle notes with null or undefined properties gracefully
-            - should call onSelect when a note is clicked
+            - should render empty state when no entries exist
+            - should render list of entries with titles
+            - should display extracted properties in entry cards
+            - should handle entries with null or undefined properties gracefully
+            - should call onSelect when a entry is clicked
             - should show loading state
-            - should highlight selected note
-            - should render empty state when no notes exist
-            - should render list of notes with titles
-            - should call onSelect when a note is clicked
-        - file: frontend/src/lib/note-store.test.ts
+            - should highlight selected entry
+            - should render empty state when no entries exist
+            - should render list of entries with titles
+            - should call onSelect when a entry is clicked
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
-            - should load notes from API
+            - should load entries from API
 
   - id: REQ-FE-005
     title: Markdown Editor
@@ -118,7 +118,7 @@ requirements:
       Editor MUST handle undefined/null content gracefully, displaying an empty
       string instead of the literal text "undefined".
 
-      New note creation MUST display initial content immediately without
+      New entry creation MUST display initial content immediately without
       waiting for resource load.
 
       Preview mode MUST NOT crash when content is undefined.
@@ -145,27 +145,27 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/note-store.test.ts
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
             - should apply optimistic updates during update
-            - should delete note optimistically
+            - should delete entry optimistically
 
   - id: REQ-FE-008
-    title: Note Selection and Highlight
+    title: Entry Selection and Highlight
     description: |
-      Frontend MUST highlight the selected note and load note details.
+      Frontend MUST highlight the selected entry and load entry details.
     related_spec:
       - architecture/frontend-backend-interface.md#interaction-patterns
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/NoteList.test.tsx
+        - file: frontend/src/components/EntryList.test.tsx
           tests:
-            - should highlight selected note
-        - file: frontend/src/lib/note-store.test.ts
+            - should highlight selected entry
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
-            - should handle note selection
+            - should handle entry selection
 
   - id: REQ-FE-009
     title: Conflict Message Display
@@ -192,12 +192,12 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/note-store.test.ts
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
             - should not refetch after successful update
         - file: frontend/src/lib/store.test.ts
           tests:
-            - legacy placeholder delegates to note-store tests
+            - legacy placeholder delegates to entry-store tests
 
   - id: REQ-FE-036
     title: SQL Query Editor
@@ -217,63 +217,63 @@ requirements:
           tests:
             - should flag missing select clause
             - should accept valid select queries
-            - should include notes table in schema
-            - should include class fields in schema
+            - should include entries table in schema
+            - should include form fields in schema
         - file: frontend/src/components/SqlQueryEditor.test.tsx
           tests:
             - should render without runtime errors
 
   - id: REQ-FE-011
-    title: Editor Content Sync on Note Switch Only
+    title: Editor Content Sync on Entry Switch Only
     description: |
       Editor content synchronization with server MUST only occur when:
-      1) user explicitly selects a different note
+      1) user explicitly selects a different entry
       2) user explicitly clicks refresh button
-      3) workspace is changed
+      3) space is changed
 
       Editor content MUST NOT be overwritten when:
       1) save operation completes
-      2) selected note resource is refetched
-      3) note list is reloaded
+      2) selected entry resource is refetched
+      3) entry list is reloaded
 
       Implementation requirements:
-      - Track last-loaded note id to detect note switches vs resource updates.
-      - Only update editor content when the note id changes.
-      - Reset the last-loaded note id when workspace changes.
+      - Track last-loaded entry id to detect entry switches vs resource updates.
+      - Only update editor content when the entry id changes.
+      - Reset the last-loaded entry id when space changes.
     related_spec:
       - architecture/frontend-backend-interface.md#interaction-patterns
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/note-store.test.ts
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
-            - should handle note selection
-            - should clear selection when deleting selected note
+            - should handle entry selection
+            - should clear selection when deleting selected entry
 
   - id: REQ-FE-012
     title: Consecutive Save Support
     description: |
-      Multiple consecutive saves on the same note MUST work correctly.
+      Multiple consecutive saves on the same entry MUST work correctly.
       After each successful save, the local revision_id MUST be updated to
       enable the next save.
 
       Implementation requirements:
       - Store currentRevisionId locally and update after each successful save.
       - Use currentRevisionId as parent_revision_id for updates.
-      - After note creation, set currentRevisionId from API response.
-      - Fall back to selected note revision id only if currentRevisionId is unset.
+      - After entry creation, set currentRevisionId from API response.
+      - Fall back to selected entry revision id only if currentRevisionId is unset.
     related_spec:
       - architecture/frontend-backend-interface.md#interaction-patterns
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/lib/note-store.test.ts
+        - file: frontend/src/lib/entry-store.test.ts
           tests:
             - should support consecutive saves with updated revision_id
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
             - consecutive PUT should succeed with updated revision_id
             - PUT with stale revision_id should return 409 conflict
@@ -298,9 +298,9 @@ requirements:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_update_note
+            - test_update_entry
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
             - saved content should persist after reload (REQ-FE-010)
 
@@ -322,41 +322,41 @@ requirements:
             - should call onSearch when form is submitted
 
   - id: REQ-FE-015
-    title: Attachment Upload UI
+    title: Asset Upload UI
     description: |
       Editor MUST provide file upload capability with drag-drop support and
       display attached files with type icons.
     related_spec:
       - stories/advanced.yaml#STORY-006
-      - api/rest.md#attachments
+      - api/rest.md#assets
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/AttachmentUploader.test.tsx
+        - file: frontend/src/components/AssetUploader.test.tsx
           tests:
             - should render file input
             - should call onUpload when file is selected
             - should display uploading state
-            - should display uploaded attachments
-            - should allow removing attachments
+            - should display uploaded assets
+            - should allow removing assets
             - should accept specific file types
             - should display error message on upload failure
 
   - id: REQ-FE-017
-    title: Workspace Storage Configuration
+    title: Space Storage Configuration
     description: |
-      Workspace settings MUST allow configuring storage backends (local, S3,
+      Space settings MUST allow configuring storage backends (local, S3,
       remote) with connection validation before saving.
     related_spec:
-      - api/rest.md#workspaces
+      - api/rest.md#spaces
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/WorkspaceSettings.test.tsx
+        - file: frontend/src/components/SpaceSettings.test.tsx
           tests:
-            - should display workspace name
+            - should display space name
             - should display storage config
             - should call onSave when save button is clicked
             - should test connection when test button is clicked
@@ -365,38 +365,38 @@ requirements:
             - should save storage config
 
   - id: REQ-FE-018
-    title: Note Classes View with Routing
+    title: Entry Forms View with Routing
     description: |
-      Frontend MUST provide a high-performance note class view using nested routing.
+      Frontend MUST provide a high-performance entry form view using nested routing.
     related_spec:
       - stories/advanced.yaml#STORY-009
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
+        - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
           tests:
-            - selecting a note class navigates correctly
+            - selecting an entry form navigates correctly
 
   - id: REQ-FE-019
     title: Multi-column Sorting
     description: |
-      ClassTable MUST support sorting by any displayed field (Title,
-      class-defined properties, Updated Date) with visual indicators.
+      FormTable MUST support sorting by any displayed field (Title,
+      form-defined properties, Updated Date) with visual indicators.
     related_spec:
       - stories/advanced.yaml#STORY-009
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/ClassTable.test.tsx
+        - file: frontend/src/components/FormTable.test.tsx
           tests:
-            - "REQ-FE-019: sorts notes when clicking headers"
+            - "REQ-FE-019: sorts entries when clicking headers"
 
   - id: REQ-FE-020
     title: Hybrid Filtering
     description: |
-      ClassTable MUST provide both global keyword search and column-specific
+      FormTable MUST provide both global keyword search and column-specific
       filtering to refine viewed records.
     related_spec:
       - stories/advanced.yaml#STORY-009
@@ -404,9 +404,9 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/ClassTable.test.tsx
+        - file: frontend/src/components/FormTable.test.tsx
           tests:
-            - "REQ-FE-020: filters notes globally"
+            - "REQ-FE-020: filters entries globally"
 
   - id: REQ-FE-021
     title: Context-aware CSV Export
@@ -419,23 +419,23 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/ClassTable.test.tsx
+        - file: frontend/src/components/FormTable.test.tsx
           tests:
             - "REQ-FE-021: exports filtered data to CSV"
 
   - id: REQ-FE-030
     title: Inline Row Creation in Grid View
     description: |
-      The grid view MUST provide a way to quickly add a new row (note).
+      The grid view MUST provide a way to quickly add a new row (entry).
     related_spec:
       - stories/advanced.yaml#STORY-009
     priority: medium
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/ClassTable.test.tsx
+        - file: frontend/src/components/FormTable.test.tsx
           tests:
-            - "REQ-FE-030: Add Row button creates a new note"
+            - "REQ-FE-030: Add Row button creates a new entry"
 
   - id: REQ-FE-031
     title: Spreadsheet-like Grid Editing & Selection
@@ -448,54 +448,54 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/ClassTable.test.tsx
+        - file: frontend/src/components/FormTable.test.tsx
           tests:
             - "REQ-FE-031: Edit Mode toggle and inline edit"
             - "REQ-FE-031: keyboard copy shortcut"
 
   - id: REQ-FE-032
-    title: Legacy Notes Route Redirect
+    title: Legacy Entries Route Redirect
     description: |
-      The legacy /notes UI route MUST redirect users to /workspaces.
+      The legacy /entries UI route MUST redirect users to /spaces.
     related_spec:
       - features/README.md
     priority: low
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/routes/notes/index.test.tsx
+        - file: frontend/src/routes/entries/index.test.tsx
           tests:
-            - "REQ-FE-032: legacy notes route redirects"
+            - "REQ-FE-032: legacy entries route redirects"
 
   - id: REQ-FE-033
-    title: Note Detail Navigation
+    title: Entry Detail Navigation
     description: |
-      Selecting a note from the list MUST navigate to the note detail view,
-      correctly handling special characters in note IDs.
+      Selecting an entry from the list MUST navigate to the entry detail view,
+      correctly handling special characters in entry IDs.
     related_spec:
       - architecture/frontend-backend-interface.md#interaction-patterns
     priority: high
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/routes/workspaces/[workspace_id]/notes/index.test.tsx
+        - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
           tests:
-            - "REQ-FE-033: selecting a note navigates with encoded id"
-        - file: frontend/src/routes/workspaces/[workspace_id]/classes/class-detail.test.tsx
+            - "REQ-FE-033: selecting an entry navigates with encoded id"
+        - file: frontend/src/routes/spaces/[space_id]/forms/form-detail.test.tsx
           tests:
-            - "REQ-FE-033: class detail navigation encodes note id"
+            - "REQ-FE-033: form detail navigation encodes entry id"
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
-            - "REQ-FE-033: Retrieve note with special characters"
-            - "REQ-FE-033: frontend note detail route renders (not SolidJS Not Found)"
+            - "REQ-FE-033: Retrieve entry with special characters"
+            - "REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)"
   - id: REQ-FE-034
-    title: Note Detail Loading State Management
+    title: Entry Detail Loading State Management
     description: |
-      When navigating between notes (from note list, class table, or any navigation),
-      the loading state MUST properly clear and display the note content.
-      The UI MUST NOT get stuck showing "Loading note..." indefinitely.
-      Rapid sequential navigation between multiple notes MUST work smoothly without
+      When navigating between entries (from entry list, form table, or any navigation),
+      the loading state MUST properly clear and display the entry content.
+      The UI MUST NOT get stuck showing "Loading entry..." indefinitely.
+      Rapid sequential navigation between multiple entries MUST work smoothly without
       requiring page reloads.
     rationale: |
       SolidJS createResource can maintain loading=true even after data loads/fails,
@@ -507,20 +507,20 @@ requirements:
     status: implemented
     tests:
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
-            - "REQ-FE-034: Multi-note navigation should not get stuck in loading state"
+            - "REQ-FE-034: Multi-entry navigation should not get stuck in loading state"
 
   - id: REQ-FE-035
-    title: Robust Note Navigation and Recovery
+    title: Robust Entry Navigation and Recovery
     description: |
-      Navigation to note details must include fail-safes (e.g., timeouts) to prevent infinite loading states.
+      Navigation to entry details must include fail-safes (e.g., timeouts) to prevent infinite loading states.
       The UI must successfully transition from loading to content or error state within 10 seconds.
       Users must be able to navigate away from a pending load without the UI becoming unresponsive.
     type: non-functional
     tests:
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
             - "REQ-FE-035: Navigation timeout handling and recovery"
 
@@ -540,17 +540,17 @@ requirements:
             - "REQ-FE-040: loads UI page specs"
             - "REQ-FE-040: validates page links"
             - "REQ-FE-040: validates component types"
-            - "REQ-FE-040: validates shared workspace chrome"
+            - "REQ-FE-040: validates shared space chrome"
             - "REQ-FE-040: validates object/grid tabs"
 
   - id: REQ-FE-037
-    title: Class-first Note Creation UI
+    title: Form-first Entry Creation UI
     description: |
-      Creating a new note MUST require selecting a Class. The create dialog
-      MUST show the selected Class fields and generate the note from the
-      Class template with the correct frontmatter.
+      Creating a new entry MUST require selecting a Form. The create dialog
+      MUST show the selected Form fields and generate the entry from the
+      Form template with the correct frontmatter.
     related_spec:
-      - data-model/overview.md#classes
+      - data-model/overview.md#forms
       - stories/core.yaml#STORY-002
     priority: high
     status: implemented
@@ -558,15 +558,15 @@ requirements:
       vitest:
         - file: frontend/src/components/create-dialogs.test.tsx
           tests:
-            - "REQ-FE-037: requires class selection before creating a note"
+            - "REQ-FE-037: requires form selection before creating a entry"
         - file: frontend/src/components/ListPanel.test.tsx
           tests:
-            - "REQ-FE-037: disables new note when no classes exist"
+            - "REQ-FE-037: disables new entry when no forms exist"
 
   - id: REQ-FE-038
-    title: Class Validation Feedback in Editor
+    title: Form Validation Feedback in Editor
     description: |
-      When a save fails due to Class validation, the editor MUST surface the
+      When a save fails due to Form validation, the editor MUST surface the
       validation messages in a readable warning panel.
     related_spec:
       - stories/core.yaml#STORY-002
@@ -574,18 +574,18 @@ requirements:
     status: implemented
     tests:
       vitest:
-        - file: frontend/src/components/NoteDetailPane.test.tsx
+        - file: frontend/src/components/EntryDetailPane.test.tsx
           tests:
-            - "REQ-FE-038: renders class validation warnings"
+            - "REQ-FE-038: renders form validation warnings"
 
   - id: REQ-FE-039
     title: Reserved Metadata Column Guardrails
     description: |
-      Class creation/editing UI MUST prevent users from defining fields that
-      collide with reserved metadata column names (e.g., title, class, tags).
+      Form creation/editing UI MUST prevent users from defining fields that
+      collide with reserved metadata column names (e.g., title, form, tags).
     related_spec:
       - data-model/overview.md#metadata-vs-content-columns
-      - requirements/class.yaml#REQ-CLS-005
+      - requirements/form.yaml#REQ-FORM-005
     priority: high
     status: implemented
     tests:
@@ -593,10 +593,3 @@ requirements:
         - file: frontend/src/components/create-dialogs.test.tsx
           tests:
             - "REQ-FE-039: blocks reserved metadata column names"
-    priority: critical
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/notes.test.ts
-          tests:
-            - "REQ-FE-035: Navigation timeout handling and recovery"

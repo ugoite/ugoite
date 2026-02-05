@@ -33,7 +33,7 @@ log_info() {
 # Test: API health check
 test_api_health() {
     local response
-    response=$(curl -s -w "\n%{http_code}" "$API_URL/workspaces" 2>/dev/null)
+    response=$(curl -s -w "\n%{http_code}" "$API_URL/spaces" 2>/dev/null)
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | head -n-1)
     
@@ -72,27 +72,27 @@ test_frontend_content() {
     fi
 }
 
-# Test: Notes page loads
-test_notes_page() {
+# Test: Entries page loads
+test_entries_page() {
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/notes" 2>/dev/null)
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/spaces" 2>/dev/null)
     
     if [ "$http_code" = "200" ]; then
-        log_pass "Notes page loads (HTTP 200)"
+        log_pass "Entries page loads (HTTP 200)"
     else
-        log_fail "Notes page: HTTP $http_code"
+        log_fail "Entries page: HTTP $http_code"
     fi
 }
 
-# Test: API workspaces endpoint
-test_api_workspaces() {
+# Test: API spaces endpoint
+test_api_spaces() {
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/workspaces" 2>/dev/null)
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/spaces" 2>/dev/null)
     
     if [ "$http_code" = "200" ]; then
-        log_pass "API /workspaces endpoint works"
+        log_pass "API /spaces endpoint works"
     else
-        log_fail "API /workspaces: HTTP $http_code"
+        log_fail "API /spaces: HTTP $http_code"
     fi
 }
 
@@ -121,8 +121,8 @@ echo ""
 test_api_health
 test_frontend_loads
 test_frontend_content
-test_notes_page
-test_api_workspaces
+test_entries_page
+test_api_spaces
 test_static_assets
 
 echo ""

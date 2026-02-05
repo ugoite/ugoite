@@ -8,7 +8,7 @@ export interface SearchBarProps {
 }
 
 /**
- * SearchBar component for searching notes in workspace.
+ * SearchBar component for searching entries in space.
  * Supports keyboard shortcut (Cmd/Ctrl+K) to focus search.
  * Triggers real-time search as user types with debouncing to avoid blocking input.
  */
@@ -88,7 +88,7 @@ export function SearchBar(props: SearchBarProps) {
 						type="text"
 						value={query()}
 						onInput={(e) => setQuery(e.currentTarget.value)}
-						placeholder={props.placeholder || "Search notes... (⌘K)"}
+						placeholder={props.placeholder || "Search entries... (⌘K)"}
 						class="w-full pl-10 pr-20 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 

@@ -7,10 +7,10 @@ export default function Home() {
 			<p class="text-xl mb-8 text-gray-600">Your AI-native, programmable knowledge base</p>
 			<div class="flex justify-center gap-4">
 				<A
-					href="/workspaces"
+					href="/spaces"
 					class="px-6 py-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
 				>
-					Open Workspaces
+					Open Spaces
 				</A>
 				<A
 					href="/about"
@@ -37,7 +37,7 @@ export default function Home() {
 				<div class="p-6 bg-white rounded-lg shadow">
 					<h3 class="text-lg font-semibold mb-2">🎨 Infinite Canvas</h3>
 					<p class="text-gray-600 text-sm">
-						Organize notes visually on a 2D canvas. Create connections and see the big picture.
+						Organize entries visually on a 2D canvas. Create connections and see the big picture.
 					</p>
 				</div>
 			</div>

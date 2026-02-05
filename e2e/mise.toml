@@ -9,10 +9,10 @@ description = "Run all E2E tests"
 run = "npm run test:smoke"
 description = "Run smoke E2E tests only"
 
-[tasks."test:notes"]
-run = "npm run test:notes"
-description = "Run notes E2E tests only"
+[tasks."test:entries"]
+run = "npm run test:entries"
+description = "Run entries E2E tests only"
 
-[tasks."test:classes"]
-run = "npm run test:classes"
-description = "Run class E2E tests only"
+[tasks."test:forms"]
+run = "npm run test:forms"
+description = "Run form E2E tests only"

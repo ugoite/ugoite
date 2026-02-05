@@ -9,23 +9,23 @@ servers:
   - url: http://localhost:8000
 
 paths:
-  /workspaces:
+  /spaces:
     get:
-      summary: List workspaces
+      summary: List spaces
       responses:
         "200":
           description: OK
     post:
-      summary: Create workspace
+      summary: Create space
       responses:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}:
+  /spaces/{space_id}:
     get:
-      summary: Get workspace
+      summary: Get space
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -34,9 +34,9 @@ paths:
         "200":
           description: OK
     patch:
-      summary: Patch workspace
+      summary: Patch space
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -45,11 +45,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/test-connection:
+  /spaces/{space_id}/test-connection:
     post:
       summary: Test storage connection
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -58,11 +58,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/notes:
+  /spaces/{space_id}/entries:
     get:
-      summary: List notes
+      summary: List entries
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -71,9 +71,9 @@ paths:
         "200":
           description: OK
     post:
-      summary: Create note
+      summary: Create entry
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -82,16 +82,16 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/notes/{note_id}:
+  /spaces/{space_id}/entries/{entry_id}:
     get:
-      summary: Get note
+      summary: Get entry
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
             type: string
-        - name: note_id
+        - name: entry_id
           in: path
           required: true
           schema:
@@ -100,14 +100,14 @@ paths:
         "200":
           description: OK
     put:
-      summary: Update note
+      summary: Update entry
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
             type: string
-        - name: note_id
+        - name: entry_id
           in: path
           required: true
           schema:
@@ -118,14 +118,14 @@ paths:
         "409":
           description: Conflict
     delete:
-      summary: Delete note
+      summary: Delete entry
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
             type: string
-        - name: note_id
+        - name: entry_id
           in: path
           required: true
           schema:
@@ -134,11 +134,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/query:
+  /spaces/{space_id}/query:
     post:
-      summary: Query notes
+      summary: Query entries
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -161,11 +161,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/search:
+  /spaces/{space_id}/search:
     get:
       summary: Keyword search
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -179,11 +179,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/classes:
+  /spaces/{space_id}/forms:
     get:
-      summary: List classes
+      summary: List forms
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -192,9 +192,9 @@ paths:
         "200":
           description: OK
     post:
-      summary: Upsert class
+      summary: Upsert form
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -203,11 +203,11 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/classes/types:
+  /spaces/{space_id}/forms/types:
     get:
-      summary: List class column types
+      summary: List form column types
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -216,11 +216,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/attachments:
+  /spaces/{space_id}/assets:
     get:
-      summary: List attachments
+      summary: List assets
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -229,9 +229,9 @@ paths:
         "200":
           description: OK
     post:
-      summary: Upload attachment
+      summary: Upload asset
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -240,16 +240,16 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/attachments/{attachment_id}:
+  /spaces/{space_id}/assets/{asset_id}:
     delete:
-      summary: Delete attachment
+      summary: Delete asset
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
             type: string
-        - name: attachment_id
+        - name: asset_id
           in: path
           required: true
           schema:
@@ -258,11 +258,11 @@ paths:
         "200":
           description: OK
 
-  /workspaces/{workspace_id}/links:
+  /spaces/{space_id}/links:
     get:
       summary: List links
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -273,7 +273,7 @@ paths:
     post:
       summary: Create link
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:
@@ -282,11 +282,11 @@ paths:
         "201":
           description: Created
 
-  /workspaces/{workspace_id}/links/{link_id}:
+  /spaces/{space_id}/links/{link_id}:
     delete:
       summary: Delete link
       parameters:
-        - name: workspace_id
+        - name: space_id
           in: path
           required: true
           schema:

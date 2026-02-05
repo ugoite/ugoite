@@ -6,14 +6,14 @@
 version: "0.2"
 updated: "2026-01"
 
-classes:
+schemas:
   # Root level
   global:
-    description: Workspace registry and system configuration
+    description: Space registry and system configuration
     path: global.json
     schema:
       type: object
-      required: [version, workspaces, hmac_key_id, hmac_key]
+      required: [version, spaces, hmac_key_id, hmac_key]
       properties:
         version:
           type: integer
@@ -21,11 +21,11 @@ classes:
         default_storage:
           type: string
           description: Default storage URI (e.g., fs:///path)
-        workspaces:
+        spaces:
           type: array
           items:
             type: string
-          description: List of workspace IDs
+          description: List of space IDs
         hmac_key_id:
           type: string
           description: Current HMAC key identifier
@@ -37,20 +37,20 @@ classes:
           format: date-time
           description: Last key rotation timestamp
 
-  # Workspace level
-  workspace_meta:
-    description: Workspace metadata
-    path: workspaces/{id}/meta.json
+  # Space level
+  space_meta:
+    description: Space metadata
+    path: spaces/{id}/meta.json
     schema:
       type: object
       required: [id, name, created_at]
       properties:
         id:
           type: string
-          description: Unique workspace identifier
+          description: Unique space identifier
         name:
           type: string
-          description: Human-readable workspace name
+          description: Human-readable space name
         created_at:
           type: string
           format: date-time
@@ -65,9 +65,9 @@ classes:
         merge_strategy:
           type: string
           enum: [manual, last_write_wins]
-        default_class:
+        default_form:
           type: string
-          description: Default class for new notes
+          description: Default form for new entries
         encryption:
           type: object
           properties:
@@ -75,13 +75,13 @@ classes:
               type: string
               enum: [none, aes256]
 
-  workspace_settings:
-    description: Workspace settings
-    path: workspaces/{id}/settings.json
+  space_settings:
+    description: Space settings
+    path: spaces/{id}/settings.json
     schema:
       type: object
       properties:
-        default_class:
+        default_form:
           type: string
         editor_theme:
           type: string
@@ -89,17 +89,17 @@ classes:
         sync_interval_seconds:
           type: integer
 
-  # Class definitions (Iceberg)
-  class_definition:
-    description: Class definition stored in Iceberg table metadata
-    path: iceberg://classes/{name}
+  # Form definitions (Iceberg)
+  form_definition:
+    description: Form definition stored in Iceberg table metadata
+    path: iceberg://forms/{name}
     schema:
       type: object
       required: [name, version, fields]
       properties:
         name:
           type: string
-          description: Class name (Iceberg table namespace)
+          description: Form name (Iceberg table namespace)
         version:
           type: integer
           description: Schema version for migrations
@@ -124,7 +124,7 @@ classes:
                 type: [string, number, boolean, array, object, null]
 
   sql_variable:
-    description: SQL variable definition stored in the SQL Class
+    description: SQL variable definition stored in the SQL Form
     schema:
       type: object
       required: [type, name, description]
@@ -140,7 +140,7 @@ classes:
           description: Human-readable description
 
   sql_record:
-    description: SQL record stored in the SQL Class
+    description: SQL record stored in the SQL Form
     schema:
       type: object
       required: [sql, variables]
@@ -151,23 +151,23 @@ classes:
         variables:
           type: array
           items:
-            $ref: "#/classes/sql_variable"
+            $ref: "#/schemas/sql_variable"
 
   # Iceberg tables
-  notes_table:
-    description: Notes table for a Class (current head rows)
-    path: iceberg://classes/{name}/notes
+  entries_table:
+    description: Entries table for a Form (current head rows)
+    path: iceberg://forms/{name}/entries
     schema:
       type: object
-      required: [note_id, title, updated_at, fields]
+      required: [entry_id, title, updated_at, fields]
       properties:
-        note_id:
+        entry_id:
           type: string
         title:
           type: string
-        class:
+        form:
           type: string
-          description: Associated class name (optional when implied by table)
+          description: Associated form name (optional when implied by table)
         tags:
           type: array
           items:
@@ -182,7 +182,7 @@ classes:
                 type: string
               target:
                 type: string
-                description: Target note ID
+                description: Target entry ID
               kind:
                 type: string
                 enum: [related, parent, child, reference]
@@ -201,23 +201,23 @@ classes:
           format: date-time
         fields:
           type: object
-          description: Class-defined fields
+          description: Form-defined fields
         extra_attributes:
           type: object
           description: Extra attributes stored as JSON when allowed
         integrity:
-          $ref: "#/classes/integrity"
+          $ref: "#/schemas/integrity"
 
   revisions_table:
-    description: Revision history table for a Class
-    path: iceberg://classes/{name}/revisions
+    description: Revision history table for a Form
+    path: iceberg://forms/{name}/revisions
     schema:
       type: object
-      required: [revision_id, note_id, timestamp, fields]
+      required: [revision_id, entry_id, timestamp, fields]
       properties:
         revision_id:
           type: string
-        note_id:
+        entry_id:
           type: string
         parent_revision_id:
           type: string
@@ -228,14 +228,14 @@ classes:
           type: string
         fields:
           type: object
-          description: Class-defined fields snapshot
+          description: Form-defined fields snapshot
         extra_attributes:
           type: object
           description: Extra attributes snapshot when allowed
         markdown_checksum:
           type: string
         integrity:
-          $ref: "#/classes/integrity"
+          $ref: "#/schemas/integrity"
 
   # Shared schemas
   integrity:

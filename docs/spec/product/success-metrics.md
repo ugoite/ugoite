@@ -5,8 +5,8 @@ These metrics help evaluate whether IEapp is delivering on its principles
 
 ## Product Metrics
 
-- **Time-to-first-note**: new user can create a workspace + first note quickly.
-- **Time-to-first-structured-field**: user can define a Class and see extracted fields.
+- **Time-to-first-entry**: new user can create a space + first entry quickly.
+- **Time-to-first-structured-field**: user can define a Form and see extracted fields.
 - **Search usefulness**: keyword search returns expected results with low latency.
 
 ## Reliability Metrics
@@ -16,7 +16,7 @@ These metrics help evaluate whether IEapp is delivering on its principles
 
 ## Performance Metrics
 
-- **List/query latency**: `GET /workspaces/{id}/notes` and `POST /workspaces/{id}/query` remain fast as notes scale.
+- **List/query latency**: `GET /spaces/{id}/entries` and `POST /spaces/{id}/query` remain fast as entries scale.
 - **Indexer cost**: incremental updates complete quickly and do not block the UI.
 
 ## Developer Experience Metrics

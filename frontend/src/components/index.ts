@@ -1,9 +1,9 @@
 // Component exports
-export { NoteList } from "./NoteList";
+export { EntryList } from "./EntryList";
 export { MarkdownEditor } from "./MarkdownEditor";
 export { CanvasPlaceholder } from "./CanvasPlaceholder";
-export { WorkspaceSelector } from "./WorkspaceSelector";
+export { SpaceSelector } from "./SpaceSelector";
 export { SearchBar } from "./SearchBar";
-export { AttachmentUploader } from "./AttachmentUploader";
-export { WorkspaceSettings } from "./WorkspaceSettings";
+export { AssetUploader } from "./AssetUploader";
+export { SpaceSettings } from "./SpaceSettings";
 export { SqlQueryEditor } from "./SqlQueryEditor";

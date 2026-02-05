@@ -16,4 +16,4 @@ wheels/
 
 # IEapp runtime data (created during dev)
 global.json
-workspaces/
+spaces/

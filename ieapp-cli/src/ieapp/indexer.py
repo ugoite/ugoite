@@ -15,7 +15,7 @@ from pydantic import BeforeValidator
 
 from .utils import (
     run_async,
-    split_workspace_path,
+    split_space_path,
     storage_config_from_root,
 )
 
@@ -134,9 +134,9 @@ def _tokenize_record_for_index(record: dict[str, Any]) -> set[str]:
     for tag in record.get("tags") or []:
         tokens.update(_tokenize_text_for_index(tag))
 
-    note_class = record.get("class")
-    if note_class:
-        tokens.update(_tokenize_text_for_index(note_class))
+    entry_form = record.get("form")
+    if entry_form:
+        tokens.update(_tokenize_text_for_index(entry_form))
 
     properties = record.get("properties") or {}
     for key, value in properties.items():
@@ -152,23 +152,23 @@ def _tokenize_record_for_index(record: dict[str, Any]) -> set[str]:
 
 
 def build_inverted_index(
-    notes: dict[str, dict[str, Any]],
+    entries: dict[str, dict[str, Any]],
 ) -> dict[str, list[str]]:
-    """Build an inverted index mapping terms to note IDs.
+    """Build an inverted index mapping terms to entry IDs.
 
     Args:
-        notes: Dictionary mapping note IDs to their record dictionaries.
+        entries: Dictionary mapping entry IDs to their record dictionaries.
 
     Returns:
-        An inverted index mapping each token to a list of note IDs.
+        An inverted index mapping each token to a list of entry IDs.
 
     """
     inverted: dict[str, list[str]] = {}
-    for note_id, record in notes.items():
+    for entry_id, record in entries.items():
         for token in _tokenize_record_for_index(record):
             inverted.setdefault(token, [])
-            if note_id not in inverted[token]:
-                inverted[token].append(note_id)
+            if entry_id not in inverted[token]:
+                inverted[token].append(entry_id)
 
     return inverted
 
@@ -201,9 +201,9 @@ MarkdownList = Annotated[list[str], BeforeValidator(parse_markdown_list)]
 
 def validate_properties(
     properties: dict[str, Any],
-    note_class: dict[str, Any],
+    entry_form: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Validate and cast extracted properties against a note_class definition.
+    """Validate and cast extracted properties against a entry_form definition.
 
     Returns:
         A tuple of (casted_properties, warnings).
@@ -212,38 +212,38 @@ def validate_properties(
     casted, warnings = run_async(
         ieapp_core.validate_properties,
         json.dumps(properties),
-        json.dumps(note_class),
+        json.dumps(entry_form),
     )
     return casted, warnings
 
 
-def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Build aggregate statistics for class and tag usage.
+def aggregate_stats(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Build aggregate statistics for form and tag usage.
 
     Args:
-        notes: Dictionary mapping note IDs to their record dictionaries.
+        entries: Dictionary mapping entry IDs to their record dictionaries.
 
     Returns:
-        A dictionary containing note_count, class_stats, and tag_counts.
+        A dictionary containing entry_count, form_stats, and tag_counts.
 
     """
-    class_stats: dict[str, dict[str, Any]] = {}
+    form_stats: dict[str, dict[str, Any]] = {}
     tag_counts: Counter[str] = Counter()
     uncategorized_count = 0
 
-    for record in notes.values():
-        note_class = record.get("class") or record.get("properties", {}).get("class")
-        if note_class:
-            class_entry = class_stats.setdefault(
-                note_class,
+    for record in entries.values():
+        entry_form = record.get("form") or record.get("properties", {}).get("form")
+        if entry_form:
+            form_entry = form_stats.setdefault(
+                entry_form,
                 {"count": 0, "fields": Counter()},
             )
-            class_entry["count"] += 1
+            form_entry["count"] += 1
 
             # Count field usage
             properties = record.get("properties", {})
             for key in properties:
-                cast("Counter", class_entry["fields"])[key] += 1
+                cast("Counter", form_entry["fields"])[key] += 1
         else:
             uncategorized_count += 1
 
@@ -251,96 +251,96 @@ def aggregate_stats(notes: dict[str, dict[str, Any]]) -> dict[str, Any]:
             tag_counts[tag] += 1
 
     # Convert Counters to dicts for JSON serialization
-    for entry in class_stats.values():
+    for entry in form_stats.values():
         if "fields" in entry and isinstance(entry["fields"], Counter):
             entry["fields"] = dict(entry["fields"])
 
-    class_stats["_uncategorized"] = {"count": uncategorized_count}
+    form_stats["_uncategorized"] = {"count": uncategorized_count}
 
     return {
-        "note_count": len(notes),
-        "class_stats": class_stats,
+        "entry_count": len(entries),
+        "form_stats": form_stats,
         "tag_counts": dict(tag_counts),
     }
 
 
 class Indexer:
-    """Live indexer that projects Markdown notes into cached JSON views."""
+    """Live indexer that projects Markdown entries into cached JSON views."""
 
     def __init__(
         self,
-        workspace_path: str,
+        space_path: str,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> None:
-        """Initialize the indexer with the workspace root and filesystem.
+        """Initialize the indexer with the space root and filesystem.
 
         Args:
-            workspace_path: Path to the workspace directory.
+            space_path: Path to the space directory.
             fs: Optional filesystem implementation. Defaults to local filesystem.
 
         """
-        self.workspace_path = workspace_path.rstrip("/")
+        self.space_path = space_path.rstrip("/")
         self._use_fsspec = fs is not None
         self.fs = fs or fsspec.filesystem("file")
 
-    def update_note_index(self, note_id: str) -> None:
-        """Incrementally update the index for a single note.
+    def update_entry_index(self, entry_id: str) -> None:
+        """Incrementally update the index for a single entry.
 
         Args:
-            note_id: The ID of the note to update.
+            entry_id: The ID of the entry to update.
 
         """
         if self._use_fsspec:
             self.run_once()
             return
 
-        root_path, workspace_id = split_workspace_path(self.workspace_path)
+        root_path, space_id = split_space_path(self.space_path)
         config = storage_config_from_root(root_path, self.fs)
-        run_async(ieapp_core.update_note_index, config, workspace_id, note_id)
+        run_async(ieapp_core.update_entry_index, config, space_id, entry_id)
 
     def run_once(self) -> None:
         """Build the structured cache and stats once.
 
-        Loads classes, collects note data, generates an inverted index for search,
-        and persists index.json, inverted_index.json, and stats.json to the workspace.
+        Loads forms, collects entry data, generates an inverted index for search,
+        and persists index.json, inverted_index.json, and stats.json to the space.
         """
-        root_path, workspace_id = split_workspace_path(self.workspace_path)
+        root_path, space_id = split_space_path(self.space_path)
         config = storage_config_from_root(root_path, self.fs)
-        run_async(ieapp_core.reindex_all, config, workspace_id)
+        run_async(ieapp_core.reindex_all, config, space_id)
 
     def _build_inverted_index(
         self,
-        notes: dict[str, dict[str, Any]],
+        entries: dict[str, dict[str, Any]],
     ) -> dict[str, list[str]]:
-        """Build an inverted index mapping terms to note IDs.
+        """Build an inverted index mapping terms to entry IDs.
 
-        Tokenizes text content (title, properties, tags) from each note and
+        Tokenizes text content (title, properties, tags) from each entry and
         creates posting lists for keyword search support.
 
         Args:
-            notes: Dictionary mapping note IDs to their record dictionaries.
+            entries: Dictionary mapping entry IDs to their record dictionaries.
 
         Returns:
-            An inverted index mapping each token to a list of note IDs containing
+            An inverted index mapping each token to a list of entry IDs containing
             that token.
 
         """
         inverted: dict[str, list[str]] = {}
-        for note_id, record in notes.items():
+        for entry_id, record in entries.items():
             tokens = self._tokenize_record(record)
             for token in tokens:
                 if token not in inverted:
                     inverted[token] = []
-                if note_id not in inverted[token]:
-                    inverted[token].append(note_id)
+                if entry_id not in inverted[token]:
+                    inverted[token].append(entry_id)
 
         return inverted
 
     def _tokenize_record(self, record: dict[str, Any]) -> set[str]:
-        """Extract lowercase tokens from a note record for indexing.
+        """Extract lowercase tokens from a entry record for indexing.
 
         Args:
-            record: The note record dictionary containing title, tags, class,
+            record: The entry record dictionary containing title, tags, form,
                 and properties.
 
         Returns:
@@ -357,10 +357,10 @@ class Indexer:
         for tag in record.get("tags") or []:
             tokens.update(self._tokenize_text(tag))
 
-        # Tokenize class
-        note_class = record.get("class")
-        if note_class:
-            tokens.update(self._tokenize_text(note_class))
+        # Tokenize form
+        entry_form = record.get("form")
+        if entry_form:
+            tokens.update(self._tokenize_text(entry_form))
 
         # Tokenize properties (both keys and string values)
         properties = record.get("properties") or {}
@@ -394,82 +394,82 @@ class Indexer:
             if len(word) > 1 and not word.isnumeric()
         }
 
-    def _load_classes(self, classes_path: str) -> dict[str, dict[str, Any]]:
-        """Load note_class definitions from the workspace.
+    def _load_forms(self, forms_path: str) -> dict[str, dict[str, Any]]:
+        """Load entry_form definitions from the space.
 
         Args:
-            classes_path: Path to the classes directory.
+            forms_path: Path to the forms directory.
 
         Returns:
-            A dictionary mapping class names to their note_class definitions.
+            A dictionary mapping form names to their entry_form definitions.
 
         """
-        classes: dict[str, dict[str, Any]] = {}
-        if not self.fs.exists(classes_path):
-            return classes
+        forms: dict[str, dict[str, Any]] = {}
+        if not self.fs.exists(forms_path):
+            return forms
 
-        for note_class_file in self.fs.glob(f"{classes_path}/*.json"):
-            class_name = note_class_file.split("/")[-1].removesuffix(".json")
+        for entry_form_file in self.fs.glob(f"{forms_path}/*.json"):
+            form_name = entry_form_file.split("/")[-1].removesuffix(".json")
             with (
                 contextlib.suppress(json.JSONDecodeError),
                 self.fs.open(
-                    note_class_file,
+                    entry_form_file,
                     "r",
                 ) as handle,
             ):
-                classes[class_name] = json.load(handle)
+                forms[form_name] = json.load(handle)
 
-        return classes
+        return forms
 
-    def _collect_notes(
+    def _collect_entries(
         self,
-        notes_path: str,
-        classes: dict[str, dict[str, Any]],
+        entries_path: str,
+        forms: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        """Collect structured records for every note directory.
+        """Collect structured records for every entry directory.
 
         Args:
-            notes_path: Path to the notes directory.
-            classes: Dictionary of note_class definitions keyed by class name.
+            entries_path: Path to the entries directory.
+            forms: Dictionary of entry_form definitions keyed by form name.
 
         Returns:
-            A dictionary mapping note IDs to their structured records.
+            A dictionary mapping entry IDs to their structured records.
 
         """
-        if not self.fs.exists(notes_path):
+        if not self.fs.exists(entries_path):
             return {}
 
-        note_dirs = self.fs.ls(notes_path, detail=False)
+        entry_dirs = self.fs.ls(entries_path, detail=False)
         records: dict[str, dict[str, Any]] = {}
 
-        for note_dir in note_dirs:
-            note_id = note_dir.split("/")[-1]
-            record = self._build_record(note_dir, note_id, classes)
+        for entry_dir in entry_dirs:
+            entry_id = entry_dir.split("/")[-1]
+            record = self._build_record(entry_dir, entry_id, forms)
             if record is not None:
-                records[note_id] = record
+                records[entry_id] = record
 
         return records
 
     def _build_record(
         self,
-        note_dir: str,
-        note_id: str,
-        classes: dict[str, dict[str, Any]],
+        entry_dir: str,
+        entry_id: str,
+        forms: dict[str, dict[str, Any]],
     ) -> dict[str, Any] | None:
         """Build a single index record, returning ``None`` on decode errors.
 
         Args:
-            note_dir: Path to the note directory.
-            note_id: The note's unique identifier.
-            classes: Dictionary of note_class definitions keyed by class name.
+            entry_dir: Path to the entry directory.
+            entry_id: The entry's unique identifier.
+            forms: Dictionary of entry_form definitions keyed by form name.
 
         Returns:
-            A structured record dictionary, or None if the note cannot be read
+            A structured record dictionary, or None if the entry cannot be read
             or parsed.
 
         """
-        content_path = f"{note_dir}/content.json"
-        meta_path = f"{note_dir}/meta.json"
+        content_path = f"{entry_dir}/content.json"
+        meta_path = f"{entry_dir}/meta.json"
 
         if not self.fs.exists(content_path):
             return None
@@ -494,27 +494,27 @@ class Indexer:
             ):
                 meta_json = json.load(meta_handle)
 
-        note_class = (
-            meta_json.get("class")
-            or properties.get("class")
-            or content_json.get("frontmatter", {}).get("class")
+        entry_form = (
+            meta_json.get("form")
+            or properties.get("form")
+            or content_json.get("frontmatter", {}).get("form")
         )
 
         warnings: list[dict[str, Any]] = []
-        if note_class and note_class in classes:
-            properties, warnings = validate_properties(properties, classes[note_class])
+        if entry_form and entry_form in forms:
+            properties, warnings = validate_properties(properties, forms[entry_form])
 
         # Calculate word count (simple whitespace split)
         word_count = len(markdown.split())
 
         return {
-            "id": note_id,
-            "title": meta_json.get("title", note_id),
-            "class": note_class,
+            "id": entry_id,
+            "title": meta_json.get("title", entry_id),
+            "form": entry_form,
             "updated_at": meta_json.get("updated_at"),
-            "workspace_id": meta_json.get(
-                "workspace_id",
-                self.workspace_path.split("/")[-1],
+            "space_id": meta_json.get(
+                "space_id",
+                self.space_path.split("/")[-1],
             ),
             "properties": properties,
             "word_count": word_count,
@@ -554,22 +554,22 @@ class Indexer:
         wait_for_changes(_run_once)
 
 
-def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
-    """Return ``True`` when ``note`` satisfies ``filters``.
+def _matches_filters(entry: dict[str, Any], filters: dict[str, Any]) -> bool:
+    """Return ``True`` when ``entry`` satisfies ``filters``.
 
     Args:
-        note: The note record dictionary to check.
+        entry: The entry record dictionary to check.
         filters: Dictionary of filter criteria where keys are field names and
             values are expected values.
 
     Returns:
-        True if the note satisfies all filter criteria, False otherwise.
+        True if the entry satisfies all filter criteria, False otherwise.
 
     """
     for key, expected in filters.items():
-        note_value = note.get(key)
-        if note_value is None:
-            note_value = note.get("properties", {}).get(key)
+        entry_value = entry.get(key)
+        if entry_value is None:
+            entry_value = entry.get("properties", {}).get(key)
 
         if isinstance(expected, dict):
             msg = (
@@ -579,67 +579,67 @@ def _matches_filters(note: dict[str, Any], filters: dict[str, Any]) -> bool:
             raise NotImplementedError(msg)
 
         # Handle list membership (e.g., tags)
-        if key == "tag" and "tags" in note:
-            if expected not in (note.get("tags") or []):
+        if key == "tag" and "tags" in entry:
+            if expected not in (entry.get("tags") or []):
                 return False
             continue
 
-        if isinstance(note_value, list):
-            if expected not in note_value:
+        if isinstance(entry_value, list):
+            if expected not in entry_value:
                 return False
-        elif note_value != expected:
+        elif entry_value != expected:
             return False
 
     return True
 
 
 def query_index(
-    workspace_path: str,
+    space_path: str,
     filter_dict: dict[str, Any] | None,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> list[dict[str, Any]]:
-    """Return note records from the cached index that satisfy ``filter_dict``.
+    """Return entry records from the cached index that satisfy ``filter_dict``.
 
     Args:
-        workspace_path: Path to the workspace directory.
-        filter_dict: Dictionary of filter criteria, or None to return all notes.
+        space_path: Path to the space directory.
+        filter_dict: Dictionary of filter criteria, or None to return all entries.
         fs: Optional filesystem implementation. Defaults to local filesystem.
 
     Returns:
-        A list of note records that match the filter criteria.
+        A list of entry records that match the filter criteria.
 
     """
-    root_path, workspace_id = split_workspace_path(workspace_path)
+    root_path, space_id = split_space_path(space_path)
     config = storage_config_from_root(root_path, fs)
     payload = json.dumps(filter_dict or {})
-    return run_async(ieapp_core.query_index, config, workspace_id, payload)
+    return run_async(ieapp_core.query_index, config, space_id, payload)
 
 
 def create_sql_session(
-    workspace_path: str,
+    space_path: str,
     sql: str,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
     """Create a SQL session for the given query."""
-    root_path, workspace_id = split_workspace_path(workspace_path)
+    root_path, space_id = split_space_path(space_path)
     config = storage_config_from_root(root_path, fs)
-    return run_async(ieapp_core.create_sql_session, config, workspace_id, sql)
+    return run_async(ieapp_core.create_sql_session, config, space_id, sql)
 
 
 def get_sql_session_rows(
-    workspace_path: str,
+    space_path: str,
     session_id: str,
     offset: int = 0,
     limit: int = 50,
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
     """Retrieve paged rows from a SQL session."""
-    root_path, workspace_id = split_workspace_path(workspace_path)
+    root_path, space_id = split_space_path(space_path)
     config = storage_config_from_root(root_path, fs)
     return run_async(
         ieapp_core.get_sql_session_rows,
         config,
-        workspace_id,
+        space_id,
         session_id,
         offset,
         limit,

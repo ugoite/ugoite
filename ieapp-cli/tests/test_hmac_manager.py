@@ -98,7 +98,7 @@ def test_ensure_global_json_local(tmp_path: Path) -> None:
     assert "version" in data
     assert "hmac_key" in data
     assert "hmac_key_id" in data
-    assert "workspaces" in data
+    assert "spaces" in data
     assert data["version"] == 1
 
 

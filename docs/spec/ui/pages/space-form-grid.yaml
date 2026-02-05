@@ -1,0 +1,54 @@
+version: "0.1"
+updated: "2026-02-02"
+page:
+  id: space-form-grid
+  title: Form Grid View
+  route: /spaces/{space_id}/forms
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+      tabs:
+        - id: dashboard
+          label: dashboard
+          target_page: space-dashboard
+        - id: search
+          label: search
+          target_page: space-search
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+      target_page: space-settings
+  body:
+    - id: form-toolbar
+      type: toolbar
+      items:
+        - id: form-search-bar
+          type: search-bar
+          placeholder: "Search"
+        - id: form-sort-button
+          type: sort-button
+          icon: sort
+        - id: form-filter-button
+          type: filter-button
+          icon: filter
+    - id: form-grid
+      type: data-grid
+      clipboard: enabled
+    - id: form-download-button
+      type: csv-download-button
+      position: bottom-right-floating
+      format: csv
+    - id: form-view-tabs
+      type: tab-bar
+      position: bottom-center-floating
+      tabs:
+        - id: object
+          label: object
+          target_page: space-entries-object
+        - id: grid
+          label: grid
+          target_page: space-form-grid

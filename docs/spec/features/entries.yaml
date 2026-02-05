@@ -1,0 +1,150 @@
+# Entry APIs
+
+version: "0.1"
+updated: "2026-01"
+kind: entries
+
+apis:
+  - id: entry.create
+    method: POST
+    backend:
+      path: /spaces/{space_id}/entries
+      file: backend/src/app/api/endpoints/entry.py
+      function: create_entry_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries.tsx
+      function: SpaceEntriesRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: create_entry
+    ieapp_cli:
+      command: ieapp entry create
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_create
+
+  - id: entry.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/entries
+      file: backend/src/app/api/endpoints/entry.py
+      function: list_entries_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries.tsx
+      function: SpaceEntriesRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: list_entries
+    ieapp_cli:
+      command: ieapp entry list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_list
+
+  - id: entry.get
+    method: GET
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: backend/src/app/api/endpoints/entry.py
+      function: get_entry_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
+      function: SpaceEntryDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: get_entry
+    ieapp_cli:
+      command: ieapp entry get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_get
+
+  - id: entry.update
+    method: PUT
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: backend/src/app/api/endpoints/entry.py
+      function: update_entry_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
+      function: SpaceEntryDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: update_entry
+    ieapp_cli:
+      command: ieapp entry update
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_update
+
+  - id: entry.delete
+    method: DELETE
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: backend/src/app/api/endpoints/entry.py
+      function: delete_entry_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
+      function: SpaceEntryDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: delete_entry
+    ieapp_cli:
+      command: ieapp entry delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_delete
+
+  - id: entry.history
+    method: GET
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}/history
+      file: backend/src/app/api/endpoints/entry.py
+      function: get_entry_history_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}/history
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
+      function: SpaceEntryHistoryRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: get_entry_history
+    ieapp_cli:
+      command: ieapp entry history
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_history
+
+  - id: entry.revision
+    method: GET
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
+      file: backend/src/app/api/endpoints/entry.py
+      function: get_entry_revision_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
+      function: SpaceEntryRevisionRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: get_entry_revision
+    ieapp_cli:
+      command: ieapp entry revision
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_revision
+
+  - id: entry.restore
+    method: POST
+    backend:
+      path: /spaces/{space_id}/entries/{entry_id}/restore
+      file: backend/src/app/api/endpoints/entry.py
+      function: restore_entry_endpoint
+    frontend:
+      path: /spaces/{space_id}/entries/{entry_id}/restore
+      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
+      function: SpaceEntryRestoreRoute
+    ieapp_core:
+      file: ieapp-core/src/entry.rs
+      function: restore_entry
+    ieapp_cli:
+      command: ieapp entry restore
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_entry_restore

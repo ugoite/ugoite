@@ -1,11 +1,11 @@
 export const RESERVED_METADATA_COLUMNS = [
 	"id",
-	"note_id",
+	"entry_id",
 	"title",
-	"class",
+	"form",
 	"tags",
 	"links",
-	"attachments",
+	"assets",
 	"created_at",
 	"updated_at",
 	"revision_id",
@@ -15,7 +15,7 @@ export const RESERVED_METADATA_COLUMNS = [
 	"author",
 	"canvas_position",
 	"integrity",
-	"workspace_id",
+	"space_id",
 	"word_count",
 ] as const;
 

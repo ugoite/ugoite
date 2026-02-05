@@ -18,14 +18,14 @@ from app.main import app
 
 
 @pytest.fixture
-def test_client(temp_workspace_root: Path) -> TestClient:
-    """Create a test client bound to the temporary workspace root."""
+def test_client(temp_space_root: Path) -> TestClient:
+    """Create a test client bound to the temporary space root."""
     return TestClient(app)
 
 
 @pytest.fixture
-def temp_workspace_root() -> Iterator[Path]:
-    """Create a temporary workspace root."""
+def temp_space_root() -> Iterator[Path]:
+    """Create a temporary space root."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         os.environ["IEAPP_ROOT"] = str(root)

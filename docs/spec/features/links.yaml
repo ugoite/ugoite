@@ -8,13 +8,13 @@ apis:
   - id: link.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/links
+      path: /spaces/{space_id}/links
       file: backend/src/app/api/endpoints/link.py
       function: create_link_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/links
-      file: frontend/src/routes/workspaces/[workspace_id]/links.tsx
-      function: WorkspaceLinksRoute
+      path: /spaces/{space_id}/links
+      file: frontend/src/routes/spaces/[space_id]/links.tsx
+      function: SpaceLinksRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: create_link
@@ -26,13 +26,13 @@ apis:
   - id: link.list
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/links
+      path: /spaces/{space_id}/links
       file: backend/src/app/api/endpoints/link.py
       function: list_links_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/links
-      file: frontend/src/routes/workspaces/[workspace_id]/links.tsx
-      function: WorkspaceLinksRoute
+      path: /spaces/{space_id}/links
+      file: frontend/src/routes/spaces/[space_id]/links.tsx
+      function: SpaceLinksRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: list_links
@@ -44,13 +44,13 @@ apis:
   - id: link.delete
     method: DELETE
     backend:
-      path: /workspaces/{workspace_id}/links/{link_id}
+      path: /spaces/{space_id}/links/{link_id}
       file: backend/src/app/api/endpoints/link.py
       function: delete_link_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/links/{link_id}
-      file: frontend/src/routes/workspaces/[workspace_id]/links/[link_id].tsx
-      function: WorkspaceLinkDetailRoute
+      path: /spaces/{space_id}/links/{link_id}
+      file: frontend/src/routes/spaces/[space_id]/links/[link_id].tsx
+      function: SpaceLinkDetailRoute
     ieapp_core:
       file: ieapp-core/src/link.rs
       function: delete_link

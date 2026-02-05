@@ -12,7 +12,7 @@ LOCAL_STORAGE_PATH_EMPTY_ERROR = "Local storage path is empty"
 
 
 def _ensure_local_root(root_path: Path | str) -> None:
-    """Ensure the local workspace root directory exists."""
+    """Ensure the local space root directory exists."""
     root_str = str(root_path)
     parsed = urlparse(root_str)
     if parsed.scheme:
@@ -34,7 +34,7 @@ def _ensure_local_root(root_path: Path | str) -> None:
 
 
 def storage_uri_from_root(root_path: Path | str) -> str:
-    """Return an OpenDAL-compatible storage URI for the workspace root."""
+    """Return an OpenDAL-compatible storage URI for the space root."""
     root_str = str(root_path)
     if "://" in root_str:
         return root_str
@@ -47,10 +47,10 @@ def storage_config_from_root(root_path: Path | str) -> dict[str, str]:
     return {"uri": storage_uri_from_root(root_path)}
 
 
-def workspace_uri(root_path: Path | str, workspace_id: str) -> str:
-    """Build a workspace URI/path for API responses."""
+def space_uri(root_path: Path | str, space_id: str) -> str:
+    """Build a space URI/path for API responses."""
     root_uri = storage_uri_from_root(root_path)
     if root_uri.startswith("fs://"):
         base = root_uri[len("fs://") :]
-        return str(Path(base) / "workspaces" / workspace_id)
-    return f"{root_uri.rstrip('/')}/workspaces/{workspace_id}"
+        return str(Path(base) / "spaces" / space_id)
+    return f"{root_uri.rstrip('/')}/spaces/{space_id}"

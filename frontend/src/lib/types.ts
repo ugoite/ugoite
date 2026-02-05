@@ -3,8 +3,8 @@
  * Based on docs/spec/data-model/overview.md and docs/spec/api/rest.md
  */
 
-/** Workspace metadata */
-export interface Workspace {
+/** Space metadata */
+export interface Space {
 	id: string;
 	name: string;
 	created_at: string;
@@ -12,8 +12,8 @@ export interface Workspace {
 	settings?: Record<string, unknown>;
 }
 
-/** Workspace patch payload */
-export interface WorkspacePatchPayload {
+/** Space patch payload */
+export interface SpacePatchPayload {
 	name?: string;
 	storage_config?: Record<string, unknown>;
 	settings?: Record<string, unknown>;
@@ -24,29 +24,29 @@ export interface TestConnectionPayload {
 	storage_config: Record<string, unknown>;
 }
 
-/** Attachment metadata */
-export interface Attachment {
+/** Asset metadata */
+export interface Asset {
 	id: string;
 	name: string;
 	path: string;
 }
 
-/** Note record (from index) */
-export interface NoteRecord {
+/** Entry record (from index) */
+export interface EntryRecord {
 	id: string;
 	title: string;
-	class?: string;
+	form?: string;
 	updated_at: string;
 	properties: Record<string, unknown>;
 	tags: string[];
-	links: NoteLink[];
+	links: EntryLink[];
 	canvas_position?: CanvasPosition;
 	checksum?: string;
-	attachments?: Attachment[];
+	assets?: Asset[];
 }
 
-/** Note link */
-export interface NoteLink {
+/** Entry link */
+export interface EntryLink {
 	id: string;
 	source?: string;
 	target: string;
@@ -59,15 +59,15 @@ export interface CanvasPosition {
 	y: number;
 }
 
-/** Full note content */
-export interface Note {
+/** Full entry content */
+export interface Entry {
 	id: string;
 	title?: string;
 	frontmatter?: Record<string, unknown>;
 	sections?: Record<string, string>;
-	attachments?: Attachment[];
-	links?: NoteLink[];
-	class?: string;
+	assets?: Asset[];
+	links?: EntryLink[];
+	form?: string;
 	tags?: string[];
 	canvas_position?: CanvasPosition;
 	content: string;
@@ -76,46 +76,46 @@ export interface Note {
 	updated_at: string;
 }
 
-/** Note history entry */
-export interface NoteRevision {
+/** Entry history entry */
+export interface EntryRevision {
 	revision_id: string;
 	created_at: string;
 	checksum: string;
 }
 
-/** Create note payload */
-export interface NoteCreatePayload {
+/** Create entry payload */
+export interface EntryCreatePayload {
 	id?: string;
 	content: string;
 }
 
-/** Update note payload */
-export interface NoteUpdatePayload {
+/** Update entry payload */
+export interface EntryUpdatePayload {
 	markdown: string;
 	parent_revision_id: string;
 	frontmatter?: Record<string, unknown>;
 	canvas_position?: CanvasPosition;
-	attachments?: Attachment[];
+	assets?: Asset[];
 }
 
-export interface ClassField {
+export interface FormField {
 	type: string;
 	required: boolean;
 }
 
-export interface Class {
+export interface Form {
 	name: string;
 	version: number;
 	template: string;
-	fields: Record<string, ClassField>;
+	fields: Record<string, FormField>;
 	defaults?: Record<string, unknown>;
 }
 
-export interface ClassCreatePayload {
+export interface FormCreatePayload {
 	name: string;
 	version?: number;
 	template: string;
-	fields: Record<string, ClassField>;
+	fields: Record<string, FormField>;
 	defaults?: Record<string, unknown>;
 	strategies?: Record<string, unknown>;
 }
@@ -174,7 +174,7 @@ export interface SqlSession {
 }
 
 export interface SqlSessionRows {
-	rows: NoteRecord[];
+	rows: EntryRecord[];
 	offset: number;
 	limit: number;
 	totalCount: number;
@@ -186,7 +186,7 @@ export interface ApiError {
 }
 
 /** Link resource */
-export interface WorkspaceLink {
+export interface SpaceLink {
 	id: string;
 	source: string;
 	target: string;
@@ -194,4 +194,4 @@ export interface WorkspaceLink {
 }
 
 /** Search result entry */
-export type SearchResult = NoteRecord;
+export type SearchResult = EntryRecord;

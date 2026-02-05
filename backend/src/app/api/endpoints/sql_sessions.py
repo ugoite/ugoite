@@ -9,34 +9,34 @@ import ieapp_core
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
-from app.api.endpoints.workspace import (
-    _ensure_workspace_exists,
+from app.api.endpoints.space import (
+    _ensure_space_exists,
     _storage_config,
     _validate_path_id,
 )
-from app.models.classes import SqlSessionCreate
+from app.models.payloads import SqlSessionCreate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/sql-sessions",
+    "/spaces/{space_id}/sql-sessions",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_sql_session_endpoint(
-    workspace_id: str,
+    space_id: str,
     payload: SqlSessionCreate,
 ) -> dict[str, object]:
     """Create a SQL session and execute the query."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
         return await ieapp_core.create_sql_session(
             storage_config,
-            workspace_id,
+            space_id,
             payload.sql,
         )
     except Exception as e:
@@ -47,21 +47,21 @@ async def create_sql_session_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/sql-sessions/{session_id}")
+@router.get("/spaces/{space_id}/sql-sessions/{session_id}")
 async def get_sql_session_endpoint(
-    workspace_id: str,
+    space_id: str,
     session_id: str,
 ) -> dict[str, object]:
     """Get SQL session status."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(session_id, "session_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
         return await ieapp_core.get_sql_session_status(
             storage_config,
-            workspace_id,
+            space_id,
             session_id,
         )
     except Exception as e:
@@ -72,21 +72,21 @@ async def get_sql_session_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/sql-sessions/{session_id}/count")
+@router.get("/spaces/{space_id}/sql-sessions/{session_id}/count")
 async def get_sql_session_count_endpoint(
-    workspace_id: str,
+    space_id: str,
     session_id: str,
 ) -> dict[str, object]:
     """Get SQL session row count."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(session_id, "session_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
         count = await ieapp_core.get_sql_session_count(
             storage_config,
-            workspace_id,
+            space_id,
             session_id,
         )
     except Exception as e:
@@ -99,23 +99,23 @@ async def get_sql_session_count_endpoint(
         return {"count": count}
 
 
-@router.get("/workspaces/{workspace_id}/sql-sessions/{session_id}/rows")
+@router.get("/spaces/{space_id}/sql-sessions/{session_id}/rows")
 async def get_sql_session_rows_endpoint(
-    workspace_id: str,
+    space_id: str,
     session_id: str,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> dict[str, object]:
     """Get paged SQL session rows."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(session_id, "session_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
         return await ieapp_core.get_sql_session_rows(
             storage_config,
-            workspace_id,
+            space_id,
             session_id,
             offset,
             limit,
@@ -128,21 +128,21 @@ async def get_sql_session_rows_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/sql-sessions/{session_id}/stream")
+@router.get("/spaces/{space_id}/sql-sessions/{session_id}/stream")
 async def get_sql_session_stream_endpoint(
-    workspace_id: str,
+    space_id: str,
     session_id: str,
 ) -> StreamingResponse:
     """Stream SQL session rows as NDJSON."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(session_id, "session_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     async def row_generator() -> AsyncGenerator[str]:
         rows = await ieapp_core.get_sql_session_rows_all(
             storage_config,
-            workspace_id,
+            space_id,
             session_id,
         )
         for row in rows:

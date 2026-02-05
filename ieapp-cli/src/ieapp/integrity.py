@@ -1,4 +1,4 @@
-"""Integrity helpers for note storage.
+"""Integrity helpers for entry storage.
 
 This module centralizes checksum and signature logic so tests can mock the
 provider while the production code derives its secret from ``global.json``.
@@ -22,50 +22,50 @@ from .utils import fs_exists, fs_join, fs_read_json, get_fs_and_path
 
 @dataclass
 class IntegrityProvider:
-    """Computes checksums and signatures for note revisions."""
+    """Computes checksums and signatures for entry revisions."""
 
     secret: bytes
 
     @classmethod
-    def for_workspace(
+    def for_space(
         cls,
-        workspace_path: str | Path,
+        space_path: str | Path,
         *,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> IntegrityProvider:
-        """Build a provider using the workspace's root ``global.json``.
+        """Build a provider using the space's root ``global.json``.
 
         Args:
-            workspace_path: Absolute path to the workspace directory.
+            space_path: Absolute path to the space directory.
             fs: Optional fsspec filesystem to use.
 
         Returns:
-            An ``IntegrityProvider`` configured with the workspace's HMAC key.
+            An ``IntegrityProvider`` configured with the space's HMAC key.
 
         Raises:
             FileNotFoundError: If ``global.json`` cannot be located.
             ValueError: If the file does not contain the expected key material.
 
         """
-        fs_obj, ws_path = get_fs_and_path(workspace_path, fs)
+        fs_obj, ws_path = get_fs_and_path(space_path, fs)
         meta_path = fs_join(ws_path, "meta.json")
 
         if not fs_exists(fs_obj, meta_path):
-            msg = f"meta.json not found for workspace at {workspace_path}"
+            msg = f"meta.json not found for space at {space_path}"
             raise FileNotFoundError(msg)
 
         meta: dict[str, Any] = fs_read_json(fs_obj, meta_path)
 
         storage_root = meta.get("storage", {}).get("root")
         if not storage_root:
-            msg = "Workspace metadata missing storage.root"
+            msg = "Space metadata missing storage.root"
             raise ValueError(msg)
 
         storage_fs, storage_path = get_fs_and_path(storage_root, fs_obj)
         global_json = fs_join(storage_path, "global.json")
 
         if not fs_exists(storage_fs, global_json):
-            msg = f"global.json not found for workspace at {storage_root}"
+            msg = f"global.json not found for space at {storage_root}"
             raise FileNotFoundError(msg)
 
         global_data = fs_read_json(storage_fs, global_json)

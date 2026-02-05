@@ -1,13 +1,13 @@
-import type { WorkspaceLink } from "./types";
+import type { SpaceLink } from "./types";
 import { apiFetch } from "./api";
 
 /** Link API client */
 export const linkApi = {
 	async create(
-		workspaceId: string,
+		spaceId: string,
 		payload: { source: string; target: string; kind: string },
-	): Promise<WorkspaceLink> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/links`, {
+	): Promise<SpaceLink> {
+		const res = await apiFetch(`/spaces/${spaceId}/links`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
@@ -16,19 +16,19 @@ export const linkApi = {
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to create link: ${res.statusText}`);
 		}
-		return (await res.json()) as WorkspaceLink;
+		return (await res.json()) as SpaceLink;
 	},
 
-	async list(workspaceId: string): Promise<WorkspaceLink[]> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/links`);
+	async list(spaceId: string): Promise<SpaceLink[]> {
+		const res = await apiFetch(`/spaces/${spaceId}/links`);
 		if (!res.ok) {
 			throw new Error(`Failed to list links: ${res.statusText}`);
 		}
-		return (await res.json()) as WorkspaceLink[];
+		return (await res.json()) as SpaceLink[];
 	},
 
-	async delete(workspaceId: string, linkId: string): Promise<{ status: string; id: string }> {
-		const res = await apiFetch(`/workspaces/${workspaceId}/links/${linkId}`, { method: "DELETE" });
+	async delete(spaceId: string, linkId: string): Promise<{ status: string; id: string }> {
+		const res = await apiFetch(`/spaces/${spaceId}/links/${linkId}`, { method: "DELETE" });
 		if (!res.ok) {
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to delete link: ${res.statusText}`);

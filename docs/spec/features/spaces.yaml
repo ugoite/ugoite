@@ -1,0 +1,96 @@
+# Space APIs
+
+version: "0.1"
+updated: "2026-01"
+kind: spaces
+
+apis:
+  - id: space.list
+    method: GET
+    backend:
+      path: /spaces
+      file: backend/src/app/api/endpoints/space.py
+      function: list_spaces_endpoint
+    frontend:
+      path: /spaces
+      file: frontend/src/routes/spaces/index.tsx
+      function: SpacesIndexRoute
+    ieapp_core:
+      file: ieapp-core/src/space.rs
+      function: list_spaces
+    ieapp_cli:
+      command: ieapp space list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_space_list
+
+  - id: space.create
+    method: POST
+    backend:
+      path: /spaces
+      file: backend/src/app/api/endpoints/space.py
+      function: create_space_endpoint
+    frontend:
+      path: /spaces
+      file: frontend/src/routes/spaces/index.tsx
+      function: SpacesIndexRoute
+    ieapp_core:
+      file: ieapp-core/src/space.rs
+      function: create_space
+    ieapp_cli:
+      command: ieapp create-space
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_create_space
+
+  - id: space.get
+    method: GET
+    backend:
+      path: /spaces/{space_id}
+      file: backend/src/app/api/endpoints/space.py
+      function: get_space_endpoint
+    frontend:
+      path: /spaces/{space_id}
+      file: frontend/src/routes/spaces/[space_id]/index.tsx
+      function: SpaceDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/space.rs
+      function: get_space
+    ieapp_cli:
+      command: ieapp space get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_space_get
+
+  - id: space.patch
+    method: PATCH
+    backend:
+      path: /spaces/{space_id}
+      file: backend/src/app/api/endpoints/space.py
+      function: patch_space_endpoint
+    frontend:
+      path: /spaces/{space_id}
+      file: frontend/src/routes/spaces/[space_id]/index.tsx
+      function: SpaceDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/space.rs
+      function: patch_space
+    ieapp_cli:
+      command: ieapp space patch
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_space_patch
+
+  - id: space.test_connection
+    method: POST
+    backend:
+      path: /spaces/{space_id}/test-connection
+      file: backend/src/app/api/endpoints/space.py
+      function: test_connection_endpoint
+    frontend:
+      path: /spaces/{space_id}/test-connection
+      file: frontend/src/routes/spaces/[space_id]/test-connection.tsx
+      function: SpaceTestConnectionRoute
+    ieapp_core:
+      file: ieapp-core/src/space.rs
+      function: test_storage_connection
+    ieapp_cli:
+      command: ieapp space test-connection
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_space_test_connection

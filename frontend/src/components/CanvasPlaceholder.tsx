@@ -1,15 +1,15 @@
 import { For, Show } from "solid-js";
-import type { NoteRecord } from "~/lib/types";
+import type { EntryRecord } from "~/lib/types";
 
 export interface CanvasPlaceholderProps {
-	notes: NoteRecord[];
-	selectedNoteId?: string | null;
-	onSelect?: (noteId: string) => void;
+	entries: EntryRecord[];
+	selectedEntryId?: string | null;
+	onSelect?: (entryId: string) => void;
 }
 
 /**
  * Canvas placeholder component for Milestone 5.
- * Displays notes in a static grid layout as a preview of future infinite canvas functionality.
+ * Displays entries in a static grid layout as a preview of future infinite canvas functionality.
  * Story 4 (The Infinite Canvas) will be fully implemented in Milestone 6.
  */
 export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
@@ -67,9 +67,9 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 					}}
 				/>
 
-				{/* Note Cards */}
+				{/* Entry Cards */}
 				<Show
-					when={props.notes.length > 0}
+					when={props.entries.length > 0}
 					fallback={
 						<div class="absolute inset-0 flex items-center justify-center">
 							<div class="text-center text-gray-400">
@@ -86,20 +86,20 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
 									/>
 								</svg>
-								<p>No notes to display</p>
-								<p class="text-sm mt-1">Create a note to see it here</p>
+								<p>No entries to display</p>
+								<p class="text-sm mt-1">Create a entry to see it here</p>
 							</div>
 						</div>
 					}
 				>
-					<For each={props.notes}>
-						{(note, index) => {
-							const pos = () => note.canvas_position || getPosition(index());
-							const isSelected = () => props.selectedNoteId === note.id;
+					<For each={props.entries}>
+						{(entry, index) => {
+							const pos = () => entry.canvas_position || getPosition(index());
+							const isSelected = () => props.selectedEntryId === entry.id;
 
 							return (
 								<button
-									data-testid="canvas-note-card"
+									data-testid="canvas-entry-card"
 									type="button"
 									class={`absolute w-[280px] bg-white rounded-lg shadow-md border-2 transition-all cursor-pointer hover:shadow-lg ${
 										isSelected()
@@ -110,14 +110,14 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										left: `${pos().x}px`,
 										top: `${pos().y + 60}px`, // Account for banner
 									}}
-									onClick={() => props.onSelect?.(note.id)}
+									onClick={() => props.onSelect?.(entry.id)}
 									aria-pressed={isSelected()}
 								>
 									{/* Card Header */}
 									<div class="p-3 border-b bg-gray-50 rounded-t-lg">
-										<h3 class="font-medium text-gray-900 truncate">{note.title || "Untitled"}</h3>
-										<Show when={note.class}>
-											<span class="text-xs text-gray-500">{note.class}</span>
+										<h3 class="font-medium text-gray-900 truncate">{entry.title || "Untitled"}</h3>
+										<Show when={entry.form}>
+											<span class="text-xs text-gray-500">{entry.form}</span>
 										</Show>
 									</div>
 
@@ -125,11 +125,11 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 									<div class="p-3">
 										{/* Properties preview */}
 										<Show
-											when={Object.keys(note.properties).length > 0}
+											when={Object.keys(entry.properties).length > 0}
 											fallback={<p class="text-sm text-gray-400 italic">No properties</p>}
 										>
 											<div class="space-y-1 text-sm">
-												<For each={Object.entries(note.properties).slice(0, 3)}>
+												<For each={Object.entries(entry.properties).slice(0, 3)}>
 													{([key, value]) => (
 														<div class="flex">
 															<span class="text-gray-500 font-medium mr-1">{key}:</span>
@@ -139,16 +139,16 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 														</div>
 													)}
 												</For>
-												<Show when={Object.keys(note.properties).length > 3}>
+												<Show when={Object.keys(entry.properties).length > 3}>
 													<span class="text-xs text-gray-400">
-														+{Object.keys(note.properties).length - 3} more
+														+{Object.keys(entry.properties).length - 3} more
 													</span>
 												</Show>
 											</div>
 										</Show>
 
 										{/* Links indicator */}
-										<Show when={note.links.length > 0}>
+										<Show when={entry.links.length > 0}>
 											<div class="mt-2 flex items-center gap-1 text-xs text-blue-500">
 												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path
@@ -158,7 +158,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 														d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
 													/>
 												</svg>
-												<span>{note.links.length} links</span>
+												<span>{entry.links.length} links</span>
 											</div>
 										</Show>
 									</div>

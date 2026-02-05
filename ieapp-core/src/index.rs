@@ -8,12 +8,12 @@ use serde_yaml;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::note;
+use crate::entry;
 use crate::sql;
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
-    let classes = load_classes(op, ws_path).await?;
-    let notes_map = collect_notes(op, ws_path, &classes).await?;
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map = collect_entries(op, ws_path, &forms).await?;
 
     let query_value = if query.trim().is_empty() {
         Value::Null
@@ -23,20 +23,20 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
 
     if let Some(sql_query) = extract_sql_query(&query_value) {
         let parsed = sql::parse_sql(&sql_query)?;
-        let tables = build_sql_tables(op, ws_path, &classes, &notes_map).await?;
-        return sql::filter_notes_by_sql(&tables, &parsed);
+        let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
+        return sql::filter_entries_by_sql(&tables, &parsed);
     }
 
     let filters: Option<Map<String, Value>> = query_value.as_object().cloned();
 
     let mut results = Vec::new();
-    for note in notes_map.values() {
+    for entry in entries_map.values() {
         if let Some(filter_obj) = filters.as_ref() {
-            if !matches_filters(note, filter_obj)? {
+            if !matches_filters(entry, filter_obj)? {
                 continue;
             }
         }
-        results.push(note.clone());
+        results.push(entry.clone());
     }
 
     Ok(results)
@@ -47,11 +47,11 @@ pub async fn execute_sql_query(
     ws_path: &str,
     sql_query: &str,
 ) -> Result<Vec<Value>> {
-    let classes = load_classes(op, ws_path).await?;
-    let notes_map = collect_notes(op, ws_path, &classes).await?;
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map = collect_entries(op, ws_path, &forms).await?;
     let parsed = sql::parse_sql(sql_query)?;
-    let tables = build_sql_tables(op, ws_path, &classes, &notes_map).await?;
-    sql::filter_notes_by_sql(&tables, &parsed)
+    let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
+    sql::filter_entries_by_sql(&tables, &parsed)
 }
 
 fn extract_sql_query(value: &Value) -> Option<String> {
@@ -66,11 +66,11 @@ fn extract_sql_query(value: &Value) -> Option<String> {
     }
 }
 
-fn matches_filters(note: &Value, filters: &Map<String, Value>) -> Result<bool> {
+fn matches_filters(entry: &Value, filters: &Map<String, Value>) -> Result<bool> {
     for (key, expected) in filters {
-        let mut note_value = note.get(key).cloned();
-        if note_value.is_none() {
-            note_value = note
+        let mut entry_value = entry.get(key).cloned();
+        if entry_value.is_none() {
+            entry_value = entry
                 .get("properties")
                 .and_then(|v| v.as_object())
                 .and_then(|props| props.get(key))
@@ -84,7 +84,7 @@ fn matches_filters(note: &Value, filters: &Map<String, Value>) -> Result<bool> {
         }
 
         if key == "tag" {
-            if let Some(tags) = note.get("tags").and_then(|v| v.as_array()) {
+            if let Some(tags) = entry.get("tags").and_then(|v| v.as_array()) {
                 if !tags.iter().any(|v| v == expected) {
                     return Ok(false);
                 }
@@ -92,7 +92,7 @@ fn matches_filters(note: &Value, filters: &Map<String, Value>) -> Result<bool> {
             }
         }
 
-        match note_value {
+        match entry_value {
             Some(Value::Array(list)) => {
                 if !list.iter().any(|v| v == expected) {
                     return Ok(false);
@@ -115,10 +115,10 @@ pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn update_note_index(op: &Operator, ws_path: &str, note_id: &str) -> Result<()> {
+pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
     let _ = op;
     let _ = ws_path;
-    let _ = note_id;
+    let _ = entry_id;
     Ok(())
 }
 
@@ -308,11 +308,11 @@ fn parse_object_list(value: &Value) -> Option<Value> {
     Some(Value::Array(normalized))
 }
 
-pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Value, Vec<Value>)> {
+pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Value, Vec<Value>)> {
     let mut warnings = Vec::new();
     let mut casted = properties.clone();
 
-    let fields = note_class.get("fields");
+    let fields = entry_form.get("fields");
     let mut field_defs: HashMap<String, Value> = HashMap::new();
 
     match fields {
@@ -453,18 +453,18 @@ pub fn validate_properties(properties: &Value, note_class: &Value) -> Result<(Va
     Ok((casted, warnings))
 }
 
-pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
-    let mut class_stats: HashMap<String, Map<String, Value>> = HashMap::new();
+pub fn aggregate_stats(entries: &Map<String, Value>) -> Value {
+    let mut form_stats: HashMap<String, Map<String, Value>> = HashMap::new();
     let mut tag_counts: HashMap<String, usize> = HashMap::new();
     let mut uncategorized = 0usize;
 
-    for record in notes.values() {
-        let note_class = record
-            .get("class")
-            .or_else(|| record.get("properties").and_then(|v| v.get("class")));
+    for record in entries.values() {
+        let entry_form = record
+            .get("form")
+            .or_else(|| record.get("properties").and_then(|v| v.get("form")));
 
-        if let Some(class_name) = note_class.and_then(|v| v.as_str()) {
-            let entry = class_stats.entry(class_name.to_string()).or_default();
+        if let Some(form_name) = entry_form.and_then(|v| v.as_str()) {
+            let entry = form_stats.entry(form_name.to_string()).or_default();
             let count = entry.get("count").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
             entry.insert("count".to_string(), Value::Number(count.into()));
 
@@ -492,11 +492,11 @@ pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
         }
     }
 
-    let mut class_stats_json: Map<String, Value> = class_stats
+    let mut form_stats_json: Map<String, Value> = form_stats
         .into_iter()
         .map(|(k, v)| (k, Value::Object(v)))
         .collect();
-    class_stats_json.insert(
+    form_stats_json.insert(
         "_uncategorized".to_string(),
         Value::Object({
             let mut map = Map::new();
@@ -508,10 +508,10 @@ pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
     Value::Object(
         [
             (
-                "note_count".to_string(),
-                Value::Number((notes.len() as u64).into()),
+                "entry_count".to_string(),
+                Value::Number((entries.len() as u64).into()),
             ),
-            ("class_stats".to_string(), Value::Object(class_stats_json)),
+            ("form_stats".to_string(), Value::Object(form_stats_json)),
             (
                 "tag_counts".to_string(),
                 Value::Object(
@@ -527,45 +527,45 @@ pub fn aggregate_stats(notes: &Map<String, Value>) -> Value {
     )
 }
 
-async fn load_classes(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
-    let mut classes = HashMap::new();
-    for class_name in crate::class::list_class_names(op, ws_path).await? {
-        if let Ok(value) = crate::class::get_class(op, ws_path, &class_name).await {
-            classes.insert(class_name, value);
+async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
+    let mut forms = HashMap::new();
+    for form_name in crate::form::list_form_names(op, ws_path).await? {
+        if let Ok(value) = crate::form::get_form(op, ws_path, &form_name).await {
+            forms.insert(form_name, value);
         }
     }
-    Ok(classes)
+    Ok(forms)
 }
 
-async fn collect_notes(
+async fn collect_entries(
     op: &Operator,
     ws_path: &str,
-    classes: &HashMap<String, Value>,
+    forms: &HashMap<String, Value>,
 ) -> Result<Map<String, Value>> {
-    let mut notes = Map::new();
-    let rows = note::list_note_rows(op, ws_path).await?;
-    for (class_name, row) in rows {
-        if let Some(record) = build_record(ws_path, &class_name, &row, classes).await? {
-            notes.insert(row.note_id.clone(), record);
+    let mut entries = Map::new();
+    let rows = entry::list_entry_rows(op, ws_path).await?;
+    for (form_name, row) in rows {
+        if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
+            entries.insert(row.entry_id.clone(), record);
         }
     }
-    Ok(notes)
+    Ok(entries)
 }
 
 async fn build_record(
     ws_path: &str,
-    class_name: &str,
-    row: &note::NoteRow,
-    classes: &HashMap<String, Value>,
+    form_name: &str,
+    row: &entry::EntryRow,
+    forms: &HashMap<String, Value>,
 ) -> Result<Option<Value>> {
     if row.deleted {
         return Ok(None);
     }
 
     let mut warnings = Vec::new();
-    let mut properties = note::merge_note_fields(&row.fields, &row.extra_attributes);
-    if let Some(class_def) = classes.get(class_name) {
-        if let Ok((casted, warns)) = validate_properties(&properties, class_def) {
+    let mut properties = entry::merge_entry_fields(&row.fields, &row.extra_attributes);
+    if let Some(form_def) = forms.get(form_name) {
+        if let Ok((casted, warns)) = validate_properties(&properties, form_def) {
             properties = casted;
             warnings = warns;
         }
@@ -573,16 +573,16 @@ async fn build_record(
 
     let word_count = compute_word_count(&serde_json::to_string(&properties)?);
     let record = serde_json::json!({
-        "id": row.note_id,
+        "id": row.entry_id,
         "title": row.title,
-        "class": class_name,
+        "form": form_name,
         "updated_at": row.updated_at,
-        "workspace_id": ws_path.split('/').next_back().unwrap_or("").to_string(),
+        "space_id": ws_path.split('/').next_back().unwrap_or("").to_string(),
         "properties": properties,
         "word_count": word_count,
         "tags": row.tags,
         "links": row.links,
-        "attachments": row.attachments,
+        "assets": row.assets,
         "canvas_position": row.canvas_position,
         "checksum": row.integrity.checksum,
         "validation_warnings": Value::Array(warnings),
@@ -594,60 +594,61 @@ async fn build_record(
 async fn build_sql_tables(
     op: &Operator,
     ws_path: &str,
-    classes: &HashMap<String, Value>,
-    notes_map: &Map<String, Value>,
+    forms: &HashMap<String, Value>,
+    entries_map: &Map<String, Value>,
 ) -> Result<HashMap<String, Vec<Value>>> {
     let mut tables: HashMap<String, Vec<Value>> = HashMap::new();
     tables.insert(
-        "notes".to_string(),
-        notes_map.values().cloned().collect::<Vec<_>>(),
+        "entries".to_string(),
+        entries_map.values().cloned().collect::<Vec<_>>(),
     );
 
-    for class_name in classes.keys() {
-        let rows: Vec<Value> = notes_map
+    for form_name in forms.keys() {
+        let rows: Vec<Value> = entries_map
             .values()
-            .filter(|note| {
-                note.get("class")
+            .filter(|entry| {
+                entry
+                    .get("form")
                     .and_then(|v| v.as_str())
-                    .map(|class| class.eq_ignore_ascii_case(class_name))
+                    .map(|form| form.eq_ignore_ascii_case(form_name))
                     .unwrap_or(false)
             })
             .cloned()
             .collect();
-        tables.insert(class_name.to_lowercase(), rows);
+        tables.insert(form_name.to_lowercase(), rows);
     }
 
-    let mut note_class_map: HashMap<String, String> = HashMap::new();
-    for (note_id, note_value) in notes_map {
-        if let Some(class) = note_value.get("class").and_then(|v| v.as_str()) {
-            note_class_map.insert(note_id.to_string(), class.to_string());
+    let mut entry_form_map: HashMap<String, String> = HashMap::new();
+    for (entry_id, entry_value) in entries_map {
+        if let Some(form) = entry_value.get("form").and_then(|v| v.as_str()) {
+            entry_form_map.insert(entry_id.to_string(), form.to_string());
         }
     }
 
-    let mut attachment_rows = Vec::new();
-    let note_rows = note::list_note_rows(op, ws_path).await?;
+    let mut asset_rows = Vec::new();
+    let entry_rows = entry::list_entry_rows(op, ws_path).await?;
     let mut link_rows = Vec::new();
-    for (_class_name, row) in note_rows {
+    for (_form_name, row) in entry_rows {
         if row.deleted {
             continue;
         }
         for link_item in row.links {
-            let source_class = note_class_map.get(&link_item.source).cloned();
-            let target_class = note_class_map.get(&link_item.target).cloned();
+            let source_form = entry_form_map.get(&link_item.source).cloned();
+            let target_form = entry_form_map.get(&link_item.target).cloned();
             link_rows.push(serde_json::json!({
                 "id": link_item.id,
                 "source": link_item.source,
                 "target": link_item.target,
                 "kind": link_item.kind,
-                "source_class": source_class,
-                "target_class": target_class,
+                "source_form": source_form,
+                "target_form": target_form,
             }));
         }
-        for attachment in row.attachments {
-            if let Some(obj) = attachment.as_object() {
-                attachment_rows.push(serde_json::json!({
+        for asset in row.assets {
+            if let Some(obj) = asset.as_object() {
+                asset_rows.push(serde_json::json!({
                     "id": obj.get("id").cloned().unwrap_or(Value::Null),
-                    "note_id": row.note_id,
+                    "entry_id": row.entry_id,
                     "name": obj.get("name").cloned().unwrap_or(Value::Null),
                     "path": obj.get("path").cloned().unwrap_or(Value::Null),
                 }));
@@ -655,7 +656,7 @@ async fn build_sql_tables(
         }
     }
     tables.insert("links".to_string(), link_rows);
-    tables.insert("attachments".to_string(), attachment_rows);
+    tables.insert("assets".to_string(), asset_rows);
 
     Ok(tables)
 }

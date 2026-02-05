@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def get_root_path() -> str | Path:
-    """Get the root path for workspaces."""
+    """Get the root path for spaces."""
     root = os.environ.get("IEAPP_ROOT")
     if root:
         return root

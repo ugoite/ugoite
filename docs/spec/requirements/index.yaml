@@ -7,7 +7,7 @@ requirements:
   - id: REQ-IDX-001
     title: Structured Cache via Live Indexer
     description: |
-      Derive materialized indexes from Iceberg tables on note changes.
+      Derive materialized indexes from Iceberg tables on entry changes.
     related_spec:
       - architecture/overview.md#structure-from-text-engine
       - data-model/overview.md#indices
@@ -22,7 +22,7 @@ requirements:
             - test_aggregate_stats_includes_field_usage
         - file: backend/tests/test_api_reindexing.py
           tests:
-            - test_update_note_reflects_in_query
+            - test_update_entry_reflects_in_query
       rust:
         - file: ieapp-core/tests/test_index.rs
           tests:
@@ -31,12 +31,12 @@ requirements:
 
 
   - id: REQ-IDX-002
-    title: Class Validation
+    title: Form Validation
     description: |
-      Validate properties against class definitions and generate warnings.
+      Validate properties against form definitions and generate warnings.
     related_spec:
       - stories/core.yaml#STORY-002
-      - data-model/overview.md#classes
+      - data-model/overview.md#forms
     priority: medium
     status: implemented
     tests:
@@ -67,7 +67,7 @@ requirements:
             - test_query_index_by_tag
         - file: backend/tests/test_api.py
           tests:
-            - test_query_notes
+            - test_query_entries
       rust:
         - file: ieapp-core/tests/test_index.rs
           tests:
@@ -126,7 +126,7 @@ requirements:
   - id: REQ-IDX-007
     title: Hybrid Search Endpoint
     description: |
-      Expose GET /workspaces/{ws_id}/search using the inverted index (keyword)
+      Expose GET /spaces/{space_id}/search using the inverted index (keyword)
       and falling back to a simple scan when the index is absent.
     related_spec:
       - stories/core.yaml#STORY-005
@@ -142,8 +142,8 @@ requirements:
   - id: REQ-IDX-008
     title: IEapp SQL Query Execution
     description: |
-      Execute IEapp SQL queries against Iceberg-derived note records via the
-      existing /workspaces/{ws_id}/query endpoint.
+      Execute IEapp SQL queries against Iceberg-derived entry records via the
+      existing /spaces/{space_id}/query endpoint.
     related_spec:
       - features/sql.md
       - api/rest.md#structured-query
@@ -153,7 +153,7 @@ requirements:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_query_notes_sql
+            - test_query_entries_sql
       rust:
         - file: ieapp-core/tests/test_index.rs
           tests:
@@ -162,7 +162,7 @@ requirements:
   - id: REQ-IDX-009
     title: IEapp SQL JOIN Support
     description: |
-      IEapp SQL MUST support JOIN queries across notes, links, and attachments
+      IEapp SQL MUST support JOIN queries across entries, links, and assets
       using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
       constraints.
     related_spec:

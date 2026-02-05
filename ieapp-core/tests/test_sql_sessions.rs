@@ -1,14 +1,14 @@
 mod common;
 
-use _ieapp_core::{class, note, sql_session, workspace};
+use _ieapp_core::{entry, form, space, sql_session};
 use common::setup_operator;
 
 #[tokio::test]
 /// REQ-API-008
 async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-sql-session", "/tmp").await?;
-    let ws_path = "workspaces/test-sql-session";
+    space::create_space(&op, "test-sql-session", "/tmp").await?;
+    let ws_path = "spaces/test-sql-session";
 
     struct MockIntegrity;
     impl _ieapp_core::integrity::IntegrityProvider for MockIntegrity {
@@ -21,21 +21,24 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         }
     }
 
-    let class_def = serde_json::json!({
-        "name": "Note",
-        "template": "# Note\n\n## Body\n",
+    let form_def = serde_json::json!({
+        "name": "Entry",
+        "template": "# Entry\n\n## Body\n",
         "fields": {"Body": {"type": "string"}}
     });
-    class::upsert_class(&op, ws_path, &class_def).await?;
+    form::upsert_form(&op, ws_path, &form_def).await?;
 
-    let note_one = "---\nclass: Note\n---\n# Alpha\n\n## Body\nalpha";
-    note::create_note(&op, ws_path, "note-1", note_one, "author", &MockIntegrity).await?;
-    let note_two = "---\nclass: Note\n---\n# Beta\n\n## Body\nbeta";
-    note::create_note(&op, ws_path, "note-2", note_two, "author", &MockIntegrity).await?;
+    let entry_one = "---\nform: Entry\n---\n# Alpha\n\n## Body\nalpha";
+    entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
+    let entry_two = "---\nform: Entry\n---\n# Beta\n\n## Body\nbeta";
+    entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
-    let session =
-        sql_session::create_sql_session(&op, ws_path, "SELECT * FROM notes WHERE title = 'Alpha'")
-            .await?;
+    let session = sql_session::create_sql_session(
+        &op,
+        ws_path,
+        "SELECT * FROM entries WHERE title = 'Alpha'",
+    )
+    .await?;
     assert_eq!(session["status"], "completed");
     let session_id = session["id"].as_str().unwrap();
 
@@ -46,7 +49,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     assert_eq!(rows["total_count"], 1);
     let rows_list = rows["rows"].as_array().unwrap();
     assert_eq!(rows_list.len(), 1);
-    assert_eq!(rows_list[0]["id"], "note-1");
+    assert_eq!(rows_list[0]["id"], "entry-1");
 
     Ok(())
 }

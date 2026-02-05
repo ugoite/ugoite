@@ -310,15 +310,15 @@ def storage_config_from_root(
     return {"uri": storage_uri_from_root(root_path, fs)}
 
 
-def split_workspace_path(workspace_path: str | Path) -> tuple[str, str]:
-    """Split workspace_path into (root_path, workspace_id)."""
-    path_str = str(workspace_path)
-    if "/workspaces/" in path_str:
-        root, ws_id = path_str.split("/workspaces/", 1)
+def split_space_path(space_path: str | Path) -> tuple[str, str]:
+    """Split space_path into (root_path, space_id)."""
+    path_str = str(space_path)
+    if "/spaces/" in path_str:
+        root, ws_id = path_str.split("/spaces/", 1)
         return root, ws_id.strip("/")
     parts = path_str.rstrip("/").split("/")
     if not parts:
-        msg = f"Invalid workspace path: {workspace_path}"
+        msg = f"Invalid space path: {space_path}"
         raise ValueError(msg)
     ws_id = parts[-1]
     root = "/".join(parts[:-1])

@@ -1,6 +1,6 @@
-// REQ-NOTE-006: Structured data extraction from markdown
+// REQ-ENTRY-006: Structured data extraction from markdown
 import { describe, it, expect } from "vitest";
-import { replaceFirstH1, ensureClassFrontmatter, updateH2Section } from "./markdown";
+import { replaceFirstH1, ensureFormFrontmatter, updateH2Section } from "./markdown";
 
 describe("markdown utils", () => {
 	it("replaceFirstH1 replaces existing H1", () => {
@@ -13,23 +13,23 @@ describe("markdown utils", () => {
 		expect(replaceFirstH1(t, "New")).toMatch(/^# New\n/);
 	});
 
-	it("ensureClassFrontmatter inserts class when none present", () => {
+	it("ensureFormFrontmatter inserts form when none present", () => {
 		const md = "# Title\n\nContent";
-		const out = ensureClassFrontmatter(md, "Task");
-		expect(out).toContain("class: Task");
+		const out = ensureFormFrontmatter(md, "Task");
+		expect(out).toContain("form: Task");
 	});
 
-	it("ensureClassFrontmatter replaces existing class in frontmatter", () => {
-		const md = "---\nclass: Old\n---\n\n# Title";
-		const out = ensureClassFrontmatter(md, "Task");
-		expect(out).toContain("class: Task");
-		expect(out).not.toContain("class: Old");
+	it("ensureFormFrontmatter replaces existing form in frontmatter", () => {
+		const md = "---\nform: Old\n---\n\n# Title";
+		const out = ensureFormFrontmatter(md, "Task");
+		expect(out).toContain("form: Task");
+		expect(out).not.toContain("form: Old");
 	});
 
-	it("ensureClassFrontmatter handles frontmatter with '---' in content safely", () => {
+	it("ensureFormFrontmatter handles frontmatter with '---' in content safely", () => {
 		const md = "---\ntitle: A\n---\n\nThis line contains three dashes --- in content\n\n# Title";
-		const out = ensureClassFrontmatter(md, "Note");
-		expect(out).toContain("class: Note");
+		const out = ensureFormFrontmatter(md, "Entry");
+		expect(out).toContain("form: Entry");
 	});
 
 	it("updateH2Section replaces existing section content", () => {

@@ -11,55 +11,55 @@ import typer
 from ieapp_core import build_sql_schema, lint_sql, sql_completions
 
 from ieapp import saved_sql
-from ieapp.attachments import (
-    AttachmentReferencedError,
-    delete_attachment,
-    list_attachments,
-    save_attachment,
+from ieapp.assets import (
+    AssetReferencedError,
+    delete_asset,
+    list_assets,
+    save_asset,
 )
-from ieapp.classes import get_class, list_classes, list_column_types, migrate_class
+from ieapp.entries import (
+    create_entry,
+    delete_entry,
+    get_entry,
+    get_entry_history,
+    get_entry_revision,
+    list_entries,
+    restore_entry,
+    update_entry,
+)
+from ieapp.forms import get_form, list_column_types, list_forms, migrate_form
 from ieapp.indexer import Indexer, create_sql_session, get_sql_session_rows, query_index
 from ieapp.links import create_link, delete_link, list_links
 from ieapp.logging_utils import setup_logging
-from ieapp.notes import (
-    create_note,
-    delete_note,
-    get_note,
-    get_note_history,
-    get_note_revision,
-    list_notes,
-    restore_note,
-    update_note,
-)
-from ieapp.search import search_notes
-from ieapp.workspace import (
-    create_workspace,
-    get_workspace,
-    list_workspaces,
-    patch_workspace,
+from ieapp.search import search_entries
+from ieapp.space import (
+    create_space,
+    get_space,
+    list_spaces,
+    patch_space,
     test_storage_connection,
 )
 
 app = typer.Typer(help="IEapp CLI - Knowledge base management")
-note_app = typer.Typer(help="Note management commands")
+entry_app = typer.Typer(help="Entry management commands")
 index_app = typer.Typer(help="Indexer operations")
-class_app = typer.Typer(help="Class management commands")
-workspace_app = typer.Typer(help="Workspace management commands")
-attachment_app = typer.Typer(help="Attachment management commands")
+form_app = typer.Typer(help="Form management commands")
+space_app = typer.Typer(help="Space management commands")
+asset_app = typer.Typer(help="Asset management commands")
 link_app = typer.Typer(help="Link management commands")
 search_app = typer.Typer(help="Search commands")
 sql_app = typer.Typer(help="SQL linting and completion commands")
 
-app.add_typer(note_app, name="note")
+app.add_typer(entry_app, name="entry")
 app.add_typer(index_app, name="index")
-app.add_typer(class_app, name="class")
-app.add_typer(workspace_app, name="workspace")
-app.add_typer(attachment_app, name="attachment")
+app.add_typer(form_app, name="form")
+app.add_typer(space_app, name="space")
+app.add_typer(asset_app, name="asset")
 app.add_typer(link_app, name="link")
 app.add_typer(search_app, name="search")
 app.add_typer(sql_app, name="sql")
 
-DEFAULT_NOTE_CONTENT = "# New Note\n"
+DEFAULT_NOTE_CONTENT = "# New Entry\n"
 
 
 def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
@@ -118,49 +118,49 @@ def _parse_json_list(value: str | None, label: str) -> list[dict[str, Any]] | No
     return payload
 
 
-@app.command("create-workspace")
+@app.command("create-space")
 @handle_cli_errors
-def cmd_create_workspace(
-    root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
-    workspace_id: Annotated[str, typer.Argument(help="ID of the workspace to create")],
+def cmd_create_space(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="ID of the space to create")],
 ) -> None:
-    """Create a new workspace."""
+    """Create a new space."""
     setup_logging()
-    create_workspace(root_path, workspace_id)
+    create_space(root_path, space_id)
     typer.echo(
-        f"Workspace '{workspace_id}' created successfully at '{root_path}'",
+        f"Space '{space_id}' created successfully at '{root_path}'",
     )
 
 
-@workspace_app.command("list")
+@space_app.command("list")
 @handle_cli_errors
-def cmd_workspace_list(
-    root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
+def cmd_space_list(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
 ) -> None:
-    """List all workspaces under the root path."""
+    """List all spaces under the root path."""
     setup_logging()
-    data = list_workspaces(root_path)
+    data = list_spaces(root_path)
     typer.echo(json.dumps(data, indent=2))
 
 
-@workspace_app.command("get")
+@space_app.command("get")
 @handle_cli_errors
-def cmd_workspace_get(
-    root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
-    workspace_id: Annotated[str, typer.Argument(help="Workspace ID")],
+def cmd_space_get(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
 ) -> None:
-    """Get workspace metadata."""
+    """Get space metadata."""
     setup_logging()
-    data = get_workspace(root_path, workspace_id)
+    data = get_space(root_path, space_id)
     typer.echo(json.dumps(data, indent=2))
 
 
-@workspace_app.command("patch")
+@space_app.command("patch")
 @handle_cli_errors
-def cmd_workspace_patch(
-    root_path: Annotated[str, typer.Argument(help="Root path for workspaces")],
-    workspace_id: Annotated[str, typer.Argument(help="Workspace ID")],
-    name: Annotated[str | None, typer.Option(help="New workspace name")] = None,
+def cmd_space_patch(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    name: Annotated[str | None, typer.Option(help="New space name")] = None,
     storage_config: Annotated[
         str | None,
         typer.Option(help="JSON object for storage_config"),
@@ -170,7 +170,7 @@ def cmd_workspace_patch(
         typer.Option(help="JSON object for settings"),
     ] = None,
 ) -> None:
-    """Patch workspace metadata/settings."""
+    """Patch space metadata/settings."""
     setup_logging()
     patch: dict[str, Any] = {}
     if name is not None:
@@ -181,13 +181,13 @@ def cmd_workspace_patch(
     settings_payload = _parse_json_payload(settings, "settings")
     if settings_payload is not None:
         patch["settings"] = settings_payload
-    data = patch_workspace(root_path, workspace_id, patch=patch)
+    data = patch_space(root_path, space_id, patch=patch)
     typer.echo(json.dumps(data, indent=2))
 
 
-@workspace_app.command("test-connection")
+@space_app.command("test-connection")
 @handle_cli_errors
-def cmd_workspace_test_connection(
+def cmd_space_test_connection(
     storage_config: Annotated[str, typer.Argument(help="Storage config JSON")],
 ) -> None:
     """Test a storage connector payload."""
@@ -200,158 +200,158 @@ def cmd_workspace_test_connection(
     typer.echo(json.dumps(result, indent=2))
 
 
-@note_app.command("create")
+@entry_app.command("create")
 @handle_cli_errors
-def cmd_note_create(
-    workspace_path: Annotated[
+def cmd_entry_create(
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
-    note_id: Annotated[str, typer.Argument(help="ID of the note to create")],
+    entry_id: Annotated[str, typer.Argument(help="ID of the entry to create")],
     content: Annotated[
         str,
-        typer.Option(help="Content of the note"),
+        typer.Option(help="Content of the entry"),
     ] = DEFAULT_NOTE_CONTENT,
-    author: Annotated[str, typer.Option(help="Author of the note")] = "user",
+    author: Annotated[str, typer.Option(help="Author of the entry")] = "user",
 ) -> None:
-    """Create a new note in a workspace."""
+    """Create a new entry in a space."""
     setup_logging()
-    create_note(workspace_path, note_id, content, author=author)
-    typer.echo(f"Note '{note_id}' created successfully.")
+    create_entry(space_path, entry_id, content, author=author)
+    typer.echo(f"Entry '{entry_id}' created successfully.")
 
 
-@note_app.command("list")
+@entry_app.command("list")
 @handle_cli_errors
-def cmd_note_list(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+def cmd_entry_list(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
 ) -> None:
-    """List notes in a workspace."""
+    """List entries in a space."""
     setup_logging()
-    notes = list_notes(workspace_path)
-    typer.echo(json.dumps(notes, indent=2))
+    entries = list_entries(space_path)
+    typer.echo(json.dumps(entries, indent=2))
 
 
-@note_app.command("get")
+@entry_app.command("get")
 @handle_cli_errors
-def cmd_note_get(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_get(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
 ) -> None:
-    """Get a single note by ID."""
+    """Get a single entry by ID."""
     setup_logging()
-    note = get_note(workspace_path, note_id)
-    typer.echo(json.dumps(note, indent=2))
+    entry = get_entry(space_path, entry_id)
+    typer.echo(json.dumps(entry, indent=2))
 
 
-@note_app.command("update")
+@entry_app.command("update")
 @handle_cli_errors
-def cmd_note_update(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_update(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
     markdown: Annotated[str, typer.Option(help="Updated markdown content")],
     parent_revision_id: Annotated[str, typer.Option(help="Parent revision ID")],
-    attachments: Annotated[
+    assets: Annotated[
         str | None,
-        typer.Option(help="JSON array of attachment metadata"),
+        typer.Option(help="JSON array of asset metadata"),
     ] = None,
     author: Annotated[str, typer.Option(help="Author")] = "user",
 ) -> None:
-    """Update a note with optimistic concurrency."""
+    """Update a entry with optimistic concurrency."""
     setup_logging()
-    attachment_payload = None
-    if attachments is not None:
+    asset_payload = None
+    if assets is not None:
         try:
-            attachment_payload = json.loads(attachments)
+            asset_payload = json.loads(assets)
         except json.JSONDecodeError as exc:
-            msg = f"Invalid JSON for attachments: {exc}"
+            msg = f"Invalid JSON for assets: {exc}"
             raise typer.BadParameter(msg) from exc
-        if not isinstance(attachment_payload, list):
-            msg = "attachments must be a JSON array"
+        if not isinstance(asset_payload, list):
+            msg = "assets must be a JSON array"
             raise typer.BadParameter(msg)
-    update_note(
-        workspace_path,
-        note_id,
+    update_entry(
+        space_path,
+        entry_id,
         markdown,
         parent_revision_id,
-        attachments=attachment_payload,
+        assets=asset_payload,
         author=author,
     )
-    typer.echo(f"Note '{note_id}' updated successfully.")
+    typer.echo(f"Entry '{entry_id}' updated successfully.")
 
 
-@note_app.command("delete")
+@entry_app.command("delete")
 @handle_cli_errors
-def cmd_note_delete(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_delete(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
     hard_delete: Annotated[bool | None, typer.Option(help="Permanently delete")] = None,
 ) -> None:
-    """Delete (tombstone) a note."""
+    """Delete (tombstone) a entry."""
     setup_logging()
-    delete_note(workspace_path, note_id, hard_delete=hard_delete is True)
-    typer.echo(f"Note '{note_id}' deleted successfully.")
+    delete_entry(space_path, entry_id, hard_delete=hard_delete is True)
+    typer.echo(f"Entry '{entry_id}' deleted successfully.")
 
 
-@note_app.command("history")
+@entry_app.command("history")
 @handle_cli_errors
-def cmd_note_history(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_history(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
 ) -> None:
-    """Get note revision history."""
+    """Get entry revision history."""
     setup_logging()
-    history = get_note_history(workspace_path, note_id)
+    history = get_entry_history(space_path, entry_id)
     typer.echo(json.dumps(history, indent=2))
 
 
-@note_app.command("revision")
+@entry_app.command("revision")
 @handle_cli_errors
-def cmd_note_revision(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_revision(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
     revision_id: Annotated[str, typer.Argument(help="Revision ID")],
 ) -> None:
-    """Get a specific note revision."""
+    """Get a specific entry revision."""
     setup_logging()
-    revision = get_note_revision(workspace_path, note_id, revision_id)
+    revision = get_entry_revision(space_path, entry_id, revision_id)
     typer.echo(json.dumps(revision, indent=2))
 
 
-@note_app.command("restore")
+@entry_app.command("restore")
 @handle_cli_errors
-def cmd_note_restore(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    note_id: Annotated[str, typer.Argument(help="Note ID")],
+def cmd_entry_restore(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    entry_id: Annotated[str, typer.Argument(help="Entry ID")],
     revision_id: Annotated[str, typer.Argument(help="Revision ID")],
     author: Annotated[str, typer.Option(help="Author")] = "user",
 ) -> None:
-    """Restore a note to a previous revision."""
+    """Restore a entry to a previous revision."""
     setup_logging()
-    data = restore_note(workspace_path, note_id, revision_id, author=author)
+    data = restore_entry(space_path, entry_id, revision_id, author=author)
     typer.echo(json.dumps(data, indent=2))
 
 
 @index_app.command("run")
 @handle_cli_errors
 def cmd_index_run(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
 ) -> None:
     """Run the indexer to rebuild caches."""
     setup_logging()
-    indexer = Indexer(workspace_path)
+    indexer = Indexer(space_path)
     indexer.run_once()
-    typer.echo(f"Indexer completed for workspace '{workspace_path}'.")
+    typer.echo(f"Indexer completed for space '{space_path}'.")
 
 
 @app.command("query")
 @handle_cli_errors
 def cmd_query(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
     sql: Annotated[
         str | None,
@@ -365,27 +365,27 @@ def cmd_query(
         int,
         typer.Option("--offset", help="Row offset for pagination"),
     ] = 0,
-    note_class: Annotated[
+    entry_form: Annotated[
         str | None,
-        typer.Option("--class", help="Filter by class"),
+        typer.Option("--form", help="Filter by form"),
     ] = None,
     tag: Annotated[
         str | None,
         typer.Option(help="Filter by tag"),
     ] = None,
 ) -> None:
-    """Query the index for notes."""
+    """Query the index for entries."""
     setup_logging()
     filter_dict: dict[str, Any] | None = None
     if sql:
-        session = create_sql_session(workspace_path, sql)
+        session = create_sql_session(space_path, sql)
         if session.get("status") == "failed":
             error = session.get("error") or "SQL query failed"
             typer.echo(error)
             raise typer.Exit(code=1)
 
         rows_payload = get_sql_session_rows(
-            workspace_path,
+            space_path,
             session.get("id", ""),
             offset=offset,
             limit=limit,
@@ -393,26 +393,26 @@ def cmd_query(
         results = rows_payload.get("rows", [])
         total = rows_payload.get("total_count", len(results))
         if not results:
-            typer.echo("No notes found.")
+            typer.echo("No entries found.")
         else:
             typer.echo(f"Total results: {total}")
-            for note in results:
-                typer.echo(f"- {note.get('id')}: {note.get('title')}")
+            for entry in results:
+                typer.echo(f"- {entry.get('id')}: {entry.get('title')}")
         return
-    if note_class or tag:
+    if entry_form or tag:
         filter_dict = {}
-        if note_class:
-            filter_dict["class"] = note_class
+        if entry_form:
+            filter_dict["form"] = entry_form
         if tag:
             filter_dict["tag"] = tag
 
-    results = query_index(workspace_path, filter_dict)
+    results = query_index(space_path, filter_dict)
 
     if not results:
-        typer.echo("No notes found.")
+        typer.echo("No entries found.")
     else:
-        for note in results:
-            typer.echo(f"- {note.get('id')}: {note.get('title')}")
+        for entry in results:
+            typer.echo(f"- {entry.get('id')}: {entry.get('title')}")
 
 
 @sql_app.command("lint")
@@ -448,14 +448,14 @@ def cmd_sql_lint(
 @sql_app.command("schema")
 @handle_cli_errors
 def cmd_sql_schema(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str | None,
-        typer.Option("--workspace", help="Full path to workspace for class fields"),
+        typer.Option("--space", help="Full path to space for form fields"),
     ] = None,
 ) -> None:
     """Output the SQL completion schema as JSON."""
-    classes = list_classes(workspace_path) if workspace_path else []
-    schema = build_sql_schema(classes)
+    forms = list_forms(space_path) if space_path else []
+    schema = build_sql_schema(forms)
     typer.echo(json.dumps(schema, indent=2))
 
 
@@ -463,52 +463,52 @@ def cmd_sql_schema(
 @handle_cli_errors
 def cmd_sql_complete(
     sql: Annotated[str, typer.Argument(help="IEapp SQL query prefix")],
-    workspace_path: Annotated[
+    space_path: Annotated[
         str | None,
-        typer.Option("--workspace", help="Full path to workspace for class fields"),
+        typer.Option("--space", help="Full path to space for form fields"),
     ] = None,
 ) -> None:
     """Provide SQL completion suggestions."""
-    classes = list_classes(workspace_path) if workspace_path else []
-    suggestions = sql_completions(sql, classes)
+    forms = list_forms(space_path) if space_path else []
+    suggestions = sql_completions(sql, forms)
     typer.echo(json.dumps(suggestions, indent=2))
 
 
 @sql_app.command("saved-list")
 @handle_cli_errors
 def cmd_sql_saved_list(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
 ) -> None:
-    """List saved SQL entries in a workspace."""
+    """List saved SQL entries in a space."""
     setup_logging()
-    entries = saved_sql.list_sql(workspace_path)
+    entries = saved_sql.list_sql(space_path)
     typer.echo(json.dumps(entries, indent=2))
 
 
 @sql_app.command("saved-get")
 @handle_cli_errors
 def cmd_sql_saved_get(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
     sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
 ) -> None:
     """Get a saved SQL entry by ID."""
     setup_logging()
-    entry = saved_sql.get_sql(workspace_path, sql_id)
+    entry = saved_sql.get_sql(space_path, sql_id)
     typer.echo(json.dumps(entry, indent=2))
 
 
 @sql_app.command("saved-create")
 @handle_cli_errors
 def cmd_sql_saved_create(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
     name: Annotated[str, typer.Argument(help="Saved SQL name")],
     sql: Annotated[str, typer.Argument(help="SQL text")],
@@ -534,7 +534,7 @@ def cmd_sql_saved_create(
         "variables": variable_list,
     }
     entry = saved_sql.create_sql(
-        workspace_path,
+        space_path,
         payload,
         sql_id=sql_id,
         author=author,
@@ -545,9 +545,9 @@ def cmd_sql_saved_create(
 @sql_app.command("saved-update")
 @handle_cli_errors
 def cmd_sql_saved_update(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
     sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
     name: Annotated[str, typer.Argument(help="Saved SQL name")],
@@ -574,22 +574,22 @@ def cmd_sql_saved_update(
         "variables": variable_list,
         "parent_revision_id": parent_revision_id,
     }
-    entry = saved_sql.update_sql(workspace_path, sql_id, payload, author=author)
+    entry = saved_sql.update_sql(space_path, sql_id, payload, author=author)
     typer.echo(json.dumps(entry, indent=2))
 
 
 @sql_app.command("saved-delete")
 @handle_cli_errors
 def cmd_sql_saved_delete(
-    workspace_path: Annotated[
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
     sql_id: Annotated[str, typer.Argument(help="Saved SQL ID")],
 ) -> None:
     """Delete a saved SQL entry."""
     setup_logging()
-    saved_sql.delete_sql(workspace_path, sql_id)
+    saved_sql.delete_sql(space_path, sql_id)
     typer.echo(f"Saved SQL '{sql_id}' deleted successfully.")
 
 
@@ -602,7 +602,7 @@ if __name__ == "__main__":
     main()
 
 
-@class_app.command("list-types")
+@form_app.command("list-types")
 @handle_cli_errors
 def cmd_list_types() -> None:
     """List available column types."""
@@ -611,57 +611,57 @@ def cmd_list_types() -> None:
         typer.echo(t)
 
 
-@class_app.command("list")
+@form_app.command("list")
 @handle_cli_errors
-def cmd_class_list(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+def cmd_form_list(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
 ) -> None:
-    """List classes in a workspace."""
+    """List forms in a space."""
     setup_logging()
-    classes = list_classes(workspace_path)
-    typer.echo(json.dumps(classes, indent=2))
+    forms = list_forms(space_path)
+    typer.echo(json.dumps(forms, indent=2))
 
 
-@class_app.command("get")
+@form_app.command("get")
 @handle_cli_errors
-def cmd_class_get(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    class_name: Annotated[str, typer.Argument(help="Class name")],
+def cmd_form_get(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    form_name: Annotated[str, typer.Argument(help="Form name")],
 ) -> None:
-    """Get a class definition by name."""
+    """Get a form definition by name."""
     setup_logging()
-    class_def = get_class(workspace_path, class_name)
-    typer.echo(json.dumps(class_def, indent=2))
+    form_def = get_form(space_path, form_name)
+    typer.echo(json.dumps(form_def, indent=2))
 
 
-@class_app.command("update")
+@form_app.command("update")
 @handle_cli_errors
-def cmd_class_update(
-    workspace_path: Annotated[
+def cmd_form_update(
+    space_path: Annotated[
         str,
-        typer.Argument(help="Full path to the workspace directory"),
+        typer.Argument(help="Full path to the space directory"),
     ],
-    class_file: Annotated[str, typer.Argument(help="Path to class JSON file")],
+    form_file: Annotated[str, typer.Argument(help="Path to form JSON file")],
     strategies: Annotated[
         str | None,
         typer.Option(help="JSON string of migration strategies"),
     ] = None,
 ) -> None:
-    """Update class and migrate existing notes using strategies."""
+    """Update form and migrate existing entries using strategies."""
     setup_logging()
 
-    class_path = Path(class_file)
+    form_path = Path(form_file)
     try:
-        with class_path.open() as f:
-            class_data = json.load(f)
+        with form_path.open() as f:
+            form_data = json.load(f)
     except FileNotFoundError as e:
-        err_msg = f"Class file not found: '{class_path}'"
+        err_msg = f"Form file not found: '{form_path}'"
         raise typer.BadParameter(err_msg) from e
     except OSError as e:
-        err_msg = f"Could not read class file '{class_path}': {e}"
+        err_msg = f"Could not read form file '{form_path}': {e}"
         raise typer.BadParameter(err_msg) from e
     except json.JSONDecodeError as e:
-        err_msg = f"Invalid JSON in class file '{class_path}': {e}"
+        err_msg = f"Invalid JSON in form file '{form_path}': {e}"
         raise typer.BadParameter(err_msg) from e
 
     strat_dict = None
@@ -672,79 +672,79 @@ def cmd_class_update(
             err_msg = f"Invalid JSON in strategies: {e}"
             raise typer.BadParameter(err_msg) from e
 
-    count = migrate_class(workspace_path, class_data, strategies=strat_dict)
-    note_word = "note" if count == 1 else "notes"
-    typer.echo(f"Class updated. Migrated {count} {note_word}.")
+    count = migrate_form(space_path, form_data, strategies=strat_dict)
+    entry_word = "entry" if count == 1 else "entries"
+    typer.echo(f"Form updated. Migrated {count} {entry_word}.")
 
 
-@attachment_app.command("upload")
+@asset_app.command("upload")
 @handle_cli_errors
-def cmd_attachment_upload(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+def cmd_asset_upload(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
     file_path: Annotated[str, typer.Argument(help="Path to the file to upload")],
     filename: Annotated[str | None, typer.Option(help="Override filename")] = None,
 ) -> None:
-    """Upload an attachment to the workspace."""
+    """Upload an asset to the space."""
     setup_logging()
     path = Path(file_path)
     try:
         data = path.read_bytes()
     except FileNotFoundError as exc:
-        err_msg = f"Attachment file not found: '{path}'"
+        err_msg = f"Asset file not found: '{path}'"
         raise typer.BadParameter(err_msg) from exc
     except IsADirectoryError as exc:
-        err_msg = f"Attachment path is a directory, not a file: '{path}'"
+        err_msg = f"Asset path is a directory, not a file: '{path}'"
         raise typer.BadParameter(err_msg) from exc
     except PermissionError as exc:
-        err_msg = f"Permission denied when reading attachment file '{path}'"
+        err_msg = f"Permission denied when reading asset file '{path}'"
         raise typer.BadParameter(err_msg) from exc
     except OSError as exc:
-        err_msg = f"Could not read attachment file '{path}': {exc}"
+        err_msg = f"Could not read asset file '{path}': {exc}"
         raise typer.BadParameter(err_msg) from exc
     name = filename or path.name
-    attachment = save_attachment(workspace_path, data, name)
-    typer.echo(json.dumps(attachment, indent=2))
+    asset = save_asset(space_path, data, name)
+    typer.echo(json.dumps(asset, indent=2))
 
 
-@attachment_app.command("list")
+@asset_app.command("list")
 @handle_cli_errors
-def cmd_attachment_list(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+def cmd_asset_list(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
 ) -> None:
-    """List attachments in a workspace."""
+    """List assets in a space."""
     setup_logging()
-    attachments = list_attachments(workspace_path)
-    typer.echo(json.dumps(attachments, indent=2))
+    assets = list_assets(space_path)
+    typer.echo(json.dumps(assets, indent=2))
 
 
-@attachment_app.command("delete")
+@asset_app.command("delete")
 @handle_cli_errors
-def cmd_attachment_delete(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    attachment_id: Annotated[str, typer.Argument(help="Attachment ID")],
+def cmd_asset_delete(
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    asset_id: Annotated[str, typer.Argument(help="Asset ID")],
 ) -> None:
-    """Delete an attachment by ID."""
+    """Delete an asset by ID."""
     setup_logging()
     try:
-        delete_attachment(workspace_path, attachment_id)
-    except AttachmentReferencedError as exc:
+        delete_asset(space_path, asset_id)
+    except AssetReferencedError as exc:
         raise typer.Exit(code=1) from exc
-    typer.echo(f"Attachment '{attachment_id}' deleted successfully.")
+    typer.echo(f"Asset '{asset_id}' deleted successfully.")
 
 
 @link_app.command("create")
 @handle_cli_errors
 def cmd_link_create(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
-    source: Annotated[str, typer.Argument(help="Source note ID")],
-    target: Annotated[str, typer.Argument(help="Target note ID")],
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
+    source: Annotated[str, typer.Argument(help="Source entry ID")],
+    target: Annotated[str, typer.Argument(help="Target entry ID")],
     kind: Annotated[str, typer.Option(help="Link kind")] = "related",
 ) -> None:
-    """Create a link between two notes."""
+    """Create a link between two entries."""
     setup_logging()
     link_id = uuid.uuid4().hex
     link = create_link(
-        workspace_path,
+        space_path,
         source=source,
         target=target,
         kind=kind,
@@ -756,33 +756,33 @@ def cmd_link_create(
 @link_app.command("list")
 @handle_cli_errors
 def cmd_link_list(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
 ) -> None:
-    """List links in a workspace."""
+    """List links in a space."""
     setup_logging()
-    links = list_links(workspace_path)
+    links = list_links(space_path)
     typer.echo(json.dumps(links, indent=2))
 
 
 @link_app.command("delete")
 @handle_cli_errors
 def cmd_link_delete(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
     link_id: Annotated[str, typer.Argument(help="Link ID")],
 ) -> None:
     """Delete a link by ID."""
     setup_logging()
-    delete_link(workspace_path, link_id)
+    delete_link(space_path, link_id)
     typer.echo(f"Link '{link_id}' deleted successfully.")
 
 
 @search_app.command("keyword")
 @handle_cli_errors
 def cmd_search_keyword(
-    workspace_path: Annotated[str, typer.Argument(help="Full path to workspace")],
+    space_path: Annotated[str, typer.Argument(help="Full path to space")],
     query: Annotated[str, typer.Argument(help="Search query")],
 ) -> None:
-    """Keyword search notes."""
+    """Keyword search entries."""
     setup_logging()
-    results = search_notes(workspace_path, query)
+    results = search_entries(space_path, query)
     typer.echo(json.dumps(results, indent=2))

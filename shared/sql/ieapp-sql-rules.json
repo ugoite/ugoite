@@ -21,31 +21,31 @@
     "OR",
     "NOT"
   ],
-  "base_tables": ["notes", "links", "attachments"],
+  "base_tables": ["entries", "links", "assets"],
   "base_columns": [
     "id",
     "title",
-    "class",
+    "form",
     "updated_at",
-    "workspace_id",
+    "space_id",
     "word_count",
     "tags"
   ],
   "table_columns": {
-    "notes": [
+    "entries": [
       "id",
       "title",
-      "class",
+      "form",
       "updated_at",
-      "workspace_id",
+      "space_id",
       "word_count",
       "tags",
       "properties",
       "links",
-      "attachments"
+      "assets"
     ],
-    "links": ["id", "source", "target", "kind", "source_class", "target_class"],
-    "attachments": ["id", "note_id", "name", "path"]
+    "links": ["id", "source", "target", "kind"],
+    "assets": ["id", "entry_id", "name", "path"]
   },
   "lint": {
     "require_select": true,

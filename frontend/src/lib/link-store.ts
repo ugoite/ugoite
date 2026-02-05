@@ -1,9 +1,9 @@
 import { createSignal } from "solid-js";
-import type { WorkspaceLink } from "./types";
+import type { SpaceLink } from "./types";
 import { linkApi } from "./link-api";
 
-export function createLinkStore(workspaceId: () => string) {
-	const [links, setLinks] = createSignal<WorkspaceLink[]>([]);
+export function createLinkStore(spaceId: () => string) {
+	const [links, setLinks] = createSignal<SpaceLink[]>([]);
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 
@@ -11,7 +11,7 @@ export function createLinkStore(workspaceId: () => string) {
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await linkApi.list(workspaceId());
+			const data = await linkApi.list(spaceId());
 			setLinks(data);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "Failed to load links");
@@ -22,14 +22,14 @@ export function createLinkStore(workspaceId: () => string) {
 
 	async function createLink(payload: { source: string; target: string; kind: string }) {
 		setError(null);
-		const created = await linkApi.create(workspaceId(), payload);
+		const created = await linkApi.create(spaceId(), payload);
 		await loadLinks();
 		return created;
 	}
 
 	async function deleteLink(linkId: string): Promise<void> {
 		setError(null);
-		await linkApi.delete(workspaceId(), linkId);
+		await linkApi.delete(spaceId(), linkId);
 		await loadLinks();
 	}
 

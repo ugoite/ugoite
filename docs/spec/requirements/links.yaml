@@ -5,7 +5,7 @@ requirements:
   - id: REQ-LNK-001
     title: Create bi-directional links
     description: |
-      Users must be able to create a bi-directional link between two notes.
+      Users must be able to create a bi-directional link between two entries.
     priority: high
     status: implemented
     tests:
@@ -17,7 +17,7 @@ requirements:
   - id: REQ-LNK-002
     title: List links
     description: |
-      Users must be able to list all links in a workspace.
+      Users must be able to list all links in a space.
     priority: medium
     status: implemented
     tests:
@@ -29,7 +29,7 @@ requirements:
   - id: REQ-LNK-003
     title: Delete links
     description: |
-      Users must be able to delete a link, removing it from both involved notes.
+      Users must be able to delete a link, removing it from both involved entries.
     priority: medium
     status: implemented
     tests:
@@ -41,12 +41,12 @@ requirements:
   - id: REQ-LNK-004
     title: Normalize IEapp Link URIs
     description: |
-      Markdown content MUST normalize IEapp link URIs (e.g. note and attachment
+      Markdown content MUST normalize IEapp link URIs (e.g. entry and asset
       links) into canonical ieapp:// forms during create/update.
     priority: medium
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_note.rs
+        - file: ieapp-core/tests/test_entry.rs
           tests:
-            - test_note_req_lnk_004_normalize_ieapp_link_uris
+            - test_entry_req_lnk_004_normalize_ieapp_link_uris

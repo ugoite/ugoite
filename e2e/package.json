@@ -5,8 +5,8 @@
 	"scripts": {
 		"test": "playwright test",
 		"test:smoke": "playwright test smoke.test.ts",
-		"test:notes": "playwright test notes.test.ts",
-		"test:classes": "playwright test classes.test.ts"
+		"test:entries": "playwright test entries.test.ts",
+		"test:forms": "playwright test forms.test.ts"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.58.1",

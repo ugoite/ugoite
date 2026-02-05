@@ -1,0 +1,78 @@
+# Form APIs
+
+version: "0.1"
+updated: "2026-01"
+kind: forms
+
+apis:
+  - id: form.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/forms
+      file: backend/src/app/api/endpoints/forms.py
+      function: list_forms_endpoint
+    frontend:
+      path: /spaces/{space_id}/forms
+      file: frontend/src/routes/spaces/[space_id]/forms.tsx
+      function: SpaceFormsRoute
+    ieapp_core:
+      file: ieapp-core/src/form.rs
+      function: list_forms
+    ieapp_cli:
+      command: ieapp form list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_form_list
+
+  - id: form.types
+    method: GET
+    backend:
+      path: /spaces/{space_id}/forms/types
+      file: backend/src/app/api/endpoints/forms.py
+      function: list_form_types_endpoint
+    frontend:
+      path: /spaces/{space_id}/forms/types
+      file: frontend/src/routes/spaces/[space_id]/forms/types.tsx
+      function: SpaceFormTypesRoute
+    ieapp_core:
+      file: ieapp-core/src/form.rs
+      function: list_column_types
+    ieapp_cli:
+      command: ieapp form list-types
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_list_types
+
+  - id: form.get
+    method: GET
+    backend:
+      path: /spaces/{space_id}/forms/{form_name}
+      file: backend/src/app/api/endpoints/forms.py
+      function: get_form_endpoint
+    frontend:
+      path: /spaces/{space_id}/forms/{form_name}
+      file: frontend/src/routes/spaces/[space_id]/forms/[form_name].tsx
+      function: SpaceFormDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/form.rs
+      function: get_form
+    ieapp_cli:
+      command: ieapp form get
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_form_get
+
+  - id: form.upsert
+    method: POST
+    backend:
+      path: /spaces/{space_id}/forms
+      file: backend/src/app/api/endpoints/forms.py
+      function: create_form_endpoint
+    frontend:
+      path: /spaces/{space_id}/forms
+      file: frontend/src/routes/spaces/[space_id]/forms.tsx
+      function: SpaceFormsRoute
+    ieapp_core:
+      file: ieapp-core/src/form.rs
+      function: upsert_form
+    ieapp_cli:
+      command: ieapp form update
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_form_update

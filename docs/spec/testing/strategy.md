@@ -94,10 +94,10 @@ cd e2e && npm run test
 
 ```python
 # Pattern: test_<feature>_<scenario>
-def test_workspace_create_success():
+def test_space_create_success():
     ...
 
-def test_workspace_create_duplicate_returns_409():
+def test_space_create_duplicate_returns_409():
     ...
 ```
 
@@ -108,23 +108,23 @@ For pytest tests that validate a specific requirement, use:
 ```python
 # Pattern: test_<feature>_<requirement_id>_<description>
 # Example (REQ-API-001):
-def test_api_req_api_001_create_workspace():
-    """REQ-API-001: Workspace CRUD"""
+def test_api_req_api_001_create_space():
+    """REQ-API-001: Space CRUD"""
     ...
 ```
 
-Notes:
+Details:
 
 - Replace hyphens in `REQ-XXX-001` with underscores to form `req_xxx_001`.
-- `feature` should reflect the domain under test (e.g., api, note, sto, cls).
+- `feature` should reflect the domain under test (e.g., api, entry, sto, form).
 
 ### Test Files
 
 ```
 ieapp-cli/tests/
 ├── conftest.py          # Shared fixtures
-├── test_workspace.py    # Workspace tests
-├── test_notes.py        # Note tests
+├── test_space.py        # Space tests
+├── test_entries.py      # Entry tests
 ├── test_indexer.py      # Indexer tests
 └── ...
 
@@ -147,8 +147,8 @@ frontend/src/
 Every test should map to a requirement:
 
 ```python
-def test_note_create_basic():
-    """REQ-NOTE-001: Note Creation"""
+def test_entry_create_basic():
+    """REQ-ENTRY-001: Entry Creation"""
     ...
 ```
 
@@ -169,15 +169,15 @@ def test_all_requirements_have_tests() -> None:
 Rust tests in `ieapp-core/tests/` use a requirement-aware naming convention:
 
 ```rust
-async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
-    // REQ-NOTE-001
+async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
+    // REQ-ENTRY-001
     ...
 }
 ```
 
 When using this pattern, replace hyphens in `REQ-XXX-001` with underscores to
 form `req_xxx_001`. The `feature` segment should reflect the domain under test
-(e.g., api, workspace, note, class, core, cli).
+(e.g., api, space, entry, form, core, cli).
 
 ## Mocking Strategy
 

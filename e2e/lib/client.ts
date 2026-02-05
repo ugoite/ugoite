@@ -36,24 +36,24 @@ export async function waitForServers(
 	options: { timeoutMs?: number } = {},
 ): Promise<void> {
 	const timeoutMs = options.timeoutMs ?? 60_000;
-	await waitForOk(request, getBackendUrl("/workspaces"), timeoutMs);
+	await waitForOk(request, getBackendUrl("/spaces"), timeoutMs);
 	await waitForOk(request, getFrontendUrl("/"), timeoutMs);
 }
 
-export async function ensureDefaultClass(
+export async function ensureDefaultForm(
 	request: APIRequestContext,
 ): Promise<void> {
-	const response = await request.post(getBackendUrl("/workspaces/default/classes"), {
+	const response = await request.post(getBackendUrl("/spaces/default/forms"), {
 		data: {
-			name: "Note",
+			name: "Entry",
 			version: 1,
-			template: "# Note\n\n## Body\n",
+			template: "# Entry\n\n## Body\n",
 			fields: { Body: { type: "markdown", required: false } },
 		},
 	});
 	if (![200, 201, 409].includes(response.status())) {
 		const body = await response.text();
-		throw new Error(`Failed to ensure default class: ${response.status()} ${body}`);
+		throw new Error(`Failed to ensure default form: ${response.status()} ${body}`);
 	}
 }
 

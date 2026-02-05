@@ -1,13 +1,13 @@
 mod common;
-use _ieapp_core::{class, index, link, note, workspace};
+use _ieapp_core::{entry, form, index, link, space};
 use common::setup_operator;
 
 #[tokio::test]
 /// REQ-IDX-001
 async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
-    let ws_path = "workspaces/test-workspace";
+    space::create_space(&op, "test-space", "/tmp").await?;
+    let ws_path = "spaces/test-space";
 
     index::reindex_all(&op, ws_path).await?;
 
@@ -29,10 +29,10 @@ fn test_index_req_idx_001_extract_properties_returns_object() {
 /// REQ-IDX-002
 async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-workspace", "/tmp").await?;
-    let ws_path = "workspaces/test-workspace";
+    space::create_space(&op, "test-space", "/tmp").await?;
+    let ws_path = "spaces/test-space";
 
-    // Setup class definition
+    // Setup form definition
     let class_def = r#"{
         "name": "Meeting",
         "fields": [
@@ -40,7 +40,7 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
         ]
     }"#;
     let class_def_value = serde_json::from_str::<serde_json::Value>(class_def)?;
-    _ieapp_core::class::upsert_class(&op, ws_path, &class_def_value).await?;
+    _ieapp_core::form::upsert_form(&op, ws_path, &class_def_value).await?;
 
     // Invalid property (wrong type/missing)
     let props = serde_json::json!({
@@ -59,8 +59,8 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
 /// REQ-IDX-003
 async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-ws", "/tmp").await?;
-    let ws_path = "workspaces/test-ws";
+    space::create_space(&op, "test-ws", "/tmp").await?;
+    let ws_path = "spaces/test-ws";
 
     index::reindex_all(&op, ws_path).await?;
     let results = index::query_index(&op, ws_path, "{}").await?;
@@ -72,8 +72,8 @@ async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
 /// REQ-IDX-004
 async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-ws", "/tmp").await?;
-    let ws_path = "workspaces/test-ws";
+    space::create_space(&op, "test-ws", "/tmp").await?;
+    let ws_path = "spaces/test-ws";
 
     index::reindex_all(&op, ws_path).await?;
     assert!(
@@ -87,8 +87,8 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
 /// REQ-IDX-008
 async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-sql-ws", "/tmp").await?;
-    let ws_path = "workspaces/test-sql-ws";
+    space::create_space(&op, "test-sql-ws", "/tmp").await?;
+    let ws_path = "spaces/test-sql-ws";
 
     struct MockIntegrity;
     impl _ieapp_core::integrity::IntegrityProvider for MockIntegrity {
@@ -109,12 +109,12 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
             "Topic": {"type": "string"}
         }
     });
-    class::upsert_class(&op, ws_path, &class_def).await?;
+    form::upsert_form(&op, ws_path, &class_def).await?;
 
-    let note_one = "---\nclass: Meeting\n---\n# Note 1\n\n## Date\n2025-01-01\n\n## Topic\nalpha";
-    note::create_note(&op, ws_path, "note-1", note_one, "author", &MockIntegrity).await?;
-    let note_two = "---\nclass: Meeting\n---\n# Note 2\n\n## Date\n2025-02-10\n\n## Topic\nbeta";
-    note::create_note(&op, ws_path, "note-2", note_two, "author", &MockIntegrity).await?;
+    let entry_one = "---\nform: Meeting\n---\n# Entry 1\n\n## Date\n2025-01-01\n\n## Topic\nalpha";
+    entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
+    let entry_two = "---\nform: Meeting\n---\n# Entry 2\n\n## Date\n2025-02-10\n\n## Topic\nbeta";
+    entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
     let payload = serde_json::json!({
         "$sql": "SELECT * FROM Meeting WHERE Date >= '2025-02-01'"
@@ -122,7 +122,7 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["id"].as_str(), Some("note-2"));
+    assert_eq!(results[0]["id"].as_str(), Some("entry-2"));
 
     Ok(())
 }
@@ -139,8 +139,8 @@ fn test_index_req_idx_005_word_count() {
 /// REQ-IDX-009
 async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-sql-join", "/tmp").await?;
-    let ws_path = "workspaces/test-sql-join";
+    space::create_space(&op, "test-sql-join", "/tmp").await?;
+    let ws_path = "spaces/test-sql-join";
 
     struct MockIntegrity;
     impl _ieapp_core::integrity::IntegrityProvider for MockIntegrity {
@@ -154,57 +154,65 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     }
 
     let class_def = serde_json::json!({
-        "name": "Note",
+        "name": "Entry",
         "fields": {
             "Body": {"type": "markdown"}
         }
     });
-    class::upsert_class(&op, ws_path, &class_def).await?;
+    form::upsert_form(&op, ws_path, &class_def).await?;
 
-    let note_one = "---\nclass: Note\n---\n# Note 1\n\n## Body\nAlpha";
-    let note_two = "---\nclass: Note\n---\n# Note 2\n\n## Body\nBeta";
-    let note_three = "---\nclass: Note\n---\n# Note 3\n\n## Body\nGamma";
-    note::create_note(&op, ws_path, "note-1", note_one, "author", &MockIntegrity).await?;
-    note::create_note(&op, ws_path, "note-2", note_two, "author", &MockIntegrity).await?;
-    note::create_note(&op, ws_path, "note-3", note_three, "author", &MockIntegrity).await?;
+    let entry_one = "---\nform: Entry\n---\n# Entry 1\n\n## Body\nAlpha";
+    let entry_two = "---\nform: Entry\n---\n# Entry 2\n\n## Body\nBeta";
+    let entry_three = "---\nform: Entry\n---\n# Entry 3\n\n## Body\nGamma";
+    entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
+    entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-3",
+        entry_three,
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
 
-    link::create_link(&op, ws_path, "note-1", "note-2", "reference", "link-1").await?;
+    link::create_link(&op, ws_path, "entry-1", "entry-2", "reference", "link-1").await?;
 
     let payload = serde_json::json!({
-        "$sql": "SELECT * FROM notes n JOIN links l ON n.id = l.source WHERE l.target = 'note-2'"
+        "$sql": "SELECT * FROM entries e JOIN links l ON e.id = l.source WHERE l.target = 'entry-2'"
     })
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["n"]["id"].as_str(), Some("note-1"));
-    assert_eq!(results[0]["l"]["target"].as_str(), Some("note-2"));
+    assert_eq!(results[0]["e"]["id"].as_str(), Some("entry-1"));
+    assert_eq!(results[0]["l"]["target"].as_str(), Some("entry-2"));
 
     let payload_right = serde_json::json!({
-        "$sql": "SELECT * FROM links l RIGHT JOIN notes n ON n.id = l.source WHERE n.id = 'note-3'"
+        "$sql": "SELECT * FROM links l RIGHT JOIN entries e ON e.id = l.source WHERE e.id = 'entry-3'"
     })
     .to_string();
     let results_right = index::query_index(&op, ws_path, &payload_right).await?;
     assert_eq!(results_right.len(), 1);
-    assert_eq!(results_right[0]["n"]["id"].as_str(), Some("note-3"));
+    assert_eq!(results_right[0]["e"]["id"].as_str(), Some("entry-3"));
     assert!(results_right[0]["l"].is_null());
 
     let payload_full = serde_json::json!({
-        "$sql": "SELECT * FROM notes n FULL JOIN links l ON n.id = l.source WHERE n.id = 'note-3'"
+        "$sql": "SELECT * FROM entries e FULL JOIN links l ON e.id = l.source WHERE e.id = 'entry-3'"
     })
     .to_string();
     let results_full = index::query_index(&op, ws_path, &payload_full).await?;
     assert_eq!(results_full.len(), 1);
-    assert_eq!(results_full[0]["n"]["id"].as_str(), Some("note-3"));
+    assert_eq!(results_full[0]["e"]["id"].as_str(), Some("entry-3"));
     assert!(results_full[0]["l"].is_null());
 
     let payload_using = serde_json::json!({
-        "$sql": "SELECT * FROM notes n JOIN notes m USING (id) WHERE n.id = 'note-1'"
+        "$sql": "SELECT * FROM entries e JOIN entries f USING (id) WHERE e.id = 'entry-1'"
     })
     .to_string();
     let results_using = index::query_index(&op, ws_path, &payload_using).await?;
     assert_eq!(results_using.len(), 1);
-    assert_eq!(results_using[0]["n"]["id"].as_str(), Some("note-1"));
-    assert_eq!(results_using[0]["m"]["id"].as_str(), Some("note-1"));
+    assert_eq!(results_using[0]["e"]["id"].as_str(), Some("entry-1"));
+    assert_eq!(results_using[0]["f"]["id"].as_str(), Some("entry-1"));
 
     Ok(())
 }

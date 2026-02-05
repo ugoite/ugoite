@@ -17,12 +17,12 @@ requirements:
       pytest:
         - file: ieapp-cli/tests/test_integrity.py
           tests:
-            - test_integrity_provider_for_workspace_success
+            - test_integrity_provider_for_space_success
             - test_integrity_provider_missing_hmac_key
             - test_integrity_provider_invalid_hmac_key
-        - file: ieapp-cli/tests/test_notes.py
+        - file: ieapp-cli/tests/test_entries.py
           tests:
-            - test_note_history_append
+            - test_entry_history_append
       rust:
         - file: ieapp-core/tests/test_integrity.rs
           tests:
@@ -32,20 +32,20 @@ requirements:
   - id: REQ-INT-002
     title: Checksum Verification
     description: |
-      Calculate and store checksums for reconstructed note content.
+      Calculate and store checksums for reconstructed entry content.
     related_spec:
       - data-model/overview.md#integrity
     priority: medium
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_notes.py
+        - file: ieapp-cli/tests/test_entries.py
           tests:
-            - test_note_history_append
+            - test_entry_history_append
       rust:
-        - file: ieapp-core/tests/test_note.rs
+        - file: ieapp-core/tests/test_entry.rs
           tests:
-            - test_note_req_note_005_note_history_append
+            - test_entry_req_entry_005_entry_history_append
 
   - id: REQ-INT-003
     title: HMAC Signature for API Responses
