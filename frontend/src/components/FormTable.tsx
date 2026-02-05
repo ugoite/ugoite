@@ -401,9 +401,6 @@ export function FormTable(props: FormTableProps) {
 			<div class="p-6">
 				<div class="mb-6 flex justify-between items-start">
 					<div>
-						<h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-							{props.entryForm.name}
-						</h1>
 						<p class="text-gray-500 dark:text-gray-400 text-sm">
 							{entries.loading && !entries()
 								? "Loading..."

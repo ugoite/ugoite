@@ -238,6 +238,12 @@ export default function SpaceFormsIndexPane() {
 						</div>
 					</Show>
 					<Show when={!sessionId().trim()}>
+						<Show when={selectedFormName()}>
+							<div class="mb-4">
+								<h2 class="text-xl font-semibold text-slate-900">{selectedFormName()}</h2>
+								<p class="text-sm text-slate-500">Query results for the selected form.</p>
+							</div>
+						</Show>
 						<Show when={selectedForm()}>
 							<FormTable
 								spaceId={ctx.spaceId()}
