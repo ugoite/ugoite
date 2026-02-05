@@ -8,26 +8,26 @@ from typing import Any
 import ieapp_core
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.endpoints.workspace import (
-    _ensure_workspace_exists,
+from app.api.endpoints.space import (
+    _ensure_space_exists,
     _storage_config,
     _validate_path_id,
 )
-from app.models.classes import SqlCreate, SqlUpdate
+from app.models.payloads import SqlCreate, SqlUpdate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/workspaces/{workspace_id}/sql")
-async def list_sql_endpoint(workspace_id: str) -> list[dict[str, Any]]:
-    """List all saved SQL entries in a workspace."""
-    _validate_path_id(workspace_id, "workspace_id")
+@router.get("/spaces/{space_id}/sql")
+async def list_sql_endpoint(space_id: str) -> list[dict[str, Any]]:
+    """List all saved SQL entries in a space."""
+    _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_sql(storage_config, workspace_id)
+        return await ieapp_core.list_sql(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list saved SQL")
         raise HTTPException(
@@ -36,15 +36,15 @@ async def list_sql_endpoint(workspace_id: str) -> list[dict[str, Any]]:
         ) from e
 
 
-@router.post("/workspaces/{workspace_id}/sql", status_code=status.HTTP_201_CREATED)
+@router.post("/spaces/{space_id}/sql", status_code=status.HTTP_201_CREATED)
 async def create_sql_endpoint(
-    workspace_id: str,
+    space_id: str,
     payload: SqlCreate,
 ) -> dict[str, Any]:
     """Create a new saved SQL entry."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     if payload.id:
         _validate_path_id(payload.id, "sql_id")
@@ -60,7 +60,7 @@ async def create_sql_endpoint(
         )
         entry = await ieapp_core.create_sql(
             storage_config,
-            workspace_id,
+            space_id,
             sql_id,
             payload_json,
         )
@@ -89,16 +89,16 @@ async def create_sql_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/sql/{sql_id}")
-async def get_sql_endpoint(workspace_id: str, sql_id: str) -> dict[str, Any]:
+@router.get("/spaces/{space_id}/sql/{sql_id}")
+async def get_sql_endpoint(space_id: str, sql_id: str) -> dict[str, Any]:
     """Get a saved SQL entry by ID."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_sql(storage_config, workspace_id, sql_id)
+        return await ieapp_core.get_sql(storage_config, space_id, sql_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():
@@ -118,17 +118,17 @@ async def get_sql_endpoint(workspace_id: str, sql_id: str) -> dict[str, Any]:
         ) from e
 
 
-@router.put("/workspaces/{workspace_id}/sql/{sql_id}")
+@router.put("/spaces/{space_id}/sql/{sql_id}")
 async def update_sql_endpoint(
-    workspace_id: str,
+    space_id: str,
     sql_id: str,
     payload: SqlUpdate,
 ) -> dict[str, Any]:
     """Update a saved SQL entry."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
         payload_json = json.dumps(
@@ -140,7 +140,7 @@ async def update_sql_endpoint(
         )
         entry = await ieapp_core.update_sql(
             storage_config,
-            workspace_id,
+            space_id,
             sql_id,
             payload_json,
             parent_revision_id=payload.parent_revision_id,
@@ -176,18 +176,18 @@ async def update_sql_endpoint(
 
 
 @router.delete(
-    "/workspaces/{workspace_id}/sql/{sql_id}",
+    "/spaces/{space_id}/sql/{sql_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_sql_endpoint(workspace_id: str, sql_id: str) -> None:
+async def delete_sql_endpoint(space_id: str, sql_id: str) -> None:
     """Delete a saved SQL entry."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
-        await ieapp_core.delete_sql(storage_config, workspace_id, sql_id)
+        await ieapp_core.delete_sql(storage_config, space_id, sql_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():

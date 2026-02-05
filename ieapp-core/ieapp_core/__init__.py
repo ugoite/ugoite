@@ -4,40 +4,6 @@ from contextlib import suppress
 from typing import Any, cast
 
 from . import _ieapp_core as _core
-from ._ieapp_core import (
-    build_response_signature,
-    create_link,
-    create_note,
-    create_workspace,
-    delete_attachment,
-    delete_link,
-    delete_note,
-    extract_properties,
-    get_class,
-    get_note,
-    get_note_history,
-    get_note_revision,
-    get_workspace,
-    list_attachments,
-    list_classes,
-    list_column_types,
-    list_links,
-    list_notes,
-    list_workspaces,
-    load_hmac_material,
-    migrate_class,
-    patch_workspace,
-    query_index,
-    reindex_all,
-    restore_note,
-    save_attachment,
-    search_notes,
-    test_storage_connection,
-    update_note,
-    update_note_index,
-    upsert_class,
-    validate_properties,
-)
 from .sql_rules import (
     SqlLintDiagnostic,
     build_sql_schema,
@@ -51,53 +17,95 @@ with suppress(ImportError):
     __doc__ = _core.__doc__
 
 _core_any = cast("Any", _core)
+build_response_signature = _core_any.build_response_signature
+create_entry = _core_any.create_entry
+create_link = _core_any.create_link
+create_space = _core_any.create_space
+delete_asset = _core_any.delete_asset
+delete_entry = _core_any.delete_entry
+delete_link = _core_any.delete_link
+extract_properties = _core_any.extract_properties
+get_entry = _core_any.get_entry
+get_entry_history = _core_any.get_entry_history
+get_entry_revision = _core_any.get_entry_revision
+get_form = _core_any.get_form
+get_space = _core_any.get_space
+list_assets = _core_any.list_assets
+list_column_types = _core_any.list_column_types
+list_entries = _core_any.list_entries
+list_links = _core_any.list_links
+list_forms = _core_any.list_forms
+list_spaces = _core_any.list_spaces
+load_hmac_material = _core_any.load_hmac_material
+migrate_form = _core_any.migrate_form
+patch_space = _core_any.patch_space
+query_index = _core_any.query_index
+reindex_all = _core_any.reindex_all
+restore_entry = _core_any.restore_entry
+save_asset = _core_any.save_asset
+search_entries = _core_any.search_entries
+test_storage_connection = _core_any.test_storage_connection
+update_entry = _core_any.update_entry
+update_entry_index = _core_any.update_entry_index
+upsert_form = _core_any.upsert_form
+validate_properties = _core_any.validate_properties
 create_sql = _core_any.create_sql
 delete_sql = _core_any.delete_sql
 get_sql = _core_any.get_sql
 list_sql = _core_any.list_sql
 update_sql = _core_any.update_sql
+create_sql_session = _core_any.create_sql_session
+get_sql_session_status = _core_any.get_sql_session_status
+get_sql_session_count = _core_any.get_sql_session_count
+get_sql_session_rows = _core_any.get_sql_session_rows
+get_sql_session_rows_all = _core_any.get_sql_session_rows_all
 
 __all__ = [
     "SqlLintDiagnostic",
     "build_response_signature",
     "build_sql_schema",
+    "create_entry",
     "create_link",
-    "create_note",
+    "create_space",
     "create_sql",
-    "create_workspace",
-    "delete_attachment",
+    "create_sql_session",
+    "delete_asset",
+    "delete_entry",
     "delete_link",
-    "delete_note",
     "delete_sql",
     "extract_properties",
-    "get_class",
-    "get_note",
-    "get_note_history",
-    "get_note_revision",
+    "get_entry",
+    "get_entry_history",
+    "get_entry_revision",
+    "get_form",
+    "get_space",
     "get_sql",
-    "get_workspace",
+    "get_sql_session_count",
+    "get_sql_session_rows",
+    "get_sql_session_rows_all",
+    "get_sql_session_status",
     "lint_sql",
-    "list_attachments",
-    "list_classes",
+    "list_assets",
     "list_column_types",
+    "list_entries",
+    "list_forms",
     "list_links",
-    "list_notes",
+    "list_spaces",
     "list_sql",
-    "list_workspaces",
     "load_hmac_material",
     "load_sql_rules",
-    "migrate_class",
-    "patch_workspace",
+    "migrate_form",
+    "patch_space",
     "query_index",
     "reindex_all",
-    "restore_note",
-    "save_attachment",
-    "search_notes",
+    "restore_entry",
+    "save_asset",
+    "search_entries",
     "sql_completions",
     "test_storage_connection",
-    "update_note",
-    "update_note_index",
+    "update_entry",
+    "update_entry_index",
     "update_sql",
-    "upsert_class",
+    "upsert_form",
     "validate_properties",
 ]

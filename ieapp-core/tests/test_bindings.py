@@ -6,10 +6,10 @@ import ieapp_core
 
 
 @pytest.mark.asyncio
-async def test_list_workspaces_binding() -> None:
-    """Verify that we can call list_workspaces from Python."""
-    # list_workspaces now returns a future and requires storage_config
-    result = await ieapp_core.list_workspaces({"uri": "memory://"})
+async def test_list_spaces_binding() -> None:
+    """Verify that we can call list_spaces from Python."""
+    # list_spaces now returns a future and requires storage_config
+    result = await ieapp_core.list_spaces({"uri": "memory://"})
     assert isinstance(result, list)
 
 

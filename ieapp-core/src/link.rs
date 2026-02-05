@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 
-use crate::note::{find_note_class, read_note_row, write_note_row};
+use crate::entry::{find_entry_form, read_entry_row, write_entry_row};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Link {
@@ -12,7 +12,7 @@ pub struct Link {
     pub kind: String,
 }
 
-/// Create a bi-directional link between two notes and persist metadata.
+/// Create a bi-directional link between two entries and persist metadata.
 pub async fn create_link(
     op: &Operator,
     ws_path: &str,
@@ -21,12 +21,12 @@ pub async fn create_link(
     kind: &str,
     link_id: &str,
 ) -> Result<Link> {
-    let source_class = find_note_class(op, ws_path, source)
+    let source_form = find_entry_form(op, ws_path, source)
         .await?
-        .ok_or_else(|| anyhow!("Source note not found: {}", source))?;
-    let target_class = find_note_class(op, ws_path, target)
+        .ok_or_else(|| anyhow!("Source entry not found: {}", source))?;
+    let target_form = find_entry_form(op, ws_path, target)
         .await?
-        .ok_or_else(|| anyhow!("Target note not found: {}", target))?;
+        .ok_or_else(|| anyhow!("Target entry not found: {}", target))?;
 
     let link_record = Link {
         id: link_id.to_string(),
@@ -43,34 +43,34 @@ pub async fn create_link(
     };
 
     // Update source
-    update_note_links(op, ws_path, &source_class, source, link_record.clone()).await?;
+    update_entry_links(op, ws_path, &source_form, source, link_record.clone()).await?;
 
     // Update target
-    update_note_links(op, ws_path, &target_class, target, reciprocal_record).await?;
+    update_entry_links(op, ws_path, &target_form, target, reciprocal_record).await?;
 
     Ok(link_record)
 }
 
-async fn update_note_links(
+async fn update_entry_links(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
-    note_id: &str,
+    form_name: &str,
+    entry_id: &str,
     link: Link,
 ) -> Result<()> {
-    let mut row = read_note_row(op, ws_path, class_name, note_id).await?;
+    let mut row = read_entry_row(op, ws_path, form_name, entry_id).await?;
     row.links.retain(|l| l.id != link.id);
     row.links.push(link);
-    row.updated_at = crate::note::now_ts();
-    write_note_row(op, ws_path, class_name, note_id, &row).await?;
+    row.updated_at = crate::entry::now_ts();
+    write_entry_row(op, ws_path, form_name, entry_id, &row).await?;
     Ok(())
 }
 
-/// Return deduplicated links in a workspace.
+/// Return deduplicated links in a space.
 pub async fn list_links(op: &Operator, ws_path: &str) -> Result<Vec<Link>> {
     let mut links = std::collections::HashMap::new();
-    let rows = crate::note::list_note_rows(op, ws_path).await?;
-    for (_class_name, row) in rows {
+    let rows = crate::entry::list_entry_rows(op, ws_path).await?;
+    for (_form_name, row) in rows {
         if row.deleted {
             continue;
         }
@@ -82,17 +82,17 @@ pub async fn list_links(op: &Operator, ws_path: &str) -> Result<Vec<Link>> {
     Ok(links.into_values().collect())
 }
 
-/// Delete a link and remove it from all notes in the workspace.
+/// Delete a link and remove it from all entries in the space.
 pub async fn delete_link(op: &Operator, ws_path: &str, link_id: &str) -> Result<()> {
     let mut found = false;
-    let rows = crate::note::list_note_rows(op, ws_path).await?;
-    for (class_name, mut row) in rows {
+    let rows = crate::entry::list_entry_rows(op, ws_path).await?;
+    for (form_name, mut row) in rows {
         let initial_len = row.links.len();
         row.links.retain(|l| l.id != link_id);
         if row.links.len() != initial_len {
             found = true;
-            row.updated_at = crate::note::now_ts();
-            write_note_row(op, ws_path, &class_name, &row.note_id, &row).await?;
+            row.updated_at = crate::entry::now_ts();
+            write_entry_row(op, ws_path, &form_name, &row.entry_id, &row).await?;
         }
     }
 

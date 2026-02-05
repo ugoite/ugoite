@@ -1,28 +1,28 @@
 import type { Diagnostic } from "@codemirror/lint";
 import type { SQLConfig } from "@codemirror/lang-sql";
 import sqlRules from "../../../shared/sql/ieapp-sql-rules.json";
-import type { Class } from "./types";
+import type { Form } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
 const BASE_COLUMNS = [...(sqlRules.base_columns ?? [])];
-const BASE_TABLES = [...(sqlRules.base_tables ?? ["notes"])];
+const BASE_TABLES = [...(sqlRules.base_tables ?? ["entries"])];
 
-export function buildSqlSchema(classes: Class[]): SqlSchema {
-	const classFieldSet = new Set<string>();
-	for (const item of classes) {
+export function buildSqlSchema(forms: Form[]): SqlSchema {
+	const formFieldSet = new Set<string>();
+	for (const item of forms) {
 		for (const field of Object.keys(item.fields ?? {})) {
-			classFieldSet.add(field);
+			formFieldSet.add(field);
 		}
 	}
 
-	const unionFields = [...BASE_COLUMNS, ...classFieldSet];
+	const unionFields = [...BASE_COLUMNS, ...formFieldSet];
 	const tables: Record<string, string[]> = {};
 	for (const table of BASE_TABLES) {
 		tables[table] = unionFields;
 	}
 
-	for (const item of classes) {
+	for (const item of forms) {
 		tables[item.name] = [...BASE_COLUMNS, ...Object.keys(item.fields ?? {})];
 	}
 

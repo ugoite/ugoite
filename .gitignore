@@ -1,8 +1,8 @@
 # IEapp runtime data (created by ieapp during dev)
 global.json
-workspaces/
-!frontend/src/routes/workspaces/
-!frontend/src/routes/workspaces/**
+spaces/
+!frontend/src/routes/spaces/
+!frontend/src/routes/spaces/**
 
 # OS metadata
 .DS_Store

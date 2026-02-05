@@ -10,10 +10,10 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
-const NOTES_TABLE_NAME: &str = "notes";
+const ENTRIES_TABLE_NAME: &str = "entries";
 const REVISIONS_TABLE_NAME: &str = "revisions";
-const CLASS_DEF_PROP: &str = "ieapp.class_definition";
-const CLASS_VERSION_PROP: &str = "ieapp.class_version";
+const FORM_DEF_PROP: &str = "ieapp.form_definition";
+const FORM_VERSION_PROP: &str = "ieapp.form_version";
 
 static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
 fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
@@ -55,27 +55,27 @@ fn warehouse_uri(op: &Operator, ws_path: &str) -> Result<String> {
     let root = normalize_root(op.info().root().as_str());
     let ws_path = ws_path.trim_start_matches('/');
     let warehouse_path = format!("{}/{}", root, ws_path);
-    Ok(format!("{}{}{}", prefix, warehouse_path, "/classes"))
+    Ok(format!("{}{}{}", prefix, warehouse_path, "/forms"))
 }
 
-fn table_location(warehouse: &str, class_name: &str, table_name: &str) -> String {
+fn table_location(warehouse: &str, form_name: &str, table_name: &str) -> String {
     format!(
         "{}/{}/{}",
         warehouse.trim_end_matches('/'),
-        class_name,
+        form_name,
         table_name
     )
 }
 
 fn metadata_location(
     warehouse: &str,
-    class_name: &str,
+    form_name: &str,
     table_name: &str,
     file_name: &str,
 ) -> String {
     format!(
         "{}/metadata/{}",
-        table_location(warehouse, class_name, table_name),
+        table_location(warehouse, form_name, table_name),
         file_name
     )
 }
@@ -150,11 +150,11 @@ async fn latest_metadata_file(op: &Operator, metadata_path: &str) -> Result<Opti
     Ok(latest.map(|(_, name)| name))
 }
 
-async fn list_class_dirs(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let classes_path = format!("{}/classes/", ws_path.trim_end_matches('/'));
+async fn list_form_dirs(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let forms_path = format!("{}/forms/", ws_path.trim_end_matches('/'));
     let mut lister = match op
         .lister_options(
-            &classes_path,
+            &forms_path,
             options::ListOptions {
                 recursive: false,
                 ..Default::default()
@@ -168,13 +168,13 @@ async fn list_class_dirs(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
 
     let mut names = Vec::new();
     let mut seen = HashSet::new();
-    let classes_prefix = classes_path.trim_end_matches('/');
+    let forms_prefix = forms_path.trim_end_matches('/');
     while let Some(entry) = lister.try_next().await? {
         if !entry.metadata().is_dir() {
             continue;
         }
         let path = entry.path().trim_end_matches('/');
-        let relative = match path.strip_prefix(classes_prefix) {
+        let relative = match path.strip_prefix(forms_prefix) {
             Some(rest) => rest.trim_start_matches('/'),
             None => continue,
         };
@@ -196,14 +196,14 @@ async fn register_existing_tables(
     ws_path: &str,
     catalog: &MemoryCatalog,
 ) -> Result<()> {
-    let class_names = list_class_dirs(op, ws_path).await?;
-    if class_names.is_empty() {
+    let form_names = list_form_dirs(op, ws_path).await?;
+    if form_names.is_empty() {
         return Ok(());
     }
 
     let warehouse = warehouse_uri(op, ws_path)?;
-    for class_name in class_names {
-        let namespace = class_namespace(&class_name);
+    for form_name in form_names {
+        let namespace = form_namespace(&form_name);
         if !catalog.namespace_exists(&namespace).await? {
             if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
                 let message = err.to_string();
@@ -215,22 +215,22 @@ async fn register_existing_tables(
             }
         }
 
-        for table_name in [NOTES_TABLE_NAME, REVISIONS_TABLE_NAME] {
+        for table_name in [ENTRIES_TABLE_NAME, REVISIONS_TABLE_NAME] {
             let table_ident = TableIdent::new(namespace.clone(), table_name.to_string());
             if catalog.table_exists(&table_ident).await? {
                 continue;
             }
 
             let metadata_path = format!(
-                "{}/classes/{}/{}/metadata/",
+                "{}/forms/{}/{}/metadata/",
                 ws_path.trim_end_matches('/'),
-                class_name,
+                form_name,
                 table_name
             );
             let Some(latest) = latest_metadata_file(op, &metadata_path).await? else {
                 continue;
             };
-            let metadata_location = metadata_location(&warehouse, &class_name, table_name, &latest);
+            let metadata_location = metadata_location(&warehouse, &form_name, table_name, &latest);
             catalog
                 .register_table(&table_ident, metadata_location)
                 .await?;
@@ -240,7 +240,7 @@ async fn register_existing_tables(
     Ok(())
 }
 
-async fn catalog_for_workspace(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCatalog>> {
+async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCatalog>> {
     let warehouse = warehouse_uri(op, ws_path)?;
     if let Some(cached) = {
         let cache = catalog_cache()
@@ -264,13 +264,13 @@ async fn catalog_for_workspace(op: &Operator, ws_path: &str) -> Result<Arc<Memor
     Ok(catalog)
 }
 
-fn class_namespace(class_name: &str) -> NamespaceIdent {
-    NamespaceIdent::new(class_name.to_string())
+fn form_namespace(form_name: &str) -> NamespaceIdent {
+    NamespaceIdent::new(form_name.to_string())
 }
 
-fn class_field_defs(class_def: &Value) -> Result<Vec<(String, String, bool)>> {
+fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
     let mut fields = Vec::new();
-    let Some(def_fields) = class_def.get("fields") else {
+    let Some(def_fields) = form_def.get("fields") else {
         return Ok(fields);
     };
 
@@ -374,9 +374,9 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
     })
 }
 
-fn build_fields_struct(class_def: &Value, id_counter: &mut i32) -> Result<Type> {
+fn build_fields_struct(form_def: &Value, id_counter: &mut i32) -> Result<Type> {
     let mut nested_fields = Vec::new();
-    for (name, field_type, required) in class_field_defs(class_def)? {
+    for (name, field_type, required) in form_field_defs(form_def)? {
         let field_id = next_id(id_counter);
         let field_type = iceberg_type_for_field(&field_type, id_counter)?;
         nested_fields.push(Arc::new(NestedField::new(
@@ -387,7 +387,7 @@ fn build_fields_struct(class_def: &Value, id_counter: &mut i32) -> Result<Type> 
     Ok(Type::Struct(StructType::new(nested_fields)))
 }
 
-fn build_notes_schema(class_def: &Value) -> Result<Schema> {
+fn build_entries_schema(form_def: &Value) -> Result<Schema> {
     let mut counter = 1;
 
     let tags_element_id = next_id(&mut counter);
@@ -441,9 +441,9 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
         )),
     ]));
 
-    let fields_struct = build_fields_struct(class_def, &mut counter)?;
+    let fields_struct = build_fields_struct(form_def, &mut counter)?;
 
-    let attachments_struct = Type::Struct(StructType::new(vec![
+    let assets_struct = Type::Struct(StructType::new(vec![
         Arc::new(NestedField::new(
             next_id(&mut counter),
             "id",
@@ -463,11 +463,11 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
             false,
         )),
     ]));
-    let attachments_element_id = next_id(&mut counter);
-    let attachments_type = Type::List(ListType::new(Arc::new(NestedField::new(
-        attachments_element_id,
+    let assets_element_id = next_id(&mut counter);
+    let assets_type = Type::List(ListType::new(Arc::new(NestedField::new(
+        assets_element_id,
         "element",
-        attachments_struct,
+        assets_struct,
         false,
     ))));
 
@@ -489,7 +489,7 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
     let fields = vec![
         Arc::new(NestedField::new(
             next_id(&mut counter),
-            "note_id",
+            "entry_id",
             Type::Primitive(PrimitiveType::String),
             true,
         )),
@@ -543,8 +543,8 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
-            "attachments",
-            attachments_type,
+            "assets",
+            assets_type,
             false,
         )),
         Arc::new(NestedField::new(
@@ -573,9 +573,9 @@ fn build_notes_schema(class_def: &Value) -> Result<Schema> {
         .map_err(|e| e.into())
 }
 
-fn build_revisions_schema(class_def: &Value) -> Result<Schema> {
+fn build_revisions_schema(form_def: &Value) -> Result<Schema> {
     let mut counter = 1;
-    let fields_struct = build_fields_struct(class_def, &mut counter)?;
+    let fields_struct = build_fields_struct(form_def, &mut counter)?;
     let integrity_struct = Type::Struct(StructType::new(vec![
         Arc::new(NestedField::new(
             next_id(&mut counter),
@@ -600,7 +600,7 @@ fn build_revisions_schema(class_def: &Value) -> Result<Schema> {
         )),
         Arc::new(NestedField::new(
             next_id(&mut counter),
-            "note_id",
+            "entry_id",
             Type::Primitive(PrimitiveType::String),
             true,
         )),
@@ -660,25 +660,25 @@ fn build_revisions_schema(class_def: &Value) -> Result<Schema> {
         .map_err(|e| e.into())
 }
 
-fn table_properties(class_def: &Value) -> Result<HashMap<String, String>> {
+fn table_properties(form_def: &Value) -> Result<HashMap<String, String>> {
     let mut props = HashMap::new();
-    let class_def_str = serde_json::to_string(class_def)?;
-    props.insert(CLASS_DEF_PROP.to_string(), class_def_str);
-    let version = class_def
+    let form_def_str = serde_json::to_string(form_def)?;
+    props.insert(FORM_DEF_PROP.to_string(), form_def_str);
+    let version = form_def
         .get("version")
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
-    props.insert(CLASS_VERSION_PROP.to_string(), version.to_string());
+    props.insert(FORM_VERSION_PROP.to_string(), version.to_string());
     Ok(props)
 }
 
-pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value) -> Result<()> {
-    let class_name = class_def
+pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
+    let form_name = form_def
         .get("name")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Class definition missing 'name'"))?;
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespace = class_namespace(class_name);
+        .ok_or_else(|| anyhow!("Form definition missing 'name'"))?;
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let namespace = form_namespace(form_name);
 
     if !catalog.namespace_exists(&namespace).await? {
         if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
@@ -691,12 +691,12 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
         }
     }
 
-    let notes_ident = TableIdent::new(namespace.clone(), NOTES_TABLE_NAME.to_string());
-    if !catalog.table_exists(&notes_ident).await? {
-        let schema = build_notes_schema(class_def)?;
-        let props = table_properties(class_def)?;
+    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
+    if !catalog.table_exists(&entries_ident).await? {
+        let schema = build_entries_schema(form_def)?;
+        let props = table_properties(form_def)?;
         let creation = TableCreation::builder()
-            .name(NOTES_TABLE_NAME.to_string())
+            .name(ENTRIES_TABLE_NAME.to_string())
             .schema(schema)
             .partition_spec(UnboundPartitionSpec::default())
             .sort_order(SortOrder::unsorted_order())
@@ -708,8 +708,8 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
                 return Err(err.into());
             }
-            let props = table_properties(class_def)?;
-            let table = catalog.load_table(&notes_ident).await?;
+            let props = table_properties(form_def)?;
+            let table = catalog.load_table(&entries_ident).await?;
             let tx = Transaction::new(&table);
             let mut action = tx.update_table_properties();
             for (key, value) in props {
@@ -719,8 +719,8 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             tx.commit(catalog.as_ref()).await?;
         }
     } else {
-        let props = table_properties(class_def)?;
-        let table = catalog.load_table(&notes_ident).await?;
+        let props = table_properties(form_def)?;
+        let table = catalog.load_table(&entries_ident).await?;
         let tx = Transaction::new(&table);
         let mut action = tx.update_table_properties();
         for (key, value) in props {
@@ -732,8 +732,8 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
 
     let revisions_ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
     if !catalog.table_exists(&revisions_ident).await? {
-        let schema = build_revisions_schema(class_def)?;
-        let props = table_properties(class_def)?;
+        let schema = build_revisions_schema(form_def)?;
+        let props = table_properties(form_def)?;
         let creation = TableCreation::builder()
             .name(REVISIONS_TABLE_NAME.to_string())
             .schema(schema)
@@ -747,7 +747,7 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
                 return Err(err.into());
             }
-            let props = table_properties(class_def)?;
+            let props = table_properties(form_def)?;
             let table = catalog.load_table(&revisions_ident).await?;
             let tx = Transaction::new(&table);
             let mut action = tx.update_table_properties();
@@ -758,7 +758,7 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
             tx.commit(catalog.as_ref()).await?;
         }
     } else {
-        let props = table_properties(class_def)?;
+        let props = table_properties(form_def)?;
         let table = catalog.load_table(&revisions_ident).await?;
         let tx = Transaction::new(&table);
         let mut action = tx.update_table_properties();
@@ -772,58 +772,58 @@ pub async fn ensure_class_tables(op: &Operator, ws_path: &str, class_def: &Value
     Ok(())
 }
 
-pub async fn load_class_tables(
+pub async fn load_form_tables(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
+    form_name: &str,
 ) -> Result<(
     Arc<MemoryCatalog>,
     iceberg::table::Table,
     iceberg::table::Table,
 )> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespace = class_namespace(class_name);
-    let notes_ident = TableIdent::new(namespace.clone(), NOTES_TABLE_NAME.to_string());
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let namespace = form_namespace(form_name);
+    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
     let revisions_ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
 
-    let notes = catalog.load_table(&notes_ident).await?;
+    let entries = catalog.load_table(&entries_ident).await?;
     let revisions = catalog.load_table(&revisions_ident).await?;
-    Ok((catalog, notes, revisions))
+    Ok((catalog, entries, revisions))
 }
 
-pub async fn load_notes_table(
+pub async fn load_entries_table(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
+    form_name: &str,
 ) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespace = class_namespace(class_name);
-    let notes_ident = TableIdent::new(namespace, NOTES_TABLE_NAME.to_string());
-    let notes = catalog.load_table(&notes_ident).await?;
-    Ok((catalog, notes))
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let namespace = form_namespace(form_name);
+    let entries_ident = TableIdent::new(namespace, ENTRIES_TABLE_NAME.to_string());
+    let entries = catalog.load_table(&entries_ident).await?;
+    Ok((catalog, entries))
 }
 
 pub async fn load_revisions_table(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
+    form_name: &str,
 ) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespace = class_namespace(class_name);
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let namespace = form_namespace(form_name);
     let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
     let revisions = catalog.load_table(&revisions_ident).await?;
     Ok((catalog, revisions))
 }
 
-pub async fn load_class_schema_fields(
+pub async fn load_form_schema_fields(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
+    form_name: &str,
 ) -> Result<Option<std::collections::HashSet<String>>> {
     let metadata_dir = format!(
-        "{}/classes/{}/notes/metadata/",
+        "{}/forms/{}/entries/metadata/",
         ws_path.trim_end_matches('/'),
-        class_name
+        form_name
     );
     let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
         return Ok(None);
@@ -872,33 +872,33 @@ pub async fn load_class_schema_fields(
     Ok(None)
 }
 
-pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -> Result<()> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
-    let namespace = class_namespace(class_name);
-    let notes_ident = TableIdent::new(namespace.clone(), NOTES_TABLE_NAME.to_string());
+pub async fn drop_form_tables(op: &Operator, ws_path: &str, form_name: &str) -> Result<()> {
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let namespace = form_namespace(form_name);
+    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
     let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
 
-    if catalog.table_exists(&notes_ident).await? {
-        catalog.drop_table(&notes_ident).await?;
+    if catalog.table_exists(&entries_ident).await? {
+        catalog.drop_table(&entries_ident).await?;
     }
     if catalog.table_exists(&revisions_ident).await? {
         catalog.drop_table(&revisions_ident).await?;
     }
 
-    let namespace = class_namespace(class_name);
+    let namespace = form_namespace(form_name);
     if catalog.namespace_exists(&namespace).await? {
         let _ = catalog.drop_namespace(&namespace).await;
     }
 
-    let class_root = format!("{}/classes/{}/", ws_path.trim_end_matches('/'), class_name);
+    let form_root = format!("{}/forms/{}/", ws_path.trim_end_matches('/'), form_name);
     let scheme = op.info().scheme();
     if scheme == "fs" || scheme == "file" {
         let root = normalize_root(op.info().root().as_str());
         let ws_path = ws_path.trim_start_matches('/');
-        let fs_root = format!("{}/{}/classes/{}", root, ws_path, class_name);
+        let fs_root = format!("{}/{}/forms/{}", root, ws_path, form_name);
         let _ = std::fs::remove_dir_all(&fs_root);
     } else {
-        let _ = op.remove_all(&class_root).await;
+        let _ = op.remove_all(&form_root).await;
     }
 
     let warehouse = warehouse_uri(op, ws_path)?;
@@ -907,8 +907,8 @@ pub async fn drop_class_tables(op: &Operator, ws_path: &str, class_name: &str) -
     Ok(())
 }
 
-pub async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_workspace(op, ws_path).await?;
+pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
     let namespaces = catalog.list_namespaces(None).await?;
     let mut names = Vec::new();
     for namespace in namespaces {
@@ -917,35 +917,31 @@ pub async fn list_class_names(op: &Operator, ws_path: &str) -> Result<Vec<String
         }
     }
     if names.is_empty() {
-        return list_class_dirs(op, ws_path).await;
+        return list_form_dirs(op, ws_path).await;
     }
     Ok(names)
 }
 
-pub async fn load_class_definition(
-    op: &Operator,
-    ws_path: &str,
-    class_name: &str,
-) -> Result<Value> {
-    let (_, notes): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        load_notes_table(op, ws_path, class_name).await?;
-    let props = notes.metadata().properties();
-    let Some(definition) = props.get(CLASS_DEF_PROP) else {
-        return Err(anyhow!("Class definition missing in Iceberg metadata"));
+pub async fn load_form_definition(op: &Operator, ws_path: &str, form_name: &str) -> Result<Value> {
+    let (_, entries): (Arc<MemoryCatalog>, iceberg::table::Table) =
+        load_entries_table(op, ws_path, form_name).await?;
+    let props = entries.metadata().properties();
+    let Some(definition) = props.get(FORM_DEF_PROP) else {
+        return Err(anyhow!("Form definition missing in Iceberg metadata"));
     };
-    let class_def = serde_json::from_str::<Value>(definition)?;
-    Ok(class_def)
+    let form_def = serde_json::from_str::<Value>(definition)?;
+    Ok(form_def)
 }
 
-pub async fn load_class_definition_from_metadata(
+pub async fn load_form_definition_from_metadata(
     op: &Operator,
     ws_path: &str,
-    class_name: &str,
+    form_name: &str,
 ) -> Result<Option<Value>> {
     let metadata_dir = format!(
-        "{}/classes/{}/notes/metadata/",
+        "{}/forms/{}/entries/metadata/",
         ws_path.trim_end_matches('/'),
-        class_name
+        form_name
     );
     let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
         return Ok(None);
@@ -957,9 +953,9 @@ pub async fn load_class_definition_from_metadata(
     let Some(props) = props else {
         return Ok(None);
     };
-    let Some(definition) = props.get(CLASS_DEF_PROP).and_then(|v| v.as_str()) else {
+    let Some(definition) = props.get(FORM_DEF_PROP).and_then(|v| v.as_str()) else {
         return Ok(None);
     };
-    let class_def = serde_json::from_str::<Value>(definition)?;
-    Ok(Some(class_def))
+    let form_def = serde_json::from_str::<Value>(definition)?;
+    Ok(Some(form_def))
 }

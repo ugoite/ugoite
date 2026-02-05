@@ -1,0 +1,32 @@
+version: "0.1"
+updated: "2026-02-02"
+page:
+  id: space-entry-detail
+  title: Entry Detail
+  route: /spaces/{space_id}/entries/{entry_id}
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+      tabs:
+        - id: dashboard
+          label: dashboard
+          target_page: space-dashboard
+        - id: search
+          label: search
+          target_page: space-search
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+      target_page: space-settings
+  body:
+    - id: entry-title
+      type: heading
+      level: 2
+      text: "{entry_title}"
+    - id: entry-editor
+      type: markdown-editor
+      mode: split

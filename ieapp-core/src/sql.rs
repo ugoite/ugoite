@@ -105,7 +105,7 @@ pub fn parse_sql(query: &str) -> Result<SqlQuery> {
     })
 }
 
-pub fn filter_notes_by_sql(
+pub fn filter_entries_by_sql(
     tables: &HashMap<String, Vec<Value>>,
     query: &SqlQuery,
 ) -> Result<Vec<Value>> {
@@ -327,7 +327,7 @@ fn object_name_to_string(name: &ObjectName) -> String {
         .last()
         .and_then(ObjectNamePart::as_ident)
         .map(|ident| ident.value.clone())
-        .unwrap_or_else(|| "notes".to_string())
+        .unwrap_or_else(|| "entries".to_string())
 }
 #[derive(Debug, Clone)]
 struct RowContext {

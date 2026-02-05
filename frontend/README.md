@@ -10,10 +10,10 @@ A SolidJS-based frontend for IEapp - your AI-native, programmable knowledge base
 ├─────────────────────────────────────────────────────────┤
 │  routes/                                                 │
 │  ├── index.tsx       Landing page                        │
-│  └── notes.tsx       Main app (orchestrates components)  │
+│  └── entries.tsx     Main app (orchestrates components)  │
 ├─────────────────────────────────────────────────────────┤
 │  components/         (Pure UI - no business logic)       │
-│  ├── NoteList.tsx    Display notes, emit selection       │
+│  ├── EntryList.tsx   Display entries, emit selection     │
 │  ├── MarkdownEditor  Edit content, emit changes          │
 │  ├── CanvasPlaceholder  Visual canvas preview            │
 │  └── Nav.tsx         Navigation bar                      │
@@ -34,47 +34,47 @@ Each component has ONE clear responsibility:
 
 | Component | Responsibility | Accepts | Emits |
 |-----------|---------------|---------|-------|
-| `NoteList` | Display notes | `notes`, `loading`, `error` (Accessors) | `onSelect(noteId)` |
+| `EntryList` | Display entries | `entries`, `loading`, `error` (Accessors) | `onSelect(entryId)` |
 | `MarkdownEditor` | Edit markdown | `content`, `isDirty` | `onChange(content)`, `onSave()` |
-| `CanvasPlaceholder` | Canvas preview | `notes[]` | `onSelect(noteId)` |
-| `workspaces/[workspace_id]/notes.tsx` | Orchestration | - | Coordinates all components |
+| `CanvasPlaceholder` | Canvas preview | `entries[]` | `onSelect(entryId)` |
+| `spaces/[space_id]/entries.tsx` | Orchestration | - | Coordinates all components |
 
 ### 📐 State Management Rules
 
 ```typescript
 // ✅ CORRECT: Route owns state, passes to components
-// routes/workspaces/[workspace_id]/notes.tsx
-const store = createNoteStore(workspaceId);
-<NoteList
-  notes={store.notes}        // Accessor
+// routes/spaces/[space_id]/entries.tsx
+const store = createEntryStore(spaceId);
+<EntryList
+  entries={store.entries}    // Accessor
   loading={store.loading}    // Accessor
   error={store.error}        // Accessor
   onSelect={handleSelect}
 />
 
 // ❌ WRONG: Component creates its own store
-// components/NoteList.tsx
-const store = createNoteStore(...);  // NO! Violates responsibility
+// components/EntryList.tsx
+const store = createEntryStore(...);  // NO! Violates responsibility
 ```
 
 ### Controlled vs Standalone Mode
 
-`NoteList` supports two modes:
+`EntryList` supports two modes:
 1. **Controlled**: Receives state from parent (recommended for routes)
 2. **Standalone**: Creates internal store (for isolated usage/testing)
 
 ```typescript
 // Controlled mode (used in routes)
-<NoteList notes={store.notes} loading={store.loading} error={store.error} />
+<EntryList entries={store.entries} loading={store.loading} error={store.error} />
 
 // Standalone mode (self-contained)
-<NoteList workspaceId="my-workspace" />
+<EntryList spaceId="my-space" />
 ```
 
 ## Features (Milestone 5)
 
-- **Note List View**: Browse and manage notes in a sidebar
-- **Markdown Editor**: Edit notes with live preview and Cmd/Ctrl+S save
+- **Entry List View**: Browse and manage entries in a sidebar
+- **Markdown Editor**: Edit entries with live preview and Cmd/Ctrl+S save
 - **Structured Properties**: H2 headers are automatically extracted as properties
 - **Optimistic Updates**: UI updates immediately, reconciles with server
 - **Canvas Placeholder**: Preview of the infinite canvas feature (Story 4)
@@ -110,7 +110,7 @@ npm test
 npm run test:run
 ```
 
-Note: E2E tests are located in the root `/e2e` directory and use Bun's native test runner. See the main project README for details.
+Important: E2E tests are located in the root `/e2e` directory and use Bun's native test runner. See the main project README for details.
 
 ### Linting & Formatting
 
@@ -124,7 +124,7 @@ npm run format
 ```
 src/
 ├── components/       # Reusable UI components
-│   ├── NoteList.tsx       # Note list sidebar
+│   ├── EntryList.tsx      # Entry list sidebar
 │   ├── MarkdownEditor.tsx # Editor with preview
 │   ├── CanvasPlaceholder.tsx # Canvas view placeholder
 │   └── Nav.tsx            # Navigation bar
@@ -135,7 +135,7 @@ src/
 │   └── types.ts          # TypeScript interfaces
 ├── routes/          # Page components
 │   ├── index.tsx         # Landing page
-│   └── notes.tsx         # Main notes view
+│   └── entries.tsx       # Main entries view
 └── test/            # Test utilities
     ├── setup.ts          # Vitest setup
     └── mocks/            # MSW handlers
@@ -147,20 +147,20 @@ E2E tests are located in the root `/e2e` directory using Bun's native test runne
 
 The frontend connects to the backend REST API:
 
-- `GET /workspaces` - List workspaces
-- `POST /workspaces` - Create workspace
-- `GET /workspaces/{id}/notes` - List notes
-- `POST /workspaces/{id}/notes` - Create note
-- `PUT /workspaces/{id}/notes/{noteId}` - Update note (requires `parent_revision_id`)
-- `DELETE /workspaces/{id}/notes/{noteId}` - Delete note
+- `GET /spaces` - List spaces
+- `POST /spaces` - Create space
+- `GET /spaces/{id}/entries` - List entries
+- `POST /spaces/{id}/entries` - Create entry
+- `PUT /spaces/{id}/entries/{entryId}` - Update entry (requires `parent_revision_id`)
+- `DELETE /spaces/{id}/entries/{entryId}` - Delete entry
 
 See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md](../docs/spec/api/mcp.md) for the API specification.
 
 ## TDD Approach
 
 Following Milestone 5 TDD steps:
-1. ✅ Component tests for note list store with REST mocks
-2. ✅ E2E smoke tests for note creation/editing (in /e2e directory)
+1. ✅ Component tests for entry list store with REST mocks
+2. ✅ E2E smoke tests for entry creation/editing (in /e2e directory)
 3. ✅ Canvas placeholder with visual baseline
 
 ## Building for Production

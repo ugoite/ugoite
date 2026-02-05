@@ -18,9 +18,9 @@ async def test_bindings_async() -> None:
 
     # List (initially empty or not exists?)
     # With memory backend, root is empty.
-    workspaces = await ieapp_core.list_workspaces(config)
-    assert isinstance(workspaces, list)
-    # Note: mock memory might be fresh each time if create_operator_from_uri
+    spaces = await ieapp_core.list_spaces(config)
+    assert isinstance(spaces, list)
+    # Heads-up: mock memory might be fresh each time if create_operator_from_uri
     # creates NEW memory backend each call?
     # OpenDAL Memory service: "Each builder will create a new memory backend."
     # So state is LOST between calls if I don't persist the operator or
@@ -36,49 +36,49 @@ async def test_bindings_async() -> None:
 
 @pytest.mark.asyncio
 async def test_bindings_file_backend(tmp_path: pathlib.Path) -> None:
-    """Test workspace and note operations using a file-based backend."""
+    """Test space and entry operations using a file-based backend."""
     root = tmp_path / "storage"
     root.mkdir()
     uri = f"fs://{root}"
     config = {"uri": uri}
 
     # List
-    workspaces = await ieapp_core.list_workspaces(config)
-    assert workspaces == []
+    spaces = await ieapp_core.list_spaces(config)
+    assert spaces == []
 
     # Create
-    await ieapp_core.create_workspace(config, "ws-1")
+    await ieapp_core.create_space(config, "sp-1")
 
     # List
-    workspaces = await ieapp_core.list_workspaces(config)
-    assert "ws-1" in workspaces
+    spaces = await ieapp_core.list_spaces(config)
+    assert "sp-1" in spaces
 
-    # List Classes (Empty)
-    classes = await ieapp_core.list_classes(config, "ws-1")
-    assert classes == []
+    # List Forms (Empty)
+    forms = await ieapp_core.list_forms(config, "sp-1")
+    assert forms == []
 
-    # Upsert Class
-    class_def = json.dumps(
+    # Upsert Form
+    form_def = json.dumps(
         {
-            "name": "Note",
-            "template": "# Note\n\n## Body\n",
+            "name": "Entry",
+            "template": "# Entry\n\n## Body\n",
             "fields": {"Body": {"type": "markdown"}},
         },
     )
-    await ieapp_core.upsert_class(config, "ws-1", class_def)
+    await ieapp_core.upsert_form(config, "sp-1", form_def)
 
-    classes = await ieapp_core.list_classes(config, "ws-1")
-    assert len(classes) == 1
-    assert classes[0]["name"] == "Note"
+    forms = await ieapp_core.list_forms(config, "sp-1")
+    assert len(forms) == 1
+    assert forms[0]["name"] == "Entry"
 
-    # Create Note
+    # Create Entry
     # Expects "Author" to be passed optional? Signature says Option<String>.
-    note = await ieapp_core.create_note(
+    entry = await ieapp_core.create_entry(
         config,
-        "ws-1",
-        "note-1",
+        "sp-1",
+        "entry-1",
         """---
-class: Note
+form: Entry
 ---
 # Content
 
@@ -86,5 +86,5 @@ class: Note
 Body text""",
         author="tester",
     )
-    assert note["id"] == "note-1"
-    assert note["created_at"]
+    assert entry["id"] == "entry-1"
+    assert entry["created_at"]

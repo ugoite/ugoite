@@ -5,7 +5,7 @@ requirements:
   - id: REQ-SRCH-001
     title: Keyword search
     description: |
-      Users must be able to search notes by keyword.
+      Users must be able to search entries by keyword.
     priority: high
     status: implemented
     tests:

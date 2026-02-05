@@ -12,7 +12,7 @@ stories:
 
   - id: STORY-002
     title: Structured Freedom
-    type: Class
+    type: Form
     as_a: user
     i_want: to use standard Markdown headers to define data fields (e.g., `## Date`)
     so_that: >
@@ -20,30 +20,30 @@ stories:
       without complex forms.
     acceptance_criteria:
       - System parses H2 headers as property keys
-      - Users can define Classes to enforce required headers and data types
-      - Frontend provides validation warnings if a note violates its Class definition
-      - Creating a note from a Class uses the fixed global template
+      - Users can define Forms to enforce required headers and data types
+      - Frontend provides validation warnings if an entry violates its Form definition
+      - Creating an entry from a Form uses the fixed global template
     related_apis:
-      - rest: POST /workspaces/{ws_id}/notes
-      - rest: PUT /workspaces/{ws_id}/notes/{note_id}
-      - rest: GET /workspaces/{ws_id}/classes
-      - mcp: ieapp://{workspace_id}/classes
+      - rest: POST /spaces/{space_id}/entries
+      - rest: PUT /spaces/{space_id}/entries/{entry_id}
+      - rest: GET /spaces/{space_id}/forms
+      - mcp: ieapp://{space_id}/forms
     requirements:
-      - REQ-NOTE-006
+      - REQ-ENTRY-006
       - REQ-IDX-002
 
   - id: STORY-003
     title: Bring Your Own Cloud
     type: Freedom
     as_a: privacy-conscious user
-    i_want: to store my notes on my own S3 bucket or local NAS
+    i_want: to store my entries on my own S3 bucket or local NAS
     so_that: I have complete control over my data privacy and backup.
     acceptance_criteria:
-      - Configurable storage backend via connection string (e.g., `s3://my-bucket/notes`)
+      - Configurable storage backend via connection string (e.g., `s3://my-bucket/entries`)
       - Seamless switching between local and remote storage
     related_apis:
-      - rest: PATCH /workspaces/{id}
-      - rest: POST /workspaces/{id}/test-connection
+      - rest: PATCH /spaces/{id}
+      - rest: POST /spaces/{id}/test-connection
     requirements:
       - REQ-STO-001
       - REQ-STO-006
@@ -52,31 +52,31 @@ stories:
     title: Time Travel
     type: Versioning
     as_a: user who made a mistake
-    i_want: to view and restore previous versions of a note
+    i_want: to view and restore previous versions of an entry
     so_that: I never lose important information.
     acceptance_criteria:
       - Every save creates a new immutable revision
       - UI allows browsing history and reverting
     related_apis:
-      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history
-      - rest: GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
-      - rest: POST /workspaces/{ws_id}/notes/{note_id}/restore
+      - rest: GET /spaces/{space_id}/entries/{entry_id}/history
+      - rest: GET /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
+      - rest: POST /spaces/{space_id}/entries/{entry_id}/restore
     requirements:
-      - REQ-NOTE-005
+      - REQ-ENTRY-005
 
   - id: STORY-005
     title: Search Across Everything
-    type: Class
-    as_a: user with many notes
-    i_want: to search my notes by keywords and structured fields
+    type: Form
+    as_a: user with many entries
+    i_want: to search my entries by keywords and structured fields
     so_that: I can quickly find relevant information.
     acceptance_criteria:
-      - Keyword search returns matching notes
-      - Structured queries filter by Class and properties
+      - Keyword search returns matching entries
+      - Structured queries filter by Form and properties
       - Results are ranked by relevance
     related_apis:
-      - rest: GET /workspaces/{ws_id}/search?q=query
-      - rest: POST /workspaces/{ws_id}/query
+      - rest: GET /spaces/{space_id}/search?q=query
+      - rest: POST /spaces/{space_id}/query
     requirements:
       - REQ-IDX-003
       - REQ-IDX-004

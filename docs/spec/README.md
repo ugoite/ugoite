@@ -17,7 +17,7 @@ Start here:
 
 ## Conventions
 
-- **"Class" is the user-facing term** (legacy term: schema).
+- **"Form" is the user-facing term** (legacy term: schema).
 - **API paths**: Backend paths are canonical; frontend calls the same
   path prefixed with `/api`.
 - **Machine-readable docs**: Stories, Requirements, and Features are expressed

@@ -7,12 +7,12 @@ from typing import Annotated, Any
 import ieapp_core
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.endpoints.workspace import (
-    _ensure_workspace_exists,
+from app.api.endpoints.space import (
+    _ensure_space_exists,
     _storage_config,
     _validate_path_id,
 )
-from app.models.classes import QueryRequest
+from app.models.payloads import QueryRequest
 
 SQL_ERROR_PREFIX = "IEAPP_SQL_ERROR"
 
@@ -25,28 +25,25 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/workspaces/{workspace_id}/query")
+@router.post("/spaces/{space_id}/query")
 async def query_endpoint(
-    workspace_id: str,
+    space_id: str,
     payload: QueryRequest,
 ) -> list[dict[str, Any]]:
-    """Query the workspace index."""
-    _validate_path_id(workspace_id, "workspace_id")
+    """Query the space index."""
+    _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
+
+    if payload.filter.get("$sql") or payload.filter.get("sql"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SQL queries must use SQL session endpoints.",
+        )
 
     try:
-        sql_payload = payload.filter.get("$sql") or payload.filter.get("sql")
-        query_payload = (
-            json.dumps(sql_payload)
-            if isinstance(sql_payload, str) and sql_payload.strip()
-            else json.dumps(payload.filter)
-        )
-        return await ieapp_core.query_index(
-            storage_config,
-            workspace_id,
-            query_payload,
-        )
+        query_payload = json.dumps(payload.filter)
+        return await ieapp_core.query_index(storage_config, space_id, query_payload)
     except Exception as e:
         logger.exception("Query failed")
         detail = str(e)
@@ -61,18 +58,18 @@ async def query_endpoint(
         ) from e
 
 
-@router.get("/workspaces/{workspace_id}/search")
+@router.get("/spaces/{space_id}/search")
 async def search_endpoint(
-    workspace_id: str,
+    space_id: str,
     q: Annotated[str, Query(..., min_length=1)],
 ) -> list[dict[str, Any]]:
     """Hybrid keyword search using inverted index with on-demand indexing."""
-    _validate_path_id(workspace_id, "workspace_id")
+    _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
-    await _ensure_workspace_exists(storage_config, workspace_id)
+    await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.search_notes(storage_config, workspace_id, q)
+        return await ieapp_core.search_entries(storage_config, space_id, q)
     except Exception as e:
         logger.exception("Search failed")
         raise HTTPException(

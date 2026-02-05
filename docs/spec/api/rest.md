@@ -13,11 +13,11 @@ When `IEAPP_ALLOW_REMOTE=true`, authentication is required (future milestone).
 
 ## Endpoints
 
-### Workspaces
+### Spaces
 
-#### List Workspaces
+#### List Spaces
 ```http
-GET /workspaces
+GET /spaces
 ```
 
 **Response**: `200 OK`
@@ -31,35 +31,35 @@ GET /workspaces
 ]
 ```
 
-#### Create Workspace
+#### Create Space
 ```http
-POST /workspaces
+POST /spaces
 Content-Type: application/json
 
 {
-  "id": "ws-new",
-  "name": "New Workspace"
+  "id": "space-new",
+  "name": "New Space"
 }
 ```
 
 **Response**: `201 Created`
 
-#### Get Workspace
+#### Get Space
 ```http
-GET /workspaces/{id}
+GET /spaces/{id}
 ```
 
 **Response**: `200 OK`
 
-#### Update Workspace
+#### Update Space
 ```http
-PATCH /workspaces/{id}
+PATCH /spaces/{id}
 Content-Type: application/json
 
 {
   "name": "Updated Name",
   "storage_config": { "uri": "s3://bucket/path" },
-  "settings": { "default_class": "Meeting" }
+  "settings": { "default_form": "Meeting" }
 }
 ```
 
@@ -67,7 +67,7 @@ Content-Type: application/json
 
 #### Test Connection
 ```http
-POST /workspaces/{id}/test-connection
+POST /spaces/{id}/test-connection
 Content-Type: application/json
 
 {
@@ -80,20 +80,20 @@ Content-Type: application/json
 
 ---
 
-### Notes
+### Entries
 
-#### List Notes
+#### List Entries
 ```http
-GET /workspaces/{ws_id}/notes
+GET /spaces/{space_id}/entries
 ```
 
 **Response**: `200 OK`
 ```json
 [
   {
-    "id": "note-uuid",
+    "id": "entry-uuid",
     "title": "Weekly Sync",
-    "class": "Meeting",
+    "form": "Meeting",
     "updated_at": "2025-11-29T10:00:00Z",
     "properties": { "Date": "2025-11-29" },
     "tags": ["project-alpha"],
@@ -102,48 +102,48 @@ GET /workspaces/{ws_id}/notes
 ]
 ```
 
-#### Create Note
+#### Create Entry
 ```http
-POST /workspaces/{ws_id}/notes
+POST /spaces/{space_id}/entries
 Content-Type: application/json
 
 {
-  "markdown": "# My Note\n\n## Field\nValue"
+  "markdown": "# My Entry\n\n## Field\nValue"
 }
 ```
 
 **Response**: `201 Created`
 ```json
 {
-  "id": "note-new-uuid",
-  "title": "My Note",
+  "id": "entry-new-uuid",
+  "title": "My Entry",
   "revision_id": "rev-0001",
   "properties": { "Field": "Value" }
 }
 ```
 
-#### Get Note
+#### Get Entry
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}
+GET /spaces/{space_id}/entries/{entry_id}
 ```
 
 **Response**: `200 OK`
 ```json
 {
-  "id": "note-uuid",
-  "markdown": "# My Note\n\n## Field\nValue",
+  "id": "entry-uuid",
+  "markdown": "# My Entry\n\n## Field\nValue",
   "revision_id": "rev-0001",
   "properties": { "Field": "Value" }
 }
 ```
 
-#### Update Note
+#### Update Entry
 ```http
-PUT /workspaces/{ws_id}/notes/{note_id}
+PUT /spaces/{space_id}/entries/{entry_id}
 Content-Type: application/json
 
 {
-  "markdown": "# Updated Note",
+  "markdown": "# Updated Entry",
   "parent_revision_id": "rev-0001"
 }
 ```
@@ -151,29 +151,29 @@ Content-Type: application/json
 **Response**: `200 OK`
 ```json
 {
-  "id": "note-uuid",
+  "id": "entry-uuid",
   "revision_id": "rev-0002"
 }
 ```
 
 **Error**: `409 Conflict` if `parent_revision_id` doesn't match current
 
-#### Delete Note
+#### Delete Entry
 ```http
-DELETE /workspaces/{ws_id}/notes/{note_id}
+DELETE /spaces/{space_id}/entries/{entry_id}
 ```
 
 **Response**: `204 No Content`
 
-#### Get Note History
+#### Get Entry History
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}/history
+GET /spaces/{space_id}/entries/{entry_id}/history
 ```
 
 **Response**: `200 OK`
 ```json
 {
-  "note_id": "note-uuid",
+  "entry_id": "entry-uuid",
   "revisions": [
     { "revision_id": "rev-0001", "timestamp": "2025-11-01T12:00:00Z" },
     { "revision_id": "rev-0002", "timestamp": "2025-11-29T10:00:00Z" }
@@ -183,14 +183,14 @@ GET /workspaces/{ws_id}/notes/{note_id}/history
 
 #### Get Revision
 ```http
-GET /workspaces/{ws_id}/notes/{note_id}/history/{revision_id}
+GET /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
 ```
 
 **Response**: `200 OK`
 
 #### Restore Revision
 ```http
-POST /workspaces/{ws_id}/notes/{note_id}/restore
+POST /spaces/{space_id}/entries/{entry_id}/restore
 Content-Type: application/json
 
 {
@@ -202,11 +202,11 @@ Content-Type: application/json
 
 ---
 
-### Classes
+### Forms
 
-#### List Classes
+#### List Forms
 ```http
-GET /workspaces/{ws_id}/classes
+GET /spaces/{space_id}/forms
 ```
 
 **Response**: `200 OK`
@@ -220,16 +220,16 @@ GET /workspaces/{ws_id}/classes
 ]
 ```
 
-#### Get Class
+#### Get Form
 ```http
-GET /workspaces/{ws_id}/classes/{name}
+GET /spaces/{space_id}/forms/{name}
 ```
 
 **Response**: `200 OK`
 
-#### Create/Update Class
+#### Create/Update Form
 ```http
-PUT /workspaces/{ws_id}/classes/{name}
+PUT /spaces/{space_id}/forms/{name}
 Content-Type: application/json
 
 {
@@ -242,21 +242,21 @@ Content-Type: application/json
 }
 ```
 
-**Note**: The note template is fixed globally (`# {class_name}` + H2 columns) and is not
-customizable per class.
+**Info**: The entry template is fixed globally (`# {form_name}` + H2 columns) and is not
+customizable per form.
 
 **Response**: `200 OK`
 
-#### Delete Class
+#### Delete Form
 ```http
-DELETE /workspaces/{ws_id}/classes/{name}
+DELETE /spaces/{space_id}/forms/{name}
 ```
 
-**Response**: `204 No Content` or `409 Conflict` if notes still reference it
+**Response**: `204 No Content` or `409 Conflict` if entries still reference it
 
 #### List Column Types
 ```http
-GET /workspaces/{ws_id}/classes/types
+GET /spaces/{space_id}/forms/types
 ```
 
 ---
@@ -265,7 +265,7 @@ GET /workspaces/{ws_id}/classes/types
 
 #### List SQL
 ```http
-GET /workspaces/{ws_id}/sql
+GET /spaces/{space_id}/sql
 ```
 
 **Response**: `200 OK`
@@ -287,7 +287,7 @@ GET /workspaces/{ws_id}/sql
 
 #### Create SQL
 ```http
-POST /workspaces/{ws_id}/sql
+POST /spaces/{space_id}/sql
 Content-Type: application/json
 
 {
@@ -309,7 +309,7 @@ Content-Type: application/json
 
 #### Get SQL
 ```http
-GET /workspaces/{ws_id}/sql/{sql_id}
+GET /spaces/{space_id}/sql/{sql_id}
 ```
 
 **Response**: `200 OK`
@@ -329,7 +329,7 @@ GET /workspaces/{ws_id}/sql/{sql_id}
 
 #### Update SQL
 ```http
-PUT /workspaces/{ws_id}/sql/{sql_id}
+PUT /spaces/{space_id}/sql/{sql_id}
 Content-Type: application/json
 
 {
@@ -352,18 +352,18 @@ Content-Type: application/json
 
 #### Delete SQL
 ```http
-DELETE /workspaces/{ws_id}/sql/{sql_id}
+DELETE /spaces/{space_id}/sql/{sql_id}
 ```
 
 **Response**: `204 No Content`
 
 ---
 
-### Attachments
+### Assets
 
-#### Upload Attachment
+#### Upload Asset
 ```http
-POST /workspaces/{ws_id}/attachments
+POST /spaces/{space_id}/assets
 Content-Type: multipart/form-data
 
 file=@audio.m4a
@@ -374,13 +374,13 @@ file=@audio.m4a
 {
   "id": "a1b2c3d4",
   "name": "audio.m4a",
-  "path": "attachments/a1b2c3d4.m4a"
+  "path": "assets/a1b2c3d4.m4a"
 }
 ```
 
-#### Delete Attachment
+#### Delete Asset
 ```http
-DELETE /workspaces/{ws_id}/attachments/{id}
+DELETE /spaces/{space_id}/assets/{id}
 ```
 
 **Response**: `204 No Content` or `409 Conflict` if still referenced
@@ -391,19 +391,19 @@ DELETE /workspaces/{ws_id}/attachments/{id}
 
 #### List Links
 ```http
-GET /workspaces/{ws_id}/links
+GET /spaces/{space_id}/links
 ```
 
 **Response**: `200 OK`
 
 #### Create Link
 ```http
-POST /workspaces/{ws_id}/links
+POST /spaces/{space_id}/links
 Content-Type: application/json
 
 {
-  "source": "note-id-1",
-  "target": "note-id-2",
+  "source": "entry-id-1",
+  "target": "entry-id-2",
   "kind": "related"
 }
 ```
@@ -412,7 +412,7 @@ Content-Type: application/json
 
 #### Delete Link
 ```http
-DELETE /workspaces/{ws_id}/links/{id}
+DELETE /spaces/{space_id}/links/{id}
 ```
 
 **Response**: `204 No Content`
@@ -423,34 +423,92 @@ DELETE /workspaces/{ws_id}/links/{id}
 
 #### Structured Query
 ```http
-POST /workspaces/{ws_id}/query
+POST /spaces/{space_id}/query
 Content-Type: application/json
 
 {
   "filter": {
-    "class": "Meeting",
+    "form": "Meeting",
     "properties.Date": { "$gt": "2025-01-01" }
-  }
-}
-```
-
-IEapp SQL (via `filter.$sql`):
-```http
-POST /workspaces/{ws_id}/query
-Content-Type: application/json
-
-{
-  "filter": {
-    "$sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50"
   }
 }
 ```
 
 **Response**: `200 OK`
 
+#### SQL Sessions
+
+SQL queries run through session-based endpoints. Creating a session executes
+the query and stores results under `sql_sessions/` in the space.
+
+##### Create SQL Session
+```http
+POST /spaces/{space_id}/sql-sessions
+Content-Type: application/json
+
+{
+  "sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50"
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "id": "session-uuid",
+  "sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50",
+  "status": "completed",
+  "created_at": "2026-02-03T12:00:00Z",
+  "updated_at": "2026-02-03T12:00:01Z",
+  "progress": {"processed": 42, "total": 42},
+  "row_count": 42,
+  "error": null
+}
+```
+
+##### Get SQL Session Status
+```http
+GET /spaces/{space_id}/sql-sessions/{session_id}
+```
+
+**Response**: `200 OK`
+
+##### Get SQL Session Count
+```http
+GET /spaces/{space_id}/sql-sessions/{session_id}/count
+```
+
+**Response**: `200 OK`
+```json
+{
+  "count": 42
+}
+```
+
+##### Get SQL Session Rows (paged)
+```http
+GET /spaces/{space_id}/sql-sessions/{session_id}/rows?offset=0&limit=50
+```
+
+**Response**: `200 OK`
+```json
+{
+  "rows": [/* entry records */],
+  "offset": 0,
+  "limit": 50,
+  "total_count": 42
+}
+```
+
+##### Stream SQL Session Rows
+```http
+GET /spaces/{space_id}/sql-sessions/{session_id}/stream
+```
+
+**Response**: `200 OK` (NDJSON stream)
+
 #### Keyword Search
 ```http
-GET /workspaces/{ws_id}/search?q=project
+GET /spaces/{space_id}/search?q=project
 ```
 
 **Response**: `200 OK`
@@ -464,7 +522,7 @@ GET /workspaces/{ws_id}/search?q=project
 | `400` | Bad Request - Invalid input |
 | `404` | Not Found - Resource doesn't exist |
 | `409` | Conflict - Duplicate or version mismatch |
-| `422` | Validation Error - Class violation |
+| `422` | Validation Error - Form violation |
 | `500` | Internal Server Error |
 
 Error response format:

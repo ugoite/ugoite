@@ -35,79 +35,79 @@ def memory_client(
         yield client
 
 
-def test_create_workspace_memory(memory_client: TestClient) -> None:
-    """Test creating a workspace in memory fs."""
-    response = memory_client.post("/workspaces", json={"name": "mem-ws"})
+def test_create_space_memory(memory_client: TestClient) -> None:
+    """Test creating a space in memory fs."""
+    response = memory_client.post("/spaces", json={"name": "mem-ws"})
     assert response.status_code == 201
     data = response.json()
     assert data["id"] == "mem-ws"
 
     # Verify it exists in list
-    response = memory_client.get("/workspaces")
+    response = memory_client.get("/spaces")
     assert response.status_code == 200
-    workspaces = response.json()
-    assert any(ws["id"] == "mem-ws" for ws in workspaces)
+    spaces = response.json()
+    assert any(ws["id"] == "mem-ws" for ws in spaces)
 
 
-def test_create_note_memory(memory_client: TestClient) -> None:
-    """Test creating a note in memory fs."""
-    # Create workspace first
-    ws_id = "note-ws"
-    memory_client.post("/workspaces", json={"name": ws_id})
+def test_create_entry_memory(memory_client: TestClient) -> None:
+    """Test creating a entry in memory fs."""
+    # Create space first
+    ws_id = "entry-ws"
+    memory_client.post("/spaces", json={"name": ws_id})
     memory_client.post(
-        f"/workspaces/{ws_id}/classes",
+        f"/spaces/{ws_id}/forms",
         json={
-            "name": "Note",
+            "name": "Entry",
             "version": 1,
-            "template": "# Note\n\n## Body\n",
+            "template": "# Entry\n\n## Body\n",
             "fields": {"Body": {"type": "markdown"}},
         },
     )
 
-    # Create note
-    note_payload = {
-        "content": "---\nclass: Note\n---\n# Memory Note\n\n## Body\nStored in RAM.",
+    # Create entry
+    entry_payload = {
+        "content": "---\nform: Entry\n---\n# Memory Entry\n\n## Body\nStored in RAM.",
     }
-    response = memory_client.post(f"/workspaces/{ws_id}/notes", json=note_payload)
+    response = memory_client.post(f"/spaces/{ws_id}/entries", json=entry_payload)
     assert response.status_code == 201
-    note_data = response.json()
-    note_id = note_data["id"]
+    entry_data = response.json()
+    entry_id = entry_data["id"]
 
-    # Get note
-    response = memory_client.get(f"/workspaces/{ws_id}/notes/{note_id}")
+    # Get entry
+    response = memory_client.get(f"/spaces/{ws_id}/entries/{entry_id}")
     assert response.status_code == 200
-    assert response.json()["content"] == note_payload["content"]
+    assert response.json()["content"] == entry_payload["content"]
 
 
-def test_update_note_and_search_memory(memory_client: TestClient) -> None:
-    """End-to-end note update and search on memory filesystem."""
+def test_update_entry_and_search_memory(memory_client: TestClient) -> None:
+    """End-to-end entry update and search on memory filesystem."""
     ws_id = "mem-search"
-    memory_client.post("/workspaces", json={"name": ws_id})
+    memory_client.post("/spaces", json={"name": ws_id})
     memory_client.post(
-        f"/workspaces/{ws_id}/classes",
+        f"/spaces/{ws_id}/forms",
         json={
-            "name": "Note",
+            "name": "Entry",
             "version": 1,
-            "template": "# Note\n\n## Body\n",
+            "template": "# Entry\n\n## Body\n",
             "fields": {"Body": {"type": "markdown"}},
         },
     )
 
     create_res = memory_client.post(
-        f"/workspaces/{ws_id}/notes",
+        f"/spaces/{ws_id}/entries",
         json={
             "id": "m1",
-            "content": "---\nclass: Note\n---\n# Title\n\n## Body\nrocket launch",
+            "content": "---\nform: Entry\n---\n# Title\n\n## Body\nrocket launch",
         },
     )
     assert create_res.status_code == 201
     revision_id = create_res.json()["revision_id"]
 
     update_res = memory_client.put(
-        f"/workspaces/{ws_id}/notes/m1",
+        f"/spaces/{ws_id}/entries/m1",
         json={
             "markdown": """---
-class: Note
+form: Entry
 ---
 # Updated Title
 
@@ -121,7 +121,7 @@ rocket launch scheduled""",
     assert new_revision != revision_id
 
     search_res = memory_client.get(
-        f"/workspaces/{ws_id}/search",
+        f"/spaces/{ws_id}/search",
         params={"q": "rocket"},
     )
     assert search_res.status_code == 200
@@ -129,57 +129,55 @@ rocket launch scheduled""",
     assert "m1" in ids
 
 
-def test_attachments_and_links_memory(memory_client: TestClient) -> None:
-    """Ensure attachments and links work over memory-backed fsspec."""
+def test_assets_and_links_memory(memory_client: TestClient) -> None:
+    """Ensure assets and links work over memory-backed fsspec."""
     ws_id = "mem-graph"
-    memory_client.post("/workspaces", json={"name": ws_id})
+    memory_client.post("/spaces", json={"name": ws_id})
     memory_client.post(
-        f"/workspaces/{ws_id}/classes",
+        f"/spaces/{ws_id}/forms",
         json={
-            "name": "Note",
+            "name": "Entry",
             "version": 1,
-            "template": "# Note\n\n## Body\n",
+            "template": "# Entry\n\n## Body\n",
             "fields": {"Body": {"type": "markdown"}},
         },
     )
 
-    note_a = memory_client.post(
-        f"/workspaces/{ws_id}/notes",
-        json={"id": "a", "content": "---\nclass: Note\n---\n# A\n\n## Body\nA body"},
+    entry_a = memory_client.post(
+        f"/spaces/{ws_id}/entries",
+        json={"id": "a", "content": "---\nform: Entry\n---\n# A\n\n## Body\nA body"},
     ).json()
     memory_client.post(
-        f"/workspaces/{ws_id}/notes",
-        json={"id": "b", "content": "---\nclass: Note\n---\n# B\n\n## Body\nB body"},
+        f"/spaces/{ws_id}/entries",
+        json={"id": "b", "content": "---\nform: Entry\n---\n# B\n\n## Body\nB body"},
     )
 
     upload_res = memory_client.post(
-        f"/workspaces/{ws_id}/attachments",
+        f"/spaces/{ws_id}/assets",
         files={"file": ("voice.m4a", io.BytesIO(b"data"), "audio/m4a")},
     )
     assert upload_res.status_code == 201
-    attachment = upload_res.json()
+    asset = upload_res.json()
 
     update_res = memory_client.put(
-        f"/workspaces/{ws_id}/notes/a",
+        f"/spaces/{ws_id}/entries/a",
         json={
-            "markdown": "---\nclass: Note\n---\n# A\n\n## Body\nwith attachment",
-            "parent_revision_id": note_a["revision_id"],
-            "attachments": [attachment],
+            "markdown": "---\nform: Entry\n---\n# A\n\n## Body\nwith asset",
+            "parent_revision_id": entry_a["revision_id"],
+            "assets": [asset],
         },
     )
     assert update_res.status_code == 200
 
     link_res = memory_client.post(
-        f"/workspaces/{ws_id}/links",
+        f"/spaces/{ws_id}/links",
         json={"source": "a", "target": "b", "kind": "related"},
     )
     assert link_res.status_code == 201
     link_id = link_res.json()["id"]
 
-    get_a = memory_client.get(f"/workspaces/{ws_id}/notes/a")
+    get_a = memory_client.get(f"/spaces/{ws_id}/entries/a")
     assert get_a.status_code == 200
-    note_payload = get_a.json()
-    assert any(
-        att["id"] == attachment["id"] for att in note_payload.get("attachments", [])
-    )
-    assert any(link["id"] == link_id for link in note_payload.get("links", []))
+    entry_payload = get_a.json()
+    assert any(att["id"] == asset["id"] for att in entry_payload.get("assets", []))
+    assert any(link["id"] == link_id for link in entry_payload.get("links", []))

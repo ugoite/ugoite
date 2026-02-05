@@ -1,0 +1,133 @@
+# Form Management Requirements
+
+category: Form Management
+prefix: REQ-FORM
+
+requirements:
+  - id: REQ-FORM-001
+    title: List Column Types
+    description: |
+      CLI and Backend MUST expose available column types for form creation.
+    related_spec:
+      - api/rest.md#forms
+      - data-model/overview.md#forms
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_forms.py
+          tests:
+            - test_list_column_types
+        - file: ieapp-cli/tests/test_cli_form.py
+          tests:
+            - test_cli_list_types
+        - file: backend/tests/test_api.py
+          tests:
+            - test_get_form_types
+      rust:
+        - file: ieapp-core/tests/test_form.rs
+          tests:
+            - test_form_req_form_001_list_column_types
+
+
+  - id: REQ-FORM-002
+    title: Form Migration Strategy
+    description: |
+      When updating a form definition, the system MUST allow specifying
+      migration strategies for existing fields (for example: set to null,
+      set a default value, or keep as-is).
+    related_spec:
+      - api/rest.md#forms
+      - data-model/overview.md#forms
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_forms.py
+          tests:
+            - test_migrate_form_add_column_with_default
+            - test_migrate_form_remove_column
+        - file: ieapp-cli/tests/test_cli_form.py
+          tests:
+            - test_cli_form_update
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_form_with_migration
+      rust:
+        - file: ieapp-core/tests/test_form.rs
+          tests:
+            - test_form_req_form_002_upsert_and_list_forms
+
+  - id: REQ-FORM-003
+    title: Form CRUD via API
+    description: |
+      Backend MUST allow creating, listing, and retrieving form definitions,
+      and validate entry updates against missing form definitions.
+    related_spec:
+      - api/rest.md#forms
+      - data-model/overview.md#forms
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_forms.py
+          tests:
+            - test_create_and_get_form
+            - test_form_validation_in_entry
+            - test_update_entry_with_missing_form_rejected
+      e2e:
+        - file: e2e/forms.test.ts
+          tests:
+            - Create and List Forms
+            - Query Entries by Form
+
+  - id: REQ-FORM-004
+    title: Extra Attributes Policy
+    description: |
+      Form definitions MUST declare how extra attributes (non-registered H2
+      sections) are handled, and the system MUST enforce the policy on entry
+      creation and update.
+    related_spec:
+      - data-model/overview.md#forms
+      - data-model/file-schemas.yaml#form_definition
+    priority: medium
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_form_004_deny_extra_attributes
+            - test_entry_req_form_004_allow_extra_attributes
+
+  - id: REQ-FORM-005
+    title: Reserved Metadata Columns
+    description: |
+      Form definitions MUST reject field names that collide with
+      system-owned metadata columns (e.g., title, form, tags). The
+      reserved list is system-owned and may expand over time.
+    related_spec:
+      - data-model/overview.md#metadata-vs-content-columns
+      - data-model/file-schemas.yaml#form_definition
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_form.rs
+          tests:
+            - test_form_req_form_005_reject_reserved_metadata_columns
+
+  - id: REQ-FORM-006
+    title: Reserved Metadata Forms
+    description: |
+      System-owned metadata Forms (e.g., SQL) MUST be reserved and rejected
+      when users attempt to create or update Forms with those names.
+    related_spec:
+      - data-model/overview.md#metadata-forms
+      - features/sql.md#saved-sql-form
+    priority: high
+    status: implemented
+    tests:
+      rust:
+        - file: ieapp-core/tests/test_form.rs
+          tests:
+            - test_form_req_form_006_reject_reserved_metadata_form

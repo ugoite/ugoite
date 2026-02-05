@@ -9,7 +9,7 @@ and responsibility boundaries.
 | Feature | Frontend | Backend | Shared Contract |
 |---|---|---|---|
 | State management | Optimistic updates, local cache, selection/view state | Persistence, history, indexing | `revision_id` optimistic concurrency |
-| Validation | UI/form validation, basic format checks | Class validation, business rules, integrity checks | Request/response models |
+| Validation | UI/form validation, basic format checks | Form validation, business rules, integrity checks | Request/response models |
 | Search & query | Query construction + display | Indexing, query execution | Query payload shape |
 | Code execution | Code execution UI (future) | MCP host | MCP protocol |
 
@@ -22,16 +22,16 @@ and responsibility boundaries.
 - On match: backend persists, appends history, returns new `revision_id`.
 - On mismatch: backend returns **409 Conflict** with the current revision info.
 
-### Note Creation & Indexing
+### Entry Creation & Indexing
 
 - Frontend sends Markdown; it does not parse Markdown for business logic.
 - Backend/CLI parses frontmatter/H2 sections, updates indices, and returns
-  extracted properties (via note list / query / get endpoints).
+  extracted properties (via entry list / query / get endpoints).
 
-### Workspace Switching
+### Space Switching
 
-- Frontend clears selection/editor state on workspace change.
-- Frontend reloads workspace-scoped resources (notes, classes, etc.).
+- Frontend clears selection/editor state on space change.
+- Frontend reloads space-scoped resources (entries, forms, etc.).
 
 ## Storage Boundary (Backend ↔ ieapp-core)
 

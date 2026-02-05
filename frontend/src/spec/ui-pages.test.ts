@@ -144,7 +144,7 @@ describe("UI spec YAML registry", () => {
 		}
 	});
 
-	it("REQ-FE-040: validates shared workspace chrome", () => {
+	it("REQ-FE-040: validates shared space chrome", () => {
 		const pages = loadPages();
 		for (const { spec, filePath } of pages) {
 			const topTabs = findSharedComponent(spec.components, "top-tabs");
@@ -161,7 +161,7 @@ describe("UI spec YAML registry", () => {
 
 	it("REQ-FE-040: validates object/grid tabs", () => {
 		const pages = loadPages();
-		const targetPages = new Set(["workspace-notes-object", "workspace-class-grid"]);
+		const targetPages = new Set(["space-entries-object", "space-form-grid"]);
 		for (const { spec, filePath } of pages) {
 			if (!spec.page?.id || !targetPages.has(spec.page.id)) {
 				continue;

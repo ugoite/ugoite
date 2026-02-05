@@ -1,12 +1,12 @@
 mod common;
-use _ieapp_core::{class, link, note, workspace};
+use _ieapp_core::{entry, form, link, space};
 use common::setup_operator;
 use uuid::Uuid;
 
-async fn create_test_note(
+async fn create_test_entry(
     op: &opendal::Operator,
     ws_path: &str,
-    note_id: &str,
+    entry_id: &str,
 ) -> anyhow::Result<()> {
     // Mock integrity provider
     struct MockIntegrity;
@@ -19,14 +19,14 @@ async fn create_test_note(
         }
     }
 
-    let class_def = serde_json::json!({
-        "name": "Note",
-        "template": "# Note\n\n## Body\n",
+    let form_def = serde_json::json!({
+        "name": "Entry",
+        "template": "# Entry\n\n## Body\n",
         "fields": {"Body": {"type": "markdown"}},
     });
-    class::upsert_class(op, ws_path, &class_def).await?;
-    let content = "---\nclass: Note\n---\n# content\n";
-    note::create_note(op, ws_path, note_id, content, "author", &MockIntegrity).await?;
+    form::upsert_form(op, ws_path, &form_def).await?;
+    let content = "---\nform: Entry\n---\n# content\n";
+    entry::create_entry(op, ws_path, entry_id, content, "author", &MockIntegrity).await?;
     Ok(())
 }
 
@@ -35,35 +35,35 @@ async fn create_test_note(
 async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-ws";
-    workspace::create_workspace(&op, ws_id, "/tmp").await?;
-    let ws_path = format!("workspaces/{}", ws_id);
+    space::create_space(&op, ws_id, "/tmp").await?;
+    let ws_path = format!("spaces/{}", ws_id);
 
-    // Create two notes
-    create_test_note(&op, &ws_path, "note1").await?;
-    create_test_note(&op, &ws_path, "note2").await?;
+    // Create two entries
+    create_test_entry(&op, &ws_path, "entry1").await?;
+    create_test_entry(&op, &ws_path, "entry2").await?;
 
     let link_id = Uuid::new_v4().to_string();
-    let link = link::create_link(&op, &ws_path, "note1", "note2", "related", &link_id).await?;
+    let link = link::create_link(&op, &ws_path, "entry1", "entry2", "related", &link_id).await?;
 
-    assert_eq!(link.source, "note1");
-    assert_eq!(link.target, "note2");
+    assert_eq!(link.source, "entry1");
+    assert_eq!(link.target, "entry2");
     assert_eq!(link.kind, "related");
     assert_eq!(link.id, link_id);
 
     // Verify persistence in note1
-    let note1 = note::get_note(&op, &ws_path, "note1").await?;
-    let links1 = note1.get("links").and_then(|v| v.as_array()).unwrap();
+    let entry1 = entry::get_entry(&op, &ws_path, "entry1").await?;
+    let links1 = entry1.get("links").and_then(|v| v.as_array()).unwrap();
     assert!(links1.iter().any(|l| {
         l.get("id").and_then(|v| v.as_str()) == Some(link_id.as_str())
-            && l.get("target").and_then(|v| v.as_str()) == Some("note2")
+            && l.get("target").and_then(|v| v.as_str()) == Some("entry2")
     }));
 
     // Verify persistence in note2
-    let note2 = note::get_note(&op, &ws_path, "note2").await?;
-    let links2 = note2.get("links").and_then(|v| v.as_array()).unwrap();
+    let entry2 = entry::get_entry(&op, &ws_path, "entry2").await?;
+    let links2 = entry2.get("links").and_then(|v| v.as_array()).unwrap();
     assert!(links2.iter().any(|l| {
         l.get("id").and_then(|v| v.as_str()) == Some(link_id.as_str())
-            && l.get("target").and_then(|v| v.as_str()) == Some("note1")
+            && l.get("target").and_then(|v| v.as_str()) == Some("entry1")
     })); // Reciprocal
 
     Ok(())
@@ -74,15 +74,15 @@ async fn test_link_req_lnk_001_create_link_bidirectional() -> anyhow::Result<()>
 async fn test_link_req_lnk_002_list_links() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-list-ws";
-    workspace::create_workspace(&op, ws_id, "/tmp").await?;
-    let ws_path = format!("workspaces/{}", ws_id);
+    space::create_space(&op, ws_id, "/tmp").await?;
+    let ws_path = format!("spaces/{}", ws_id);
 
-    create_test_note(&op, &ws_path, "noteA").await?;
-    create_test_note(&op, &ws_path, "noteB").await?;
+    create_test_entry(&op, &ws_path, "entryA").await?;
+    create_test_entry(&op, &ws_path, "entryB").await?;
 
     // Create a link
     let link_id = "link-123";
-    link::create_link(&op, &ws_path, "noteA", "noteB", "parent", link_id).await?;
+    link::create_link(&op, &ws_path, "entryA", "entryB", "parent", link_id).await?;
 
     let all_links = link::list_links(&op, &ws_path).await?;
     assert_eq!(all_links.len(), 1);
@@ -96,14 +96,14 @@ async fn test_link_req_lnk_002_list_links() -> anyhow::Result<()> {
 async fn test_link_req_lnk_003_delete_link() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let ws_id = "test-links-del-ws";
-    workspace::create_workspace(&op, ws_id, "/tmp").await?;
-    let ws_path = format!("workspaces/{}", ws_id);
+    space::create_space(&op, ws_id, "/tmp").await?;
+    let ws_path = format!("spaces/{}", ws_id);
 
-    create_test_note(&op, &ws_path, "noteX").await?;
-    create_test_note(&op, &ws_path, "noteY").await?;
+    create_test_entry(&op, &ws_path, "entryX").await?;
+    create_test_entry(&op, &ws_path, "entryY").await?;
 
     let link_id = "link-to-delete";
-    link::create_link(&op, &ws_path, "noteX", "noteY", "next", link_id).await?;
+    link::create_link(&op, &ws_path, "entryX", "entryY", "next", link_id).await?;
 
     // Verify exists
     let links_before = link::list_links(&op, &ws_path).await?;
@@ -116,9 +116,9 @@ async fn test_link_req_lnk_003_delete_link() -> anyhow::Result<()> {
     let links_after = link::list_links(&op, &ws_path).await?;
     assert!(links_after.is_empty());
 
-    // Check individual notes
-    let note_x = note::get_note(&op, &ws_path, "noteX").await?;
-    let links_x = note_x.get("links").and_then(|v| v.as_array()).unwrap();
+    // Check individual entries
+    let entry_x = entry::get_entry(&op, &ws_path, "entryX").await?;
+    let links_x = entry_x.get("links").and_then(|v| v.as_array()).unwrap();
     assert!(links_x.is_empty());
 
     Ok(())

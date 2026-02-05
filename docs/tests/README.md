@@ -52,15 +52,15 @@ def test_all_requirements_have_tests() -> None:
 Rust tests in `ieapp-core/tests/` follow a requirement-aware naming pattern:
 
 ```rust
-async fn test_note_req_note_001_create_note_basic() -> anyhow::Result<()> {
-    // REQ-NOTE-001
+async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
+    // REQ-ENTRY-001
     ...
 }
 ```
 
 When adopting this pattern, replace hyphens in `REQ-XXX-001` with underscores to
 form `req_xxx_001`, and keep `feature` aligned to the domain under test (e.g.
-api, workspace, note, class, core, cli).
+api, space, entry, form, core, cli).
 
 ### test_requirements.py
 
@@ -167,10 +167,10 @@ def test_docs_req_api_005_all_requirements_have_tests():
     ...
 ```
 
-Notes:
+Details:
 
 - Replace hyphens in `REQ-XXX-001` with underscores to form `req_xxx_001`.
-- `feature` should reflect the domain under test (e.g., docs, api, note).
+- `feature` should reflect the domain under test (e.g., docs, api, entry).
 
 ## Dependencies
 

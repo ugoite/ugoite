@@ -1,11 +1,11 @@
 import { For, Show, createMemo } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { NoteRecord, Class } from "~/lib/types";
+import type { EntryRecord, Form } from "~/lib/types";
 import { SearchBar } from "./SearchBar";
 
 export interface ListPanelProps {
 	/** Current view mode */
-	mode: "notes" | "classes";
+	mode: "entries" | "forms";
 	/** Whether to show the create button */
 	showCreate?: boolean;
 	/** Label for create button */
@@ -16,36 +16,36 @@ export interface ListPanelProps {
 	createDisabledReason?: string;
 	/** Callback when create button is clicked */
 	onCreate?: () => void;
-	/** List of classes for filter dropdown */
-	classes: Class[];
-	/** Selected class for filtering */
-	filterClass: Accessor<string>;
-	/** Callback when filter class changes */
-	onFilterClassChange: (className: string) => void;
+	/** List of forms for filter dropdown */
+	forms: Form[];
+	/** Selected form for filtering */
+	filterForm: Accessor<string>;
+	/** Callback when filter form changes */
+	onFilterFormChange: (formName: string) => void;
 	/** Search callback */
 	onSearch?: (query: string) => void;
 	/** Whether search is in progress */
 	isSearching?: boolean;
 	/** Number of search results */
 	searchResultsCount?: number;
-	/** Notes to display (for notes mode) */
-	notes?: NoteRecord[];
+	/** Entries to display (for entries mode) */
+	entries?: EntryRecord[];
 	/** Loading state */
 	loading?: boolean;
 	/** Error state */
 	error?: string | null;
 	/** Selected item ID */
 	selectedId?: string;
-	/** Callback when a note is selected */
-	onSelectNote?: (noteId: string) => void;
-	/** Callback when a class is selected */
-	onSelectClass?: (noteClass: Class) => void;
-	/** Currently selected class (for classes mode) */
-	selectedClass?: Class | null;
+	/** Callback when a entry is selected */
+	onSelectEntry?: (entryId: string) => void;
+	/** Callback when a form is selected */
+	onSelectForm?: (entryForm: Form) => void;
+	/** Currently selected form (for forms mode) */
+	selectedForm?: Form | null;
 }
 
 export function ListPanel(props: ListPanelProps) {
-	const notes = createMemo(() => props.notes || []);
+	const entries = createMemo(() => props.entries || []);
 	const loading = createMemo(() => props.loading || false);
 	const error = createMemo(() => props.error || null);
 
@@ -79,7 +79,7 @@ export function ListPanel(props: ListPanelProps) {
 								d="M12 4v16m8-8H4"
 							/>
 						</svg>
-						{props.createLabel || (props.mode === "notes" ? "New Note" : "New Class")}
+						{props.createLabel || (props.mode === "entries" ? "New Entry" : "New Form")}
 					</button>
 					<Show when={props.createDisabled && props.createDisabledReason}>
 						<p class="mt-2 text-xs text-gray-500">{props.createDisabledReason}</p>
@@ -87,8 +87,8 @@ export function ListPanel(props: ListPanelProps) {
 				</div>
 			</Show>
 
-			{/* Search (for notes mode) */}
-			<Show when={props.mode === "notes" && props.onSearch}>
+			{/* Search (for entries mode) */}
+			<Show when={props.mode === "entries" && props.onSearch}>
 				{(onSearch) => (
 					<div class="p-4 border-b space-y-3">
 						<SearchBar
@@ -100,41 +100,41 @@ export function ListPanel(props: ListPanelProps) {
 				)}
 			</Show>
 
-			{/* Class filter */}
-			<Show when={props.mode === "notes" && props.classes.length > 0}>
+			{/* Form filter */}
+			<Show when={props.mode === "entries" && props.forms.length > 0}>
 				<div class="px-4 py-3 border-b bg-gray-50">
-					<label class="block text-xs font-medium text-gray-500 mb-1" for="filter-class">
-						Filter by Class
+					<label class="block text-xs font-medium text-gray-500 mb-1" for="filter-form">
+						Filter by Form
 					</label>
 					<select
-						id="filter-class"
+						id="filter-form"
 						class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						value={props.filterClass()}
-						onChange={(e) => props.onFilterClassChange(e.currentTarget.value)}
+						value={props.filterForm()}
+						onChange={(e) => props.onFilterFormChange(e.currentTarget.value)}
 					>
 						<option value="">All</option>
-						<For each={props.classes}>{(s) => <option value={s.name}>{s.name}</option>}</For>
+						<For each={props.forms}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 					</select>
 				</div>
 			</Show>
 
 			{/* List content */}
 			<div class="flex-1 overflow-auto p-4">
-				<Show when={props.mode === "notes"}>
-					<NoteListContent
-						notes={notes}
+				<Show when={props.mode === "entries"}>
+					<EntryListContent
+						entries={entries}
 						loading={loading}
 						error={error}
 						selectedId={props.selectedId}
-						onSelect={props.onSelectNote}
+						onSelect={props.onSelectEntry}
 					/>
 				</Show>
 
-				<Show when={props.mode === "classes"}>
-					<ClassListContent
-						classes={props.classes}
-						selectedClass={props.selectedClass || null}
-						onSelect={props.onSelectClass}
+				<Show when={props.mode === "forms"}>
+					<FormListContent
+						forms={props.forms}
+						selectedForm={props.selectedForm || null}
+						onSelect={props.onSelectForm}
 					/>
 				</Show>
 			</div>
@@ -142,17 +142,17 @@ export function ListPanel(props: ListPanelProps) {
 	);
 }
 
-interface NoteListContentProps {
-	notes: Accessor<NoteRecord[]>;
+interface EntryListContentProps {
+	entries: Accessor<EntryRecord[]>;
 	loading: Accessor<boolean>;
 	error: Accessor<string | null>;
 	selectedId?: string;
-	onSelect?: (noteId: string) => void;
+	onSelect?: (entryId: string) => void;
 }
 
-function NoteListContent(props: NoteListContentProps) {
+function EntryListContent(props: EntryListContentProps) {
 	return (
-		<div class="note-list-container">
+		<div class="entry-list-container">
 			<Show when={props.loading()}>
 				<div class="loading-indicator flex items-center justify-center p-8">
 					<div class="flex flex-col items-center">
@@ -176,7 +176,7 @@ function NoteListContent(props: NoteListContentProps) {
 								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 							/>
 						</svg>
-						<span class="text-gray-600 text-sm">Loading notes...</span>
+						<span class="text-gray-600 text-sm">Loading entries...</span>
 					</div>
 				</div>
 			</Show>
@@ -194,7 +194,7 @@ function NoteListContent(props: NoteListContentProps) {
 				</div>
 			</Show>
 
-			<Show when={!props.loading() && props.notes().length === 0 && !props.error()}>
+			<Show when={!props.loading() && props.entries().length === 0 && !props.error()}>
 				<div class="empty-state p-12 text-center">
 					<div class="flex flex-col items-center">
 						<svg
@@ -210,25 +210,25 @@ function NoteListContent(props: NoteListContentProps) {
 								d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
 							/>
 						</svg>
-						<p class="text-gray-600 font-medium mb-1">No notes yet</p>
+						<p class="text-gray-600 font-medium mb-1">No entries yet</p>
 						<Show
-							when={props.mode === "notes" && props.classes.length === 0}
-							fallback={<p class="text-sm text-gray-400">Create your first note to get started</p>}
+							when={props.mode === "entries" && props.forms.length === 0}
+							fallback={<p class="text-sm text-gray-400">Create your first entry to get started</p>}
 						>
-							<p class="text-sm text-gray-400">Create a class first to start writing notes</p>
+							<p class="text-sm text-gray-400">Create a form first to start writing entries</p>
 						</Show>
 					</div>
 				</div>
 			</Show>
 
-			<Show when={!props.loading() && props.notes().length > 0}>
+			<Show when={!props.loading() && props.entries().length > 0}>
 				<ul class="space-y-2">
-					<For each={props.notes()}>
-						{(note) => (
-							<NoteListItem
-								note={note}
-								isSelected={props.selectedId === note.id}
-								onClick={() => props.onSelect?.(note.id)}
+					<For each={props.entries()}>
+						{(entry) => (
+							<EntryListItem
+								entry={entry}
+								isSelected={props.selectedId === entry.id}
+								onClick={() => props.onSelect?.(entry.id)}
 							/>
 						)}
 					</For>
@@ -238,14 +238,14 @@ function NoteListContent(props: NoteListContentProps) {
 	);
 }
 
-interface NoteListItemProps {
-	note: NoteRecord;
+interface EntryListItemProps {
+	entry: EntryRecord;
 	isSelected: boolean;
 	onClick: () => void;
 }
 
-function NoteListItem(props: NoteListItemProps) {
-	const propertyEntries = () => Object.entries(props.note.properties ?? {}).slice(0, 3);
+function EntryListItem(props: EntryListItemProps) {
+	const propertyEntries = () => Object.entries(props.entry.properties ?? {}).slice(0, 3);
 
 	const formatDate = (dateStr: string) => {
 		try {
@@ -256,10 +256,10 @@ function NoteListItem(props: NoteListItemProps) {
 	};
 
 	return (
-		<li data-testid="note-item">
+		<li data-testid="entry-item">
 			<button
 				type="button"
-				class={`note-item-button w-full text-left p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
+				class={`entry-item-button w-full text-left p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
 					props.isSelected
 						? "selected border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
 						: "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md hover:bg-gray-50"
@@ -269,11 +269,11 @@ function NoteListItem(props: NoteListItemProps) {
 			>
 				<div class="flex justify-between items-start mb-2">
 					<h3 class="font-semibold text-gray-900 truncate flex-1 pr-2">
-						{props.note.title || "Untitled"}
+						{props.entry.title || "Untitled"}
 					</h3>
-					<Show when={props.note.class}>
+					<Show when={props.entry.form}>
 						<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium whitespace-nowrap">
-							{props.note.class}
+							{props.entry.form}
 						</span>
 					</Show>
 				</div>
@@ -309,23 +309,23 @@ function NoteListItem(props: NoteListItemProps) {
 							d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
 						/>
 					</svg>
-					<span>Updated {formatDate(props.note.updated_at)}</span>
+					<span>Updated {formatDate(props.entry.updated_at)}</span>
 				</div>
 			</button>
 		</li>
 	);
 }
 
-interface ClassListContentProps {
-	classes: Class[];
-	selectedClass: Class | null;
-	onSelect?: (noteClass: Class) => void;
+interface FormListContentProps {
+	forms: Form[];
+	selectedForm: Form | null;
+	onSelect?: (entryForm: Form) => void;
 }
 
-function ClassListContent(props: ClassListContentProps) {
+function FormListContent(props: FormListContentProps) {
 	return (
 		<Show
-			when={props.classes.length > 0}
+			when={props.forms.length > 0}
 			fallback={
 				<div class="empty-state p-12 text-center">
 					<div class="flex flex-col items-center">
@@ -342,29 +342,29 @@ function ClassListContent(props: ClassListContentProps) {
 								d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
 							/>
 						</svg>
-						<p class="text-gray-600 font-medium mb-1">No classes yet</p>
-						<p class="text-sm text-gray-400">Create your first class to get started</p>
+						<p class="text-gray-600 font-medium mb-1">No forms yet</p>
+						<p class="text-sm text-gray-400">Create your first form to get started</p>
 					</div>
 				</div>
 			}
 		>
 			<ul class="space-y-2">
-				<For each={props.classes}>
-					{(noteClass) => (
+				<For each={props.forms}>
+					{(entryForm) => (
 						<li>
 							<button
 								type="button"
-								onClick={() => props.onSelect?.(noteClass)}
+								onClick={() => props.onSelect?.(entryForm)}
 								class={`w-full text-left p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
-									props.selectedClass?.name === noteClass.name
+									props.selectedForm?.name === entryForm.name
 										? "border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
 										: "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md hover:bg-gray-50"
 								}`}
 							>
-								<div class="font-semibold text-gray-900">{noteClass.name}</div>
+								<div class="font-semibold text-gray-900">{entryForm.name}</div>
 								<div class="text-xs text-gray-500 mt-1">
-									{Object.keys(noteClass.fields).length}{" "}
-									{Object.keys(noteClass.fields).length === 1 ? "field" : "fields"}
+									{Object.keys(entryForm.fields).length}{" "}
+									{Object.keys(entryForm.fields).length === 1 ? "field" : "fields"}
 								</div>
 							</button>
 						</li>

@@ -1,6 +1,6 @@
 """Sandbox tests removed (sandbox feature deprecated).
 
-REQ-SEC-001: Localhost binding (sandbox deprecated note).
+REQ-SEC-001: Localhost binding (sandbox deprecated entry).
 """
 
 import pytest

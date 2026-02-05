@@ -1,6 +1,6 @@
-use crate::class;
+use crate::entry;
+use crate::form;
 use crate::integrity::IntegrityProvider;
-use crate::note;
 use crate::sql;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
-const SQL_CLASS_NAME: &str = "SQL";
+const SQL_FORM_NAME: &str = "SQL";
 const SQL_VALIDATION_PREFIX: &str = "IEAPP_SQL_VALIDATION";
 
 fn validation_error(message: impl std::fmt::Display) -> anyhow::Error {
@@ -34,9 +34,9 @@ pub struct SqlPayload {
     pub variables: Value,
 }
 
-fn sql_class_definition() -> Value {
+fn sql_form_definition() -> Value {
     serde_json::json!({
-        "name": SQL_CLASS_NAME,
+        "name": SQL_FORM_NAME,
         "version": 1,
         "fields": {
             "sql": {"type": "markdown", "required": true},
@@ -46,10 +46,10 @@ fn sql_class_definition() -> Value {
     })
 }
 
-async fn ensure_sql_class(op: &Operator, ws_path: &str) -> Result<Value> {
-    let class_def = sql_class_definition();
-    class::upsert_metadata_class(op, ws_path, &class_def).await?;
-    Ok(class_def)
+async fn ensure_sql_form(op: &Operator, ws_path: &str) -> Result<Value> {
+    let form_def = sql_form_definition();
+    form::upsert_metadata_form(op, ws_path, &form_def).await?;
+    Ok(form_def)
 }
 
 fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
@@ -146,20 +146,20 @@ fn sql_integrity_payload(
     integrity: &dyn IntegrityProvider,
     payload: &SqlPayload,
     variables: &Value,
-) -> note::IntegrityPayload {
+) -> entry::IntegrityPayload {
     let payload = serde_json::json!({
         "name": payload.name,
         "sql": payload.sql,
         "variables": variables,
     });
     let serialized = serde_json::to_string(&payload).unwrap_or_default();
-    note::IntegrityPayload {
+    entry::IntegrityPayload {
         checksum: integrity.checksum(&serialized),
         signature: integrity.signature(&serialized),
     }
 }
 
-fn sql_entry_from_row(row: &note::NoteRow) -> Result<Value> {
+fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
     let fields = row
         .fields
         .as_object()
@@ -171,7 +171,7 @@ fn sql_entry_from_row(row: &note::NoteRow) -> Result<Value> {
         .unwrap_or_else(|| Value::Array(Vec::new()));
 
     Ok(serde_json::json!({
-        "id": row.note_id,
+        "id": row.entry_id,
         "name": row.title,
         "sql": sql_value,
         "variables": variables,
@@ -182,9 +182,9 @@ fn sql_entry_from_row(row: &note::NoteRow) -> Result<Value> {
 }
 
 pub async fn list_sql(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
-    ensure_sql_class(op, ws_path).await?;
-    let class_def = class::read_class_definition(op, ws_path, SQL_CLASS_NAME).await?;
-    let rows = note::list_class_note_rows(op, ws_path, SQL_CLASS_NAME, &class_def).await?;
+    ensure_sql_form(op, ws_path).await?;
+    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
+    let rows = entry::list_form_entry_rows(op, ws_path, SQL_FORM_NAME, &form_def).await?;
     let mut entries = Vec::new();
     for row in rows {
         if row.deleted {
@@ -196,8 +196,8 @@ pub async fn list_sql(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
 }
 
 pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value> {
-    ensure_sql_class(op, ws_path).await?;
-    let row = note::read_note_row(op, ws_path, SQL_CLASS_NAME, sql_id).await?;
+    ensure_sql_form(op, ws_path).await?;
+    let row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(anyhow!("SQL entry not found: {}", sql_id));
     }
@@ -212,15 +212,15 @@ pub async fn create_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
-    if note::find_note_class(op, ws_path, sql_id).await?.is_some() {
+    if entry::find_entry_form(op, ws_path, sql_id).await?.is_some() {
         return Err(anyhow!("SQL entry already exists: {}", sql_id));
     }
 
-    let class_def = ensure_sql_class(op, ws_path).await?;
+    let form_def = ensure_sql_form(op, ws_path).await?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(&payload.sql, &variables)?;
 
-    let timestamp = note::now_ts();
+    let timestamp = entry::now_ts();
     let revision_id = Uuid::new_v4().to_string();
     let integrity_payload = sql_integrity_payload(integrity, payload, &variables);
 
@@ -228,10 +228,10 @@ pub async fn create_sql<I: IntegrityProvider>(
     fields.insert("sql".to_string(), Value::String(payload.sql.to_string()));
     fields.insert("variables".to_string(), variables.clone());
 
-    let row = note::NoteRow {
-        note_id: sql_id.to_string(),
+    let row = entry::EntryRow {
+        entry_id: sql_id.to_string(),
         title: payload.name.to_string(),
-        class: SQL_CLASS_NAME.to_string(),
+        form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         links: Vec::new(),
         canvas_position: Value::Object(Map::new()),
@@ -241,18 +241,18 @@ pub async fn create_sql<I: IntegrityProvider>(
         extra_attributes: Value::Object(Map::new()),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
-        attachments: Vec::new(),
+        assets: Vec::new(),
         integrity: integrity_payload.clone(),
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
     };
 
-    note::write_note_row(op, ws_path, SQL_CLASS_NAME, sql_id, &row).await?;
+    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
 
-    let revision = note::RevisionRow {
+    let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
-        note_id: sql_id.to_string(),
+        entry_id: sql_id.to_string(),
         parent_revision_id: None,
         timestamp,
         author: author.to_string(),
@@ -262,7 +262,7 @@ pub async fn create_sql<I: IntegrityProvider>(
         integrity: integrity_payload,
         restored_from: None,
     };
-    note::append_revision_row_for_class(op, ws_path, SQL_CLASS_NAME, &revision, &class_def).await?;
+    entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
     sql_entry_from_row(&row)
 }
@@ -276,9 +276,9 @@ pub async fn update_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
-    ensure_sql_class(op, ws_path).await?;
-    let class_def = class::read_class_definition(op, ws_path, SQL_CLASS_NAME).await?;
-    let mut row = note::read_note_row(op, ws_path, SQL_CLASS_NAME, sql_id).await?;
+    ensure_sql_form(op, ws_path).await?;
+    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
+    let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(anyhow!("SQL entry not found: {}", sql_id));
     }
@@ -295,7 +295,7 @@ pub async fn update_sql<I: IntegrityProvider>(
 
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(&payload.sql, &variables)?;
-    let mut timestamp = note::now_ts();
+    let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
     }
@@ -314,11 +314,11 @@ pub async fn update_sql<I: IntegrityProvider>(
     row.author = author.to_string();
     row.integrity = integrity_payload.clone();
 
-    note::write_note_row(op, ws_path, SQL_CLASS_NAME, sql_id, &row).await?;
+    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
 
-    let revision = note::RevisionRow {
+    let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
-        note_id: sql_id.to_string(),
+        entry_id: sql_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
         author: author.to_string(),
@@ -328,25 +328,25 @@ pub async fn update_sql<I: IntegrityProvider>(
         integrity: integrity_payload,
         restored_from: None,
     };
-    note::append_revision_row_for_class(op, ws_path, SQL_CLASS_NAME, &revision, &class_def).await?;
+    entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
     sql_entry_from_row(&row)
 }
 
 pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()> {
-    ensure_sql_class(op, ws_path).await?;
-    let mut row = note::read_note_row(op, ws_path, SQL_CLASS_NAME, sql_id).await?;
+    ensure_sql_form(op, ws_path).await?;
+    let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(anyhow!("SQL entry not found: {}", sql_id));
     }
 
-    let mut delete_ts = note::now_ts();
+    let mut delete_ts = entry::now_ts();
     if delete_ts <= row.updated_at {
         delete_ts = row.updated_at + 0.001;
     }
     row.deleted = true;
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
-    note::write_note_row(op, ws_path, SQL_CLASS_NAME, sql_id, &row).await?;
+    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
     Ok(())
 }

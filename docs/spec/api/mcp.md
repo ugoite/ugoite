@@ -8,25 +8,25 @@ IEapp implements the Model Context Protocol (MCP) to enable AI agents to interac
 
 Resources provide read-only access to data:
 
-### `ieapp://{workspace_id}/notes/list`
+### `ieapp://{space_id}/entries/list`
 
-Returns JSON list of notes with metadata.
+Returns JSON list of entries with metadata.
 
 ```json
 [
   {
-    "id": "note-uuid",
+    "id": "entry-uuid",
     "title": "Weekly Sync",
-    "class": "Meeting",
+    "form": "Meeting",
     "properties": { "Date": "2025-11-29" },
     "updated_at": "2025-11-29T10:00:00Z"
   }
 ]
 ```
 
-### `ieapp://{workspace_id}/notes/{note_id}`
+### `ieapp://{space_id}/entries/{entry_id}`
 
-Returns Markdown content of a specific note.
+Returns Markdown content of a specific entry.
 
 ```markdown
 # Weekly Sync
@@ -39,17 +39,17 @@ Returns Markdown content of a specific note.
 - Bob
 ```
 
-### `ieapp://{workspace_id}/notes/{note_id}/history`
+### `ieapp://{space_id}/entries/{entry_id}/history`
 
 Returns revision history summaries.
 
-### `ieapp://{workspace_id}/classes`
+### `ieapp://{space_id}/forms`
 
-Returns available class definitions and their fields.
+Returns available form definitions and their fields.
 
-### `ieapp://{workspace_id}/links`
+### `ieapp://{space_id}/links`
 
-Returns all note-to-note relationships.
+Returns all entry-to-entry relationships.
 
 ---
 
@@ -63,17 +63,17 @@ No MCP tools are currently exposed. The deprecated `run_script` tool has been re
 
 Pre-defined prompts help AI understand the context:
 
-### `summarize_workspace`
+### `summarize_space`
 
-> "Read the index of the workspace and provide a high-level summary of the topics covered."
+> "Read the index of the space and provide a high-level summary of the topics covered."
 
 ### `analyze_meetings`
 
-> "Find all notes with class='Meeting' and summarize the key decisions."
+> "Find all entries with form='Meeting' and summarize the key decisions."
 
 ### `find_related`
 
-> "Given a note ID, find all related notes via links and shared tags."
+> "Given an entry ID, find all related entries via links and shared tags."
 
 ---
 
@@ -89,5 +89,5 @@ MCP requests inherit the authentication of the HTTP connection:
 
 MCP requests are logged with:
 - Timestamp
-- Workspace ID
+- Space ID
 - Resource identifier

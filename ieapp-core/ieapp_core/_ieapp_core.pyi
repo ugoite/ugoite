@@ -96,6 +96,26 @@ def query_index(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[list[dict[str, object]]]: ...
+def create_sql_session(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
+def get_sql_session_status(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
+def get_sql_session_count(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[int]: ...
+def get_sql_session_rows(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
+def get_sql_session_rows_all(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[list[dict[str, object]]]: ...
 def search_notes(
     *args: object,
     **kwargs: object,

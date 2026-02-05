@@ -16,41 +16,41 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_scaffolding
-            - test_create_workspace_s3_unimplemented
+            - test_create_space_scaffolding
+            - test_create_space_s3_unimplemented
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
       rust:
-        - file: ieapp-core/tests/test_workspace.rs
+        - file: ieapp-core/tests/test_space.rs
           tests:
-            - test_workspace_req_sto_002_create_workspace_scaffolding
+            - test_space_req_sto_002_create_space_scaffolding
 
   - id: REQ-STO-002
-    title: Workspace Directory Structure
+    title: Space Directory Structure
     description: |
-      Workspace has the following structure:
+      Space has the following structure:
       - meta.json, settings.json
-      - classes/ (Iceberg-managed Class tables)
-      - attachments/
+      - forms/ (Iceberg-managed Form tables)
+      - assets/
     related_spec:
       - data-model/directory-structure.md
     priority: high
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_scaffolding
+            - test_create_space_scaffolding
         - file: backend/tests/test_api.py
           tests:
-            - test_create_workspace
+            - test_create_space
       rust:
-        - file: ieapp-core/tests/test_workspace.rs
+        - file: ieapp-core/tests/test_space.rs
           tests:
-            - test_workspace_req_sto_002_create_workspace_scaffolding
+            - test_space_req_sto_002_create_space_scaffolding
 
   - id: REQ-STO-003
     title: File Permissions (chmod 600)
@@ -62,62 +62,62 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_scaffolding
+            - test_create_space_scaffolding
 
   - id: REQ-STO-004
-    title: Workspace Management via global.json
+    title: Space Management via global.json
     description: |
-      global.json maintains workspace registry and HMAC keys.
+      global.json maintains space registry and HMAC keys.
     related_spec:
       - data-model/overview.md#directory-structure
     priority: high
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_scaffolding
+            - test_create_space_scaffolding
         - file: ieapp-cli/tests/test_integrity.py
           tests:
-            - test_integrity_provider_for_workspace_success
+            - test_integrity_provider_for_space_success
             - test_integrity_provider_missing_hmac_key
       rust:
-        - file: ieapp-core/tests/test_workspace.rs
+        - file: ieapp-core/tests/test_space.rs
           tests:
-            - test_workspace_req_sto_002_create_workspace_scaffolding
-            - test_workspace_req_sto_004_list_workspaces_from_global_json
+            - test_space_req_sto_002_create_space_scaffolding
+            - test_space_req_sto_004_list_spaces_from_global_json
 
   - id: REQ-STO-005
-    title: Prevent Duplicate Workspace Creation
+    title: Prevent Duplicate Space Creation
     description: |
-      Returns 409 error when attempting to create a workspace with an existing ID.
+      Returns 409 error when attempting to create a space with an existing ID.
     related_spec:
-      - api/rest.md#create-workspace
+      - api/rest.md#create-space
     priority: medium
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_idempotency
+            - test_create_space_idempotency
         - file: backend/tests/test_api.py
           tests:
-            - test_create_workspace_conflict
+            - test_create_space_conflict
       rust:
-        - file: ieapp-core/tests/test_workspace.rs
+        - file: ieapp-core/tests/test_space.rs
           tests:
-            - test_workspace_req_sto_005_create_workspace_idempotency
+            - test_space_req_sto_005_create_space_idempotency
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
-            - should throw error for duplicate workspace
+            - should throw error for duplicate space
 
   - id: REQ-STO-006
     title: Storage Connector Validation
     description: |
-      Workspaces MUST accept storage connector updates and provide
+      Spaces MUST accept storage connector updates and provide
       a validation endpoint before committing changes.
     related_spec:
       - stories/core.yaml#STORY-003
@@ -128,7 +128,7 @@ requirements:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_update_workspace_storage_connector
+            - test_update_space_storage_connector
             - test_test_connection_endpoint
 
   - id: REQ-STO-007
@@ -146,40 +146,40 @@ requirements:
       pytest:
         - file: backend/tests/test_api_memory.py
           tests:
-            - test_create_workspace_memory
-            - test_create_note_memory
-            - test_update_note_and_search_memory
-            - test_attachments_and_links_memory
+            - test_create_space_memory
+            - test_create_entry_memory
+            - test_update_entry_and_search_memory
+            - test_assets_and_links_memory
 
   - id: REQ-STO-008
     title: Resilient global.json parsing
     description: |
-      Listing workspaces MUST NOT fail when global.json is corrupt.
+      Listing spaces MUST NOT fail when global.json is corrupt.
       The system MUST recover by restoring a default global.json and
-      return an empty workspace list.
+      return an empty space list.
     related_spec:
       - data-model/file-schemas.yaml#global
     priority: high
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_workspace.rs
+        - file: ieapp-core/tests/test_space.rs
           tests:
-            - test_workspace_req_sto_008_list_workspaces_recovers_from_corrupt_global
+            - test_space_req_sto_008_list_spaces_recovers_from_corrupt_global
 
   - id: REQ-STO-009
-    title: Resilient workspace listing API
+    title: Resilient space listing API
     description: |
-      The backend MUST return a successful response for workspace listing
-      even if storage roots are missing or core workspace listing fails.
+      The backend MUST return a successful response for space listing
+      even if storage roots are missing or core space listing fails.
       Local filesystem roots MUST be created automatically when absent.
     related_spec:
-      - api/rest.md#list-workspaces
+      - api/rest.md#list-spaces
     priority: high
     status: implemented
     tests:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_list_workspaces_missing_root_creates_default
-            - test_list_workspaces_handles_core_failure
+            - test_list_spaces_missing_root_creates_default
+            - test_list_spaces_handles_core_failure

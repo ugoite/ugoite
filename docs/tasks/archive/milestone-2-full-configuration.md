@@ -28,44 +28,44 @@ Transform the MVP codebase into a well-structured, maintainable system with:
 
 ---
 
-## Checkpoint 1: Terminology Unification ✅ DONE (Refactored to "Note Class")
+## Checkpoint 1: Terminology Unification ✅ DONE (Refactored to "Entry Form")
 
-**Goal**: Consolidate "datamodel", "schema", "class" terminology to single "class" term
+**Goal**: Consolidate "datamodel", "schema", "form" terminology to single "form" term
 
 ### AS-IS (Status: Migrated)
 
-The codebase now consistently uses "Class" or "Note Class".
+The codebase now consistently uses "Form" or "Entry Form".
 
 | Location | Term Used | Status |
 |----------|-----------|--------|
-| Specification | "Note Class" | Updated |
-| CLI Logic | `classes.py` | Renamed / Updated |
-| API Routes | `/classes` | Updated |
-| Models | `ClassCreate` | Updated |
-| Frontend | `classApi` | Updated |
-| Directory | `classes/` | Migrated |
+| Specification | "Entry Form" | Updated |
+| CLI Logic | `forms.py` | Renamed / Updated |
+| API Routes | `/forms` | Updated |
+| Models | `FormCreate` | Updated |
+| Frontend | `formApi` | Updated |
+| Directory | `forms/` | Migrated |
 
 ### TO-BE (Verified)
 
-Unified to "Class" terminology:
+Unified to "Form" terminology:
 
 | Location | New Term | Changes Required |
 |----------|----------|------------------|
-| Documentation | "Class" | Update all spec files |
-| `ieapp-cli/src/ieapp/classes.py` | "class" | Rename `schemas.py` → `classes.py`, rename functions |
-| `backend/src/app/api/endpoints/` | "class" | Routes: `/classes`, `/classes/{name}` |
-| `backend/src/app/models/classes.py` | "ClassCreate" | Rename models file |
-| `frontend/src/lib/*-api.ts` | "classApi" | Rename API client methods |
-| Directory structure | `classes/` | Rename workspace subdirectory |
+| Documentation | "Form" | Update all spec files |
+| `ieapp-cli/src/ieapp/forms.py` | "form" | Rename `schemas.py` → `forms.py`, rename functions |
+| `backend/src/app/api/endpoints/` | "form" | Routes: `/forms`, `/forms/{name}` |
+| `backend/src/app/models/forms.py` | "FormCreate" | Rename models file |
+| `frontend/src/lib/*-api.ts` | "formApi" | Rename API client methods |
+| Directory structure | `forms/` | Rename space subdirectory |
 
 ### Tasks
 
-- [x] Update `docs/spec/` to use "Class" consistently
-- [x] Rename `ieapp-cli/src/ieapp/schemas.py` → `classes.py`
-- [x] Rename functions: `list_schemas` → `list_classes`, `get_schema` → `get_class`, etc.
+- [x] Update `docs/spec/` to use "Form" consistently
+- [x] Rename `ieapp-cli/src/ieapp/schemas.py` → `forms.py`
+- [x] Rename functions: `list_schemas` → `list_forms`, `get_schema` → `get_form`, etc.
 - [x] Update backend routes and models
 - [x] Update frontend API client
-- [x] Create migration script for existing workspaces (`schemas/` → `classes/`)
+- [x] Create migration script for existing spaces (`schemas/` → `forms/`)
 - [x] Update tests to use new terminology
 - [x] Add backwards compatibility layer (optional, for existing users)
 
@@ -73,7 +73,7 @@ Unified to "Class" terminology:
 
 - [x] No references to "schema" (lowercase) in user-facing code/docs (except Python `BaseModel` internals)
 - [x] All tests pass with new terminology
-- [x] Existing workspaces can be migrated automatically
+- [x] Existing spaces can be migrated automatically
 
 ---
 
@@ -86,12 +86,12 @@ Unified to "Class" terminology:
 ```
 ieapp-cli/
 ├── src/ieapp/
-│   ├── workspace.py      # Workspace CRUD, fsspec operations
-│   ├── notes.py          # Note CRUD, revision history
-│   ├── schemas.py        # Class definitions
+│   ├── space.py          # Space CRUD, fsspec operations
+│   ├── entries.py        # Entry CRUD, revision history
+│   ├── forms.py          # Form definitions
 │   ├── indexer.py        # Structured data extraction
-│   ├── attachments.py    # Binary file management
-│   ├── links.py          # Note-to-note links
+│   ├── assets.py         # Binary file management
+│   ├── links.py          # Entry-to-entry links
 │   ├── integrity.py      # HMAC signing
 │   └── utils.py          # fsspec helpers
 backend/
@@ -115,12 +115,12 @@ ieapp-core/                     # NEW: Rust crate (Mixed Layout)
 │   └── __init__.py
 ├── src/                        # Rust core + bindings
 │   ├── lib.rs                  # pyo3 entry point & bindings
-│   ├── workspace.rs           # Workspace operations
-│   ├── note.rs                # Note operations
-│   ├── class.rs               # Class definitions
+│   ├── space.rs               # Space operations
+│   ├── entry.rs               # Entry operations
+│   ├── form.rs                # Form definitions
 │   ├── index.rs               # Indexing logic
-│   ├── attachment.rs          # Attachment handling
-│   ├── link.rs                # Note links
+│   ├── asset.rs               # Asset handling
+│   ├── link.rs                # Entry links
 │   ├── integrity.rs           # HMAC/checksum
 │   ├── storage/               # Storage abstraction
 │   │   ├── mod.rs
@@ -154,11 +154,11 @@ frontend/                       # UNCHANGED: UI only
 
 - [x] Create `ieapp-core/` Rust crate with Cargo.toml
 - [x] Implement storage abstraction using OpenDAL
-- [x] Port `workspace.py` → `workspace.rs`
-- [x] Port `notes.py` → `note.rs`
-- [x] Port `classes.py` (was schemas.py) → `class.rs`
+- [x] Port `space.py` → `space.rs`
+- [x] Port `entries.py` → `entry.rs`
+- [x] Port `forms.py` (was schemas.py) → `form.rs`
 - [x] Port `indexer.py` → `index.rs`
-- [x] Port `attachments.py` → `attachment.rs`
+- [x] Port `assets.py` → `asset.rs`
 - [x] Port `integrity.py` → `integrity.rs`
 - [x] Create pyo3 Python bindings
 - [x] Update ieapp-cli to use Rust bindings
@@ -193,11 +193,11 @@ Path patterns are inconsistent across modules:
 
 | Feature | ieapp-cli | backend | frontend |
 |---------|-----------|---------|----------|
-| Workspace | `workspace.py` | `api/endpoints/workspaces.py` | `workspace-store.ts` |
-| Notes | `notes.py` | `api/endpoints/workspaces.py` (mixed) | `store.ts`, `routes/workspaces/[workspace_id]/notes` |
-| Classes | `schemas.py` | `api/endpoints/workspaces.py` (mixed) | `class-api.ts` (classApi) |
-| Attachments | `attachments.py` | `api/endpoints/workspaces.py` | (in store) |
-| Search | `search.py` | `api/endpoints/workspaces.py` | `search-api.ts` |
+| Space | `space.py` | `api/endpoints/spaces.py` | `space-store.ts` |
+| Entries | `entries.py` | `api/endpoints/spaces.py` (mixed) | `store.ts`, `routes/spaces/[space_id]/entries` |
+| Forms | `forms.py` | `api/endpoints/spaces.py` (mixed) | `form-api.ts` (formApi) |
+| Assets | `assets.py` | `api/endpoints/spaces.py` | (in store) |
+| Search | `search.py` | `api/endpoints/spaces.py` | `search-api.ts` |
 
 ### TO-BE (Target State)
 
@@ -206,29 +206,29 @@ All modules follow the same feature-based structure:
 ```yaml
 # docs/spec/features.yaml
 features:
-  workspace:
-    crate: src/workspace.rs
-    ieapp_core: src/ieapp/workspace.py
-    backend: src/app/api/endpoints/workspace.py
-    frontend: src/lib/workspace-store.ts
+  space:
+    crate: src/space.rs
+    ieapp_core: src/ieapp/space.py
+    backend: src/app/api/endpoints/space.py
+    frontend: src/lib/space-store.ts
     
-  note:
-    crate: src/note.rs
-    ieapp_core: src/ieapp/note.py
-    backend: src/app/api/endpoints/note.py
-    frontend: src/lib/note-store.ts
+  entry:
+    crate: src/entry.rs
+    ieapp_core: src/ieapp/entries.py
+    backend: src/app/api/endpoints/entry.py
+    frontend: src/lib/entry-store.ts
     
-  class:
-    crate: src/class.rs
-    ieapp_core: src/ieapp/class.py
-    backend: src/app/api/endpoints/class.py
-    frontend: src/lib/class-store.ts
+  form:
+    crate: src/form.rs
+    ieapp_core: src/ieapp/forms.py
+    backend: src/app/api/endpoints/forms.py
+    frontend: src/lib/form-store.ts
     
-  attachment:
-    crate: src/attachment.rs
-    ieapp_cli: src/ieapp/attachment.py
-    backend: src/app/api/endpoints/attachment.py
-    frontend: src/lib/attachment-store.ts
+  asset:
+    crate: src/asset.rs
+    ieapp_cli: src/ieapp/assets.py
+    backend: src/app/api/endpoints/asset.py
+    frontend: src/lib/asset-store.ts
     
   link:
     crate: src/link.rs
@@ -252,9 +252,9 @@ features:
 ### Tasks
 
 - [x] Define API-level feature registry under `docs/spec/features/`
-- [x] Refactor backend: split `workspaces.py` into feature-specific files
+- [x] Refactor backend: split `spaces.py` into feature-specific files
 - [x] Refactor frontend: organize stores by feature
-- [x] Rename `schemas.py` → `class.py` (part of Checkpoint 1)
+- [x] Rename `schemas.py` → `form.py` (part of Checkpoint 1)
 - [x] Create path verification test for each module
 - [x] Add CI check for feature path consistency
 
@@ -283,13 +283,13 @@ features:
 docs/spec/requirements/
 ├── README.md              # Explanation of requirements format
 ├── storage.yaml           # REQ-STO-* requirements
-├── note.yaml              # REQ-NOTE-* requirements
+├── entry.yaml              # REQ-ENTRY-* requirements
 ├── index.yaml             # REQ-IDX-* requirements
 ├── integrity.yaml         # REQ-INT-* requirements
 ├── security.yaml          # REQ-SEC-* requirements
 ├── api.yaml               # REQ-API-* requirements
 ├── frontend.yaml          # REQ-FE-* requirements
-├── class.yaml              # REQ-CLS-* requirements
+├── form.yaml              # REQ-FORM-* requirements
 └── e2e.yaml               # REQ-E2E-* requirements
 
 docs/tests/
@@ -315,16 +315,16 @@ requirements:
       - stories/core.yaml
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_workspace.py
+        - file: ieapp-cli/tests/test_space.py
           tests:
-            - test_create_workspace_scaffolding
+            - test_create_space_scaffolding
             - test_create_workspace_s3_unimplemented
         - file: ieapp-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
             
   - id: REQ-STO-002
-    title: Workspace Directory Structure
+    title: Space Directory Structure
     # ...
 ```
 
@@ -397,7 +397,7 @@ docs/spec/
 │   └── experimental.yaml         # Future features
 ├── data-model/
 │   ├── overview.md               # Data model explanation
-│   └── directory-structure.md    # Workspace layout
+│   └── directory-structure.md    # Space layout
 ├── api/
 │   ├── rest.md                   # REST API documentation
 │   ├── mcp.md                    # MCP protocol documentation
@@ -405,7 +405,7 @@ docs/spec/
 ├── requirements/
 │   ├── README.md                 # Requirements format
 │   ├── storage.yaml
-│   ├── note.yaml
+│   ├── entry.yaml
 │   └── ... (per category)
 ├── security/
 │   ├── overview.md               # Security strategy
@@ -437,15 +437,15 @@ stories:
     title: The Programmable Knowledge Base
     type: AI Native
     as_a: power user or AI agent
-    i_want: to query my notes through MCP resources
+    i_want: to query my entries through MCP resources
     so_that: I can perform complex tasks like analyzing data and generating reports
     acceptance_criteria:
-      - MCP resources expose note lists and content
+      - MCP resources expose entry lists and content
       - AI can query structured properties via API
       - Output (text/charts) is returned to AI context
     related_apis:
-      - MCP resource: ieapp://{workspace_id}/notes/list
-      - REST: POST /workspaces/{ws_id}/query
+      - MCP resource: ieapp://{space_id}/entries/list
+      - REST: POST /spaces/{space_id}/query
     requirements:
 ```
 

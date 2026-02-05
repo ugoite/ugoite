@@ -53,12 +53,12 @@ The core library handles ALL data operations:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `workspace.rs` | Workspace CRUD, directory scaffolding |
-| `note.rs` | Note CRUD via Iceberg tables, revision history, conflict detection |
-| `class.rs` | Iceberg class schema management |
+| `space.rs` | Space CRUD, directory scaffolding |
+| `entry.rs` | Entry CRUD via Iceberg tables, revision history, conflict detection |
+| `form.rs` | Iceberg form schema management |
 | `index.rs` | Structured data extraction, derived indexes |
-| `attachment.rs` | Binary file storage, deduplication |
-| `link.rs` | Note-to-note relationships |
+| `asset.rs` | Binary file storage, deduplication |
+| `link.rs` | Entry-to-entry relationships |
 | `integrity.rs` | HMAC signing, checksum verification |
 | `search.rs` | Full-text and structured queries |
 
@@ -99,21 +99,21 @@ IEapp bridges the gap between Markdown freedom and database structure:
 
 1. **Parse**: Scan Markdown for H2 headers (`## Key`)
 2. **Extract**: Convert headers + content to structured properties
-3. **Validate**: Check against Class definition (if assigned)
+3. **Validate**: Check against Form definition (if assigned)
 4. **Index**: Update derived indexes for fast queries
 
 This enables "Markdown sections as database fields" without complex forms.
 
 ## 4. Data Flow Example
 
-**Creating a Note:**
+**Creating an Entry:**
 
 ```
 Frontend                 Backend              ieapp-core           Storage
    │                        │                     │                   │
-   │ POST /notes            │                     │                   │
+   │ POST /spaces/:id/entries│                    │                   │
    │───────────────────────>│                     │                   │
-   │                        │ create_note()       │                   │
+   │                        │ create_entry()      │                   │
    │                        │────────────────────>│                   │
    │                        │                     │ write Iceberg rows│
    │                        │                     │──────────────────>│

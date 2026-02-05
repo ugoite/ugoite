@@ -14,17 +14,17 @@ This document defines cross-cutting error-handling principles for IEapp.
 ### Validation Errors
 
 - Use **400** for invalid path ids / malformed requests.
-- Use **422** for semantic validation failures (e.g., Class validation warnings).
+- Use **422** for semantic validation failures (e.g., Form validation warnings).
 
 ### Concurrency Conflicts
 
 - Use **409** with enough context for the client to recover:
   - current revision id
-  - or current note snapshot
+  - or current entry snapshot
 
 ### Not Found
 
-- Use **404** when workspace/note/class does not exist.
+- Use **404** when space/entry/form does not exist.
 
 ### Server Errors
 

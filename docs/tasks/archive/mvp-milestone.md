@@ -10,9 +10,9 @@ This milestone established the foundational architecture and core features of IE
 ## Summary
 
 The MVP milestone delivered:
-- Full CRUD operations for workspaces, notes, and attachments
+- Full CRUD operations for spaces, entries, and assets
 - Markdown-to-structured-data extraction (H2 headers as fields)
-- Schema/Class definitions for typed note templates
+- Schema/Form definitions for typed entry templates
 - Version history with optimistic concurrency control
 - Wasm-based JavaScript sandbox for AI code execution (MCP `run_script`)
 - Frontend with SolidStart + Bun, Backend with FastAPI + fsspec
@@ -30,24 +30,24 @@ The MVP milestone delivered:
 
 ### Checkpoint 2: Storage Layer (ieapp-cli)
 - [x] fsspec abstraction for all I/O operations
-- [x] Workspace creation with directory structure
-- [x] Note CRUD with revision history
+- [x] Space creation with directory structure
+- [x] Entry CRUD with revision history
 - [x] HMAC signing for data integrity
 - [x] Memory filesystem support for testing
 
 ### Checkpoint 3: Backend API
-- [x] FastAPI REST endpoints for workspaces, notes, schemas
+- [x] FastAPI REST endpoints for spaces, entries, forms
 - [x] Query endpoint with structured filters
 - [x] Search endpoint (keyword-based)
-- [x] Attachment upload and linking
+- [x] Asset upload and linking
 - [x] Middleware for security headers and HMAC
 
 ### Checkpoint 4: Frontend Core
 - [x] SolidStart application with routing
-- [x] Workspace selector with persistence
-- [x] Note list and Markdown editor
+- [x] Space selector with persistence
+- [x] Entry list and Markdown editor
 - [x] Optimistic updates with conflict detection
-- [x] Schema/Class table view with sorting and filtering
+- [x] Schema/Form table view with sorting and filtering
 
 ### Checkpoint 5: AI Integration
 - [x] Wasm sandbox (wasmtime + QuickJS)

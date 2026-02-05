@@ -1,0 +1,36 @@
+version: "0.1"
+updated: "2026-02-02"
+page:
+  id: space-query-variables
+  title: Query Variables
+  route: /spaces/{space_id}/queries/{query_id}/variables
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+      tabs:
+        - id: dashboard
+          label: dashboard
+          target_page: space-dashboard
+        - id: search
+          label: search
+          target_page: space-search
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+      target_page: space-settings
+  body:
+    - id: variables-form
+      type: form
+      fields:
+        - name: variable
+          type: text-input
+          repeatable: true
+    - id: run-query-button
+      type: button
+      variant: primary
+      label: "Run"
+      target_page: space-entries-object

@@ -1,7 +1,7 @@
 #!/bin/bash
 # E2E test runner script
 # Usage: ./scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "notes", or "full" (runs all tests)
+#   test-type: "smoke", "entries", or "full" (runs all tests)
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -25,8 +25,8 @@ fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
 
-# Create default workspace for tests
-echo "Creating default workspace..."
+# Create default space for tests
+echo "Creating default space..."
 cd "$ROOT_DIR/backend"
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
 if [ -z "$E2E_STORAGE_ROOT" ]; then
@@ -50,7 +50,7 @@ from app.core.storage import storage_config_from_root
 async def main() -> None:
     config = storage_config_from_root(get_root_path())
     try:
-        await ieapp_core.create_workspace(config, "default")
+        await ieapp_core.create_space(config, "default")
     except RuntimeError as exc:
         if "already exists" not in str(exc).lower():
             raise
@@ -95,7 +95,7 @@ trap cleanup EXIT INT TERM
 # Wait for backend to be ready
 echo "Waiting for backend (port 8000)..."
 for i in {1..30}; do
-    if curl -s http://localhost:8000/workspaces > /dev/null 2>&1; then
+    if curl -s http://localhost:8000/spaces > /dev/null 2>&1; then
         echo "✓ Backend is ready!"
         break
     fi
@@ -137,15 +137,15 @@ case "$TEST_TYPE" in
     smoke)
         npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
-    notes)
-        npm run test:notes -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    entries)
+        npm run test:entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     full)
         npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"
-        echo "Usage: ./scripts/run-e2e.sh [smoke|notes|full]"
+        echo "Usage: ./scripts/run-e2e.sh [smoke|entries|full]"
         exit 1
         ;;
 esac

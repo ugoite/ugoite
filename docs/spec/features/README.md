@@ -5,10 +5,10 @@ This directory contains the feature definitions for IEapp.
 ## Files
 
 - [features.yaml](features.yaml) - Registry manifest and conventions
-- [workspaces.yaml](workspaces.yaml) - Workspace APIs
-- [notes.yaml](notes.yaml) - Note APIs
-- [classes.yaml](classes.yaml) - Class APIs
-- [attachments.yaml](attachments.yaml) - Attachment APIs
+- [spaces.yaml](spaces.yaml) - Space APIs
+- [entries.yaml](entries.yaml) - Entry APIs
+- [forms.yaml](forms.yaml) - Form APIs
+- [assets.yaml](assets.yaml) - Asset APIs
 - [links.yaml](links.yaml) - Link APIs
 - [search.yaml](search.yaml) - Search + structured query APIs
 - [sql.md](sql.md) - IEapp SQL dialect
@@ -39,23 +39,23 @@ Example:
 
 ```yaml
 apis:
-  - id: note.create
+  - id: entry.create
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/notes
-      file: backend/src/app/api/endpoints/note.py
-      function: create_note_endpoint
+      path: /spaces/{space_id}/entries
+      file: backend/src/app/api/endpoints/entry.py
+      function: create_entry_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/notes
-      file: frontend/src/routes/workspaces/[workspace_id]/notes.tsx
-      function: WorkspaceNotesRoute
+      path: /spaces/{space_id}/entries
+      file: frontend/src/routes/spaces/[space_id]/entries.tsx
+      function: SpaceEntriesRoute
     ieapp_core:
-      file: ieapp-core/src/note.rs
-      function: create_note
+      file: ieapp-core/src/entry.rs
+      function: create_entry
     ieapp_cli:
-      command: ieapp note create
+      command: ieapp entry create
       file: ieapp-cli/src/ieapp/cli.py
-      function: cmd_note_create
+      function: cmd_entry_create
 ```
 
 ## Verification Tests

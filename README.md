@@ -15,10 +15,10 @@ IEapp is a knowledge management system built on three core principles:
 ## Key Features
 
 - **Markdown as Database**: Write standard Markdown with `## Headers` that become structured fields
-- **Class Definitions**: Define note types (Meeting, Task, etc.) with typed fields and templates
+- **Form Definitions**: Define entry types (Meeting, Task, etc.) with typed fields and templates
 - **AI-Programmable**: MCP protocol with resource-first integration for AI agents
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
-- **Version History**: Every save creates an immutable revision; time travel through your notes
+- **Version History**: Every save creates an immutable revision; time travel through your entries
 
 ## Stack Overview
 
@@ -73,10 +73,10 @@ Start development (frontend + backend):
 mise run dev
 ```
 
-Note: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
+Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
 
-Notes:
+Details:
 
 Backend (dev) example:
 

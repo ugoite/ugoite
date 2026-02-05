@@ -3,8 +3,8 @@
 **Version**: 0.1
 **Updated**: 2026-01
 
-IEapp SQL provides a lightweight SQL dialect for querying Iceberg-backed notes.
-It is designed for filtering and sorting note records without changing API paths.
+IEapp SQL provides a lightweight SQL dialect for querying Iceberg-backed entries.
+It is designed for filtering and sorting entry records without changing API paths.
 
 ## Scope
 
@@ -19,25 +19,25 @@ It is designed for filtering and sorting note records without changing API paths
 
 ## Tables
 
-- `notes` — All notes across classes.
-- `<ClassName>` — Notes scoped to a specific class.
-- `links` — Link rows (id, source, target, kind, source_class, target_class).
-- `attachments` — Attachment rows (id, note_id, name, path).
+- `entries` — All entries across forms.
+- `<FormName>` — Entries scoped to a specific form.
+- `links` — Link rows (id, source, target, kind, source_form, target_form).
+- `assets` — Asset rows (id, entry_id, name, path).
 
 ## Columns
 
-- Standard columns: `id`, `title`, `class`, `updated_at`, `workspace_id`, `word_count`, `tags`.
-- Class fields: Use field names directly (e.g., `Date`, `Owner`) or `properties.<field>`.
+- Standard columns: `id`, `title`, `form`, `updated_at`, `space_id`, `word_count`, `tags`.
+- Form fields: Use field names directly (e.g., `Date`, `Owner`) or `properties.<field>`.
 - Join columns: Use table-qualified names when joining (e.g., `n.id`, `l.target`).
 - Complex join predicates (AND/OR, nested conditions) are supported.
 
-## Saved SQL Class
+## Saved SQL Form
 
-IEapp defines a system-owned **SQL** Class for persisting saved queries.
-The SQL Class is a **metadata Class**; users cannot create Classes with the
+IEapp defines a system-owned **SQL** Form for persisting saved queries.
+The SQL Form is a **metadata Form**; users cannot create Forms with the
 reserved name `SQL`.
 
-SQL Class fields:
+SQL Form fields:
 
 - `sql` (markdown/string): SQL query text
 - `variables` (object_list): JSON array of objects with `type`, `name`, and
@@ -52,8 +52,8 @@ with literal values.
 
 ```sql
 SELECT *
-FROM notes
-WHERE class = 'Meeting' AND updated_at >= {{since}}
+FROM entries
+WHERE form = 'Meeting' AND updated_at >= {{since}}
 ORDER BY updated_at DESC
 LIMIT 50
 ```
@@ -63,12 +63,12 @@ SELECT * FROM Meeting WHERE Date >= '2025-01-01' AND tags = 'project'
 ```
 
 ```sql
-SELECT * FROM notes WHERE properties.Owner = 'alice'
+SELECT * FROM entries WHERE properties.Owner = 'alice'
 ```
 
 ```sql
 SELECT *
-FROM notes n
+FROM entries n
 JOIN links l ON n.id = l.source
 WHERE l.kind = 'reference'
 ORDER BY n.updated_at DESC
@@ -77,15 +77,15 @@ LIMIT 100
 
 ```sql
 SELECT *
-FROM notes n
+FROM entries n
 RIGHT JOIN links l ON n.id = l.source
-WHERE l.target = 'note-2'
+WHERE l.target = 'entry-2'
 ```
 
 ```sql
 SELECT *
-FROM notes n
-FULL JOIN notes m USING (id)
+FROM entries n
+FULL JOIN entries m USING (id)
 WHERE n.id IS NOT NULL
 ```
 
@@ -112,7 +112,7 @@ Clients send SQL via the existing structured query payload:
 ```json
 {
   "filter": {
-    "$sql": "SELECT * FROM notes WHERE class = 'Meeting'"
+    "$sql": "SELECT * FROM entries WHERE form = 'Meeting'"
   }
 }
 ```

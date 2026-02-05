@@ -8,7 +8,7 @@ describe("REQ-FE-036: SQL Query Editor", () => {
 		const onDiagnostics = vi.fn();
 		const result = render(() => (
 			<SqlQueryEditor
-				value="SELECT * FROM notes"
+				value="SELECT * FROM entries"
 				onChange={() => undefined}
 				schema={buildSqlSchema([])}
 				onDiagnostics={onDiagnostics}

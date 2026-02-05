@@ -1,0 +1,230 @@
+# Entry Management Requirements
+
+category: Entry Management
+prefix: REQ-ENTRY
+
+requirements:
+  - id: REQ-ENTRY-001
+    title: Entry Creation
+    description: |
+      Create entry from Markdown content by writing a row to the Form `entries`
+      table and appending a row to the Form `revisions` table in Iceberg.
+    related_spec:
+      - api/rest.md#create-entry
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_create_entry_basic
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_entry
+            - test_create_entry_conflict
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_001_create_entry_basic
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should create a entry and extract title from markdown
+        - file: frontend/src/lib/entry-store.test.ts
+          tests:
+            - should create a entry and reload list
+        - file: frontend/src/lib/markdown.test.ts
+          tests:
+            - updateH2Section replaces existing section content
+      e2e:
+        - file: e2e/entries.test.ts
+          tests:
+            - POST /spaces/default/entries creates a new entry
+
+  - id: REQ-ENTRY-002
+    title: Optimistic Concurrency via Revisions
+    description: |
+      Validate parent_revision_id during update; return 409 Conflict on mismatch.
+    related_spec:
+      - architecture/decisions.md#adr-005
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_update_entry_revision_mismatch
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_003_update_entry_success
+            - test_entry_req_entry_002_update_entry_conflict
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should throw RevisionConflictError (409) on revision mismatch
+
+  - id: REQ-ENTRY-003
+    title: Entry Update
+    description: |
+      Update entry and create new revision.
+    related_spec:
+      - api/rest.md#update-entry
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_entry_history_append
+            - test_entry_history_diff
+        - file: backend/tests/test_api.py
+          tests:
+            - test_update_entry
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_003_update_entry_success
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should update entry with correct parent_revision_id
+        - file: frontend/src/lib/entry-store.test.ts
+          tests:
+            - should apply optimistic updates during update
+      e2e:
+        - file: e2e/entries.test.ts
+          tests:
+            - PUT /spaces/default/entries/:id updates entry
+
+  - id: REQ-ENTRY-004
+    title: Entry Deletion (Tombstone)
+    description: |
+      Delete entry (tombstone) and exclude from list.
+    related_spec:
+      - api/rest.md#delete-entry
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_delete_entry
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should remove entry from list
+        - file: frontend/src/lib/entry-store.test.ts
+          tests:
+            - should delete entry optimistically
+      e2e:
+        - file: e2e/entries.test.ts
+          tests:
+            - DELETE /spaces/default/entries/:id removes entry
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_004_delete_entry
+
+  - id: REQ-ENTRY-005
+    title: Entry History (Time Travel)
+    description: |
+      Every save creates an immutable revision; history can be browsed and restored.
+    related_spec:
+      - stories/core.yaml#STORY-004
+      - api/rest.md#get-entry-history
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_entry_history_append
+            - test_entry_history_diff
+        - file: backend/tests/test_api.py
+          tests:
+            - test_get_entry_history
+            - test_get_entry_revision
+            - test_restore_entry
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_005_entry_history_append
+
+  - id: REQ-ENTRY-006
+    title: Structured Data Extraction from Markdown
+    description: |
+      Extract H2 headers (## Key) as fields and merge with frontmatter.
+    related_spec:
+      - stories/core.yaml#STORY-002
+      - data-model/overview.md#properties-extraction
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_markdown_sections_persist
+        - file: ieapp-cli/tests/test_indexer.py
+          tests:
+            - test_extract_properties_h2_sections
+            - test_extract_properties_precedence
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should extract H2 headers as properties
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_006_extract_h2_headers
+
+  - id: REQ-ENTRY-007
+    title: Properties and Links in List Response
+    description: |
+      Include properties and links fields when retrieving entry list.
+    related_spec:
+      - api/rest.md#list-entries
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: ieapp-cli/tests/test_entries.py
+          tests:
+            - test_list_entries_returns_properties_and_links
+        - file: backend/tests/test_api.py
+          tests:
+            - test_list_entries
+
+  - id: REQ-ENTRY-008
+    title: Assets Upload & Linking
+    description: |
+      Upload binary assets, return a generated asset ID, and allow
+      entries to reference assets in stored entry content.
+    related_spec:
+      - stories/advanced.yaml#STORY-006
+      - api/rest.md#upload-asset
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_upload_asset_and_link_to_entry
+      rust:
+        - file: ieapp-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_008_assets_linking
+
+  - id: REQ-ENTRY-009
+    title: Asset Garbage Collection Guard
+    description: |
+      Prevent deleting assets that are still referenced by any entry.
+    related_spec:
+      - data-model/directory-structure.md#assets
+    priority: low
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_delete_asset_referenced_fails

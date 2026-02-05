@@ -47,5 +47,5 @@ select = ["ALL"]
 "tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
 "src/ieapp/cli.py" = ["ANN401", "PLR0913"]
 "src/ieapp/indexer.py" = ["ANN401"]
-"src/ieapp/notes.py" = ["PLR0913"]
+"src/ieapp/entries.py" = ["PLR0913"]
 "src/ieapp/hmac_manager.py" = ["ARG001"]  # protocol arg is cache key for lru_cache

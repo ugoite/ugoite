@@ -1,0 +1,50 @@
+version: "0.1"
+updated: "2026-02-02"
+page:
+  id: space-search
+  title: Query Search
+  route: /spaces/{space_id}/search
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+      tabs:
+        - id: dashboard
+          label: dashboard
+          target_page: space-dashboard
+        - id: search
+          label: search
+          target_page: space-search
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+      target_page: space-settings
+  body:
+    - id: query-create-button
+      type: icon-button
+      icon: plus
+      label: create-query
+      target_page: space-query-create
+    - id: query-search-bar
+      type: search-bar
+      placeholder: "Search queries"
+    - id: query-filter-button
+      type: filter-button
+      icon: filter
+      opens: query-filter-dialog
+    - id: query-filter-dialog
+      type: dialog
+      trigger: query-filter-button
+      fields:
+        - form
+        - tags
+        - updated_range
+    - id: query-list
+      type: list
+      item_type: query
+      selection:
+        target_page_with_variables: space-query-variables
+        target_page_without_variables: space-entries-object

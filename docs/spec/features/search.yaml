@@ -8,13 +8,13 @@ apis:
   - id: query.execute
     method: POST
     backend:
-      path: /workspaces/{workspace_id}/query
+      path: /spaces/{space_id}/query
       file: backend/src/app/api/endpoints/search.py
       function: query_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/query
-      file: frontend/src/routes/workspaces/[workspace_id]/query.tsx
-      function: WorkspaceQueryRoute
+      path: /spaces/{space_id}/query
+      file: frontend/src/routes/spaces/[space_id]/query.tsx
+      function: SpaceQueryRoute
     ieapp_core:
       file: ieapp-core/src/index.rs
       function: query_index
@@ -26,16 +26,16 @@ apis:
   - id: search.keyword
     method: GET
     backend:
-      path: /workspaces/{workspace_id}/search
+      path: /spaces/{space_id}/search
       file: backend/src/app/api/endpoints/search.py
       function: search_endpoint
     frontend:
-      path: /workspaces/{workspace_id}/search
-      file: frontend/src/routes/workspaces/[workspace_id]/search.tsx
-      function: WorkspaceSearchRoute
+      path: /spaces/{space_id}/search
+      file: frontend/src/routes/spaces/[space_id]/search.tsx
+      function: SpaceSearchRoute
     ieapp_core:
       file: ieapp-core/src/search.rs
-      function: search_notes
+      function: search_entries
     ieapp_cli:
       command: ieapp search keyword
       file: ieapp-cli/src/ieapp/cli.py

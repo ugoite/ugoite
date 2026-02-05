@@ -5,64 +5,64 @@ prefix: REQ-API
 
 requirements:
   - id: REQ-API-001
-    title: Workspace CRUD
+    title: Space CRUD
     description: |
-      Create, retrieve, and list workspaces.
+      Create, retrieve, and list spaces.
     related_spec:
-      - api/rest.md#workspaces
+      - api/rest.md#spaces
     priority: high
     status: implemented
     tests:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_create_workspace
-            - test_list_workspaces
-            - test_get_workspace
-            - test_get_workspace_not_found
+            - test_create_space
+            - test_list_spaces
+            - test_get_space
+            - test_get_space_not_found
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
-            - workspaceApi.list
-            - workspaceApi.create
+            - spaceApi.list
+            - spaceApi.create
       e2e:
         - file: e2e/smoke.test.ts
           tests:
-            - GET /workspaces returns list
-            - GET /workspaces includes default workspace
+            - GET /spaces returns list
+            - GET /spaces includes default space
 
   - id: REQ-API-002
-    title: Note CRUD
+    title: Entry CRUD
     description: |
-      Create, retrieve, update, and delete notes.
+      Create, retrieve, update, and delete entries.
     related_spec:
-      - api/rest.md#notes
+      - api/rest.md#entries
     priority: high
     status: implemented
     tests:
       pytest:
         - file: backend/tests/test_api.py
           tests:
-            - test_create_note
-            - test_list_notes
-            - test_get_note
-            - test_update_note
-            - test_delete_note
+            - test_create_entry
+            - test_list_entries
+            - test_get_entry
+            - test_update_entry
+            - test_delete_entry
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
-            - noteApi.list
-            - noteApi.create
-            - noteApi.get
-            - noteApi.update
-            - noteApi.delete
+            - entryApi.list
+            - entryApi.create
+            - entryApi.get
+            - entryApi.update
+            - entryApi.delete
       e2e:
-        - file: e2e/notes.test.ts
+        - file: e2e/entries.test.ts
           tests:
-            - POST /workspaces/default/notes creates a new note
-            - GET /workspaces/default/notes returns note list
-            - PUT /workspaces/default/notes/:id updates note
-            - DELETE /workspaces/default/notes/:id removes note
+            - POST /spaces/default/entries creates a new entry
+            - GET /spaces/default/entries returns entry list
+            - PUT /spaces/default/entries/:id updates entry
+            - DELETE /spaces/default/entries/:id removes entry
 
   - id: REQ-API-004
     title: Feature Registry Consistency
@@ -108,7 +108,7 @@ requirements:
       validation of SQL variable objects.
     related_spec:
       - api/rest.md#sql-saved-queries
-      - features/sql.md#saved-sql-class
+      - features/sql.md#saved-sql-form
     priority: high
     status: implemented
     tests:
@@ -132,7 +132,7 @@ requirements:
       substituting placeholders with literal values.
     related_spec:
       - api/rest.md#sql-saved-queries
-      - features/sql.md#saved-sql-class
+      - features/sql.md#saved-sql-form
     priority: high
     status: implemented
     tests:
@@ -147,3 +147,22 @@ requirements:
         - file: ieapp-core/tests/test_saved_sql.rs
           tests:
             - test_saved_sql_req_api_007_validation_errors
+
+  - id: REQ-API-008
+    title: SQL session query API
+    description: |
+      The API MUST create SQL query sessions and provide status, count, rows,
+      and stream endpoints for paged retrieval.
+    related_spec:
+      - api/rest.md#sql-sessions
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_query_entries_sql
+      rust:
+        - file: ieapp-core/tests/test_sql_sessions.rs
+          tests:
+            - test_sql_sessions_req_api_008_end_to_end

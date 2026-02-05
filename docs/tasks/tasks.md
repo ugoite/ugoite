@@ -1,9 +1,9 @@
 # Milestone 3: Markdown as Table
 
 **Status**: ✅ Done  
-**Goal**: Store notes as Iceberg-backed tables while preserving the current UI behavior
+**Goal**: Store entries as Iceberg-backed tables while preserving the current UI behavior
 
-This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Notes become row-based records defined by Classes, and queryable via a domain-specific SQL.
+This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Entries become row-based records defined by Forms, and queryable via a domain-specific SQL.
 
 ---
 
@@ -11,62 +11,62 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 - **No migration path required**: We do not provide any conversion from the current storage format.
 - **Breaking change is acceptable**: Existing users and data are out of scope.
-- **Class-first**: Notes can only be created for a defined Class. The current “classless note” flow is removed.
+- **Form-first**: Entries can only be created for a defined Form. The current “formless entry” flow is removed.
 - **Phase 1 UI lock**: Initial implementation must keep the UI behavior *exactly* as it is today. Only `ieapp-core` storage changes.
 
 ---
 
-## Phase 1: Iceberg storage for class-defined fields only
+## Phase 1: Iceberg storage for form-defined fields only
 
-**Objective**: Replace note storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Class schema. H2 sections not in the Class are rejected.
+**Objective**: Replace entry storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Form schema. H2 sections not in the Form are rejected.
 
 ### Key Tasks
-- [x] Define Iceberg table layout and schema per Class (notes + revisions tables).
-- [x] Define `classes/` as the Iceberg-managed root and document ownership rules.
-- [x] Standardize Class name → Iceberg table name mapping (no class_id directories).
-- [x] Update `ieapp-core` write path to persist note records via Iceberg (official Rust crate + OpenDAL).
+- [x] Define Iceberg table layout and schema per Form (entries + revisions tables).
+- [x] Define `forms/` as the Iceberg-managed root and document ownership rules.
+- [x] Standardize Form name → Iceberg table name mapping (no form_id directories).
+- [x] Update `ieapp-core` write path to persist entry records via Iceberg (official Rust crate + OpenDAL).
 - [x] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
-- [x] Enforce “Class-defined H2 only” validation in `ieapp-core`.
+- [x] Enforce “Form-defined H2 only” validation in `ieapp-core`.
 - [x] Keep backend and frontend API contracts unchanged.
 - [x] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
 
 ### Legacy → TOBE (directory-structure) Delta
-- **Remove per-note folders**: `notes/{note_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
-- **Iceberg-managed classes root**: `classes/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
-- **Table naming**: Class name is the Iceberg table name; no class_id directories are created.
-- **Class definitions in Iceberg**: Class fields and schemas live in Iceberg; no per-class JSON files.
-- **Fixed template**: Default note template is global (`# {class_name}` with H2 columns), not per class.
+- **Remove per-entry folders**: `entries/{entry_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
+- **Iceberg-managed forms root**: `forms/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
+- **Table naming**: Form name is the Iceberg table name; no form_id directories are created.
+- **Form definitions in Iceberg**: Form fields and schemas live in Iceberg; no per-form JSON files.
+- **Fixed template**: Default entry template is global (`# {form_name}` with H2 columns), not per form.
 - **Reconstruction source**: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).
 - **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
 
 ### Acceptance Criteria
-- [x] Notes are stored in Iceberg tables per Class.
-- [x] Notes can be read back with identical Markdown content (current UI behavior preserved).
-- [x] Non-Class H2 sections are rejected by `ieapp-core`.
+- [x] Entries are stored in Iceberg tables per Form.
+- [x] Entries can be read back with identical Markdown content (current UI behavior preserved).
+- [x] Non-Form H2 sections are rejected by `ieapp-core`.
 
 ---
 
-## Phase 2: Optional extra attributes in Class schema
+## Phase 2: Optional extra attributes in Form schema
 
-**Objective**: Allow Classes to declare whether extra attributes (non-registered H2 sections) are allowed, and how they are stored.
+**Objective**: Allow Forms to declare whether extra attributes (non-registered H2 sections) are allowed, and how they are stored.
 
 ### Key Tasks
-- [x] Extend Class definition to include `allow_extra_attributes` with options (e.g., `deny`, `allow_json`, `allow_columns`).
-- [x] Update validation to enforce the new Class policy.
+- [x] Extend Form definition to include `allow_extra_attributes` with options (e.g., `deny`, `allow_json`, `allow_columns`).
+- [x] Update validation to enforce the new Form policy.
 - [x] Implement storage for extra attributes (JSON column or dynamic columns, as specified).
-- [x] Update documentation in `docs/spec/data-model/` for the new Class rules.
+- [x] Update documentation in `docs/spec/data-model/` for the new Form rules.
 - [x] Add tests that cover both “deny” and “allow” modes.
 
 ### Acceptance Criteria
-- [x] Class schema can explicitly allow or deny extra attributes.
+- [x] Form schema can explicitly allow or deny extra attributes.
 - [x] Extra attributes are stored deterministically.
-- [x] Validation behavior matches the Class policy.
+- [x] Validation behavior matches the Form policy.
 
 ---
 
 ## Phase 3: IEapp SQL (Domain-Specific SQL)
 
-**Objective**: Define and implement an SQL dialect optimized for IEapp classes and Iceberg storage.
+**Objective**: Define and implement an SQL dialect optimized for IEapp forms and Iceberg storage.
 
 ### Key Tasks
 - [x] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
@@ -76,7 +76,7 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 - [x] Add tests for SQL parsing and execution.
 
 ### Acceptance Criteria
-- [x] Users can query Class data via IEapp SQL.
+- [x] Users can query Form data via IEapp SQL.
 - [x] SQL execution returns consistent, deterministic results.
 - [x] Query errors are clear and actionable.
 
@@ -90,50 +90,50 @@ and broadened IEapp SQL join capabilities.
 
 ### Key Tasks
 - [x] Define metadata vs content column ownership rules and reserved names.
-- [x] Prevent user-defined class fields from using metadata column names.
+- [x] Prevent user-defined form fields from using metadata column names.
 - [x] Make metadata column list extensible for future system-owned fields.
 - [x] Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).
 - [x] Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).
-- [x] Introduce IEapp URI scheme for in-note links (note, attachment, extensible kinds) and normalize links on write/read.
+- [x] Introduce IEapp URI scheme for in-entry links (entry, asset, extensible kinds) and normalize links on write/read.
 - [x] Extend IEapp SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
 - [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
 - [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
-- [x] Update frontend UX to enforce class-first note creation and surface class validation warnings.
+- [x] Update frontend UX to enforce form-first entry creation and surface form validation warnings.
 - [x] Add frontend guardrails for reserved metadata column names and list-friendly field types.
 
 ### Acceptance Criteria
-- [x] Metadata columns are reserved and cannot be used as user-defined Class fields.
+- [x] Metadata columns are reserved and cannot be used as user-defined Form fields.
 - [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
 - [x] IEapp link URIs are normalized and persisted consistently.
-- [x] IEapp SQL supports JOIN queries across notes, links, and attachments.
-- [x] Frontend note creation is class-first, and validation feedback is visible in the editor UX.
-- [x] Class creation/editing UI blocks reserved metadata column names.
+- [x] IEapp SQL supports JOIN queries across entries, links, and assets.
+- [x] Frontend entry creation is form-first, and validation feedback is visible in the editor UX.
+- [x] Form creation/editing UI blocks reserved metadata column names.
 
 ---
 
-## Phase 5: SQL Class (Metadata Class) + CRUD
+## Phase 5: SQL Form (Metadata Form) + CRUD
 
-**Objective**: Define and implement a system-owned SQL Class to persist SQL queries
-and variables with full CRUD support, while preventing user-defined Classes from
-using the reserved SQL class name.
+**Objective**: Define and implement a system-owned SQL Form to persist SQL queries
+and variables with full CRUD support, while preventing user-defined Forms from
+using the reserved SQL form name.
 
 ### Key Tasks
-- [x] Define the SQL Class schema as a metadata Class with reserved name protection.
+- [x] Define the SQL Form schema as a metadata Form with reserved name protection.
 - [x] Add SQL variable object-list type and validation rules in the data model spec.
 - [x] Extend REST API and ieapp-core with SQL CRUD operations.
-- [x] Add tests covering SQL CRUD and reserved SQL Class name rejection.
+- [x] Add tests covering SQL CRUD and reserved SQL Form name rejection.
 
 ### Acceptance Criteria
-- [x] SQL Class is system-owned; users cannot create a Class with the SQL name.
+- [x] SQL Form is system-owned; users cannot create a Form with the SQL name.
 - [x] SQL records store SQL text and a list of typed variables (type, name, description).
 - [x] SQL CRUD operations are available via API and core bindings.
-- [x] Tests confirm reserved class name enforcement and SQL CRUD behavior.
+- [x] Tests confirm reserved form name enforcement and SQL CRUD behavior.
 
 ---
 
 ## Phase 6: UI Redesign Spec + Validation
 
-**Objective**: Define page-level UI specs for the new simplified workspace UI,
+**Objective**: Define page-level UI specs for the new simplified space UI,
 and add automated validation that frontend tests load and verify the spec.
 
 ### Key Tasks
@@ -143,8 +143,8 @@ and add automated validation that frontend tests load and verify the spec.
 - [x] Add frontend tests that load all UI spec YAML files and validate links and component types.
 
 ### Acceptance Criteria
-- [x] Each workspace UI page is defined in a YAML spec.
-- [x] Specs include shared workspace UI chrome (top tabs + settings button).
+- [x] Each space UI page is defined in a YAML spec.
+- [x] Specs include shared space UI chrome (top tabs + settings button).
 - [x] Frontend tests validate page links and component type registry.
 
 ---
@@ -154,17 +154,78 @@ and add automated validation that frontend tests load and verify the spec.
 **Objective**: Implement the new UI described in the page-level YAML specs.
 
 ### Key Tasks
-- [ ] Build the new workspace-wide layout with floating top tabs and settings button.
-- [ ] Implement the dashboard view with prominent workspace name.
-- [ ] Implement query list, query create, and query variable input flows.
-- [ ] Implement object (notes) view with grid list and note detail navigation.
-- [ ] Implement class grid view with search/sort/filter, copy-paste grid, and CSV export.
-- [ ] Wire bottom view tabs between object and grid.
-- [ ] Connect UI components to existing APIs without changing backend contracts.
+- [x] Build the new space-wide layout with floating top tabs and settings button.
+- [x] Implement the dashboard view with prominent space name.
+- [x] Implement query list, query create, and query variable input flows.
+- [x] Implement object (entries) view with grid list and entry detail navigation.
+- [x] Implement form grid view with search/sort/filter, copy-paste grid, and CSV export.
+- [x] Wire bottom view tabs between object and grid.
+- [x] Connect UI components to existing APIs without changing backend contracts.
 
 ### Acceptance Criteria
-- [ ] UI matches the new simplified layout and navigation model.
-- [ ] All workflows are functional with existing backend APIs.
+- [x] UI matches the new simplified layout and navigation model.
+- [x] All workflows are functional with existing backend APIs.
+
+---
+
+## Phase 8: Terminology Rebrand (Space/Form/Entry/Asset)
+
+**Objective**: Rename the core terminology across specs, docs, code, file paths, and data model
+without migration, removing the old labels entirely before production.
+
+### Rebrand Plan
+- **Scope**: 全リポジトリ（docs/spec, API, frontend, backend, ieapp-core, ieapp-cli, tests, e2e, scripts, data-model paths）
+- **Owner**: @tohboeh5 / Agent
+- **Verification**:
+	- `mise run test` パス
+	- `mise run e2e` パス
+	- 文字列検索で旧名称が残っていないこと
+
+### Work Plan (Phase 8 execution)
+- [ ] Update spec terminology cross-check (docs/spec index, data-model, API, UI specs)
+- [ ] Rename API routes/endpoints + payload fields (backend + OpenAPI + MCP docs)
+- [ ] Rename core storage paths and Iceberg/OpenDAL references
+- [ ] Rename frontend UI routes, components, copy, and types
+- [ ] Rename CLI commands and help text
+- [ ] Rename tests, fixtures, and test data to match new terms
+- [ ] Sweep and remove legacy terms from repo (string + filename search)
+- [ ] Validate with `mise run test` and `mise run e2e`
+
+### Key Tasks
+- [ ] Add a rebrand plan with scope, owner, and verification steps.
+- [ ] Update specs under `docs/spec/` to use Space/Form/Entry/Asset terminology.
+- [ ] Update docs, UI copy, and API descriptions to the new terms.
+- [ ] Rename code symbols, route paths, filenames, and datamodel references (OpenDAL/Iceberg) to match.
+- [ ] Remove all legacy terms from the repository (pre-rebrand labels).
+- [ ] Update tests and fixtures to match new names and semantics.
+- [ ] Verify `mise run test` and `mise run e2e` pass.
+
+### Acceptance Criteria
+- [ ] No legacy terms remain in the repository (including file names and data paths).
+- [ ] All specs and docs consistently use Space/Form/Entry/Asset.
+- [ ] Tests pass for unit, integration, and e2e.
+
+---
+
+## Phase 9: Full Repository Rebrand Completion (Legacy → Space/Form/Entry/Asset)
+
+**Objective**: Remove all legacy terms and complete the repository-wide rename to
+Space/Form/Entry/Asset across docs/spec, code, API, UI, tests, fixtures, and
+storage paths (OpenDAL/Iceberg).
+
+### Work Summary (Phase 9 execution)
+- [ ] Sweep docs/spec for legacy terms and update references, examples, and diagrams.
+- [ ] Rename API routes, payload fields, and OpenAPI/MCP docs to new terms.
+- [ ] Rename code symbols, modules, and file paths across backend, frontend, ieapp-core, ieapp-cli.
+- [ ] Update storage paths, datamodel references, and OpenDAL/Iceberg layouts.
+- [ ] Update tests, fixtures, and test data to new terms and semantics.
+- [ ] Verify no legacy terms remain via full-repo search.
+- [ ] Confirm `mise run test` and `mise run e2e` pass before push.
+
+### Acceptance Criteria
+- [ ] Zero occurrences of legacy terms in repository (including file names and data paths).
+- [ ] Specs/docs/API/UI all use Space/Form/Entry/Asset consistently.
+- [ ] All tests (unit/integration/e2e) pass.
 
 ---
 

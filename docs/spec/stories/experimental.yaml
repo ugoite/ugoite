@@ -12,16 +12,16 @@ stories:
     title: Multi-User Collaboration
     type: Collaboration
     as_a: team lead
-    i_want: to share a workspace with my team
+    i_want: to share a space with my team
     so_that: we can collaborate on shared knowledge.
     acceptance_criteria:
-      - Workspace owner can invite users by email
-      - Invited users can view and edit notes based on permissions
+      - Space owner can invite users by email
+      - Invited users can view and edit entries based on permissions
       - Concurrent edits are handled with conflict resolution
     related_apis:
-      - rest: POST /workspaces/{ws_id}/members
-      - rest: GET /workspaces/{ws_id}/members
-      - rest: DELETE /workspaces/{ws_id}/members/{user_id}
+      - rest: POST /spaces/{space_id}/members
+      - rest: GET /spaces/{space_id}/members
+      - rest: DELETE /spaces/{space_id}/members/{user_id}
     requirements: []
     milestone: User Management
 
@@ -30,7 +30,7 @@ stories:
     type: Native
     as_a: user who prefers native apps
     i_want: to use IEapp as a standalone desktop application
-    so_that: I can access my notes without a browser and with better OS integration.
+    so_that: I can access my entries without a browser and with better OS integration.
     acceptance_criteria:
       - Cross-platform desktop app (Windows, macOS, Linux)
       - Works offline with local storage
@@ -45,14 +45,14 @@ stories:
     title: Mobile Companion
     type: Native
     as_a: user on the go
-    i_want: to access my notes on my phone
+    i_want: to access my entries on my phone
     so_that: I can capture and review knowledge anywhere.
     acceptance_criteria:
       - iOS and Android apps
       - Quick capture with voice, camera, or text
-      - Sync with main workspace
+      - Sync with main space
     related_apis:
-      - rest: All note APIs
+      - rest: All entry APIs
     requirements: []
     milestone: Native App
 
@@ -60,14 +60,14 @@ stories:
     title: Vector Search
     type: AI Native
     as_a: user searching by concept
-    i_want: to find notes semantically similar to a query
+    i_want: to find entries semantically similar to a query
     so_that: I can discover related content even without exact keyword matches.
     acceptance_criteria:
       - Configurable embedding provider (OpenAI, local models)
-      - Semantic search returns notes by conceptual similarity
+      - Semantic search returns entries by conceptual similarity
       - Combined with keyword search for best results
     related_apis:
-      - rest: GET /workspaces/{ws_id}/search?type=semantic&q=query
+      - rest: GET /spaces/{space_id}/search?type=semantic&q=query
     requirements: []
     milestone: AI-Enabled & AI-Used
 
@@ -76,13 +76,13 @@ stories:
     type: AI Native
     as_a: user who wants automated maintenance
     i_want: to schedule AI agents to run periodically
-    so_that: my workspace stays organized without manual intervention.
+    so_that: my space stays organized without manual intervention.
     acceptance_criteria:
       - Define scheduled tasks with cron-like syntax
       - Tasks invoke MCP resources/tools via schedules
       - Results logged and notifications sent
     related_apis:
-      - rest: POST /workspaces/{ws_id}/schedules
-      - rest: GET /workspaces/{ws_id}/schedules
+      - rest: POST /spaces/{space_id}/schedules
+      - rest: GET /spaces/{space_id}/schedules
     requirements: []
     milestone: AI-Enabled & AI-Used

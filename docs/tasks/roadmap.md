@@ -13,7 +13,7 @@ This roadmap outlines the major milestones planned for IEapp development.
 |---|-----------|--------|-------------|
 | 1 | **MVP** | ✅ Completed | Minimum Viable Product - Core functionality |
 | 2 | **Full Configuration** | ✅ Completed | Codebase unification and architecture refinement |
-| 3 | **Markdown as Table** | 📋 Planned | Store notes as Class-backed Iceberg tables with SQL querying |
+| 3 | **Markdown as Table** | 📋 Planned | Store entries as Form-backed Iceberg tables with SQL querying |
 | 4 | **User Controlled View** | 📋 Planned | User-defined UI views driven by queries |
 | 5 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
 | 6 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
@@ -27,9 +27,9 @@ This roadmap outlines the major milestones planned for IEapp development.
 
 Delivered the foundational architecture and core features:
 - Local-first storage with fsspec abstraction
-- Note CRUD with revision history and conflict detection
+- Entry CRUD with revision history and conflict detection
 - Markdown-to-structured-data extraction
-- Schema/Class definitions for typed notes
+- Schema/Form definitions for typed entries
 - SolidStart frontend + FastAPI backend
 
 ---
@@ -41,7 +41,7 @@ Delivered the foundational architecture and core features:
 Focus on codebase quality, consistency, and architecture refinement:
 
 ### Key Objectives
-1. **Terminology Unification** - Consolidate "datamodel", "schema", "class" to single "class" term
+1. **Terminology Unification** - Consolidate "datamodel", "schema", "form" to single "form" term
 2. **Rust Core Library** - Extract core logic into a Rust crate for multi-platform use
 3. **Feature Path Consistency** - Standardize directory structure across all modules
 4. **Requirements Automation** - YAML-based requirements with automated test verification
@@ -59,18 +59,18 @@ Focus on codebase quality, consistency, and architecture refinement:
 
 **Tasks**: [tasks.md](tasks.md)
 
-Focus on storing notes as Class-backed Iceberg tables while preserving the current UI behavior:
+Focus on storing entries as Form-backed Iceberg tables while preserving the current UI behavior:
 
 ### Key Objectives
-1. **Iceberg Storage** - Class-defined fields stored as Iceberg tables per Class
-2. **Class-First Notes** - Notes require a Class; no classless notes
+1. **Iceberg Storage** - Form-defined fields stored as Iceberg tables per Form
+2. **Form-First Entries** - Entries require a Form; no formless entries
 3. **Deterministic Reconstruction** - Markdown can be reconstructed from table rows
 4. **IEapp SQL** - Domain-specific SQL for flexible user queries
 
 ### Expected Deliverables
 - Iceberg-backed storage in `ieapp-core`
-- Class validation for allowed fields
-- SQL query engine over Class data
+- Form validation for allowed fields
+- SQL query engine over Form data
 
 ---
 
@@ -81,7 +81,7 @@ Focus on enabling user-defined UI views driven by queries:
 ### Key Objectives
 1. **Query + UI Composition** - Users attach UI components to queries
 2. **Low-Code Views** - Views are expressed as UI-only definitions
-3. **Shareable View Specs** - Views stored in the workspace and reusable
+3. **Shareable View Specs** - Views stored in the space and reusable
 
 ### Expected Deliverables
 - View definition format and renderer
@@ -99,12 +99,12 @@ Focus on complete AI integration and workflow automation:
 2. **AI Workflow Automation** - Scheduled tasks, batch processing via AI
 3. **Vector Search Integration** - FAISS index with embedding support
 4. **Voice-to-Schema** - Audio upload with AI-powered transcription and structuring
-5. **Computational Notebooks** - Embedded JavaScript execution in notes
+5. **Computational Entries** - Embedded JavaScript execution in entries
 
 ### Expected Deliverables
 - Production-ready MCP server
 - Vector search with configurable embedding providers
-- Voice memo attachment with transcription workflow
+- Voice memo asset with transcription workflow
 - Interactive code block execution in editor
 
 ---
@@ -115,15 +115,15 @@ Focus on multi-user support and security:
 
 ### Key Objectives
 1. **Authentication** - JWT/OAuth2 support with configurable providers
-2. **Authorization** - Workspace and note-level permissions
-3. **Multi-tenant Workspaces** - Shared workspaces with collaboration
+2. **Authorization** - Space and entry-level permissions
+3. **Multi-tenant Spaces** - Shared spaces with collaboration
 4. **Audit Logging** - Track all changes with user attribution
 5. **API Keys** - Service account access for automation
 
 ### Expected Deliverables
 - Pluggable auth provider system
 - Role-based access control (RBAC)
-- Workspace sharing and invitation system
+- Space sharing and invitation system
 - Activity audit trail
 
 ---

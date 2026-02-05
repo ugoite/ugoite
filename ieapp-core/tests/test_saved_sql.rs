@@ -2,7 +2,7 @@ mod common;
 
 use _ieapp_core::integrity::FakeIntegrityProvider;
 use _ieapp_core::saved_sql::{self, SqlPayload};
-use _ieapp_core::workspace;
+use _ieapp_core::space;
 use common::setup_operator;
 use serde_json::json;
 
@@ -10,13 +10,13 @@ use serde_json::json;
 /// REQ-API-006
 async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "sql-ws", "/tmp").await?;
-    let ws_path = "workspaces/sql-ws";
+    space::create_space(&op, "sql-space", "/tmp").await?;
+    let ws_path = "spaces/sql-space";
     let integrity = FakeIntegrityProvider;
 
     let payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM notes WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM entries WHERE updated_at >= {{since}}".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -47,7 +47,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let update_payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM notes WHERE updated_at >= {{since}} ORDER BY updated_at DESC"
+        sql: "SELECT * FROM entries WHERE updated_at >= {{since}} ORDER BY updated_at DESC"
             .to_string(),
         variables: payload.variables.clone(),
     };
@@ -79,13 +79,13 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 /// REQ-API-007
 async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "sql-validate", "/tmp").await?;
-    let ws_path = "workspaces/sql-validate";
+    space::create_space(&op, "sql-validate", "/tmp").await?;
+    let ws_path = "spaces/sql-validate";
     let integrity = FakeIntegrityProvider;
 
     let missing_placeholder = SqlPayload {
         name: "Missing placeholder".to_string(),
-        sql: "SELECT * FROM notes".to_string(),
+        sql: "SELECT * FROM entries".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -109,7 +109,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let undefined_placeholder = SqlPayload {
         name: "Undefined placeholder".to_string(),
-        sql: "SELECT * FROM notes WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM entries WHERE updated_at >= {{since}}".to_string(),
         variables: json!([]),
     };
 
@@ -127,7 +127,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let invalid_sql = SqlPayload {
         name: "Invalid SQL".to_string(),
-        sql: "FROM notes".to_string(),
+        sql: "FROM entries".to_string(),
         variables: json!([]),
     };
 

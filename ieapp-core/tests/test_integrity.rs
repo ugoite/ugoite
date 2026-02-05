@@ -1,6 +1,6 @@
 mod common;
 use _ieapp_core::integrity::{FakeIntegrityProvider, IntegrityProvider, RealIntegrityProvider};
-use _ieapp_core::workspace;
+use _ieapp_core::space;
 use common::setup_operator;
 
 #[test]
@@ -21,10 +21,10 @@ fn test_integrity_req_int_001_fake_integrity_provider() {
 /// REQ-INT-001
 async fn test_integrity_req_int_001_real_integrity_provider() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    workspace::create_workspace(&op, "test-ws", "/tmp").await?;
+    space::create_space(&op, "test-space", "/tmp").await?;
 
-    // Test loading from workspace
-    let provider = RealIntegrityProvider::from_workspace(&op, "test-ws").await;
+    // Test loading from space
+    let provider = RealIntegrityProvider::from_space(&op, "test-space").await;
     assert!(provider.is_ok());
     let provider = provider.unwrap();
 

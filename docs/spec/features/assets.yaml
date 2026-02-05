@@ -1,0 +1,60 @@
+# Asset APIs
+
+version: "0.1"
+updated: "2026-01"
+kind: assets
+
+apis:
+  - id: asset.upload
+    method: POST
+    backend:
+      path: /spaces/{space_id}/assets
+      file: backend/src/app/api/endpoints/asset.py
+      function: upload_asset_endpoint
+    frontend:
+      path: /spaces/{space_id}/assets
+      file: frontend/src/routes/spaces/[space_id]/assets.tsx
+      function: SpaceAssetsRoute
+    ieapp_core:
+      file: ieapp-core/src/asset.rs
+      function: save_asset
+    ieapp_cli:
+      command: ieapp asset upload
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_asset_upload
+
+  - id: asset.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/assets
+      file: backend/src/app/api/endpoints/asset.py
+      function: list_assets_endpoint
+    frontend:
+      path: /spaces/{space_id}/assets
+      file: frontend/src/routes/spaces/[space_id]/assets.tsx
+      function: SpaceAssetsRoute
+    ieapp_core:
+      file: ieapp-core/src/asset.rs
+      function: list_assets
+    ieapp_cli:
+      command: ieapp asset list
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_asset_list
+
+  - id: asset.delete
+    method: DELETE
+    backend:
+      path: /spaces/{space_id}/assets/{asset_id}
+      file: backend/src/app/api/endpoints/asset.py
+      function: delete_asset_endpoint
+    frontend:
+      path: /spaces/{space_id}/assets/{asset_id}
+      file: frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
+      function: SpaceAssetDetailRoute
+    ieapp_core:
+      file: ieapp-core/src/asset.rs
+      function: delete_asset
+    ieapp_cli:
+      command: ieapp asset delete
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_asset_delete

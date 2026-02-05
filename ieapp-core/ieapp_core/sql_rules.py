@@ -47,22 +47,22 @@ def load_sql_rules(path: str | None = None) -> dict[str, Any]:
 
 
 def build_sql_schema(
-    classes: list[dict[str, Any]],
+    forms: list[dict[str, Any]],
     rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return SQL completion schema based on shared rules and classes."""
+    """Return SQL completion schema based on shared rules and forms."""
     rules = rules or load_sql_rules()
     base_columns = list(rules.get("base_columns", []))
-    base_tables = list(rules.get("base_tables", ["notes"]))
+    base_tables = list(rules.get("base_tables", ["entries"]))
     table_columns = rules.get("table_columns", {})
 
-    class_field_set: set[str] = set()
-    for item in classes:
+    form_field_set: set[str] = set()
+    for item in forms:
         fields = item.get("fields") or {}
         if isinstance(fields, dict):
-            class_field_set.update(fields.keys())
+            form_field_set.update(fields.keys())
 
-    union_fields = base_columns + sorted(class_field_set)
+    union_fields = base_columns + sorted(form_field_set)
 
     tables: dict[str, list[str]] = {}
     for table in base_tables:
@@ -74,7 +74,7 @@ def build_sql_schema(
         else:
             tables[table] = union_fields
 
-    for item in classes:
+    for item in forms:
         name = item.get("name")
         if not name:
             continue
@@ -171,11 +171,11 @@ def lint_sql(
 
 def sql_completions(
     query: str,
-    classes: list[dict[str, Any]],
+    forms: list[dict[str, Any]],
     rules: dict[str, Any] | None = None,
 ) -> list[str]:
     """Return completion suggestions based on query context."""
-    schema = build_sql_schema(classes, rules)
+    schema = build_sql_schema(forms, rules)
     tables = sorted(schema.get("tables", {}).keys())
     keywords = sorted(schema.get("keywords", []))
 
@@ -185,8 +185,8 @@ def sql_completions(
     columns = []
     if table_name and table_name in schema.get("tables", {}):
         columns = sorted(schema["tables"][table_name])
-    elif "notes" in schema.get("tables", {}):
-        columns = sorted(schema["tables"]["notes"])
+    elif "entries" in schema.get("tables", {}):
+        columns = sorted(schema["tables"]["entries"])
 
     if re.search(r"\bfrom\b\s*$", query, re.IGNORECASE):
         return tables

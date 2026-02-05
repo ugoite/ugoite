@@ -14,12 +14,12 @@ FastAPI-based REST API for IEapp - your AI-native, programmable knowledge base.
 │             │                 │  - Error Handling       │
 ├─────────────┴─────────────────┴────────────────────────┤
 │                   ieapp-core Library                     │
-│  - workspace.py  (Workspace CRUD)                        │
-│  - notes.py      (Note CRUD + Revision Control)          │
+│  - space.py      (Space CRUD)                            │
+│  - entries.py    (Entry CRUD + Revision Control)         │
 │  - indexer.py    (Structure-from-Text Extraction)        │
 ├─────────────────────────────────────────────────────────┤
 │                   File System Storage                    │
-│  global.json → workspaces/{id}/meta.json + notes/        │
+│  global.json → spaces/{id}/meta.json + forms/            │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -31,7 +31,7 @@ src/app/
 ├── api/
 │   ├── api.py           # Router aggregation
 │   └── endpoints/
-│       └── workspaces.py # REST endpoints for workspaces & notes
+│       └── spaces.py     # REST endpoints for spaces & entries
 ├── core/
 │   ├── config.py        # Configuration (root path, settings)
 │   ├── middleware.py    # Security middleware (HMAC, localhost)
@@ -39,7 +39,7 @@ src/app/
 ├── mcp/
 │   └── server.py        # MCP protocol server (Milestone 4)
 └── models/
-    └── classes.py       # Pydantic request/response models
+    └── payloads.py      # Pydantic request/response models
 ```
 
 ## Key Design Decisions
@@ -50,20 +50,20 @@ The backend does NOT implement business logic directly. Instead, it delegates to
 
 ```python
 # ✅ Correct: Use library functions
-from ieapp.notes import create_note, update_note, get_note
-from ieapp.workspace import create_workspace, list_workspaces
+from ieapp.entries import create_entry, update_entry, get_entry
+from ieapp.space import create_space, list_spaces
 
 # ❌ Wrong: Direct file manipulation in API layer
 ```
 
 ### 2. Optimistic Concurrency Control
 
-All note updates require `parent_revision_id` for conflict detection:
+All entry updates require `parent_revision_id` for conflict detection:
 
 ```python
 # Update endpoint returns 409 if revision mismatch
-@router.put("/workspaces/{workspace_id}/notes/{note_id}")
-async def update_note_endpoint(payload: NoteUpdate):
+@router.put("/spaces/{space_id}/entries/{entry_id}")
+async def update_entry_endpoint(payload: EntryUpdate):
     try:
         update_note(ws_path, note_id, payload.markdown, payload.parent_revision_id)
     except RevisionMismatchError as e:
@@ -77,10 +77,10 @@ async def update_note_endpoint(payload: NoteUpdate):
 
 | Operation | Response |
 |-----------|----------|
-| Create note | `{"id": "...", "revision_id": "..."}` |
-| Update note | `{"id": "...", "revision_id": "..."}` |
-| Get note | Full note object with content |
-| List notes | Array of NoteRecord (index data) |
+| Create entry | `{"id": "...", "revision_id": "..."}` |
+| Update entry | `{"id": "...", "revision_id": "..."}` |
+| Get entry | Full entry object with content |
+| List entries | Array of EntryRecord (index data) |
 
 ### 4. Security Middleware
 
@@ -133,15 +133,15 @@ See [docs/spec/api/rest.md](../docs/spec/api/rest.md) and [docs/spec/api/mcp.md]
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/workspaces` | List all workspaces |
-| POST | `/workspaces` | Create workspace |
-| GET | `/workspaces/{id}` | Get workspace metadata |
-| GET | `/workspaces/{id}/notes` | List notes (index data) |
-| POST | `/workspaces/{id}/notes` | Create note |
-| GET | `/workspaces/{id}/notes/{noteId}` | Get full note |
-| PUT | `/workspaces/{id}/notes/{noteId}` | Update note |
-| DELETE | `/workspaces/{id}/notes/{noteId}` | Delete (tombstone) note |
-| POST | `/workspaces/{id}/query` | Query notes by filter |
+| GET | `/spaces` | List all spaces |
+| POST | `/spaces` | Create space |
+| GET | `/spaces/{id}` | Get space metadata |
+| GET | `/spaces/{id}/entries` | List entries (index data) |
+| POST | `/spaces/{id}/entries` | Create entry |
+| GET | `/spaces/{id}/entries/{entryId}` | Get full entry |
+| PUT | `/spaces/{id}/entries/{entryId}` | Update entry |
+| DELETE | `/spaces/{id}/entries/{entryId}` | Delete (tombstone) entry |
+| POST | `/spaces/{id}/query` | Query entries by filter |
 
 ## Testing Strategy
 
@@ -157,5 +157,5 @@ Test fixtures are in `tests/conftest.py`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IEAPP_ROOT` | `~/.ieapp` | Root path for workspace storage |
+| `IEAPP_ROOT` | `~/.ieapp` | Root path for space storage |
 | `IEAPP_ALLOW_REMOTE` | `false` | Allow non-localhost connections |

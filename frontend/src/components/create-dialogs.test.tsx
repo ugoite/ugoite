@@ -1,10 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, screen } from "@solidjs/testing-library";
-import { CreateClassDialog, EditClassDialog, CreateNoteDialog } from "./create-dialogs";
-import type { Class } from "~/lib/types";
+import { CreateFormDialog, EditFormDialog, CreateEntryDialog } from "./create-dialogs";
+import type { Form } from "~/lib/types";
 
-describe("CreateClassDialog", () => {
+describe("CreateFormDialog", () => {
 	const columnTypes = ["string", "number", "boolean"];
 
 	it("REQ-FE-032: maintains focus on column name input when typing", async () => {
@@ -12,7 +12,7 @@ describe("CreateClassDialog", () => {
 		const onClose = vi.fn();
 
 		render(() => (
-			<CreateClassDialog
+			<CreateFormDialog
 				open={true}
 				columnTypes={columnTypes}
 				onClose={onClose}
@@ -20,9 +20,9 @@ describe("CreateClassDialog", () => {
 			/>
 		));
 
-		// Enter noteClass name
+		// Enter entryForm name
 		const nameInput = screen.getByPlaceholderText("e.g. Meeting, Task");
-		fireEvent.input(nameInput, { target: { value: "TestClass" } });
+		fireEvent.input(nameInput, { target: { value: "TestForm" } });
 
 		// Add a column
 		const addButton = screen.getByText("+ Add Column");
@@ -50,7 +50,7 @@ describe("CreateClassDialog", () => {
 		const onClose = vi.fn();
 
 		render(() => (
-			<CreateClassDialog
+			<CreateFormDialog
 				open={true}
 				columnTypes={columnTypes}
 				onClose={onClose}
@@ -59,22 +59,22 @@ describe("CreateClassDialog", () => {
 		));
 
 		fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
-			target: { value: "TestClass" },
+			target: { value: "TestForm" },
 		});
 		fireEvent.click(screen.getByText("+ Add Column"));
 		const columnInput = screen.getByPlaceholderText("Column Name") as HTMLInputElement;
 		fireEvent.input(columnInput, { target: { value: "title" } });
 
 		expect(screen.getByText("Reserved metadata column name")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Create Class" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Create Form" })).toBeDisabled();
 	});
 });
 
-describe("CreateNoteDialog", () => {
-	it("REQ-FE-037: requires class selection before creating a note", async () => {
+describe("CreateEntryDialog", () => {
+	it("REQ-FE-037: requires form selection before creating a entry", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
-		const classes = [
+		const forms = [
 			{
 				name: "Meeting",
 				version: 1,
@@ -90,11 +90,11 @@ describe("CreateNoteDialog", () => {
 		];
 
 		render(() => (
-			<CreateNoteDialog open={true} classes={classes} onClose={onClose} onSubmit={onSubmit} />
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
 		));
 
-		fireEvent.input(screen.getByPlaceholderText("Enter note title..."), {
-			target: { value: "Test Note" },
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Test Entry" },
 		});
 
 		const createButton = screen.getByRole("button", { name: "Create" });
@@ -105,12 +105,12 @@ describe("CreateNoteDialog", () => {
 	});
 });
 
-describe("EditClassDialog", () => {
+describe("EditFormDialog", () => {
 	const columnTypes = ["string", "number", "boolean"];
-	const mockClass: Class = {
-		name: "ExistingClass",
+	const mockForm: Form = {
+		name: "ExistingForm",
 		version: 1,
-		template: "# ExistingClass\n\n## field1\n\n",
+		template: "# ExistingForm\n\n## field1\n\n",
 		fields: {
 			field1: { type: "string", required: false },
 		},
@@ -121,9 +121,9 @@ describe("EditClassDialog", () => {
 		const onClose = vi.fn();
 
 		render(() => (
-			<EditClassDialog
+			<EditFormDialog
 				open={true}
-				noteClass={mockClass}
+				entryForm={mockForm}
 				columnTypes={columnTypes}
 				onClose={onClose}
 				onSubmit={onSubmit}

@@ -117,7 +117,7 @@ def _write_default_global(
     payload = {
         "version": 1,
         "default_storage": f"{protocol}://{root_path}",
-        "workspaces": [],
+        "spaces": [],
         "hmac_key_id": key_id,
         "hmac_key": hmac_key,
         "last_rotation": now_iso,

@@ -4,10 +4,10 @@ This document describes the high-level data model of IEapp, including its storag
 
 ## Terminology Distinction
 
-To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Classes**:
+To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Forms**:
 
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
-- **Note Classes**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
+- **Entry Forms**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
 ## Principles
 
@@ -15,33 +15,34 @@ IEapp's data model is built on these principles:
 
 | Principle | Description |
 |-----------|-------------|
-| **Filesystem = Database** | Workspaces are directory trees; Iceberg tables are file-backed |
-| **Class-on-Read** | Notes are reconstructed from Class-defined fields in Iceberg |
+| **Filesystem = Database** | Spaces are directory trees; Iceberg tables are file-backed |
+| **Form-on-Read** | Entries are reconstructed from Form-defined fields in Iceberg |
 | **Append-Only Integrity** | Revisions are appended in Iceberg; history is immutable |
-| **Table-Backed Storage** | Notes live in Apache Iceberg tables via OpenDAL |
+| **Table-Backed Storage** | Entries live in Apache Iceberg tables via OpenDAL |
 
 ## Directory Structure
 
-See [directory-structure.md](directory-structure.md) for the full workspace layout.
+See [directory-structure.md](directory-structure.md) for the full space layout.
 
 ```
-global.json                    # Workspace registry
-workspaces/
-  {workspace_id}/
-    meta.json                  # Workspace metadata
-    settings.json              # Workspace settings
-    classes/                   # Iceberg-managed Class tables (layout not specified)
-    attachments/               # Binary files
+global.json                    # Space registry
+spaces/
+  {space_id}/
+    meta.json                  # Space metadata
+    settings.json              # Space settings
+    forms/                     # Iceberg-managed Form tables (layout not specified)
+    assets/                    # Binary files
+    sql_sessions/              # SQL query sessions (results + progress)
 ```
 
 ## Key Concepts
 
-### Classes
+### Forms
 
-Classes define note types with:
-- **Template**: Fixed global template `# {class_name} + H2 columns`
+Forms define entry types with:
+- **Template**: Fixed global template `# {form_name} + H2 columns`
 - **Fields**: Content columns derived from the Iceberg table schema
-- **Types**: Iceberg column types mapped to note fields
+- **Types**: Iceberg column types mapped to entry fields
 - **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
 
 ### Metadata vs Content Columns
@@ -49,27 +50,27 @@ Classes define note types with:
 IEapp separates columns into two ownership categories:
 
 - **Metadata columns (system-owned)**: Reserved fields created and managed by IEapp.
-  Users **cannot** define Class fields with these names.
-- **Content columns (user-owned)**: Class-defined fields stored in the Iceberg `fields` struct.
+  Users **cannot** define Form fields with these names.
+- **Content columns (user-owned)**: Form-defined fields stored in the Iceberg `fields` struct.
 
 Reserved metadata column names include (case-insensitive):
 
-`id`, `note_id`, `title`, `class`, `tags`, `links`, `attachments`,
+`id`, `entry_id`, `title`, `form`, `tags`, `links`, `assets`,
 `created_at`, `updated_at`, `revision_id`, `parent_revision_id`,
 `deleted`, `deleted_at`, `author`, `canvas_position`, `integrity`,
-`workspace_id`, `word_count`.
+`space_id`, `word_count`.
 
 The metadata column list is treated as an internal system contract and may expand
-over time; Class creation MUST reject any field name that conflicts with a
+over time; Form creation MUST reject any field name that conflicts with a
 reserved metadata column name.
 
-### Metadata Classes
+### Metadata Forms
 
-IEapp also reserves **metadata Class names** for system-owned tables. Users cannot
-create or update Classes with these names. The reserved metadata Class list is
+IEapp also reserves **metadata Form names** for system-owned tables. Users cannot
+create or update Forms with these names. The reserved metadata Form list is
 case-insensitive and may expand over time.
 
-Reserved metadata Class names include:
+Reserved metadata Form names include:
 
 `SQL`
 
@@ -78,13 +79,13 @@ Reserved metadata Class names include:
 The write pipeline extracts properties from Markdown:
 
 1. **Frontmatter**: YAML block at top of Markdown
-2. **H2 Sections**: `## Field Name` headers (must be Class-defined)
+2. **H2 Sections**: `## Field Name` headers (must be Form-defined)
 3. **Auto Properties**: Computed values (word_count, etc.)
 
 Precedence: Section > Frontmatter > Auto default
 
-Extra H2 sections are handled by the Class policy:
-- `deny`: reject notes with unknown H2 sections
+Extra H2 sections are handled by the Form policy:
+- `deny`: reject entries with unknown H2 sections
 - `allow_json`: store unknown sections in `extra_attributes`
 - `allow_columns`: accept unknown sections and store in `extra_attributes`
 
@@ -116,14 +117,14 @@ Type casting errors are reported during validation.
 
 ### Link URIs
 
-Notes can contain IEapp-internal links using the `ieapp://` scheme. The URI
+Entries can contain IEapp-internal links using the `ieapp://` scheme. The URI
 kind determines the link target and is designed to be extensible:
 
-- `ieapp://note/{note_id}`
-- `ieapp://attachment/{attachment_id}`
+- `ieapp://entry/{entry_id}`
+- `ieapp://asset/{asset_id}`
 
-IEapp normalizes equivalent forms (e.g. `ieapp://notes/{id}`,
-`ieapp://attachments/{id}`, `ieapp://note?id=...`) to canonical URIs on write.
+IEapp normalizes equivalent forms (e.g. `ieapp://entries/{id}`,
+`ieapp://assets/{id}`, `ieapp://entry?id=...`) to canonical URIs on write.
 This keeps Markdown stable while allowing new link kinds in future milestones.
 
 ### Versioning
@@ -133,7 +134,7 @@ Every save creates a new revision row in the Iceberg `revisions` table:
 1. Client sends update with `parent_revision_id`
 2. Server validates parent matches current head
 3. New revision row is appended via Iceberg
-4. `notes` table updated to new head
+4. `entries` table updated to new head
 
 Conflicts return HTTP 409 with current revision.
 
@@ -146,7 +147,7 @@ and can be regenerated. The Iceberg-managed layout is the only source of truth.
 
 All data is signed with HMAC:
 - Key stored in `global.json`
-- Signature stored alongside note and revision rows
+- Signature stored alongside entry and revision rows
 - Checksum (SHA-256) for tamper detection
 
 ## Extra Attributes Storage
