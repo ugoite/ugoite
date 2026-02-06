@@ -53,12 +53,14 @@ export default function SpaceFormsIndexPane() {
 
 	createEffect(() => {
 		const name = selectedFormName().trim();
-		if (!name) return;
-		const label = selectedFormLabel().trim();
-		if (!label || label === name) {
-			if (selectedFormLabel() !== name) {
-				setSelectedFormLabel(name);
+		if (!name) {
+			if (selectedFormLabel().trim()) {
+				setSelectedFormLabel("");
 			}
+			return;
+		}
+		if (selectedFormLabel() !== name) {
+			setSelectedFormLabel(name);
 		}
 	});
 
@@ -70,7 +72,6 @@ export default function SpaceFormsIndexPane() {
 
 	const handleFormSelection = (value: string) => {
 		if (!value) return;
-		if (value === selectedFormValue()) return;
 		setSelectedFormLabel(value);
 		setSearchParams({ form: value });
 	};
@@ -83,6 +84,7 @@ export default function SpaceFormsIndexPane() {
 		if (selectedFormValue().trim()) return;
 		const first = ctx.forms()[0];
 		if (first?.name) {
+			setSelectedFormLabel(first.name);
 			setSearchParams({ form: first.name }, { replace: true });
 		}
 	});
