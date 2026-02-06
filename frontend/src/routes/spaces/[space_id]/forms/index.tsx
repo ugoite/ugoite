@@ -68,6 +68,13 @@ export default function SpaceFormsIndexPane() {
 		return selectedFormName().trim();
 	});
 
+	const handleFormSelection = (value: string) => {
+		if (!value) return;
+		if (value === selectedFormValue()) return;
+		setSelectedFormLabel(value);
+		setSearchParams({ form: value });
+	};
+
 	createEffect(() => {
 		if (sessionId().trim()) {
 			setPage(1);
@@ -141,11 +148,8 @@ export default function SpaceFormsIndexPane() {
 							<select
 								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
 								value={selectedFormValue()}
-								onChange={(e) => {
-									const value = e.currentTarget.value;
-									setSelectedFormLabel(value);
-									setSearchParams({ form: value });
-								}}
+								onInput={(e) => handleFormSelection(e.currentTarget.value)}
+								onChange={(e) => handleFormSelection(e.currentTarget.value)}
 							>
 								<option value="" disabled>
 									Select form
