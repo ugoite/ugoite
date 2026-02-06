@@ -52,7 +52,17 @@ export default function SpaceFormsIndexPane() {
 	);
 
 	createEffect(() => {
-		setSelectedFormLabel(selectedFormName());
+		const name = selectedFormName().trim();
+		if (!name) return;
+		if (selectedFormLabel() !== name) {
+			setSelectedFormLabel(name);
+		}
+	});
+
+	const selectedFormValue = createMemo(() => {
+		const label = selectedFormLabel().trim();
+		if (label) return label;
+		return selectedFormName().trim();
 	});
 
 	createEffect(() => {
@@ -60,8 +70,7 @@ export default function SpaceFormsIndexPane() {
 			setPage(1);
 			return;
 		}
-		if (selectedFormLabel().trim()) return;
-		if (selectedFormName()) return;
+		if (selectedFormValue().trim()) return;
 		const first = ctx.forms()[0];
 		if (first?.name) {
 			setSearchParams({ form: first.name }, { replace: true });
@@ -80,12 +89,11 @@ export default function SpaceFormsIndexPane() {
 	});
 
 	const selectedForm = createMemo(() =>
-		ctx.forms().find((entry) => entry.name === selectedFormName()),
+		ctx.forms().find((entry) => entry.name === selectedFormValue()),
 	);
 
 	const selectedHeading = createMemo(() => {
-		if (selectedFormLabel().trim()) return selectedFormLabel();
-		if (selectedFormName().trim()) return selectedFormName();
+		if (selectedFormValue().trim()) return selectedFormValue();
 		return selectedForm()?.name || "";
 	});
 
@@ -129,7 +137,7 @@ export default function SpaceFormsIndexPane() {
 						<Show when={!sessionId().trim()}>
 							<select
 								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
-								value={selectedFormName()}
+								value={selectedFormValue()}
 								onChange={(e) => {
 									const value = e.currentTarget.value;
 									setSelectedFormLabel(value);
