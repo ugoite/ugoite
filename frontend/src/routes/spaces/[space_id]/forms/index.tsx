@@ -54,8 +54,11 @@ export default function SpaceFormsIndexPane() {
 	createEffect(() => {
 		const name = selectedFormName().trim();
 		if (!name) return;
-		if (selectedFormLabel() !== name) {
-			setSelectedFormLabel(name);
+		const label = selectedFormLabel().trim();
+		if (!label || label === name) {
+			if (selectedFormLabel() !== name) {
+				setSelectedFormLabel(name);
+			}
 		}
 	});
 
