@@ -60,6 +60,7 @@ export default function SpaceFormsIndexPane() {
 			setPage(1);
 			return;
 		}
+		if (selectedFormLabel().trim()) return;
 		if (selectedFormName()) return;
 		const first = ctx.forms()[0];
 		if (first?.name) {
