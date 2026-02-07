@@ -52,28 +52,27 @@ export default function SpaceFormsIndexPane() {
 	);
 
 	createEffect(() => {
+		const label = selectedFormLabel().trim();
+		if (!label) return;
 		const name = selectedFormName().trim();
-		if (!name) {
-			if (selectedFormLabel().trim()) {
-				setSelectedFormLabel("");
-			}
-			return;
+		if (label !== name) {
+			setSearchParams({ form: label });
 		}
-		if (selectedFormLabel() !== name) {
+	});
+
+	createEffect(() => {
+		const name = selectedFormName().trim();
+		if (!name) return;
+		if (selectedFormLabel().trim() !== name) {
 			setSelectedFormLabel(name);
 		}
 	});
 
-	const selectedFormValue = createMemo(() => {
-		const label = selectedFormLabel().trim();
-		if (label) return label;
-		return selectedFormName().trim();
-	});
+	const selectedFormValue = createMemo(() => selectedFormLabel().trim());
 
 	const handleFormSelection = (value: string) => {
 		if (!value) return;
 		setSelectedFormLabel(value);
-		setSearchParams({ form: value });
 	};
 
 	createEffect(() => {
@@ -85,7 +84,6 @@ export default function SpaceFormsIndexPane() {
 		const first = ctx.forms()[0];
 		if (first?.name) {
 			setSelectedFormLabel(first.name);
-			setSearchParams({ form: first.name }, { replace: true });
 		}
 	});
 
@@ -104,10 +102,7 @@ export default function SpaceFormsIndexPane() {
 		ctx.forms().find((entry) => entry.name === selectedFormValue()),
 	);
 
-	const selectedHeading = createMemo(() => {
-		if (selectedFormValue().trim()) return selectedFormValue();
-		return selectedForm()?.name || "";
-	});
+	const selectedHeading = createMemo(() => selectedFormValue().trim());
 
 	const sessionEntries = createMemo(() => sessionRows()?.rows || []);
 	const sessionFields = createMemo(() => {
