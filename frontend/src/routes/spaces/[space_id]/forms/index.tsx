@@ -92,8 +92,6 @@ export default function SpaceFormsIndexPane() {
 		ctx.forms().find((entry) => entry.name === selectedFormValue()),
 	);
 
-	const selectedHeading = createMemo(() => selectedFormValue().trim());
-
 	const sessionEntries = createMemo(() => sessionRows()?.rows || []);
 	const sessionFields = createMemo(() => {
 		const fields = new Set<string>();
@@ -257,23 +255,25 @@ export default function SpaceFormsIndexPane() {
 						</div>
 					</Show>
 					<Show when={!sessionId().trim()}>
-						<Show when={selectedHeading()}>
-							<div class="mb-4">
-								<h2 class="text-xl font-semibold text-slate-900">{selectedHeading()}</h2>
-								<p class="text-sm text-slate-500">Query results for the selected form.</p>
-							</div>
-						</Show>
-						<Show when={selectedForm()}>
-							<FormTable
-								spaceId={ctx.spaceId()}
-								entryForm={selectedForm()}
-								onEntryClick={(entryId) =>
-									navigate(`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(entryId)}`)
-								}
-							/>
-						</Show>
-						<Show when={!selectedForm()}>
-							<p class="text-sm text-slate-500">Create a form to get started.</p>
+						<Show
+							when={selectedForm()}
+							fallback={<p class="text-sm text-slate-500">Create a form to get started.</p>}
+						>
+							{(form) => (
+								<>
+									<div class="mb-4">
+										<h2 class="text-xl font-semibold text-slate-900">{form().name}</h2>
+										<p class="text-sm text-slate-500">Query results for the selected form.</p>
+									</div>
+									<FormTable
+										spaceId={ctx.spaceId()}
+										entryForm={form()}
+										onEntryClick={(entryId) =>
+											navigate(`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(entryId)}`)
+										}
+									/>
+								</>
+							)}
 						</Show>
 					</Show>
 				</div>
