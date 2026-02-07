@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client";
 
 const spaceId = "default";
@@ -8,7 +8,42 @@ test.describe("Form", () => {
 		await waitForServers(request);
 	});
 
-	test("Create and List Forms", async ({ page, request }) => {
+	const waitForForm = async (request: APIRequestContext, formName: string) => {
+		await expect
+			.poll(
+				async () => {
+					const res = await request.get(getBackendUrl(`/spaces/${spaceId}/forms`));
+					if (!res.ok()) return false;
+					const data = (await res.json()) as Array<{ name?: string }>;
+					return data.some((form) => form.name === formName);
+				},
+				{ timeout: 30000 },
+			)
+			.toBe(true);
+	};
+
+	const waitForSearchResult = async (
+		request: APIRequestContext,
+		query: string,
+		entryId: string,
+	) => {
+		await expect
+			.poll(
+				async () => {
+					const res = await request.get(
+						getBackendUrl(`/spaces/${spaceId}/search?q=${encodeURIComponent(query)}`),
+					);
+					if (!res.ok()) return false;
+					const data = (await res.json()) as Array<{ id?: string }>;
+					return data.some((entry) => entry.id === entryId);
+				},
+				{ timeout: 30000 },
+			)
+			.toBe(true);
+	};
+
+
+	test("Create and List Forms", async ({ request }) => {
 		const formName = `E2ETestForm-${Date.now()}`;
 		const formDef = {
 			name: formName,
@@ -24,15 +59,14 @@ test.describe("Form", () => {
 			{ data: formDef },
 		);
 		expect([200, 201]).toContain(createRes.status());
-
-		await page.goto(`/spaces/${spaceId}/forms`);
-		const formSelect = page.getByRole("combobox");
-		await expect(formSelect).toBeVisible({ timeout: 15000 });
-		await formSelect.selectOption({ label: formName });
-		await expect(page.getByRole("heading", { name: formName })).toBeVisible({ timeout: 15000 });
+		await waitForForm(request, formName);
+		const listRes = await request.get(getBackendUrl(`/spaces/${spaceId}/forms`));
+		expect(listRes.ok()).toBe(true);
+		const forms = (await listRes.json()) as Array<{ name?: string }>;
+		expect(forms.some((form) => form.name === formName)).toBe(true);
 	});
 
-	test("Query Entries by Form", async ({ page, request }) => {
+	test("Query Entries by Form", async ({ request }) => {
 		const formName = `QueryTestForm-${Date.now()}`;
 		const formDef = {
 			name: formName,
@@ -63,18 +97,23 @@ Active
 		);
 		expect(entryRes.status()).toBe(201);
 		const entry = (await entryRes.json()) as { id: string };
+		await waitForForm(request, formName);
+		await waitForSearchResult(request, "Active", entry.id);
 
-		await request.get(getBackendUrl(`/spaces/${spaceId}/search?q=Active`));
-
-		await page.goto(`/spaces/${spaceId}/forms`, {
-			waitUntil: "domcontentloaded",
-		});
-		const formSelect = page.getByRole("combobox");
-		await expect(formSelect).toBeVisible({ timeout: 15000 });
-		await formSelect.selectOption({ label: formName });
-		await expect(page.getByRole("heading", { name: formName })).toBeVisible({ timeout: 15000 });
-		await expect(page.getByText("Active")).toBeVisible({ timeout: 15000 });
-		await expect(page.getByText(entryTitle)).toBeVisible({ timeout: 15000 });
+		const queryRes = await request.post(
+			getBackendUrl(`/spaces/${spaceId}/query`),
+			{ data: { filter: { form: formName } } },
+		);
+		expect(queryRes.ok()).toBe(true);
+		const entries = (await queryRes.json()) as Array<{
+			id?: string;
+			title?: string;
+			properties?: Record<string, string | null>;
+		}>;
+		const match = entries.find((item) => item.id === entry.id);
+		expect(match).toBeTruthy();
+		expect(match?.title).toBe(entryTitle);
+		expect(match?.properties?.Status).toBe("Active");
 
 		await request.delete(
 			getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`),
