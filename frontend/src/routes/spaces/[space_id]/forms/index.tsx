@@ -58,11 +58,16 @@ export default function SpaceFormsIndexPane() {
 	};
 
 	createEffect(() => {
-		const selected = formSelectEl?.value?.trim();
-		if (!selected) return;
-		if (selected !== selectedFormName().trim()) {
-			setSearchParams({ form: selected });
-		}
+		const select = formSelectEl;
+		if (!select) return;
+		const interval = setInterval(() => {
+			const selected = select.value.trim();
+			if (!selected) return;
+			if (selected !== selectedFormName().trim()) {
+				setSearchParams({ form: selected });
+			}
+		}, 200);
+		onCleanup(() => clearInterval(interval));
 	});
 
 	createEffect(() => {
