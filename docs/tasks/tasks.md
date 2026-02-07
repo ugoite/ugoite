@@ -229,6 +229,26 @@ storage paths (OpenDAL/Iceberg).
 
 ---
 
+## Phase 10: UIの洗練化 (Mobile + Theme System)
+
+**Objective**: モバイル対応の強化と、アプリ全体に統一されたテーマシステムを導入し、
+UIテーマ（materialize / classic / pop）と色合い（light / dark）を切り替え可能にする。
+
+### Key Tasks
+- [x] モバイルで崩れないトップ/ボトムバーとレイアウト余白を調整
+- [x] Tailwind v4の公式推奨 `@theme` 記法でテーマトークンを定義（@applyは不使用）
+- [x] UIテーマ 3種（materialize / classic / pop）を選択可能にする
+- [x] light / dark の色合い切り替えを追加する
+- [x] 画面上部バー右側の設定アイコンからテーマ選択UIを開けるようにする
+
+### Acceptance Criteria
+- [x] モバイル環境でUIが破綻しない
+- [x] テーマトークンは `@theme` で統一され、@apply未使用
+- [x] UIテーマとlight/darkが独立して切り替えられる
+- [x] 設定アイコンからテーマ選択が可能
+
+---
+
 ## Definition of Done
 
 - [x] All phases completed with acceptance criteria met.

@@ -150,7 +150,7 @@ export default function SpaceEntriesIndexPane() {
 						</Show>
 						<button
 							type="button"
-							class="px-3 py-1.5 text-sm rounded bg-slate-900 text-white hover:bg-slate-800"
+							class="px-3 py-1.5 text-sm rounded bg-accent-strong text-white hover:bg-accent"
 							onClick={() => setShowCreateEntryDialog(true)}
 						>
 							New entry

@@ -151,7 +151,7 @@ export default function SpaceFormsIndexPane() {
 							</select>
 							<button
 								type="button"
-								class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+								class="rounded-lg bg-accent-strong px-3 py-1.5 text-sm text-white hover:bg-accent"
 								onClick={() => setShowCreateFormDialog(true)}
 							>
 								New form

@@ -50,7 +50,7 @@ export default function SpaceSearchRoute() {
 					<h1 class="text-2xl font-semibold text-slate-900">Queries</h1>
 					<A
 						href={`/spaces/${spaceId()}/queries/new`}
-						class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+						class="inline-flex items-center gap-2 rounded-full bg-accent-strong px-4 py-2 text-sm text-white hover:bg-accent"
 					>
 						<span class="text-lg">+</span>
 						Create query
