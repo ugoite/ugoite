@@ -20,6 +20,7 @@ export default function SpaceFormsIndexPane() {
 	const ctx = useEntriesRouteContext();
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
+	let formSelectEl: HTMLSelectElement | undefined;
 	const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
@@ -55,6 +56,14 @@ export default function SpaceFormsIndexPane() {
 		if (!value) return;
 		setSearchParams({ form: value });
 	};
+
+	createEffect(() => {
+		const selected = formSelectEl?.value?.trim();
+		if (!selected) return;
+		if (selected !== selectedFormName().trim()) {
+			setSearchParams({ form: selected });
+		}
+	});
 
 	createEffect(() => {
 		if (sessionId().trim()) {
@@ -125,6 +134,7 @@ export default function SpaceFormsIndexPane() {
 						<Show when={!sessionId().trim()}>
 							<select
 								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
+								ref={formSelectEl}
 								value={selectedFormValue()}
 								onInput={(e) => handleFormSelection(e.currentTarget.value)}
 								onChange={(e) => handleFormSelection(e.currentTarget.value)}
