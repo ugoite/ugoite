@@ -24,8 +24,7 @@ export default function SpaceFormsIndexPane() {
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
 	const [pageSize] = createSignal(25);
-	const [selectedFormLabel, setSelectedFormLabel] = createSignal("");
-	const [pendingFormSelection, setPendingFormSelection] = createSignal<string | null>(null);
+	const selectedFormName = createMemo(() => (searchParams.form ? String(searchParams.form) : ""));
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
 			await formApi.create(ctx.spaceId(), payload);
@@ -35,8 +34,6 @@ export default function SpaceFormsIndexPane() {
 			alert(e instanceof Error ? e.message : "Failed to create form");
 		}
 	};
-
-	const selectedFormName = createMemo(() => (searchParams.form ? String(searchParams.form) : ""));
 
 	const [session, { refetch: refetchSession }] = createResource(
 		() => sessionId().trim() || null,
@@ -52,36 +49,11 @@ export default function SpaceFormsIndexPane() {
 		async ({ id, offset, limit }) => sqlSessionApi.rows(ctx.spaceId(), id, offset, limit),
 	);
 
-	createEffect(() => {
-		const label = selectedFormLabel().trim();
-		if (!label) return;
-		const name = selectedFormName().trim();
-		if (label !== name) {
-			setSearchParams({ form: label });
-		}
-	});
-
-	createEffect(() => {
-		const name = selectedFormName().trim();
-		if (!name) return;
-		const pending = pendingFormSelection();
-		if (pending) {
-			if (pending === name) {
-				setPendingFormSelection(null);
-			}
-			return;
-		}
-		if (selectedFormLabel().trim() !== name) {
-			setSelectedFormLabel(name);
-		}
-	});
-
-	const selectedFormValue = createMemo(() => selectedFormLabel().trim());
+	const selectedFormValue = createMemo(() => selectedFormName().trim());
 
 	const handleFormSelection = (value: string) => {
 		if (!value) return;
-		setPendingFormSelection(value);
-		setSelectedFormLabel(value);
+		setSearchParams({ form: value });
 	};
 
 	createEffect(() => {
@@ -92,7 +64,7 @@ export default function SpaceFormsIndexPane() {
 		if (selectedFormValue().trim()) return;
 		const first = ctx.forms()[0];
 		if (first?.name) {
-			setSelectedFormLabel(first.name);
+			setSearchParams({ form: first.name }, { replace: true });
 		}
 	});
 
