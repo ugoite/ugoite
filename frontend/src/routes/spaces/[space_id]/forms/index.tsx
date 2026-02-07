@@ -25,6 +25,7 @@ export default function SpaceFormsIndexPane() {
 	const [page, setPage] = createSignal(1);
 	const [pageSize] = createSignal(25);
 	const [selectedFormLabel, setSelectedFormLabel] = createSignal("");
+	const [pendingFormSelection, setPendingFormSelection] = createSignal<string | null>(null);
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
 			await formApi.create(ctx.spaceId(), payload);
@@ -63,6 +64,13 @@ export default function SpaceFormsIndexPane() {
 	createEffect(() => {
 		const name = selectedFormName().trim();
 		if (!name) return;
+		const pending = pendingFormSelection();
+		if (pending) {
+			if (pending === name) {
+				setPendingFormSelection(null);
+			}
+			return;
+		}
 		if (selectedFormLabel().trim() !== name) {
 			setSelectedFormLabel(name);
 		}
@@ -72,6 +80,7 @@ export default function SpaceFormsIndexPane() {
 
 	const handleFormSelection = (value: string) => {
 		if (!value) return;
+		setPendingFormSelection(value);
 		setSelectedFormLabel(value);
 	};
 
