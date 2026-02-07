@@ -20,11 +20,12 @@ export default function SpaceFormsIndexPane() {
 	const ctx = useEntriesRouteContext();
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
+	let formSelectEl: HTMLSelectElement | undefined;
 	const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
 	const [pageSize] = createSignal(25);
-	const [selectedFormLabel, setSelectedFormLabel] = createSignal("");
+	const selectedFormName = createMemo(() => (searchParams.form ? String(searchParams.form) : ""));
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
 			await formApi.create(ctx.spaceId(), payload);
@@ -34,8 +35,6 @@ export default function SpaceFormsIndexPane() {
 			alert(e instanceof Error ? e.message : "Failed to create form");
 		}
 	};
-
-	const selectedFormName = createMemo(() => (searchParams.form ? String(searchParams.form) : ""));
 
 	const [session, { refetch: refetchSession }] = createResource(
 		() => sessionId().trim() || null,
@@ -51,8 +50,24 @@ export default function SpaceFormsIndexPane() {
 		async ({ id, offset, limit }) => sqlSessionApi.rows(ctx.spaceId(), id, offset, limit),
 	);
 
+	const selectedFormValue = createMemo(() => selectedFormName().trim());
+
+	const handleFormSelection = (value: string) => {
+		if (!value) return;
+		setSearchParams({ form: value });
+	};
+
 	createEffect(() => {
-		setSelectedFormLabel(selectedFormName());
+		const select = formSelectEl;
+		if (!select) return;
+		const interval = setInterval(() => {
+			const selected = select.value.trim();
+			if (!selected) return;
+			if (selected !== selectedFormName().trim()) {
+				setSearchParams({ form: selected });
+			}
+		}, 200);
+		onCleanup(() => clearInterval(interval));
 	});
 
 	createEffect(() => {
@@ -60,7 +75,7 @@ export default function SpaceFormsIndexPane() {
 			setPage(1);
 			return;
 		}
-		if (selectedFormName()) return;
+		if (selectedFormValue().trim()) return;
 		const first = ctx.forms()[0];
 		if (first?.name) {
 			setSearchParams({ form: first.name }, { replace: true });
@@ -79,14 +94,8 @@ export default function SpaceFormsIndexPane() {
 	});
 
 	const selectedForm = createMemo(() =>
-		ctx.forms().find((entry) => entry.name === selectedFormName()),
+		ctx.forms().find((entry) => entry.name === selectedFormValue()),
 	);
-
-	const selectedHeading = createMemo(() => {
-		if (selectedFormLabel().trim()) return selectedFormLabel();
-		if (selectedFormName().trim()) return selectedFormName();
-		return selectedForm()?.name || "";
-	});
 
 	const sessionEntries = createMemo(() => sessionRows()?.rows || []);
 	const sessionFields = createMemo(() => {
@@ -128,12 +137,10 @@ export default function SpaceFormsIndexPane() {
 						<Show when={!sessionId().trim()}>
 							<select
 								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
-								value={selectedFormName()}
-								onChange={(e) => {
-									const value = e.currentTarget.value;
-									setSelectedFormLabel(value);
-									setSearchParams({ form: value });
-								}}
+								ref={formSelectEl}
+								value={selectedFormValue()}
+								onInput={(e) => handleFormSelection(e.currentTarget.value)}
+								onChange={(e) => handleFormSelection(e.currentTarget.value)}
 							>
 								<option value="" disabled>
 									Select form
@@ -253,23 +260,25 @@ export default function SpaceFormsIndexPane() {
 						</div>
 					</Show>
 					<Show when={!sessionId().trim()}>
-						<Show when={selectedHeading()}>
-							<div class="mb-4">
-								<h2 class="text-xl font-semibold text-slate-900">{selectedHeading()}</h2>
-								<p class="text-sm text-slate-500">Query results for the selected form.</p>
-							</div>
-						</Show>
-						<Show when={selectedForm()}>
-							<FormTable
-								spaceId={ctx.spaceId()}
-								entryForm={selectedForm()}
-								onEntryClick={(entryId) =>
-									navigate(`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(entryId)}`)
-								}
-							/>
-						</Show>
-						<Show when={!selectedForm()}>
-							<p class="text-sm text-slate-500">Create a form to get started.</p>
+						<Show
+							when={selectedForm()}
+							fallback={<p class="text-sm text-slate-500">Create a form to get started.</p>}
+						>
+							{(form) => (
+								<>
+									<div class="mb-4">
+										<h2 class="text-xl font-semibold text-slate-900">{form().name}</h2>
+										<p class="text-sm text-slate-500">Query results for the selected form.</p>
+									</div>
+									<FormTable
+										spaceId={ctx.spaceId()}
+										entryForm={form()}
+										onEntryClick={(entryId) =>
+											navigate(`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(entryId)}`)
+										}
+									/>
+								</>
+							)}
 						</Show>
 					</Show>
 				</div>
