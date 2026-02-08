@@ -69,11 +69,13 @@ test.describe("UI theme flows", () => {
 			await page.getByLabel("title").fill(entryTitle);
 			await page.getByRole("button", { name: "Run" }).click();
 			await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
+			await page.getByRole("button", { name: "Clear query" }).click();
+			await page.getByRole("heading", { name: "Entries" }).waitFor();
 
 			await page.getByRole("link", { name: "grid" }).click();
 			await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
 			await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
-			await page.getByRole("button", { name: "Sort" }).click();
+			await page.getByRole("button", { name: "Sort menu" }).click();
 			await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
 			await page.getByRole("radio", { name: "Descending" }).click();
 			await page.keyboard.press("Escape");
