@@ -14,6 +14,7 @@ This directory contains machine-readable requirement definitions for IEapp.
 | [api.yaml](api.yaml) | REST API | REQ-API-* |
 | [frontend.yaml](frontend.yaml) | Frontend UI | REQ-FE-* |
 | [e2e.yaml](e2e.yaml) | End-to-End | REQ-E2E-* |
+| [ops.yaml](ops.yaml) | Operations & Dev Environment | REQ-OPS-* |
 | [form.yaml](form.yaml) | Form Management | REQ-FORM-* |
 | [links.yaml](links.yaml) | Link Management | REQ-LNK-* |
 | [search.yaml](search.yaml) | Search | REQ-SRCH-* |

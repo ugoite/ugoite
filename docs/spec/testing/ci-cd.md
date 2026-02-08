@@ -7,6 +7,7 @@
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
+| Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 
 ## Python CI
 

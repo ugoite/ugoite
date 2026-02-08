@@ -1,0 +1,37 @@
+# Operations & Dev Environment Requirements
+
+category: Operations & Dev Environment
+prefix: REQ-OPS
+
+requirements:
+  - id: REQ-OPS-001
+    title: Developer Guides for Local Runs
+    description: |
+      Provide English documentation for Docker Compose and CLI usage. Shell
+      command snippets must remain syntactically valid for bash.
+    related_spec:
+      - ../guide/docker-compose.md
+      - ../guide/cli.md
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_guides.py
+          tests:
+            - test_docs_req_ops_001_guides_exist
+            - test_docs_req_ops_001_shell_blocks_parse
+
+  - id: REQ-OPS-002
+    title: Docker Build CI Validation
+    description: |
+      CI MUST validate Docker image builds for backend and frontend to ensure
+      containerized environments remain buildable.
+    related_spec:
+      - testing/ci-cd.md
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_guides.py
+          tests:
+            - test_docs_req_ops_002_docker_build_ci_declared
