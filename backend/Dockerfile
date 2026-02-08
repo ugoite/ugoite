@@ -4,6 +4,11 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Build essentials for compiling ieapp-core (Rust native modules)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends build-essential \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Copy pyproject.toml and uv.lock for dependency installation
 COPY ./pyproject.toml .
 COPY ./uv.lock .
