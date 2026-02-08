@@ -48,6 +48,10 @@ test.describe("UI theme flows", () => {
 			await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
 
 			await page.getByRole("link", { name: "search" }).click();
+			await page.getByRole("button", { name: "Filter" }).click();
+			await page.getByRole("heading", { name: "Filters" }).waitFor();
+			await page.getByRole("button", { name: "Close" }).click();
+
 			await page.getByRole("link", { name: "Create query" }).click();
 
 			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
@@ -63,6 +67,12 @@ test.describe("UI theme flows", () => {
 
 			await page.getByRole("link", { name: "grid" }).click();
 			await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
+			await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
+			await page.getByRole("button", { name: "Sort" }).click();
+			await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
+			await page.getByRole("radio", { name: "Descending" }).click();
+			await page.keyboard.press("Escape");
+			await page.getByRole("button", { name: "Filter" }).click();
 
 			await page.getByRole("link", { name: "object" }).click();
 			await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();

@@ -144,11 +144,14 @@ function formatCsvRow(entry: EntryRecord, headers: string[]) {
 }
 
 export function FormTable(props: FormTableProps) {
+	let sortMenuRef: HTMLDivElement | undefined;
 	// State for filtering and sorting
 	const [globalFilter, setGlobalFilter] = createSignal("");
 	const [sortField, setSortField] = createSignal<string | null>(null);
 	const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
 	const [columnFilters, setColumnFilters] = createSignal<Record<string, string>>({});
+	const [showColumnFilters, setShowColumnFilters] = createSignal(true);
+	const [showSortMenu, setShowSortMenu] = createSignal(false);
 	const [isEditMode, setIsEditMode] = createSignal(false);
 	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
 
@@ -165,6 +168,8 @@ export function FormTable(props: FormTableProps) {
 	const fields = createMemo(() =>
 		props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
 	);
+
+	const sortableFields = createMemo(() => ["title", ...fields(), "updated_at"]);
 
 	const processedEntries = createMemo(() => {
 		const currentEntries = entries();
@@ -189,6 +194,40 @@ export function FormTable(props: FormTableProps) {
 			setSortDirection("asc");
 		}
 	};
+
+	const handleSortFieldChange = (value: string) => {
+		if (!value) {
+			setSortField(null);
+			setSortDirection(null);
+			return;
+		}
+		setSortField(value);
+		if (!sortDirection()) setSortDirection("asc");
+	};
+
+	const handleSortMenuPointer = (event: PointerEvent) => {
+		if (!showSortMenu()) return;
+		if (!sortMenuRef || sortMenuRef.contains(event.target as Node)) return;
+		setShowSortMenu(false);
+	};
+
+	const handleSortMenuKeydown = (event: KeyboardEvent) => {
+		if (event.key === "Escape") {
+			setShowSortMenu(false);
+		}
+	};
+
+	onMount(() => {
+		if (typeof document === "undefined") return;
+		document.addEventListener("pointerdown", handleSortMenuPointer);
+		document.addEventListener("keydown", handleSortMenuKeydown);
+	});
+
+	onCleanup(() => {
+		if (typeof document === "undefined") return;
+		document.removeEventListener("pointerdown", handleSortMenuPointer);
+		document.removeEventListener("keydown", handleSortMenuKeydown);
+	});
 
 	const updateColumnFilter = (field: string, value: string) => {
 		setColumnFilters((prev) => ({ ...prev, [field]: value }));
@@ -394,8 +433,8 @@ export function FormTable(props: FormTableProps) {
 
 	return (
 		<div class={`flex-1 h-full overflow-auto ui-surface ${isSelecting() ? "select-none" : ""}`}>
-			<div class="p-6">
-				<div class="mb-6 flex justify-between items-start">
+			<div class="p-4 sm:p-6">
+				<div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
 					<div>
 						<p class="ui-muted text-sm">
 							{entries.loading && !entries()
@@ -471,14 +510,86 @@ export function FormTable(props: FormTableProps) {
 					</div>
 				</div>
 
-				<div class="mb-4">
-					<input
-						type="text"
-						placeholder="Global Search..."
-						class="ui-input w-full max-w-md"
-						value={globalFilter()}
-						onInput={(e) => setGlobalFilter(e.currentTarget.value)}
-					/>
+				<div class="mb-4 ui-card ui-stack-sm">
+					<div class="flex flex-wrap items-center gap-2 justify-between">
+						<input
+							type="text"
+							placeholder="Global Search..."
+							class="ui-input w-full max-w-md"
+							value={globalFilter()}
+							onInput={(e) => setGlobalFilter(e.currentTarget.value)}
+						/>
+						<div class="flex flex-wrap gap-2">
+							<div
+								class="ui-menu"
+								ref={(el) => {
+									sortMenuRef = el;
+								}}
+							>
+								<button
+									type="button"
+									class="ui-button ui-button-secondary text-sm"
+									onClick={() => setShowSortMenu((value) => !value)}
+									aria-haspopup="menu"
+									aria-expanded={showSortMenu()}
+								>
+									Sort
+								</button>
+								<Show when={showSortMenu()}>
+									<div class="ui-menu-panel" role="menu">
+										<div class="ui-menu-section">
+											<p class="ui-menu-title">Sort Field</p>
+											<select
+												aria-label="Sort field"
+												class="ui-input"
+												value={sortField() ?? ""}
+												onChange={(e) => handleSortFieldChange(e.currentTarget.value)}
+											>
+												<option value="">None</option>
+												<For each={sortableFields()}>
+													{(field) => <option value={field}>{field}</option>}
+												</For>
+											</select>
+										</div>
+										<div class="ui-menu-section">
+											<p class="ui-menu-title">Direction</p>
+											<div class="ui-menu-options">
+												<label class="ui-radio">
+													<input
+														type="radio"
+														name="sort-direction"
+														value="asc"
+														checked={sortDirection() === "asc"}
+														onChange={() => setSortDirection("asc")}
+													/>
+													<span>Ascending</span>
+												</label>
+												<label class="ui-radio">
+													<input
+														type="radio"
+														name="sort-direction"
+														value="desc"
+														checked={sortDirection() === "desc"}
+														onChange={() => setSortDirection("desc")}
+													/>
+													<span>Descending</span>
+												</label>
+											</div>
+										</div>
+									</div>
+								</Show>
+							</div>
+							<button
+								type="button"
+								class={`ui-button text-sm ${
+									showColumnFilters() ? "ui-button-primary" : "ui-button-secondary"
+								}`}
+								onClick={() => setShowColumnFilters((value) => !value)}
+							>
+								Filter
+							</button>
+						</div>
+					</div>
 				</div>
 
 				<div class="ui-table-wrapper overflow-x-auto">
@@ -502,14 +613,16 @@ export function FormTable(props: FormTableProps) {
 											Title
 											<SortIcon active={sortField() === "title"} direction={sortDirection()} />
 										</button>
-										<input
-											type="text"
-											class="ui-input ui-input-sm ui-table-filter text-xs"
-											placeholder="Filter..."
-											value={columnFilters().title || ""}
-											onInput={(e) => updateColumnFilter("title", e.currentTarget.value)}
-											onClick={(e) => e.stopPropagation()}
-										/>
+										<Show when={showColumnFilters()}>
+											<input
+												type="text"
+												class="ui-input ui-input-sm ui-table-filter text-xs"
+												placeholder="Filter..."
+												value={columnFilters().title || ""}
+												onInput={(e) => updateColumnFilter("title", e.currentTarget.value)}
+												onClick={(e) => e.stopPropagation()}
+											/>
+										</Show>
 									</div>
 								</th>
 
@@ -525,14 +638,16 @@ export function FormTable(props: FormTableProps) {
 													{field}
 													<SortIcon active={sortField() === field} direction={sortDirection()} />
 												</button>
-												<input
-													type="text"
-													class="ui-input ui-input-sm ui-table-filter text-xs"
-													placeholder="Filter..."
-													value={columnFilters()[field] || ""}
-													onInput={(e) => updateColumnFilter(field, e.currentTarget.value)}
-													onClick={(e) => e.stopPropagation()}
-												/>
+												<Show when={showColumnFilters()}>
+													<input
+														type="text"
+														class="ui-input ui-input-sm ui-table-filter text-xs"
+														placeholder="Filter..."
+														value={columnFilters()[field] || ""}
+														onInput={(e) => updateColumnFilter(field, e.currentTarget.value)}
+														onClick={(e) => e.stopPropagation()}
+													/>
+												</Show>
 											</div>
 										</th>
 									)}
@@ -548,14 +663,16 @@ export function FormTable(props: FormTableProps) {
 											Updated
 											<SortIcon active={sortField() === "updated_at"} direction={sortDirection()} />
 										</button>
-										<input
-											type="text"
-											class="ui-input ui-input-sm ui-table-filter text-xs"
-											placeholder="Filter..."
-											value={columnFilters().updated_at || ""}
-											onInput={(e) => updateColumnFilter("updated_at", e.currentTarget.value)}
-											onClick={(e) => e.stopPropagation()}
-										/>
+										<Show when={showColumnFilters()}>
+											<input
+												type="text"
+												class="ui-input ui-input-sm ui-table-filter text-xs"
+												placeholder="Filter..."
+												value={columnFilters().updated_at || ""}
+												onInput={(e) => updateColumnFilter("updated_at", e.currentTarget.value)}
+												onClick={(e) => e.stopPropagation()}
+											/>
+										</Show>
 									</div>
 								</th>
 							</tr>
