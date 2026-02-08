@@ -823,32 +823,6 @@ a:hover {
 	font-weight: 600;
 }
 
-.ui-table {
-	width: 100%;
-	border-collapse: separate;
-	border-spacing: 0;
-}
-
-.ui-table thead {
-	background: var(--ui-surface-3);
-	color: var(--ui-foreground-muted);
-}
-
-.ui-table th,
-.ui-table td {
-	padding: 0.6rem 0.85rem;
-	text-align: left;
-	font-weight: 500;
-}
-
-.ui-table tbody tr {
-	border-top: var(--ui-border-width) solid var(--ui-border);
-}
-
-.ui-table tbody tr:hover {
-	background: color-mix(in oklch, var(--ui-surface-2) 85%, transparent 15%);
-}
-
 @media (max-width: 640px) {
 	.ui-page {
 		padding: calc(var(--ui-spacing-lg)) calc(var(--ui-content-padding-x) * 0.8);

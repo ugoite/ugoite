@@ -54,7 +54,7 @@ export default function SpaceDashboardRoute() {
 		requiredValues: Record<string, string>,
 	) => {
 		if (!formName) {
-			alert("Please select a form to create a entry.");
+			alert("Please select a form to create an entry.");
 			return;
 		}
 		const formDef = safeForms().find((entryForm) => entryForm.name === formName);

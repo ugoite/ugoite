@@ -183,23 +183,23 @@ export default function SpaceFormsIndexPane() {
 								<p class="text-sm ui-muted">No results found.</p>
 							</Show>
 							<Show when={sessionEntries().length > 0}>
-								<div class="ui-card overflow-x-auto">
+								<div class="ui-table-wrapper overflow-x-auto">
 									<table class="ui-table text-sm min-w-full">
-										<thead>
+										<thead class="ui-table-head">
 											<tr>
-												<th class="px-4 py-2 text-left font-medium">Title</th>
-												<th class="px-4 py-2 text-left font-medium">Form</th>
-												<th class="px-4 py-2 text-left font-medium">Updated</th>
+												<th class="ui-table-header-cell">Title</th>
+												<th class="ui-table-header-cell">Form</th>
+												<th class="ui-table-header-cell">Updated</th>
 												<For each={sessionFields()}>
-													{(field) => <th class="px-4 py-2 text-left font-medium">{field}</th>}
+													{(field) => <th class="ui-table-header-cell">{field}</th>}
 												</For>
 											</tr>
 										</thead>
-										<tbody>
+										<tbody class="ui-table-body">
 											<For each={sessionEntries()}>
 												{(entry) => (
-													<tr>
-														<td class="px-4 py-2">
+													<tr class="ui-table-row">
+														<td class="ui-table-cell">
 															<button
 																type="button"
 																class="text-left hover:underline"
@@ -212,13 +212,13 @@ export default function SpaceFormsIndexPane() {
 																{entry.title || "Untitled"}
 															</button>
 														</td>
-														<td class="px-4 py-2 ui-muted">{entry.form || "-"}</td>
-														<td class="px-4 py-2 ui-muted">
+														<td class="ui-table-cell ui-table-cell-muted">{entry.form || "-"}</td>
+														<td class="ui-table-cell ui-table-cell-muted">
 															{new Date(entry.updated_at).toLocaleDateString()}
 														</td>
 														<For each={sessionFields()}>
 															{(field) => (
-																<td class="px-4 py-2 ui-muted">
+																<td class="ui-table-cell ui-table-cell-muted">
 																	{String(entry.properties?.[field] ?? "")}
 																</td>
 															)}

@@ -57,7 +57,6 @@ export function ThemeMenu(props: ThemeMenuProps) {
 				type="button"
 				class="ui-icon-button"
 				aria-label="Theme settings"
-				aria-haspopup="menu"
 				aria-expanded={open()}
 				onClick={() => setOpen((value) => !value)}
 			>
@@ -72,7 +71,7 @@ export function ThemeMenu(props: ThemeMenuProps) {
 				</svg>
 			</button>
 			<Show when={open()}>
-				<div class="ui-menu-panel" role="menu">
+				<div class="ui-menu-panel">
 					<div class="ui-menu-section">
 						<p class="ui-menu-title">UI Theme</p>
 						<div class="ui-menu-options">

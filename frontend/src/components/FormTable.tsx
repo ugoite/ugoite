@@ -531,13 +531,12 @@ export function FormTable(props: FormTableProps) {
 									class="ui-button ui-button-secondary text-sm"
 									onClick={() => setShowSortMenu((value) => !value)}
 									aria-label="Sort menu"
-									aria-haspopup="menu"
 									aria-expanded={showSortMenu()}
 								>
 									Sort
 								</button>
 								<Show when={showSortMenu()}>
-									<div class="ui-menu-panel" role="menu">
+									<div class="ui-menu-panel">
 										<div class="ui-menu-section">
 											<p class="ui-menu-title">Sort Field</p>
 											<select

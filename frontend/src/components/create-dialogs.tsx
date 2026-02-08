@@ -14,6 +14,13 @@ import { RESERVED_METADATA_CLASSES, isReservedMetadataForm } from "~/lib/metadat
 
 const numericFieldTypes = new Set(["integer", "long", "number", "double", "float"]);
 
+const formatDatetimeLocal = (date: Date) => {
+	const pad = (value: number) => String(value).padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+		date.getHours(),
+	)}:${pad(date.getMinutes())}`;
+};
+
 const isLongTextField = (name: string, def: Form["fields"][string]) =>
 	def.type === "markdown" || name.toLowerCase() === "sql";
 
@@ -79,7 +86,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			case "timestamp_tz":
 			case "timestamp_ns":
 			case "timestamp_tz_ns":
-				return new Date().toISOString();
+				return formatDatetimeLocal(new Date());
 			case "object_list":
 				return "[]";
 			default:

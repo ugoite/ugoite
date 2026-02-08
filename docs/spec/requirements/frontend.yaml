@@ -589,7 +589,9 @@ requirements:
       vitest:
         - file: frontend/src/components/create-dialogs.test.tsx
           tests:
-            - "REQ-FE-037: requires form selection before creating a entry"
+            - "REQ-FE-037: requires form selection before creating an entry"
+            - "REQ-FE-037: blocks submission when required fields are empty"
+            - "REQ-FE-037: pre-fills defaults for required fields"
         - file: frontend/src/components/ListPanel.test.tsx
           tests:
             - "REQ-FE-037: disables new entry when no forms exist"

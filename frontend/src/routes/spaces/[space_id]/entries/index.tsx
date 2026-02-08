@@ -106,7 +106,7 @@ export default function SpaceEntriesIndexPane() {
 		requiredValues: Record<string, string>,
 	) => {
 		if (!formName) {
-			alert("Please select a form to create a entry.");
+			alert("Please select a form to create an entry.");
 			return;
 		}
 		const formDef = ctx.forms().find((s) => s.name === formName);
