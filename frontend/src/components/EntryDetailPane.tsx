@@ -90,7 +90,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
 	const [entry, { refetch: refetchEntry }] = createResource(
 		() => {
-			if (isServer) return null;
 			const wsId = props.spaceId();
 			const entryId = props.entryId();
 			return wsId && entryId ? { wsId, entryId } : null;
