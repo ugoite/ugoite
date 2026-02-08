@@ -8,6 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY ./pyproject.toml .
 COPY ./uv.lock .
 COPY ./README.md .
+COPY --from=core ./ ../ieapp-core/
 COPY --from=module ./ ../ieapp-cli/
 
 # Copy the rest of the backend code
