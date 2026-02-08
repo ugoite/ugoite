@@ -15,14 +15,12 @@ export default function SpaceDashboardRoute() {
 		<SpaceShell spaceId={spaceId()} activeTopTab="dashboard">
 			<div class="mx-auto max-w-4xl">
 				<Show when={space.loading}>
-					<p class="text-sm text-slate-500">Loading space...</p>
+					<p class="text-sm ui-muted">Loading space...</p>
 				</Show>
 				<Show when={space.error}>
 					<p class="text-sm text-red-600">Failed to load space.</p>
 				</Show>
-				<Show when={space()}>
-					{(ws) => <h1 class="text-4xl font-semibold text-slate-900">{ws().name}</h1>}
-				</Show>
+				<Show when={space()}>{(ws) => <h1 class="ui-page-title text-4xl">{ws().name}</h1>}</Show>
 			</div>
 		</SpaceShell>
 	);

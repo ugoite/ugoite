@@ -1,18 +1,597 @@
 @import "tailwindcss";
 
+@theme inline {
+	--color-slate-50: color-mix(in oklch, var(--ui-surface-1) 96%, var(--ui-foreground) 4%);
+	--color-slate-100: color-mix(in oklch, var(--ui-surface-1) 92%, var(--ui-foreground) 8%);
+	--color-slate-200: color-mix(in oklch, var(--ui-surface-1) 85%, var(--ui-foreground) 15%);
+	--color-slate-300: color-mix(in oklch, var(--ui-surface-1) 75%, var(--ui-foreground) 25%);
+	--color-slate-400: color-mix(in oklch, var(--ui-surface-1) 60%, var(--ui-foreground) 40%);
+	--color-slate-500: var(--ui-foreground-muted);
+	--color-slate-600: color-mix(in oklch, var(--ui-foreground) 65%, var(--ui-surface-1) 35%);
+	--color-slate-700: color-mix(in oklch, var(--ui-foreground) 78%, var(--ui-surface-1) 22%);
+	--color-slate-800: color-mix(in oklch, var(--ui-foreground) 88%, var(--ui-surface-1) 12%);
+	--color-slate-900: var(--ui-foreground);
+	--color-slate-950: color-mix(in oklch, var(--ui-foreground) 92%, black 8%);
+
+	--color-gray-50: var(--color-slate-50);
+	--color-gray-100: var(--color-slate-100);
+	--color-gray-200: var(--color-slate-200);
+	--color-gray-300: var(--color-slate-300);
+	--color-gray-400: var(--color-slate-400);
+	--color-gray-500: var(--color-slate-500);
+	--color-gray-600: var(--color-slate-600);
+	--color-gray-700: var(--color-slate-700);
+	--color-gray-800: var(--color-slate-800);
+	--color-gray-900: var(--color-slate-900);
+	--color-gray-950: var(--color-slate-950);
+
+	--color-blue-50: color-mix(in oklch, var(--ui-accent) 12%, var(--ui-surface-1) 88%);
+	--color-blue-100: color-mix(in oklch, var(--ui-accent) 22%, var(--ui-surface-1) 78%);
+	--color-blue-200: color-mix(in oklch, var(--ui-accent) 36%, var(--ui-surface-1) 64%);
+	--color-blue-300: color-mix(in oklch, var(--ui-accent) 48%, var(--ui-surface-1) 52%);
+	--color-blue-400: color-mix(in oklch, var(--ui-accent) 68%, var(--ui-surface-1) 32%);
+	--color-blue-500: var(--ui-accent);
+	--color-blue-600: var(--ui-accent-strong);
+	--color-blue-700: color-mix(in oklch, var(--ui-accent-strong) 85%, black 15%);
+	--color-blue-800: color-mix(in oklch, var(--ui-accent-strong) 75%, black 25%);
+	--color-blue-900: color-mix(in oklch, var(--ui-accent-strong) 65%, black 35%);
+	--color-blue-950: color-mix(in oklch, var(--ui-accent-strong) 55%, black 45%);
+
+	--color-sky-50: var(--color-blue-50);
+	--color-sky-100: var(--color-blue-100);
+	--color-sky-200: var(--color-blue-200);
+	--color-sky-300: var(--color-blue-300);
+	--color-sky-400: var(--color-blue-400);
+	--color-sky-500: var(--color-blue-500);
+	--color-sky-600: var(--color-blue-600);
+	--color-sky-700: var(--color-blue-700);
+	--color-sky-800: var(--color-blue-800);
+	--color-sky-900: var(--color-blue-900);
+	--color-sky-950: var(--color-blue-950);
+
+	--color-red-50: color-mix(in oklch, var(--ui-danger) 12%, var(--ui-surface-1) 88%);
+	--color-red-100: color-mix(in oklch, var(--ui-danger) 22%, var(--ui-surface-1) 78%);
+	--color-red-200: color-mix(in oklch, var(--ui-danger) 36%, var(--ui-surface-1) 64%);
+	--color-red-300: color-mix(in oklch, var(--ui-danger) 48%, var(--ui-surface-1) 52%);
+	--color-red-400: color-mix(in oklch, var(--ui-danger) 68%, var(--ui-surface-1) 32%);
+	--color-red-500: var(--ui-danger);
+	--color-red-600: color-mix(in oklch, var(--ui-danger) 85%, black 15%);
+	--color-red-700: color-mix(in oklch, var(--ui-danger) 72%, black 28%);
+	--color-red-800: color-mix(in oklch, var(--ui-danger) 60%, black 40%);
+	--color-red-900: color-mix(in oklch, var(--ui-danger) 52%, black 48%);
+	--color-red-950: color-mix(in oklch, var(--ui-danger) 42%, black 58%);
+
+	--color-green-50: color-mix(in oklch, var(--ui-success) 12%, var(--ui-surface-1) 88%);
+	--color-green-100: color-mix(in oklch, var(--ui-success) 22%, var(--ui-surface-1) 78%);
+	--color-green-200: color-mix(in oklch, var(--ui-success) 36%, var(--ui-surface-1) 64%);
+	--color-green-300: color-mix(in oklch, var(--ui-success) 48%, var(--ui-surface-1) 52%);
+	--color-green-400: color-mix(in oklch, var(--ui-success) 68%, var(--ui-surface-1) 32%);
+	--color-green-500: var(--ui-success);
+	--color-green-600: color-mix(in oklch, var(--ui-success) 85%, black 15%);
+	--color-green-700: color-mix(in oklch, var(--ui-success) 72%, black 28%);
+	--color-green-800: color-mix(in oklch, var(--ui-success) 60%, black 40%);
+	--color-green-900: color-mix(in oklch, var(--ui-success) 52%, black 48%);
+	--color-green-950: color-mix(in oklch, var(--ui-success) 42%, black 58%);
+
+	--radius-md: var(--ui-radius-md);
+	--radius-lg: var(--ui-radius-lg);
+	--radius-xl: var(--ui-radius-xl);
+	--shadow-sm: var(--ui-shadow-sm);
+	--shadow-md: var(--ui-shadow-md);
+	--shadow-lg: var(--ui-shadow-lg);
+	--shadow-xl: var(--ui-shadow-xl);
+}
+
 :root {
-	--background-rgb: 214, 219, 220;
-	--foreground-rgb: 0, 0, 0;
+	--ui-surface-1: oklch(0.98 0.01 240);
+	--ui-surface-2: oklch(0.96 0.02 240);
+	--ui-surface-3: oklch(0.92 0.03 240);
+	--ui-foreground: oklch(0.2 0.02 260);
+	--ui-foreground-muted: oklch(0.5 0.02 260);
+	--ui-border: oklch(0.88 0.02 240);
+	--ui-accent: oklch(0.6 0.17 256);
+	--ui-accent-strong: oklch(0.52 0.2 258);
+	--ui-accent-foreground: oklch(0.98 0 0);
+	--ui-danger: oklch(0.6 0.2 25);
+	--ui-success: oklch(0.62 0.18 145);
+	--ui-radius-md: 0.9rem;
+	--ui-radius-lg: 1.2rem;
+	--ui-radius-xl: 1.6rem;
+	--ui-radius-pill: 999px;
+	--ui-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
+	--ui-shadow-md: 0 6px 12px rgb(0 0 0 / 0.1);
+	--ui-shadow-lg: 0 14px 32px rgb(0 0 0 / 0.16);
+	--ui-shadow-xl: 0 24px 48px rgb(0 0 0 / 0.2);
+}
+
+:root[data-ui-theme="classic"] {
+	--ui-surface-1: oklch(0.97 0 0);
+	--ui-surface-2: oklch(0.94 0 0);
+	--ui-surface-3: oklch(0.9 0 0);
+	--ui-foreground: oklch(0.22 0 0);
+	--ui-foreground-muted: oklch(0.5 0 0);
+	--ui-border: oklch(0.86 0 0);
+	--ui-accent: oklch(0.58 0.12 240);
+	--ui-accent-strong: oklch(0.5 0.14 240);
+	--ui-accent-foreground: oklch(0.98 0 0);
+	--ui-danger: oklch(0.58 0.16 28);
+	--ui-success: oklch(0.6 0.14 150);
+	--ui-radius-md: 0.4rem;
+	--ui-radius-lg: 0.6rem;
+	--ui-radius-xl: 0.9rem;
+	--ui-shadow-sm: 0 1px 1px rgb(0 0 0 / 0.06);
+	--ui-shadow-md: 0 4px 8px rgb(0 0 0 / 0.1);
+	--ui-shadow-lg: 0 12px 20px rgb(0 0 0 / 0.12);
+	--ui-shadow-xl: 0 16px 28px rgb(0 0 0 / 0.18);
+}
+
+:root[data-ui-theme="pop"] {
+	--ui-surface-1: oklch(0.97 0.02 20);
+	--ui-surface-2: oklch(0.95 0.03 20);
+	--ui-surface-3: oklch(0.9 0.04 20);
+	--ui-foreground: oklch(0.22 0.05 10);
+	--ui-foreground-muted: oklch(0.5 0.04 10);
+	--ui-border: oklch(0.86 0.05 20);
+	--ui-accent: oklch(0.68 0.2 320);
+	--ui-accent-strong: oklch(0.6 0.23 320);
+	--ui-accent-foreground: oklch(0.98 0.01 20);
+	--ui-danger: oklch(0.62 0.23 30);
+	--ui-success: oklch(0.64 0.2 140);
+	--ui-radius-md: 1.1rem;
+	--ui-radius-lg: 1.6rem;
+	--ui-radius-xl: 2rem;
+	--ui-shadow-sm: 0 2px 4px rgb(0 0 0 / 0.08);
+	--ui-shadow-md: 0 10px 18px rgb(0 0 0 / 0.14);
+	--ui-shadow-lg: 0 20px 36px rgb(0 0 0 / 0.2);
+	--ui-shadow-xl: 0 30px 56px rgb(0 0 0 / 0.24);
+}
+
+:root[data-ui-theme="materialize"][data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.16 0.02 255);
+	--ui-surface-2: oklch(0.2 0.02 255);
+	--ui-surface-3: oklch(0.24 0.02 255);
+	--ui-foreground: oklch(0.92 0.01 255);
+	--ui-foreground-muted: oklch(0.72 0.01 255);
+	--ui-border: oklch(0.3 0.02 255);
+	--ui-accent: oklch(0.7 0.16 255);
+	--ui-accent-strong: oklch(0.76 0.18 255);
+	--ui-accent-foreground: oklch(0.12 0.02 255);
+	--ui-danger: oklch(0.68 0.2 25);
+	--ui-success: oklch(0.68 0.18 145);
+}
+
+:root[data-ui-theme="classic"][data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.18 0 0);
+	--ui-surface-2: oklch(0.22 0 0);
+	--ui-surface-3: oklch(0.26 0 0);
+	--ui-foreground: oklch(0.92 0 0);
+	--ui-foreground-muted: oklch(0.7 0 0);
+	--ui-border: oklch(0.32 0 0);
+	--ui-accent: oklch(0.7 0.1 240);
+	--ui-accent-strong: oklch(0.76 0.12 240);
+	--ui-accent-foreground: oklch(0.14 0 0);
+	--ui-danger: oklch(0.68 0.14 28);
+	--ui-success: oklch(0.68 0.12 150);
+}
+
+:root[data-ui-theme="pop"][data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.18 0.03 340);
+	--ui-surface-2: oklch(0.22 0.04 340);
+	--ui-surface-3: oklch(0.26 0.04 340);
+	--ui-foreground: oklch(0.92 0.02 20);
+	--ui-foreground-muted: oklch(0.72 0.02 20);
+	--ui-border: oklch(0.32 0.05 340);
+	--ui-accent: oklch(0.76 0.2 320);
+	--ui-accent-strong: oklch(0.82 0.22 320);
+	--ui-accent-foreground: oklch(0.16 0.04 340);
+	--ui-danger: oklch(0.7 0.22 30);
+	--ui-success: oklch(0.7 0.2 140);
+}
+
+:root[data-color-mode="light"] {
+	color-scheme: light;
+}
+
+:root[data-color-mode="dark"] {
+	color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-	:root {
-		--background-rgb: 0, 0, 0;
-		--foreground-rgb: 255, 255, 255;
+	:root:not([data-color-mode]) {
+		--ui-surface-1: oklch(0.16 0.02 255);
+		--ui-surface-2: oklch(0.2 0.02 255);
+		--ui-surface-3: oklch(0.24 0.02 255);
+		--ui-foreground: oklch(0.92 0.01 255);
+		--ui-foreground-muted: oklch(0.72 0.01 255);
+		--ui-border: oklch(0.3 0.02 255);
+		--ui-accent: oklch(0.7 0.16 255);
+		--ui-accent-strong: oklch(0.76 0.18 255);
+		--ui-accent-foreground: oklch(0.12 0.02 255);
+		--ui-danger: oklch(0.68 0.2 25);
+		--ui-success: oklch(0.68 0.18 145);
+		color-scheme: dark;
 	}
 }
 
 body {
-	background: rgb(var(--background-rgb));
-	color: rgb(var(--foreground-rgb));
+	min-height: 100vh;
+	background: var(--ui-surface-1);
+	color: var(--ui-foreground);
+	font-family: var(--font-sans);
+	letter-spacing: -0.01em;
+}
+
+code {
+	background: color-mix(in oklch, var(--ui-surface-3) 80%, transparent 20%);
+	border-radius: 0.35rem;
+	padding: 0.1rem 0.35rem;
+}
+
+a {
+	color: var(--ui-accent-strong);
+	text-decoration: none;
+}
+
+a:hover {
+	color: color-mix(in oklch, var(--ui-accent-strong) 82%, black 18%);
+}
+
+.ui-shell {
+	min-height: 100vh;
+	background: var(--ui-surface-1);
+	color: var(--ui-foreground);
+}
+
+.ui-loading-bar {
+	height: 4px;
+	width: 100%;
+	background: var(--ui-accent);
+	animation: ui-loading 1.2s ease-in-out infinite;
+}
+
+@keyframes ui-loading {
+	0% {
+		opacity: 0.5;
+		transform: translateX(-30%);
+	}
+	50% {
+		opacity: 1;
+		transform: translateX(0%);
+	}
+	100% {
+		opacity: 0.5;
+		transform: translateX(30%);
+	}
+}
+
+.ui-topbar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 50;
+	display: flex;
+	justify-content: center;
+	pointer-events: none;
+}
+
+.ui-topbar-inner {
+	pointer-events: auto;
+	width: min(64rem, 100%);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.75rem 1rem;
+}
+
+.ui-topbar-center {
+	flex: 1;
+	display: flex;
+	justify-content: center;
+}
+
+.ui-topbar-right {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.ui-floating {
+	background: color-mix(in oklch, var(--ui-surface-2) 85%, transparent 15%);
+	border: 1px solid var(--ui-border);
+	box-shadow: var(--ui-shadow-lg);
+	backdrop-filter: blur(14px);
+	border-radius: var(--ui-radius-pill);
+}
+
+.ui-tabs {
+	display: flex;
+	gap: 0.5rem;
+	padding: 0.35rem;
+}
+
+.ui-tab {
+	padding: 0.5rem 1rem;
+	font-size: 0.9rem;
+	font-weight: 600;
+	border-radius: var(--ui-radius-pill);
+	color: var(--ui-foreground-muted);
+	transition: all 0.2s ease;
+}
+
+.ui-tab:hover {
+	background: color-mix(in oklch, var(--ui-accent) 12%, transparent 88%);
+	color: var(--ui-foreground);
+}
+
+.ui-tab-active {
+	background: var(--ui-accent);
+	color: var(--ui-accent-foreground);
+	box-shadow: var(--ui-shadow-md);
+}
+
+.ui-tab-secondary {
+	color: var(--ui-foreground-muted);
+}
+
+.ui-tab-secondary.ui-tab-active {
+	background: var(--ui-foreground);
+	color: var(--ui-surface-1);
+}
+
+.ui-icon-button {
+	width: 2.6rem;
+	height: 2.6rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--ui-radius-pill);
+	background: color-mix(in oklch, var(--ui-surface-2) 85%, transparent 15%);
+	border: 1px solid var(--ui-border);
+	box-shadow: var(--ui-shadow-sm);
+	transition: all 0.2s ease;
+}
+
+.ui-icon-button:hover {
+	box-shadow: var(--ui-shadow-md);
+	transform: translateY(-1px);
+}
+
+.ui-menu {
+	position: relative;
+}
+
+.ui-menu-panel {
+	position: absolute;
+	top: 3.1rem;
+	right: 0;
+	min-width: 16rem;
+	background: var(--ui-surface-2);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--ui-radius-lg);
+	box-shadow: var(--ui-shadow-xl);
+	padding: 0.75rem;
+	display: grid;
+	gap: 0.75rem;
+	z-index: 60;
+}
+
+.ui-menu-section {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.ui-menu-title {
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ui-foreground-muted);
+}
+
+.ui-menu-options {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.ui-radio {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.9rem;
+	color: var(--ui-foreground);
+}
+
+.ui-radio input {
+	accent-color: var(--ui-accent);
+}
+
+.ui-menu-link {
+	display: block;
+	padding: 0.5rem 0.75rem;
+	border-radius: var(--ui-radius-md);
+	background: color-mix(in oklch, var(--ui-surface-3) 80%, transparent 20%);
+	color: var(--ui-foreground);
+	font-weight: 600;
+}
+
+.ui-menu-link:hover {
+	background: color-mix(in oklch, var(--ui-accent) 15%, var(--ui-surface-2) 85%);
+}
+
+.ui-content {
+	padding: 6rem 1.5rem 3rem;
+}
+
+.ui-content.ui-content-with-tabs {
+	padding-bottom: 6rem;
+}
+
+.ui-bottom-tabs {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 1.5rem;
+	z-index: 50;
+	display: flex;
+	justify-content: center;
+}
+
+.ui-nav {
+	background: var(--ui-surface-2);
+	border-bottom: 1px solid var(--ui-border);
+	box-shadow: var(--ui-shadow-sm);
+}
+
+.ui-nav-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+	align-items: center;
+	padding: 0.75rem 1rem;
+}
+
+.ui-nav-link {
+	padding: 0.25rem 0.5rem;
+	border-bottom: 2px solid transparent;
+	color: var(--ui-foreground-muted);
+	font-weight: 600;
+}
+
+.ui-nav-link-active {
+	border-color: var(--ui-accent);
+	color: var(--ui-foreground);
+}
+
+.ui-page-title {
+	font-size: 2rem;
+	font-weight: 700;
+}
+
+.ui-page-subtitle {
+	font-size: 0.9rem;
+	color: var(--ui-foreground-muted);
+}
+
+.ui-muted {
+	color: var(--ui-foreground-muted);
+}
+
+.ui-card {
+	background: var(--ui-surface-2);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--ui-radius-lg);
+	box-shadow: var(--ui-shadow-md);
+	padding: 1.5rem;
+}
+
+.ui-field {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.ui-label {
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: var(--ui-foreground-muted);
+}
+
+.ui-input {
+	width: 100%;
+	padding: 0.65rem 0.85rem;
+	border-radius: var(--ui-radius-md);
+	border: 1px solid var(--ui-border);
+	background: var(--ui-surface-1);
+	color: var(--ui-foreground);
+	transition:
+		box-shadow 0.2s ease,
+		border-color 0.2s ease;
+}
+
+.ui-input:focus {
+	outline: none;
+	border-color: var(--ui-accent);
+	box-shadow: 0 0 0 3px color-mix(in oklch, var(--ui-accent) 30%, transparent 70%);
+}
+
+.ui-button {
+	padding: 0.65rem 1.2rem;
+	border-radius: var(--ui-radius-md);
+	font-weight: 600;
+	transition: all 0.2s ease;
+}
+
+.ui-button-primary {
+	background: var(--ui-accent);
+	color: var(--ui-accent-foreground);
+	box-shadow: var(--ui-shadow-sm);
+}
+
+.ui-button-primary:hover {
+	background: var(--ui-accent-strong);
+	box-shadow: var(--ui-shadow-md);
+}
+
+.ui-button-secondary {
+	background: color-mix(in oklch, var(--ui-surface-3) 85%, transparent 15%);
+	color: var(--ui-foreground);
+}
+
+.ui-button-secondary:hover {
+	background: color-mix(in oklch, var(--ui-surface-3) 70%, transparent 30%);
+}
+
+.ui-button:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.ui-alert {
+	padding: 0.75rem 1rem;
+	border-radius: var(--ui-radius-md);
+	border: 1px solid var(--ui-border);
+	background: var(--ui-surface-2);
+}
+
+.ui-alert-success {
+	border-color: color-mix(in oklch, var(--ui-success) 60%, var(--ui-border) 40%);
+	color: var(--ui-success);
+}
+
+.ui-alert-error {
+	border-color: color-mix(in oklch, var(--ui-danger) 60%, var(--ui-border) 40%);
+	color: var(--ui-danger);
+}
+
+@media (max-width: 640px) {
+	.ui-topbar-inner {
+		padding: 0.5rem 0.75rem;
+	}
+
+	.ui-topbar-center {
+		justify-content: flex-start;
+	}
+
+	.ui-tabs {
+		gap: 0.25rem;
+		padding: 0.25rem;
+	}
+
+	.ui-tab {
+		padding: 0.4rem 0.75rem;
+		font-size: 0.8rem;
+	}
+
+	.ui-content {
+		padding: 5.2rem 1rem 3rem;
+	}
+
+	.ui-content.ui-content-with-tabs {
+		padding-bottom: 5.5rem;
+	}
+
+	.ui-menu-panel {
+		right: -0.5rem;
+		min-width: 14rem;
+	}
 }

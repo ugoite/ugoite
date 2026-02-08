@@ -2,8 +2,7 @@ import { useLocation } from "@solidjs/router";
 
 export default function Nav() {
 	const location = useLocation();
-	const active = (path: string) =>
-		path === location.pathname ? "border-sky-600" : "border-transparent hover:border-sky-600";
+	const active = (path: string) => path === location.pathname;
 
 	const isSpaceExplorer =
 		location.pathname.includes("/spaces/") && !location.pathname.endsWith("/spaces");
@@ -14,16 +13,30 @@ export default function Nav() {
 	}
 
 	return (
-		<nav class="bg-sky-800">
-			<ul class="container flex items-center p-3 text-gray-200">
-				<li form={`border-b-2 ${active("/")} mx-1.5 sm:mx-6`}>
-					<a href="/">Home</a>
+		<nav class="ui-nav">
+			<ul class="ui-nav-list">
+				<li>
+					<a href="/" class="ui-nav-link" classList={{ "ui-nav-link-active": active("/") }}>
+						Home
+					</a>
 				</li>
-				<li form={`border-b-2 ${active("/spaces")} mx-1.5 sm:mx-6`}>
-					<a href="/spaces">Spaces</a>
+				<li>
+					<a
+						href="/spaces"
+						class="ui-nav-link"
+						classList={{ "ui-nav-link-active": active("/spaces") }}
+					>
+						Spaces
+					</a>
 				</li>
-				<li form={`border-b-2 ${active("/about")} mx-1.5 sm:mx-6`}>
-					<a href="/about">About</a>
+				<li>
+					<a
+						href="/about"
+						class="ui-nav-link"
+						classList={{ "ui-nav-link-active": active("/about") }}
+					>
+						About
+					</a>
 				</li>
 			</ul>
 		</nav>

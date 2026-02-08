@@ -59,13 +59,13 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 	};
 
 	return (
-		<div class="space-settings max-w-2xl mx-auto p-6">
-			<h2 class="text-2xl font-bold mb-6">Space Settings</h2>
+		<div class="space-settings max-w-2xl mx-auto ui-card">
+			<h2 class="text-xl font-semibold mb-6">Space Settings</h2>
 
 			<form onSubmit={handleSave} class="space-y-6">
 				{/* Space Name */}
-				<div>
-					<label for="space-name" class="block text-sm font-medium text-gray-700 mb-2">
+				<div class="ui-field">
+					<label for="space-name" class="ui-label">
 						Space Name
 					</label>
 					<input
@@ -73,7 +73,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 						type="text"
 						value={name()}
 						onInput={(e) => setName(e.currentTarget.value)}
-						class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+						class="ui-input"
 						required
 					/>
 				</div>
@@ -83,8 +83,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 					<h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
 
 					<div class="space-y-4">
-						<div>
-							<label for="storage-uri" class="block text-sm font-medium text-gray-700 mb-2">
+						<div class="ui-field">
+							<label for="storage-uri" class="ui-label">
 								Storage URI
 							</label>
 							<input
@@ -93,12 +93,11 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 								value={storageUri()}
 								onInput={(e) => setStorageUri(e.currentTarget.value)}
 								placeholder="file:///local/path or s3://bucket/path"
-								class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+								class="ui-input"
 								required
 							/>
-							<p class="mt-1 text-sm text-gray-500">
-								Supported: <code class="bg-gray-100 px-1 rounded">file://</code> (local),{" "}
-								<code class="bg-gray-100 px-1 rounded">s3://</code> (S3 bucket)
+							<p class="text-sm ui-muted">
+								Supported: <code>file://</code> (local), <code>s3://</code> (S3 bucket)
 							</p>
 						</div>
 
@@ -108,7 +107,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 								type="button"
 								onClick={handleTestConnection}
 								disabled={isTesting() || !storageUri()}
-								class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								class="ui-button ui-button-secondary"
 							>
 								<Show when={isTesting()} fallback="Test Connection">
 									Testing...
@@ -119,10 +118,10 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 						{/* Test Status */}
 						<Show when={testStatus()}>
 							<div
-								class="p-3 rounded-lg"
+								class="ui-alert"
 								classList={{
-									"bg-green-50 border border-green-200 text-green-700": testStatus() === "success",
-									"bg-red-50 border border-red-200 text-red-700": testStatus() === "error",
+									"ui-alert-success": testStatus() === "success",
+									"ui-alert-error": testStatus() === "error",
 								}}
 							>
 								{testMessage()}
@@ -133,18 +132,12 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 
 				{/* Save Error */}
 				<Show when={saveError()}>
-					<div class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
-						{saveError()}
-					</div>
+					<div class="ui-alert ui-alert-error">{saveError()}</div>
 				</Show>
 
 				{/* Actions */}
 				<div class="flex gap-4 border-t pt-6">
-					<button
-						type="submit"
-						disabled={isSaving()}
-						class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-					>
+					<button type="submit" disabled={isSaving()} class="ui-button ui-button-primary">
 						<Show when={isSaving()} fallback="Save Settings">
 							Saving...
 						</Show>

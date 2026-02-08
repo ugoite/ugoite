@@ -27,12 +27,12 @@ export default function SpaceSettingsRoute() {
 	return (
 		<SpaceShell spaceId={spaceId()}>
 			<div class="mx-auto max-w-5xl">
-				<h1 class="text-2xl font-semibold text-slate-900">Space Settings</h1>
-				<p class="text-sm text-slate-500 mt-1">Space ID: {spaceId()}</p>
+				<h1 class="ui-page-title">Space Settings</h1>
+				<p class="ui-page-subtitle mt-1">Space ID: {spaceId()}</p>
 
 				<div class="mt-6">
 					<Show when={space.loading}>
-						<p class="text-sm text-slate-500">Loading space...</p>
+						<p class="text-sm ui-muted">Loading space...</p>
 					</Show>
 					<Show when={space.error}>
 						<p class="text-sm text-red-600">Failed to load space.</p>

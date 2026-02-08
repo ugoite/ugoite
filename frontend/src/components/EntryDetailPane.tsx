@@ -1,5 +1,6 @@
 import { createEffect, createResource, createSignal, onCleanup, Show, For } from "solid-js";
 import type { Accessor } from "solid-js";
+import { isServer } from "solid-js/web";
 import { AssetUploader } from "~/components/AssetUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { assetApi } from "~/lib/asset-api";
@@ -89,6 +90,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
 	const [entry, { refetch: refetchEntry }] = createResource(
 		() => {
+			if (isServer) return null;
 			const wsId = props.spaceId();
 			const entryId = props.entryId();
 			return wsId && entryId ? { wsId, entryId } : null;
@@ -111,6 +113,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
 	let assetsAbortController: AbortController | null = null;
 	createEffect(() => {
+		if (isServer) return;
 		const wsId = props.spaceId();
 		if (!wsId) return;
 		assetsAbortController?.abort();
