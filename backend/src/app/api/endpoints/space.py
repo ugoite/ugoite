@@ -10,7 +10,12 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.config import get_root_path
 from app.core.ids import validate_id
 from app.core.storage import space_uri, storage_config_from_root
-from app.models.payloads import SpaceConnectionRequest, SpaceCreate, SpacePatch
+from app.models.payloads import (
+    SampleSpaceCreate,
+    SpaceConnectionRequest,
+    SpaceCreate,
+    SpacePatch,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -178,6 +183,47 @@ async def create_space_endpoint(
         "name": payload.name,
         "path": _space_uri(space_id),
     }
+
+
+@router.post("/spaces/sample-data", status_code=status.HTTP_201_CREATED)
+async def create_sample_space_endpoint(
+    payload: SampleSpaceCreate,
+) -> dict[str, Any]:
+    """Create a new space populated with generated sample data."""
+    _validate_path_id(payload.space_id, "space_id")
+    storage_config = _storage_config()
+
+    try:
+        return await ieapp_core.create_sample_space(
+            storage_config,
+            payload.space_id,
+            payload.scenario,
+            payload.entry_count,
+            payload.seed,
+        )
+    except RuntimeError as e:
+        msg = str(e)
+        lowered = msg.lower()
+        if "already exists" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=msg,
+            ) from e
+        if "unknown sample data scenario" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=msg,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        ) from e
+    except Exception as e:
+        logger.exception("Failed to create sample space")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.get("/spaces/{space_id}")

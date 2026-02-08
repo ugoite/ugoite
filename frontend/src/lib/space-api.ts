@@ -1,4 +1,10 @@
-import type { TestConnectionPayload, Space, SpacePatchPayload } from "./types";
+import type {
+	SampleSpaceCreatePayload,
+	SampleSpaceSummary,
+	TestConnectionPayload,
+	Space,
+	SpacePatchPayload,
+} from "./types";
 import { apiFetch } from "./api";
 
 /**
@@ -26,6 +32,20 @@ export const spaceApi = {
 			throw new Error(error.detail || `Failed to create space: ${res.statusText}`);
 		}
 		return (await res.json()) as { id: string; name: string };
+	},
+
+	/** Create a sample-data space */
+	async createSampleSpace(payload: SampleSpaceCreatePayload): Promise<SampleSpaceSummary> {
+		const res = await apiFetch("/spaces/sample-data", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			const error = (await res.json()) as { detail?: string };
+			throw new Error(error.detail || `Failed to create sample space: ${res.statusText}`);
+		}
+		return (await res.json()) as SampleSpaceSummary;
 	},
 
 	/** Get space by ID */

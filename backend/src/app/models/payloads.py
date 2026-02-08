@@ -2,13 +2,22 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SpaceCreate(BaseModel):
     """Space creation payload."""
 
     name: str
+
+
+class SampleSpaceCreate(BaseModel):
+    """Sample data space creation payload."""
+
+    space_id: str
+    scenario: str = "renewable-ops"
+    entry_count: int = Field(default=5000, ge=1)
+    seed: int | None = None
 
 
 class EntryCreate(BaseModel):

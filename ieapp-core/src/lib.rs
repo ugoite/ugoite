@@ -16,6 +16,7 @@ pub mod index;
 pub mod integrity;
 pub mod link;
 pub mod metadata;
+pub mod sample_data;
 pub mod saved_sql;
 pub mod search;
 pub mod space;
@@ -101,6 +102,37 @@ fn create_space<'a>(
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(())
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, scenario=None, entry_count=None, seed=None))]
+fn create_sample_space<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    scenario: Option<String>,
+    entry_count: Option<usize>,
+    seed: Option<u64>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let options = sample_data::SampleDataOptions {
+            space_id,
+            scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
+            entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
+            seed,
+        };
+        let summary = sample_data::create_sample_space(&op, &uri, &options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(summary).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
     })
 }
 
@@ -921,6 +953,7 @@ fn get_sql_session_rows_all<'a>(
 fn _ieapp_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list_spaces, m)?)?;
     m.add_function(wrap_pyfunction!(create_space, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sample_space, m)?)?;
     m.add_function(wrap_pyfunction!(test_storage_connection_py, m)?)?;
 
     m.add_function(wrap_pyfunction!(create_entry, m)?)?;

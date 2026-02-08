@@ -19,6 +19,23 @@ export interface SpacePatchPayload {
 	settings?: Record<string, unknown>;
 }
 
+/** Sample space creation payload */
+export interface SampleSpaceCreatePayload {
+	space_id: string;
+	scenario: string;
+	entry_count?: number;
+	seed?: number;
+}
+
+/** Sample space creation response */
+export interface SampleSpaceSummary {
+	space_id: string;
+	scenario: string;
+	entry_count: number;
+	form_count: number;
+	forms: string[];
+}
+
 /** Test connection payload */
 export interface TestConnectionPayload {
 	storage_config: Record<string, unknown>;
