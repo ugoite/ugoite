@@ -20,7 +20,9 @@ export default function SpaceDashboardRoute() {
 				<Show when={space.error}>
 					<p class="text-sm ui-text-danger">Failed to load space.</p>
 				</Show>
-				<Show when={space()}>{(ws) => <h1 class="ui-page-title text-4xl">{ws().name}</h1>}</Show>
+				<Show when={space()}>
+					{(ws) => <h1 class="ui-page-title text-3xl sm:text-4xl">{ws().name}</h1>}
+				</Show>
 			</div>
 		</SpaceShell>
 	);

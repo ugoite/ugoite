@@ -3,9 +3,11 @@ import { A } from "@solidjs/router";
 export default function Home() {
 	return (
 		<main class="ui-page text-center mx-auto">
-			<h1 class="max-6-xs text-6xl font-thin uppercase my-16">IEapp</h1>
-			<p class="text-xl mb-8 ui-muted">Your AI-native, programmable knowledge base</p>
-			<div class="flex justify-center gap-4 flex-wrap">
+			<h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">IEapp</h1>
+			<p class="text-base sm:text-xl mb-6 sm:mb-8 ui-muted">
+				Your AI-native, programmable knowledge base
+			</p>
+			<div class="flex justify-center gap-3 sm:gap-4 flex-wrap">
 				<A href="/spaces" class="ui-button ui-button-primary">
 					Open Spaces
 				</A>
@@ -13,7 +15,7 @@ export default function Home() {
 					Learn More
 				</A>
 			</div>
-			<div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto text-left">
+			<div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
 				<div class="ui-card">
 					<h3 class="text-lg font-semibold mb-2">📝 Structured Freedom</h3>
 					<p class="ui-muted text-sm">
