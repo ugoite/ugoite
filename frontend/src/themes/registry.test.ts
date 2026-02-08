@@ -24,6 +24,14 @@ describe("Theme registry", () => {
 		}
 	});
 
+	it("REQ-FE-041: imports each theme stylesheet", () => {
+		const appCssPath = path.resolve(process.cwd(), "src/app.css");
+		const content = fs.readFileSync(appCssPath, "utf-8");
+		for (const theme of UI_THEMES) {
+			expect(content).toContain(`@import "./themes/${theme.id}.css";`);
+		}
+	});
+
 	it("REQ-FE-041: uses English-only theme labels", () => {
 		for (const theme of UI_THEMES) {
 			expect(hasJapanese(theme.label)).toBe(false);

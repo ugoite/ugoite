@@ -41,3 +41,15 @@ components:
       level: 1
       text: "{space_name}"
       emphasis: xl
+    - id: quick-actions
+      type: grid-list
+      item_type: action
+      items:
+        - id: create-entry
+          type: button
+          label: "New entry"
+          target_page: space-entries-object
+        - id: create-form
+          type: button
+          label: "New form"
+          target_page: space-form-grid

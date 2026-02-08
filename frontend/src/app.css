@@ -850,6 +850,10 @@ a:hover {
 }
 
 @media (max-width: 640px) {
+	.ui-page {
+		padding: calc(var(--ui-spacing-lg)) calc(var(--ui-content-padding-x) * 0.8);
+	}
+
 	.ui-topbar-inner {
 		padding: calc(var(--ui-topbar-padding-y) * 0.7) calc(var(--ui-topbar-padding-x) * 0.75);
 		flex-direction: column;
