@@ -218,10 +218,41 @@ requirements:
             - should flag missing select clause
             - should accept valid select queries
             - should include entries table in schema
-            - should include form fields in schema
         - file: frontend/src/components/SqlQueryEditor.test.tsx
           tests:
             - should render without runtime errors
+
+  - id: REQ-FE-041
+    title: Theme Registry Validation
+    description: |
+      The frontend MUST externalize theme definitions into per-theme files and
+      validate them at test time. Theme labels MUST be English-only.
+    related_spec:
+      - ui/README.md
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/themes/registry.test.ts
+          tests:
+            - defines a CSS file for each theme
+            - uses English-only theme labels
+            - maps neutral colors to theme tokens
+
+  - id: REQ-FE-042
+    title: Theme Coverage Enforcement
+    description: |
+      Theme-aware components MUST avoid raw Tailwind color utilities in favor
+      of shared UI tokens, ensuring consistent theming across the UI.
+    related_spec:
+      - ui/README.md
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/themes/usage.test.ts
+          tests:
+            - "REQ-FE-042: avoids raw color utilities in themed components"
 
   - id: REQ-FE-011
     title: Editor Content Sync on Entry Switch Only
