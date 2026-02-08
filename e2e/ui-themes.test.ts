@@ -68,12 +68,12 @@ test.describe("UI theme flows", () => {
 			await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
 			await page.getByRole("button", { name: entryTitle }).waitFor();
 			await page.getByRole("button", { name: entryTitle }).click();
-			await page.getByRole("heading", { name: entryTitle }).waitFor();
+			await page.getByRole("heading", { name: entryTitle, level: 2 }).waitFor();
 
 			await settingsButton.click();
 			await page.getByRole("radio", { name: "dark" }).click();
 			await page.getByRole("link", { name: "Space settings" }).click();
-			await page.getByRole("heading", { name: "Space Settings" }).waitFor();
+			await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
 
 			await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
 

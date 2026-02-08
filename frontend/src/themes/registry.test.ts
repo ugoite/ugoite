@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { UI_THEMES } from "./registry";
 import { REQUIRED_THEME_TOKENS } from "./tokens";
 
-const themeCssPath = (id: string) => fileURLToPath(new URL(`./${id}.css`, import.meta.url));
+const themeCssPath = (id: string) => path.resolve(process.cwd(), "src/themes", `${id}.css`);
 
 const hasJapanese = (value: string) => /[\u3040-\u30FF\u4E00-\u9FFF]/u.test(value);
 
@@ -31,7 +31,7 @@ describe("Theme registry", () => {
 	});
 
 	it("REQ-FE-041: maps neutral colors to theme tokens", () => {
-		const appCssPath = fileURLToPath(new URL("../app.css", import.meta.url));
+		const appCssPath = path.resolve(process.cwd(), "src/app.css");
 		const content = fs.readFileSync(appCssPath, "utf-8");
 		expect(content).toContain("--color-white: var(--ui-surface-1)");
 		expect(content).toContain("--color-black: var(--ui-foreground)");
