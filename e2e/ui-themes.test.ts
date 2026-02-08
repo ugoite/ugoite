@@ -3,6 +3,11 @@ import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client";
 
 const spaceId = "default";
 const themes = ["materialize", "classic", "pop"] as const;
+const themeTestTitles: Record<(typeof themes)[number], string> = {
+	materialize: "REQ-E2E-003: UI flows work in materialize theme",
+	classic: "REQ-E2E-003: UI flows work in classic theme",
+	pop: "REQ-E2E-003: UI flows work in pop theme",
+};
 
 test.describe("UI theme flows", () => {
 	test.beforeAll(async ({ request }) => {
@@ -11,7 +16,7 @@ test.describe("UI theme flows", () => {
 	});
 
 	for (const theme of themes) {
-		test(`REQ-E2E-003: UI flows work in ${theme} theme`, async ({ page, request }) => {
+		test(themeTestTitles[theme], async ({ page, request }) => {
 			const entryTitle = `E2E Theme Entry ${theme} ${Date.now()}`;
 			const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {

@@ -471,6 +471,11 @@ a:hover {
 	color: var(--ui-foreground);
 }
 
+.ui-canvas-grid {
+	background-image: radial-gradient(circle, var(--ui-border) 1px, transparent 1px);
+	background-size: 20px 20px;
+}
+
 .ui-table-wrapper {
 	border: var(--ui-border-width) solid var(--ui-border);
 	border-radius: var(--ui-radius-lg);

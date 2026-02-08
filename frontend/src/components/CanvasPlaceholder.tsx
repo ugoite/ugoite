@@ -59,13 +59,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 				style={{ "min-width": "1200px", "min-height": "800px" }}
 			>
 				{/* Grid Background */}
-				<div
-					class="absolute inset-0 pointer-events-none"
-					style={{
-						"background-image": "radial-gradient(circle, var(--ui-border) 1px, transparent 1px)",
-						"background-size": "20px 20px",
-					}}
-				/>
+				<div class="absolute inset-0 pointer-events-none ui-canvas-grid" />
 
 				{/* Entry Cards */}
 				<Show
