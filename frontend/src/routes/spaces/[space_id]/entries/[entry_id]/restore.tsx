@@ -32,29 +32,26 @@ export default function SpaceEntryRestoreRoute() {
 	};
 
 	return (
-		<main class="flex-1 overflow-auto p-6">
+		<main class="ui-page">
 			<div class="flex items-center justify-between mb-4">
 				<div>
-					<h1 class="text-xl font-semibold text-gray-900">Restore Entry</h1>
-					<p class="text-sm text-gray-500">Select a revision to restore.</p>
+					<h1 class="ui-page-title">Restore Entry</h1>
+					<p class="text-sm ui-muted">Select a revision to restore.</p>
 				</div>
-				<A
-					href={`/spaces/${spaceId()}/entries/${encodedEntryId()}`}
-					class="text-sm text-sky-700 hover:underline"
-				>
+				<A href={`/spaces/${spaceId()}/entries/${encodedEntryId()}`} class="text-sm ui-link">
 					Back to Entry
 				</A>
 			</div>
 
 			<Show when={history.loading}>
-				<p class="text-sm text-gray-500">Loading revisions...</p>
+				<p class="text-sm ui-muted">Loading revisions...</p>
 			</Show>
 			<Show when={history.error}>
-				<p class="text-sm text-red-600">Failed to load history.</p>
+				<p class="text-sm ui-text-danger">Failed to load history.</p>
 			</Show>
 			<Show when={history()}>
 				{(data) => (
-					<div class="space-y-4">
+					<div class="ui-stack-sm">
 						<ul class="space-y-2">
 							<For each={data().revisions}>
 								{(revision) => (
@@ -66,22 +63,22 @@ export default function SpaceEntryRestoreRoute() {
 											checked={selectedRevision() === revision.revision_id}
 											onChange={() => setSelectedRevision(revision.revision_id)}
 										/>
-										<span class="text-sm text-gray-800">{revision.revision_id}</span>
-										<span class="text-xs text-gray-500">{revision.created_at}</span>
+										<span class="text-sm">{revision.revision_id}</span>
+										<span class="text-xs ui-muted">{revision.created_at}</span>
 									</li>
 								)}
 							</For>
 						</ul>
 						<button
 							type="button"
-							class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+							class="ui-button ui-button-primary"
 							onClick={handleRestore}
 							disabled={!selectedRevision() || isRestoring()}
 						>
 							{isRestoring() ? "Restoring..." : "Restore Selected Revision"}
 						</button>
 						<Show when={restoreError()}>
-							<p class="text-sm text-red-600">{restoreError()}</p>
+							<p class="text-sm ui-text-danger">{restoreError()}</p>
 						</Show>
 					</div>
 				)}

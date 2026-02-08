@@ -1,0 +1,82 @@
+:root,
+:root:not([data-ui-theme]),
+:root[data-ui-theme="materialize"] {
+	--ui-font-sans: var(--font-sans);
+	--ui-font-mono: var(--font-mono);
+	--ui-surface-1: oklch(0.99 0.015 250);
+	--ui-surface-2: oklch(0.96 0.025 255);
+	--ui-surface-3: oklch(0.92 0.035 262);
+	--ui-foreground: oklch(0.2 0.03 260);
+	--ui-foreground-muted: oklch(0.48 0.03 260);
+	--ui-border: oklch(0.86 0.04 262);
+	--ui-accent: oklch(0.64 0.22 285);
+	--ui-accent-strong: oklch(0.58 0.25 290);
+	--ui-accent-foreground: oklch(0.98 0 0);
+	--ui-danger: oklch(0.63 0.22 28);
+	--ui-success: oklch(0.64 0.2 150);
+	--ui-warning: oklch(0.76 0.16 82);
+	--ui-border-width: 1px;
+	--ui-radius-sm: 0.7rem;
+	--ui-radius-md: 1.2rem;
+	--ui-radius-lg: 1.8rem;
+	--ui-radius-xl: 2.6rem;
+	--ui-radius-pill: 999px;
+	--ui-spacing-xs: 0.55rem;
+	--ui-spacing-sm: 0.9rem;
+	--ui-spacing-md: 1.2rem;
+	--ui-spacing-lg: 1.8rem;
+	--ui-spacing-xl: 2.4rem;
+	--ui-control-padding-x: 1.05rem;
+	--ui-control-padding-y: 0.75rem;
+	--ui-button-padding-x: 1.45rem;
+	--ui-button-padding-y: 0.8rem;
+	--ui-card-padding: 1.75rem;
+	--ui-tab-padding-x: 1.1rem;
+	--ui-tab-padding-y: 0.65rem;
+	--ui-tab-font-size: 0.94rem;
+	--ui-icon-size: 3rem;
+	--ui-topbar-padding-x: 1.2rem;
+	--ui-topbar-padding-y: 0.9rem;
+	--ui-content-padding-top: 6.4rem;
+	--ui-content-padding-x: 1.7rem;
+	--ui-content-padding-bottom: 3.4rem;
+	--ui-content-padding-bottom-tabs: 6.4rem;
+	--ui-menu-panel-padding: 0.9rem;
+	--ui-shadow-sm: 0 2px 6px rgb(24 32 52 / 0.12);
+	--ui-shadow-md: 0 8px 20px rgb(24 32 52 / 0.18);
+	--ui-shadow-lg: 0 16px 36px rgb(24 32 52 / 0.22);
+	--ui-shadow-xl: 0 28px 52px rgb(24 32 52 / 0.26);
+}
+
+:root[data-ui-theme="materialize"][data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.16 0.03 262);
+	--ui-surface-2: oklch(0.2 0.035 265);
+	--ui-surface-3: oklch(0.24 0.04 268);
+	--ui-foreground: oklch(0.92 0.02 262);
+	--ui-foreground-muted: oklch(0.72 0.03 262);
+	--ui-border: oklch(0.32 0.04 265);
+	--ui-accent: oklch(0.76 0.22 285);
+	--ui-accent-strong: oklch(0.82 0.24 290);
+	--ui-accent-foreground: oklch(0.12 0.02 262);
+	--ui-danger: oklch(0.72 0.22 28);
+	--ui-success: oklch(0.72 0.2 150);
+	--ui-warning: oklch(0.8 0.16 84);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-color-mode]) {
+		--ui-surface-1: oklch(0.16 0.03 262);
+		--ui-surface-2: oklch(0.2 0.035 265);
+		--ui-surface-3: oklch(0.24 0.04 268);
+		--ui-foreground: oklch(0.92 0.02 262);
+		--ui-foreground-muted: oklch(0.72 0.03 262);
+		--ui-border: oklch(0.32 0.04 265);
+		--ui-accent: oklch(0.76 0.22 285);
+		--ui-accent-strong: oklch(0.82 0.24 290);
+		--ui-accent-foreground: oklch(0.12 0.02 262);
+		--ui-danger: oklch(0.72 0.22 28);
+		--ui-success: oklch(0.72 0.2 150);
+		--ui-warning: oklch(0.8 0.16 84);
+		color-scheme: dark;
+	}
+}

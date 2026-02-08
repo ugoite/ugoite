@@ -12,12 +12,31 @@ import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
 import { RESERVED_METADATA_CLASSES, isReservedMetadataForm } from "~/lib/metadata-forms";
 
+const numericFieldTypes = new Set(["integer", "long", "number", "double", "float"]);
+
+const isLongTextField = (name: string, def: Form["fields"][string]) =>
+	def.type === "markdown" || name.toLowerCase() === "sql";
+
+const isTextareaField = (name: string, def: Form["fields"][string]) =>
+	isLongTextField(name, def) || def.type === "object_list";
+
+const resolveInputType = (def: Form["fields"][string]) => {
+	if (numericFieldTypes.has(def.type)) return "number";
+	if (def.type === "date") return "date";
+	if (def.type === "time") return "time";
+	if (def.type.startsWith("timestamp")) return "datetime-local";
+	return "text";
+};
+
+const resolveTextareaPlaceholder = (def: Form["fields"][string]) =>
+	def.type === "object_list" ? "[]" : "Enter value";
+
 export interface CreateEntryDialogProps {
 	open: boolean;
 	forms: Form[];
 	defaultForm?: string;
 	onClose: () => void;
-	onSubmit: (title: string, formName: string) => void;
+	onSubmit: (title: string, formName: string, requiredValues: Record<string, string>) => void;
 }
 
 /**
@@ -27,12 +46,46 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [title, setTitle] = createSignal("");
 	const [selectedForm, setSelectedForm] = createSignal("");
 	const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
+	const [requiredValues, setRequiredValues] = createSignal<Record<string, string>>({});
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 
 	const selectedFormDef = createMemo(() =>
 		props.forms.find((entryForm) => entryForm.name === selectedForm()),
 	);
+
+	const requiredFields = createMemo(() => {
+		const form = selectedFormDef();
+		if (!form) return [] as Array<[string, Form["fields"][string]]>;
+		return Object.entries(form.fields || {}).filter(([, def]) => def.required);
+	});
+
+	const buildDefaultValue = (name: string, field: Form["fields"][string]) => {
+		if (name.toLowerCase() === "sql") return "SELECT * FROM entries LIMIT 50";
+		switch (field.type) {
+			case "integer":
+			case "long":
+			case "number":
+			case "double":
+			case "float":
+				return "0";
+			case "date": {
+				return new Date().toISOString().slice(0, 10);
+			}
+			case "time": {
+				return new Date().toTimeString().slice(0, 5);
+			}
+			case "timestamp":
+			case "timestamp_tz":
+			case "timestamp_ns":
+			case "timestamp_tz_ns":
+				return new Date().toISOString();
+			case "object_list":
+				return "[]";
+			default:
+				return "";
+		}
+	};
 
 	// Handle escape key and click outside
 	const handleKeyDown = (e: KeyboardEvent) => {
@@ -76,6 +129,21 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setTimeout(() => inputRef?.focus(), 50);
 	});
 
+	createEffect(() => {
+		if (!props.open) return;
+		const form = selectedFormDef();
+		if (!form) {
+			setRequiredValues({});
+			return;
+		}
+		const defaults: Record<string, string> = {};
+		for (const [name, def] of Object.entries(form.fields || {})) {
+			if (!def.required) continue;
+			defaults[name] = buildDefaultValue(name, def);
+		}
+		setRequiredValues(defaults);
+	});
+
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
 		const entryTitle = title().trim();
@@ -84,7 +152,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setErrorMessage("Please provide a title and select a form.");
 			return;
 		}
-		props.onSubmit(entryTitle, formName);
+		const missing = requiredFields()
+			.map(([name]) => name)
+			.filter((name) => !(requiredValues()[name] || "").trim());
+		if (missing.length > 0) {
+			setErrorMessage(`Please fill required fields: ${missing.join(", ")}.`);
+			return;
+		}
+		props.onSubmit(entryTitle, formName, requiredValues());
 		setTitle("");
 		setSelectedForm("");
 	};
@@ -94,23 +169,23 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 w-full h-full"
+				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();
 				}}
 			>
 				<div
-					class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4"
+					class="ui-dialog w-full max-w-md mx-4"
 					role="document"
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Entry</h2>
+					<h2 class="text-lg font-semibold mb-4">Create New Entry</h2>
 
-					<form onSubmit={handleSubmit} class="space-y-4">
-						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1" for="entry-title">
+					<form onSubmit={handleSubmit} class="ui-stack-sm">
+						<div class="ui-field">
+							<label class="ui-label" for="entry-title">
 								Title
 							</label>
 							<input
@@ -120,7 +195,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								value={title()}
 								onInput={(e) => setTitle(e.currentTarget.value)}
 								placeholder="Enter entry title..."
-								class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+								class="ui-input"
 								autofocus
 							/>
 						</div>
@@ -128,18 +203,18 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 						<Show
 							when={props.forms.length > 0}
 							fallback={
-								<div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+								<div class="ui-card ui-card-dashed text-sm ui-muted">
 									Create a form first to start writing entries.
 								</div>
 							}
 						>
-							<div>
-								<label class="block text-sm font-medium text-gray-700 mb-1" for="entry-form">
-									Form <span class="text-red-500">*</span>
+							<div class="ui-field">
+								<label class="ui-label" for="entry-form">
+									Form <span class="ui-text-danger">*</span>
 								</label>
 								<select
 									id="entry-form"
-									class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900"
+									class="ui-input"
 									value={selectedForm()}
 									onChange={(e) => {
 										setSelectedForm(e.currentTarget.value);
@@ -153,22 +228,20 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								</select>
 								<Show when={selectedFormDef()}>
 									{(entryForm) => (
-										<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-											<p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-												Fields
-											</p>
+										<div class="ui-card mt-3">
+											<p class="text-xs font-semibold ui-muted uppercase tracking-wide">Fields</p>
 											<div class="mt-2 flex flex-wrap gap-2">
 												<Show
 													when={Object.keys(entryForm().fields || {}).length > 0}
-													fallback={<span class="text-xs text-gray-500">No fields defined.</span>}
+													fallback={<span class="text-xs ui-muted">No fields defined.</span>}
 												>
 													<For each={Object.entries(entryForm().fields)}>
 														{([name, def]) => (
-															<span class="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-xs text-gray-700 border border-gray-200">
+															<span class="ui-pill gap-1">
 																<span class="font-medium">{name}</span>
-																<span class="text-gray-400">({def.type})</span>
+																<span class="ui-muted">({def.type})</span>
 																<Show when={def.required}>
-																	<span class="text-red-500">*</span>
+																	<span class="ui-text-danger">*</span>
 																</Show>
 															</span>
 														)}
@@ -181,24 +254,70 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</div>
 						</Show>
 
-						<Show when={errorMessage()}>
-							<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-								{errorMessage()}
+						<Show when={requiredFields().length > 0}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">Required fields</p>
+								<div class="ui-stack-sm mt-3">
+									<For each={requiredFields()}>
+										{([name, def]) => {
+											const useTextarea = isTextareaField(name, def);
+											const inputType = resolveInputType(def);
+											const value = requiredValues()[name] ?? "";
+											const handleValue = (nextValue: string) =>
+												setRequiredValues((prev) => ({
+													...prev,
+													[name]: nextValue,
+												}));
+											return (
+												<div class="ui-field">
+													<label class="ui-label" for={`required-${name}`}>
+														{name}
+														<span class="ui-muted ml-2 text-xs">({def.type})</span>
+													</label>
+													<Show
+														when={!useTextarea}
+														fallback={
+															<textarea
+																id={`required-${name}`}
+																class="ui-input ui-textarea"
+																placeholder={resolveTextareaPlaceholder(def)}
+																value={value}
+																onInput={(e) => handleValue(e.currentTarget.value)}
+															/>
+														}
+													>
+														<input
+															id={`required-${name}`}
+															type={inputType}
+															class="ui-input"
+															value={value}
+															onInput={(e) => handleValue(e.currentTarget.value)}
+														/>
+													</Show>
+												</div>
+											);
+										}}
+									</For>
+								</div>
 							</div>
+						</Show>
+
+						<Show when={errorMessage()}>
+							<div class="ui-alert ui-alert-error text-sm">{errorMessage()}</div>
 						</Show>
 
 						<div class="flex justify-end gap-3 pt-2">
 							<button
 								type="button"
 								onClick={props.onClose}
-								class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+								class="ui-button ui-button-secondary text-sm"
 							>
 								Cancel
 							</button>
 							<button
 								type="submit"
 								disabled={!title().trim() || !selectedForm().trim() || props.forms.length === 0}
-								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								class="ui-button ui-button-primary text-sm"
 							>
 								Create
 							</button>
@@ -331,23 +450,23 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 w-full h-full"
+				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();
 				}}
 			>
 				<div
-					class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+					class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
 					role="document"
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">Create New Form</h2>
+					<h2 class="text-lg font-semibold mb-4">Create New Form</h2>
 
-					<form onSubmit={handleSubmit} class="space-y-4 flex-1 overflow-auto">
-						<div>
-							<label class="block text-sm font-medium text-gray-700 mb-1" for="form-name">
+					<form onSubmit={handleSubmit} class="ui-stack-sm flex-1 overflow-auto">
+						<div class="ui-field">
+							<label class="ui-label" for="form-name">
 								Name
 							</label>
 							<input
@@ -357,23 +476,22 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								value={name()}
 								onInput={(e) => setName(e.currentTarget.value)}
 								placeholder="e.g. Meeting, Task"
-								class={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-									nameIssue() ? "border-red-300 bg-red-50" : "border-gray-300"
-								}`}
+								class="ui-input"
+								classList={{ "ui-input-error": Boolean(nameIssue()) }}
 								autofocus
 							/>
 							<Show when={nameIssue()}>
-								<span class="text-xs text-red-600">{nameIssue()}</span>
+								<span class="text-xs ui-text-danger">{nameIssue()}</span>
 							</Show>
 						</div>
 
-						<div class="space-y-2">
+						<div class="ui-stack-sm">
 							<div class="flex justify-between items-center">
-								<span class="block text-sm font-medium text-gray-700">Columns</span>
+								<span class="text-sm font-semibold">Columns</span>
 								<button
 									type="button"
 									onClick={addField}
-									class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+									class="ui-button ui-button-secondary ui-button-sm text-xs"
 								>
 									+ Add Column
 								</button>
@@ -388,15 +506,14 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 												placeholder="Column Name"
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
-												class={`flex-1 px-2 py-1 text-sm border rounded ${
-													fieldIssues().has(i) ? "border-red-300 bg-red-50" : "border-gray-300"
-												}`}
+												class="ui-input ui-input-sm flex-1"
+												classList={{ "ui-input-error": fieldIssues().has(i) }}
 												aria-invalid={fieldIssues().has(i) || undefined}
 											/>
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+												class="ui-input ui-input-sm"
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
@@ -405,23 +522,22 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 											<button
 												type="button"
 												onClick={() => removeField(i)}
-												class="text-red-500 hover:text-red-700 px-2"
+												class="ui-button ui-button-secondary ui-button-sm"
+												aria-label="Remove column"
 											>
 												×
 											</button>
 										</div>
 										<Show when={fieldIssues().has(i)}>
-											<span class="text-xs text-red-600">{fieldIssues().get(i)}</span>
+											<span class="text-xs ui-text-danger">{fieldIssues().get(i)}</span>
 										</Show>
 									</div>
 								)}
 							</Index>
 							<Show when={fields().length === 0}>
-								<div class="text-sm text-gray-500 italic p-2 bg-gray-50 rounded text-center">
-									No columns defined
-								</div>
+								<div class="ui-card text-sm ui-muted italic text-center">No columns defined</div>
 							</Show>
-							<div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 space-y-1">
+							<div class="ui-alert ui-alert-warning text-xs space-y-1">
 								<p>
 									Reserved metadata columns are system-owned and cannot be used:{" "}
 									{RESERVED_METADATA_COLUMNS.join(", ")}
@@ -437,18 +553,18 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 							</div>
 						</div>
 
-						<div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+						<div class="flex justify-end gap-3 pt-4">
 							<button
 								type="button"
 								onClick={props.onClose}
-								class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+								class="ui-button ui-button-secondary text-sm"
 							>
 								Cancel
 							</button>
 							<button
 								type="submit"
 								disabled={!name().trim() || hasFieldIssues() || Boolean(nameIssue())}
-								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								class="ui-button ui-button-primary text-sm"
 							>
 								Create Form
 							</button>
@@ -607,36 +723,34 @@ export function EditFormDialog(props: EditFormDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 w-full h-full"
+				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();
 				}}
 			>
 				<div
-					class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+					class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
 					role="document"
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold text-gray-900 mb-4">
-						Edit Form: {props.entryForm?.name}
-					</h2>
-					<div class="mb-4 text-sm text-gray-600 bg-yellow-50 p-2 rounded border border-yellow-200">
+					<h2 class="text-lg font-semibold mb-4">Edit Form: {props.entryForm?.name}</h2>
+					<div class="ui-alert ui-alert-warning text-sm">
 						<p>
 							<strong>Warning:</strong> Removing or renaming columns will delete associated data in
 							existing entries.
 						</p>
 					</div>
 
-					<form onSubmit={handleSubmit} class="space-y-4 flex-1 overflow-auto">
-						<div class="space-y-2">
+					<form onSubmit={handleSubmit} class="ui-stack-sm flex-1 overflow-auto">
+						<div class="ui-stack-sm">
 							<div class="flex justify-between items-center">
-								<span class="block text-sm font-medium text-gray-700">Columns</span>
+								<span class="text-sm font-semibold">Columns</span>
 								<button
 									type="button"
 									onClick={addField}
-									class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+									class="ui-button ui-button-secondary ui-button-sm text-xs"
 								>
 									+ Add Column
 								</button>
@@ -652,18 +766,15 @@ export function EditFormDialog(props: EditFormDialogProps) {
 												disabled={!field().isNew && !!props.entryForm.fields[field().name]}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
-												class={`flex-1 px-2 py-1 text-sm border rounded disabled:bg-gray-100 disabled:text-gray-500 ${
-													fieldIssues().has(i) && field().isNew
-														? "border-red-300 bg-red-50"
-														: "border-gray-300"
-												}`}
+												class="ui-input ui-input-sm flex-1"
+												classList={{ "ui-input-error": fieldIssues().has(i) && field().isNew }}
 												aria-invalid={fieldIssues().has(i) || undefined}
 												title={!field().isNew ? "Delete and add a new column to rename" : ""}
 											/>
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+												class="ui-input ui-input-sm"
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
@@ -672,23 +783,24 @@ export function EditFormDialog(props: EditFormDialogProps) {
 											<button
 												type="button"
 												onClick={() => removeField(i)}
-												class="text-red-500 hover:text-red-700 px-2"
+												class="ui-button ui-button-secondary ui-button-sm"
+												aria-label="Remove column"
 											>
 												×
 											</button>
 										</div>
 										<Show when={fieldIssues().has(i) && field().isNew}>
-											<span class="text-xs text-red-600">{fieldIssues().get(i)}</span>
+											<span class="text-xs ui-text-danger">{fieldIssues().get(i)}</span>
 										</Show>
 										<Show when={!props.entryForm.fields[field().name] || field().isNew}>
 											<div class="ml-1 flex items-center gap-2">
-												<span class="text-xs text-gray-500">Default Value:</span>
+												<span class="text-xs ui-muted">Default Value:</span>
 												<input
 													type="text"
 													placeholder="(Optional) e.g. Pending"
 													value={field().defaultValue || ""}
 													onInput={(e) => updateField(i, "defaultValue", e.currentTarget.value)}
-													class="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
+													class="ui-input ui-input-sm flex-1"
 												/>
 											</div>
 										</Show>
@@ -696,11 +808,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
 								)}
 							</Index>
 							<Show when={fields().length === 0}>
-								<div class="text-sm text-gray-500 italic p-2 bg-gray-50 rounded text-center">
-									No columns defined
-								</div>
+								<div class="ui-card text-sm ui-muted italic text-center">No columns defined</div>
 							</Show>
-							<div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 space-y-1">
+							<div class="ui-alert ui-alert-warning text-xs space-y-1">
 								<p>
 									Reserved metadata columns are system-owned and cannot be used:{" "}
 									{RESERVED_METADATA_COLUMNS.join(", ")}
@@ -718,18 +828,18 @@ export function EditFormDialog(props: EditFormDialogProps) {
 							</div>
 						</div>
 
-						<div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+						<div class="flex justify-end gap-3 pt-4">
 							<button
 								type="button"
 								onClick={props.onClose}
-								class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+								class="ui-button ui-button-secondary text-sm"
 							>
 								Cancel
 							</button>
 							<button
 								type="submit"
 								disabled={hasFieldIssues() || Boolean(nameIssue())}
-								class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								class="ui-button ui-button-primary text-sm"
 							>
 								Save Changes
 							</button>

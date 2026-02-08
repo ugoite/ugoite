@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
-import { ensureFormFrontmatter, replaceFirstH1 } from "~/lib/markdown";
+import { ensureFormFrontmatter, replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { EntryRecord } from "~/lib/types";
@@ -100,7 +100,11 @@ export default function SpaceEntriesIndexPane() {
 		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(entryId)}`);
 	};
 
-	const handleCreateEntry = async (title: string, formName: string) => {
+	const handleCreateEntry = async (
+		title: string,
+		formName: string,
+		requiredValues: Record<string, string>,
+	) => {
 		if (!formName) {
 			alert("Please select a form to create a entry.");
 			return;
@@ -110,7 +114,11 @@ export default function SpaceEntriesIndexPane() {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
 		}
-		const initialContent = ensureFormFrontmatter(replaceFirstH1(formDef.template, title), formName);
+		let initialContent = ensureFormFrontmatter(replaceFirstH1(formDef.template, title), formName);
+		for (const [name, value] of Object.entries(requiredValues)) {
+			if (!value.trim()) continue;
+			initialContent = updateH2Section(initialContent, name, value.trim());
+		}
 
 		try {
 			const result = await ctx.entryStore.createEntry(initialContent);
@@ -131,18 +139,16 @@ export default function SpaceEntriesIndexPane() {
 			<div class="mx-auto max-w-6xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
-						<h1 class="text-2xl font-semibold text-slate-900">
-							{sessionId().trim() ? "Query Results" : "Entries"}
-						</h1>
+						<h1 class="ui-page-title">{sessionId().trim() ? "Query Results" : "Entries"}</h1>
 						<Show when={sessionId().trim()}>
-							<p class="text-sm text-slate-500">Showing results for this query session.</p>
+							<p class="text-sm ui-muted">Showing results for this query session.</p>
 						</Show>
 					</div>
 					<div class="flex items-center gap-2">
 						<Show when={sessionId().trim()}>
 							<button
 								type="button"
-								class="px-3 py-1.5 text-sm rounded border border-slate-300 bg-white hover:bg-slate-50"
+								class="ui-button ui-button-secondary text-sm"
 								onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
 							>
 								Clear query
@@ -150,7 +156,7 @@ export default function SpaceEntriesIndexPane() {
 						</Show>
 						<button
 							type="button"
-							class="px-3 py-1.5 text-sm rounded bg-slate-900 text-white hover:bg-slate-800"
+							class="ui-button ui-button-primary text-sm"
 							onClick={() => setShowCreateEntryDialog(true)}
 						>
 							New entry
@@ -160,11 +166,11 @@ export default function SpaceEntriesIndexPane() {
 
 				<div class="mt-6">
 					<Show when={sessionId().trim() && session()?.status === "running"}>
-						<p class="text-sm text-slate-500">
+						<p class="text-sm ui-muted">
 							Running query...
 							<Show when={session()?.progress}>
 								{(progress) => (
-									<span class="ml-2 text-xs text-slate-400">
+									<span class="ml-2 text-xs ui-muted">
 										{progress().processed} / {progress().total ?? "?"}
 									</span>
 								)}
@@ -172,36 +178,32 @@ export default function SpaceEntriesIndexPane() {
 						</p>
 					</Show>
 					<Show when={session()?.status === "failed"}>
-						<p class="text-sm text-red-600">{session()?.error || "Query failed."}</p>
+						<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
 					</Show>
 					<Show when={isLoading()}>
-						<p class="text-sm text-slate-500">Loading entries...</p>
+						<p class="text-sm ui-muted">Loading entries...</p>
 					</Show>
 					<Show when={errorMessage()}>
-						<p class="text-sm text-red-600">{errorMessage()}</p>
+						<p class="text-sm ui-text-danger">{errorMessage()}</p>
 					</Show>
 					<Show when={!isLoading() && displayEntries().length === 0 && !errorMessage()}>
-						<p class="text-sm text-slate-500">No entries found.</p>
+						<p class="text-sm ui-muted">No entries found.</p>
 					</Show>
 					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						<For each={displayEntries()}>
 							{(entry) => (
 								<button
 									type="button"
-									class="text-left rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition"
+									class="ui-card ui-card-interactive text-left"
 									onClick={() => handleSelectEntry(entry.id)}
 								>
 									<div class="flex items-start justify-between gap-2">
-										<h2 class="text-base font-semibold text-slate-900">
-											{entry.title || "Untitled"}
-										</h2>
+										<h2 class="text-base font-semibold">{entry.title || "Untitled"}</h2>
 										<Show when={entry.form}>
-											<span class="text-xs rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
-												{entry.form}
-											</span>
+											<span class="ui-pill">{entry.form}</span>
 										</Show>
 									</div>
-									<p class="mt-2 text-xs text-slate-500">
+									<p class="mt-2 text-xs ui-muted">
 										Updated {new Date(entry.updated_at).toLocaleDateString()}
 									</p>
 								</button>
@@ -209,14 +211,14 @@ export default function SpaceEntriesIndexPane() {
 						</For>
 					</div>
 					<Show when={sessionId().trim() && totalCount() > 0}>
-						<div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+						<div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
 							<div>
 								Page {page()} of {totalPages()} · {totalCount()} results
 							</div>
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
-									class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+									class="ui-button ui-button-secondary text-sm"
 									disabled={page() <= 1}
 									onClick={() => setPage((prev) => Math.max(1, prev - 1))}
 								>
@@ -224,7 +226,7 @@ export default function SpaceEntriesIndexPane() {
 								</button>
 								<button
 									type="button"
-									class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+									class="ui-button ui-button-secondary text-sm"
 									disabled={page() >= totalPages()}
 									onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
 								>

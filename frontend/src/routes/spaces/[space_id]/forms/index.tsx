@@ -124,10 +124,8 @@ export default function SpaceFormsIndexPane() {
 			<div class="mx-auto max-w-6xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
-						<h1 class="text-2xl font-semibold text-slate-900">
-							{sessionId().trim() ? "Query Results" : "Form Grid"}
-						</h1>
-						<p class="text-sm text-slate-500">
+						<h1 class="ui-page-title">{sessionId().trim() ? "Query Results" : "Form Grid"}</h1>
+						<p class="text-sm ui-muted">
 							{sessionId().trim()
 								? "Viewing query results in a grid."
 								: "Browse form records in a grid."}
@@ -136,7 +134,7 @@ export default function SpaceFormsIndexPane() {
 					<div class="flex items-center gap-2">
 						<Show when={!sessionId().trim()}>
 							<select
-								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
+								class="ui-input"
 								ref={formSelectEl}
 								value={selectedFormValue()}
 								onInput={(e) => handleFormSelection(e.currentTarget.value)}
@@ -151,7 +149,7 @@ export default function SpaceFormsIndexPane() {
 							</select>
 							<button
 								type="button"
-								class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+								class="ui-button ui-button-primary text-sm"
 								onClick={() => setShowCreateFormDialog(true)}
 							>
 								New form
@@ -160,7 +158,7 @@ export default function SpaceFormsIndexPane() {
 						<Show when={sessionId().trim()}>
 							<button
 								type="button"
-								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
+								class="ui-button ui-button-secondary text-sm"
 								onClick={() => navigate(`/spaces/${ctx.spaceId()}/forms`)}
 							>
 								Clear query
@@ -171,23 +169,23 @@ export default function SpaceFormsIndexPane() {
 
 				<div class="mt-6">
 					<Show when={sessionId().trim()}>
-						<div class="space-y-4">
+						<div class="ui-stack-sm">
 							<Show when={session()?.status === "running"}>
-								<p class="text-sm text-slate-500">Running query...</p>
+								<p class="text-sm ui-muted">Running query...</p>
 							</Show>
 							<Show when={session()?.status === "failed"}>
-								<p class="text-sm text-red-600">{session()?.error || "Query failed."}</p>
+								<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
 							</Show>
 							<Show when={sessionRows.loading}>
-								<p class="text-sm text-slate-500">Loading results...</p>
+								<p class="text-sm ui-muted">Loading results...</p>
 							</Show>
 							<Show when={!sessionRows.loading && sessionEntries().length === 0}>
-								<p class="text-sm text-slate-500">No results found.</p>
+								<p class="text-sm ui-muted">No results found.</p>
 							</Show>
 							<Show when={sessionEntries().length > 0}>
-								<div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-									<table class="min-w-full text-sm">
-										<thead class="bg-slate-50 text-slate-600">
+								<div class="ui-card overflow-x-auto">
+									<table class="ui-table text-sm min-w-full">
+										<thead>
 											<tr>
 												<th class="px-4 py-2 text-left font-medium">Title</th>
 												<th class="px-4 py-2 text-left font-medium">Form</th>
@@ -200,11 +198,11 @@ export default function SpaceFormsIndexPane() {
 										<tbody>
 											<For each={sessionEntries()}>
 												{(entry) => (
-													<tr class="border-t border-slate-100">
+													<tr>
 														<td class="px-4 py-2">
 															<button
 																type="button"
-																class="text-left text-slate-900 hover:underline"
+																class="text-left hover:underline"
 																onClick={() =>
 																	navigate(
 																		`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(entry.id)}`,
@@ -214,13 +212,13 @@ export default function SpaceFormsIndexPane() {
 																{entry.title || "Untitled"}
 															</button>
 														</td>
-														<td class="px-4 py-2 text-slate-600">{entry.form || "-"}</td>
-														<td class="px-4 py-2 text-slate-500">
+														<td class="px-4 py-2 ui-muted">{entry.form || "-"}</td>
+														<td class="px-4 py-2 ui-muted">
 															{new Date(entry.updated_at).toLocaleDateString()}
 														</td>
 														<For each={sessionFields()}>
 															{(field) => (
-																<td class="px-4 py-2 text-slate-600">
+																<td class="px-4 py-2 ui-muted">
 																	{String(entry.properties?.[field] ?? "")}
 																</td>
 															)}
@@ -233,14 +231,14 @@ export default function SpaceFormsIndexPane() {
 								</div>
 							</Show>
 							<Show when={totalCount() > 0}>
-								<div class="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+								<div class="flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
 									<div>
 										Page {page()} of {totalPages()} · {totalCount()} results
 									</div>
 									<div class="flex items-center gap-2">
 										<button
 											type="button"
-											class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+											class="ui-button ui-button-secondary text-sm"
 											disabled={page() <= 1}
 											onClick={() => setPage((prev) => Math.max(1, prev - 1))}
 										>
@@ -248,7 +246,7 @@ export default function SpaceFormsIndexPane() {
 										</button>
 										<button
 											type="button"
-											class="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+											class="ui-button ui-button-secondary text-sm"
 											disabled={page() >= totalPages()}
 											onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
 										>
@@ -262,13 +260,13 @@ export default function SpaceFormsIndexPane() {
 					<Show when={!sessionId().trim()}>
 						<Show
 							when={selectedForm()}
-							fallback={<p class="text-sm text-slate-500">Create a form to get started.</p>}
+							fallback={<p class="text-sm ui-muted">Create a form to get started.</p>}
 						>
 							{(form) => (
 								<>
 									<div class="mb-4">
-										<h2 class="text-xl font-semibold text-slate-900">{form().name}</h2>
-										<p class="text-sm text-slate-500">Query results for the selected form.</p>
+										<h2 class="text-xl font-semibold">{form().name}</h2>
+										<p class="text-sm ui-muted">Query results for the selected form.</p>
 									</div>
 									<FormTable
 										spaceId={ctx.spaceId()}

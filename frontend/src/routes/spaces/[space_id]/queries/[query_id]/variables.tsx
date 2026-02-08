@@ -74,31 +74,31 @@ export default function SpaceQueryVariablesRoute() {
 	return (
 		<SpaceShell spaceId={spaceId()} activeTopTab="search">
 			<div class="mx-auto max-w-4xl">
-				<h1 class="text-2xl font-semibold text-slate-900">Query variables</h1>
+				<h1 class="ui-page-title">Query variables</h1>
 
 				<Show when={entry.loading}>
-					<p class="text-sm text-slate-500 mt-4">Loading query...</p>
+					<p class="text-sm ui-muted mt-4">Loading query...</p>
 				</Show>
 				<Show when={entry.error}>
-					<p class="text-sm text-red-600 mt-4">Failed to load query.</p>
+					<p class="text-sm ui-text-danger mt-4">Failed to load query.</p>
 				</Show>
 				<Show when={entry()}>
 					{(data) => (
-						<div class="mt-6 space-y-4">
-							<p class="text-sm text-slate-600">{data().name}</p>
-							<div class="space-y-3">
+						<div class="mt-6 ui-stack-sm">
+							<p class="text-sm ui-muted">{data().name}</p>
+							<div class="ui-stack-sm">
 								<For each={variables()}>
 									{(variable, index) => {
 										const inputId = `query-var-${variable.name}-${index()}`;
 										return (
 											<div>
-												<label class="block text-sm font-medium text-slate-700" for={inputId}>
+												<label class="ui-label" for={inputId}>
 													{variable.name}
-													<span class="ml-2 text-xs text-slate-500">{variable.type}</span>
+													<span class="ml-2 text-xs ui-muted">{variable.type}</span>
 												</label>
 												<input
 													id={inputId}
-													class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+													class="ui-input"
 													placeholder={variable.description}
 													value={values()[variable.name] ?? ""}
 													onInput={(e) => handleInputChange(variable.name, e.currentTarget.value)}
@@ -109,13 +109,9 @@ export default function SpaceQueryVariablesRoute() {
 								</For>
 							</div>
 							<Show when={error()}>
-								<p class="text-sm text-red-600">{error()}</p>
+								<p class="text-sm ui-text-danger">{error()}</p>
 							</Show>
-							<button
-								type="button"
-								class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
-								onClick={handleRun}
-							>
+							<button type="button" class="ui-button ui-button-primary text-sm" onClick={handleRun}>
 								Run
 							</button>
 						</div>

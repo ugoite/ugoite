@@ -33,12 +33,12 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 
 	return (
 		<div
-			class="canvas-placeholder relative w-full h-full bg-gray-50 overflow-auto"
+			class="canvas-placeholder relative w-full h-full ui-surface overflow-auto"
 			data-testid="canvas-placeholder"
 		>
 			{/* Info Banner */}
-			<div class="sticky top-0 left-0 right-0 bg-blue-50 border-b border-blue-200 p-3 z-10">
-				<div class="flex items-center gap-2 text-blue-700">
+			<div class="sticky top-0 left-0 right-0 ui-alert ui-alert-warning p-3 z-10">
+				<div class="flex items-center gap-2 ui-accent-text">
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
@@ -62,7 +62,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 				<div
 					class="absolute inset-0 pointer-events-none"
 					style={{
-						"background-image": "radial-gradient(circle, #ddd 1px, transparent 1px)",
+						"background-image": "radial-gradient(circle, var(--ui-border) 1px, transparent 1px)",
 						"background-size": "20px 20px",
 					}}
 				/>
@@ -72,7 +72,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 					when={props.entries.length > 0}
 					fallback={
 						<div class="absolute inset-0 flex items-center justify-center">
-							<div class="text-center text-gray-400">
+							<div class="text-center ui-muted">
 								<svg
 									class="w-16 h-16 mx-auto mb-4 opacity-50"
 									fill="none"
@@ -101,10 +101,8 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 								<button
 									data-testid="canvas-entry-card"
 									type="button"
-									class={`absolute w-[280px] bg-white rounded-lg shadow-md border-2 transition-all cursor-pointer hover:shadow-lg ${
-										isSelected()
-											? "border-blue-500 ring-2 ring-blue-200"
-											: "border-gray-200 hover:border-gray-300"
+									class={`absolute w-[280px] ui-card ui-card-interactive ui-card-hover transition-all cursor-pointer ${
+										isSelected() ? "ui-card-selected" : ""
 									}`}
 									style={{
 										left: `${pos().x}px`,
@@ -114,10 +112,10 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 									aria-pressed={isSelected()}
 								>
 									{/* Card Header */}
-									<div class="p-3 border-b bg-gray-50 rounded-t-lg">
-										<h3 class="font-medium text-gray-900 truncate">{entry.title || "Untitled"}</h3>
+									<div class="p-3 ui-card-header">
+										<h3 class="font-medium truncate">{entry.title || "Untitled"}</h3>
 										<Show when={entry.form}>
-											<span class="text-xs text-gray-500">{entry.form}</span>
+											<span class="text-xs ui-muted">{entry.form}</span>
 										</Show>
 									</div>
 
@@ -126,21 +124,21 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 										{/* Properties preview */}
 										<Show
 											when={Object.keys(entry.properties).length > 0}
-											fallback={<p class="text-sm text-gray-400 italic">No properties</p>}
+											fallback={<p class="text-sm ui-muted italic">No properties</p>}
 										>
 											<div class="space-y-1 text-sm">
 												<For each={Object.entries(entry.properties).slice(0, 3)}>
 													{([key, value]) => (
 														<div class="flex">
-															<span class="text-gray-500 font-medium mr-1">{key}:</span>
-															<span class="text-gray-700 truncate">
+															<span class="ui-label font-medium mr-1">{key}:</span>
+															<span class="truncate">
 																{typeof value === "string" ? value : JSON.stringify(value)}
 															</span>
 														</div>
 													)}
 												</For>
 												<Show when={Object.keys(entry.properties).length > 3}>
-													<span class="text-xs text-gray-400">
+													<span class="text-xs ui-muted">
 														+{Object.keys(entry.properties).length - 3} more
 													</span>
 												</Show>
@@ -149,7 +147,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 
 										{/* Links indicator */}
 										<Show when={entry.links.length > 0}>
-											<div class="mt-2 flex items-center gap-1 text-xs text-blue-500">
+											<div class="mt-2 flex items-center gap-1 text-xs ui-accent-text">
 												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path
 														stroke-linecap="round"

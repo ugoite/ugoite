@@ -32,39 +32,39 @@ export default function SpaceLinkDetailRoute() {
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
-			<div class="max-w-3xl mx-auto p-6">
+		<main class="ui-shell">
+			<div class="ui-page max-w-3xl mx-auto">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="text-2xl font-bold text-gray-900">Link</h1>
-					<A href={`/spaces/${spaceId()}/links`} class="text-sm text-sky-700 hover:underline">
+					<h1 class="ui-page-title">Link</h1>
+					<A href={`/spaces/${spaceId()}/links`} class="text-sm ui-link">
 						Back to Links
 					</A>
 				</div>
 
 				<Show when={links.loading}>
-					<p class="text-sm text-gray-500">Loading link...</p>
+					<p class="text-sm ui-muted">Loading link...</p>
 				</Show>
 				<Show when={links.error}>
-					<p class="text-sm text-red-600">Failed to load link.</p>
+					<p class="text-sm ui-text-danger">Failed to load link.</p>
 				</Show>
 				<Show when={link()}>
 					{(item) => (
-						<div class="bg-white border rounded-lg p-4">
-							<p class="text-sm text-gray-700">ID: {item().id}</p>
-							<p class="text-sm text-gray-700">Kind: {item().kind}</p>
-							<p class="text-sm text-gray-500">
+						<div class="ui-card">
+							<p class="text-sm ui-muted">ID: {item().id}</p>
+							<p class="text-sm ui-muted">Kind: {item().kind}</p>
+							<p class="text-sm ui-muted">
 								{item().source} → {item().target}
 							</p>
 							<button
 								type="button"
-								class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+								class="mt-4 ui-button ui-button-danger"
 								onClick={handleDelete}
 								disabled={isDeleting()}
 							>
 								{isDeleting() ? "Deleting..." : "Delete Link"}
 							</button>
 							<Show when={deleteError()}>
-								<p class="text-sm text-red-600 mt-2">{deleteError()}</p>
+								<p class="text-sm ui-text-danger mt-2">{deleteError()}</p>
 							</Show>
 						</div>
 					)}

@@ -69,7 +69,7 @@ export function SearchBar(props: SearchBarProps) {
 				<div class="relative flex items-center">
 					{/* Search Icon */}
 					<svg
-						class="absolute left-3 w-5 h-5 text-gray-400"
+						class="absolute left-3 w-5 h-5 ui-muted"
 						fill="none"
 						stroke="currentColor"
 						viewBox="0 0 24 24"
@@ -89,7 +89,7 @@ export function SearchBar(props: SearchBarProps) {
 						value={query()}
 						onInput={(e) => setQuery(e.currentTarget.value)}
 						placeholder={props.placeholder || "Search entries... (⌘K)"}
-						class="w-full pl-10 pr-20 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+						class="ui-input w-full pl-10 pr-20"
 					/>
 
 					{/* Clear Button */}
@@ -98,14 +98,9 @@ export function SearchBar(props: SearchBarProps) {
 							type="button"
 							onClick={handleClear}
 							aria-label="Clear search"
-							class="absolute right-2 p-1 hover:bg-gray-100 rounded"
+							class="ui-button ui-button-secondary ui-button-sm absolute right-2"
 						>
-							<svg
-								class="w-4 h-4 text-gray-500"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path
 									stroke-linecap="round"
 									stroke-linejoin="round"
@@ -121,10 +116,10 @@ export function SearchBar(props: SearchBarProps) {
 			{/* Status Messages */}
 			<div class="mt-2 text-sm">
 				<Show when={props.loading}>
-					<span class="text-gray-500">Searching...</span>
+					<span class="ui-muted">Searching...</span>
 				</Show>
 				<Show when={props.resultsCount !== undefined && !props.loading}>
-					<span class="text-gray-600">
+					<span class="ui-muted">
 						{props.resultsCount} {props.resultsCount === 1 ? "result" : "results"}
 					</span>
 				</Show>

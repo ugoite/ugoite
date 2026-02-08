@@ -65,8 +65,8 @@ describe("CanvasPlaceholder", () => {
 		render(() => <CanvasPlaceholder entries={mockEntries} selectedEntryId="entry-1" />);
 
 		const cards = screen.getAllByTestId("canvas-entry-card");
-		expect(cards[0]).toHaveClass("border-blue-500");
-		expect(cards[1]).not.toHaveClass("border-blue-500");
+		expect(cards[0]).toHaveClass("ui-card-selected");
+		expect(cards[1]).not.toHaveClass("ui-card-selected");
 	});
 
 	it("should show empty state when no entries", () => {

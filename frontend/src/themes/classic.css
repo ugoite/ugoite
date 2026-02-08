@@ -1,0 +1,62 @@
+:root[data-ui-theme="classic"] {
+	--ui-font-sans: var(--font-sans);
+	--ui-font-mono: var(--font-mono);
+	--ui-surface-1: oklch(0.98 0 0);
+	--ui-surface-2: oklch(0.95 0 0);
+	--ui-surface-3: oklch(0.92 0 0);
+	--ui-foreground: oklch(0.2 0 0);
+	--ui-foreground-muted: oklch(0.5 0 0);
+	--ui-border: oklch(0.86 0 0);
+	--ui-accent: oklch(0.52 0.08 260);
+	--ui-accent-strong: oklch(0.46 0.1 260);
+	--ui-accent-foreground: oklch(0.98 0 0);
+	--ui-danger: oklch(0.58 0.12 30);
+	--ui-success: oklch(0.58 0.1 150);
+	--ui-warning: oklch(0.7 0.12 82);
+	--ui-border-width: 1px;
+	--ui-radius-sm: 0.2rem;
+	--ui-radius-md: 0.3rem;
+	--ui-radius-lg: 0.4rem;
+	--ui-radius-xl: 0.55rem;
+	--ui-radius-pill: 999px;
+	--ui-spacing-xs: 0.3rem;
+	--ui-spacing-sm: 0.5rem;
+	--ui-spacing-md: 0.75rem;
+	--ui-spacing-lg: 1rem;
+	--ui-spacing-xl: 1.3rem;
+	--ui-control-padding-x: 0.7rem;
+	--ui-control-padding-y: 0.45rem;
+	--ui-button-padding-x: 0.95rem;
+	--ui-button-padding-y: 0.5rem;
+	--ui-card-padding: 1rem;
+	--ui-tab-padding-x: 0.7rem;
+	--ui-tab-padding-y: 0.4rem;
+	--ui-tab-font-size: 0.82rem;
+	--ui-icon-size: 2.1rem;
+	--ui-topbar-padding-x: 0.8rem;
+	--ui-topbar-padding-y: 0.5rem;
+	--ui-content-padding-top: 5rem;
+	--ui-content-padding-x: 1rem;
+	--ui-content-padding-bottom: 2.4rem;
+	--ui-content-padding-bottom-tabs: 5rem;
+	--ui-menu-panel-padding: 0.55rem;
+	--ui-shadow-sm: 0 1px 1px rgb(0 0 0 / 0.04);
+	--ui-shadow-md: 0 2px 4px rgb(0 0 0 / 0.06);
+	--ui-shadow-lg: 0 6px 10px rgb(0 0 0 / 0.08);
+	--ui-shadow-xl: 0 10px 16px rgb(0 0 0 / 0.12);
+}
+
+:root[data-ui-theme="classic"][data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.18 0 0);
+	--ui-surface-2: oklch(0.22 0 0);
+	--ui-surface-3: oklch(0.26 0 0);
+	--ui-foreground: oklch(0.92 0 0);
+	--ui-foreground-muted: oklch(0.7 0 0);
+	--ui-border: oklch(0.32 0 0);
+	--ui-accent: oklch(0.68 0.08 260);
+	--ui-accent-strong: oklch(0.74 0.1 260);
+	--ui-accent-foreground: oklch(0.14 0 0);
+	--ui-danger: oklch(0.66 0.12 30);
+	--ui-success: oklch(0.66 0.1 150);
+	--ui-warning: oklch(0.76 0.12 84);
+}

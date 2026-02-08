@@ -35,7 +35,7 @@ export default function SpaceSettingsRoute() {
 						<p class="text-sm ui-muted">Loading space...</p>
 					</Show>
 					<Show when={space.error}>
-						<p class="text-sm text-red-600">Failed to load space.</p>
+						<p class="text-sm ui-text-danger">Failed to load space.</p>
 					</Show>
 					<Show when={space()}>
 						{(ws) => (
