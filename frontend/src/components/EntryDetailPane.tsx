@@ -1,5 +1,6 @@
 import { createEffect, createResource, createSignal, onCleanup, Show, For } from "solid-js";
 import type { Accessor } from "solid-js";
+import { isServer } from "solid-js/web";
 import { AssetUploader } from "~/components/AssetUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { assetApi } from "~/lib/asset-api";
@@ -111,6 +112,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
 	let assetsAbortController: AbortController | null = null;
 	createEffect(() => {
+		if (isServer) return;
 		const wsId = props.spaceId();
 		if (!wsId) return;
 		assetsAbortController?.abort();
@@ -232,10 +234,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 	return (
 		<div class="flex-1 flex flex-col overflow-hidden relative h-full">
 			<Show when={entry.loading}>
-				<div class="absolute inset-0 bg-white/80 z-50 flex items-center justify-center">
-					<div class="text-center">
-						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2" />
-						<p class="text-gray-500 text-sm">Loading entry...</p>
+				<div class="absolute inset-0 ui-backdrop z-50 flex items-center justify-center">
+					<div class="ui-card text-center">
+						<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto mb-2" />
+						<p class="ui-muted text-sm">Loading entry...</p>
 					</div>
 				</div>
 			</Show>
@@ -243,31 +245,31 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 			<Show
 				when={entry()}
 				fallback={
-					<div class="flex-1 flex items-center justify-center text-gray-500">
+					<div class="flex-1 flex items-center justify-center ui-muted">
 						<Show
 							when={entryError()}
 							fallback={
 								<Show when={!entry.loading} fallback={<div />}>
-									<p class="text-gray-700">Entry not found.</p>
+									<p class="ui-muted">Entry not found.</p>
 								</Show>
 							}
 						>
 							<div class="text-center space-y-2">
-								<p class="text-red-600">{entryError()}</p>
-								<p class="text-xs text-gray-400">
+								<p class="ui-alert ui-alert-error text-sm">{entryError()}</p>
+								<p class="text-xs ui-muted">
 									Space: {props.spaceId()} / Entry: {props.entryId()}
 								</p>
 								<button
 									type="button"
 									onClick={() => refetchEntry()}
-									class="text-blue-600 hover:underline"
+									class="ui-button ui-button-secondary text-sm"
 								>
 									Retry
 								</button>
 								<div class="mt-4">
 									<button
 										type="button"
-										class="text-sm text-sky-700 hover:underline"
+										class="ui-button ui-button-secondary text-sm"
 										onClick={props.onDeleted}
 									>
 										Back to entries
@@ -280,22 +282,21 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 			>
 				{(currentEntry) => (
 					<div class="flex-1 flex flex-col overflow-hidden">
-						<div class="bg-white border-b px-4 py-3 flex items-center justify-between">
+						<div class="ui-card flex items-center justify-between">
 							<div>
-								<h2 class="font-semibold text-gray-800">{currentEntry().title || "Untitled"}</h2>
+								<h2 class="font-semibold">{currentEntry().title || "Untitled"}</h2>
 								<Show when={currentEntry().form}>
-									<span class="text-sm text-gray-500">Form: {currentEntry().form}</span>
+									<span class="text-sm ui-muted">Form: {currentEntry().form}</span>
 								</Show>
 							</div>
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
 									onClick={() => refetchEntry()}
-									class="p-2 hover:bg-gray-100 rounded"
-									aria-label="Refresh"
+									class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-sm"
 								>
 									<svg
-										class="w-5 h-5"
+										class="w-4 h-4"
 										fill="none"
 										stroke="currentColor"
 										viewBox="0 0 24 24"
@@ -308,15 +309,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 											d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
 										/>
 									</svg>
+									Refresh
 								</button>
 								<button
 									type="button"
 									onClick={handleDelete}
-									class="p-2 text-red-500 hover:bg-red-50 rounded"
-									aria-label="Delete entry"
+									class="ui-button ui-button-danger ui-button-sm inline-flex items-center gap-2 text-sm"
 								>
 									<svg
-										class="w-5 h-5"
+										class="w-4 h-4"
 										fill="none"
 										stroke="currentColor"
 										viewBox="0 0 24 24"
@@ -329,14 +330,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 											d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
 										/>
 									</svg>
+									Delete
 								</button>
 							</div>
 						</div>
 
-						<div class="flex-1 bg-white overflow-hidden flex flex-col">
+						<div class="flex-1 overflow-hidden flex flex-col">
 							<Show when={validationError()}>
 								{(error) => (
-									<div class="mx-4 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+									<div class="mx-4 mt-4 ui-alert ui-alert-warning text-sm">
 										<p class="font-semibold">{error().title}</p>
 										<ul class="mt-2 list-disc pl-5 space-y-1">
 											<For each={error().items}>{(item) => <li>{item}</li>}</For>

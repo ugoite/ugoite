@@ -47,10 +47,10 @@ export default function SpaceSearchRoute() {
 		<SpaceShell spaceId={spaceId()} activeTopTab="search">
 			<div class="mx-auto max-w-4xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
-					<h1 class="text-2xl font-semibold text-slate-900">Queries</h1>
+					<h1 class="ui-page-title">Queries</h1>
 					<A
 						href={`/spaces/${spaceId()}/queries/new`}
-						class="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+						class="ui-button ui-button-primary inline-flex items-center gap-2 text-sm"
 					>
 						<span class="text-lg">+</span>
 						Create query
@@ -60,50 +60,50 @@ export default function SpaceSearchRoute() {
 				<div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
 					<input
 						type="text"
-						class="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						class="ui-input flex-1"
 						placeholder="Search queries"
 						value={query()}
 						onInput={(e) => setQuery(e.currentTarget.value)}
 					/>
 					<button
 						type="button"
-						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						class="ui-button ui-button-secondary text-sm"
 						onClick={() => setShowFilters(true)}
 					>
 						Filter
 					</button>
 					<button
 						type="button"
-						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+						class="ui-button ui-button-secondary text-sm"
 						onClick={() => refetch()}
 					>
 						Refresh
 					</button>
 				</div>
 
-				<div class="mt-6 space-y-3">
+				<div class="mt-6 ui-stack-sm">
 					<Show when={queries.loading}>
-						<p class="text-sm text-slate-500">Loading queries...</p>
+						<p class="text-sm ui-muted">Loading queries...</p>
 					</Show>
 					<Show when={error()}>
-						<p class="text-sm text-red-600">{error()}</p>
+						<p class="text-sm ui-text-danger">{error()}</p>
 					</Show>
 					<Show when={queries.error}>
-						<p class="text-sm text-red-600">Failed to load queries.</p>
+						<p class="text-sm ui-text-danger">Failed to load queries.</p>
 					</Show>
 					<Show when={!queries.loading && filteredQueries().length === 0}>
-						<p class="text-sm text-slate-500">No queries yet.</p>
+						<p class="text-sm ui-muted">No queries yet.</p>
 					</Show>
 					<For each={filteredQueries()}>
 						{(entry) => (
 							<button
 								type="button"
-								class="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:shadow-md"
+								class="ui-card ui-card-interactive w-full text-left"
 								onClick={() => handleSelect(entry)}
 							>
 								<div class="flex items-center justify-between gap-2">
-									<h2 class="text-base font-semibold text-slate-900">{entry.name}</h2>
-									<span class="text-xs text-slate-500">
+									<h2 class="text-base font-semibold">{entry.name}</h2>
+									<span class="text-xs ui-muted">
 										{runningId() === entry.id
 											? "Running"
 											: entry.variables?.length
@@ -111,7 +111,7 @@ export default function SpaceSearchRoute() {
 												: "Ready"}
 									</span>
 								</div>
-								<p class="mt-2 text-xs text-slate-500">Updated {entry.updated_at}</p>
+								<p class="mt-2 text-xs ui-muted">Updated {entry.updated_at}</p>
 							</button>
 						)}
 					</For>
@@ -119,30 +119,18 @@ export default function SpaceSearchRoute() {
 			</div>
 
 			<Show when={showFilters()}>
-				<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-					<div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-						<h2 class="text-lg font-semibold text-slate-900">Filters</h2>
-						<div class="mt-4 space-y-3">
-							<input
-								type="text"
-								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-								placeholder="Form"
-							/>
-							<input
-								type="text"
-								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-								placeholder="Tags"
-							/>
-							<input
-								type="text"
-								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-								placeholder="Updated range"
-							/>
+				<div class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop p-4">
+					<div class="ui-dialog w-full max-w-md">
+						<h2 class="text-lg font-semibold">Filters</h2>
+						<div class="mt-4 ui-stack-sm">
+							<input type="text" class="ui-input" placeholder="Form" />
+							<input type="text" class="ui-input" placeholder="Tags" />
+							<input type="text" class="ui-input" placeholder="Updated range" />
 						</div>
 						<div class="mt-6 flex justify-end gap-2">
 							<button
 								type="button"
-								class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+								class="ui-button ui-button-secondary text-sm"
 								onClick={() => setShowFilters(false)}
 							>
 								Close

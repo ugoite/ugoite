@@ -72,7 +72,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 			<div class="mb-4">
 				<label
 					for="file-upload"
-					class="inline-flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					class="ui-button ui-button-primary inline-flex items-center cursor-pointer"
 					classList={{ "opacity-50 cursor-not-allowed": uploading() }}
 				>
 					<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -101,23 +101,21 @@ export function AssetUploader(props: AssetUploaderProps) {
 
 			{/* Error Message */}
 			<Show when={error()}>
-				<div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-					{error()}
-				</div>
+				<div class="ui-alert ui-alert-error text-sm mb-4">{error()}</div>
 			</Show>
 
 			{/* Assets List */}
 			<Show when={props.assets && props.assets.length > 0}>
 				<div class="space-y-2">
-					<h4 class="text-sm font-medium text-gray-700">Assets</h4>
+					<h4 class="text-sm font-medium">Assets</h4>
 					<For each={props.assets}>
 						{(asset) => (
-							<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+							<div class="ui-card ui-card-interactive flex items-center justify-between gap-3">
 								<div class="flex items-center gap-3 flex-1 min-w-0">
 									<span class="text-2xl flex-shrink-0">{getFileIcon(asset.name)}</span>
 									<div class="flex-1 min-w-0">
-										<p class="text-sm font-medium text-gray-900 truncate">{asset.name}</p>
-										<p class="text-xs text-gray-500">{asset.path}</p>
+										<p class="text-sm font-medium truncate">{asset.name}</p>
+										<p class="text-xs ui-muted">{asset.path}</p>
 									</div>
 								</div>
 								<Show when={props.onRemove}>
@@ -125,7 +123,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 										type="button"
 										onClick={() => handleRemove(asset.id)}
 										aria-label={`Remove asset ${asset.name}`}
-										class="flex-shrink-0 p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+										class="ui-button ui-button-danger ui-button-sm flex-shrink-0"
 									>
 										<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path

@@ -46,32 +46,32 @@ export default function SpaceLinksRoute() {
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
+		<main class="ui-shell ui-page">
 			<div class="max-w-4xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="text-2xl font-bold text-gray-900">Links</h1>
-					<A href={`/spaces/${spaceId()}/entries`} class="text-sm text-sky-700 hover:underline">
+					<h1 class="ui-page-title">Links</h1>
+					<A href={`/spaces/${spaceId()}/entries`} class="text-sm">
 						Back to Entries
 					</A>
 				</div>
 
-				<section class="mb-6 bg-white border rounded-lg p-4">
+				<section class="mb-6 ui-card">
 					<h2 class="text-lg font-semibold mb-3">Create Link</h2>
 					<div class="grid gap-3 sm:grid-cols-3">
 						<input
-							class="px-3 py-2 border rounded"
+							class="ui-input"
 							placeholder="Source entry ID"
 							value={source()}
 							onInput={(e) => setSource(e.currentTarget.value)}
 						/>
 						<input
-							class="px-3 py-2 border rounded"
+							class="ui-input"
 							placeholder="Target entry ID"
 							value={target()}
 							onInput={(e) => setTarget(e.currentTarget.value)}
 						/>
 						<input
-							class="px-3 py-2 border rounded"
+							class="ui-input"
 							placeholder="Kind"
 							value={kind()}
 							onInput={(e) => setKind(e.currentTarget.value)}
@@ -79,48 +79,48 @@ export default function SpaceLinksRoute() {
 					</div>
 					<button
 						type="button"
-						class="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+						class="ui-button ui-button-primary mt-3"
 						onClick={handleCreate}
 						disabled={isCreating()}
 					>
 						{isCreating() ? "Creating..." : "Create Link"}
 					</button>
 					<Show when={actionError()}>
-						<p class="text-sm text-red-600 mt-2">{actionError()}</p>
+						<p class="ui-alert ui-alert-error text-sm mt-2">{actionError()}</p>
 					</Show>
 				</section>
 
-				<section class="bg-white border rounded-lg p-4">
+				<section class="ui-card">
 					<h2 class="text-lg font-semibold mb-3">Space Links</h2>
 					<Show when={links.loading}>
-						<p class="text-sm text-gray-500">Loading links...</p>
+						<p class="text-sm ui-muted">Loading links...</p>
 					</Show>
 					<Show when={links.error}>
-						<p class="text-sm text-red-600">Failed to load links.</p>
+						<p class="ui-alert ui-alert-error text-sm">Failed to load links.</p>
 					</Show>
 					<Show when={links() && links()?.length === 0}>
-						<p class="text-sm text-gray-500">No links yet.</p>
+						<p class="text-sm ui-muted">No links yet.</p>
 					</Show>
 					<ul class="space-y-3">
 						<For each={links() || []}>
 							{(link) => (
-								<li class="border rounded p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+								<li class="ui-card ui-card-hover flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
 									<div>
-										<p class="text-sm font-medium text-gray-800">{link.kind}</p>
-										<p class="text-xs text-gray-500">
+										<p class="text-sm font-medium">{link.kind}</p>
+										<p class="text-xs ui-muted">
 											{link.source} → {link.target}
 										</p>
 									</div>
 									<div class="flex gap-2">
 										<A
 											href={`/spaces/${spaceId()}/links/${encodeURIComponent(link.id)}`}
-											class="text-sm text-blue-600 hover:underline"
+											class="ui-button ui-button-secondary text-sm"
 										>
 											Details
 										</A>
 										<button
 											type="button"
-											class="text-sm text-red-600 hover:underline"
+											class="ui-button ui-button-danger text-sm"
 											onClick={() => handleDelete(link.id)}
 										>
 											Delete

@@ -82,5 +82,5 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 		view?.destroy();
 	});
 
-	return <div ref={setHost} id={props.id} class="border rounded-md text-sm" />;
+	return <div ref={setHost} id={props.id} class="ui-input ui-sql-editor text-sm" />;
 }

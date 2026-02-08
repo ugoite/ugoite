@@ -82,7 +82,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
 	if (!props.active || !props.direction) {
 		return (
 			<svg
-				class="w-4 h-4 text-gray-400 opacity-50"
+				class="w-4 h-4 ui-muted opacity-50"
 				fill="none"
 				stroke="currentColor"
 				viewBox="0 0 24 24"
@@ -99,7 +99,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
 	}
 	if (props.direction === "asc") {
 		return (
-			<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<svg class="w-4 h-4 ui-accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<title>Sorted Ascending</title>
 				<path
 					stroke-linecap="round"
@@ -111,7 +111,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
 		);
 	}
 	return (
-		<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<svg class="w-4 h-4 ui-accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<title>Sorted Descending</title>
 			<path
 				stroke-linecap="round"
@@ -144,11 +144,14 @@ function formatCsvRow(entry: EntryRecord, headers: string[]) {
 }
 
 export function FormTable(props: FormTableProps) {
+	let sortMenuRef: HTMLDivElement | undefined;
 	// State for filtering and sorting
 	const [globalFilter, setGlobalFilter] = createSignal("");
 	const [sortField, setSortField] = createSignal<string | null>(null);
 	const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
 	const [columnFilters, setColumnFilters] = createSignal<Record<string, string>>({});
+	const [showColumnFilters, setShowColumnFilters] = createSignal(true);
+	const [showSortMenu, setShowSortMenu] = createSignal(false);
 	const [isEditMode, setIsEditMode] = createSignal(false);
 	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
 
@@ -165,6 +168,8 @@ export function FormTable(props: FormTableProps) {
 	const fields = createMemo(() =>
 		props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
 	);
+
+	const sortableFields = createMemo(() => ["title", ...fields(), "updated_at"]);
 
 	const processedEntries = createMemo(() => {
 		const currentEntries = entries();
@@ -189,6 +194,40 @@ export function FormTable(props: FormTableProps) {
 			setSortDirection("asc");
 		}
 	};
+
+	const handleSortFieldChange = (value: string) => {
+		if (!value) {
+			setSortField(null);
+			setSortDirection(null);
+			return;
+		}
+		setSortField(value);
+		if (!sortDirection()) setSortDirection("asc");
+	};
+
+	const handleSortMenuPointer = (event: PointerEvent) => {
+		if (!showSortMenu()) return;
+		if (!sortMenuRef || sortMenuRef.contains(event.target as Node)) return;
+		setShowSortMenu(false);
+	};
+
+	const handleSortMenuKeydown = (event: KeyboardEvent) => {
+		if (event.key === "Escape") {
+			setShowSortMenu(false);
+		}
+	};
+
+	onMount(() => {
+		if (typeof document === "undefined") return;
+		document.addEventListener("pointerdown", handleSortMenuPointer);
+		document.addEventListener("keydown", handleSortMenuKeydown);
+	});
+
+	onCleanup(() => {
+		if (typeof document === "undefined") return;
+		document.removeEventListener("pointerdown", handleSortMenuPointer);
+		document.removeEventListener("keydown", handleSortMenuKeydown);
+	});
 
 	const updateColumnFilter = (field: string, value: string) => {
 		setColumnFilters((prev) => ({ ...prev, [field]: value }));
@@ -393,15 +432,11 @@ export function FormTable(props: FormTableProps) {
 	};
 
 	return (
-		<div
-			class={`flex-1 h-full overflow-auto bg-white dark:bg-gray-950 ${
-				isSelecting() ? "select-none" : ""
-			}`}
-		>
-			<div class="p-6">
-				<div class="mb-6 flex justify-between items-start">
+		<div class={`flex-1 h-full overflow-auto ui-surface ${isSelecting() ? "select-none" : ""}`}>
+			<div class="p-4 sm:p-6">
+				<div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
 					<div>
-						<p class="text-gray-500 dark:text-gray-400 text-sm">
+						<p class="ui-muted text-sm">
 							{entries.loading && !entries()
 								? "Loading..."
 								: `${processedEntries().length} records found`}
@@ -411,7 +446,7 @@ export function FormTable(props: FormTableProps) {
 						<button
 							type="button"
 							onClick={downloadCSV}
-							class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+							class="ui-button ui-button-secondary text-sm flex items-center gap-2"
 						>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<title>Download CSV</title>
@@ -427,10 +462,8 @@ export function FormTable(props: FormTableProps) {
 						<button
 							type="button"
 							onClick={() => setIsEditMode(!isEditMode())}
-							class={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors ${
-								isEditMode()
-									? "bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-100"
-									: "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200"
+							class={`ui-button text-sm flex items-center gap-2 ${
+								isEditMode() ? "ui-button-primary" : "ui-button-secondary"
 							}`}
 							title={isEditMode() ? "Disable Editing" : "Enable Editing"}
 						>
@@ -461,7 +494,7 @@ export function FormTable(props: FormTableProps) {
 							<button
 								type="button"
 								onClick={handleAddRow}
-								class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+								class="ui-button ui-button-primary text-sm flex items-center gap-2"
 							>
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path
@@ -477,113 +510,182 @@ export function FormTable(props: FormTableProps) {
 					</div>
 				</div>
 
-				<div class="mb-4">
-					<input
-						type="text"
-						placeholder="Global Search..."
-						class="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-shadow"
-						value={globalFilter()}
-						onInput={(e) => setGlobalFilter(e.currentTarget.value)}
-					/>
+				<div class="mb-4 ui-card ui-stack-sm">
+					<div class="flex flex-wrap items-center gap-2 justify-between">
+						<input
+							type="text"
+							placeholder="Global Search..."
+							class="ui-input w-full max-w-md"
+							value={globalFilter()}
+							onInput={(e) => setGlobalFilter(e.currentTarget.value)}
+						/>
+						<div class="flex flex-wrap gap-2">
+							<div
+								class="ui-menu"
+								ref={(el) => {
+									sortMenuRef = el;
+								}}
+							>
+								<button
+									type="button"
+									class="ui-button ui-button-secondary text-sm"
+									onClick={() => setShowSortMenu((value) => !value)}
+									aria-label="Sort menu"
+									aria-expanded={showSortMenu()}
+								>
+									Sort
+								</button>
+								<Show when={showSortMenu()}>
+									<div class="ui-menu-panel">
+										<div class="ui-menu-section">
+											<p class="ui-menu-title">Sort Field</p>
+											<select
+												aria-label="Sort field"
+												class="ui-input"
+												value={sortField() ?? ""}
+												onChange={(e) => handleSortFieldChange(e.currentTarget.value)}
+											>
+												<option value="">None</option>
+												<For each={sortableFields()}>
+													{(field) => <option value={field}>{field}</option>}
+												</For>
+											</select>
+										</div>
+										<div class="ui-menu-section">
+											<p class="ui-menu-title">Direction</p>
+											<div class="ui-menu-options">
+												<label class="ui-radio">
+													<input
+														type="radio"
+														name="sort-direction"
+														value="asc"
+														checked={sortDirection() === "asc"}
+														onChange={() => setSortDirection("asc")}
+													/>
+													<span>Ascending</span>
+												</label>
+												<label class="ui-radio">
+													<input
+														type="radio"
+														name="sort-direction"
+														value="desc"
+														checked={sortDirection() === "desc"}
+														onChange={() => setSortDirection("desc")}
+													/>
+													<span>Descending</span>
+												</label>
+											</div>
+										</div>
+									</div>
+								</Show>
+							</div>
+							<button
+								type="button"
+								class={`ui-button text-sm ${
+									showColumnFilters() ? "ui-button-primary" : "ui-button-secondary"
+								}`}
+								onClick={() => setShowColumnFilters((value) => !value)}
+							>
+								Filter
+							</button>
+						</div>
+					</div>
 				</div>
 
-				<div class="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm">
-					<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-						<thead class="bg-gray-50 dark:bg-gray-900">
+				<div class="ui-table-wrapper overflow-x-auto">
+					<table class="ui-table">
+						<thead class="ui-table-head">
 							<tr>
 								<th
 									scope="col"
-									class="w-10 px-4 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
+									class="ui-table-header-cell w-10 sticky top-0 z-10"
 									aria-label="Actions"
 								>
 									<span class="sr-only">Actions</span>
 								</th>
-								<th
-									scope="col"
-									class="px-6 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
-								>
+								<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
 									<div class="flex flex-col gap-2">
 										<button
 											type="button"
-											class="flex items-center gap-1 cursor-pointer select-none text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider group hover:text-gray-700 dark:hover:text-gray-300"
+											class="ui-table-header-button select-none"
 											onClick={() => handleHeaderClick("title")}
 										>
 											Title
 											<SortIcon active={sortField() === "title"} direction={sortDirection()} />
 										</button>
-										<input
-											type="text"
-											class="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
-											placeholder="Filter..."
-											value={columnFilters().title || ""}
-											onInput={(e) => updateColumnFilter("title", e.currentTarget.value)}
-											onClick={(e) => e.stopPropagation()}
-										/>
+										<Show when={showColumnFilters()}>
+											<input
+												type="text"
+												class="ui-input ui-input-sm ui-table-filter text-xs"
+												placeholder="Filter..."
+												value={columnFilters().title || ""}
+												onInput={(e) => updateColumnFilter("title", e.currentTarget.value)}
+												onClick={(e) => e.stopPropagation()}
+											/>
+										</Show>
 									</div>
 								</th>
 
 								<For each={fields()}>
 									{(field) => (
-										<th
-											scope="col"
-											class="px-6 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
-										>
+										<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
 											<div class="flex flex-col gap-2">
 												<button
 													type="button"
-													class="flex items-center gap-1 cursor-pointer select-none text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider group hover:text-gray-700 dark:hover:text-gray-300"
+													class="ui-table-header-button select-none"
 													onClick={() => handleHeaderClick(field)}
 												>
 													{field}
 													<SortIcon active={sortField() === field} direction={sortDirection()} />
 												</button>
-												<input
-													type="text"
-													class="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
-													placeholder="Filter..."
-													value={columnFilters()[field] || ""}
-													onInput={(e) => updateColumnFilter(field, e.currentTarget.value)}
-													onClick={(e) => e.stopPropagation()}
-												/>
+												<Show when={showColumnFilters()}>
+													<input
+														type="text"
+														class="ui-input ui-input-sm ui-table-filter text-xs"
+														placeholder="Filter..."
+														value={columnFilters()[field] || ""}
+														onInput={(e) => updateColumnFilter(field, e.currentTarget.value)}
+														onClick={(e) => e.stopPropagation()}
+													/>
+												</Show>
 											</div>
 										</th>
 									)}
 								</For>
 
-								<th
-									scope="col"
-									class="px-6 py-3 text-left bg-gray-50 dark:bg-gray-900 sticky top-0 z-10"
-								>
+								<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
 									<div class="flex flex-col gap-2">
 										<button
 											type="button"
-											class="flex items-center gap-1 cursor-pointer select-none text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider group hover:text-gray-700 dark:hover:text-gray-300"
+											class="ui-table-header-button select-none"
 											onClick={() => handleHeaderClick("updated_at")}
 										>
 											Updated
 											<SortIcon active={sortField() === "updated_at"} direction={sortDirection()} />
 										</button>
-										<input
-											type="text"
-											class="w-full px-2 py-1 text-xs border rounded bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700"
-											placeholder="Filter..."
-											value={columnFilters().updated_at || ""}
-											onInput={(e) => updateColumnFilter("updated_at", e.currentTarget.value)}
-											onClick={(e) => e.stopPropagation()}
-										/>
+										<Show when={showColumnFilters()}>
+											<input
+												type="text"
+												class="ui-input ui-input-sm ui-table-filter text-xs"
+												placeholder="Filter..."
+												value={columnFilters().updated_at || ""}
+												onInput={(e) => updateColumnFilter("updated_at", e.currentTarget.value)}
+												onClick={(e) => e.stopPropagation()}
+											/>
+										</Show>
 									</div>
 								</th>
 							</tr>
 						</thead>
-						<tbody class="bg-white dark:bg-gray-950 divide-y divide-gray-200 dark:divide-gray-800">
+						<tbody class="ui-table-body">
 							<For each={processedEntries()}>
 								{(entry, rowIndex) => (
-									<tr class="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
-										<td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
+									<tr class="ui-table-row">
+										<td class="ui-table-cell ui-table-cell-muted whitespace-nowrap">
 											<button
 												type="button"
 												onClick={() => props.onEntryClick(entry.id)}
-												class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+												class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-xs"
 												title="View Entry"
 												aria-label="View Entry"
 											>
@@ -596,12 +698,13 @@ export function FormTable(props: FormTableProps) {
 														d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
 													/>
 												</svg>
+												<span>View</span>
 											</button>
 										</td>
 										{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
 										<td
-											class={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white ${
-												isSelected(rowIndex(), 0) ? "bg-blue-100 dark:bg-blue-900" : ""
+											class={`ui-table-cell whitespace-nowrap font-medium ${
+												isSelected(rowIndex(), 0) ? "ui-table-cell-selected" : ""
 											}`}
 											onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
 											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), 0)}
@@ -629,7 +732,7 @@ export function FormTable(props: FormTableProps) {
 														}
 													}}
 													onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-													class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
+													class="ui-table-cell-input"
 													autofocus
 													onClick={(e) => e.stopPropagation()}
 												/>
@@ -639,10 +742,8 @@ export function FormTable(props: FormTableProps) {
 											{(field, fieldIndex) => (
 												// biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now
 												<td
-													class={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 ${
-														isSelected(rowIndex(), fieldIndex() + 1)
-															? "bg-blue-100 dark:bg-blue-900"
-															: ""
+													class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+														isSelected(rowIndex(), fieldIndex() + 1) ? "ui-table-cell-selected" : ""
 													}`}
 													onMouseDown={() => handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
 													onMouseEnter={(e) =>
@@ -672,7 +773,7 @@ export function FormTable(props: FormTableProps) {
 																}
 															}}
 															onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-															class="w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 dark:text-white"
+															class="ui-table-cell-input"
 															autofocus
 															onClick={(e) => e.stopPropagation()}
 														/>
@@ -681,10 +782,8 @@ export function FormTable(props: FormTableProps) {
 											)}
 										</For>
 										<td
-											class={`px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 ${
-												isSelected(rowIndex(), fields().length + 1)
-													? "bg-blue-100 dark:bg-blue-900"
-													: ""
+											class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+												isSelected(rowIndex(), fields().length + 1) ? "ui-table-cell-selected" : ""
 											}`}
 											onMouseDown={() => handleCellMouseDown(rowIndex(), fields().length + 1)}
 											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), fields().length + 1)}

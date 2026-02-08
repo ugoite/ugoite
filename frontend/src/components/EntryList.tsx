@@ -64,7 +64,7 @@ export function EntryList(props: EntryListProps) {
 				<div class="loading-indicator flex items-center justify-center p-8">
 					<div class="flex flex-col items-center">
 						<svg
-							class="animate-spin h-8 w-8 text-blue-500 mb-2"
+							class="animate-spin h-8 w-8 ui-accent-text mb-2"
 							xmlns="http://www.w3.org/2000/svg"
 							fill="none"
 							viewBox="0 0 24 24"
@@ -83,14 +83,14 @@ export function EntryList(props: EntryListProps) {
 								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 							/>
 						</svg>
-						<span class="text-gray-600 text-sm">Loading entries...</span>
+						<span class="ui-muted text-sm">Loading entries...</span>
 					</div>
 				</div>
 			</Show>
 
 			<Show when={error()}>
-				<div class="error-message text-red-600 p-4 rounded-lg bg-red-50 border border-red-200 flex items-start">
-					<svg class="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+				<div class="error-message ui-alert ui-alert-error flex items-start gap-2">
+					<svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
 						<path
 							fill-rule="evenodd"
 							d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -105,7 +105,7 @@ export function EntryList(props: EntryListProps) {
 				<div class="empty-state p-12 text-center">
 					<div class="flex flex-col items-center">
 						<svg
-							class="w-16 h-16 text-gray-300 mb-4"
+							class="w-16 h-16 ui-muted mb-4"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -117,8 +117,8 @@ export function EntryList(props: EntryListProps) {
 								d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
 							/>
 						</svg>
-						<p class="text-gray-600 font-medium mb-1">No entries yet</p>
-						<p class="text-sm text-gray-400">Create your first entry to get started</p>
+						<p class="ui-muted font-medium mb-1">No entries yet</p>
+						<p class="text-sm ui-muted">Create your first entry to get started</p>
 					</div>
 				</div>
 			</Show>
@@ -160,34 +160,26 @@ function EntryListItem(props: EntryListItemProps) {
 		<li data-testid="entry-item">
 			<button
 				type="button"
-				class={`entry-item-button w-full text-left p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
-					props.isSelected
-						? "selected border-blue-500 bg-blue-50 shadow-sm ring-2 ring-blue-200"
-						: "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md hover:bg-gray-50"
+				class={`entry-item-button ui-card ui-card-interactive ui-card-hover w-full text-left cursor-pointer transition-all duration-200 ${
+					props.isSelected ? "ui-card-selected" : ""
 				}`}
 				onClick={props.onClick}
 				aria-pressed={props.isSelected}
 			>
 				<div class="flex justify-between items-start mb-2">
-					<h3 class="font-semibold text-gray-900 truncate flex-1 pr-2">
-						{props.entry.title || "Untitled"}
-					</h3>
+					<h3 class="font-semibold truncate flex-1 pr-2">{props.entry.title || "Untitled"}</h3>
 					<Show when={props.entry.form}>
-						<span class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium whitespace-nowrap">
-							{props.entry.form}
-						</span>
+						<span class="ui-pill text-xs whitespace-nowrap">{props.entry.form}</span>
 					</Show>
 				</div>
 
 				<Show when={propertyEntries().length > 0}>
-					<div class="mt-2 text-sm text-gray-600 space-y-1">
+					<div class="mt-2 text-sm ui-muted space-y-1">
 						<For each={propertyEntries()}>
 							{([key, value]) => (
 								<div class="flex items-baseline">
-									<span class="font-medium text-gray-500 mr-2 text-xs uppercase tracking-wide">
-										{key}:
-									</span>
-									<span class="truncate text-gray-700">
+									<span class="ui-label mr-2 text-xs uppercase tracking-wide">{key}:</span>
+									<span class="truncate">
 										{typeof value === "string" ? value : JSON.stringify(value)}
 									</span>
 								</div>
@@ -196,7 +188,7 @@ function EntryListItem(props: EntryListItemProps) {
 					</div>
 				</Show>
 
-				<div class="mt-3 text-xs text-gray-400 flex items-center">
+				<div class="mt-3 text-xs ui-muted flex items-center">
 					<svg
 						class="w-3 h-3 mr-1 opacity-50"
 						fill="none"

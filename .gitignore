@@ -6,3 +6,6 @@ spaces/
 
 # OS metadata
 .DS_Store
+
+# Local VS Code MCP config
+.vscode/mcp.json

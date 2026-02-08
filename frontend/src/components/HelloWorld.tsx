@@ -17,7 +17,7 @@ export default function HelloWorld() {
 	return (
 		<div class="mt-4">
 			<h2 class="text-xl font-semibold">Backend says:</h2>
-			<p class="text-gray-600">{message()}</p>
+			<p class="ui-muted">{message()}</p>
 		</div>
 	);
 }

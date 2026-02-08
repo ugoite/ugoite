@@ -44,20 +44,20 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 			.replace(/^### (.+)$/gm, '<h3 class="text-lg font-medium mb-1 mt-3">$1</h3>')
 			.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
 			.replace(/\*(.+?)\*/g, "<em>$1</em>")
-			.replace(/`(.+?)`/g, '<code class="bg-gray-100 px-1 rounded">$1</code>')
+			.replace(/`(.+?)`/g, '<code class="ui-code">$1</code>')
 			.replace(/\n/g, "<br>");
 	};
 
 	return (
 		<div class="markdown-editor flex flex-col h-full">
 			{/* Toolbar */}
-			<div class="toolbar flex items-center justify-between p-2 border-b bg-gray-50">
+			<div class="toolbar ui-toolbar">
 				<div class="flex items-center gap-2">
 					<Show when={props.showPreview && !props.mode}>
 						<button
 							type="button"
-							class={`px-3 py-1 rounded text-sm ${
-								isPreviewMode() ? "bg-blue-500 text-white" : "bg-white border hover:bg-gray-100"
+							class={`ui-button text-sm ${
+								isPreviewMode() ? "ui-button-primary" : "ui-button-secondary"
 							}`}
 							onClick={() => setIsPreviewMode(!isPreviewMode())}
 							aria-label={isPreviewMode() ? "Edit" : "Preview"}
@@ -69,8 +69,8 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 
 				<div class="flex items-center gap-2">
 					<Show when={props.isDirty}>
-						<span class="text-sm text-amber-600 flex items-center gap-1">
-							<span class="w-2 h-2 bg-amber-500 rounded-full" />
+						<span class="text-sm ui-warning flex items-center gap-1">
+							<span class="ui-indicator-dot" />
 							Unsaved changes
 						</span>
 					</Show>
@@ -78,7 +78,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 					<Show when={props.onSave}>
 						<button
 							type="button"
-							class="px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+							class="ui-button ui-button-primary text-sm"
 							onClick={props.onSave}
 							disabled={!props.isDirty || props.isSaving || props.disabled}
 							aria-label="Save"
@@ -91,7 +91,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 
 			{/* Conflict Warning */}
 			<Show when={props.conflictMessage}>
-				<div class="conflict-message bg-red-50 border-l-4 border-red-500 p-3 text-red-700">
+				<div class="conflict-message ui-alert ui-alert-error">
 					<div class="flex items-center gap-2">
 						<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
 							<path
@@ -110,7 +110,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 				<Show when={isSplitMode()}>
 					<div class="flex h-full">
 						<textarea
-							class="w-1/2 h-full p-4 resize-none font-mono text-sm border-r border-gray-200 focus:outline-none focus:ring-0"
+							class="ui-editor ui-editor-split w-1/2 h-full"
 							value={props.content ?? ""}
 							onInput={handleInput}
 							onKeyDown={handleKeyDown}
@@ -119,7 +119,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 							spellcheck={false}
 						/>
 						<div
-							class="preview w-1/2 p-4 prose prose-sm max-w-none overflow-auto h-full"
+							class="preview ui-preview w-1/2 h-full"
 							innerHTML={renderMarkdown(props.content ?? "")}
 						/>
 					</div>
@@ -129,7 +129,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 						when={isPreviewMode() || isForcedPreview()}
 						fallback={
 							<textarea
-								class="w-full h-full p-4 resize-none font-mono text-sm border-0 focus:outline-none focus:ring-0"
+								class="ui-editor w-full h-full"
 								value={props.content ?? ""}
 								onInput={handleInput}
 								onKeyDown={handleKeyDown}
@@ -140,7 +140,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 						}
 					>
 						<div
-							class="preview p-4 prose prose-sm max-w-none overflow-auto h-full"
+							class="preview ui-preview h-full"
 							innerHTML={renderMarkdown(props.content ?? "")}
 						/>
 					</Show>

@@ -42,3 +42,21 @@ requirements:
             - POST /spaces/default/entries creates a new entry
             - PUT /spaces/default/entries/:id updates entry
             - DELETE /spaces/default/entries/:id removes entry
+
+  - id: REQ-E2E-003
+    title: Theme-aware UI Flows
+    description: |
+      The UI MUST support core space workflows across all supported themes and
+      color modes, including navigation, query flows, and entry detail access.
+    related_spec:
+      - ui/README.md
+      - tasks/tasks.md#phase-7-5-uiの洗練化-追加
+    priority: high
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/ui-themes.test.ts
+          tests:
+            - "REQ-E2E-003: UI flows work in materialize theme"
+            - "REQ-E2E-003: UI flows work in classic theme"
+            - "REQ-E2E-003: UI flows work in pop theme"

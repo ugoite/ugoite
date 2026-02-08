@@ -31,11 +31,11 @@ export default function SpaceAssetsRoute() {
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
+		<main class="ui-shell ui-page">
 			<div class="max-w-4xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="text-2xl font-bold text-gray-900">Assets</h1>
-					<A href={`/spaces/${spaceId()}/entries`} class="text-sm text-sky-700 hover:underline">
+					<h1 class="ui-page-title">Assets</h1>
+					<A href={`/spaces/${spaceId()}/entries`} class="text-sm">
 						Back to Entries
 					</A>
 				</div>
@@ -43,13 +43,13 @@ export default function SpaceAssetsRoute() {
 				<AssetUploader assets={assets() || []} onUpload={handleUpload} onRemove={handleRemove} />
 
 				<Show when={actionError()}>
-					<p class="text-sm text-red-600 mt-4">{actionError()}</p>
+					<p class="ui-alert ui-alert-error text-sm mt-4">{actionError()}</p>
 				</Show>
 				<Show when={assets.loading}>
-					<p class="text-sm text-gray-500 mt-4">Loading assets...</p>
+					<p class="text-sm ui-muted mt-4">Loading assets...</p>
 				</Show>
 				<Show when={assets.error}>
-					<p class="text-sm text-red-600 mt-4">Failed to load assets.</p>
+					<p class="ui-alert ui-alert-error text-sm mt-4">Failed to load assets.</p>
 				</Show>
 			</div>
 		</main>

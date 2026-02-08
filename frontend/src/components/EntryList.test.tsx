@@ -161,7 +161,7 @@ describe("EntryList", () => {
 			));
 
 			const button = screen.getByRole("button");
-			expect(button).toHaveClass("selected");
+			expect(button).toHaveClass("ui-card-selected");
 		});
 	});
 

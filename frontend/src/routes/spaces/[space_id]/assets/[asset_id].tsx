@@ -32,37 +32,37 @@ export default function SpaceAssetDetailRoute() {
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
+		<main class="ui-shell ui-page">
 			<div class="max-w-3xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="text-2xl font-bold text-gray-900">Asset</h1>
-					<A href={`/spaces/${spaceId()}/assets`} class="text-sm text-sky-700 hover:underline">
+					<h1 class="ui-page-title">Asset</h1>
+					<A href={`/spaces/${spaceId()}/assets`} class="text-sm">
 						Back to Assets
 					</A>
 				</div>
 
 				<Show when={assets.loading}>
-					<p class="text-sm text-gray-500">Loading asset...</p>
+					<p class="text-sm ui-muted">Loading asset...</p>
 				</Show>
 				<Show when={assets.error}>
-					<p class="text-sm text-red-600">Failed to load asset.</p>
+					<p class="ui-alert ui-alert-error text-sm">Failed to load asset.</p>
 				</Show>
 				<Show when={asset()}>
 					{(item) => (
-						<div class="bg-white border rounded-lg p-4">
-							<p class="text-sm text-gray-700">Name: {item().name}</p>
-							<p class="text-sm text-gray-500">ID: {item().id}</p>
-							<p class="text-sm text-gray-500">Path: {item().path}</p>
+						<div class="ui-card">
+							<p class="text-sm">Name: {item().name}</p>
+							<p class="text-sm ui-muted">ID: {item().id}</p>
+							<p class="text-sm ui-muted">Path: {item().path}</p>
 							<button
 								type="button"
-								class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+								class="ui-button ui-button-danger mt-4"
 								onClick={handleDelete}
 								disabled={isDeleting()}
 							>
 								{isDeleting() ? "Deleting..." : "Delete Asset"}
 							</button>
 							<Show when={deleteError()}>
-								<p class="text-sm text-red-600 mt-2">{deleteError()}</p>
+								<p class="ui-alert ui-alert-error text-sm mt-2">{deleteError()}</p>
 							</Show>
 						</div>
 					)}

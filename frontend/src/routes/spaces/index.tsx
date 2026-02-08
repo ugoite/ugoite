@@ -30,20 +30,20 @@ export default function SpacesIndexRoute() {
 	};
 
 	return (
-		<main class="mx-auto max-w-4xl p-6">
-			<div class="flex items-center justify-between mb-6">
-				<h1 class="text-2xl font-bold text-gray-900">Spaces</h1>
-				<A href="/" class="text-sm text-sky-700 hover:text-sky-800 hover:underline">
+		<main class="mx-auto max-w-4xl ui-page ui-stack">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<h1 class="ui-page-title">Spaces</h1>
+				<A href="/" class="ui-muted text-sm">
 					Back to Home
 				</A>
 			</div>
 
-			<section class="mb-8">
-				<h2 class="text-lg font-semibold text-gray-800 mb-2">Create Space</h2>
+			<section class="ui-card">
+				<h2 class="text-lg font-semibold mb-2">Create Space</h2>
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 					<input
 						type="text"
-						class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+						class="ui-input flex-1"
 						placeholder="Space name"
 						value={newSpaceName()}
 						onInput={(e) => setNewSpaceName(e.currentTarget.value)}
@@ -53,7 +53,7 @@ export default function SpacesIndexRoute() {
 					/>
 					<button
 						type="button"
-						class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						class="ui-button ui-button-primary"
 						disabled={isCreating()}
 						onClick={handleCreate}
 					>
@@ -61,39 +61,39 @@ export default function SpacesIndexRoute() {
 					</button>
 				</div>
 				<Show when={createError()}>
-					<p class="text-sm text-red-600 mt-2">{createError()}</p>
+					<p class="ui-alert ui-alert-error text-sm mt-2">{createError()}</p>
 				</Show>
 			</section>
 
-			<section>
-				<h2 class="text-lg font-semibold text-gray-800 mb-3">Available Spaces</h2>
+			<section class="ui-card">
+				<h2 class="text-lg font-semibold mb-3">Available Spaces</h2>
 				<Show when={spaces.loading}>
-					<p class="text-sm text-gray-500">Loading spaces...</p>
+					<p class="text-sm ui-muted">Loading spaces...</p>
 				</Show>
 				<Show when={spaces.error}>
-					<p class="text-sm text-red-600">Failed to load spaces.</p>
+					<p class="ui-alert ui-alert-error text-sm">Failed to load spaces.</p>
 				</Show>
 				<Show when={spaces() && spaces()?.length === 0}>
-					<p class="text-sm text-gray-500">No spaces yet. Create one above.</p>
+					<p class="text-sm ui-muted">No spaces yet. Create one above.</p>
 				</Show>
-				<ul class="space-y-3">
+				<ul class="ui-stack-sm">
 					<For each={spaces() || []}>
 						{(space) => (
-							<li class="border rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+							<li class="ui-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 								<div>
-									<h3 class="font-medium text-gray-900">{space.name || space.id}</h3>
-									<p class="text-xs text-gray-500">ID: {space.id}</p>
+									<h3 class="font-medium">{space.name || space.id}</h3>
+									<p class="text-xs ui-muted">ID: {space.id}</p>
 								</div>
-								<div class="flex gap-2">
+								<div class="flex flex-wrap gap-2">
 									<A
 										href={`/spaces/${space.id}/settings`}
-										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+										class="ui-button ui-button-secondary text-sm"
 									>
 										Settings
 									</A>
 									<A
 										href={`/spaces/${space.id}/dashboard`}
-										class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+										class="ui-button ui-button-primary text-sm"
 									>
 										Open Space
 									</A>

@@ -144,7 +144,7 @@ describe("ListPanel", () => {
 				/>
 			));
 			const selectedButton = screen.getByText("Test Entry 1").closest("button");
-			expect(selectedButton).toHaveClass("selected");
+			expect(selectedButton).toHaveClass("ui-card-selected");
 		});
 
 		it("should call onSelectEntry when a entry is clicked", () => {
@@ -255,7 +255,7 @@ describe("ListPanel", () => {
 			// Find the button containing "2 fields" which is in the Meeting form item
 			const fieldsText = screen.getByText("2 fields");
 			const selectedButton = fieldsText.closest("button");
-			expect(selectedButton).toHaveClass("ring-2");
+			expect(selectedButton).toHaveClass("ui-card-selected");
 		});
 
 		it("should call onSelectForm when a form is clicked", () => {

@@ -21,10 +21,35 @@ components:
       type: floating-icon-button
       position: top-right-floating
       icon: settings
-      target_page: space-settings
+      menu:
+        id: ui-theme-menu
+        theme_options:
+          - materialize
+          - classic
+          - pop
+        color_modes:
+          - light
+          - dark
+        persist: localStorage
+        actions:
+          - id: open-space-settings
+            label: Space settings
+            target_page: space-settings
   body:
     - id: space-title
       type: heading
       level: 1
       text: "{space_name}"
       emphasis: xl
+    - id: quick-actions
+      type: grid-list
+      item_type: action
+      items:
+        - id: create-entry
+          type: button
+          label: "New entry"
+          target_page: space-entries-object
+        - id: create-form
+          type: button
+          label: "New form"
+          target_page: space-form-grid

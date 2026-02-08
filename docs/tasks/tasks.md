@@ -168,6 +168,27 @@ and add automated validation that frontend tests load and verify the spec.
 
 ---
 
+## Phase 7.5: UIの洗練化 (追加)
+
+**Objective**: 既存UIの構成を維持したまま、モバイル対応とテーマ統一を実装し、設定アイコンからUIテーマを切り替え可能にする。
+
+### Key Tasks
+- [ ] モバイル対応 (トップバー/ナビ/カード/フォームのレスポンシブ最適化)
+- [ ] Tailwind v4 `@theme` の推奨パターンでテーマトークンを定義
+- [ ] `@apply` を使わず、テーマトークンで全体の色/影/角丸/サイズ感を統一
+- [ ] 上部バー右側に設定アイコンを配置し、UIテーマ切替を提供
+- [ ] UIテーマ: `materialize` / `classic` / `pop`
+- [ ] 色合い: `light` / `dark` を独立切替
+- [ ] 選択状態を永続化 (localStorage)
+
+### Acceptance Criteria
+- [ ] 全画面がモバイルで崩れず操作可能
+- [ ] テーマ切替が全UIに即時反映される
+- [ ] `@apply` 未使用でテーマ統一が保たれている
+- [ ] 設定アイコンからテーマ選択が可能
+
+---
+
 ## Phase 8: Terminology Rebrand (Space/Form/Entry/Asset)
 
 **Objective**: Rename the core terminology across specs, docs, code, file paths, and data model

@@ -31,50 +31,50 @@ export default function SpaceTestConnectionRoute() {
 	};
 
 	return (
-		<main class="min-h-screen bg-gray-50">
+		<main class="ui-shell ui-page">
 			<div class="max-w-3xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
 					<div>
-						<h1 class="text-2xl font-bold text-gray-900">Test Connection</h1>
-						<p class="text-sm text-gray-500">Space ID: {spaceId()}</p>
+						<h1 class="ui-page-title">Test Connection</h1>
+						<p class="text-sm ui-muted">Space ID: {spaceId()}</p>
 					</div>
-					<A href={`/spaces/${spaceId()}`} class="text-sm text-sky-700 hover:underline">
+					<A href={`/spaces/${spaceId()}`} class="text-sm">
 						Back to Settings
 					</A>
 				</div>
 
 				<Show when={space.loading}>
-					<p class="text-sm text-gray-500">Loading space...</p>
+					<p class="text-sm ui-muted">Loading space...</p>
 				</Show>
 				<Show when={space.error}>
-					<p class="text-sm text-red-600">Failed to load space.</p>
+					<p class="ui-alert ui-alert-error text-sm">Failed to load space.</p>
 				</Show>
 
-				<div class="bg-white border rounded-lg p-4">
-					<label class="block text-sm font-medium text-gray-700 mb-2" for="storage-uri">
+				<div class="ui-card">
+					<label class="ui-label text-sm mb-2" for="storage-uri">
 						Storage URI
 					</label>
 					<input
 						id="storage-uri"
 						type="text"
-						class="w-full px-3 py-2 border rounded"
+						class="ui-input w-full"
 						value={uri()}
 						onInput={(e) => setUri(e.currentTarget.value)}
 						placeholder="file:///local/path or s3://bucket/path"
 					/>
 					<button
 						type="button"
-						class="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+						class="ui-button ui-button-primary mt-3"
 						onClick={handleTest}
 						disabled={isTesting() || !uri()}
 					>
 						{isTesting() ? "Testing..." : "Test Connection"}
 					</button>
 					<Show when={status()}>
-						<p class="text-sm text-green-600 mt-2">Connection successful ({status()})</p>
+						<p class="ui-alert ui-alert-success text-sm mt-2">Connection successful ({status()})</p>
 					</Show>
 					<Show when={error()}>
-						<p class="text-sm text-red-600 mt-2">{error()}</p>
+						<p class="ui-alert ui-alert-error text-sm mt-2">{error()}</p>
 					</Show>
 				</div>
 			</div>

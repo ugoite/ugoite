@@ -68,19 +68,19 @@ export default function SpaceFormDetailRoute() {
 					when={resolvedForm()}
 					keyed
 					fallback={
-						<div class="p-8 text-center text-gray-500">
+						<div class="ui-card text-center ui-muted">
 							{loadingForm() ? "Loading form..." : "Form not found"}
 						</div>
 					}
 				>
 					{(s) => (
 						<div class="h-full flex flex-col">
-							<div class="flex flex-wrap items-center justify-between gap-2 p-4 border-b bg-white rounded-t-2xl">
+							<div class="ui-card ui-card-header flex flex-wrap items-center justify-between gap-2 p-4">
 								<h1 class="text-xl font-bold">{s.name}</h1>
 								<button
 									type="button"
 									onClick={() => setShowEditDialog(true)}
-									class="px-3 py-1 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-medium"
+									class="ui-button ui-button-secondary text-sm"
 								>
 									Edit Form
 								</button>

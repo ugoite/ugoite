@@ -71,7 +71,7 @@ describe("CreateFormDialog", () => {
 });
 
 describe("CreateEntryDialog", () => {
-	it("REQ-FE-037: requires form selection before creating a entry", async () => {
+	it("REQ-FE-037: requires form selection before creating an entry", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
 		const forms = [
@@ -102,6 +102,71 @@ describe("CreateEntryDialog", () => {
 
 		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
 		expect(createButton).not.toBeDisabled();
+	});
+
+	it("REQ-FE-037: blocks submission when required fields are empty", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { Status: { type: "string", required: true } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Test Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const createButton = screen.getByRole("button", { name: "Create" });
+		fireEvent.click(createButton);
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(screen.getByText("Please fill required fields: Status.")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-037: pre-fills defaults for required fields", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Event",
+				version: 1,
+				fields: {
+					Date: { type: "date", required: true },
+					Time: { type: "time", required: true },
+					StartsAt: { type: "timestamp", required: true },
+					Count: { type: "integer", required: true },
+				},
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Test Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Event" } });
+
+		const dateInput = screen.getByLabelText(/Date/);
+		const timeInput = screen.getByLabelText(/Time/);
+		const startsAtInput = screen.getByLabelText(/StartsAt/);
+		const countInput = screen.getByLabelText(/Count/);
+
+		expect((dateInput as HTMLInputElement).value).not.toBe("");
+		expect((timeInput as HTMLInputElement).value).not.toBe("");
+		expect((startsAtInput as HTMLInputElement).value).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+		expect((countInput as HTMLInputElement).value).toBe("0");
 	});
 });
 

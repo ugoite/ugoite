@@ -1,6 +1,6 @@
 export default function FormsIndex() {
 	return (
-		<div class="flex-1 flex items-center justify-center text-gray-400">
+		<div class="flex-1 flex items-center justify-center ui-muted">
 			<div class="text-center">
 				<svg
 					class="w-16 h-16 mx-auto mb-4 opacity-50"

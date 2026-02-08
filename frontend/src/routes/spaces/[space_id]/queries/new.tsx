@@ -68,22 +68,22 @@ export default function SpaceQueryCreateRoute() {
 	return (
 		<SpaceShell spaceId={spaceId()} activeTopTab="search">
 			<div class="mx-auto max-w-4xl">
-				<h1 class="text-2xl font-semibold text-slate-900">Create query</h1>
+				<h1 class="ui-page-title">Create query</h1>
 
-				<div class="mt-6 space-y-4">
-					<label class="block text-sm font-medium text-slate-700" for="query-title">
+				<div class="mt-6 ui-stack-sm">
+					<label class="ui-label" for="query-title">
 						Query name
 					</label>
 					<input
 						id="query-title"
-						class="w-full rounded-lg border border-slate-300 px-3 py-2"
+						class="ui-input"
 						placeholder="Untitled query"
 						value={queryName()}
 						onInput={(e) => setQueryName(e.currentTarget.value)}
 					/>
 
 					<div>
-						<label class="block text-sm font-medium text-slate-700 mb-2" for="query-sql">
+						<label class="ui-label mb-2" for="query-sql">
 							SQL
 						</label>
 						<SqlQueryEditor
@@ -97,17 +97,17 @@ export default function SpaceQueryCreateRoute() {
 					</div>
 
 					<Show when={diagnostics().length > 0}>
-						<ul class="text-sm text-amber-700 space-y-1">
+						<ul class="text-sm ui-text-warning ui-stack-sm">
 							<For each={diagnostics()}>{(diag) => <li>{diag.message}</li>}</For>
 						</ul>
 					</Show>
 					<Show when={error()}>
-						<p class="text-sm text-red-600">{error()}</p>
+						<p class="text-sm ui-text-danger">{error()}</p>
 					</Show>
 
 					<button
 						type="button"
-						class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50"
+						class="ui-button ui-button-primary text-sm"
 						onClick={handleSave}
 						disabled={isSaving()}
 					>
