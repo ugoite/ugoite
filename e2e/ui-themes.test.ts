@@ -57,7 +57,9 @@ test.describe("UI theme flows", () => {
 			await page.getByRole("heading", { name: "Filters" }).waitFor();
 			await page.getByRole("button", { name: "Close" }).click();
 
-			await page.getByRole("link", { name: "Create query" }).click();
+			await page.goto(`/spaces/${spaceId}/queries/new`, { waitUntil: "networkidle" });
+			await page.getByLabel("Query name").waitFor({ state: "visible" });
+			await page.waitForLoadState("networkidle");
 
 			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
 			await page.getByLabel("Query name").fill(queryName);
