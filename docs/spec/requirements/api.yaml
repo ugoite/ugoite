@@ -166,3 +166,31 @@ requirements:
         - file: ieapp-core/tests/test_sql_sessions.rs
           tests:
             - test_sql_sessions_req_api_008_end_to_end
+
+  - id: REQ-API-009
+    title: Sample data space generation
+    description: |
+      The API MUST provide a way to generate a sample-data space with a small
+      set of input parameters (space id, scenario, entry count, seed), backed
+      by ieapp-core dynamic generation.
+    related_spec:
+      - api/rest.md#spaces
+      - features/spaces.yaml
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_create_sample_space
+        - file: ieapp-cli/tests/test_space.py
+          tests:
+            - test_create_sample_space_req_api_009
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should create a sample-data space
+      rust:
+        - file: ieapp-core/tests/test_sample_data.rs
+          tests:
+            - test_sample_data_req_api_009_create_sample_space

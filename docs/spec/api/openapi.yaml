@@ -21,6 +21,13 @@ paths:
         "201":
           description: Created
 
+  /spaces/sample-data:
+    post:
+      summary: Create sample data space
+      responses:
+        "201":
+          description: Created
+
   /spaces/{space_id}:
     get:
       summary: Get space
