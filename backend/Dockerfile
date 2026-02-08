@@ -20,6 +20,7 @@ COPY --from=module ./ ../ieapp-cli/
 COPY ./src src
 
 ENV UV_LINK_MODE=copy
+ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 # Install backend dependencies
 RUN uv sync --locked
 
