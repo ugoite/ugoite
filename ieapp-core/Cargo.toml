@@ -30,7 +30,7 @@ hex = "0.4"
 iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
 arrow-array = "57.0"
 arrow-schema = "57.3"
-parquet = { version = "57.0", default-features = false, features = ["arrow", "async"] }
+parquet = { version = "57.3", default-features = false, features = ["arrow", "async"] }
 sqlparser = "0.60.0"
 
 [dev-dependencies]
