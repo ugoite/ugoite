@@ -9,7 +9,7 @@
 		"test:forms": "playwright test forms.test.ts"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.58.1",
+		"@playwright/test": "^1.58.2",
 		"@types/node": "^25.2.1",
 		"typescript": "^5.9.3"
 	}
