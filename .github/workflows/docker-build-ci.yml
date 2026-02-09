@@ -39,3 +39,5 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: false
+          build-contexts: |
+            shared=./shared
