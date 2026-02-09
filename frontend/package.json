@@ -15,7 +15,7 @@
 		"@codemirror/lang-sql": "^6.9.0",
 		"@codemirror/lint": "^6.5.0",
 		"@codemirror/state": "^6.5.1",
-		"@codemirror/view": "^6.28.0",
+		"@codemirror/view": "^6.39.13",
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.1",
 		"solid-js": "^1.9.11",
