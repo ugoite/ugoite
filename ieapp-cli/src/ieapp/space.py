@@ -165,9 +165,11 @@ def create_sample_space(
     resolved = options or SampleSpaceOptions()
 
     if resolved.entry_count < 1:
-        raise ValueError("entry_count must be >= 1")
+        msg_err = "entry_count must be >= 1"
+        raise ValueError(msg_err)
     if resolved.seed is not None and resolved.seed < 0:
-        raise ValueError("seed must be >= 0")
+        msg_err = "seed must be >= 0"
+        raise ValueError(msg_err)
 
     try:
         return run_async(
