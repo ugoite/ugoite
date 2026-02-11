@@ -4,6 +4,7 @@ use opendal::Operator;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::index;
 use crate::materialized_view;
 use crate::saved_sql;
 
@@ -152,13 +153,11 @@ pub async fn get_sql_session_count(op: &Operator, ws_path: &str, session_id: &st
         return Err(anyhow!("SQL session expired"));
     }
 
-    let sql_id = meta
-        .get("view")
-        .and_then(|v| v.get("sql_id"))
-        .or_else(|| meta.get("sql_id"))
+    let sql = meta
+        .get("sql")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql_id"))?;
-    let rows = materialized_view::read_view_rows(op, ws_path, sql_id).await?;
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    let rows = index::execute_sql_query(op, ws_path, sql).await?;
     Ok(rows.len() as u64)
 }
 
@@ -173,13 +172,11 @@ pub async fn get_sql_session_rows(
     if meta.get("status") == Some(&Value::String("expired".to_string())) {
         return Err(anyhow!("SQL session expired"));
     }
-    let sql_id = meta
-        .get("view")
-        .and_then(|v| v.get("sql_id"))
-        .or_else(|| meta.get("sql_id"))
+    let sql = meta
+        .get("sql")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql_id"))?;
-    let rows = materialized_view::read_view_rows(op, ws_path, sql_id).await?;
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    let rows = index::execute_sql_query(op, ws_path, sql).await?;
     let total = rows.len();
     let start = offset.min(total);
     let end = (offset + limit).min(total);
@@ -202,11 +199,9 @@ pub async fn get_sql_session_rows_all(
     if meta.get("status") == Some(&Value::String("expired".to_string())) {
         return Err(anyhow!("SQL session expired"));
     }
-    let sql_id = meta
-        .get("view")
-        .and_then(|v| v.get("sql_id"))
-        .or_else(|| meta.get("sql_id"))
+    let sql = meta
+        .get("sql")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql_id"))?;
-    materialized_view::read_view_rows(op, ws_path, sql_id).await
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    index::execute_sql_query(op, ws_path, sql).await
 }

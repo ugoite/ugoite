@@ -3,8 +3,6 @@ use chrono::Utc;
 use opendal::Operator;
 use serde_json::Value;
 
-use crate::index;
-
 const VIEW_DIR: &str = "materialized_views";
 
 fn views_root(ws_path: &str) -> String {
@@ -17,10 +15,6 @@ fn view_path(ws_path: &str, sql_id: &str) -> String {
 
 fn meta_path(ws_path: &str, sql_id: &str) -> String {
     format!("{}/meta.json", view_path(ws_path, sql_id))
-}
-
-fn rows_path(ws_path: &str, sql_id: &str) -> String {
-    format!("{}/rows.json", view_path(ws_path, sql_id))
 }
 
 async fn ensure_views_dir(op: &Operator, ws_path: &str) -> Result<()> {
@@ -54,9 +48,6 @@ pub async fn create_or_update_view(
         op.create_dir(&view_dir).await?;
     }
 
-    let rows = index::execute_sql_query(op, ws_path, sql).await?;
-    write_json(op, &rows_path(ws_path, sql_id), &Value::Array(rows)).await?;
-
     let now = Utc::now().to_rfc3339();
     let snapshot_id = Utc::now().timestamp_millis() as u64;
     let created_at = if op.exists(&meta_path(ws_path, sql_id)).await? {
@@ -75,6 +66,7 @@ pub async fn create_or_update_view(
         "created_at": created_at,
         "updated_at": now,
         "snapshot_id": snapshot_id,
+        "sql": sql,
     });
 
     write_json(op, &meta_path(ws_path, sql_id), &meta).await?;
@@ -91,9 +83,4 @@ pub async fn delete_view(op: &Operator, ws_path: &str, sql_id: &str) -> Result<(
 
 pub async fn read_view_meta(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value> {
     read_json(op, &meta_path(ws_path, sql_id)).await
-}
-
-pub async fn read_view_rows(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Vec<Value>> {
-    let rows_value = read_json(op, &rows_path(ws_path, sql_id)).await?;
-    Ok(rows_value.as_array().cloned().unwrap_or_default())
 }

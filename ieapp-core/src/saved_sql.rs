@@ -95,6 +95,24 @@ fn sql_placeholder_regex() -> &'static Regex {
     })
 }
 
+fn matches_sql_template(template: &str, candidate: &str) -> bool {
+    let regex = sql_placeholder_regex();
+    let mut pattern = String::new();
+    let mut last = 0;
+    for capture in regex.captures_iter(template) {
+        if let Some(matched) = capture.get(0) {
+            pattern.push_str(&regex::escape(&template[last..matched.start()]));
+            pattern.push_str(".+?");
+            last = matched.end();
+        }
+    }
+    pattern.push_str(&regex::escape(&template[last..]));
+    let pattern = format!("^{}$", pattern);
+    Regex::new(&pattern)
+        .map(|re| re.is_match(candidate))
+        .unwrap_or(false)
+}
+
 fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
     let items = variables
         .as_array()
@@ -222,7 +240,7 @@ pub async fn find_sql_id_by_text(
             .and_then(|obj| obj.get("sql"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if sql_value == sql_text {
+        if sql_value == sql_text || matches_sql_template(sql_value, sql_text) {
             return Ok(Some(row.entry_id));
         }
     }

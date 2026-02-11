@@ -630,21 +630,21 @@ def test_query_entries_sql(
         },
     )
 
+    sql_query = "SELECT * FROM entries WHERE title = 'Alpha'"
     sql_res = test_client.post(
         "/spaces/test-ws/sql",
         json={
             "id": "sql-alpha",
             "name": "Alpha Query",
-            "sql": "SELECT * FROM entries WHERE title = 'Alpha'",
+            "sql": sql_query,
             "variables": [],
         },
     )
     assert sql_res.status_code == 201
-    sql_entry = sql_res.json()
 
     response = test_client.post(
         "/spaces/test-ws/sql-sessions",
-        json={"sql": sql_entry["sql"]},
+        json={"sql": sql_query},
     )
     assert response.status_code == 201
     session = response.json()
