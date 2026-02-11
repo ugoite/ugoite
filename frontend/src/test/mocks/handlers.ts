@@ -199,7 +199,7 @@ export const handlers = [
 			forms,
 		};
 		const job: SampleSpaceJob = {
-			job_id: `job-${id}`,
+			job_id: "00000000-0000-4000-8000-000000000001", // Valid UUID for mock
 			space_id: id,
 			scenario: summary.scenario,
 			entry_count: summary.entry_count,
