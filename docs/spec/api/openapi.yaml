@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: IEapp API
+  title: Ugoite API
   version: "0.1"
   description: |
     Minimal OpenAPI document for the current REST surface.
@@ -215,7 +215,7 @@ paths:
                   type: object
                   additionalProperties: true
                   description: |-
-                    Filter object or IEapp SQL payload via `$sql`.
+                    Filter object or Ugoite SQL payload via `$sql`.
               required:
                 - filter
       responses:

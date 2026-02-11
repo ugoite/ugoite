@@ -88,7 +88,7 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={onSave} />);
 
 		const uriInput = screen.getByLabelText(/storage uri/i);
-		fireEvent.input(uriInput, { target: { value: "s3://my-bucket/ieapp" } });
+		fireEvent.input(uriInput, { target: { value: "s3://my-bucket/ugoite" } });
 
 		const saveButton = screen.getByRole("button", { name: /save/i });
 		fireEvent.click(saveButton);
@@ -96,7 +96,7 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Test Space",
-				storage_config: { uri: "s3://my-bucket/ieapp" },
+				storage_config: { uri: "s3://my-bucket/ugoite" },
 			});
 		});
 	});

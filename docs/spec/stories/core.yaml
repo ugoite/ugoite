@@ -1,6 +1,6 @@
 # Core User Stories
 #
-# Essential scenarios that define the core IEapp product.
+# Essential scenarios that define the core Ugoite product.
 # These stories represent the MVP functionality.
 
 version: "0.1"
@@ -27,7 +27,7 @@ stories:
       - rest: POST /spaces/{space_id}/entries
       - rest: PUT /spaces/{space_id}/entries/{entry_id}
       - rest: GET /spaces/{space_id}/forms
-      - mcp: ieapp://{space_id}/forms
+      - mcp: ugoite://{space_id}/forms
     requirements:
       - REQ-ENTRY-006
       - REQ-IDX-002

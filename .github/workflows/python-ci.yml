@@ -36,19 +36,19 @@ jobs:
         run: uv run ty check .
 
       - name: Run ty check (cli)
-        working-directory: ./ieapp-cli
+        working-directory: ./ugoite-cli
         run: uv run ty check .
 
       - name: Run ty check (core)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: uv run ty check .
 
       - name: Run rustfmt check (core)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: cargo fmt --check
 
       - name: Run clippy (core)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: cargo clippy -- -D warnings
 
       - name: Run pytest (backend)
@@ -56,20 +56,20 @@ jobs:
         run: uv run pytest
 
       - name: Run pytest (cli)
-        working-directory: ./ieapp-cli
+        working-directory: ./ugoite-cli
         run: uv run pytest
 
       - name: Run docs consistency tests
         run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
 
       - name: Build core (maturin)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: uv run maturin develop
 
       - name: Run pytest (core)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: uv run pytest
 
       - name: Run cargo test (core)
-        working-directory: ./ieapp-core
+        working-directory: ./ugoite-core
         run: cargo test

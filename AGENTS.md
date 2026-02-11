@@ -1,4 +1,4 @@
-# IE-app AI Agent Development Guide
+# Ugoite AI Agent Development Guide
 
 ## 🎯 Project Context
 
@@ -31,7 +31,7 @@ mise run test             # Run all tests
 uvx ruff format .         # Auto-format Python
 uvx ruff check --fix .    # Fix lint issues
 cd backend && uv run ty check .      # Type check backend
-cd ieapp-cli && uv run ty check .    # Type check CLI
+cd ugoite-cli && uv run ty check .    # Type check CLI
 cd frontend && biome ci . # Check frontend
 
 ```

@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated, Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.api.endpoints.space import (
@@ -32,7 +32,7 @@ async def upload_asset_endpoint(
     contents = await file.read()
 
     try:
-        return await ieapp_core.save_asset(
+        return await ugoite_core.save_asset(
             storage_config,
             space_id,
             file.filename or "",
@@ -56,7 +56,7 @@ async def list_assets_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_assets(storage_config, space_id)
+        return await ugoite_core.list_assets(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list assets")
         raise HTTPException(
@@ -77,7 +77,7 @@ async def delete_asset_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        await ieapp_core.delete_asset(storage_config, space_id, asset_id)
+        await ugoite_core.delete_asset(storage_config, space_id, asset_id)
     except RuntimeError as e:
         msg = str(e)
         if "referenced" in msg.lower():

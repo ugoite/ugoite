@@ -15,12 +15,12 @@ apis:
       path: /spaces
       file: frontend/src/routes/spaces/index.tsx
       function: SpacesIndexRoute
-    ieapp_core:
-      file: ieapp-core/src/space.rs
+    ugoite_core:
+      file: ugoite-core/src/space.rs
       function: list_spaces
-    ieapp_cli:
-      command: ieapp space list
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite space list
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_list
 
   - id: space.create
@@ -33,12 +33,12 @@ apis:
       path: /spaces
       file: frontend/src/routes/spaces/index.tsx
       function: SpacesIndexRoute
-    ieapp_core:
-      file: ieapp-core/src/space.rs
+    ugoite_core:
+      file: ugoite-core/src/space.rs
       function: create_space
-    ieapp_cli:
-      command: ieapp create-space
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite create-space
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_create_space
 
   - id: space.sample_data
@@ -51,12 +51,12 @@ apis:
       path: /spaces
       file: frontend/src/routes/spaces/index.tsx
       function: SpacesIndexRoute
-    ieapp_core:
-      file: ieapp-core/src/sample_data.rs
+    ugoite_core:
+      file: ugoite-core/src/sample_data.rs
       function: create_sample_space
-    ieapp_cli:
-      command: ieapp space sample-data
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite space sample-data
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_sample_data
 
   - id: space.get
@@ -69,12 +69,12 @@ apis:
       path: /spaces/{space_id}
       file: frontend/src/routes/spaces/[space_id]/index.tsx
       function: SpaceDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/space.rs
+    ugoite_core:
+      file: ugoite-core/src/space.rs
       function: get_space
-    ieapp_cli:
-      command: ieapp space get
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite space get
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_get
 
   - id: space.patch
@@ -87,12 +87,12 @@ apis:
       path: /spaces/{space_id}
       file: frontend/src/routes/spaces/[space_id]/index.tsx
       function: SpaceDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/space.rs
+    ugoite_core:
+      file: ugoite-core/src/space.rs
       function: patch_space
-    ieapp_cli:
-      command: ieapp space patch
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite space patch
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_patch
 
   - id: space.test_connection
@@ -105,10 +105,10 @@ apis:
       path: /spaces/{space_id}/test-connection
       file: frontend/src/routes/spaces/[space_id]/test-connection.tsx
       function: SpaceTestConnectionRoute
-    ieapp_core:
-      file: ieapp-core/src/space.rs
+    ugoite_core:
+      file: ugoite-core/src/space.rs
       function: test_storage_connection
-    ieapp_cli:
-      command: ieapp space test-connection
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite space test-connection
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_test_connection

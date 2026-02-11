@@ -91,7 +91,7 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     _require_build_contexts(
         "backend",
         backend_step,
-        {"core=./ieapp-core", "module=./ieapp-cli"},
+        {"core=./ugoite-core", "module=./ugoite-cli"},
         missing_parts,
     )
     _require_build_contexts(

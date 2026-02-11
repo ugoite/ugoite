@@ -26,7 +26,7 @@ jobs:
       - name: Run ScanCode pipelines
         uses: aboutcode-org/scancode-action@beta
         with:
-          project-name: "ieapp"
+          project-name: "ugoite"
           inputs-path: "scancode-inputs"
           pipelines: "scan_codebase,find_vulnerabilities"
           output-formats: "json xlsx spdx cyclonedx:1.5"

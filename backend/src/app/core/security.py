@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-import ieapp_core
+import ugoite_core
 
 from app.core.storage import storage_config_from_root
 
@@ -62,7 +62,7 @@ async def build_response_signature(
 ) -> tuple[str, str]:
     """Compute the HMAC signature for the response body.
 
-    This function delegates to ieapp-core, which computes the HMAC signature
+    This function delegates to ugoite-core, which computes the HMAC signature
     using the configured signing key and related settings, keeping
     cryptographic and business logic out of the backend API layer for
     better abstraction and testability.
@@ -76,4 +76,4 @@ async def build_response_signature(
 
     """
     storage_config = storage_config_from_root(root_path)
-    return await ieapp_core.build_response_signature(storage_config, body)
+    return await ugoite_core.build_response_signature(storage_config, body)

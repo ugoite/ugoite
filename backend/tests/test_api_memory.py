@@ -25,7 +25,7 @@ def memory_client(
     memory_root = "memory://test_backend_root"
 
     # Patch environment variable
-    monkeypatch.setenv("IEAPP_ROOT", memory_root)
+    monkeypatch.setenv("UGOITE_ROOT", memory_root)
 
     # We also need to make sure get_root_path returns this
     # (It reads env var, so it should be fine if patched before call)

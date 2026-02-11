@@ -1,28 +1,28 @@
 # CLI Guide
 
-This guide explains how to run the IEapp CLI inside the devcontainer.
+This guide explains how to run the Ugoite CLI inside the devcontainer.
 
 ## Install dependencies
 
 From the repository root:
 
 ```bash
-mise run //ieapp-cli:install
+mise run //ugoite-cli:install
 ```
 
 Alternatively, you can install directly in the CLI folder:
 
 ```bash
-cd ieapp-cli
+cd ugoite-cli
 uv sync
 ```
 
 ## Run the CLI
 
-The CLI is exposed as the `ieapp` command via `uv run`.
+The CLI is exposed as the `ugoite` command via `uv run`.
 
 ```bash
-uv run ieapp --help
+uv run ugoite --help
 ```
 
 ## Basic workflow
@@ -31,13 +31,13 @@ Create a local data directory and list spaces:
 
 ```bash
 mkdir -p ./spaces
-uv run ieapp space list ./spaces
+uv run ugoite space list ./spaces
 ```
 
 Create a new space:
 
 ```bash
-uv run ieapp create-space ./spaces demo
+uv run ugoite create-space ./spaces demo
 ```
 
 ## Notes

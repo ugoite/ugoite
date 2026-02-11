@@ -1,4 +1,4 @@
-# IEapp Specification Index
+# Ugoite Specification Index
 
 **Version**: 2.0.0 (Full Configuration)  
 **Updated**: February 2026  
@@ -8,7 +8,7 @@
 
 **"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
 
-IEapp is a knowledge management system built on three core principles:
+Ugoite is a knowledge management system built on three core principles:
 
 | Principle | Description |
 |-----------|-------------|
@@ -29,7 +29,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ### Features & Stories
 - [Features Registry](features/README.md) - API-level feature registry across modules
-- [IEapp SQL](features/sql.md) - SQL dialect for structured queries
+- [Ugoite SQL](features/sql.md) - SQL dialect for structured queries
 - [Core Stories](stories/core.yaml) - Essential user scenarios
 - [Advanced Stories](stories/advanced.yaml) - Power user and experimental features
 
@@ -65,9 +65,9 @@ IEapp is a knowledge management system built on three core principles:
 
 | Module | Responsibility | Language |
 |--------|----------------|----------|
-| `ieapp-core` | Core data operations, storage (OpenDAL), validation | Rust |
-| `ieapp-cli` | Command-line interface for direct user interaction | Python |
-| `backend` | REST API, MCP server (delegates to ieapp-core) | Python (FastAPI) |
+| `ugoite-core` | Core data operations, storage (OpenDAL), validation | Rust |
+| `ugoite-cli` | Command-line interface for direct user interaction | Python |
+| `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
 | `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |
 
 ---

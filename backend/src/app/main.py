@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-import ieapp_core
+import ugoite_core
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,7 +31,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     root_path: Path | str = get_root_path()
     storage_config = storage_config_from_root(root_path)
     try:
-        await ieapp_core.create_space(storage_config, "default")
+        await ugoite_core.create_space(storage_config, "default")
         logger.info("Created default space at startup")
     except RuntimeError as exc:  # pragma: no cover - best effort guard
         if "already exists" in str(exc).lower():

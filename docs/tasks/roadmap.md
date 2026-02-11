@@ -1,9 +1,9 @@
-# IEapp Development Roadmap
+# Ugoite Development Roadmap
 
 **Vision**: "Local-First, AI-Native Knowledge Space for the Post-SaaS Era"  
 **Core Principles**: Low Cost, Easy, Freedom
 
-This roadmap outlines the major milestones planned for IEapp development.
+This roadmap outlines the major milestones planned for Ugoite development.
 
 ---
 
@@ -47,8 +47,8 @@ Focus on codebase quality, consistency, and architecture refinement:
 4. **Requirements Automation** - YAML-based requirements with automated test verification
 
 ### Deliverables
-- `ieapp-core` Rust crate with opendal for storage
-- Python bindings via pyo3 for ieapp-cli
+- `ugoite-core` Rust crate with opendal for storage
+- Python bindings via pyo3 for ugoite-cli
 - Unified feature paths in `docs/spec/features.yaml`
 - YAML-based requirements in `docs/spec/requirements/`
 - Document consistency tests
@@ -65,10 +65,10 @@ Focus on storing entries as Form-backed Iceberg tables while preserving the curr
 1. **Iceberg Storage** - Form-defined fields stored as Iceberg tables per Form
 2. **Form-First Entries** - Entries require a Form; no formless entries
 3. **Deterministic Reconstruction** - Markdown can be reconstructed from table rows
-4. **IEapp SQL** - Domain-specific SQL for flexible user queries
+4. **Ugoite SQL** - Domain-specific SQL for flexible user queries
 
 ### Expected Deliverables
-- Iceberg-backed storage in `ieapp-core`
+- Iceberg-backed storage in `ugoite-core`
 - Form validation for allowed fields
 - SQL query engine over Form data
 
@@ -134,7 +134,7 @@ Focus on desktop application using Tauri:
 
 ### Key Objectives
 1. **Tauri Desktop App** - Cross-platform (Windows, macOS, Linux)
-2. **Direct Crate Integration** - ieapp-core used directly (not via Python)
+2. **Direct Crate Integration** - ugoite-core used directly (not via Python)
 3. **Offline-First Sync** - Background sync with conflict resolution
 4. **System Integration** - File associations, tray icon, keyboard shortcuts
 5. **Mobile Support** - iOS/Android via Tauri Mobile (experimental)

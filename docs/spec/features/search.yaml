@@ -15,12 +15,12 @@ apis:
       path: /spaces/{space_id}/query
       file: frontend/src/routes/spaces/[space_id]/query.tsx
       function: SpaceQueryRoute
-    ieapp_core:
-      file: ieapp-core/src/index.rs
+    ugoite_core:
+      file: ugoite-core/src/index.rs
       function: query_index
-    ieapp_cli:
-      command: ieapp query
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite query
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_query
 
   - id: search.keyword
@@ -33,10 +33,10 @@ apis:
       path: /spaces/{space_id}/search
       file: frontend/src/routes/spaces/[space_id]/search.tsx
       function: SpaceSearchRoute
-    ieapp_core:
-      file: ieapp-core/src/search.rs
+    ugoite_core:
+      file: ugoite-core/src/search.rs
       function: search_entries
-    ieapp_cli:
-      command: ieapp search keyword
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite search keyword
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_search_keyword

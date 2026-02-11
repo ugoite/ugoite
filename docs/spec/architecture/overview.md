@@ -2,7 +2,7 @@
 
 ## 1. High-Level Architecture
 
-IEapp follows a **Local-First, Server-Relay** architecture. The system is designed for:
+Ugoite follows a **Local-First, Server-Relay** architecture. The system is designed for:
 
 - **Portability**: Iceberg tables (Parquet) with Markdown reconstruction
 - **AI Integration**: First-class support for AI agents via MCP
@@ -20,7 +20,7 @@ IEapp follows a **Local-First, Server-Relay** architecture. The system is design
                │                                 │
                ▼                                 ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
-│     Backend (FastAPI)       │   │      ieapp-cli (Python)     │
+│     Backend (FastAPI)       │   │      ugoite-cli (Python)     │
 │  - REST API & MCP Server    │   │  - Typer-based CLI          │
 │  - Auth & Orchestration     │   │  - Direct data access       │
 └──────────────┬──────────────┘   └──────────────┬──────────────┘
@@ -29,7 +29,7 @@ IEapp follows a **Local-First, Server-Relay** architecture. The system is design
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   ieapp-core (Rust Crate)                       │
+│                   ugoite-core (Rust Crate)                       │
 │   - All data operations                                         │
 │   - Storage abstraction (OpenDAL)                               │
 │   - Compiles to: native, Python binding, WebAssembly            │
@@ -47,7 +47,7 @@ IEapp follows a **Local-First, Server-Relay** architecture. The system is design
 
 ## 2. Module Responsibilities
 
-### ieapp-core (Rust)
+### ugoite-core (Rust)
 
 The core library handles ALL data operations:
 
@@ -62,7 +62,7 @@ The core library handles ALL data operations:
 | `integrity.rs` | HMAC signing, checksum verification |
 | `search.rs` | Full-text and structured queries |
 
-### ieapp-cli (Python)
+### ugoite-cli (Python)
 
 Command-line interface for power users:
 
@@ -77,7 +77,7 @@ API layer providing access to frontend and AI agents:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `api/endpoints/` | REST route handlers (call ieapp-core bindings) |
+| `api/endpoints/` | REST route handlers (call ugoite-core bindings) |
 | `mcp/` | MCP protocol implementation |
 | `models/` | Pydantic request/response models |
 | `core/` | Configuration, middleware |
@@ -95,7 +95,7 @@ UI layer with NO data logic:
 
 ## 3. The "Structure-from-Text" Engine
 
-IEapp bridges the gap between Markdown freedom and database structure:
+Ugoite bridges the gap between Markdown freedom and database structure:
 
 1. **Parse**: Scan Markdown for H2 headers (`## Key`)
 2. **Extract**: Convert headers + content to structured properties
@@ -109,7 +109,7 @@ This enables "Markdown sections as database fields" without complex forms.
 **Creating an Entry:**
 
 ```
-Frontend                 Backend              ieapp-core           Storage
+Frontend                 Backend              ugoite-core           Storage
    │                        │                     │                   │
    │ POST /spaces/:id/entries│                    │                   │
    │───────────────────────>│                     │                   │

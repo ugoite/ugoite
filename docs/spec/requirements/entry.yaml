@@ -15,7 +15,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_create_entry_basic
         - file: backend/tests/test_api.py
@@ -23,7 +23,7 @@ requirements:
             - test_create_entry
             - test_create_entry_conflict
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_001_create_entry_basic
       vitest:
@@ -51,11 +51,11 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_update_entry_revision_mismatch
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_003_update_entry_success
             - test_entry_req_entry_002_update_entry_conflict
@@ -74,7 +74,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_entry_history_append
             - test_entry_history_diff
@@ -82,7 +82,7 @@ requirements:
           tests:
             - test_update_entry
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_003_update_entry_success
       vitest:
@@ -122,7 +122,7 @@ requirements:
           tests:
             - DELETE /spaces/default/entries/:id removes entry
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_004_delete_entry
 
@@ -137,7 +137,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_entry_history_append
             - test_entry_history_diff
@@ -147,7 +147,7 @@ requirements:
             - test_get_entry_revision
             - test_restore_entry
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_005_entry_history_append
 
@@ -162,10 +162,10 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_markdown_sections_persist
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_extract_properties_h2_sections
             - test_extract_properties_precedence
@@ -174,7 +174,7 @@ requirements:
           tests:
             - should extract H2 headers as properties
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_006_extract_h2_headers
 
@@ -188,7 +188,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_entries.py
+        - file: ugoite-cli/tests/test_entries.py
           tests:
             - test_list_entries_returns_properties_and_links
         - file: backend/tests/test_api.py
@@ -211,7 +211,7 @@ requirements:
           tests:
             - test_upload_asset_and_link_to_entry
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_entry_008_assets_linking
 

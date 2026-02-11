@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import get_root_path
@@ -32,7 +32,7 @@ async def _ensure_space_exists(
 ) -> dict[str, Any]:
     """Ensure a space exists or raise 404."""
     try:
-        return await ieapp_core.get_space(storage_config, space_id)
+        return await ugoite_core.get_space(storage_config, space_id)
     except RuntimeError as exc:
         msg = str(exc)
         if "not found" in msg.lower():
@@ -80,13 +80,13 @@ async def _validate_entry_markdown_against_form(
     markdown: str,
 ) -> None:
     """Validate extracted entry properties against the space form."""
-    properties = ieapp_core.extract_properties(markdown)
+    properties = ugoite_core.extract_properties(markdown)
     entry_form = properties.get("form")
     if not isinstance(entry_form, str) or not entry_form.strip():
         return
 
     try:
-        form_def = await ieapp_core.get_form(storage_config, space_id, entry_form)
+        form_def = await ugoite_core.get_form(storage_config, space_id, entry_form)
     except RuntimeError as e:
         if "not found" not in str(e).lower():
             raise HTTPException(
@@ -98,7 +98,7 @@ async def _validate_entry_markdown_against_form(
             detail=f"Form not found: {entry_form}",
         ) from e
 
-    _casted, warnings = ieapp_core.validate_properties(
+    _casted, warnings = ugoite_core.validate_properties(
         json.dumps(properties),
         json.dumps(form_def),
     )
@@ -110,7 +110,7 @@ async def _validate_entry_markdown_against_form(
 
 
 def _validate_path_id(identifier: str, name: str) -> None:
-    """Validate identifier using shared ieapp-cli rules."""
+    """Validate identifier using shared ugoite-cli rules."""
     try:
         validate_id(identifier, name)
     except ValueError as exc:  # pragma: no cover - exercised via API tests
@@ -130,7 +130,7 @@ async def list_spaces_endpoint() -> list[dict[str, Any]]:
     """List all spaces."""
     storage_config = _storage_config()
     try:
-        space_ids = await ieapp_core.list_spaces(storage_config)
+        space_ids = await ugoite_core.list_spaces(storage_config)
     except RuntimeError as exc:
         logger.warning("Failed to list spaces, returning empty list: %s", exc)
         return []
@@ -144,7 +144,7 @@ async def list_spaces_endpoint() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for space_id in space_ids:
         try:
-            results.append(await ieapp_core.get_space(storage_config, space_id))
+            results.append(await ugoite_core.get_space(storage_config, space_id))
         except Exception:
             logger.exception("Failed to read space meta %s", space_id)
 
@@ -160,7 +160,7 @@ async def create_space_endpoint(
 
     try:
         storage_config = _storage_config()
-        await ieapp_core.create_space(storage_config, space_id)
+        await ugoite_core.create_space(storage_config, space_id)
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise HTTPException(
@@ -194,7 +194,7 @@ async def create_sample_space_endpoint(
     storage_config = _storage_config()
 
     try:
-        return await ieapp_core.create_sample_space(
+        return await ugoite_core.create_sample_space(
             storage_config,
             payload.space_id,
             payload.scenario,
@@ -232,7 +232,7 @@ async def get_space_endpoint(space_id: str) -> dict[str, Any]:
     _validate_path_id(space_id, "space_id")
     try:
         storage_config = _storage_config()
-        return await ieapp_core.get_space(storage_config, space_id)
+        return await ugoite_core.get_space(storage_config, space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -270,7 +270,7 @@ async def patch_space_endpoint(
 
     try:
         storage_config = _storage_config()
-        return await ieapp_core.patch_space(
+        return await ugoite_core.patch_space(
             storage_config,
             space_id,
             json.dumps(patch_data),
@@ -304,7 +304,7 @@ async def test_connection_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.test_storage_connection(payload.storage_config)
+        return await ugoite_core.test_storage_connection(payload.storage_config)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

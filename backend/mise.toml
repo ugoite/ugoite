@@ -5,11 +5,11 @@ _.python.venv = { path = ".venv" }
 run = "uv sync"
 
 [tasks.dev]
-# IEAPP_ALLOW_REMOTE=true allows remote connections in dev containers / Codespaces
-run = "IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir . --reload-dir ../ieapp-core/ieapp_core"
+# UGOITE_ALLOW_REMOTE=true allows remote connections in dev containers / Codespaces
+run = "UGOITE_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir . --reload-dir ../ugoite-core/ugoite_core"
 
 [tasks.test]
 run = "uv run pytest"
 description = "Run backend pytest suite"
-depends = ["//ieapp-core:build"]
+depends = ["//ugoite-core:build"]
 

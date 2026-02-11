@@ -29,7 +29,7 @@ stories:
     title: Desktop App
     type: Native
     as_a: user who prefers native apps
-    i_want: to use IEapp as a standalone desktop application
+    i_want: to use Ugoite as a standalone desktop application
     so_that: I can access my entries without a browser and with better OS integration.
     acceptance_criteria:
       - Cross-platform desktop app (Windows, macOS, Linux)

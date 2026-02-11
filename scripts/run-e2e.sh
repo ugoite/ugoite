@@ -30,7 +30,7 @@ echo "Creating default space..."
 cd "$ROOT_DIR/backend"
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
 if [ -z "$E2E_STORAGE_ROOT" ]; then
-    E2E_STORAGE_ROOT="/tmp/ieapp-e2e"
+    E2E_STORAGE_ROOT="/tmp/ugoite-e2e"
     CLEANUP_E2E_STORAGE=true
 else
     CLEANUP_E2E_STORAGE=false
@@ -38,10 +38,10 @@ fi
 
 mkdir -p "$E2E_STORAGE_ROOT"
 
-IEAPP_ROOT="$E2E_STORAGE_ROOT" uv run python - <<'PY'
+UGOITE_ROOT="$E2E_STORAGE_ROOT" uv run python - <<'PY'
 import asyncio
 
-import ieapp_core
+import ugoite_core
 
 from app.core.config import get_root_path
 from app.core.storage import storage_config_from_root
@@ -50,7 +50,7 @@ from app.core.storage import storage_config_from_root
 async def main() -> None:
     config = storage_config_from_root(get_root_path())
     try:
-        await ieapp_core.create_space(config, "default")
+        await ugoite_core.create_space(config, "default")
     except RuntimeError as exc:
         if "already exists" not in str(exc).lower():
             raise
@@ -62,7 +62,7 @@ PY
 # Start backend in background
 echo "Starting backend server..."
 cd "$ROOT_DIR/backend"
-IEAPP_ROOT="$E2E_STORAGE_ROOT" IEAPP_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+UGOITE_ROOT="$E2E_STORAGE_ROOT" UGOITE_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Start frontend in background

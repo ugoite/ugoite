@@ -202,9 +202,9 @@ requirements:
   - id: REQ-FE-036
     title: SQL Query Editor
     description: |
-      The query UI MUST provide an IEapp SQL editor with syntax highlighting,
+      The query UI MUST provide a Ugoite SQL editor with syntax highlighting,
       lint feedback, and completion for tables/fields.
-      The editor MUST load shared SQL rules from shared/sql/ieapp-sql-rules.json
+      The editor MUST load shared SQL rules from shared/sql/ugoite-sql-rules.json
       and MUST render without CodeMirror extension errors.
     related_spec:
       - features/sql.md

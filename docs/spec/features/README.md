@@ -1,6 +1,6 @@
 # Features Registry
 
-This directory contains the feature definitions for IEapp.
+This directory contains the feature definitions for Ugoite.
 
 ## Files
 
@@ -11,7 +11,7 @@ This directory contains the feature definitions for IEapp.
 - [assets.yaml](assets.yaml) - Asset APIs
 - [links.yaml](links.yaml) - Link APIs
 - [search.yaml](search.yaml) - Search + structured query APIs
-- [sql.md](sql.md) - IEapp SQL dialect
+- [sql.md](sql.md) - Ugoite SQL dialect
 
 ## Purpose
 
@@ -32,8 +32,8 @@ Each operation entry includes:
 
 **Frontend path semantics**: The frontend path is the UI route path (no `/api` prefix).
 It should mirror the backend path to keep functionality aligned and discoverable.
-- **ieapp-core**: Internal logic implementation (Rust).
-- **ieapp-cli**: Command-line interface usage and implementation.
+- **ugoite-core**: Internal logic implementation (Rust).
+- **ugoite-cli**: Command-line interface usage and implementation.
 
 Example:
 
@@ -49,12 +49,12 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries.tsx
       function: SpaceEntriesRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: create_entry
-    ieapp_cli:
-      command: ieapp entry create
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry create
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_create
 ```
 

@@ -1,0 +1,51 @@
+[project]
+name = "ugoite"
+version = "0.1.1"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "tohboeh5", email = "tohboeh5simsim7@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fsspec>=2025.10.0",
+    "ugoite-core",
+    "pyyaml>=6.0.0",
+    "pydantic>=2.0.0",
+    "typer>=0.15.0",
+]
+
+[project.scripts]
+ugoite = "ugoite.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.4,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "ruff>=0.14.7",
+    "ty>=0.0.1a26",
+]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.uv]
+
+[tool.uv.sources]
+ugoite-core = { path = "../ugoite-core", editable = true }
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files commonly use `typing.Any`, magic numbers, and unused-fixture
+# patterns that we intentionally allow. Centralize those exceptions here
+# instead of using inline `# noqa` comments.
+"tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
+"src/ugoite/cli.py" = ["ANN401", "PLR0913"]
+"src/ugoite/indexer.py" = ["ANN401"]
+"src/ugoite/entries.py" = ["PLR0913"]
+"src/ugoite/hmac_manager.py" = ["ARG001"]  # protocol arg is cache key for lru_cache

@@ -10,7 +10,6 @@ repos:
         # the linter; apply auto-fixes during pre-commit to correct fixable
         # issues before committing.
         args: ["--select", "ALL", "--ignore-noqa", "--fix"]
-
       - id: ruff-format
         # Use ruff's format hook to apply auto-formatting on commit
         # (this replaces the legacy `ruff` alias)
@@ -19,24 +18,18 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: cargo fmt --manifest-path ieapp-core/Cargo.toml --
+        entry: cargo fmt --manifest-path ugoite-core/Cargo.toml --
         language: system
         files: \.rs$
         pass_filenames: false
 
-  - repo: local
-    hooks:
-      - id: biome-ci
-        name: biome ci
-        # Run biome in CI mode for linting and formatting checks on frontend code
-        # This matches the GitHub Actions configuration
-        entry: bash -c "cd frontend && bunx @biomejs/biome@2.3.5 ci ."
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c "cd ugoite-core && uv run cargo clippy -- -D warnings"
         language: system
+        files: \.rs$
         pass_filenames: false
-        files: ^frontend/
 
-  - repo: local
-    hooks:
       - id: ty-backend
         name: "ty: backend type check"
         entry: bash -c "cd backend && uv run ty check ."
@@ -45,22 +38,24 @@ repos:
         files: ^backend/
 
       - id: ty-cli
-        name: "ty: ieapp-cli type check"
-        entry: bash -c "cd ieapp-cli && uv run ty check ."
+        name: "ty: ugoite-cli type check"
+        entry: bash -c "cd ugoite-cli && uv run ty check ."
         language: system
         pass_filenames: false
-        files: ^ieapp-cli/
+        files: ^ugoite-cli/
 
       - id: ty-core
-        name: "ty: ieapp-core type check"
-        entry: bash -c "cd ieapp-core && uv run ty check ."
+        name: "ty: ugoite-core type check"
+        entry: bash -c "cd ugoite-core && uv run ty check ."
         language: system
         pass_filenames: false
-        files: ^ieapp-core/
+        files: ^ugoite-core/
 
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: bash -c "cd ieapp-core && uv run cargo clippy -- -D warnings"
+      - id: biome-ci
+        name: biome ci
+        # Run biome in CI mode for linting and formatting checks on frontend code
+        # This matches the GitHub Actions configuration
+        entry: bash -c "cd frontend && bunx @biomejs/biome@2.3.5 ci ."
         language: system
-        files: \.rs$
         pass_filenames: false
+        files: ^frontend/

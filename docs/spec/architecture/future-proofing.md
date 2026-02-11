@@ -19,9 +19,9 @@ Non-goals:
 ## Multi-Platform Core
 
 To enable cross-platform operation and varied deployment targets:
-- Core operations are contained in `ieapp-core` (Rust).
+- Core operations are contained in `ugoite-core` (Rust).
 - Multiple language bindings are provided:
-  - Python bindings for backend and `ieapp-cli`
+  - Python bindings for backend and `ugoite-cli`
   - WebAssembly bindings for browser contexts (future target)
 
 ## Data Portability

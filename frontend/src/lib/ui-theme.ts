@@ -4,8 +4,8 @@ import { isServer } from "solid-js/web";
 export type UiTheme = "materialize" | "classic" | "pop";
 export type ColorMode = "light" | "dark";
 
-const THEME_STORAGE_KEY = "ieapp-ui-theme";
-const MODE_STORAGE_KEY = "ieapp-color-mode";
+const THEME_STORAGE_KEY = "ugoite-ui-theme";
+const MODE_STORAGE_KEY = "ugoite-color-mode";
 
 const safeStorage = () => {
 	if (isServer || typeof window === "undefined") return null;

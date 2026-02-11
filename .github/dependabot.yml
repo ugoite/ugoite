@@ -21,17 +21,17 @@ updates:
       interval: "daily"
 
   - package-ecosystem: "uv"
-    directory: "/ieapp-cli"
+    directory: "/ugoite-cli"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "uv"
-    directory: "/ieapp-core"
+    directory: "/ugoite-core"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "cargo"
-    directory: "/ieapp-core"
+    directory: "/ugoite-core"
     schedule:
       interval: "daily"
 

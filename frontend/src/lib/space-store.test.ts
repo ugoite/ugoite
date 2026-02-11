@@ -145,7 +145,7 @@ describe("createSpaceStore", () => {
 			store.selectSpace("space-2");
 
 			expect(store.selectedSpaceId()).toBe("space-2");
-			expect(localStorageMock.setItem).toHaveBeenCalledWith("ieapp-selected-space", "space-2");
+			expect(localStorageMock.setItem).toHaveBeenCalledWith("ugoite-selected-space", "space-2");
 
 			dispose();
 		});

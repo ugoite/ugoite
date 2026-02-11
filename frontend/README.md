@@ -1,6 +1,6 @@
-# IEapp Frontend
+# Ugoite Frontend
 
-A SolidJS-based frontend for IEapp - your AI-native, programmable knowledge base.
+A SolidJS-based frontend for Ugoite - your AI-native, programmable knowledge base.
 
 ## Architecture Overview
 

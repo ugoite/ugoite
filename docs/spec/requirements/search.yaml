@@ -10,7 +10,7 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_search.rs
+        - file: ugoite-core/tests/test_search.rs
           tests:
             - test_search_req_srch_001_keyword_search
 
@@ -22,14 +22,14 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_search.rs
+        - file: ugoite-core/tests/test_search.rs
           tests:
             - test_search_req_srch_002_fallback_scan
 
   - id: REQ-SRCH-003
-    title: IEapp SQL lint and completion rules
+    title: Ugoite SQL lint and completion rules
     description: |
-      The system MUST provide shared IEapp SQL linting and completion rules
+      The system MUST provide shared Ugoite SQL linting and completion rules
       for UI and CLI usage, sourced from a common config in the project root.
     related_spec:
       - features/sql.md
@@ -37,7 +37,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_sql_rules.py
+        - file: ugoite-cli/tests/test_sql_rules.py
           tests:
             - test_cli_sql_lint_reports_errors
             - test_cli_sql_complete_suggests_tables

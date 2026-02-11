@@ -15,7 +15,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
             - test_aggregate_stats
@@ -24,7 +24,7 @@ requirements:
           tests:
             - test_update_entry_reflects_in_query
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_001_reindex_writes_index_files
             - test_index_req_idx_001_extract_properties_returns_object
@@ -41,12 +41,12 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_validate_properties_missing_required
             - test_validate_properties_valid
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_002_validate_properties
 
@@ -61,7 +61,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_query_index
             - test_query_index_by_tag
@@ -69,7 +69,7 @@ requirements:
           tests:
             - test_query_entries
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_003_query_index
 
@@ -83,11 +83,11 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_generates_inverted_index
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_004_inverted_index_generation
 
@@ -101,11 +101,11 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_computes_word_count
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_005_word_count
 
@@ -119,7 +119,7 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_watch_loop_triggers_run
 
@@ -140,9 +140,9 @@ requirements:
             - test_search_returns_matches
 
   - id: REQ-IDX-008
-    title: IEapp SQL Query Execution
+    title: Ugoite SQL Query Execution
     description: |
-      Execute IEapp SQL queries against Iceberg-derived entry records via the
+      Execute Ugoite SQL queries against Iceberg-derived entry records via the
       existing /spaces/{space_id}/query endpoint.
     related_spec:
       - features/sql.md
@@ -155,14 +155,14 @@ requirements:
           tests:
             - test_query_entries_sql
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_008_query_sql
 
   - id: REQ-IDX-009
-    title: IEapp SQL JOIN Support
+    title: Ugoite SQL JOIN Support
     description: |
-      IEapp SQL MUST support JOIN queries across entries, links, and assets
+      Ugoite SQL MUST support JOIN queries across entries, links, and assets
       using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
       constraints.
     related_spec:
@@ -171,7 +171,7 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_009_query_sql_joins
 
@@ -187,6 +187,6 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_index.rs
+        - file: ugoite-core/tests/test_index.rs
           tests:
             - test_index_req_idx_010_rich_content_parsing

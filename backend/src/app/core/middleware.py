@@ -26,7 +26,7 @@ async def security_middleware(
     """Enforce security policies."""
     root_path = get_root_path()
     # 1. Localhost Binding Check (unless disabled via env var)
-    allow_remote = os.environ.get("IEAPP_ALLOW_REMOTE", "false").lower() == "true"
+    allow_remote = os.environ.get("UGOITE_ALLOW_REMOTE", "false").lower() == "true"
     client_host = resolve_client_host(
         request.headers,
         request.client.host if request.client else None,
@@ -38,7 +38,7 @@ async def security_middleware(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
                 "detail": (
-                    "Remote access is disabled. Set IEAPP_ALLOW_REMOTE=true only on"
+                    "Remote access is disabled. Set UGOITE_ALLOW_REMOTE=true only on"
                     " trusted networks."
                 ),
             },
@@ -78,7 +78,7 @@ async def _apply_security_headers(
     """Attach security-related headers including the HMAC signature."""
     key_id, signature = await build_response_signature(body, root_path)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-IEApp-Key-Id"] = key_id
-    response.headers["X-IEApp-Signature"] = signature
+    response.headers["X-Ugoite-Key-Id"] = key_id
+    response.headers["X-Ugoite-Signature"] = signature
     response.headers["Content-Length"] = str(len(body))
     return response

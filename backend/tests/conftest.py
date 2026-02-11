@@ -28,6 +28,6 @@ def temp_space_root() -> Iterator[Path]:
     """Create a temporary space root."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
-        os.environ["IEAPP_ROOT"] = str(root)
+        os.environ["UGOITE_ROOT"] = str(root)
         yield root
-        del os.environ["IEAPP_ROOT"]
+        del os.environ["UGOITE_ROOT"]

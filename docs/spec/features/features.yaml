@@ -4,8 +4,8 @@
 # Each operation is described with the columns:
 # - backend: includes path, file definition location, and function name
 # - frontend: includes path, file definition location, and function name
-# - ieapp_core: includes file and function name
-# - ieapp_cli: includes command, file, and function name
+# - ugoite_core: includes file and function name
+# - ugoite_cli: includes command, file, and function name
 
 version: "0.2"
 updated: "2026-01"
@@ -21,11 +21,11 @@ conventions:
     - frontend.path
     - frontend.file
     - frontend.function
-    - ieapp_core.file
-    - ieapp_core.function
-    - ieapp_cli.command
-    - ieapp_cli.file
-    - ieapp_cli.function
+    - ugoite_core.file
+    - ugoite_core.function
+    - ugoite_cli.command
+    - ugoite_cli.file
+    - ugoite_cli.function
 
 files:
   - kind: spaces

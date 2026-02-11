@@ -1,6 +1,6 @@
-# IEapp Spec (v2)
+# Ugoite Spec (v2)
 
-This directory contains the **current, canonical** specification for IEapp.
+This directory contains the **current, canonical** specification for Ugoite.
 
 Start here:
 - [index.md](index.md) - Master navigation

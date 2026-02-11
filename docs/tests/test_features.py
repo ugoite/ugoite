@@ -130,7 +130,7 @@ def test_feature_paths_exist() -> None:
 
     for api in entries:
         api_id = api.get("id", "<unknown>")
-        for section_key in ("backend", "frontend", "ieapp_core", "ieapp_cli"):
+        for section_key in ("backend", "frontend", "ugoite_core", "ugoite_cli"):
             section = api.get(section_key)
             if not isinstance(section, dict):
                 message = f"Missing {section_key} section for {api_id}"
@@ -145,8 +145,8 @@ def test_feature_paths_exist() -> None:
                 message = "Feature registry must not use n/a for file paths"
                 raise AssertionError(message)
 
-            if section_key == "ieapp_cli" and not section.get("command"):
-                message = f"Missing ieapp_cli command for {api_id}"
+            if section_key == "ugoite_cli" and not section.get("command"):
+                message = f"Missing ugoite_cli command for {api_id}"
                 raise AssertionError(message)
 
             file_path = REPO_ROOT / file_value

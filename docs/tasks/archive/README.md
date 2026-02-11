@@ -1,6 +1,6 @@
 # Milestone Archive
 
-This directory contains completed milestones for the IEapp project.
+This directory contains completed milestones for the Ugoite project.
 
 ## Completed Milestones
 

@@ -2,13 +2,13 @@
 
 ## Overview
 
-IEapp implements the Model Context Protocol (MCP) to enable AI agents to interact with the knowledge base. MCP requests are sent as HTTP POST to `/mcp`.
+Ugoite implements the Model Context Protocol (MCP) to enable AI agents to interact with the knowledge base. MCP requests are sent as HTTP POST to `/mcp`.
 
 ## Resources
 
 Resources provide read-only access to data:
 
-### `ieapp://{space_id}/entries/list`
+### `ugoite://{space_id}/entries/list`
 
 Returns JSON list of entries with metadata.
 
@@ -24,7 +24,7 @@ Returns JSON list of entries with metadata.
 ]
 ```
 
-### `ieapp://{space_id}/entries/{entry_id}`
+### `ugoite://{space_id}/entries/{entry_id}`
 
 Returns Markdown content of a specific entry.
 
@@ -39,15 +39,15 @@ Returns Markdown content of a specific entry.
 - Bob
 ```
 
-### `ieapp://{space_id}/entries/{entry_id}/history`
+### `ugoite://{space_id}/entries/{entry_id}/history`
 
 Returns revision history summaries.
 
-### `ieapp://{space_id}/forms`
+### `ugoite://{space_id}/forms`
 
 Returns available form definitions and their fields.
 
-### `ieapp://{space_id}/links`
+### `ugoite://{space_id}/links`
 
 Returns all entry-to-entry relationships.
 

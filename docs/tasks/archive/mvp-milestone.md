@@ -3,7 +3,7 @@
 **Status**: ✅ Completed (January 2026)  
 **Goal**: A working local-first knowledge management app with core features operational
 
-This milestone established the foundational architecture and core features of IEapp, proving the concept of a "Local-First, AI-Native Knowledge Space."
+This milestone established the foundational architecture and core features of Ugoite, proving the concept of a "Local-First, AI-Native Knowledge Space."
 
 ---
 
@@ -23,12 +23,12 @@ The MVP milestone delivered:
 ## Checkpoints
 
 ### Checkpoint 1: Project Scaffolding
-- [x] Setup monorepo structure (backend, frontend, ieapp-cli)
+- [x] Setup monorepo structure (backend, frontend, ugoite-cli)
 - [x] Configure mise tasks for development
 - [x] Setup Docker Compose and Dev Container
 - [x] CI/CD with GitHub Actions (Python CI, Frontend CI, E2E)
 
-### Checkpoint 2: Storage Layer (ieapp-cli)
+### Checkpoint 2: Storage Layer (ugoite-cli)
 - [x] fsspec abstraction for all I/O operations
 - [x] Space creation with directory structure
 - [x] Entry CRUD with revision history

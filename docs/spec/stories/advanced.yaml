@@ -23,7 +23,7 @@ stories:
     related_apis:
       - rest: POST /spaces/{space_id}/assets
       - rest: PUT /spaces/{space_id}/entries/{entry_id}
-      - mcp: ieapp://{space_id}/entries/{entry_id}
+      - mcp: ugoite://{space_id}/entries/{entry_id}
     requirements:
       - REQ-ENTRY-008
 
@@ -52,7 +52,7 @@ stories:
       - User asks Agent: "Find duplicates in Project X and merge them."
       - Agent executes the logic and presents the result for confirmation
     related_apis:
-      - mcp: ieapp://{space_id}/entries/list
+      - mcp: ugoite://{space_id}/entries/list
       - rest: GET/PUT /spaces/{space_id}/entries/{entry_id}
     requirements: []
 
