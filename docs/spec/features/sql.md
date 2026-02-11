@@ -17,6 +17,19 @@ It is designed for filtering and sorting entry records without changing API path
 - **Safety limits**: Implementations MUST cap results to a server-side maximum
   (default 1000 rows) even when `LIMIT` is omitted.
 
+## Materialized Views & Sessions
+
+- Saved SQL (`create_sql`) **creates a materialized view** under
+  `spaces/{space_id}/materialized_views/{sql_id}/`.
+- Updates/deletes of saved SQL **refresh/remove** the corresponding view.
+- SQL sessions store **metadata only** (no result rows) and pin the view
+  `snapshot_id` used for paging and count queries.
+- Session metadata is stored under
+  `spaces/{space_id}/sql_sessions/{session_id}/meta.json` and is short-lived
+  (target: ~10 minutes).
+- The design is **stateless beyond OpenDAL storage** (no RDB, no external
+  job queue, no NFS shared disks).
+
 ## Tables
 
 - `entries` — All entries across forms.

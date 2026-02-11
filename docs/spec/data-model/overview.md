@@ -32,7 +32,8 @@ spaces/
     settings.json              # Space settings
     forms/                     # Iceberg-managed Form tables (layout not specified)
     assets/                    # Binary files
-    sql_sessions/              # SQL query sessions (results + progress)
+    materialized_views/        # SQL materialized views (Iceberg-managed)
+    sql_sessions/              # SQL query sessions (metadata only)
 ```
 
 ## Key Concepts
@@ -73,6 +74,28 @@ case-insensitive and may expand over time.
 Reserved metadata Form names include:
 
 `SQL`
+
+### SQL Materialized Views
+
+Saved SQL (created via `create_sql`) has a corresponding **materialized view**
+under `spaces/{space_id}/materialized_views/`. The view is created, updated,
+and deleted **in lockstep** with the SQL record. The view is the only persisted
+query artifact; SQL session results are not stored.
+
+Materialized views are Iceberg-managed tables. The on-disk layout beneath
+`materialized_views/` is owned by Iceberg and intentionally unspecified.
+
+### SQL Sessions (Metadata Only)
+
+SQL sessions are short-lived (target: ~10 minutes) and store **metadata only**
+under `spaces/{space_id}/sql_sessions/{session_id}/meta.json`. They do **not**
+persist result rows. Session metadata includes the materialized view snapshot
+ID and paging strategy so that each request can re-run the SQL query quickly
+against the view using the recorded snapshot.
+
+This keeps the system stateless beyond OpenDAL storage (no RDB, no external job
+queue, no NFS), while still allowing multiple API servers to serve the same
+session.
 
 ### Properties Extraction
 

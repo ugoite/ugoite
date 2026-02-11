@@ -462,8 +462,10 @@ Content-Type: application/json
 
 #### SQL Sessions
 
-SQL queries run through session-based endpoints. Creating a session executes
-the query and stores results under `sql_sessions/` in the space.
+SQL queries run through session-based endpoints. Creating a session pins a
+materialized view snapshot and stores **metadata only** under `sql_sessions/`.
+Result rows are never persisted; each request re-runs the SQL against the
+captured snapshot.
 
 ##### Create SQL Session
 ```http
@@ -479,12 +481,13 @@ Content-Type: application/json
 ```json
 {
   "id": "session-uuid",
+  "sql_id": "sql-uuid",
   "sql": "SELECT * FROM Meeting WHERE Date >= '2025-01-01' ORDER BY updated_at DESC LIMIT 50",
-  "status": "completed",
+  "status": "ready",
   "created_at": "2026-02-03T12:00:00Z",
-  "updated_at": "2026-02-03T12:00:01Z",
-  "progress": {"processed": 42, "total": 42},
-  "row_count": 42,
+  "expires_at": "2026-02-03T12:10:00Z",
+  "view_snapshot_id": 42,
+  "paging": {"strategy": "offset", "default_limit": 50, "max_limit": 1000},
   "error": null
 }
 ```
