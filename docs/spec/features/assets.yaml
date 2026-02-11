@@ -15,12 +15,12 @@ apis:
       path: /spaces/{space_id}/assets
       file: frontend/src/routes/spaces/[space_id]/assets.tsx
       function: SpaceAssetsRoute
-    ieapp_core:
-      file: ieapp-core/src/asset.rs
+    ugoite_core:
+      file: ugoite-core/src/asset.rs
       function: save_asset
-    ieapp_cli:
-      command: ieapp asset upload
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite asset upload
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_asset_upload
 
   - id: asset.list
@@ -33,12 +33,12 @@ apis:
       path: /spaces/{space_id}/assets
       file: frontend/src/routes/spaces/[space_id]/assets.tsx
       function: SpaceAssetsRoute
-    ieapp_core:
-      file: ieapp-core/src/asset.rs
+    ugoite_core:
+      file: ugoite-core/src/asset.rs
       function: list_assets
-    ieapp_cli:
-      command: ieapp asset list
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite asset list
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_asset_list
 
   - id: asset.delete
@@ -51,10 +51,10 @@ apis:
       path: /spaces/{space_id}/assets/{asset_id}
       file: frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
       function: SpaceAssetDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/asset.rs
+    ugoite_core:
+      file: ugoite-core/src/asset.rs
       function: delete_asset
-    ieapp_cli:
-      command: ieapp asset delete
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite asset delete
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_asset_delete

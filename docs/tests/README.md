@@ -49,7 +49,7 @@ def test_all_requirements_have_tests() -> None:
     ...
 ```
 
-Rust tests in `ieapp-core/tests/` follow a requirement-aware naming pattern:
+Rust tests in `ugoite-core/tests/` follow a requirement-aware naming pattern:
 
 ```rust
 async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {

@@ -3,7 +3,7 @@ import { A } from "@solidjs/router";
 export default function Home() {
 	return (
 		<main class="ui-page text-center mx-auto">
-			<h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">IEapp</h1>
+			<h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">Ugoite</h1>
 			<p class="text-base sm:text-xl mb-6 sm:mb-8 ui-muted">
 				Your AI-native, programmable knowledge base
 			</p>

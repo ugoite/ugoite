@@ -14,6 +14,6 @@ wheels/
 *.pid
 *.bin
 
-# IEapp runtime data (created during dev)
+# Ugoite runtime data (created during dev)
 global.json
 spaces/

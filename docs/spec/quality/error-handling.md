@@ -1,6 +1,6 @@
 # Error Handling & Resilience
 
-This document defines cross-cutting error-handling principles for IEapp.
+This document defines cross-cutting error-handling principles for Ugoite.
 
 ## Principles
 

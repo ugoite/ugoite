@@ -12,23 +12,38 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 - **No migration path required**: We do not provide any conversion from the current storage format.
 - **Breaking change is acceptable**: Existing users and data are out of scope.
 - **Form-first**: Entries can only be created for a defined Form. The current “formless entry” flow is removed.
-- **Phase 1 UI lock**: Initial implementation must keep the UI behavior *exactly* as it is today. Only `ieapp-core` storage changes.
+- **Phase 1 UI lock**: Initial implementation must keep the UI behavior *exactly* as it is today. Only `ugoite-core` storage changes.
+
+---
+
+## Phase 0: Spec Alignment & Form-First Contract
+
+**Objective**: Align specs and tests with the Iceberg-backed, Form-first model before storage changes.
+
+### Key Tasks
+- [x] Update data-model specs to describe Iceberg-backed Form tables and reconstruction rules.
+- [x] Document the breaking-change/no-migration decision for Milestone 3.
+- [x] Align test coverage with Form-first enforcement requirements.
+
+### Acceptance Criteria
+- [x] Specs reflect Form-first storage and Iceberg-backed entries.
+- [x] Tests reference Form-first requirements.
 
 ---
 
 ## Phase 1: Iceberg storage for form-defined fields only
 
-**Objective**: Replace entry storage with Apache Iceberg in `ieapp-core`, limited to fields defined by the Form schema. H2 sections not in the Form are rejected.
+**Objective**: Replace entry storage with Apache Iceberg in `ugoite-core`, limited to fields defined by the Form schema. H2 sections not in the Form are rejected.
 
 ### Key Tasks
 - [x] Define Iceberg table layout and schema per Form (entries + revisions tables).
 - [x] Define `forms/` as the Iceberg-managed root and document ownership rules.
 - [x] Standardize Form name → Iceberg table name mapping (no form_id directories).
-- [x] Update `ieapp-core` write path to persist entry records via Iceberg (official Rust crate + OpenDAL).
-- [x] Update `ieapp-core` read path to reconstruct Markdown content from Iceberg fields.
-- [x] Enforce “Form-defined H2 only” validation in `ieapp-core`.
+- [x] Update `ugoite-core` write path to persist entry records via Iceberg (official Rust crate + OpenDAL).
+- [x] Update `ugoite-core` read path to reconstruct Markdown content from Iceberg fields.
+- [x] Enforce “Form-defined H2 only” validation in `ugoite-core`.
 - [x] Keep backend and frontend API contracts unchanged.
-- [x] Add/update tests in `ieapp-core` to validate Iceberg round-trip.
+- [x] Add/update tests in `ugoite-core` to validate Iceberg round-trip.
 
 ### Legacy → TOBE (directory-structure) Delta
 - **Remove per-entry folders**: `entries/{entry_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
@@ -42,7 +57,7 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 ### Acceptance Criteria
 - [x] Entries are stored in Iceberg tables per Form.
 - [x] Entries can be read back with identical Markdown content (current UI behavior preserved).
-- [x] Non-Form H2 sections are rejected by `ieapp-core`.
+- [x] Non-Form H2 sections are rejected by `ugoite-core`.
 
 ---
 
@@ -64,19 +79,19 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 
 ---
 
-## Phase 3: IEapp SQL (Domain-Specific SQL)
+## Phase 3: Ugoite SQL (Domain-Specific SQL)
 
-**Objective**: Define and implement an SQL dialect optimized for IEapp forms and Iceberg storage.
+**Objective**: Define and implement an SQL dialect optimized for Ugoite forms and Iceberg storage.
 
 ### Key Tasks
-- [x] Define IEapp SQL syntax and capabilities (filter, sort, select, aggregate).
-- [x] Map SQL queries to Iceberg scans in `ieapp-core`.
+- [x] Define Ugoite SQL syntax and capabilities (filter, sort, select, aggregate).
+- [x] Map SQL queries to Iceberg scans in `ugoite-core`.
 - [x] Add query validation and error reporting.
 - [x] Integrate with existing REST/MCP query endpoints without API changes.
 - [x] Add tests for SQL parsing and execution.
 
 ### Acceptance Criteria
-- [x] Users can query Form data via IEapp SQL.
+- [x] Users can query Form data via Ugoite SQL.
 - [x] SQL execution returns consistent, deterministic results.
 - [x] Query errors are clear and actionable.
 
@@ -85,8 +100,8 @@ This milestone replaces the current Markdown-based storage with an Apache Iceber
 ## Phase 4: Metadata Columns, Rich Types, Link URIs, SQL Joins
 
 **Objective**: Expand the Iceberg-backed data model with reserved metadata columns,
-rich content column types with Markdown-friendly parsing, canonical IEapp link URIs,
-and broadened IEapp SQL join capabilities.
+rich content column types with Markdown-friendly parsing, canonical Ugoite link URIs,
+and broadened Ugoite SQL join capabilities.
 
 ### Key Tasks
 - [x] Define metadata vs content column ownership rules and reserved names.
@@ -94,8 +109,8 @@ and broadened IEapp SQL join capabilities.
 - [x] Make metadata column list extensible for future system-owned fields.
 - [x] Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).
 - [x] Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).
-- [x] Introduce IEapp URI scheme for in-entry links (entry, asset, extensible kinds) and normalize links on write/read.
-- [x] Extend IEapp SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
+- [x] Introduce Ugoite URI scheme for in-entry links (entry, asset, extensible kinds) and normalize links on write/read.
+- [x] Extend Ugoite SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
 - [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
 - [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
 - [x] Update frontend UX to enforce form-first entry creation and surface form validation warnings.
@@ -104,8 +119,8 @@ and broadened IEapp SQL join capabilities.
 ### Acceptance Criteria
 - [x] Metadata columns are reserved and cannot be used as user-defined Form fields.
 - [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
-- [x] IEapp link URIs are normalized and persisted consistently.
-- [x] IEapp SQL supports JOIN queries across entries, links, and assets.
+- [x] Ugoite link URIs are normalized and persisted consistently.
+- [x] Ugoite SQL supports JOIN queries across entries, links, and assets.
 - [x] Frontend entry creation is form-first, and validation feedback is visible in the editor UX.
 - [x] Form creation/editing UI blocks reserved metadata column names.
 
@@ -120,7 +135,7 @@ using the reserved SQL form name.
 ### Key Tasks
 - [x] Define the SQL Form schema as a metadata Form with reserved name protection.
 - [x] Add SQL variable object-list type and validation rules in the data model spec.
-- [x] Extend REST API and ieapp-core with SQL CRUD operations.
+- [x] Extend REST API and ugoite-core with SQL CRUD operations.
 - [x] Add tests covering SQL CRUD and reserved SQL Form name rejection.
 
 ### Acceptance Criteria
@@ -195,7 +210,7 @@ and add automated validation that frontend tests load and verify the spec.
 
 ### Key Tasks
 - [ ] Define a neutral, operational scenario (non-personal data) and form schema set (3–6 forms)
-- [ ] Implement dynamic sample data generation in `ieapp-core` (seeded randomness, configurable entry count)
+- [ ] Implement dynamic sample data generation in `ugoite-core` (seeded randomness, configurable entry count)
 - [ ] Add REST API endpoint to create a sample-data space with a few parameters
 - [ ] Add CLI command to generate a sample-data space
 - [ ] Add UI flow to generate a sample-data space (name, scenario, size, seed)
@@ -215,7 +230,7 @@ and add automated validation that frontend tests load and verify the spec.
 without migration, removing the old labels entirely before production.
 
 ### Rebrand Plan
-- **Scope**: Entire repository (docs/spec, API, frontend, backend, ieapp-core, ieapp-cli, tests, e2e, scripts, data-model paths)
+- **Scope**: Entire repository (docs/spec, API, frontend, backend, ugoite-core, ugoite-cli, tests, e2e, scripts, data-model paths)
 - **Owner**: @tohboeh5 / Agent
 - **Verification**:
 	- `mise run test` passes
@@ -257,7 +272,7 @@ storage paths (OpenDAL/Iceberg).
 ### Work Summary (Phase 9 execution)
 - [ ] Sweep docs/spec for legacy terms and update references, examples, and diagrams.
 - [ ] Rename API routes, payload fields, and OpenAPI/MCP docs to new terms.
-- [ ] Rename code symbols, modules, and file paths across backend, frontend, ieapp-core, ieapp-cli.
+- [ ] Rename code symbols, modules, and file paths across backend, frontend, ugoite-core, ugoite-cli.
 - [ ] Update storage paths, datamodel references, and OpenDAL/Iceberg layouts.
 - [ ] Update tests, fixtures, and test data to new terms and semantics.
 - [ ] Verify no legacy terms remain via full-repo search.

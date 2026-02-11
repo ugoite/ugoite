@@ -65,7 +65,7 @@ test_frontend_content() {
     local response
     response=$(curl -s "$BASE_URL/" 2>/dev/null)
     
-    if echo "$response" | grep -qi "ieapp\|<!DOCTYPE html>"; then
+    if echo "$response" | grep -qi "ugoite\|<!DOCTYPE html>"; then
         log_pass "Frontend returns valid HTML content"
     else
         log_fail "Frontend content check failed"

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "ugoite-core"
+requires-python = ">=3.12"
+dependencies = []
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.5,<2.0",
+    "patchelf>=0.17.0,<0.18.0",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.7",
+    "ty>=0.0.11",
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "ugoite_core._ugoite_core"
+
+[tool.ruff]
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files commonly use `typing.Any`, magic numbers, and unused-fixture
+# patterns that we intentionally allow. Centralize those exceptions here
+# instead of using inline `# noqa` comments.
+"tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]

@@ -38,7 +38,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "ieapp-core" },
+    { name = "ugoite-core" },
     { name = "mcp" },
     { name = "uvicorn" },
 ]
@@ -54,7 +54,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.121.1" },
-    { name = "ieapp-core", editable = "../ieapp-core" },
+    { name = "ugoite-core", editable = "../ugoite-core" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
 ]
@@ -276,8 +276,8 @@ wheels = [
 ]
 
 [[package]]
-name = "ieapp-core"
-source = { editable = "../ieapp-core" }
+name = "ugoite-core"
+source = { editable = "../ugoite-core" }
 
 [package.metadata]
 

@@ -1,7 +1,0 @@
-[tasks.install]
-run = "uv sync"
-
-[tasks.test]
-run = "uv run pytest"
-description = "Run ieapp-cli pytest suite"
-depends = ["//ieapp-core:build"]

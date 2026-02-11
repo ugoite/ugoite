@@ -15,12 +15,12 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries.tsx
       function: SpaceEntriesRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: create_entry
-    ieapp_cli:
-      command: ieapp entry create
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry create
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_create
 
   - id: entry.list
@@ -33,12 +33,12 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries.tsx
       function: SpaceEntriesRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: list_entries
-    ieapp_cli:
-      command: ieapp entry list
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry list
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_list
 
   - id: entry.get
@@ -51,12 +51,12 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
       function: SpaceEntryDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: get_entry
-    ieapp_cli:
-      command: ieapp entry get
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry get
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_get
 
   - id: entry.update
@@ -69,12 +69,12 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
       function: SpaceEntryDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: update_entry
-    ieapp_cli:
-      command: ieapp entry update
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry update
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_update
 
   - id: entry.delete
@@ -87,12 +87,12 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
       function: SpaceEntryDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: delete_entry
-    ieapp_cli:
-      command: ieapp entry delete
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry delete
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_delete
 
   - id: entry.history
@@ -105,12 +105,12 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}/history
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
       function: SpaceEntryHistoryRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: get_entry_history
-    ieapp_cli:
-      command: ieapp entry history
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry history
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_history
 
   - id: entry.revision
@@ -123,12 +123,12 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
       function: SpaceEntryRevisionRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: get_entry_revision
-    ieapp_cli:
-      command: ieapp entry revision
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry revision
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_revision
 
   - id: entry.restore
@@ -141,10 +141,10 @@ apis:
       path: /spaces/{space_id}/entries/{entry_id}/restore
       file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
       function: SpaceEntryRestoreRoute
-    ieapp_core:
-      file: ieapp-core/src/entry.rs
+    ugoite_core:
+      file: ugoite-core/src/entry.rs
       function: restore_entry
-    ieapp_cli:
-      command: ieapp entry restore
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite entry restore
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_entry_restore

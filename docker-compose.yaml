@@ -8,16 +8,16 @@ services:
     build:
       context: ./backend
       additional_contexts:
-        core: ./ieapp-core
-        module: ./ieapp-cli
+        core: ./ugoite-core
+        module: ./ugoite-cli
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./spaces:/data
       - ./backend/src:/app/src
     environment:
-      - IEAPP_ROOT=/data
-      - IEAPP_ALLOW_REMOTE=true
+      - UGOITE_ROOT=/data
+      - UGOITE_ALLOW_REMOTE=true
     working_dir: /app
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 

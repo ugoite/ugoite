@@ -1,0 +1,14 @@
+target
+ugoite_core/*.so
+ugoite_core/_ugoite_core.*
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv

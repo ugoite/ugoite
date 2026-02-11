@@ -15,17 +15,17 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_forms.py
+        - file: ugoite-cli/tests/test_forms.py
           tests:
             - test_list_column_types
-        - file: ieapp-cli/tests/test_cli_form.py
+        - file: ugoite-cli/tests/test_cli_form.py
           tests:
             - test_cli_list_types
         - file: backend/tests/test_api.py
           tests:
             - test_get_form_types
       rust:
-        - file: ieapp-core/tests/test_form.rs
+        - file: ugoite-core/tests/test_form.rs
           tests:
             - test_form_req_form_001_list_column_types
 
@@ -43,18 +43,18 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_forms.py
+        - file: ugoite-cli/tests/test_forms.py
           tests:
             - test_migrate_form_add_column_with_default
             - test_migrate_form_remove_column
-        - file: ieapp-cli/tests/test_cli_form.py
+        - file: ugoite-cli/tests/test_cli_form.py
           tests:
             - test_cli_form_update
         - file: backend/tests/test_api.py
           tests:
             - test_update_form_with_migration
       rust:
-        - file: ieapp-core/tests/test_form.rs
+        - file: ugoite-core/tests/test_form.rs
           tests:
             - test_form_req_form_002_upsert_and_list_forms
 
@@ -94,7 +94,7 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_entry.rs
+        - file: ugoite-core/tests/test_entry.rs
           tests:
             - test_entry_req_form_004_deny_extra_attributes
             - test_entry_req_form_004_allow_extra_attributes
@@ -112,7 +112,7 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_form.rs
+        - file: ugoite-core/tests/test_form.rs
           tests:
             - test_form_req_form_005_reject_reserved_metadata_columns
 
@@ -128,6 +128,6 @@ requirements:
     status: implemented
     tests:
       rust:
-        - file: ieapp-core/tests/test_form.rs
+        - file: ugoite-core/tests/test_form.rs
           tests:
             - test_form_req_form_006_reject_reserved_metadata_form

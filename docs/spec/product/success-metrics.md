@@ -1,6 +1,6 @@
 # Success Metrics
 
-These metrics help evaluate whether IEapp is delivering on its principles
+These metrics help evaluate whether Ugoite is delivering on its principles
 (**Low Cost**, **Easy**, **Freedom**).
 
 ## Product Metrics

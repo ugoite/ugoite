@@ -15,12 +15,12 @@ apis:
       path: /spaces/{space_id}/sql
       file: frontend/src/routes/spaces/[space_id]/sql.tsx
       function: SpaceSqlRoute
-    ieapp_core:
-      file: ieapp-core/src/saved_sql.rs
+    ugoite_core:
+      file: ugoite-core/src/saved_sql.rs
       function: list_sql
-    ieapp_cli:
-      command: ieapp sql saved-list
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite sql saved-list
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_sql_saved_list
 
   - id: sql.create
@@ -33,12 +33,12 @@ apis:
       path: /spaces/{space_id}/sql
       file: frontend/src/routes/spaces/[space_id]/sql.tsx
       function: SpaceSqlRoute
-    ieapp_core:
-      file: ieapp-core/src/saved_sql.rs
+    ugoite_core:
+      file: ugoite-core/src/saved_sql.rs
       function: create_sql
-    ieapp_cli:
-      command: ieapp sql saved-create
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite sql saved-create
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_sql_saved_create
 
   - id: sql.get
@@ -51,12 +51,12 @@ apis:
       path: /spaces/{space_id}/sql/{sql_id}
       file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
       function: SpaceSqlDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/saved_sql.rs
+    ugoite_core:
+      file: ugoite-core/src/saved_sql.rs
       function: get_sql
-    ieapp_cli:
-      command: ieapp sql saved-get
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite sql saved-get
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_sql_saved_get
 
   - id: sql.update
@@ -69,12 +69,12 @@ apis:
       path: /spaces/{space_id}/sql/{sql_id}
       file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
       function: SpaceSqlDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/saved_sql.rs
+    ugoite_core:
+      file: ugoite-core/src/saved_sql.rs
       function: update_sql
-    ieapp_cli:
-      command: ieapp sql saved-update
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite sql saved-update
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_sql_saved_update
 
   - id: sql.delete
@@ -87,12 +87,12 @@ apis:
       path: /spaces/{space_id}/sql/{sql_id}
       file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
       function: SpaceSqlDetailRoute
-    ieapp_core:
-      file: ieapp-core/src/saved_sql.rs
+    ugoite_core:
+      file: ugoite-core/src/saved_sql.rs
       function: delete_sql
-    ieapp_cli:
-      command: ieapp sql saved-delete
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite sql saved-delete
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_sql_saved_delete
 
   - id: sql.session.create
@@ -105,12 +105,12 @@ apis:
       path: /spaces/{space_id}/search
       file: frontend/src/routes/spaces/[space_id]/search.tsx
       function: SpaceSearchRoute
-    ieapp_core:
-      file: ieapp-core/src/sql_session.rs
+    ugoite_core:
+      file: ugoite-core/src/sql_session.rs
       function: create_sql_session
-    ieapp_cli:
-      command: ieapp query --sql
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite query --sql
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_query
 
   - id: sql.session.status
@@ -123,12 +123,12 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
       function: SpaceEntriesIndexPane
-    ieapp_core:
-      file: ieapp-core/src/sql_session.rs
+    ugoite_core:
+      file: ugoite-core/src/sql_session.rs
       function: get_sql_session_status
-    ieapp_cli:
-      command: ieapp query --sql
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite query --sql
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_query
 
   - id: sql.session.count
@@ -141,12 +141,12 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
       function: SpaceEntriesIndexPane
-    ieapp_core:
-      file: ieapp-core/src/sql_session.rs
+    ugoite_core:
+      file: ugoite-core/src/sql_session.rs
       function: get_sql_session_count
-    ieapp_cli:
-      command: ieapp query --sql
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite query --sql
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_query
 
   - id: sql.session.rows
@@ -159,10 +159,10 @@ apis:
       path: /spaces/{space_id}/entries
       file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
       function: SpaceEntriesIndexPane
-    ieapp_core:
-      file: ieapp-core/src/sql_session.rs
+    ugoite_core:
+      file: ugoite-core/src/sql_session.rs
       function: get_sql_session_rows
-    ieapp_cli:
-      command: ieapp query --sql
-      file: ieapp-cli/src/ieapp/cli.py
+    ugoite_cli:
+      command: ugoite query --sql
+      file: ugoite-cli/src/ugoite/cli.py
       function: cmd_query

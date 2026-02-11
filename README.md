@@ -1,10 +1,10 @@
-# IEapp
+# Ugoite
 
 **"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
 
 ## Vision
 
-IEapp is a knowledge management system built on three core principles:
+Ugoite is a knowledge management system built on three core principles:
 
 | Principle | Description |
 |-----------|-------------|
@@ -14,7 +14,7 @@ IEapp is a knowledge management system built on three core principles:
 
 ## Key Features
 
-- **Markdown as Database**: Write standard Markdown with `## Headers` that become structured fields
+- **Markdown as Table**: Markdown sections map to Form-defined fields stored in Iceberg tables
 - **Form Definitions**: Define entry types (Meeting, Task, etc.) with typed fields and templates
 - **AI-Programmable**: MCP protocol with resource-first integration for AI agents
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
@@ -26,7 +26,8 @@ IEapp is a knowledge management system built on three core principles:
 |-----------|------------|
 | Frontend | Bun + SolidStart + TailwindCSS |
 | Backend | Python 3.12+ (FastAPI) |
-| Storage | fsspec (local, S3, memory) |
+| Core | Rust (ugoite-core via pyo3 bindings) |
+| Storage | fsspec/OpenDAL + Apache Iceberg |
 | AI Interface | MCP (resource-first integration) |
 
 ---
@@ -39,7 +40,9 @@ frontend/           # SolidStart frontend
   └─ public/
 backend/            # FastAPI backend (REST & MCP server)
   └─ src/
-ieapp-cli/          # Command-line interface for power users
+ugoite-cli/         # Command-line interface for power users
+  └─ src/
+ugoite-core/        # Rust core logic + Python bindings
   └─ src/
 docs/
   ├─ spec/          # Technical specifications (YAML + Markdown)
@@ -82,7 +85,7 @@ Backend (dev) example:
 
 ```bash
 cd backend
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Frontend (dev) example:
@@ -144,7 +147,7 @@ uv run pytest
 Where you can run this:
 
 - Dev Container: everything needed to run tests is available; run `uv run pytest`.
-- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ieapp-cli/`.
+- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ugoite-cli/`.
 - Local (non-container): install `uv`, then run the commands above.
 
 Frontend tests: check `frontend/package.json`.

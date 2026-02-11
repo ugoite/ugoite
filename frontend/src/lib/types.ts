@@ -1,5 +1,5 @@
 /**
- * Type definitions for the IEapp API
+ * Type definitions for the Ugoite API
  * Based on docs/spec/data-model/overview.md and docs/spec/api/rest.md
  */
 

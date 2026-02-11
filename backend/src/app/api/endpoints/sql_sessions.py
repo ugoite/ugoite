@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
@@ -34,7 +34,7 @@ async def create_sql_session_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.create_sql_session(
+        return await ugoite_core.create_sql_session(
             storage_config,
             space_id,
             payload.sql,
@@ -59,7 +59,7 @@ async def get_sql_session_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_sql_session_status(
+        return await ugoite_core.get_sql_session_status(
             storage_config,
             space_id,
             session_id,
@@ -84,7 +84,7 @@ async def get_sql_session_count_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        count = await ieapp_core.get_sql_session_count(
+        count = await ugoite_core.get_sql_session_count(
             storage_config,
             space_id,
             session_id,
@@ -113,7 +113,7 @@ async def get_sql_session_rows_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_sql_session_rows(
+        return await ugoite_core.get_sql_session_rows(
             storage_config,
             space_id,
             session_id,
@@ -140,7 +140,7 @@ async def get_sql_session_stream_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     async def row_generator() -> AsyncGenerator[str]:
-        rows = await ieapp_core.get_sql_session_rows_all(
+        rows = await ugoite_core.get_sql_session_rows_all(
             storage_config,
             space_id,
             session_id,

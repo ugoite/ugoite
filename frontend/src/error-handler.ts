@@ -10,7 +10,7 @@ export default function errorHandler(error: any, event: any) {
 	// 1. Check if headers are already sent
 	if (event.node?.res?.headersSent || event.res?.headersSent) {
 		// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-		console.error("[ieapp-error-handler] Error occurring after headers sent:", error);
+		console.error("[ugoite-error-handler] Error occurring after headers sent:", error);
 		if (event.node?.res && !event.node.res.writableEnded) {
 			event.node.res.end();
 		}
@@ -19,7 +19,7 @@ export default function errorHandler(error: any, event: any) {
 
 	// 2. Clear out any state if possible (though we can't easily reset headers)
 	// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-	console.error("[ieapp-error-handler] Server Error:", error);
+	console.error("[ugoite-error-handler] Server Error:", error);
 
 	try {
 		setResponseStatus(event, 503, "Server Unavailable");
@@ -45,7 +45,7 @@ export default function errorHandler(error: any, event: any) {
 </html>`);
 	} catch (e) {
 		// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-		console.error("[ieapp-error-handler] Fatal error in error handler:", e);
+		console.error("[ugoite-error-handler] Fatal error in error handler:", e);
 		if (event.node?.res && !event.node.res.writableEnded) {
 			event.node.res.end("Internal Server Error");
 		}

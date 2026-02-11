@@ -1,0 +1,7 @@
+[tasks.install]
+run = "uv sync"
+
+[tasks.test]
+run = "uv run --with pytest python -m pytest"
+description = "Run ugoite-cli pytest suite"
+depends = ["//ugoite-core:build"]

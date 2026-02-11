@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.endpoints.space import (
@@ -36,7 +36,7 @@ async def create_link_endpoint(
     link_id = uuid.uuid4().hex
 
     try:
-        return await ieapp_core.create_link(
+        return await ugoite_core.create_link(
             storage_config,
             space_id,
             payload.source,
@@ -70,7 +70,7 @@ async def list_links_endpoint(space_id: str) -> list[dict[str, Any]]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_links(storage_config, space_id)
+        return await ugoite_core.list_links(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list links")
         raise HTTPException(
@@ -91,7 +91,7 @@ async def delete_link_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        await ieapp_core.delete_link(storage_config, space_id, link_id)
+        await ugoite_core.delete_link(storage_config, space_id, link_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(

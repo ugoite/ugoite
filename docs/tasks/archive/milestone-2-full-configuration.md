@@ -52,7 +52,7 @@ Unified to "Form" terminology:
 | Location | New Term | Changes Required |
 |----------|----------|------------------|
 | Documentation | "Form" | Update all spec files |
-| `ieapp-cli/src/ieapp/forms.py` | "form" | Rename `schemas.py` → `forms.py`, rename functions |
+| `ugoite-cli/src/ugoite/forms.py` | "form" | Rename `schemas.py` → `forms.py`, rename functions |
 | `backend/src/app/api/endpoints/` | "form" | Routes: `/forms`, `/forms/{name}` |
 | `backend/src/app/models/forms.py` | "FormCreate" | Rename models file |
 | `frontend/src/lib/*-api.ts` | "formApi" | Rename API client methods |
@@ -61,7 +61,7 @@ Unified to "Form" terminology:
 ### Tasks
 
 - [x] Update `docs/spec/` to use "Form" consistently
-- [x] Rename `ieapp-cli/src/ieapp/schemas.py` → `forms.py`
+- [x] Rename `ugoite-cli/src/ugoite/schemas.py` → `forms.py`
 - [x] Rename functions: `list_schemas` → `list_forms`, `get_schema` → `get_form`, etc.
 - [x] Update backend routes and models
 - [x] Update frontend API client
@@ -77,15 +77,15 @@ Unified to "Form" terminology:
 
 ---
 
-## Checkpoint 2: Rust Core Library (ieapp-core) ✅ DONE
+## Checkpoint 2: Rust Core Library (ugoite-core) ✅ DONE
 
 **Goal**: Extract core logic into a Rust crate for multi-platform deployment
 
 ### AS-IS (Current State)
 
 ```
-ieapp-cli/
-├── src/ieapp/
+ugoite-cli/
+├── src/ugoite/
 │   ├── space.py          # Space CRUD, fsspec operations
 │   ├── entries.py        # Entry CRUD, revision history
 │   ├── forms.py          # Form definitions
@@ -96,7 +96,7 @@ ieapp-cli/
 │   └── utils.py          # fsspec helpers
 backend/
 ├── src/app/
-│   ├── api/              # FastAPI routes (calls ieapp-core)
+│   ├── api/              # FastAPI routes (calls ugoite-core)
 │   └── mcp/              # MCP server endpoints
 ```
 
@@ -108,10 +108,10 @@ backend/
 ### TO-BE (Target State)
 
 ```
-ieapp-core/                     # NEW: Rust crate (Mixed Layout)
+ugoite-core/                     # NEW: Rust crate (Mixed Layout)
 ├── Cargo.toml                  # Rust package config
 ├── pyproject.toml              # Python package config (maturin)
-├── ieapp_core/                 # Python package
+├── ugoite_core/                 # Python package
 │   └── __init__.py
 ├── src/                        # Rust core + bindings
 │   ├── lib.rs                  # pyo3 entry point & bindings
@@ -128,15 +128,15 @@ ieapp-core/                     # NEW: Rust crate (Mixed Layout)
 │   │   └── memory.rs          # In-memory for tests
 │       └── mod.rs
 
-ieapp-cli/                      # UPDATED: CLI for power users
-├── src/ieapp/
+ugoite-cli/                      # UPDATED: CLI for power users
+├── src/ugoite/
 │   ├── cli.py                 # Typer-based CLI
 │   └── compat.py              # Compatibility layer (optional)
 
-backend/                        # UPDATED: Pure API layer (calls ieapp-core)
+backend/                        # UPDATED: Pure API layer (calls ugoite-core)
 ├── src/app/
-│   ├── api/                   # Routes (delegate to ieapp-core)
-│   └── mcp/                   # MCP server (delegate to ieapp-core)
+│   ├── api/                   # Routes (delegate to ugoite-core)
+│   └── mcp/                   # MCP server (delegate to ugoite-core)
 
 frontend/                       # UNCHANGED: UI only
 ```
@@ -145,14 +145,14 @@ frontend/                       # UNCHANGED: UI only
 
 | Module | Responsibility |
 |--------|----------------|
-| `ieapp-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing |
-| `ieapp-cli` (Python) | Typer CLI for direct user interaction |
-| `backend` (Python) | REST API routes, MCP server, delegates to ieapp-core |
+| `ugoite-core` (Rust) | All data operations, storage abstraction (OpenDAL), validation, indexing |
+| `ugoite-cli` (Python) | Typer CLI for direct user interaction |
+| `backend` (Python) | REST API routes, MCP server, delegates to ugoite-core |
 | `frontend` (TypeScript) | UI rendering, optimistic updates, no data logic |
 
 ### Tasks
 
-- [x] Create `ieapp-core/` Rust crate with Cargo.toml
+- [x] Create `ugoite-core/` Rust crate with Cargo.toml
 - [x] Implement storage abstraction using OpenDAL
 - [x] Port `space.py` → `space.rs`
 - [x] Port `entries.py` → `entry.rs`
@@ -161,8 +161,8 @@ frontend/                       # UNCHANGED: UI only
 - [x] Port `assets.py` → `asset.rs`
 - [x] Port `integrity.py` → `integrity.rs`
 - [x] Create pyo3 Python bindings
-- [x] Update ieapp-cli to use Rust bindings
-- [x] Update backend to use ieapp-core bindings (no direct file access)
+- [x] Update ugoite-cli to use Rust bindings
+- [x] Update backend to use ugoite-core bindings (no direct file access)
 - [x] Ensure all tests pass with new architecture
 - [x] Benchmark performance vs Python implementation
 
@@ -176,8 +176,8 @@ frontend/                       # UNCHANGED: UI only
 
 ### Acceptance Criteria
 
-- [x] `ieapp-core` compiles to native library and Wasm
-- [x] Python bindings work with existing ieapp-cli tests
+- [x] `ugoite-core` compiles to native library and Wasm
+- [x] Python bindings work with existing ugoite-cli tests
 - [x] Backend has zero direct filesystem operations
 - [x] Performance is equal or better than Python implementation
 
@@ -191,7 +191,7 @@ frontend/                       # UNCHANGED: UI only
 
 Path patterns are inconsistent across modules:
 
-| Feature | ieapp-cli | backend | frontend |
+| Feature | ugoite-cli | backend | frontend |
 |---------|-----------|---------|----------|
 | Space | `space.py` | `api/endpoints/spaces.py` | `space-store.ts` |
 | Entries | `entries.py` | `api/endpoints/spaces.py` (mixed) | `store.ts`, `routes/spaces/[space_id]/entries` |
@@ -208,43 +208,43 @@ All modules follow the same feature-based structure:
 features:
   space:
     crate: src/space.rs
-    ieapp_core: src/ieapp/space.py
+    ugoite_core: src/ugoite/space.py
     backend: src/app/api/endpoints/space.py
     frontend: src/lib/space-store.ts
     
   entry:
     crate: src/entry.rs
-    ieapp_core: src/ieapp/entries.py
+    ugoite_core: src/ugoite/entries.py
     backend: src/app/api/endpoints/entry.py
     frontend: src/lib/entry-store.ts
     
   form:
     crate: src/form.rs
-    ieapp_core: src/ieapp/forms.py
+    ugoite_core: src/ugoite/forms.py
     backend: src/app/api/endpoints/forms.py
     frontend: src/lib/form-store.ts
     
   asset:
     crate: src/asset.rs
-    ieapp_cli: src/ieapp/assets.py
+    ugoite_cli: src/ugoite/assets.py
     backend: src/app/api/endpoints/asset.py
     frontend: src/lib/asset-store.ts
     
   link:
     crate: src/link.rs
-    ieapp_cli: src/ieapp/link.py
+    ugoite_cli: src/ugoite/link.py
     backend: src/app/api/endpoints/link.py
     frontend: src/lib/link-store.ts
     
   search:
     crate: src/search.rs
-    ieapp_cli: src/ieapp/search.py
+    ugoite_cli: src/ugoite/search.py
     backend: src/app/api/endpoints/search.py
     frontend: src/lib/search-store.ts
     
   index:
     crate: src/index.rs
-    ieapp_cli: src/ieapp/index.py
+    ugoite_cli: src/ugoite/index.py
     backend: (internal, no API)
     frontend: (not applicable)
 ```
@@ -315,11 +315,11 @@ requirements:
       - stories/core.yaml
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_space.py
+        - file: ugoite-cli/tests/test_space.py
           tests:
             - test_create_space_scaffolding
             - test_create_workspace_s3_unimplemented
-        - file: ieapp-cli/tests/test_indexer.py
+        - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
             
@@ -444,7 +444,7 @@ stories:
       - AI can query structured properties via API
       - Output (text/charts) is returned to AI context
     related_apis:
-      - MCP resource: ieapp://{space_id}/entries/list
+      - MCP resource: ugoite://{space_id}/entries/list
       - REST: POST /spaces/{space_id}/query
     requirements:
 ```

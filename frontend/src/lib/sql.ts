@@ -1,6 +1,6 @@
 import type { Diagnostic } from "@codemirror/lint";
 import type { SQLConfig } from "@codemirror/lang-sql";
-import sqlRules from "../../../shared/sql/ieapp-sql-rules.json";
+import sqlRules from "../../../shared/sql/ugoite-sql-rules.json";
 import type { Form } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;

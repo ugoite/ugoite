@@ -18,10 +18,10 @@ jobs:
     - ruff check .
   type-check:
     - cd backend && uv run ty check .
-    - cd ieapp-cli && uv run ty check .
+    - cd ugoite-cli && uv run ty check .
   test:
     - cd backend && uv run pytest
-    - cd ieapp-cli && uv run pytest
+    - cd ugoite-cli && uv run pytest
 ```
 
 ## Frontend CI
@@ -72,8 +72,8 @@ Hooks configured in `.pre-commit-config.yaml`:
 
 | Variable | Purpose |
 |----------|---------|
-| `IEAPP_ROOT` | Data directory path |
-| `IEAPP_ALLOW_REMOTE` | Enable remote connections |
+| `UGOITE_ROOT` | Data directory path |
+| `UGOITE_ALLOW_REMOTE` | Enable remote connections |
 | `BACKEND_URL` | Backend URL for frontend proxy |
 
 ### Secrets
@@ -92,7 +92,7 @@ Before pushing, run the same checks as CI:
 uvx ruff format --check .
 uvx ruff check .
 cd backend && uv run ty check . && uv run pytest
-cd ieapp-cli && uv run ty check . && uv run pytest
+cd ugoite-cli && uv run ty check . && uv run pytest
 
 # Frontend
 cd frontend && biome ci . && bun test

@@ -2,11 +2,11 @@
 
 ## Overview
 
-IEapp uses a modern stack optimized for local-first operation and AI integration.
+Ugoite uses a modern stack optimized for local-first operation and AI integration.
 
 ## Core Technologies
 
-### ieapp-core (Rust Crate)
+### ugoite-core (Rust Crate)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
@@ -16,7 +16,7 @@ IEapp uses a modern stack optimized for local-first operation and AI integration
 | [pyo3](https://pyo3.rs/) | Latest | Python bindings |
 | [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/) | Latest | WebAssembly bindings (future) |
 
-### ieapp-cli (Python)
+### ugoite-cli (Python)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
@@ -69,11 +69,11 @@ OpenDAL provides unified access to multiple storage systems:
 
 ## Build Targets
 
-The ieapp-core crate compiles to multiple targets:
+The ugoite-core crate compiles to multiple targets:
 
 | Target | Use Case |
 |--------|----------|
-| Native (x86_64, arm64) | backend & ieapp-cli via pyo3 |
+| Native (x86_64, arm64) | backend & ugoite-cli via pyo3 |
 | WebAssembly | Browser-based frontend |
 | Tauri integration | Desktop application |
 

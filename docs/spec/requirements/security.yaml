@@ -8,7 +8,7 @@ requirements:
     title: Localhost Binding
     description: |
       API binds to 127.0.0.1 only by default. Remote access requires
-      explicit IEAPP_ALLOW_REMOTE=true environment variable.
+      explicit UGOITE_ALLOW_REMOTE=true environment variable.
     related_spec:
       - security/overview.md
     priority: high

@@ -7,8 +7,8 @@ import io
 import json
 from pathlib import Path
 
-import ieapp_core
 import pytest
+import ugoite_core
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -102,7 +102,7 @@ def test_list_spaces_missing_root_creates_default(
 ) -> None:
     """REQ-STO-009: /spaces succeeds with missing root path."""
     root = tmp_path / "missing-root"
-    monkeypatch.setenv("IEAPP_ROOT", str(root))
+    monkeypatch.setenv("UGOITE_ROOT", str(root))
 
     with TestClient(app) as client:
         response = client.get("/spaces")
@@ -123,7 +123,7 @@ def test_list_spaces_handles_core_failure(
         msg = "boom"
         raise RuntimeError(msg)
 
-    monkeypatch.setattr(ieapp_core, "list_spaces", _raise)
+    monkeypatch.setattr(ugoite_core, "list_spaces", _raise)
 
     response = test_client.get("/spaces")
     assert response.status_code == 200
@@ -256,7 +256,7 @@ def test_list_entries_space_not_found_returns_404(
 
     lacks spaces dir.
     """
-    # temp_space_root fixture sets IEAPP_ROOT to an empty temporary directory
+    # temp_space_root fixture sets UGOITE_ROOT to an empty temporary directory
     response = test_client.get("/spaces/Stay/entries")
     assert response.status_code == 404
 
@@ -595,7 +595,7 @@ def test_query_entries(
     # Entry: In a real scenario, the indexer runs in background.
     # For this test, we might need to mock the index or manually update it
     # if the API reads from index.json
-    # However, the Milestone 2 implementation of `ieapp.query` should read
+    # However, the Milestone 2 implementation of `ugoite.query` should read
     # from index.json.
     # Since we haven't implemented the background indexer in the backend yet,
     # we might need to manually populate index.json or rely on the API to
@@ -900,8 +900,8 @@ def test_middleware_hmac_signature(
         hashlib.sha256,
     ).hexdigest()
 
-    assert response.headers["X-IEApp-Key-Id"] == global_data["hmac_key_id"]
-    assert response.headers["X-IEApp-Signature"] == expected_signature
+    assert response.headers["X-Ugoite-Key-Id"] == global_data["hmac_key_id"]
+    assert response.headers["X-Ugoite-Signature"] == expected_signature
 
 
 def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
@@ -909,7 +909,7 @@ def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
     response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
-    assert "X-IEApp-Signature" in response.headers
+    assert "X-Ugoite-Signature" in response.headers
 
 
 def test_get_form_types(test_client: TestClient, temp_space_root: Path) -> None:

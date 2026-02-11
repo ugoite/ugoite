@@ -15,11 +15,11 @@ requirements:
     status: implemented
     tests:
       pytest:
-        - file: ieapp-cli/tests/test_assets.py
+        - file: ugoite-cli/tests/test_assets.py
           tests:
             - test_asset_lifecycle
       rust:
-        - file: ieapp-core/tests/test_asset.rs
+        - file: ugoite-core/tests/test_asset.rs
           tests:
             - test_asset_req_asset_001_create_asset
             - test_asset_req_asset_001_delete_asset

@@ -1,17 +1,17 @@
 # Data Model Overview
 
-This document describes the high-level data model of IEapp, including its storage principles and directory structure.
+This document describes the high-level data model of Ugoite, including its storage principles and directory structure.
 
 ## Terminology Distinction
 
-To ensure clarity, IEapp distinguishes between the **System Data Model** and user-defined **Forms**:
+To ensure clarity, Ugoite distinguishes between the **System Data Model** and user-defined **Forms**:
 
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
 - **Entry Forms**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
 ## Principles
 
-IEapp's data model is built on these principles:
+Ugoite's data model is built on these principles:
 
 | Principle | Description |
 |-----------|-------------|
@@ -26,8 +26,7 @@ See [directory-structure.md](directory-structure.md) for the full space layout.
 
 ```
 global.json                    # Space registry
-spaces/
-  {space_id}/
+i
     meta.json                  # Space metadata
     settings.json              # Space settings
     forms/                     # Iceberg-managed Form tables (layout not specified)
@@ -47,9 +46,9 @@ Forms define entry types with:
 
 ### Metadata vs Content Columns
 
-IEapp separates columns into two ownership categories:
+Ugoite separates columns into two ownership categories:
 
-- **Metadata columns (system-owned)**: Reserved fields created and managed by IEapp.
+- **Metadata columns (system-owned)**: Reserved fields created and managed by Ugoite.
   Users **cannot** define Form fields with these names.
 - **Content columns (user-owned)**: Form-defined fields stored in the Iceberg `fields` struct.
 
@@ -66,7 +65,7 @@ reserved metadata column name.
 
 ### Metadata Forms
 
-IEapp also reserves **metadata Form names** for system-owned tables. Users cannot
+Ugoite also reserves **metadata Form names** for system-owned tables. Users cannot
 create or update Forms with these names. The reserved metadata Form list is
 case-insensitive and may expand over time.
 
@@ -117,14 +116,14 @@ Type casting errors are reported during validation.
 
 ### Link URIs
 
-Entries can contain IEapp-internal links using the `ieapp://` scheme. The URI
+Entries can contain Ugoite-internal links using the `ugoite://` scheme. The URI
 kind determines the link target and is designed to be extensible:
 
-- `ieapp://entry/{entry_id}`
-- `ieapp://asset/{asset_id}`
+- `ugoite://entry/{entry_id}`
+- `ugoite://asset/{asset_id}`
 
-IEapp normalizes equivalent forms (e.g. `ieapp://entries/{id}`,
-`ieapp://assets/{id}`, `ieapp://entry?id=...`) to canonical URIs on write.
+Ugoite normalizes equivalent forms (e.g. `ugoite://entries/{id}`,
+`ugoite://assets/{id}`, `ugoite://entry?id=...`) to canonical URIs on write.
 This keeps Markdown stable while allowing new link kinds in future milestones.
 
 ### Versioning

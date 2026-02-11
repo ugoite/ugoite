@@ -85,7 +85,7 @@ requirements:
     title: Requirements Traceability Automation
     description: |
       Requirements MUST be defined in YAML and validated against test references
-      in backend, frontend, ieapp-cli, and ieapp-core.
+      in backend, frontend, ugoite-cli, and ugoite-core.
     related_spec:
       - requirements/README.md
       - testing/strategy.md
@@ -116,11 +116,11 @@ requirements:
         - file: backend/tests/test_sql.py
           tests:
             - test_sql_req_api_006_crud
-        - file: ieapp-cli/tests/test_saved_sql.py
+        - file: ugoite-cli/tests/test_saved_sql.py
           tests:
             - test_saved_sql_req_api_006_crud
       rust:
-        - file: ieapp-core/tests/test_saved_sql.rs
+        - file: ugoite-core/tests/test_saved_sql.rs
           tests:
             - test_saved_sql_req_api_006_crud
 
@@ -128,7 +128,7 @@ requirements:
     title: Saved SQL variable embedding and SQL validity
     description: |
       Saved SQL entries MUST embed each declared variable in the SQL text using
-      {{variable_name}} placeholders, and the SQL must be valid IEapp SQL after
+      {{variable_name}} placeholders, and the SQL must be valid Ugoite SQL after
       substituting placeholders with literal values.
     related_spec:
       - api/rest.md#sql-saved-queries
@@ -140,11 +140,11 @@ requirements:
         - file: backend/tests/test_sql.py
           tests:
             - test_sql_req_api_007_validation
-        - file: ieapp-cli/tests/test_saved_sql.py
+        - file: ugoite-cli/tests/test_saved_sql.py
           tests:
             - test_saved_sql_req_api_007_validation
       rust:
-        - file: ieapp-core/tests/test_saved_sql.rs
+        - file: ugoite-core/tests/test_saved_sql.rs
           tests:
             - test_saved_sql_req_api_007_validation_errors
 
@@ -163,7 +163,7 @@ requirements:
           tests:
             - test_query_entries_sql
       rust:
-        - file: ieapp-core/tests/test_sql_sessions.rs
+        - file: ugoite-core/tests/test_sql_sessions.rs
           tests:
             - test_sql_sessions_req_api_008_end_to_end
 
@@ -172,7 +172,7 @@ requirements:
     description: |
       The API MUST provide a way to generate a sample-data space with a small
       set of input parameters (space id, scenario, entry count, seed), backed
-      by ieapp-core dynamic generation.
+      by ugoite-core dynamic generation.
     related_spec:
       - api/rest.md#spaces
       - features/spaces.yaml
@@ -183,7 +183,7 @@ requirements:
         - file: backend/tests/test_api.py
           tests:
             - test_create_sample_space
-        - file: ieapp-cli/tests/test_space.py
+        - file: ugoite-cli/tests/test_space.py
           tests:
             - test_create_sample_space_req_api_009
       vitest:
@@ -191,6 +191,6 @@ requirements:
           tests:
             - should create a sample-data space [REQ-API-009]
       rust:
-        - file: ieapp-core/tests/test_sample_data.rs
+        - file: ugoite-core/tests/test_sample_data.rs
           tests:
             - test_sample_data_req_api_009_create_sample_space

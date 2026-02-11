@@ -1,9 +1,9 @@
-# IEapp SQL (Domain-Specific SQL)
+# Ugoite SQL (Domain-Specific SQL)
 
 **Version**: 0.1
 **Updated**: 2026-01
 
-IEapp SQL provides a lightweight SQL dialect for querying Iceberg-backed entries.
+Ugoite SQL provides a lightweight SQL dialect for querying Iceberg-backed entries.
 It is designed for filtering and sorting entry records without changing API paths.
 
 ## Scope
@@ -33,7 +33,7 @@ It is designed for filtering and sorting entry records without changing API path
 
 ## Saved SQL Form
 
-IEapp defines a system-owned **SQL** Form for persisting saved queries.
+Ugoite defines a system-owned **SQL** Form for persisting saved queries.
 The SQL Form is a **metadata Form**; users cannot create Forms with the
 reserved name `SQL`.
 
@@ -45,7 +45,7 @@ SQL Form fields:
 
 Saved SQL entries MUST embed every variable in the `sql` text using
 `{{variable_name}}` placeholders. Placeholders MUST correspond to entries in
-`variables`, and the SQL must be valid IEapp SQL after substituting placeholders
+`variables`, and the SQL must be valid Ugoite SQL after substituting placeholders
 with literal values.
 
 ## Examples
@@ -91,7 +91,7 @@ WHERE n.id IS NOT NULL
 
 ## Errors
 
-Invalid syntax or unsupported clauses must return an error from `ieapp-core` and
+Invalid syntax or unsupported clauses must return an error from `ugoite-core` and
 surface as a `400` or `500` response depending on the caller context.
 Limits that exceed the server-side maximum must return a validation error.
 
@@ -99,9 +99,9 @@ Limits that exceed the server-side maximum must return a validation error.
 
 Linting and completion rules are defined in the shared configuration file:
 
-- `shared/sql/ieapp-sql-rules.json`
+- `shared/sql/ugoite-sql-rules.json`
 
-`ieapp-core` reads this file to provide CLI linting/completion behavior, while
+`ugoite-core` reads this file to provide CLI linting/completion behavior, while
 the frontend uses the same file for editor hints without requiring runtime API
 calls.
 

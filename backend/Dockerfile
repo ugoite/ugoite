@@ -4,7 +4,7 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Build essentials and Rust toolchain for compiling ieapp-core (Rust native modules)
+# Build essentials and Rust toolchain for compiling ugoite-core (Rust native modules)
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		build-essential \
@@ -21,8 +21,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY ./pyproject.toml .
 COPY ./uv.lock .
 COPY ./README.md .
-COPY --from=core ./ ../ieapp-core/
-COPY --from=module ./ ../ieapp-cli/
+COPY --from=core ./ ../ugoite-core/
+COPY --from=module ./ ../ugoite-cli/
 
 # Copy the rest of the backend code
 COPY ./src src

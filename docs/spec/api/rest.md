@@ -9,7 +9,7 @@ The REST API is the primary interface for the frontend and external integrations
 ## Authentication
 
 By default, the API binds to localhost only and requires no authentication.
-When `IEAPP_ALLOW_REMOTE=true`, authentication is required (future milestone).
+When `UGOITE_ALLOW_REMOTE=true`, authentication is required (future milestone).
 
 ## Endpoints
 

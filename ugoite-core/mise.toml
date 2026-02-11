@@ -1,0 +1,35 @@
+[env]
+_.python.venv = { path = ".venv" }
+UV_PYTHON = "3.13"
+CARGO_TARGET_DIR = "{{env.HOME}}/.cache/ugoite/ugoite-core/target"
+
+[tasks.install]
+run = "uv sync"
+description = "Install dependencies"
+
+[tasks.build]
+run = [
+	"python -c \"import pathlib; [p.unlink() for p in pathlib.Path('ugoite_core').glob('_ugoite_core.*.so')]\"",
+	"PYO3_PYTHON=\"$(command -v python)\" uv run maturin develop",
+]
+description = "Build Rust extension for local development"
+
+[tasks.test]
+run = [
+	"cargo test -j 1",
+	"if [ -d tests ]; then uv run --with pytest --with pytest-asyncio python -m pytest; fi",
+]
+description = "Run Rust crate tests and Python binding tests"
+depends = ["build"]
+
+[tasks.lint]
+run = "cargo clippy && uv run ruff check ."
+description = "Run Rust and Python linters"
+
+[tasks.format]
+run = "cargo fmt && uv run ruff format ."
+description = "Format Rust and Python code"
+
+[tasks.ty]
+run = "uv run ty check ."
+description = "Run Python type checking"

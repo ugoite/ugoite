@@ -1,5 +1,5 @@
 /**
- * Entries E2E Tests for IEapp
+ * Entries E2E Tests for Ugoite
  *
  * These tests verify the full entries CRUD functionality:
  * - Create entries

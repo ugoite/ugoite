@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.endpoints.space import (
@@ -26,7 +26,7 @@ async def list_forms_endpoint(space_id: str) -> list[dict[str, Any]]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_forms(storage_config, space_id)
+        return await ugoite_core.list_forms(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list forms")
         raise HTTPException(
@@ -43,7 +43,7 @@ async def list_form_types_endpoint(space_id: str) -> list[str]:
         # Verify space exists even though types are static
         storage_config = _storage_config()
         await _ensure_space_exists(storage_config, space_id)
-        return await ieapp_core.list_column_types()
+        return await ugoite_core.list_column_types()
     except Exception as e:
         if isinstance(e, HTTPException):
             raise
@@ -63,7 +63,7 @@ async def get_form_endpoint(space_id: str, form_name: str) -> dict[str, Any]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_form(storage_config, space_id, form_name)
+        return await ugoite_core.get_form(storage_config, space_id, form_name)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -93,18 +93,18 @@ async def create_form_endpoint(
         strategies = form_data.pop("strategies", None)
         form_json = json.dumps(form_data)
 
-        await ieapp_core.upsert_form(storage_config, space_id, form_json)
+        await ugoite_core.upsert_form(storage_config, space_id, form_json)
 
         if strategies:
             strategies_json = json.dumps(strategies)
-            await ieapp_core.migrate_form(
+            await ugoite_core.migrate_form(
                 storage_config,
                 space_id,
                 form_json,
                 strategies_json,
             )
 
-        return await ieapp_core.get_form(storage_config, space_id, payload.name)
+        return await ugoite_core.get_form(storage_config, space_id, payload.name)
     except RuntimeError as e:
         msg = str(e)
         if "reserved" in msg.lower():

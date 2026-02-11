@@ -3,7 +3,7 @@ import type { Space } from "./types";
 import { spaceApi } from "./space-api";
 
 const DEFAULT_SPACE_ID = "default";
-const STORAGE_KEY = "ieapp-selected-space";
+const STORAGE_KEY = "ugoite-selected-space";
 
 /**
  * Creates a reactive space store.

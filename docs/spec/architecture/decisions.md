@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This document captures key architectural decisions made during IEapp development.
+This document captures key architectural decisions made during Ugoite development.
 
 ## ADR-001: Rust Core with Python Bindings
 
@@ -12,7 +12,7 @@ This document captures key architectural decisions made during IEapp development
 - fsspec is Python-only, not portable to other platforms
 
 **Decision**: 
-Extract core logic into a Rust crate (`ieapp-core`) with:
+Extract core logic into a Rust crate (`ugoite-core`) with:
 - OpenDAL for storage abstraction (Rust-native fsspec equivalent)
 - pyo3 for Python bindings
 - wasm-bindgen for WebAssembly (future)
@@ -130,10 +130,10 @@ Use revision-based optimistic concurrency:
 
 **Decision**: 
 Backend should be a pure API layer:
-- All business logic in `ieapp-core`
+- All business logic in `ugoite-core`
 - Backend only routes requests and formats responses
 - No direct filesystem access in backend
-- Backend tests use memory filesystem via `ieapp-core`
+- Backend tests use memory filesystem via `ugoite-core`
 
 **Consequences**:
 - (+) Single source of truth for business logic
@@ -142,7 +142,7 @@ Backend should be a pure API layer:
 - (-) More abstraction layers
 - (-) Slightly more latency
 
-**Info**: `ieapp-cli` is a separate tool for direct command-line interaction with `ieapp-core`.
+**Info**: `ugoite-cli` is a separate tool for direct command-line interaction with `ugoite-core`.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Storage helpers for ieapp-core integration."""
+"""Storage helpers for ugoite-core integration."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def storage_uri_from_root(root_path: Path | str) -> str:
 
 
 def storage_config_from_root(root_path: Path | str) -> dict[str, str]:
-    """Build storage_config for ieapp-core bindings."""
+    """Build storage_config for ugoite-core bindings."""
     _ensure_local_root(root_path)
     return {"uri": storage_uri_from_root(root_path)}
 

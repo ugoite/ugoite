@@ -26,7 +26,7 @@ Space registry and system configuration:
 ```json
 {
   "version": 1,
-  "default_storage": "fs:///Users/alex/ieapp",
+  "default_storage": "fs:///Users/alex/ugoite",
   "spaces": ["space-main", "space-research"],
   "hmac_key_id": "key-2025-11-01",
   "hmac_key": "base64-encoded-secret",
@@ -44,7 +44,7 @@ Space registry and system configuration:
   "name": "Personal Knowledge",
   "created_at": "2025-08-12T12:00:00Z",
   "storage_config": {
-    "uri": "s3://my-bucket/ieapp/space-main",
+    "uri": "s3://my-bucket/ugoite/space-main",
     "credentials_profile": "default"
   },
   "merge_strategy": "manual",
@@ -135,6 +135,6 @@ markdown_checksum: string
 Each space directory is fully portable:
 - Copy to another location to backup
 - Move to different storage backend
-- Share with other IEapp instances
+- Share with other Ugoite instances
 
 Materialized indexes (search, embeddings) are derived from Iceberg tables and can be regenerated.

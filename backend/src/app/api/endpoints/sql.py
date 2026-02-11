@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.endpoints.space import (
@@ -27,7 +27,7 @@ async def list_sql_endpoint(space_id: str) -> list[dict[str, Any]]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_sql(storage_config, space_id)
+        return await ugoite_core.list_sql(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list saved SQL")
         raise HTTPException(
@@ -58,7 +58,7 @@ async def create_sql_endpoint(
                 "variables": [var.model_dump() for var in payload.variables],
             },
         )
-        entry = await ieapp_core.create_sql(
+        entry = await ugoite_core.create_sql(
             storage_config,
             space_id,
             sql_id,
@@ -72,7 +72,7 @@ async def create_sql_endpoint(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=msg,
             ) from e
-        if msg.startswith("IEAPP_SQL_VALIDATION") or "reserved" in msg.lower():
+        if msg.startswith("UGOITE_SQL_VALIDATION") or "reserved" in msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
@@ -98,7 +98,7 @@ async def get_sql_endpoint(space_id: str, sql_id: str) -> dict[str, Any]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_sql(storage_config, space_id, sql_id)
+        return await ugoite_core.get_sql(storage_config, space_id, sql_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():
@@ -138,7 +138,7 @@ async def update_sql_endpoint(
                 "variables": [var.model_dump() for var in payload.variables],
             },
         )
-        entry = await ieapp_core.update_sql(
+        entry = await ugoite_core.update_sql(
             storage_config,
             space_id,
             sql_id,
@@ -158,7 +158,7 @@ async def update_sql_endpoint(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=msg,
             ) from e
-        if msg.startswith("IEAPP_SQL_VALIDATION"):
+        if msg.startswith("UGOITE_SQL_VALIDATION"):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
@@ -187,7 +187,7 @@ async def delete_sql_endpoint(space_id: str, sql_id: str) -> None:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        await ieapp_core.delete_sql(storage_config, space_id, sql_id)
+        await ugoite_core.delete_sql(storage_config, space_id, sql_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():

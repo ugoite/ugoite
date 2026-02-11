@@ -1,6 +1,6 @@
 # Requirements Documentation
 
-This directory contains machine-readable requirement definitions for IEapp.
+This directory contains machine-readable requirement definitions for Ugoite.
 
 ## Files
 
@@ -70,7 +70,7 @@ requirements:
 
 Each requirement lists the tests that verify it:
 
-- **pytest**: Python tests in `ieapp-cli/tests/` and `backend/tests/`
+- **pytest**: Python tests in `ugoite-cli/tests/` and `backend/tests/`
 - **vitest**: TypeScript tests in `frontend/src/**/*.test.ts(x)`
 - **e2e**: End-to-end tests in `e2e/`
 

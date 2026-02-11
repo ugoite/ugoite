@@ -2,7 +2,7 @@
 
 ## Philosophy
 
-IEapp follows **Test-Driven Development (TDD)**:
+Ugoite follows **Test-Driven Development (TDD)**:
 
 1. Write failing test first
 2. Implement minimal code to pass
@@ -26,7 +26,7 @@ IEapp follows **Test-Driven Development (TDD)**:
 
 | Module | Framework | Location |
 |--------|-----------|----------|
-| ieapp-cli | pytest | `ieapp-cli/tests/` |
+| ugoite-cli | pytest | `ugoite-cli/tests/` |
 | backend | pytest | `backend/tests/` |
 | frontend | vitest | `frontend/src/**/*.test.ts(x)` |
 
@@ -52,7 +52,7 @@ mise run test
 ```bash
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
-mise run //ieapp-cli:test  # CLI pytest
+mise run //ugoite-cli:test  # CLI pytest
 ```
 
 ### E2E Tests
@@ -83,7 +83,7 @@ cd e2e && npm run test
 
 | Module | Target | Current |
 |--------|--------|---------|
-| ieapp-cli | >80% | ~85% |
+| ugoite-cli | >80% | ~85% |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
 | e2e | Critical paths | Complete |
@@ -121,7 +121,7 @@ Details:
 ### Test Files
 
 ```
-ieapp-cli/tests/
+ugoite-cli/tests/
 ├── conftest.py          # Shared fixtures
 ├── test_space.py        # Space tests
 ├── test_entries.py      # Entry tests
@@ -166,7 +166,7 @@ def test_all_requirements_have_tests() -> None:
     ...
 ```
 
-Rust tests in `ieapp-core/tests/` use a requirement-aware naming convention:
+Rust tests in `ugoite-core/tests/` use a requirement-aware naming convention:
 
 ```rust
 async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {

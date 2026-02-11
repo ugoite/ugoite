@@ -1,5 +1,5 @@
 /**
- * Smoke Tests for IEapp
+ * Smoke Tests for Ugoite
  *
  * These tests verify that the basic infrastructure is working:
  * - Frontend serves pages

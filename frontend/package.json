@@ -1,5 +1,5 @@
 {
-	"name": "ieapp-frontend",
+	"name": "ugoite-frontend",
 	"type": "module",
 	"scripts": {
 		"dev": "vinxi dev",

@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.endpoints.space import (
@@ -36,13 +36,13 @@ async def create_entry_endpoint(
     entry_id = payload.id or str(uuid.uuid4())
 
     try:
-        await ieapp_core.create_entry(
+        await ugoite_core.create_entry(
             storage_config,
             space_id,
             entry_id,
             payload.content,
         )
-        entry_data = await ieapp_core.get_entry(storage_config, space_id, entry_id)
+        entry_data = await ugoite_core.get_entry(storage_config, space_id, entry_id)
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise HTTPException(
@@ -76,7 +76,7 @@ async def list_entries_endpoint(space_id: str) -> list[dict[str, Any]]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.list_entries(storage_config, space_id)
+        return await ugoite_core.list_entries(storage_config, space_id)
     except Exception as e:
         logger.exception("Failed to list entries")
         raise HTTPException(
@@ -94,7 +94,7 @@ async def get_entry_endpoint(space_id: str, entry_id: str) -> dict[str, Any]:
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_entry(storage_config, space_id, entry_id)
+        return await ugoite_core.get_entry(storage_config, space_id, entry_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -136,7 +136,7 @@ async def update_entry_endpoint(
             payload.markdown,
         )
         assets_json = json.dumps(payload.assets) if payload.assets is not None else None
-        updated_entry = await ieapp_core.update_entry(
+        updated_entry = await ugoite_core.update_entry(
             storage_config,
             space_id,
             entry_id,
@@ -152,7 +152,7 @@ async def update_entry_endpoint(
         msg = str(e)
         if "conflict" in msg.lower():
             try:
-                current_entry = await ieapp_core.get_entry(
+                current_entry = await ugoite_core.get_entry(
                     storage_config,
                     space_id,
                     entry_id,
@@ -205,7 +205,7 @@ async def delete_entry_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        await ieapp_core.delete_entry(storage_config, space_id, entry_id)
+        await ugoite_core.delete_entry(storage_config, space_id, entry_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -238,7 +238,7 @@ async def get_entry_history_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_entry_history(storage_config, space_id, entry_id)
+        return await ugoite_core.get_entry_history(storage_config, space_id, entry_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -271,7 +271,7 @@ async def get_entry_revision_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.get_entry_revision(
+        return await ugoite_core.get_entry_revision(
             storage_config,
             space_id,
             entry_id,
@@ -308,7 +308,7 @@ async def restore_entry_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        entry_data = await ieapp_core.restore_entry(
+        entry_data = await ugoite_core.restore_entry(
             storage_config,
             space_id,
             entry_id,

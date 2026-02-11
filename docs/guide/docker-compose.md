@@ -1,6 +1,6 @@
 # Docker Compose Guide
 
-This guide describes how to run IEapp with Docker Compose for local development.
+This guide describes how to run Ugoite with Docker Compose for local development.
 If you are working inside the devcontainer and Docker is not available, use the
 local dev workflow described in [README.md](../../README.md) instead.
 

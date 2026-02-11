@@ -1,6 +1,6 @@
-# IEapp Backend
+# Ugoite Backend
 
-FastAPI-based REST API for IEapp - your AI-native, programmable knowledge base.
+FastAPI-based REST API for Ugoite - your AI-native, programmable knowledge base.
 
 ## Architecture Overview
 
@@ -13,7 +13,7 @@ FastAPI-based REST API for IEapp - your AI-native, programmable knowledge base.
 │             │                 │  - Localhost Guard      │
 │             │                 │  - Error Handling       │
 ├─────────────┴─────────────────┴────────────────────────┤
-│                   ieapp-core Library                     │
+│                   ugoite-core Library                     │
 │  - space.py      (Space CRUD)                            │
 │  - entries.py    (Entry CRUD + Revision Control)         │
 │  - indexer.py    (Structure-from-Text Extraction)        │
@@ -44,14 +44,14 @@ src/app/
 
 ## Key Design Decisions
 
-### 1. Dependency on ieapp-core Library
+### 1. Dependency on ugoite-core Library
 
-The backend does NOT implement business logic directly. Instead, it delegates to `ieapp-core`:
+The backend does NOT implement business logic directly. Instead, it delegates to `ugoite-core`:
 
 ```python
 # ✅ Correct: Use library functions
-from ieapp.entries import create_entry, update_entry, get_entry
-from ieapp.space import create_space, list_spaces
+from ugoite.entries import create_entry, update_entry, get_entry
+from ugoite.space import create_space, list_spaces
 
 # ❌ Wrong: Direct file manipulation in API layer
 ```
@@ -85,7 +85,7 @@ async def update_entry_endpoint(payload: EntryUpdate):
 ### 4. Security Middleware
 
 - **Localhost Guard**: Rejects requests from non-localhost unless explicitly configured
-- **HMAC Signing**: All responses include `X-IEApp-Signature` header for integrity verification
+- **HMAC Signing**: All responses include `X-Ugoite-Signature` header for integrity verification
 
 ## Getting Started
 
@@ -157,5 +157,5 @@ Test fixtures are in `tests/conftest.py`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IEAPP_ROOT` | `~/.ieapp` | Root path for space storage |
-| `IEAPP_ALLOW_REMOTE` | `false` | Allow non-localhost connections |
+| `UGOITE_ROOT` | `~/.ugoite` | Root path for space storage |
+| `UGOITE_ALLOW_REMOTE` | `false` | Allow non-localhost connections |

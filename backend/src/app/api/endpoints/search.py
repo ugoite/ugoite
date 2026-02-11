@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Annotated, Any
 
-import ieapp_core
+import ugoite_core
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.endpoints.space import (
@@ -14,7 +14,7 @@ from app.api.endpoints.space import (
 )
 from app.models.payloads import QueryRequest
 
-SQL_ERROR_PREFIX = "IEAPP_SQL_ERROR"
+SQL_ERROR_PREFIX = "UGOITE_SQL_ERROR"
 
 
 def _is_sql_error(detail: str) -> bool:
@@ -43,7 +43,7 @@ async def query_endpoint(
 
     try:
         query_payload = json.dumps(payload.filter)
-        return await ieapp_core.query_index(storage_config, space_id, query_payload)
+        return await ugoite_core.query_index(storage_config, space_id, query_payload)
     except Exception as e:
         logger.exception("Query failed")
         detail = str(e)
@@ -69,7 +69,7 @@ async def search_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ieapp_core.search_entries(storage_config, space_id, q)
+        return await ugoite_core.search_entries(storage_config, space_id, q)
     except Exception as e:
         logger.exception("Search failed")
         raise HTTPException(

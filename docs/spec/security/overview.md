@@ -2,7 +2,7 @@
 
 ## Strategy
 
-IEapp implements a **Local-Only by Default** security model:
+Ugoite implements a **Local-Only by Default** security model:
 
 | Mode | Description |
 |------|-------------|
@@ -17,7 +17,7 @@ IEapp implements a **Local-Only by Default** security model:
 
 ### Remote Access
 - Blocked by default
-- Set `IEAPP_ALLOW_REMOTE=true` to allow remote connections
+- Set `UGOITE_ALLOW_REMOTE=true` to allow remote connections
 - Required for dev containers or Codespaces
 - Automatically configured in `mise run dev`
 

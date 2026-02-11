@@ -24,8 +24,8 @@ uv = "latest"
 run = [
 	"mise run //backend:install",
 	"mise run //frontend:install",
-	"mise run //ieapp-cli:install",
-	"mise run //ieapp-core:install",
+	"mise run //ugoite-cli:install",
+	"mise run //ugoite-core:install",
 	"mise run //e2e:install",
 ]
 
@@ -33,8 +33,8 @@ run = [
 depends = ["//backend:dev", "//frontend:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ieapp-cli:test", "//ieapp-core:test", "test:docs"]
-description = "Run tests for all packages (ieapp-core, backend, frontend, ieapp-cli)"
+depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "test:docs"]
+description = "Run tests for all packages (ugoite-core, backend, frontend, ugoite-cli)"
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"
