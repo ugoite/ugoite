@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use opendal::Operator;
-use rand::RngCore;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -61,7 +61,7 @@ async fn ensure_global_json(op: &Operator) -> Result<()> {
     }
 
     let mut key_bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut key_bytes);
+    rand::rng().fill(&mut key_bytes);
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
     let key_id = format!("key-{}", Uuid::new_v4().simple());
 
