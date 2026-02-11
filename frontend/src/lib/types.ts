@@ -176,20 +176,20 @@ export interface SqlUpdatePayload {
 
 export interface SqlSession {
 	id: string;
-	space_id?: string;
-	sql_id?: string;
+	space_id: string;
+	sql_id: string;
 	sql: string;
 	status: "ready" | "running" | "failed" | "expired";
 	created_at: string;
-	expires_at?: string;
+	expires_at: string;
 	error?: string | null;
-	view?: {
+	view: {
 		sql_id: string;
 		snapshot_id: number;
 		snapshot_at?: string;
 		schema_version?: number;
 	};
-	pagination?: {
+	pagination: {
 		strategy: "offset";
 		order_by: string[];
 		default_limit: number;

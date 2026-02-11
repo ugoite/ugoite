@@ -46,32 +46,33 @@ async fn read_json(op: &Operator, path: &str) -> Result<Value> {
 }
 
 fn space_id_from_ws_path(ws_path: &str) -> String {
-    ws_path
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or_default()
-        .to_string()
+    let trimmed = ws_path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Some((_, space_id)) = trimmed.rsplit_once('/') {
+        if !space_id.is_empty() {
+            return space_id.to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 fn is_expired(meta: &Value) -> bool {
-    let expires_at = meta.get("expires_at").and_then(|v| v.as_str());
-    let expires_at = match expires_at {
+    let expires_at = match meta.get("expires_at").and_then(|v| v.as_str()) {
         Some(value) => value,
-        None => return false,
+        None => return true,
     };
-    let parsed = DateTime::parse_from_rfc3339(expires_at);
-    if let Ok(time) = parsed {
-        return time.with_timezone(&Utc) <= Utc::now();
+    match DateTime::parse_from_rfc3339(expires_at) {
+        Ok(time) => time.with_timezone(&Utc) <= Utc::now(),
+        Err(_) => true,
     }
-    false
 }
 
 async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Result<Value> {
     let mut meta = read_json(op, &meta_path(ws_path, session_id)).await?;
     if is_expired(&meta) {
         meta["status"] = Value::String("expired".to_string());
-        write_json(op, &meta_path(ws_path, session_id), &meta).await?;
     }
     Ok(meta)
 }
@@ -83,9 +84,10 @@ pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Resu
     let session_dir = format!("{}/", session_path(ws_path, &session_id));
     op.create_dir(&session_dir).await?;
 
-    let sql_id = saved_sql::find_sql_id_by_text(op, ws_path, sql)
-        .await?
-        .ok_or_else(|| anyhow!("SQL entry not found for session"))?;
+    let sql_id = match saved_sql::find_sql_id_by_text(op, ws_path, sql).await? {
+        Some(existing_id) => existing_id,
+        None => Uuid::new_v4().to_string(),
+    };
 
     let view_meta = match materialized_view::read_view_meta(op, ws_path, &sql_id).await {
         Ok(meta) => meta,
@@ -149,7 +151,7 @@ pub async fn get_sql_session_status(
 
 pub async fn get_sql_session_count(op: &Operator, ws_path: &str, session_id: &str) -> Result<u64> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status") == Some(&Value::String("expired".to_string())) {
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(anyhow!("SQL session expired"));
     }
 
@@ -169,7 +171,7 @@ pub async fn get_sql_session_rows(
     limit: usize,
 ) -> Result<Value> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status") == Some(&Value::String("expired".to_string())) {
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(anyhow!("SQL session expired"));
     }
     let sql = meta
@@ -196,7 +198,7 @@ pub async fn get_sql_session_rows_all(
     session_id: &str,
 ) -> Result<Vec<Value>> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status") == Some(&Value::String("expired".to_string())) {
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(anyhow!("SQL session expired"));
     }
     let sql = meta

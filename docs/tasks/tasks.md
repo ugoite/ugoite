@@ -137,19 +137,19 @@ using the reserved SQL form name.
 OpenDAL storage, without relying on RDBs or external job queues.
 
 ### Key Tasks
-- [ ] Sessions store **metadata only** in `meta.json` (no result rows).
-- [ ] `create_sql` creates a corresponding **materialized view** under
+- [x] Sessions store **metadata only** in `meta.json` (no result rows).
+- [x] `create_sql` creates corresponding **materialized view metadata** under
 	`spaces/{space_id}/materialized_views/`.
-- [ ] SQL updates/deletes synchronize materialized view refresh/removal.
-- [ ] Session metadata stores snapshot ID and paging hints for fast re-queries.
-- [ ] Sessions are short-lived (target: ~10 minutes) and shareable across API servers.
-- [ ] Update `docs/spec` data model, API, and SQL docs to reflect the redesign.
+- [x] SQL updates/deletes synchronize materialized view metadata refresh/removal.
+- [x] Session metadata stores snapshot ID and paging hints for fast re-queries.
+- [x] Sessions are short-lived (target: ~10 minutes) and shareable across API servers.
+- [x] Update `docs/spec` data model, API, and SQL docs to reflect the redesign.
 
 ### Acceptance Criteria
-- [ ] SQL sessions store metadata only and are re-executable.
-- [ ] `materialized_views/` lifecycle is synchronized with saved SQL.
-- [ ] Session metadata includes snapshot and paging details.
-- [ ] Specs in `docs/spec` are updated consistently.
+- [x] SQL sessions store metadata only and are re-executable.
+- [x] `materialized_views/` lifecycle is synchronized with saved SQL.
+- [x] Session metadata includes snapshot and paging details.
+- [x] Specs in `docs/spec` are updated consistently.
 
 ---
 

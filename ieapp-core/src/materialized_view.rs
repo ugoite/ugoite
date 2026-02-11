@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use opendal::Operator;
+use rand::random;
 use serde_json::Value;
 
 const VIEW_DIR: &str = "materialized_views";
@@ -49,7 +50,7 @@ pub async fn create_or_update_view(
     }
 
     let now = Utc::now().to_rfc3339();
-    let snapshot_id = Utc::now().timestamp_millis() as u64;
+    let snapshot_id: u64 = random();
     let created_at = if op.exists(&meta_path(ws_path, sql_id)).await? {
         read_json(op, &meta_path(ws_path, sql_id))
             .await?
@@ -76,7 +77,7 @@ pub async fn create_or_update_view(
 pub async fn delete_view(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()> {
     let dir = format!("{}/", view_path(ws_path, sql_id));
     if op.exists(&dir).await? {
-        let _ = op.remove_all(&dir).await;
+        op.remove_all(&dir).await?;
     }
     Ok(())
 }

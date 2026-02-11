@@ -19,11 +19,11 @@ It is designed for filtering and sorting entry records without changing API path
 
 ## Materialized Views & Sessions
 
-- Saved SQL (`create_sql`) **creates a materialized view** under
+- Saved SQL (`create_sql`) **creates materialized view metadata** under
   `spaces/{space_id}/materialized_views/{sql_id}/`.
-- Updates/deletes of saved SQL **refresh/remove** the corresponding view.
-- SQL sessions store **metadata only** (no result rows) and pin the view
-  `snapshot_id` used for paging and count queries.
+- Updates/deletes of saved SQL **refresh/remove** the corresponding metadata.
+- SQL sessions store **metadata only** (no result rows); `view.snapshot_id` is a
+  logical marker reserved for future materialized view support.
 - Session metadata is stored under
   `spaces/{space_id}/sql_sessions/{session_id}/meta.json` and is short-lived
   (target: ~10 minutes).

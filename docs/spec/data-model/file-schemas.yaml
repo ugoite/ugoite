@@ -162,6 +162,8 @@ schemas:
       properties:
         sql_id:
           type: string
+        sql:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -178,7 +180,7 @@ schemas:
     path: spaces/{id}/sql_sessions/{session_id}/meta.json
     schema:
       type: object
-      required: [id, space_id, sql, created_at, expires_at, status, view, pagination]
+      required: [id, space_id, sql_id, sql, created_at, expires_at, status, view, pagination]
       properties:
         id:
           type: string

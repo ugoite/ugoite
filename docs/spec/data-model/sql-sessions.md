@@ -1,4 +1,3 @@
-````chatagent
 # SQL Sessions & Materialized Views
 
 **Updated**: 2026-02
@@ -17,8 +16,8 @@ avoids RDBs, external job queues, or NFS-based shared disks.
 
 ## Materialized Views
 
-When a saved SQL is created (`create_sql`), a corresponding **materialized view**
-MUST be created under:
+When a saved SQL is created (`create_sql`), a corresponding **materialized view
+metadata record** MUST be created under:
 
 ```
 spaces/{space_id}/materialized_views/{sql_id}/
@@ -26,12 +25,13 @@ spaces/{space_id}/materialized_views/{sql_id}/
 
 The materialized view lifecycle is **synchronized** with the SQL entry:
 
-- **Create SQL** → create materialized view
-- **Update SQL** → refresh/rebuild materialized view
-- **Delete SQL** → delete materialized view
+- **Create SQL** → create materialized view metadata
+- **Update SQL** → refresh/rebuild materialized view metadata
+- **Delete SQL** → delete materialized view metadata
 
-Materialized views are **Iceberg-managed** tables. The on-disk layout is owned
-by Iceberg and intentionally not specified.
+Materialized views are currently **metadata-only placeholders**. The on-disk
+layout of any future Iceberg-managed tables is owned by Iceberg and will be
+specified when materialization is implemented.
 
 ### Materialized View Metadata (Optional)
 
@@ -46,6 +46,7 @@ Recommended fields:
 ```json
 {
   "sql_id": "sql-uuid",
+  "sql": "SELECT * FROM Meeting",
   "created_at": "2026-02-10T12:00:00Z",
   "updated_at": "2026-02-10T12:05:00Z",
   "snapshot_id": 42,
@@ -62,7 +63,8 @@ spaces/{space_id}/sql_sessions/{session_id}/meta.json
 ```
 
 Sessions do **not** store result rows. Every query for rows/count re-runs the SQL
-against the **materialized view snapshot** captured in the session metadata.
+against the current entries tables; the `view.snapshot_id` field is a logical
+marker reserved for future materialized view support.
 
 ### Session Metadata Schema (Recommended)
 
@@ -98,9 +100,9 @@ against the **materialized view snapshot** captured in the session metadata.
 
 ### Paging & Count
 
-- **Rows**: `offset`/`limit` is applied to the materialized view using the
-  snapshot pinned in `meta.json`.
-- **Count**: computed on-demand with `SELECT COUNT(*)` against the same snapshot.
+- **Rows**: `offset`/`limit` is applied to the re-executed query against the
+  current entries tables.
+- **Count**: computed on-demand with `SELECT COUNT(*)` against the same query.
 - **Fast paging**: `order_by` in metadata MUST include a deterministic tie-breaker
   (e.g., `id`) to avoid unstable pages.
 
@@ -112,7 +114,5 @@ on a periodic sweep or when accessed after `expires_at`.
 ## Multi-Server Behavior
 
 Because the only persistence is OpenDAL storage, **any API server** can service
-requests for the same session by reading `meta.json`, then querying the view
-snapshot referenced in `view.snapshot_id`.
-
-````
+requests for the same session by reading `meta.json`, then re-running the SQL
+query against the current entries tables.

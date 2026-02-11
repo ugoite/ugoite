@@ -11,7 +11,7 @@ spaces/
     forms/                            # Iceberg-managed root for Form tables
     assets/                           # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
-    materialized_views/               # Iceberg-managed SQL materialized views
+    materialized_views/               # SQL materialized view metadata (no rows)
     sql_sessions/                     # SQL query sessions (metadata only)
       {session_id}/                   # Session directory
         meta.json                     # Session metadata (status, snapshots)
@@ -139,16 +139,16 @@ Each space directory is fully portable:
 
 Materialized indexes (search, embeddings) are derived from Iceberg tables and can be regenerated.
 
-## SQL Materialized Views (Iceberg)
+## SQL Materialized Views (Metadata)
 
 ### `materialized_views/`
 
-Saved SQL entries create a corresponding Iceberg-managed materialized view
-under `materialized_views/`. The view is created on SQL creation, refreshed
-on SQL update, and deleted on SQL deletion. The on-disk layout is managed by
-Iceberg and intentionally not specified.
+Saved SQL entries create a corresponding materialized view **metadata** record
+under `materialized_views/`. The metadata is created on SQL creation, refreshed
+on SQL update, and deleted on SQL deletion. The on-disk layout for future
+Iceberg-managed views is intentionally not specified.
 
 ## SQL Sessions (Metadata Only)
 
 SQL sessions persist **only metadata** to allow re-running queries against the
-materialized view snapshot. Result rows are never stored under `sql_sessions/`.
+current entries tables. Result rows are never stored under `sql_sessions/`.
