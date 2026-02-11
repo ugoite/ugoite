@@ -9,6 +9,9 @@ import type {
 	FormCreatePayload,
 	Space,
 	SpaceLink,
+	SampleSpaceJob,
+	SampleSpaceScenario,
+	SampleSpaceSummary,
 } from "~/lib/types";
 
 // In-memory mock data store
@@ -18,6 +21,7 @@ let mockEntryIndex: Map<string, Map<string, EntryRecord>> = new Map();
 let mockAssets: Map<string, Map<string, Asset>> = new Map();
 let mockLinks: Map<string, Map<string, SpaceLink>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
+let mockSampleJobs: Map<string, SampleSpaceJob> = new Map();
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
@@ -30,8 +34,42 @@ export const resetMockData = () => {
 	mockAssets = new Map();
 	mockLinks = new Map();
 	mockForms = new Map();
+	mockSampleJobs = new Map();
 	revisionCounter = 0;
 };
+
+const sampleScenarios: SampleSpaceScenario[] = [
+	{
+		id: "renewable-ops",
+		label: "Renewable operations",
+		description: "Operations data for renewable energy sites.",
+	},
+	{
+		id: "supply-chain",
+		label: "Supply chain operations",
+		description: "Warehouse, shipment, and supplier performance logs.",
+	},
+	{
+		id: "municipal-infra",
+		label: "Municipal infrastructure",
+		description: "Asset inspections and maintenance work orders.",
+	},
+	{
+		id: "fleet-ops",
+		label: "Fleet operations",
+		description: "Vehicle usage, service tickets, and fuel reports.",
+	},
+	{
+		id: "lab-qa",
+		label: "Laboratory QA",
+		description: "Batch testing, calibrations, and nonconformance tracking.",
+	},
+	{
+		id: "retail-ops",
+		label: "Retail operations",
+		description: "Store performance, stock alerts, and delivery logs.",
+	},
+];
 
 // Seed data helpers
 export const seedSpace = (space: Space) => {
@@ -91,6 +129,14 @@ export const handlers = [
 			entry_count?: number;
 			seed?: number;
 		};
+		if ((body.entry_count ?? 5000) < 100) {
+			return HttpResponse.json(
+				{
+					detail: [{ msg: "entry_count must be >= 100", type: "value_error" }],
+				},
+				{ status: 422 },
+			);
+		}
 		const id = body.space_id;
 		if (mockSpaces.has(id)) {
 			return HttpResponse.json({ detail: "Space already exists" }, { status: 409 });
@@ -109,16 +155,76 @@ export const handlers = [
 		mockForms.set(id, new Map());
 
 		const forms = ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"];
-		return HttpResponse.json(
-			{
-				space_id: id,
-				scenario: body.scenario ?? "renewable-ops",
-				entry_count: body.entry_count ?? 5000,
-				form_count: forms.length,
-				forms,
-			},
-			{ status: 201 },
-		);
+		const summary: SampleSpaceSummary = {
+			space_id: id,
+			scenario: body.scenario ?? "renewable-ops",
+			entry_count: body.entry_count ?? 5000,
+			form_count: forms.length,
+			forms,
+		};
+		return HttpResponse.json(summary, { status: 201 });
+	}),
+
+	// List sample-data scenarios
+	http.get("http://localhost:3000/api/spaces/sample-data/scenarios", () => {
+		return HttpResponse.json(sampleScenarios);
+	}),
+
+	// Create sample-data job
+	http.post("http://localhost:3000/api/spaces/sample-data/jobs", async ({ request }) => {
+		const body = (await request.json()) as {
+			space_id: string;
+			scenario?: string;
+			entry_count?: number;
+			seed?: number;
+		};
+		if ((body.entry_count ?? 5000) < 100) {
+			return HttpResponse.json(
+				{
+					detail: [{ msg: "entry_count must be >= 100", type: "value_error" }],
+				},
+				{ status: 422 },
+			);
+		}
+		const id = body.space_id;
+		if (mockSpaces.has(id)) {
+			return HttpResponse.json({ detail: "Space already exists" }, { status: 409 });
+		}
+		const forms = ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"];
+		const summary: SampleSpaceSummary = {
+			space_id: id,
+			scenario: body.scenario ?? "renewable-ops",
+			entry_count: body.entry_count ?? 5000,
+			form_count: forms.length,
+			forms,
+		};
+		const job: SampleSpaceJob = {
+			job_id: `job-${id}`,
+			space_id: id,
+			scenario: summary.scenario,
+			entry_count: summary.entry_count,
+			seed: body.seed,
+			status: "completed",
+			status_message: "Completed",
+			processed_entries: summary.entry_count,
+			total_entries: summary.entry_count,
+			started_at: new Date().toISOString(),
+			completed_at: new Date().toISOString(),
+			error: null,
+			summary,
+		};
+		mockSampleJobs.set(job.job_id, job);
+		return HttpResponse.json(job, { status: 202 });
+	}),
+
+	// Get sample-data job
+	http.get("http://localhost:3000/api/spaces/sample-data/jobs/:jobId", ({ params }) => {
+		const jobId = params.jobId as string;
+		const job = mockSampleJobs.get(jobId);
+		if (!job) {
+			return HttpResponse.json({ detail: "Job not found" }, { status: 404 });
+		}
+		return HttpResponse.json(job);
 	}),
 
 	// List forms
