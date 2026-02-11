@@ -524,16 +524,12 @@ fn date_from_offset(base: NaiveDate, offset: i64) -> String {
 }
 
 fn validate_job_id(job_id: &str) -> Result<()> {
-    if job_id.is_empty()
-        || !job_id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
-    {
-        return Err(anyhow!(
-            "Invalid job_id: {}. Must be alphanumeric, hyphens, or underscores.",
-            job_id
-        ));
+    if job_id.is_empty() {
+        return Err(anyhow!("job_id is empty"));
     }
+    // Strict UUID validation as requested by reviewers
+    Uuid::parse_str(job_id)
+        .map_err(|e| anyhow!("Invalid job_id: {}. Must be a valid UUID. ({})", job_id, e))?;
     Ok(())
 }
 

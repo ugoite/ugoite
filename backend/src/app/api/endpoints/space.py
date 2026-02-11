@@ -8,7 +8,7 @@ import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import get_root_path
-from app.core.ids import validate_id
+from app.core.ids import validate_id, validate_uuid
 from app.core.storage import space_uri, storage_config_from_root
 from app.models.payloads import (
     SampleSpaceCreate,
@@ -283,7 +283,13 @@ async def create_sample_space_job_endpoint(
 @router.get("/spaces/sample-data/jobs/{job_id}")
 async def get_sample_space_job_endpoint(job_id: str) -> dict[str, Any]:
     """Get sample-data job status."""
-    _validate_path_id(job_id, "job_id")
+    try:
+        validate_uuid(job_id, "job_id")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
     storage_config = _storage_config()
     try:
         return await ugoite_core.get_sample_space_job(storage_config, job_id)
