@@ -11,6 +11,7 @@ RUN cd /temp/dev && bun install --frozen-lockfile
 FROM base AS release
 COPY --from=install /temp/dev/node_modules node_modules
 COPY ./ ./
+COPY --from=shared ./sql/ieapp-sql-rules.json /usr/src/shared/sql/ieapp-sql-rules.json
 
 # Build the frontend application
 RUN bun run build

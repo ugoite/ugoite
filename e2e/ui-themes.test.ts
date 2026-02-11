@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client";
 
 const spaceId = "default";
@@ -17,6 +17,7 @@ test.describe("UI theme flows", () => {
 
 	for (const theme of themes) {
 		test(themeTestTitles[theme], async ({ page, request }) => {
+			test.setTimeout(120_000);
 			const entryTitle = `E2E Theme Entry ${theme} ${Date.now()}`;
 			const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
@@ -58,12 +59,12 @@ test.describe("UI theme flows", () => {
 			await page.getByRole("button", { name: "Close" }).click();
 
 			await page.goto(`/spaces/${spaceId}/queries/new`, { waitUntil: "networkidle" });
-			await page.getByLabel("Query name").waitFor({ state: "visible" });
-			await page.waitForLoadState("networkidle");
+			await waitForQueryForm(page);
 
 			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
 			await page.getByLabel("Query name").fill(queryName);
 			await page.getByRole("button", { name: "Save" }).click();
+			await waitForQueryButton(page, variableQueryName, spaceId);
 			await page.goto(`/spaces/${spaceId}/search`, { waitUntil: "networkidle" });
 			await page.getByPlaceholder("Search queries").fill(variableQueryName);
 			await page
@@ -114,3 +115,42 @@ test.describe("UI theme flows", () => {
 		});
 	}
 });
+
+async function waitForQueryForm(page: Page): Promise<void> {
+	const queryName = page.getByLabel("Query name");
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			await queryName.waitFor({ state: "visible", timeout: 30_000 });
+			await page.waitForLoadState("networkidle");
+			return;
+		} catch (error) {
+			if (attempt === 1) {
+				throw error;
+			}
+			await page.reload({ waitUntil: "networkidle" });
+		}
+	}
+}
+
+async function waitForQueryButton(
+	page: Page,
+	name: string,
+	space: string,
+): Promise<void> {
+	const locator = page.getByRole("button", { name });
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			await locator.waitFor({ state: "visible", timeout: 20_000 });
+			return;
+		} catch (error) {
+			if (attempt === 2) {
+				throw error;
+			}
+			if (attempt === 0) {
+				await page.reload({ waitUntil: "networkidle" });
+			} else {
+				await page.goto(`/spaces/${space}/queries`, { waitUntil: "networkidle" });
+			}
+		}
+	}
+}

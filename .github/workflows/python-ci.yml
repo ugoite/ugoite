@@ -60,7 +60,7 @@ jobs:
         run: uv run pytest
 
       - name: Run docs consistency tests
-        run: uv run --with pytest --with pyyaml pytest docs/tests -v
+        run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
 
       - name: Build core (maturin)
         working-directory: ./ieapp-core

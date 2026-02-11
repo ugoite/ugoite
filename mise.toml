@@ -38,7 +38,7 @@ description = "Run tests for all packages (ieapp-core, backend, frontend, ieapp-
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"
-run = "uv run --with pytest --with pyyaml pytest docs/tests -v"
+run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
 
 [tasks.e2e]
 description = "Run E2E tests with backend and frontend servers"
