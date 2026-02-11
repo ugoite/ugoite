@@ -261,7 +261,8 @@ Content-Type: application/json
   "version": 1,
   "fields": {
     "Date": { "type": "date", "required": true },
-    "Attendees": { "type": "list", "required": false }
+    "Attendees": { "type": "list", "required": false },
+    "Related": { "type": "row_reference", "required": false, "target_form": "Project" }
   }
 }
 ```
@@ -408,38 +409,6 @@ DELETE /spaces/{space_id}/assets/{id}
 ```
 
 **Response**: `204 No Content` or `409 Conflict` if still referenced
-
----
-
-### Links
-
-#### List Links
-```http
-GET /spaces/{space_id}/links
-```
-
-**Response**: `200 OK`
-
-#### Create Link
-```http
-POST /spaces/{space_id}/links
-Content-Type: application/json
-
-{
-  "source": "entry-id-1",
-  "target": "entry-id-2",
-  "kind": "related"
-}
-```
-
-**Response**: `201 Created`
-
-#### Delete Link
-```http
-DELETE /spaces/{space_id}/links/{id}
-```
-
-**Response**: `204 No Content`
 
 ---
 

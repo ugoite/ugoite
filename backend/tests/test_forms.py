@@ -162,3 +162,49 @@ def test_create_reserved_metadata_form_rejected(space_id: str) -> None:
     assert response.status_code == 422
     detail = response.json().get("detail", "")
     assert "reserved" in detail.lower()
+
+
+def test_form_req_form_007_row_reference_requires_target(space_id: str) -> None:
+    """REQ-FORM-007: row_reference fields require a target_form."""
+    base_form = {
+        "name": "Project",
+        "version": 1,
+        "template": "# Project\n\n## Name\n",
+        "fields": {
+            "Name": {"type": "string", "required": True},
+        },
+    }
+    response = client.post(f"/spaces/{space_id}/forms", json=base_form)
+    assert response.status_code == 201
+
+    invalid_form = {
+        "name": "Task",
+        "version": 1,
+        "template": "# Task\n\n## Project\n",
+        "fields": {
+            "Project": {
+                "type": "row_reference",
+                "required": False,
+                "target_form": "Project",
+            },
+        },
+    }
+    response = client.post(f"/spaces/{space_id}/forms", json=invalid_form)
+    assert response.status_code == 422
+    detail = response.json().get("detail", "")
+    assert "target_form" in detail
+
+    valid_form = {
+        "name": "Task",
+        "version": 1,
+        "template": "# Task\n\n## Project\n",
+        "fields": {
+            "Project": {
+                "type": "row_reference",
+                "required": False,
+                "target_form": "Project",
+            },
+        },
+    }
+    response = client.post(f"/spaces/{space_id}/forms", json=valid_form)
+    assert response.status_code == 201

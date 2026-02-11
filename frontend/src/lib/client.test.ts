@@ -4,7 +4,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { assetApi } from "./asset-api";
 import { formApi } from "./form-api";
-import { linkApi } from "./link-api";
 import { entryApi, RevisionConflictError } from "./entry-api";
 import { searchApi } from "./search-api";
 import { spaceApi } from "./space-api";
@@ -272,23 +271,6 @@ describe("entryApi", () => {
 			});
 
 			await expect(assetApi.delete("test-ws", asset.id)).rejects.toThrow();
-		});
-
-		it("creates, lists, and deletes links", async () => {
-			const entryA = await entryApi.create("test-ws", { content: "# A" });
-			const entryB = await entryApi.create("test-ws", { content: "# B" });
-
-			const link = await linkApi.create("test-ws", {
-				source: entryA.id,
-				target: entryB.id,
-				kind: "related",
-			});
-
-			const links = await linkApi.list("test-ws");
-			expect(links.map((l) => l.id)).toContain(link.id);
-
-			const deleted = await linkApi.delete("test-ws", link.id);
-			expect(deleted.status).toBe("deleted");
 		});
 	});
 });

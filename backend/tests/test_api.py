@@ -749,85 +749,6 @@ def test_delete_asset_referenced_fails(
     assert "referenced" in delete_res.json()["detail"].lower()
 
 
-def test_create_and_list_links(
-    test_client: TestClient,
-    temp_space_root: Path,
-) -> None:
-    """Links are created bi-directionally and listed at space level."""
-    test_client.post("/spaces", json={"name": "test-ws"})
-    _create_form(test_client, "test-ws")
-    test_client.post(
-        "/spaces/test-ws/entries",
-        json={
-            "id": "entry-a",
-            "content": "---\nform: Entry\n---\n# A\n\n## Body\nA body",
-        },
-    )
-    test_client.post(
-        "/spaces/test-ws/entries",
-        json={
-            "id": "entry-b",
-            "content": "---\nform: Entry\n---\n# B\n\n## Body\nB body",
-        },
-    )
-
-    create_res = test_client.post(
-        "/spaces/test-ws/links",
-        json={"source": "entry-a", "target": "entry-b", "kind": "related"},
-    )
-    assert create_res.status_code == 201
-    link = create_res.json()
-    assert link["id"]
-
-    list_res = test_client.get("/spaces/test-ws/links")
-    assert list_res.status_code == 200
-    links = list_res.json()
-    assert any(link_item["id"] == link["id"] for link_item in links)
-
-    # Entry meta files should contain the link
-    entry_a = test_client.get("/spaces/test-ws/entries/entry-a").json()
-    entry_b = test_client.get("/spaces/test-ws/entries/entry-b").json()
-    assert any(item["target"] == "entry-b" for item in entry_a.get("links", []))
-    assert any(item["target"] == "entry-a" for item in entry_b.get("links", []))
-
-
-def test_delete_link_updates_entries(
-    test_client: TestClient,
-    temp_space_root: Path,
-) -> None:
-    """Deleting a link should remove it from both entries."""
-    test_client.post("/spaces", json={"name": "test-ws"})
-    _create_form(test_client, "test-ws")
-    test_client.post(
-        "/spaces/test-ws/entries",
-        json={
-            "id": "entry-a",
-            "content": "---\nform: Entry\n---\n# A\n\n## Body\nA body",
-        },
-    )
-    test_client.post(
-        "/spaces/test-ws/entries",
-        json={
-            "id": "entry-b",
-            "content": "---\nform: Entry\n---\n# B\n\n## Body\nB body",
-        },
-    )
-
-    create_res = test_client.post(
-        "/spaces/test-ws/links",
-        json={"source": "entry-a", "target": "entry-b", "kind": "related"},
-    )
-    link_id = create_res.json()["id"]
-
-    delete_res = test_client.delete(f"/spaces/test-ws/links/{link_id}")
-    assert delete_res.status_code == 200
-
-    entry_a = test_client.get("/spaces/test-ws/entries/entry-a").json()
-    entry_b = test_client.get("/spaces/test-ws/entries/entry-b").json()
-    assert all(item["id"] != link_id for item in entry_a.get("links", []))
-    assert all(item["id"] != link_id for item in entry_b.get("links", []))
-
-
 def test_search_returns_matches(
     test_client: TestClient,
     temp_space_root: Path,
@@ -935,6 +856,7 @@ def test_get_form_types(test_client: TestClient, temp_space_root: Path) -> None:
     assert isinstance(data, list)
     assert "string" in data
     assert "number" in data
+    assert "row_reference" in data
 
 
 def test_update_form_with_migration(

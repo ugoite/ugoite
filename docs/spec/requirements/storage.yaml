@@ -149,7 +149,7 @@ requirements:
             - test_create_space_memory
             - test_create_entry_memory
             - test_update_entry_and_search_memory
-            - test_assets_and_links_memory
+            - test_assets_memory
 
   - id: REQ-STO-008
     title: Resilient global.json parsing

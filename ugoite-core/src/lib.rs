@@ -334,64 +334,6 @@ fn search_entries<'a>(
     })
 }
 
-// Links
-
-#[pyfunction]
-fn create_link<'a>(
-    py: Python<'a>,
-    storage_config: Bound<'a, PyDict>,
-    space_id: String,
-    source: String,
-    target: String,
-    kind: String,
-    link_id: String,
-) -> PyResult<Bound<'a, PyAny>> {
-    let op = get_operator(py, &storage_config)?;
-    let ws_path = format!("spaces/{}", space_id);
-    pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let link = link::create_link(&op, &ws_path, &source, &target, &kind, &link_id)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let val = serde_json::to_value(link).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Python::with_gil(|py| json_to_py(py, val))
-    })
-}
-
-#[pyfunction]
-fn list_links<'a>(
-    py: Python<'a>,
-    storage_config: Bound<'a, PyDict>,
-    space_id: String,
-) -> PyResult<Bound<'a, PyAny>> {
-    let op = get_operator(py, &storage_config)?;
-    let ws_path = format!("spaces/{}", space_id);
-    pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let links = link::list_links(&op, &ws_path)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let val =
-            serde_json::to_value(links).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Python::with_gil(|py| json_to_py(py, val))
-    })
-}
-
-#[pyfunction]
-fn delete_link<'a>(
-    py: Python<'a>,
-    storage_config: Bound<'a, PyDict>,
-    space_id: String,
-    link_id: String,
-) -> PyResult<Bound<'a, PyAny>> {
-    let op = get_operator(py, &storage_config)?;
-    let ws_path = format!("spaces/{}", space_id);
-    pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        link::delete_link(&op, &ws_path, &link_id)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(())
-    })
-}
-
 #[pyfunction]
 #[pyo3(signature = (storage_config, space_id, entry_id, hard_delete=false))]
 fn delete_entry<'a>(
@@ -995,9 +937,6 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(reindex_all, m)?)?;
     m.add_function(wrap_pyfunction!(update_entry_index, m)?)?;
 
-    m.add_function(wrap_pyfunction!(create_link, m)?)?;
-    m.add_function(wrap_pyfunction!(list_links, m)?)?;
-    m.add_function(wrap_pyfunction!(delete_link, m)?)?;
     m.add_function(wrap_pyfunction!(search_entries, m)?)?;
     m.add_function(wrap_pyfunction!(build_response_signature, m)?)?;
     m.add_function(wrap_pyfunction!(load_hmac_material, m)?)?;

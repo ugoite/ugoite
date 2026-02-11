@@ -131,3 +131,24 @@ requirements:
         - file: ugoite-core/tests/test_form.rs
           tests:
             - test_form_req_form_006_reject_reserved_metadata_form
+
+  - id: REQ-FORM-007
+    title: Row reference field targets
+    description: |
+      Form fields with type row_reference MUST declare a target_form that
+      resolves to an existing Form or the current Form.
+    related_spec:
+      - data-model/overview.md#content-column-types--markdown-parsing
+      - data-model/file-schemas.yaml#form_definition
+      - api/rest.md#forms
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_forms.py
+          tests:
+            - test_form_req_form_007_row_reference_requires_target
+      rust:
+        - file: ugoite-core/tests/test_form.rs
+          tests:
+            - test_form_req_form_007_row_reference_requires_target

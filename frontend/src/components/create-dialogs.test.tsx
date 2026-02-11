@@ -15,6 +15,7 @@ describe("CreateFormDialog", () => {
 			<CreateFormDialog
 				open={true}
 				columnTypes={columnTypes}
+				formNames={[]}
 				onClose={onClose}
 				onSubmit={onSubmit}
 			/>
@@ -53,6 +54,7 @@ describe("CreateFormDialog", () => {
 			<CreateFormDialog
 				open={true}
 				columnTypes={columnTypes}
+				formNames={[]}
 				onClose={onClose}
 				onSubmit={onSubmit}
 			/>
@@ -190,6 +192,7 @@ describe("EditFormDialog", () => {
 				open={true}
 				entryForm={mockForm}
 				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
 				onClose={onClose}
 				onSubmit={onSubmit}
 			/>

@@ -49,6 +49,7 @@ async fn test_form_req_form_001_list_column_types() -> anyhow::Result<()> {
     assert!(types.contains(&"timestamp_ns".to_string()));
     assert!(types.contains(&"timestamp_tz_ns".to_string()));
     assert!(types.contains(&"uuid".to_string()));
+    assert!(types.contains(&"row_reference".to_string()));
     assert!(types.contains(&"binary".to_string()));
     assert!(types.contains(&"list".to_string()));
     Ok(())
@@ -94,6 +95,43 @@ async fn test_form_req_form_006_reject_reserved_metadata_form() -> anyhow::Resul
     assert!(result.is_err());
     let message = result.unwrap_err().to_string();
     assert!(message.contains("reserved"));
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-FORM-007
+async fn test_form_req_form_007_row_reference_requires_target() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-row-ref", "/tmp").await?;
+    let ws_path = "spaces/test-row-ref";
+
+    let base_form = serde_json::json!({
+        "name": "Project",
+        "fields": {
+            "Name": {"type": "string"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &base_form).await?;
+
+    let invalid_form = serde_json::json!({
+        "name": "Task",
+        "fields": {
+            "Project": {"type": "row_reference"}
+        }
+    });
+    let result = form::upsert_form(&op, ws_path, &invalid_form).await;
+    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("target_form"));
+
+    let valid_form = serde_json::json!({
+        "name": "Task",
+        "fields": {
+            "Project": {"type": "row_reference", "target_form": "Project"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &valid_form).await?;
 
     Ok(())
 }

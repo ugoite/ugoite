@@ -8,7 +8,6 @@ import type {
 	Form,
 	FormCreatePayload,
 	Space,
-	SpaceLink,
 } from "~/lib/types";
 
 // In-memory mock data store
@@ -16,7 +15,6 @@ let mockSpaces: Map<string, Space> = new Map();
 let mockEntries: Map<string, Map<string, Entry>> = new Map();
 let mockEntryIndex: Map<string, Map<string, EntryRecord>> = new Map();
 let mockAssets: Map<string, Map<string, Asset>> = new Map();
-let mockLinks: Map<string, Map<string, SpaceLink>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
 let revisionCounter = 0;
 
@@ -28,7 +26,6 @@ export const resetMockData = () => {
 	mockEntries = new Map();
 	mockEntryIndex = new Map();
 	mockAssets = new Map();
-	mockLinks = new Map();
 	mockForms = new Map();
 	revisionCounter = 0;
 };
@@ -39,7 +36,6 @@ export const seedSpace = (space: Space) => {
 	mockEntries.set(space.id, new Map());
 	mockEntryIndex.set(space.id, new Map());
 	mockAssets.set(space.id, new Map());
-	mockLinks.set(space.id, new Map());
 	mockForms.set(space.id, new Map());
 };
 
@@ -77,7 +73,6 @@ export const handlers = [
 		mockEntries.set(id, new Map());
 		mockEntryIndex.set(id, new Map());
 		mockAssets.set(id, new Map());
-		mockLinks.set(id, new Map());
 		mockForms.set(id, new Map());
 
 		return HttpResponse.json({ id, name: body.name }, { status: 201 });
@@ -105,7 +100,6 @@ export const handlers = [
 		mockEntries.set(id, new Map());
 		mockEntryIndex.set(id, new Map());
 		mockAssets.set(id, new Map());
-		mockLinks.set(id, new Map());
 		mockForms.set(id, new Map());
 
 		const forms = ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"];
@@ -438,74 +432,5 @@ export const handlers = [
 
 		store.delete(assetId);
 		return HttpResponse.json({ status: "deleted", id: assetId });
-	}),
-
-	// Create link
-	http.post("http://localhost:3000/api/spaces/:spaceId/links", async ({ params, request }) => {
-		const spaceId = params.spaceId as string;
-		const { source, target, kind } = (await request.json()) as SpaceLink;
-		const entriesStore = mockEntries.get(spaceId);
-		if (!entriesStore?.has(source) || !entriesStore?.has(target)) {
-			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
-		}
-		const id = crypto.randomUUID();
-		const link: SpaceLink = { id, source, target, kind };
-		mockLinks.get(spaceId)?.set(id, link);
-
-		const updateLinks = (entryId: string, linkEntry: SpaceLink) => {
-			const entry = entriesStore.get(entryId);
-			if (entry) {
-				entry.links = [...(entry.links || []), linkEntry];
-			}
-			const record = mockEntryIndex.get(spaceId)?.get(entryId);
-			if (record) {
-				record.links = [
-					...record.links,
-					{
-						id: linkEntry.id,
-						target: linkEntry.target,
-						kind: linkEntry.kind,
-						source: linkEntry.source,
-					},
-				];
-			}
-		};
-
-		updateLinks(source, link);
-		updateLinks(target, { ...link, source: target, target: source });
-
-		return HttpResponse.json(link, { status: 201 });
-	}),
-
-	// List links
-	http.get("http://localhost:3000/api/spaces/:spaceId/links", ({ params }) => {
-		const spaceId = params.spaceId as string;
-		if (!mockSpaces.has(spaceId)) {
-			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
-		}
-		const links = Array.from(mockLinks.get(spaceId)?.values() || []);
-		return HttpResponse.json(links);
-	}),
-
-	// Delete link
-	http.delete("http://localhost:3000/api/spaces/:spaceId/links/:linkId", ({ params }) => {
-		const spaceId = params.spaceId as string;
-		const linkId = params.linkId as string;
-		const linksStore = mockLinks.get(spaceId);
-		if (!linksStore?.has(linkId)) {
-			return HttpResponse.json({ detail: "Link not found" }, { status: 404 });
-		}
-		linksStore.delete(linkId);
-
-		const entriesStore = mockEntries.get(spaceId) || new Map();
-		for (const entry of entriesStore.values()) {
-			entry.links = (entry.links || []).filter((l) => l.id !== linkId);
-		}
-		const indexStore = mockEntryIndex.get(spaceId) || new Map();
-		for (const record of indexStore.values()) {
-			record.links = record.links.filter((l) => l.id !== linkId);
-		}
-
-		return HttpResponse.json({ status: "deleted", id: linkId });
 	}),
 ];

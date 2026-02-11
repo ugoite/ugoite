@@ -129,8 +129,8 @@ rocket launch scheduled""",
     assert "m1" in ids
 
 
-def test_assets_and_links_memory(memory_client: TestClient) -> None:
-    """Ensure assets and links work over memory-backed fsspec."""
+def test_assets_memory(memory_client: TestClient) -> None:
+    """Ensure assets work over memory-backed fsspec."""
     ws_id = "mem-graph"
     memory_client.post("/spaces", json={"name": ws_id})
     memory_client.post(
@@ -169,15 +169,7 @@ def test_assets_and_links_memory(memory_client: TestClient) -> None:
     )
     assert update_res.status_code == 200
 
-    link_res = memory_client.post(
-        f"/spaces/{ws_id}/links",
-        json={"source": "a", "target": "b", "kind": "related"},
-    )
-    assert link_res.status_code == 201
-    link_id = link_res.json()["id"]
-
     get_a = memory_client.get(f"/spaces/{ws_id}/entries/a")
     assert get_a.status_code == 200
     entry_payload = get_a.json()
     assert any(att["id"] == asset["id"] for att in entry_payload.get("assets", []))
-    assert any(link["id"] == link_id for link in entry_payload.get("links", []))

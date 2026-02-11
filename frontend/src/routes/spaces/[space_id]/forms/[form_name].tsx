@@ -96,6 +96,7 @@ export default function SpaceFormDetailRoute() {
 								open={showEditDialog()}
 								entryForm={s}
 								columnTypes={ctx.columnTypes()}
+								formNames={ctx.forms().map((form) => form.name)}
 								onClose={() => setShowEditDialog(false)}
 								onSubmit={handleUpdateForm}
 							/>
