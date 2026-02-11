@@ -84,7 +84,7 @@ export default function About() {
 						<strong>Frontend:</strong> SolidStart + Tailwind CSS
 					</li>
 					<li>
-						<strong>Backend:</strong> FastAPI (Python 3.12+)
+						<strong>Backend:</strong> FastAPI (Python 3.13+)
 					</li>
 					<li>
 						<strong>Core:</strong> Rust with pyo3 bindings
