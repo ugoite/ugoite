@@ -246,6 +246,123 @@ and add automated validation that frontend tests load and verify the spec.
 
 ---
 
+## Phase 7.7: Sample Data Generator Hardening + Async + Scenarios
+
+**Objective**: Eliminate UI/UX errors in sample-data generation, make generation non-blocking at higher volumes, and expand neutral scenario options without compliance risk.
+
+### Key Tasks
+- [ ] Tighten requirements and validation so UI never renders a placeholder like [object Object]
+- [ ] Make sample-data generation asynchronous with progress/state reporting (no UI freeze)
+- [ ] Add at least five additional neutral, non-personal, non-ideological sample scenarios
+- [ ] Ensure scenario catalog is deterministic and test-covered
+- [ ] Add tests and requirement mappings for all new behaviors
+
+### Acceptance Criteria
+- [ ] Sample-data generation UI never displays [object Object]-style placeholders
+- [ ] Generation completes without blocking the UI at large data sizes
+- [ ] At least five new compliant scenarios are available and selectable
+- [ ] Tests reference requirements and validate async state handling
+
+---
+
+## Phase 7.8: Frontend Proxy Robustness for /spaces
+
+**Objective**: Eliminate intermittent /spaces proxy connection failures during local dev.
+
+### Key Tasks
+- [ ] Identify root cause of ECONNREFUSED for /spaces during dev
+- [ ] Implement a fix or a safe fallback if backend is not yet ready
+- [ ] Add minimal test/diagnostic coverage where appropriate
+
+### Acceptance Criteria
+- [ ] /spaces requests no longer fail with ECONNREFUSED during normal dev startup
+- [ ] Error handling is explicit and user-facing if backend is unavailable
+
+---
+
+## Phase 7.9: About Page from docs
+
+**Objective**: Replace the placeholder About page with real content sourced from docs.
+
+### Key Tasks
+- [ ] Define the canonical doc source(s) under docs/ for About content
+- [ ] Implement About page rendering from docs content
+- [ ] Ensure updates to docs are reflected in About without code changes
+- [ ] Add tests for About content loading and rendering
+
+### Acceptance Criteria
+- [ ] About page shows real content derived from docs
+- [ ] Content stays in sync with docs updates
+- [ ] Tests cover loading path and expected sections
+
+---
+
+## Phase 7.10: Home Copy Refresh
+
+**Objective**: Rewrite the home screen messaging to align with current docs and positioning.
+
+### Key Tasks
+- [ ] Review docs/spec and docs/guide for updated positioning
+- [ ] Replace home copy with new, consistent messaging
+- [ ] Add tests to lock in key messaging elements
+
+### Acceptance Criteria
+- [ ] Home copy reflects current documentation and product framing
+- [ ] Key messages are test-covered
+
+---
+
+## Phase 7.11: Query Results Progress Behavior
+
+**Objective**: Fix persistent progress indicators in Query Results.
+
+### Key Tasks
+- [ ] Identify progress state lifecycle in Query Results view
+- [ ] Ensure progress ends when results are ready or on error
+- [ ] Add tests for progress completion behavior
+
+### Acceptance Criteria
+- [ ] Progress bar stops when results are loaded or error is shown
+- [ ] Tests cover normal and error completion
+
+---
+
+## Phase 7.12: Replace Entry-Link Endpoint with Row-Reference Column Type
+
+**Objective**: Remove unnecessary cross-entrypoint link creation and replace with a typed row-reference field in Forms.
+
+### Key Tasks
+- [ ] Remove API endpoint(s) and implementation for cross-entrypoint link creation
+- [ ] Add Form column type for referencing a row in a specified table (table fixed in column definition)
+- [ ] Ensure metadata includes a row-id column if needed for references
+- [ ] Update validation and UI to support selecting the row-reference column type
+- [ ] Add tests and requirement mappings for reference behavior
+
+### Acceptance Criteria
+- [ ] Cross-entrypoint link creation endpoint is removed end-to-end
+- [ ] Forms can define a row-reference column type with target table
+- [ ] Metadata row-id is available and used for references
+- [ ] Tests validate reference creation and validation rules
+
+---
+
+## Phase 7.13: Default Data Dir for dev
+
+**Objective**: When running dev without user-specified data dir, create a temp data directory under /tmp and use it for OpenDAL.
+
+### Key Tasks
+- [ ] Detect missing user data-dir configuration in dev
+- [ ] Create a unique /tmp subdirectory and use it as OpenDAL data dir
+- [ ] Ensure behavior is consistent across backend/frontend dev flows
+- [ ] Add tests and update docs as needed
+
+### Acceptance Criteria
+- [ ] Running dev defaults to a temp /tmp data dir when not specified
+- [ ] OpenDAL uses the temp dir without errors
+- [ ] Tests cover defaulting logic
+
+---
+
 ## Phase 8: Terminology Rebrand (Space/Form/Entry/Asset)
 
 **Objective**: Rename the core terminology across specs, docs, code, file paths, and data model

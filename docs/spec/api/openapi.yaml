@@ -82,6 +82,95 @@ paths:
         "422":
           description: Unprocessable Entity (Invalid validation or unknown scenario)
 
+  /spaces/sample-data/scenarios:
+    get:
+      summary: List sample data scenarios
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    label:
+                      type: string
+                    description:
+                      type: string
+
+  /spaces/sample-data/jobs:
+    post:
+      summary: Create sample data job
+      requestBody:
+        description: Sample data job payload
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - space_id
+              properties:
+                space_id:
+                  type: string
+                scenario:
+                  type: string
+                  default: "renewable-ops"
+                entry_count:
+                  type: integer
+                  minimum: 100
+                  maximum: 20000
+                  default: 5000
+                seed:
+                  type: integer
+                  minimum: 0
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  space_id:
+                    type: string
+                  scenario:
+                    type: string
+                  entry_count:
+                    type: integer
+                  status:
+                    type: string
+                  status_message:
+                    type: string
+                  processed_entries:
+                    type: integer
+                  total_entries:
+                    type: integer
+                  summary:
+                    type: object
+                    nullable: true
+
+  /spaces/sample-data/jobs/{job_id}:
+    get:
+      summary: Get sample data job
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+
   /spaces/{space_id}:
     get:
       summary: Get space
