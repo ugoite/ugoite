@@ -6,12 +6,13 @@ const env =
 	(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
 const backendUrl = env.BACKEND_URL;
+const useViteProxy = env.VITE_API_PROXY === "true";
 
 const sharedDir = new URL("../shared", import.meta.url).pathname;
 
 const proxyRule: Record<string, ProxyOptions> = {};
 
-if (backendUrl) {
+if (backendUrl && useViteProxy) {
 	proxyRule["/api"] = {
 		target: backendUrl,
 		changeOrigin: true,
