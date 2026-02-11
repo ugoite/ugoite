@@ -1,6 +1,6 @@
 # Milestone 3: Markdown as Table
 
-**Status**: ✅ Done  
+**Status**: 🟡 In Progress  
 **Goal**: Store entries as Iceberg-backed tables while preserving the current UI behavior
 
 This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Entries become row-based records defined by Forms, and queryable via a domain-specific SQL.
@@ -128,6 +128,26 @@ using the reserved SQL form name.
 - [x] SQL records store SQL text and a list of typed variables (type, name, description).
 - [x] SQL CRUD operations are available via API and core bindings.
 - [x] Tests confirm reserved form name enforcement and SQL CRUD behavior.
+
+---
+
+## Phase 5.5: SQLの取り回しの抜本的見直し
+
+**Objective**: SQLセッションの保存方式を見直し、`opendal` 以外の永続ストレージや外部ジョブキューに依存しない設計へ再定義する。
+
+### Key Tasks
+- [ ] セッションは**結果を保存しない**。保存は `meta.json` のみ（小容量）に限定する。
+- [ ] `create_sql` でSQLを作成したら、対応する **materialized view** を `spaces/{space_id}/materialized_views/` 配下に作成する。
+- [ ] SQL更新/削除と **materialized view** の生成/削除を同期させる。
+- [ ] SQLセッションのメタデータに、参照スナップショットIDやページング方針など**高速クエリ可能な情報**のみを保持する。
+- [ ] セッションは短寿命（目安10分）を前提とし、複数APIサーバーで共有可能な最小メタデータのみを保存する。
+- [ ] `docs/spec` のデータモデル・API・SQL仕様を新方針に合わせて再定義する。
+
+### Acceptance Criteria
+- [ ] SQLセッションは結果を保存せず、`meta.json` のみで再実行可能。
+- [ ] `materialized_views/` がSQLとライフサイクル同期される。
+- [ ] セッションメタデータにスナップショットIDとページング情報が含まれる。
+- [ ] 仕様ドキュメントが `docs/spec` で整合して更新されている。
 
 ---
 
