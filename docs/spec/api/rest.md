@@ -44,6 +44,30 @@ Content-Type: application/json
 
 **Response**: `201 Created`
 
+#### Create Sample Data Space
+```http
+POST /spaces/sample-data
+Content-Type: application/json
+
+{
+  "space_id": "sample-ops",
+  "scenario": "renewable-ops",
+  "entry_count": 5000,
+  "seed": 42
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "space_id": "sample-ops",
+  "scenario": "renewable-ops",
+  "entry_count": 5000,
+  "form_count": 5,
+  "forms": ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"]
+}
+```
+
 #### Get Space
 ```http
 GET /spaces/{id}

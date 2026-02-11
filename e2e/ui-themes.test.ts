@@ -65,6 +65,11 @@ test.describe("UI theme flows", () => {
 			await page.getByLabel("Query name").fill(queryName);
 			await page.getByRole("button", { name: "Save" }).click();
 			await waitForQueryButton(page, variableQueryName, spaceId);
+			await page.goto(`/spaces/${spaceId}/search`, { waitUntil: "networkidle" });
+			await page.getByPlaceholder("Search queries").fill(variableQueryName);
+			await page
+				.getByRole("button", { name: variableQueryName })
+				.waitFor({ state: "visible" });
 			await page.getByRole("button", { name: variableQueryName }).click();
 			await page.getByRole("heading", { name: "Query variables" }).waitFor();
 

@@ -5,6 +5,7 @@ import json
 import logging
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,15 @@ def _resolve_space_paths(
 
 class SpaceExistsError(Exception):
     """Raised when trying to create a space that already exists."""
+
+
+@dataclass(frozen=True)
+class SampleSpaceOptions:
+    """Configuration for sample data generation."""
+
+    scenario: str = "renewable-ops"
+    entry_count: int = 5000
+    seed: int | None = None
 
 
 def _append_space_to_global(
@@ -140,6 +150,43 @@ def create_space(
             raise NotImplementedError(msg_err) from exc
         raise
     logger.info("Space %s created successfully", space_id)
+
+
+def create_sample_space(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    options: SampleSpaceOptions | None = None,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Create a new space populated with generated sample data."""
+    safe_space_id = validate_id(space_id, "space_id")
+    config = storage_config_from_root(root_path, fs)
+    resolved = options or SampleSpaceOptions()
+
+    if resolved.entry_count < 1:
+        msg_err = "entry_count must be >= 1"
+        raise ValueError(msg_err)
+    if resolved.seed is not None and resolved.seed < 0:
+        msg_err = "seed must be >= 0"
+        raise ValueError(msg_err)
+
+    try:
+        return run_async(
+            ieapp_core.create_sample_space,
+            config,
+            safe_space_id,
+            resolved.scenario,
+            resolved.entry_count,
+            resolved.seed,
+        )
+    except (RuntimeError, ValueError, OverflowError, TypeError) as exc:
+        msg = str(exc)
+        if "already exists" in msg:
+            raise SpaceExistsError(msg) from exc
+        if "unknown sample data scenario" in msg.lower():
+            raise ValueError(msg) from exc
+        raise
 
 
 def get_space(

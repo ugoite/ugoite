@@ -83,6 +83,44 @@ export const handlers = [
 		return HttpResponse.json({ id, name: body.name }, { status: 201 });
 	}),
 
+	// Create sample-data space
+	http.post("http://localhost:3000/api/spaces/sample-data", async ({ request }) => {
+		const body = (await request.json()) as {
+			space_id: string;
+			scenario?: string;
+			entry_count?: number;
+			seed?: number;
+		};
+		const id = body.space_id;
+		if (mockSpaces.has(id)) {
+			return HttpResponse.json({ detail: "Space already exists" }, { status: 409 });
+		}
+
+		const space: Space = {
+			id,
+			name: id,
+			created_at: new Date().toISOString(),
+		};
+		mockSpaces.set(id, space);
+		mockEntries.set(id, new Map());
+		mockEntryIndex.set(id, new Map());
+		mockAssets.set(id, new Map());
+		mockLinks.set(id, new Map());
+		mockForms.set(id, new Map());
+
+		const forms = ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"];
+		return HttpResponse.json(
+			{
+				space_id: id,
+				scenario: body.scenario ?? "renewable-ops",
+				entry_count: body.entry_count ?? 5000,
+				form_count: forms.length,
+				forms,
+			},
+			{ status: 201 },
+		);
+	}),
+
 	// List forms
 	http.get("http://localhost:3000/api/spaces/:spaceId/forms", ({ params }) => {
 		const spaceId = params.spaceId as string;

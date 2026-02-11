@@ -1,5 +1,6 @@
 // REQ-API-001: Space CRUD
 // REQ-API-002: Entry CRUD
+// REQ-API-009: Sample data space generation
 import { describe, it, expect, beforeEach } from "vitest";
 import { assetApi } from "./asset-api";
 import { formApi } from "./form-api";
@@ -48,6 +49,21 @@ describe("spaceApi", () => {
 		it("should throw error for duplicate space", async () => {
 			await spaceApi.create("my-space");
 			await expect(spaceApi.create("my-space")).rejects.toThrow("already exists");
+		});
+	});
+
+	describe("createSampleSpace", () => {
+		it("should create a sample-data space [REQ-API-009]", async () => {
+			const summary = await spaceApi.createSampleSpace({
+				space_id: "sample-ws",
+				scenario: "renewable-ops",
+				entry_count: 120,
+				seed: 42,
+			});
+			expect(summary.space_id).toBe("sample-ws");
+			expect(summary.entry_count).toBe(120);
+			expect(summary.form_count).toBeGreaterThanOrEqual(3);
+			expect(summary.form_count).toBeLessThanOrEqual(6);
 		});
 	});
 

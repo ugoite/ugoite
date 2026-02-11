@@ -109,7 +109,7 @@ async def create_form_endpoint(
         msg = str(e)
         if "reserved" in msg.lower():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
             ) from e
         raise HTTPException(
