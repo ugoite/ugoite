@@ -7,6 +7,36 @@ export default function SpacesIndexRoute() {
 	const [newSpaceName, setNewSpaceName] = createSignal("");
 	const [createError, setCreateError] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
+	const [sampleSpaceName, setSampleSpaceName] = createSignal("");
+	const [sampleScenario, setSampleScenario] = createSignal("renewable-ops");
+	const [sampleEntryCount, setSampleEntryCount] = createSignal("5000");
+	const [sampleSeed, setSampleSeed] = createSignal("");
+	const [sampleError, setSampleError] = createSignal<string | null>(null);
+	const [isGeneratingSample, setIsGeneratingSample] = createSignal(false);
+
+	const buildSamplePayload = () => {
+		const name = sampleSpaceName().trim();
+		if (!name) {
+			return { error: "Space name is required." };
+		}
+		const entryCountValue = Number(sampleEntryCount());
+		if (!Number.isFinite(entryCountValue) || entryCountValue <= 0) {
+			return { error: "Entry count must be a positive number." };
+		}
+		const seedValue = sampleSeed().trim();
+		const seedNumber = seedValue ? Number(seedValue) : undefined;
+		if (seedValue && (!Number.isFinite(seedNumber) || seedNumber < 0)) {
+			return { error: "Seed must be a non-negative number." };
+		}
+		return {
+			payload: {
+				space_id: name,
+				scenario: sampleScenario(),
+				entry_count: entryCountValue,
+				seed: seedNumber,
+			},
+		};
+	};
 
 	const [spaces, { refetch }] = createResource(async () => {
 		return await spaceApi.list();
@@ -26,6 +56,27 @@ export default function SpacesIndexRoute() {
 			setCreateError(err instanceof Error ? err.message : "Failed to create space");
 		} finally {
 			setIsCreating(false);
+		}
+	};
+
+	const handleCreateSample = async () => {
+		const result = buildSamplePayload();
+		if (!result.payload) {
+			setSampleError(result.error ?? "Invalid sample data settings.");
+			return;
+		}
+
+		setSampleError(null);
+		setIsGeneratingSample(true);
+		try {
+			const summary = await spaceApi.createSampleSpace(result.payload);
+			await refetch();
+			setSampleSpaceName("");
+			navigate(`/spaces/${summary.space_id}/dashboard`);
+		} catch (err) {
+			setSampleError(err instanceof Error ? err.message : "Failed to create sample space");
+		} finally {
+			setIsGeneratingSample(false);
 		}
 	};
 
@@ -63,6 +114,59 @@ export default function SpacesIndexRoute() {
 				<Show when={createError()}>
 					<p class="ui-alert ui-alert-error text-sm mt-2">{createError()}</p>
 				</Show>
+			</section>
+
+			<section class="ui-card">
+				<h2 class="text-lg font-semibold mb-2">Create Sample Space</h2>
+				<p class="text-sm ui-muted mb-3">
+					Generate a neutral operations dataset (no personal data) with multiple forms and ~5,000
+					entries to explore the app.
+				</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<input
+						type="text"
+						class="ui-input"
+						placeholder="Sample space name"
+						value={sampleSpaceName()}
+						onInput={(e) => setSampleSpaceName(e.currentTarget.value)}
+					/>
+					<select
+						class="ui-input"
+						value={sampleScenario()}
+						onChange={(e) => setSampleScenario(e.currentTarget.value)}
+					>
+						<option value="renewable-ops">Renewable operations (non-personal)</option>
+					</select>
+					<input
+						type="number"
+						class="ui-input"
+						min="1"
+						placeholder="Entry count"
+						value={sampleEntryCount()}
+						onInput={(e) => setSampleEntryCount(e.currentTarget.value)}
+					/>
+					<input
+						type="number"
+						class="ui-input"
+						min="0"
+						placeholder="Seed (optional)"
+						value={sampleSeed()}
+						onInput={(e) => setSampleSeed(e.currentTarget.value)}
+					/>
+				</div>
+				<div class="flex flex-wrap items-center gap-2 mt-3">
+					<button
+						type="button"
+						class="ui-button ui-button-primary"
+						disabled={isGeneratingSample()}
+						onClick={handleCreateSample}
+					>
+						{isGeneratingSample() ? "Generating..." : "Generate Sample Space"}
+					</button>
+					<Show when={sampleError()}>
+						<p class="ui-alert ui-alert-error text-sm">{sampleError()}</p>
+					</Show>
+				</div>
 			</section>
 
 			<section class="ui-card">

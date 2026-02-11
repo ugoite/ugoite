@@ -74,7 +74,7 @@ async def create_sql_endpoint(
             ) from e
         if msg.startswith("IEAPP_SQL_VALIDATION") or "reserved" in msg.lower():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
             ) from e
         raise HTTPException(
@@ -160,7 +160,7 @@ async def update_sql_endpoint(
             ) from e
         if msg.startswith("IEAPP_SQL_VALIDATION"):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
             ) from e
         raise HTTPException(

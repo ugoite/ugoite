@@ -12,7 +12,12 @@ import json
 import fsspec
 import pytest
 
-from ieapp.space import SpaceExistsError, create_space
+from ieapp.space import (
+    SampleSpaceOptions,
+    SpaceExistsError,
+    create_sample_space,
+    create_space,
+)
 from ieapp.utils import fs_join
 
 
@@ -84,3 +89,22 @@ def test_create_space_s3_unimplemented() -> None:
     # But the requirement is to "raise unimplemented error".
     with pytest.raises(NotImplementedError):
         create_space(root, ws_id)
+
+
+def test_create_sample_space_req_api_009(
+    fs_impl: tuple[fsspec.AbstractFileSystem, str],
+) -> None:
+    """REQ-API-009: CLI can generate a sample-data space."""
+    fs, root = fs_impl
+    ws_id = "sample-space"
+
+    options = SampleSpaceOptions(
+        scenario="renewable-ops",
+        entry_count=120,
+        seed=123,
+    )
+    summary = create_sample_space(root, ws_id, options=options, fs=fs)
+
+    assert summary["space_id"] == ws_id
+    assert summary["entry_count"] == 120
+    assert 3 <= summary["form_count"] <= 6
