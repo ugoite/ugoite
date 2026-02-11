@@ -523,6 +523,20 @@ fn date_from_offset(base: NaiveDate, offset: i64) -> String {
         .to_string()
 }
 
+fn validate_job_id(job_id: &str) -> Result<()> {
+    if job_id.is_empty()
+        || !job_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err(anyhow!(
+            "Invalid job_id: {}. Must be alphanumeric, hyphens, or underscores.",
+            job_id
+        ));
+    }
+    Ok(())
+}
+
 fn job_path(job_id: &str) -> String {
     format!("{}/{}.json", SAMPLE_JOBS_DIR, job_id)
 }
@@ -2130,6 +2144,7 @@ pub async fn create_sample_space_job(
 }
 
 pub async fn get_sample_space_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
+    validate_job_id(job_id)?;
     ensure_jobs_dir(op).await?;
     let path = job_path(job_id);
     if !op.exists(&path).await? {

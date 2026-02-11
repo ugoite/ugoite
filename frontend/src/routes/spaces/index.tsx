@@ -1,5 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
 import type { SampleSpaceJob } from "~/lib/types";
 
@@ -15,6 +15,7 @@ export default function SpacesIndexRoute() {
 	const [sampleError, setSampleError] = createSignal<string | null>(null);
 	const [isGeneratingSample, setIsGeneratingSample] = createSignal(false);
 	const [sampleJob, setSampleJob] = createSignal<SampleSpaceJob | null>(null);
+	let pollAbortController: AbortController | null = null;
 
 	const buildSamplePayload = () => {
 		const name = sampleSpaceName().trim();
@@ -56,6 +57,10 @@ export default function SpacesIndexRoute() {
 		}
 	});
 
+	onCleanup(() => {
+		pollAbortController?.abort();
+	});
+
 	const handleCreate = async () => {
 		const name = newSpaceName().trim();
 		if (!name) return;
@@ -73,22 +78,37 @@ export default function SpacesIndexRoute() {
 		}
 	};
 
-	const pollSampleJob = async (jobId: string) => {
+	const handleSampleJobUpdate = async (latest: SampleSpaceJob) => {
+		setSampleJob(latest);
+		if (latest.status === "completed") {
+			if (latest.summary) {
+				await refetch();
+				setSampleSpaceName("");
+				navigate(`/spaces/${latest.summary.space_id}/dashboard`);
+			}
+			return false;
+		}
+		if (latest.status === "failed") {
+			throw new Error(latest.error || "Sample data generation failed.");
+		}
+		return true;
+	};
+
+	const pollSampleJob = async (jobId: string, signal?: AbortSignal) => {
 		const pollIntervalMs = 1200;
+		const timeoutMs = 10 * 60 * 1000;
+		const startAt = Date.now();
 		while (true) {
+			if (signal?.aborted) return;
+			if (Date.now() - startAt > timeoutMs) {
+				throw new Error(
+					"Sample data generation is taking longer than expected. Please check back later.",
+				);
+			}
 			const latest = await spaceApi.getSampleSpaceJob(jobId);
-			setSampleJob(latest);
-			if (latest.status === "completed") {
-				if (latest.summary) {
-					await refetch();
-					setSampleSpaceName("");
-					navigate(`/spaces/${latest.summary.space_id}/dashboard`);
-				}
-				return;
-			}
-			if (latest.status === "failed") {
-				throw new Error(latest.error || "Sample data generation failed.");
-			}
+			if (signal?.aborted) return;
+			const shouldContinue = await handleSampleJobUpdate(latest);
+			if (!shouldContinue) return;
 			await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 		}
 	};
@@ -103,13 +123,21 @@ export default function SpacesIndexRoute() {
 		setSampleError(null);
 		setIsGeneratingSample(true);
 		setSampleJob(null);
+		if (pollAbortController) {
+			pollAbortController.abort();
+		}
+		const pollController = new AbortController();
+		pollAbortController = pollController;
 		try {
 			const job = await spaceApi.createSampleSpaceJob(result.payload);
 			setSampleJob(job);
-			await pollSampleJob(job.job_id);
+			await pollSampleJob(job.job_id, pollController.signal);
 		} catch (err) {
 			setSampleError(err instanceof Error ? err.message : "Failed to create sample space");
 		} finally {
+			if (pollAbortController === pollController) {
+				pollAbortController = null;
+			}
 			setIsGeneratingSample(false);
 		}
 	};

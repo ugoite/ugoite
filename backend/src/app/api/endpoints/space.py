@@ -283,6 +283,7 @@ async def create_sample_space_job_endpoint(
 @router.get("/spaces/sample-data/jobs/{job_id}")
 async def get_sample_space_job_endpoint(job_id: str) -> dict[str, Any]:
     """Get sample-data job status."""
+    _validate_path_id(job_id, "job_id")
     storage_config = _storage_config()
     try:
         return await ugoite_core.get_sample_space_job(storage_config, job_id)

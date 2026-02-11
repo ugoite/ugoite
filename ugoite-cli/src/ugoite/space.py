@@ -239,9 +239,10 @@ def get_sample_space_job(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> dict[str, Any]:
     """Get sample-data job status."""
+    safe_job_id = validate_id(job_id, "job_id")
     config = storage_config_from_root(root_path, fs)
     try:
-        return run_async(ugoite_core.get_sample_space_job, config, job_id)
+        return run_async(ugoite_core.get_sample_space_job, config, safe_job_id)
     except RuntimeError as exc:
         msg = str(exc)
         if "not found" in msg.lower():
