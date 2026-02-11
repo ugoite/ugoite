@@ -199,6 +199,21 @@ requirements:
           tests:
             - legacy placeholder delegates to entry-store tests
 
+  - id: REQ-FE-043
+    title: Sample data error formatting
+    description: |
+      Frontend MUST display human-readable validation errors from the API
+      without rendering placeholder strings like "[object Object]".
+    related_spec:
+      - architecture/frontend-backend-interface.md#error-handling-standards
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should surface validation errors without object placeholders [REQ-FE-043]
+
   - id: REQ-FE-036
     title: SQL Query Editor
     description: |

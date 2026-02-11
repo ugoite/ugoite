@@ -1,6 +1,8 @@
 // REQ-API-001: Space CRUD
 // REQ-API-002: Entry CRUD
 // REQ-API-009: Sample data space generation
+// REQ-API-010: Sample data scenarios and async jobs
+// REQ-FE-043: Frontend error formatting
 import { describe, it, expect, beforeEach } from "vitest";
 import { assetApi } from "./asset-api";
 import { formApi } from "./form-api";
@@ -64,6 +66,38 @@ describe("spaceApi", () => {
 			expect(summary.entry_count).toBe(120);
 			expect(summary.form_count).toBeGreaterThanOrEqual(3);
 			expect(summary.form_count).toBeLessThanOrEqual(6);
+		});
+
+		it("should surface validation errors without object placeholders [REQ-FE-043]", async () => {
+			await expect(
+				spaceApi.createSampleSpace({
+					space_id: "bad-sample",
+					scenario: "renewable-ops",
+					entry_count: 10,
+				}),
+			).rejects.toThrow("entry_count must be >= 100");
+		});
+	});
+
+	describe("sample scenarios and jobs", () => {
+		it("should list sample-data scenarios [REQ-API-010]", async () => {
+			const scenarios = await spaceApi.listSampleScenarios();
+			expect(scenarios.length).toBeGreaterThan(1);
+			expect(scenarios[0].id).toBeDefined();
+		});
+
+		it("should create and fetch sample-data jobs [REQ-API-010]", async () => {
+			const job = await spaceApi.createSampleSpaceJob({
+				space_id: "sample-job",
+				scenario: "renewable-ops",
+				entry_count: 120,
+			});
+			expect(job.status).toBe("completed");
+			expect(job.summary?.space_id).toBe("sample-job");
+
+			const fetched = await spaceApi.getSampleSpaceJob(job.job_id);
+			expect(fetched.job_id).toBe(job.job_id);
+			expect(fetched.summary?.space_id).toBe("sample-job");
 		});
 	});
 

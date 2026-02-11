@@ -22,6 +22,9 @@ create_entry = _core_any.create_entry
 create_link = _core_any.create_link
 create_space = _core_any.create_space
 create_sample_space = _core_any.create_sample_space
+create_sample_space_job = _core_any.create_sample_space_job
+get_sample_space_job = _core_any.get_sample_space_job
+list_sample_scenarios = _core_any.list_sample_scenarios
 delete_asset = _core_any.delete_asset
 delete_entry = _core_any.delete_entry
 delete_link = _core_any.delete_link
@@ -68,6 +71,7 @@ __all__ = [
     "create_entry",
     "create_link",
     "create_sample_space",
+    "create_sample_space_job",
     "create_space",
     "create_sql",
     "create_sql_session",
@@ -80,6 +84,7 @@ __all__ = [
     "get_entry_history",
     "get_entry_revision",
     "get_form",
+    "get_sample_space_job",
     "get_space",
     "get_sql",
     "get_sql_session_count",
@@ -92,6 +97,7 @@ __all__ = [
     "list_entries",
     "list_forms",
     "list_links",
+    "list_sample_scenarios",
     "list_spaces",
     "list_sql",
     "load_hmac_material",

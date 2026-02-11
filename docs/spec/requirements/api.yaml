@@ -197,3 +197,30 @@ requirements:
         - file: ugoite-core/tests/test_sample_data.rs
           tests:
             - test_sample_data_req_api_009_create_sample_space
+
+  - id: REQ-API-010
+    title: Sample data scenarios and async jobs
+    description: |
+      The API MUST expose a catalog of sample-data scenarios and support
+      asynchronous sample-data generation jobs with status reporting.
+    related_spec:
+      - api/rest.md#spaces
+      - features/spaces.yaml
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: backend/tests/test_api.py
+          tests:
+            - test_list_sample_scenarios_req_api_010
+            - test_create_sample_space_job_req_api_010
+      vitest:
+        - file: frontend/src/lib/client.test.ts
+          tests:
+            - should list sample-data scenarios [REQ-API-010]
+            - should create and fetch sample-data jobs [REQ-API-010]
+      rust:
+        - file: ugoite-core/tests/test_sample_data.rs
+          tests:
+            - test_sample_data_req_api_010_list_scenarios
+            - test_sample_data_req_api_010_job_lifecycle
