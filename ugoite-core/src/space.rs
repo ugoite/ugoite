@@ -115,7 +115,7 @@ pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<
     op.create_dir(&format!("{}/", ws_path)).await?;
 
     // 1. Create directory structure
-    for dir in &["forms", "assets", "sql_sessions"] {
+    for dir in &["forms", "assets", "materialized_views", "sql_sessions"] {
         op.create_dir(&format!("{}/{}/", ws_path, dir)).await?;
     }
 

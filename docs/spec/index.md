@@ -1,8 +1,8 @@
 # Ugoite Specification Index
 
 **Version**: 2.0.0 (Full Configuration)  
-**Updated**: January 2026  
-**Status**: Milestone 2 - In Progress
+**Updated**: February 2026  
+**Status**: Milestone 3 - In Progress
 
 ## Vision
 
@@ -39,6 +39,7 @@ Ugoite is a knowledge management system built on three core principles:
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
 - [Directory Structure](data-model/directory-structure.md) - Space layout conventions
+- [SQL Sessions & Materialized Views](data-model/sql-sessions.md) - SQL execution metadata
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration

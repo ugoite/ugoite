@@ -11,10 +11,10 @@ spaces/
     forms/                            # Iceberg-managed root for Form tables
     assets/                           # Binary files (images, audio, etc.)
       {hash}.{ext}                    # Content-addressed storage
-    sql_sessions/                     # SQL query sessions
+    materialized_views/               # SQL materialized view metadata (no rows)
+    sql_sessions/                     # SQL query sessions (metadata only)
       {session_id}/                   # Session directory
-        meta.json                     # Session metadata (status, progress)
-        rows.json                     # Stored result rows
+        meta.json                     # Session metadata (status, snapshots)
 ```
 
 ## Root Level
@@ -138,3 +138,17 @@ Each space directory is fully portable:
 - Share with other Ugoite instances
 
 Materialized indexes (search, embeddings) are derived from Iceberg tables and can be regenerated.
+
+## SQL Materialized Views (Metadata)
+
+### `materialized_views/`
+
+Saved SQL entries create a corresponding materialized view **metadata** record
+under `materialized_views/`. The metadata is created on SQL creation, refreshed
+on SQL update, and deleted on SQL deletion. The on-disk layout for future
+Iceberg-managed views is intentionally not specified.
+
+## SQL Sessions (Metadata Only)
+
+SQL sessions persist **only metadata** to allow re-running queries against the
+current entries tables. Result rows are never stored under `sql_sessions/`.

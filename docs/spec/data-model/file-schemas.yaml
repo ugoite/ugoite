@@ -153,6 +153,94 @@ schemas:
           items:
             $ref: "#/schemas/sql_variable"
 
+  materialized_view_meta:
+    description: Metadata for a SQL materialized view (optional)
+    path: spaces/{id}/materialized_views/{sql_id}/meta.json
+    schema:
+      type: object
+      required: [sql_id, created_at]
+      properties:
+        sql_id:
+          type: string
+        sql:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        snapshot_id:
+          type: integer
+        schema_hash:
+          type: string
+
+  sql_session_meta:
+    description: SQL session metadata (result rows are not stored)
+    path: spaces/{id}/sql_sessions/{session_id}/meta.json
+    schema:
+      type: object
+      required: [id, space_id, sql_id, sql, created_at, expires_at, status, view, pagination]
+      properties:
+        id:
+          type: string
+        space_id:
+          type: string
+        sql_id:
+          type: string
+        sql:
+          type: string
+        status:
+          type: string
+          enum: [ready, running, failed, expired]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+        view:
+          type: object
+          required: [sql_id, snapshot_id]
+          properties:
+            sql_id:
+              type: string
+            snapshot_id:
+              type: integer
+            snapshot_at:
+              type: string
+              format: date-time
+            schema_version:
+              type: integer
+        pagination:
+          type: object
+          required: [strategy, order_by, default_limit, max_limit]
+          properties:
+            strategy:
+              type: string
+              enum: [offset]
+            order_by:
+              type: array
+              items:
+                type: string
+            default_limit:
+              type: integer
+            max_limit:
+              type: integer
+        count:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [on_demand, cached]
+            cached_at:
+              type: string
+              format: date-time
+            value:
+              type: integer
+
   # Iceberg tables
   entries_table:
     description: Entries table for a Form (current head rows)

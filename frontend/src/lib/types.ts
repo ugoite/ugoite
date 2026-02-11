@@ -174,20 +174,32 @@ export interface SqlUpdatePayload {
 	parent_revision_id?: string | null;
 }
 
-export interface SqlSessionProgress {
-	processed: number;
-	total?: number | null;
-}
-
 export interface SqlSession {
 	id: string;
+	space_id: string;
+	sql_id: string;
 	sql: string;
-	status: "running" | "completed" | "failed";
+	status: "ready" | "running" | "failed" | "expired";
 	created_at: string;
-	updated_at: string;
-	progress?: SqlSessionProgress;
-	row_count?: number | null;
+	expires_at: string;
 	error?: string | null;
+	view: {
+		sql_id: string;
+		snapshot_id: number;
+		snapshot_at?: string;
+		schema_version?: number;
+	};
+	pagination: {
+		strategy: "offset";
+		order_by: string[];
+		default_limit: number;
+		max_limit: number;
+	};
+	count?: {
+		mode: "on_demand" | "cached";
+		cached_at?: string | null;
+		value?: number | null;
+	};
 }
 
 export interface SqlSessionRows {

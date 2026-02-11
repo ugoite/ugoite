@@ -1,6 +1,7 @@
 use crate::entry;
 use crate::form;
 use crate::integrity::IntegrityProvider;
+use crate::materialized_view;
 use crate::sql;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
@@ -92,6 +93,24 @@ fn sql_placeholder_regex() -> &'static Regex {
         Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
             .expect("sql placeholder regex must compile")
     })
+}
+
+fn matches_sql_template(template: &str, candidate: &str) -> bool {
+    let regex = sql_placeholder_regex();
+    let mut pattern = String::new();
+    let mut last = 0;
+    for capture in regex.captures_iter(template) {
+        if let Some(matched) = capture.get(0) {
+            pattern.push_str(&regex::escape(&template[last..matched.start()]));
+            pattern.push_str(".+?");
+            last = matched.end();
+        }
+    }
+    pattern.push_str(&regex::escape(&template[last..]));
+    let pattern = format!("^{}$", pattern);
+    Regex::new(&pattern)
+        .map(|re| re.is_match(candidate))
+        .unwrap_or(false)
 }
 
 fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
@@ -204,6 +223,30 @@ pub async fn get_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<Value
     sql_entry_from_row(&row)
 }
 
+pub async fn find_sql_id_by_text(
+    op: &Operator,
+    ws_path: &str,
+    sql_text: &str,
+) -> Result<Option<String>> {
+    ensure_sql_form(op, ws_path).await?;
+    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
+    let rows = entry::list_form_entry_rows(op, ws_path, SQL_FORM_NAME, &form_def).await?;
+    for row in rows {
+        if row.deleted {
+            continue;
+        }
+        let fields = row.fields.as_object();
+        let sql_value = fields
+            .and_then(|obj| obj.get("sql"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if sql_value == sql_text || matches_sql_template(sql_value, sql_text) {
+            return Ok(Some(row.entry_id));
+        }
+    }
+    Ok(None)
+}
+
 pub async fn create_sql<I: IntegrityProvider>(
     op: &Operator,
     ws_path: &str,
@@ -263,6 +306,8 @@ pub async fn create_sql<I: IntegrityProvider>(
         restored_from: None,
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
+
+    materialized_view::create_or_update_view(op, ws_path, sql_id, &payload.sql).await?;
 
     sql_entry_from_row(&row)
 }
@@ -330,6 +375,8 @@ pub async fn update_sql<I: IntegrityProvider>(
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
+    materialized_view::create_or_update_view(op, ws_path, sql_id, &payload.sql).await?;
+
     sql_entry_from_row(&row)
 }
 
@@ -348,5 +395,6 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
     entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
+    materialized_view::delete_view(op, ws_path, sql_id).await?;
     Ok(())
 }

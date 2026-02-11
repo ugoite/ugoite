@@ -1,6 +1,6 @@
 mod common;
 
-use _ugoite_core::{entry, form, space, sql_session};
+use _ugoite_core::{entry, form, saved_sql, space, sql_session};
 use common::setup_operator;
 
 #[tokio::test]
@@ -33,13 +33,23 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let entry_two = "---\nform: Entry\n---\n# Beta\n\n## Body\nbeta";
     entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
-    let session = sql_session::create_sql_session(
+    let sql_payload = saved_sql::SqlPayload {
+        name: "Alpha Query".to_string(),
+        sql: "SELECT * FROM entries WHERE title = 'Alpha'".to_string(),
+        variables: serde_json::json!([]),
+    };
+    saved_sql::create_sql(
         &op,
         ws_path,
-        "SELECT * FROM entries WHERE title = 'Alpha'",
+        "sql-alpha",
+        &sql_payload,
+        "author",
+        &MockIntegrity,
     )
     .await?;
-    assert_eq!(session["status"], "completed");
+
+    let session = sql_session::create_sql_session(&op, ws_path, &sql_payload.sql).await?;
+    assert_eq!(session["status"], "ready");
     let session_id = session["id"].as_str().unwrap();
 
     let count = sql_session::get_sql_session_count(&op, ws_path, session_id).await?;
