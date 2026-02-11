@@ -7,9 +7,11 @@ REQ-OPS-002: Docker build CI workflow must be declared.
 from __future__ import annotations
 
 import re
-import shlex
 import textwrap
 from pathlib import Path
+
+import bashlex
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
@@ -25,36 +27,15 @@ def _iter_bash_blocks(text: str) -> list[str]:
     return [block.strip() for block in CODE_BLOCK_PATTERN.findall(text)]
 
 
-def _iter_logical_lines(script: str) -> list[str]:
-    logical_lines: list[str] = []
-    buffer: list[str] = []
+def _assert_no_shell_prompts(script: str, source: Path) -> None:
     for raw_line in script.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith(("$", ">")):
-            message = "Shell prompts are not allowed in bash blocks"
+        stripped = raw_line.lstrip()
+        if stripped.startswith(("$ ", "> ")):
+            message = (
+                "Shell prompts are not allowed in bash blocks "
+                f"({source.relative_to(REPO_ROOT)})"
+            )
             raise AssertionError(message)
-        if stripped.endswith("\\"):
-            buffer.append(stripped[:-1].rstrip())
-            continue
-        if buffer:
-            buffer.append(stripped)
-            logical_lines.append(" ".join(buffer).strip())
-            buffer.clear()
-        else:
-            logical_lines.append(stripped)
-    if buffer:
-        logical_lines.append(" ".join(buffer).strip())
-    return logical_lines
-
-
-def _validate_shell_line(line: str, source: Path) -> None:
-    try:
-        shlex.split(line, posix=True)
-    except ValueError as exc:
-        message = f"Shell parsing failed for {source.relative_to(REPO_ROOT)}: {exc}"
-        raise AssertionError(message) from exc
 
 
 def _bash_syntax_check(script: str, source: Path) -> None:
@@ -63,8 +44,12 @@ def _bash_syntax_check(script: str, source: Path) -> None:
         message = f"Empty bash block found in {source.relative_to(REPO_ROOT)}"
         raise AssertionError(message)
 
-    for line in _iter_logical_lines(normalized):
-        _validate_shell_line(line, source)
+    _assert_no_shell_prompts(normalized, source)
+    try:
+        bashlex.parse(normalized)
+    except bashlex.errors.ParsingError as exc:
+        message = f"Bash syntax check failed for {source.relative_to(REPO_ROOT)}: {exc}"
+        raise AssertionError(message) from exc
 
 
 def test_docs_req_ops_001_guides_exist() -> None:
@@ -95,17 +80,105 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     if not WORKFLOW_PATH.exists():
         message = f"Missing workflow file: {WORKFLOW_PATH.relative_to(REPO_ROOT)}"
         raise AssertionError(message)
+    workflow = _load_workflow()
+    build_steps = _collect_build_steps(workflow)
+    backend_step = _find_build_step(build_steps, "./backend")
+    frontend_step = _find_build_step(build_steps, "./frontend")
 
+    missing_parts: list[str] = []
+    _require_step("backend", backend_step, missing_parts)
+    _require_step("frontend", frontend_step, missing_parts)
+    _require_build_contexts(
+        "backend",
+        backend_step,
+        {"core=./ieapp-core", "module=./ieapp-cli"},
+        missing_parts,
+    )
+    _require_build_contexts(
+        "frontend",
+        frontend_step,
+        {"shared=./shared"},
+        missing_parts,
+    )
+    _raise_if_missing(missing_parts)
+
+
+def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
-    required_markers = [
-        "Build backend image",
-        "Build frontend image",
-        "docker/build-push-action",
-    ]
-    missing = [marker for marker in required_markers if marker not in workflow_text]
+    workflow = yaml.safe_load(workflow_text)
+    if isinstance(workflow, dict):
+        return workflow
+    return {}
+
+
+def _collect_build_steps(workflow: dict[str, object]) -> list[dict[str, object]]:
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return []
+    build_steps: list[dict[str, object]] = []
+    for job in jobs.values():
+        steps = job.get("steps", []) if isinstance(job, dict) else []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            uses = step.get("uses")
+            if isinstance(uses, str) and uses.startswith("docker/build-push-action"):
+                build_steps.append(step)
+    return build_steps
+
+
+def _find_build_step(
+    build_steps: list[dict[str, object]],
+    context: str,
+) -> dict[str, object] | None:
+    for step in build_steps:
+        with_block = step.get("with", {})
+        if not isinstance(with_block, dict):
+            continue
+        if with_block.get("context") == context:
+            return step
+    return None
+
+
+def _build_contexts(step: dict[str, object]) -> set[str]:
+    with_block = step.get("with", {})
+    if not isinstance(with_block, dict):
+        return set()
+    contexts = with_block.get("build-contexts", "")
+    if isinstance(contexts, str):
+        return {line.strip() for line in contexts.splitlines() if line.strip()}
+    return set()
+
+
+def _require_step(
+    label: str,
+    step: dict[str, object] | None,
+    missing_parts: list[str],
+) -> None:
+    if step is None:
+        missing_parts.append(f"{label} docker/build-push-action step")
+
+
+def _require_build_contexts(
+    label: str,
+    step: dict[str, object] | None,
+    required: set[str],
+    missing_parts: list[str],
+) -> None:
+    if step is None:
+        return
+    contexts = _build_contexts(step)
+    missing = required.difference(contexts)
     if missing:
-        missing_list = ", ".join(missing)
+        missing_parts.append(
+            f"{label} build-contexts missing: " + ", ".join(sorted(missing)),
+        )
+
+
+def _raise_if_missing(missing_parts: list[str]) -> None:
+    if missing_parts:
         message = (
-            f"Docker build CI workflow is missing required markers: {missing_list}"
+            "Docker build CI workflow is missing required build steps/contexts: "
+            + "; ".join(missing_parts)
         )
         raise AssertionError(message)
