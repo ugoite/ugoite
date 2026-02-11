@@ -33,6 +33,8 @@ from ieapp.links import create_link, delete_link, list_links
 from ieapp.logging_utils import setup_logging
 from ieapp.search import search_entries
 from ieapp.space import (
+    SampleSpaceOptions,
+    create_sample_space,
     create_space,
     get_space,
     list_spaces,
@@ -153,6 +155,35 @@ def cmd_space_get(
     setup_logging()
     data = get_space(root_path, space_id)
     typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("sample-data")
+@handle_cli_errors
+def cmd_space_sample_data(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    scenario: Annotated[
+        str,
+        typer.Option(help="Sample data scenario"),
+    ] = "renewable-ops",
+    entry_count: Annotated[
+        int,
+        typer.Option(help="Approximate total number of entries"),
+    ] = 5000,
+    seed: Annotated[
+        int | None,
+        typer.Option(help="Seed for deterministic generation"),
+    ] = None,
+) -> None:
+    """Create a sample-data space with generated content."""
+    setup_logging()
+    options = SampleSpaceOptions(
+        scenario=scenario,
+        entry_count=entry_count,
+        seed=seed,
+    )
+    summary = create_sample_space(root_path, space_id, options=options)
+    typer.echo(json.dumps(summary, indent=2))
 
 
 @space_app.command("patch")

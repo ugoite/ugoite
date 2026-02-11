@@ -168,24 +168,44 @@ and add automated validation that frontend tests load and verify the spec.
 
 ---
 
-## Phase 7.5: UIの洗練化 (追加)
+## Phase 7.5: UI Polish (Added)
 
-**Objective**: 既存UIの構成を維持したまま、モバイル対応とテーマ統一を実装し、設定アイコンからUIテーマを切り替え可能にする。
+**Objective**: Keep the existing UI structure while adding mobile responsiveness and unified theming, with a settings icon that lets users switch UI themes.
 
 ### Key Tasks
-- [ ] モバイル対応 (トップバー/ナビ/カード/フォームのレスポンシブ最適化)
-- [ ] Tailwind v4 `@theme` の推奨パターンでテーマトークンを定義
-- [ ] `@apply` を使わず、テーマトークンで全体の色/影/角丸/サイズ感を統一
-- [ ] 上部バー右側に設定アイコンを配置し、UIテーマ切替を提供
-- [ ] UIテーマ: `materialize` / `classic` / `pop`
-- [ ] 色合い: `light` / `dark` を独立切替
-- [ ] 選択状態を永続化 (localStorage)
+- [ ] Mobile responsiveness (top bar/nav/cards/forms)
+- [ ] Define theme tokens using the recommended Tailwind v4 `@theme` pattern
+- [ ] Unify colors/shadows/radii/sizing via theme tokens (no `@apply`)
+- [ ] Add a settings icon in the top bar to switch UI themes
+- [ ] UI themes: `materialize` / `classic` / `pop`
+- [ ] Independent `light` / `dark` tone switching
+- [ ] Persist selection state (localStorage)
 
 ### Acceptance Criteria
-- [ ] 全画面がモバイルで崩れず操作可能
-- [ ] テーマ切替が全UIに即時反映される
-- [ ] `@apply` 未使用でテーマ統一が保たれている
-- [ ] 設定アイコンからテーマ選択が可能
+- [ ] All screens are usable on mobile without layout breakage
+- [ ] Theme switching updates the entire UI immediately
+- [ ] Theme consistency is preserved without `@apply`
+- [ ] Theme selection is available from the settings icon
+
+---
+
+## Phase 7.6: Sample Data Space Generator
+
+**Objective**: Provide a dynamic sample-data generator that creates a new space with 3–6 forms and roughly 5,000 entries, using a neutral, meaningful story that demonstrates the app without touching privacy, hierarchy, or ideology.
+
+### Key Tasks
+- [ ] Define a neutral, operational scenario (non-personal data) and form schema set (3–6 forms)
+- [ ] Implement dynamic sample data generation in `ieapp-core` (seeded randomness, configurable entry count)
+- [ ] Add REST API endpoint to create a sample-data space with a few parameters
+- [ ] Add CLI command to generate a sample-data space
+- [ ] Add UI flow to generate a sample-data space (name, scenario, size, seed)
+- [ ] Add tests and requirement mappings (core + API + CLI + frontend)
+
+### Acceptance Criteria
+- [ ] A sample-data space can be generated from UI/CLI/API with a few inputs
+- [ ] The generated space contains 3–6 forms and approximately 5,000 entries by default
+- [ ] The data is dynamically generated (seeded, not fixed)
+- [ ] Scenario content avoids privacy, hierarchy, and ideology
 
 ---
 
@@ -195,12 +215,12 @@ and add automated validation that frontend tests load and verify the spec.
 without migration, removing the old labels entirely before production.
 
 ### Rebrand Plan
-- **Scope**: 全リポジトリ（docs/spec, API, frontend, backend, ieapp-core, ieapp-cli, tests, e2e, scripts, data-model paths）
+- **Scope**: Entire repository (docs/spec, API, frontend, backend, ieapp-core, ieapp-cli, tests, e2e, scripts, data-model paths)
 - **Owner**: @tohboeh5 / Agent
 - **Verification**:
-	- `mise run test` パス
-	- `mise run e2e` パス
-	- 文字列検索で旧名称が残っていないこと
+	- `mise run test` passes
+	- `mise run e2e` passes
+	- No legacy terms remain after string search
 
 ### Work Plan (Phase 8 execution)
 - [ ] Update spec terminology cross-check (docs/spec index, data-model, API, UI specs)

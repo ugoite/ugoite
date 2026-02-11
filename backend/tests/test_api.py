@@ -45,6 +45,27 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     assert (ws_path / "meta.json").exists()
 
 
+def test_create_sample_space(test_client: TestClient, temp_space_root: Path) -> None:
+    """REQ-API-009: Create a sample-data space via API."""
+    payload = {
+        "space_id": "sample-ws",
+        "scenario": "renewable-ops",
+        "entry_count": 120,
+        "seed": 42,
+    }
+
+    response = test_client.post("/spaces/sample-data", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["space_id"] == "sample-ws"
+    assert data["scenario"] == "renewable-ops"
+    assert data["entry_count"] == 120
+    assert 3 <= data["form_count"] <= 6
+
+    list_response = test_client.get("/spaces")
+    assert any(ws["id"] == "sample-ws" for ws in list_response.json())
+
+
 def test_create_space_conflict(
     test_client: TestClient,
     temp_space_root: Path,

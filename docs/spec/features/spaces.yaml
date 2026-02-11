@@ -41,6 +41,24 @@ apis:
       file: ieapp-cli/src/ieapp/cli.py
       function: cmd_create_space
 
+  - id: space.sample_data
+    method: POST
+    backend:
+      path: /spaces/sample-data
+      file: backend/src/app/api/endpoints/space.py
+      function: create_sample_space_endpoint
+    frontend:
+      path: /spaces
+      file: frontend/src/routes/spaces/index.tsx
+      function: SpacesIndexRoute
+    ieapp_core:
+      file: ieapp-core/src/sample_data.rs
+      function: create_sample_space
+    ieapp_cli:
+      command: ieapp space sample-data
+      file: ieapp-cli/src/ieapp/cli.py
+      function: cmd_space_sample_data
+
   - id: space.get
     method: GET
     backend:

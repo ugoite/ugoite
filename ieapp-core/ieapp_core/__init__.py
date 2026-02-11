@@ -21,6 +21,7 @@ build_response_signature = _core_any.build_response_signature
 create_entry = _core_any.create_entry
 create_link = _core_any.create_link
 create_space = _core_any.create_space
+create_sample_space = _core_any.create_sample_space
 delete_asset = _core_any.delete_asset
 delete_entry = _core_any.delete_entry
 delete_link = _core_any.delete_link
@@ -66,6 +67,7 @@ __all__ = [
     "build_sql_schema",
     "create_entry",
     "create_link",
+    "create_sample_space",
     "create_space",
     "create_sql",
     "create_sql_session",
