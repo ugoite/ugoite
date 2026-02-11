@@ -16,15 +16,6 @@ import pytest
 import ugoite_core
 
 import ugoite.indexer as indexer_module
-from ugoite.indexer import (
-    Indexer,
-    aggregate_stats,
-    build_inverted_index,
-    compute_word_count,
-    extract_properties,
-    query_index,
-    validate_properties,
-)
 from ugoite.utils import fs_join
 
 EXPECTED_TASK_COUNT = 1
@@ -54,7 +45,7 @@ status: draft
 1. Review PRs
 2. Plan next sprint
 """
-    properties = extract_properties(markdown)
+    properties = indexer_module.extract_properties(markdown)
 
     # Check frontmatter
     assert properties["form"] == "meeting"
@@ -77,7 +68,7 @@ title: Frontmatter Title
 ## title
 Section Title
 """
-    properties = extract_properties(markdown)
+    properties = indexer_module.extract_properties(markdown)
     assert properties["title"] == "Section Title"
 
 
@@ -93,7 +84,7 @@ def test_validate_properties_missing_required() -> None:
     # Missing Date
     properties = {"Attendees": "- Alice"}
 
-    _, warnings = validate_properties(properties, entry_form)
+    _, warnings = indexer_module.validate_properties(properties, entry_form)
     assert len(warnings) == EXPECTED_TASK_COUNT
     assert warnings[0]["code"] == "missing_field"
     assert warnings[0]["field"] == "Date"
@@ -103,7 +94,7 @@ def test_validate_properties_valid() -> None:
     """Return zero warnings when required data is present."""
     entry_form = {"fields": {"Date": {"type": "date", "required": True}}}
     properties = {"Date": "2025-10-27"}
-    _, warnings = validate_properties(properties, entry_form)
+    _, warnings = indexer_module.validate_properties(properties, entry_form)
     assert len(warnings) == 0
 
 
@@ -123,7 +114,7 @@ def test_indexer_run_once(
 
     monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
-    indexer = Indexer(space_path, fs=fs)
+    indexer = indexer_module.Indexer(space_path, fs=fs)
     indexer.run_once()
 
     assert calls["func"] is ugoite_core.reindex_all
@@ -166,17 +157,17 @@ def test_query_index(
 
     monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
-    results = query_index(space_path, {"form": "meeting"}, fs=fs)
+    results = indexer_module.query_index(space_path, {"form": "meeting"}, fs=fs)
     assert len(results) == EXPECTED_MEETING_RESULTS
     ids = {entry["id"] for entry in results}
     assert ids == {"entry1", "entry2"}
 
-    results = query_index(space_path, {"form": "task"}, fs=fs)
+    results = indexer_module.query_index(space_path, {"form": "task"}, fs=fs)
     assert len(results) == EXPECTED_SINGLE_RESULT
     assert results[0]["id"] == "entry3"
 
     # Filtering by properties should work as well
-    results = query_index(space_path, {"status": "todo"}, fs=fs)
+    results = indexer_module.query_index(space_path, {"status": "todo"}, fs=fs)
     assert len(results) == EXPECTED_SINGLE_RESULT
     assert results[0]["id"] == "entry3"
 
@@ -210,11 +201,11 @@ def test_query_index_by_tag(
 
     monkeypatch.setattr(indexer_module, "run_async", fake_run_async)
 
-    results = query_index(space_path, {"tag": "project-alpha"}, fs=fs)
+    results = indexer_module.query_index(space_path, {"tag": "project-alpha"}, fs=fs)
     ids = {entry["id"] for entry in results}
     assert ids == {"entry1", "entry3"}
 
-    results = query_index(space_path, {"tag": "urgent"}, fs=fs)
+    results = indexer_module.query_index(space_path, {"tag": "urgent"}, fs=fs)
     assert len(results) == EXPECTED_SINGLE_RESULT
     assert results[0]["id"] == "entry1"
 
@@ -226,7 +217,7 @@ def test_indexer_watch_loop_triggers_run(
     """Ensure watch loop invokes run_once for each file-system event."""
     fs, root = fs_impl
     space_path = fs_join(root, "test_space")
-    indexer = Indexer(space_path, fs=fs)
+    indexer = indexer_module.Indexer(space_path, fs=fs)
 
     calls: list[int] = []
 
@@ -249,7 +240,7 @@ def test_indexer_computes_word_count() -> None:
     content = "# Hello World\n\nThis is a test entry with some words."
     # "Hello World" (2) + "This is a test entry with some words." (8) = 10 words
     # Entry: split() counts '#' as a word, so 11.
-    assert compute_word_count(content) == EXPECTED_WORD_COUNT
+    assert indexer_module.compute_word_count(content) == EXPECTED_WORD_COUNT
 
 
 def test_aggregate_stats_includes_field_usage() -> None:
@@ -269,7 +260,7 @@ def test_aggregate_stats_includes_field_usage() -> None:
         },
     }
 
-    stats = aggregate_stats(index_data)
+    stats = indexer_module.aggregate_stats(index_data)
 
     # Check field usage for 'meeting'
     meeting_stats = stats["form_stats"]["meeting"]
@@ -285,7 +276,7 @@ def test_indexer_generates_inverted_index(
 ) -> None:
     """Ensure inverted index contains term-to-entry mappings."""
     _fs, _root = fs_impl
-    inverted_index = build_inverted_index(
+    inverted_index = indexer_module.build_inverted_index(
         {
             "entry1": {
                 "id": "entry1",

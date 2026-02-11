@@ -26,7 +26,8 @@ See [directory-structure.md](directory-structure.md) for the full space layout.
 
 ```
 global.json                    # Space registry
-i
+spaces/
+  {space_id}/
     meta.json                  # Space metadata
     settings.json              # Space settings
     forms/                     # Iceberg-managed Form tables (layout not specified)
