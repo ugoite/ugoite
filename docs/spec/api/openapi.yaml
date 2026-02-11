@@ -24,9 +24,63 @@ paths:
   /spaces/sample-data:
     post:
       summary: Create sample data space
+      requestBody:
+        description: Sample data space creation payload
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - space_id
+              properties:
+                space_id:
+                  type: string
+                scenario:
+                  type: string
+                  default: "renewable-ops"
+                entry_count:
+                  type: integer
+                  minimum: 100
+                  maximum: 20000
+                  default: 5000
+                seed:
+                  type: integer
+                  minimum: 0
+            example:
+              space_id: "sample-space"
+              scenario: "renewable-ops"
+              entry_count: 1000
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  space_id:
+                    type: string
+                  scenario:
+                    type: string
+                  entry_count:
+                    type: integer
+                  form_count:
+                    type: integer
+                  forms:
+                    type: array
+                    items:
+                      type: string
+              example:
+                space_id: "sample-space"
+                scenario: "renewable-ops"
+                entry_count: 1000
+                form_count: 5
+                forms: ["Form1", "Form2", "Form3", "Form4", "Form5"]
+        "409":
+          description: Conflict (Space already exists)
+        "422":
+          description: Unprocessable Entity (Invalid validation or unknown scenario)
 
   /spaces/{space_id}:
     get:

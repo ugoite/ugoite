@@ -189,7 +189,7 @@ requirements:
       vitest:
         - file: frontend/src/lib/client.test.ts
           tests:
-            - should create a sample-data space
+            - should create a sample-data space [REQ-API-009]
       rust:
         - file: ieapp-core/tests/test_sample_data.rs
           tests:

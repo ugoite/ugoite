@@ -163,6 +163,12 @@ def create_sample_space(
     safe_space_id = validate_id(space_id, "space_id")
     config = storage_config_from_root(root_path, fs)
     resolved = options or SampleSpaceOptions()
+
+    if resolved.entry_count < 1:
+        raise ValueError("entry_count must be >= 1")
+    if resolved.seed is not None and resolved.seed < 0:
+        raise ValueError("seed must be >= 0")
+
     try:
         return run_async(
             ieapp_core.create_sample_space,
@@ -172,7 +178,7 @@ def create_sample_space(
             resolved.entry_count,
             resolved.seed,
         )
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, OverflowError, TypeError) as exc:
         msg = str(exc)
         if "already exists" in msg:
             raise SpaceExistsError(msg) from exc

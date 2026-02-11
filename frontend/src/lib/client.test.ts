@@ -53,7 +53,7 @@ describe("spaceApi", () => {
 	});
 
 	describe("createSampleSpace", () => {
-		it("should create a sample-data space", async () => {
+		it("should create a sample-data space [REQ-API-009]", async () => {
 			const summary = await spaceApi.createSampleSpace({
 				space_id: "sample-ws",
 				scenario: "renewable-ops",
