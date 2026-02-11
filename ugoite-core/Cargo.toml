@@ -21,7 +21,7 @@ futures = { version = "0.3.31", features = ["std"] }
 pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
 thiserror = "2.0.18"
 base64 = "0.22.1"
-rand = "0.9.2"
+rand = "0.10.0"
 serde_yaml = "0.9.34"
 regex = "1.12.3"
 sha2 = "0.10"

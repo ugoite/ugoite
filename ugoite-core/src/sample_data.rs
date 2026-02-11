@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result};
 use chrono::{Duration, NaiveDate};
 use opendal::Operator;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 

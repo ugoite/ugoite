@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use opendal::Operator;
 use pyo3::prelude::*;
-use rand::TryRngCore;
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -76,7 +76,7 @@ fn default_global_config(default_storage: &str) -> GlobalConfig {
     let key_id = format!("key-{}", uuid::Uuid::new_v4().simple());
 
     let mut key_bytes = [0u8; 32];
-    rand::rngs::OsRng
+    rand::rngs::SysRng
         .try_fill_bytes(&mut key_bytes)
         .expect("Failed to generate secure random bytes");
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
