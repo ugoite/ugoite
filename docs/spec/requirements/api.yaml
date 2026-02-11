@@ -166,7 +166,7 @@ requirements:
         - file: ugoite-core/tests/test_sql_sessions.rs
           tests:
             - test_sql_sessions_req_api_008_end_to_end
-        - file: ieapp-core/tests/test_materialized_view.rs
+        - file: ugoite-core/tests/test_materialized_view.rs
           tests:
             - test_materialized_view_req_api_008_metadata_lifecycle
 

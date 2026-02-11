@@ -2,7 +2,7 @@
 
 **Updated**: 2026-02
 
-This document defines how IEapp manages SQL execution without persisting
+This document defines how Ugoite manages SQL execution without persisting
 large result sets. The design is **stateless except for OpenDAL storage** and
 avoids RDBs, external job queues, or NFS-based shared disks.
 
