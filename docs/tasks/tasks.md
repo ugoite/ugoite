@@ -131,23 +131,25 @@ using the reserved SQL form name.
 
 ---
 
-## Phase 5.5: SQLの取り回しの抜本的見直し
+## Phase 5.5: SQL Session Redesign
 
-**Objective**: SQLセッションの保存方式を見直し、`opendal` 以外の永続ストレージや外部ジョブキューに依存しない設計へ再定義する。
+**Objective**: Redefine SQL session handling so it remains stateless beyond
+OpenDAL storage, without relying on RDBs or external job queues.
 
 ### Key Tasks
-- [ ] セッションは**結果を保存しない**。保存は `meta.json` のみ（小容量）に限定する。
-- [ ] `create_sql` でSQLを作成したら、対応する **materialized view** を `spaces/{space_id}/materialized_views/` 配下に作成する。
-- [ ] SQL更新/削除と **materialized view** の生成/削除を同期させる。
-- [ ] SQLセッションのメタデータに、参照スナップショットIDやページング方針など**高速クエリ可能な情報**のみを保持する。
-- [ ] セッションは短寿命（目安10分）を前提とし、複数APIサーバーで共有可能な最小メタデータのみを保存する。
-- [ ] `docs/spec` のデータモデル・API・SQL仕様を新方針に合わせて再定義する。
+- [ ] Sessions store **metadata only** in `meta.json` (no result rows).
+- [ ] `create_sql` creates a corresponding **materialized view** under
+	`spaces/{space_id}/materialized_views/`.
+- [ ] SQL updates/deletes synchronize materialized view refresh/removal.
+- [ ] Session metadata stores snapshot ID and paging hints for fast re-queries.
+- [ ] Sessions are short-lived (target: ~10 minutes) and shareable across API servers.
+- [ ] Update `docs/spec` data model, API, and SQL docs to reflect the redesign.
 
 ### Acceptance Criteria
-- [ ] SQLセッションは結果を保存せず、`meta.json` のみで再実行可能。
-- [ ] `materialized_views/` がSQLとライフサイクル同期される。
-- [ ] セッションメタデータにスナップショットIDとページング情報が含まれる。
-- [ ] 仕様ドキュメントが `docs/spec` で整合して更新されている。
+- [ ] SQL sessions store metadata only and are re-executable.
+- [ ] `materialized_views/` lifecycle is synchronized with saved SQL.
+- [ ] Session metadata includes snapshot and paging details.
+- [ ] Specs in `docs/spec` are updated consistently.
 
 ---
 

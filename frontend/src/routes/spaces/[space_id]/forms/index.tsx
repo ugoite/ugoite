@@ -44,7 +44,7 @@ export default function SpaceFormsIndexPane() {
 	const [sessionRows] = createResource(
 		() => {
 			const id = sessionId().trim();
-			if (!id || session()?.status !== "completed") return null;
+			if (!id || session()?.status !== "ready") return null;
 			return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
 		},
 		async ({ id, offset, limit }) => sqlSessionApi.rows(ctx.spaceId(), id, offset, limit),
@@ -109,9 +109,7 @@ export default function SpaceFormsIndexPane() {
 		return Array.from(fields);
 	});
 
-	const totalCount = createMemo(
-		() => sessionRows()?.totalCount ?? session()?.row_count ?? sessionEntries().length,
-	);
+	const totalCount = createMemo(() => sessionRows()?.totalCount ?? sessionEntries().length);
 	const totalPages = createMemo(() => Math.max(1, Math.ceil(totalCount() / pageSize())));
 
 	return (
@@ -171,10 +169,13 @@ export default function SpaceFormsIndexPane() {
 					<Show when={sessionId().trim()}>
 						<div class="ui-stack-sm">
 							<Show when={session()?.status === "running"}>
-								<p class="text-sm ui-muted">Running query...</p>
+								<p class="text-sm ui-muted">Preparing query...</p>
 							</Show>
 							<Show when={session()?.status === "failed"}>
 								<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
+							</Show>
+							<Show when={session()?.status === "expired"}>
+								<p class="text-sm ui-text-danger">Query session expired.</p>
 							</Show>
 							<Show when={sessionRows.loading}>
 								<p class="text-sm ui-muted">Loading results...</p>

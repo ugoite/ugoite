@@ -34,7 +34,7 @@ export default function SpaceEntriesIndexPane() {
 	const [sessionRows] = createResource(
 		() => {
 			const id = sessionId().trim();
-			if (!id || session()?.status !== "completed") return null;
+			if (!id || session()?.status !== "ready") return null;
 			return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
 		},
 		async ({ id, offset, limit }) => sqlSessionApi.rows(spaceId(), id, offset, limit),
@@ -70,9 +70,7 @@ export default function SpaceEntriesIndexPane() {
 		return ctx.entryStore.entries() || [];
 	});
 
-	const totalCount = createMemo(
-		() => sessionRows()?.totalCount ?? session()?.row_count ?? displayEntries().length,
-	);
+	const totalCount = createMemo(() => sessionRows()?.totalCount ?? displayEntries().length);
 
 	const totalPages = createMemo(() => Math.max(1, Math.ceil(totalCount() / pageSize())));
 
@@ -166,19 +164,13 @@ export default function SpaceEntriesIndexPane() {
 
 				<div class="mt-6">
 					<Show when={sessionId().trim() && session()?.status === "running"}>
-						<p class="text-sm ui-muted">
-							Running query...
-							<Show when={session()?.progress}>
-								{(progress) => (
-									<span class="ml-2 text-xs ui-muted">
-										{progress().processed} / {progress().total ?? "?"}
-									</span>
-								)}
-							</Show>
-						</p>
+						<p class="text-sm ui-muted">Preparing query...</p>
 					</Show>
 					<Show when={session()?.status === "failed"}>
 						<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
+					</Show>
+					<Show when={session()?.status === "expired"}>
+						<p class="text-sm ui-text-danger">Query session expired.</p>
 					</Show>
 					<Show when={isLoading()}>
 						<p class="text-sm ui-muted">Loading entries...</p>
