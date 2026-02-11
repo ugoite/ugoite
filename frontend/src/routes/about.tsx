@@ -20,6 +20,7 @@ export default function About() {
 					</A>
 				</div>
 			</section>
+			<h2 class="sr-only">What makes Ugoite different</h2>
 			<section class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-5xl mx-auto">
 				<div class="ui-card">
 					<h3 class="text-lg font-semibold mb-2">Local-first ownership</h3>
