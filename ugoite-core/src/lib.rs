@@ -138,6 +138,60 @@ fn create_sample_space<'a>(
 }
 
 #[pyfunction]
+fn list_sample_scenarios(py: Python<'_>) -> PyResult<PyObject> {
+    let scenarios = sample_data::list_sample_scenarios();
+    let val =
+        serde_json::to_value(scenarios).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    json_to_py(py, val)
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, scenario=None, entry_count=None, seed=None))]
+fn create_sample_space_job<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    scenario: Option<String>,
+    entry_count: Option<usize>,
+    seed: Option<u64>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let options = sample_data::SampleDataOptions {
+            space_id,
+            scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
+            entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
+            seed,
+        };
+        let job = sample_data::create_sample_space_job(&op, &uri, &options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(job).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_sample_space_job<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    job_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let job = sample_data::get_sample_space_job(&op, &job_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(job).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
 #[pyo3(name = "test_storage_connection")]
 fn test_storage_connection_py<'a>(
     py: Python<'a>,
@@ -955,6 +1009,9 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list_spaces, m)?)?;
     m.add_function(wrap_pyfunction!(create_space, m)?)?;
     m.add_function(wrap_pyfunction!(create_sample_space, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sample_scenarios, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sample_space_job, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sample_space_job, m)?)?;
     m.add_function(wrap_pyfunction!(test_storage_connection_py, m)?)?;
 
     m.add_function(wrap_pyfunction!(create_entry, m)?)?;
