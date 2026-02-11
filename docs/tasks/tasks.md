@@ -1,6 +1,6 @@
 # Milestone 3: Markdown as Table
 
-**Status**: ✅ Done  
+**Status**: 🟡 In Progress  
 **Goal**: Store entries as Iceberg-backed tables while preserving the current UI behavior
 
 This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Entries become row-based records defined by Forms, and queryable via a domain-specific SQL.
@@ -128,6 +128,28 @@ using the reserved SQL form name.
 - [x] SQL records store SQL text and a list of typed variables (type, name, description).
 - [x] SQL CRUD operations are available via API and core bindings.
 - [x] Tests confirm reserved form name enforcement and SQL CRUD behavior.
+
+---
+
+## Phase 5.5: SQL Session Redesign
+
+**Objective**: Redefine SQL session handling so it remains stateless beyond
+OpenDAL storage, without relying on RDBs or external job queues.
+
+### Key Tasks
+- [x] Sessions store **metadata only** in `meta.json` (no result rows).
+- [x] `create_sql` creates corresponding **materialized view metadata** under
+	`spaces/{space_id}/materialized_views/`.
+- [x] SQL updates/deletes synchronize materialized view metadata refresh/removal.
+- [x] Session metadata stores snapshot ID and paging hints for fast re-queries.
+- [x] Sessions are short-lived (target: ~10 minutes) and shareable across API servers.
+- [x] Update `docs/spec` data model, API, and SQL docs to reflect the redesign.
+
+### Acceptance Criteria
+- [x] SQL sessions store metadata only and are re-executable.
+- [x] `materialized_views/` lifecycle is synchronized with saved SQL.
+- [x] Session metadata includes snapshot and paging details.
+- [x] Specs in `docs/spec` are updated consistently.
 
 ---
 

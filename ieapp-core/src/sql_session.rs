@@ -1,10 +1,12 @@
-use anyhow::Result;
-use chrono::Utc;
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Duration, Utc};
 use opendal::Operator;
-use serde_json::Value;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::index;
+use crate::materialized_view;
+use crate::saved_sql;
 
 const SESSION_DIR: &str = "sql_sessions";
 
@@ -25,10 +27,6 @@ fn meta_path(ws_path: &str, session_id: &str) -> String {
     format!("{}/meta.json", session_path(ws_path, session_id))
 }
 
-fn rows_path(ws_path: &str, session_id: &str) -> String {
-    format!("{}/rows.json", session_path(ws_path, session_id))
-}
-
 async fn ensure_sessions_dir(op: &Operator, ws_path: &str) -> Result<()> {
     let root = format!("{}/", sessions_root(ws_path));
     if !op.exists(&root).await? {
@@ -47,6 +45,38 @@ async fn read_json(op: &Operator, path: &str) -> Result<Value> {
     Ok(serde_json::from_slice(&bytes.to_vec())?)
 }
 
+fn space_id_from_ws_path(ws_path: &str) -> String {
+    let trimmed = ws_path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Some((_, space_id)) = trimmed.rsplit_once('/') {
+        if !space_id.is_empty() {
+            return space_id.to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+fn is_expired(meta: &Value) -> bool {
+    let expires_at = match meta.get("expires_at").and_then(|v| v.as_str()) {
+        Some(value) => value,
+        None => return true,
+    };
+    match DateTime::parse_from_rfc3339(expires_at) {
+        Ok(time) => time.with_timezone(&Utc) <= Utc::now(),
+        Err(_) => true,
+    }
+}
+
+async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Result<Value> {
+    let mut meta = read_json(op, &meta_path(ws_path, session_id)).await?;
+    if is_expired(&meta) {
+        meta["status"] = Value::String("expired".to_string());
+    }
+    Ok(meta)
+}
+
 pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Result<Value> {
     ensure_sessions_dir(op, ws_path).await?;
 
@@ -54,44 +84,60 @@ pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Resu
     let session_dir = format!("{}/", session_path(ws_path, &session_id));
     op.create_dir(&session_dir).await?;
 
-    let now = Utc::now().to_rfc3339();
-    let mut meta = serde_json::json!({
+    let sql_id = match saved_sql::find_sql_id_by_text(op, ws_path, sql).await? {
+        Some(existing_id) => existing_id,
+        None => Uuid::new_v4().to_string(),
+    };
+
+    let view_meta = match materialized_view::read_view_meta(op, ws_path, &sql_id).await {
+        Ok(meta) => meta,
+        Err(_) => materialized_view::create_or_update_view(op, ws_path, &sql_id, sql).await?,
+    };
+
+    let snapshot_id = view_meta
+        .get("snapshot_id")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_default();
+    let snapshot_at = view_meta
+        .get("updated_at")
+        .or_else(|| view_meta.get("created_at"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
+    let now = Utc::now();
+    let expires_at = (now + Duration::minutes(10)).to_rfc3339();
+    let created_at = now.to_rfc3339();
+    let space_id = space_id_from_ws_path(ws_path);
+
+    let meta = json!({
         "id": session_id,
+        "space_id": space_id,
+        "sql_id": sql_id,
         "sql": sql,
-        "status": "running",
-        "created_at": now,
-        "updated_at": now,
-        "progress": {"processed": 0, "total": Value::Null},
-        "row_count": Value::Null,
+        "status": "ready",
+        "created_at": created_at,
+        "expires_at": expires_at,
         "error": Value::Null,
+        "view": {
+            "sql_id": sql_id,
+            "snapshot_id": snapshot_id,
+            "snapshot_at": snapshot_at,
+            "schema_version": 1,
+        },
+        "pagination": {
+            "strategy": "offset",
+            "order_by": ["updated_at", "id"],
+            "default_limit": 50,
+            "max_limit": 1000,
+        },
+        "count": {
+            "mode": "on_demand",
+            "cached_at": Value::Null,
+            "value": Value::Null,
+        }
     });
 
-    let session_id = meta["id"].as_str().unwrap_or_default().to_string();
     write_json(op, &meta_path(ws_path, &session_id), &meta).await?;
-
-    match index::execute_sql_query(op, ws_path, sql).await {
-        Ok(rows) => {
-            let total = rows.len() as u64;
-            write_json(op, &rows_path(ws_path, &session_id), &Value::Array(rows)).await?;
-            let now = Utc::now().to_rfc3339();
-            meta["status"] = Value::String("completed".to_string());
-            meta["updated_at"] = Value::String(now);
-            meta["row_count"] = Value::Number(total.into());
-            meta["progress"] = serde_json::json!({"processed": total, "total": total});
-            meta["error"] = Value::Null;
-            write_json(op, &meta_path(ws_path, &session_id), &meta).await?;
-        }
-        Err(err) => {
-            let now = Utc::now().to_rfc3339();
-            meta["status"] = Value::String("failed".to_string());
-            meta["updated_at"] = Value::String(now);
-            meta["row_count"] = Value::Number(0.into());
-            meta["progress"] = serde_json::json!({"processed": 0, "total": 0});
-            meta["error"] = Value::String(err.to_string());
-            write_json(op, &meta_path(ws_path, &session_id), &meta).await?;
-        }
-    }
-
     Ok(meta)
 }
 
@@ -100,17 +146,20 @@ pub async fn get_sql_session_status(
     ws_path: &str,
     session_id: &str,
 ) -> Result<Value> {
-    read_json(op, &meta_path(ws_path, session_id)).await
+    load_session_meta(op, ws_path, session_id).await
 }
 
 pub async fn get_sql_session_count(op: &Operator, ws_path: &str, session_id: &str) -> Result<u64> {
-    let meta = get_sql_session_status(op, ws_path, session_id).await?;
-    if let Some(count) = meta.get("row_count").and_then(|v| v.as_u64()) {
-        return Ok(count);
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(anyhow!("SQL session expired"));
     }
 
-    let rows_value = read_json(op, &rows_path(ws_path, session_id)).await?;
-    let rows = rows_value.as_array().cloned().unwrap_or_default();
+    let sql = meta
+        .get("sql")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    let rows = index::execute_sql_query(op, ws_path, sql).await?;
     Ok(rows.len() as u64)
 }
 
@@ -121,8 +170,15 @@ pub async fn get_sql_session_rows(
     offset: usize,
     limit: usize,
 ) -> Result<Value> {
-    let rows_value = read_json(op, &rows_path(ws_path, session_id)).await?;
-    let rows = rows_value.as_array().cloned().unwrap_or_default();
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(anyhow!("SQL session expired"));
+    }
+    let sql = meta
+        .get("sql")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    let rows = index::execute_sql_query(op, ws_path, sql).await?;
     let total = rows.len();
     let start = offset.min(total);
     let end = (offset + limit).min(total);
@@ -141,6 +197,13 @@ pub async fn get_sql_session_rows_all(
     ws_path: &str,
     session_id: &str,
 ) -> Result<Vec<Value>> {
-    let rows_value = read_json(op, &rows_path(ws_path, session_id)).await?;
-    Ok(rows_value.as_array().cloned().unwrap_or_default())
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(anyhow!("SQL session expired"));
+    }
+    let sql = meta
+        .get("sql")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
+    index::execute_sql_query(op, ws_path, sql).await
 }
