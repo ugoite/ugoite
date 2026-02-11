@@ -185,7 +185,6 @@ def test_form_req_form_007_row_reference_requires_target(space_id: str) -> None:
             "Project": {
                 "type": "row_reference",
                 "required": False,
-                "target_form": "Project",
             },
         },
     }
