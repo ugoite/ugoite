@@ -94,7 +94,7 @@ async def _validate_entry_markdown_against_form(
                 detail="Failed to load form definition",
             ) from e
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Form not found: {entry_form}",
         ) from e
 
@@ -104,7 +104,7 @@ async def _validate_entry_markdown_against_form(
     )
     if warnings:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_format_form_validation_errors(warnings),
         )
 
@@ -211,7 +211,7 @@ async def create_sample_space_endpoint(
             ) from e
         if "unknown sample data scenario" in lowered:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,
             ) from e
         raise HTTPException(

@@ -16,8 +16,8 @@ class SampleSpaceCreate(BaseModel):
 
     space_id: str
     scenario: str = "renewable-ops"
-    entry_count: int = Field(default=5000, ge=1)
-    seed: int | None = None
+    entry_count: int = Field(default=5000, ge=100, le=20000)
+    seed: int | None = Field(default=None, ge=0)
 
 
 class EntryCreate(BaseModel):
