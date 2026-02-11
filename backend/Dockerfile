@@ -8,11 +8,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		build-essential \
-		cargo \
-		rustc \
 		pkg-config \
 		libssl-dev \
-	&& rm -rf /var/lib/apt/lists/*
+		curl \
+		ca-certificates \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.88.0
+
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy pyproject.toml and uv.lock for dependency installation
 COPY ./pyproject.toml .
