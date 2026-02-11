@@ -20,7 +20,7 @@ export function SpaceShell(props: SpaceShellProps) {
 	return (
 		<main class="ui-shell">
 			<Show when={loadingState.isLoading()}>
-				<div class="fixed top-0 left-0 right-0 z-50">
+				<div class="fixed top-0 left-0 right-0 z-[60] pointer-events-none">
 					<div class="ui-loading-bar" />
 				</div>
 			</Show>
