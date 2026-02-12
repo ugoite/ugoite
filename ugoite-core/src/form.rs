@@ -35,6 +35,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "timestamp_ns".to_string(),
         "timestamp_tz_ns".to_string(),
         "uuid".to_string(),
+        "row_reference".to_string(),
         "binary".to_string(),
         "list".to_string(),
         "object_list".to_string(),
@@ -52,6 +53,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
         .get("name")
         .and_then(|v| v.as_str())
         .context("Form definition missing 'name' field")?;
+    validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
     let existing = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
         Ok(def) => Some(def),
         Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
@@ -105,6 +107,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
 ) -> Result<usize> {
     let normalized = normalize_form_definition(form_def)?;
     let form_name = normalized["name"].as_str().context("Form name required")?;
+    validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
     let existing_def = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
         Ok(def) => Some(def),
         Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
@@ -282,6 +285,7 @@ fn normalize_form_definition_with_options(
                 ));
             }
         }
+        validate_row_reference_field_defs(field_map)?;
     }
     let allow_extra_attributes = form_def
         .get("allow_extra_attributes")
@@ -303,6 +307,69 @@ fn normalize_form_definition_with_options(
         "fields": fields,
         "allow_extra_attributes": allow_extra_attributes,
     }))
+}
+
+fn validate_row_reference_field_defs(field_map: &Map<String, Value>) -> Result<()> {
+    for (name, def) in field_map {
+        let field_type = def.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+        if field_type != "row_reference" {
+            continue;
+        }
+        let target_form = def
+            .get("target_form")
+            .and_then(|v| v.as_str())
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
+        if is_reserved_metadata_form(target_form) {
+            return Err(anyhow!(
+                "row_reference field '{}' target_form '{}' is reserved",
+                name,
+                target_form
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_row_reference_targets(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    form_def: &Value,
+) -> Result<()> {
+    let Some(field_map) = form_def.get("fields").and_then(|v| v.as_object()) else {
+        return Ok(());
+    };
+
+    let mut available: HashSet<String> = list_form_names(op, ws_path)
+        .await
+        .with_context(|| format!("failed to list forms for workspace '{}'", ws_path))?
+        .into_iter()
+        .collect();
+    available.insert(form_name.to_string());
+
+    for (name, def) in field_map {
+        let field_type = def.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+        if field_type != "row_reference" {
+            continue;
+        }
+        let target_form = def
+            .get("target_form")
+            .and_then(|v| v.as_str())
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
+        if !available.contains(target_form) {
+            return Err(anyhow!(
+                "row_reference field '{}' target_form '{}' not found",
+                name,
+                target_form
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn is_reserved_metadata_column(name: &str) -> bool {

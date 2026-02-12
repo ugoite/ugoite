@@ -38,6 +38,57 @@ const resolveInputType = (def: Form["fields"][string]) => {
 const resolveTextareaPlaceholder = (def: Form["fields"][string]) =>
 	def.type === "object_list" ? "[]" : "Enter value";
 
+type FieldIssueSource = { name: string; type: string; targetForm?: string };
+
+type FieldIssueContext = {
+	availableForms?: string[];
+	currentFormName?: string;
+};
+
+const getRowReferenceIssue = (field: FieldIssueSource, context?: FieldIssueContext) => {
+	if (field.type !== "row_reference") return null;
+	const targetForm = field.targetForm?.trim();
+	if (!targetForm) return "Target form required for row_reference";
+	if (isReservedMetadataForm(targetForm)) return "Target form is reserved";
+	if (context?.availableForms && context.availableForms.length > 0) {
+		const validTargets = new Set(
+			context.availableForms.map((formName) => formName.trim().toLowerCase()),
+		);
+		if (context.currentFormName?.trim()) {
+			validTargets.add(context.currentFormName.trim().toLowerCase());
+		}
+		if (!validTargets.has(targetForm.toLowerCase())) {
+			return "Target form does not exist";
+		}
+	}
+	return null;
+};
+
+const buildFieldIssues = (fields: FieldIssueSource[], context?: FieldIssueContext) => {
+	const issues = new Map<number, string>();
+	const seen = new Map<string, number>();
+	fields.forEach((field, index) => {
+		const trimmed = field.name.trim();
+		if (!trimmed) return;
+		if (isReservedMetadataColumn(trimmed)) {
+			issues.set(index, "Reserved metadata column name");
+			return;
+		}
+		const rowIssue = getRowReferenceIssue(field, context);
+		if (rowIssue) {
+			issues.set(index, rowIssue);
+			return;
+		}
+		const normalized = trimmed.toLowerCase();
+		if (seen.has(normalized)) {
+			issues.set(index, "Duplicate column name");
+			return;
+		}
+		seen.set(normalized, index);
+	});
+	return issues;
+};
+
 export interface CreateEntryDialogProps {
 	open: boolean;
 	forms: Form[];
@@ -339,6 +390,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 export interface CreateFormDialogProps {
 	open: boolean;
 	columnTypes: string[];
+	formNames: string[];
 	onClose: () => void;
 	onSubmit: (payload: FormCreatePayload) => void;
 }
@@ -349,30 +401,23 @@ export interface CreateFormDialogProps {
 export function CreateFormDialog(props: CreateFormDialogProps) {
 	const [name, setName] = createSignal("");
 	const [fields, setFields] = createSignal<
-		Array<{ name: string; type: string; required: boolean }>
+		Array<{ name: string; type: string; required: boolean; targetForm?: string }>
 	>([]);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
-
-	const fieldIssues = createMemo(() => {
-		const issues = new Map<number, string>();
-		const seen = new Map<string, number>();
-		fields().forEach((field, index) => {
-			const trimmed = field.name.trim();
-			if (!trimmed) return;
-			const normalized = trimmed.toLowerCase();
-			if (isReservedMetadataColumn(trimmed)) {
-				issues.set(index, "Reserved metadata column name");
-				return;
-			}
-			if (seen.has(normalized)) {
-				issues.set(index, "Duplicate column name");
-				return;
-			}
-			seen.set(normalized, index);
-		});
-		return issues;
+	const targetFormOptions = createMemo(() => {
+		const options = new Set(props.formNames);
+		const current = name().trim();
+		if (current) options.add(current);
+		return Array.from(options);
 	});
+
+	const fieldIssues = createMemo(() =>
+		buildFieldIssues(fields(), {
+			availableForms: props.formNames,
+			currentFormName: name(),
+		}),
+	);
 
 	const nameIssue = createMemo(() =>
 		isReservedMetadataForm(name()) ? "Reserved metadata form name" : "",
@@ -410,13 +455,15 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 		const formName = name().trim();
 		if (!formName || hasFieldIssues() || nameIssue()) return;
 
-		const fieldRecord: Record<string, { type: string; required: boolean }> = {};
+		const fieldRecord: Record<string, { type: string; required: boolean; target_form?: string }> =
+			{};
 		let template = `# ${formName}\n\n`;
 
 		for (const f of fields()) {
 			const trimmedName = f.name.trim();
 			if (trimmedName) {
-				fieldRecord[trimmedName] = { type: f.type, required: f.required };
+				const target_form = f.type === "row_reference" ? f.targetForm?.trim() : undefined;
+				fieldRecord[trimmedName] = { type: f.type, required: f.required, target_form };
 				template += `## ${trimmedName}\n\n`;
 			}
 		}
@@ -535,6 +582,24 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 												×
 											</button>
 										</div>
+										<Show when={field().type === "row_reference"}>
+											<div class="ml-1 flex items-center gap-2">
+												<span class="text-xs ui-muted">Target Form:</span>
+												<input
+													type="text"
+													list={`row-ref-targets-${i}`}
+													placeholder="e.g. Project"
+													value={field().targetForm || ""}
+													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
+													class="ui-input ui-input-sm flex-1"
+												/>
+												<datalist id={`row-ref-targets-${i}`}>
+													<For each={targetFormOptions()}>
+														{(option) => <option value={option} />}
+													</For>
+												</datalist>
+											</div>
+										</Show>
 										<Show when={fieldIssues().has(i)}>
 											<span class="text-xs ui-text-danger">{fieldIssues().get(i)}</span>
 										</Show>
@@ -584,17 +649,24 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 }
 
 function processFields(
-	fields: Array<{ name: string; type: string; required: boolean; defaultValue?: string }>,
-	existingFields: Record<string, { type: string; required: boolean }>,
+	fields: Array<{
+		name: string;
+		type: string;
+		required: boolean;
+		targetForm?: string;
+		defaultValue?: string;
+	}>,
+	existingFields: Record<string, { type: string; required: boolean; target_form?: string }>,
 ) {
-	const fieldRecord: Record<string, { type: string; required: boolean }> = {};
+	const fieldRecord: Record<string, { type: string; required: boolean; target_form?: string }> = {};
 	const strategies: Record<string, string | null> = {};
 	const currentNames = new Set<string>();
 
 	for (const f of fields) {
 		const trimmedName = f.name.trim();
 		if (trimmedName) {
-			fieldRecord[trimmedName] = { type: f.type, required: f.required };
+			const target_form = f.type === "row_reference" ? f.targetForm?.trim() : undefined;
+			fieldRecord[trimmedName] = { type: f.type, required: f.required, target_form };
 			currentNames.add(trimmedName);
 			if (!existingFields[trimmedName] && f.defaultValue) {
 				strategies[trimmedName] = f.defaultValue;
@@ -613,35 +685,35 @@ export interface EditFormDialogProps {
 	open: boolean;
 	entryForm: Form;
 	columnTypes: string[];
+	formNames: string[];
 	onClose: () => void;
 	onSubmit: (payload: FormCreatePayload) => void;
 }
 
 export function EditFormDialog(props: EditFormDialogProps) {
 	const [fields, setFields] = createSignal<
-		Array<{ name: string; type: string; required: boolean; defaultValue?: string; isNew?: boolean }>
+		Array<{
+			name: string;
+			type: string;
+			required: boolean;
+			targetForm?: string;
+			defaultValue?: string;
+			isNew?: boolean;
+		}>
 	>([]);
 	let dialogRef: HTMLDialogElement | undefined;
-
-	const fieldIssues = createMemo(() => {
-		const issues = new Map<number, string>();
-		const seen = new Map<string, number>();
-		fields().forEach((field, index) => {
-			const trimmed = field.name.trim();
-			if (!trimmed) return;
-			const normalized = trimmed.toLowerCase();
-			if (isReservedMetadataColumn(trimmed)) {
-				issues.set(index, "Reserved metadata column name");
-				return;
-			}
-			if (seen.has(normalized)) {
-				issues.set(index, "Duplicate column name");
-				return;
-			}
-			seen.set(normalized, index);
-		});
-		return issues;
+	const targetFormOptions = createMemo(() => {
+		const options = new Set(props.formNames);
+		if (props.entryForm?.name) options.add(props.entryForm.name);
+		return Array.from(options);
 	});
+
+	const fieldIssues = createMemo(() =>
+		buildFieldIssues(fields(), {
+			availableForms: props.formNames,
+			currentFormName: props.entryForm?.name,
+		}),
+	);
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 	const nameIssue = createMemo(() =>
@@ -672,6 +744,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 				name,
 				type: def.type,
 				required: def.required,
+				targetForm: def.target_form,
 				isNew: false,
 			}));
 			setFields(initialFields);
@@ -796,6 +869,24 @@ export function EditFormDialog(props: EditFormDialogProps) {
 												×
 											</button>
 										</div>
+										<Show when={field().type === "row_reference"}>
+											<div class="ml-1 flex items-center gap-2">
+												<span class="text-xs ui-muted">Target Form:</span>
+												<input
+													type="text"
+													list={`row-ref-targets-edit-${i}`}
+													placeholder="e.g. Project"
+													value={field().targetForm || ""}
+													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
+													class="ui-input ui-input-sm flex-1"
+												/>
+												<datalist id={`row-ref-targets-edit-${i}`}>
+													<For each={targetFormOptions()}>
+														{(option) => <option value={option} />}
+													</For>
+												</datalist>
+											</div>
+										</Show>
 										<Show when={fieldIssues().has(i) && field().isNew}>
 											<span class="text-xs ui-text-danger">{fieldIssues().get(i)}</span>
 										</Show>

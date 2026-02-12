@@ -433,7 +433,7 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                 Value::String(ref s) => parse_boolean(s).map(Value::Bool),
                 _ => None,
             },
-            "markdown" | "string" => Some(raw_value.clone()),
+            "markdown" | "string" | "row_reference" => Some(raw_value.clone()),
             _ => Some(raw_value.clone()),
         };
 

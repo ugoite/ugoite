@@ -100,14 +100,6 @@ class SpaceConnectionRequest(BaseModel):
     storage_config: dict[str, Any]
 
 
-class LinkCreate(BaseModel):
-    """Link creation payload."""
-
-    source: str
-    target: str
-    kind: str = "related"
-
-
 class FormCreate(BaseModel):
     """Form creation payload."""
 

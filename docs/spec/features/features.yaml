@@ -36,8 +36,6 @@ files:
     file: forms.yaml
   - kind: assets
     file: assets.yaml
-  - kind: links
-    file: links.yaml
   - kind: search
     file: search.yaml
   - kind: sql

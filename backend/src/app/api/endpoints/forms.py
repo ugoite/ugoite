@@ -107,7 +107,12 @@ async def create_form_endpoint(
         return await ugoite_core.get_form(storage_config, space_id, payload.name)
     except RuntimeError as e:
         msg = str(e)
-        if "reserved" in msg.lower():
+        lowered = msg.lower()
+        if (
+            "reserved" in lowered
+            or "row_reference" in lowered
+            or "target_form" in lowered
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=msg,

@@ -1,36 +1,27 @@
 import { createSignal } from "solid-js";
-import type { SpaceLink } from "./types";
-import { linkApi } from "./link-api";
 
-export function createLinkStore(spaceId: () => string) {
-	const [links, setLinks] = createSignal<SpaceLink[]>([]);
+const linksRemovedMessage = "Links API has been removed. Use row_reference fields instead.";
+
+export function createLinkStore(_spaceId: () => string) {
+	const [links, setLinks] = createSignal<unknown[]>([]);
 	const [loading, setLoading] = createSignal(false);
-	const [error, setError] = createSignal<string | null>(null);
+	const [error, setError] = createSignal<string | null>(linksRemovedMessage);
 
 	async function loadLinks(): Promise<void> {
 		setLoading(true);
-		setError(null);
-		try {
-			const data = await linkApi.list(spaceId());
-			setLinks(data);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to load links");
-		} finally {
-			setLoading(false);
-		}
+		setError(linksRemovedMessage);
+		setLinks([]);
+		setLoading(false);
 	}
 
-	async function createLink(payload: { source: string; target: string; kind: string }) {
-		setError(null);
-		const created = await linkApi.create(spaceId(), payload);
-		await loadLinks();
-		return created;
+	async function createLink(_payload: { source: string; target: string; kind: string }) {
+		setError(linksRemovedMessage);
+		throw new Error(linksRemovedMessage);
 	}
 
-	async function deleteLink(linkId: string): Promise<void> {
-		setError(null);
-		await linkApi.delete(spaceId(), linkId);
-		await loadLinks();
+	async function deleteLink(_linkId: string): Promise<void> {
+		setError(linksRemovedMessage);
+		throw new Error(linksRemovedMessage);
 	}
 
 	return {

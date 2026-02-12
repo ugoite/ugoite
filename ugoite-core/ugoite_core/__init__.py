@@ -19,7 +19,6 @@ with suppress(ImportError):
 _core_any = cast("Any", _core)
 build_response_signature = _core_any.build_response_signature
 create_entry = _core_any.create_entry
-create_link = _core_any.create_link
 create_space = _core_any.create_space
 create_sample_space = _core_any.create_sample_space
 create_sample_space_job = _core_any.create_sample_space_job
@@ -27,7 +26,6 @@ get_sample_space_job = _core_any.get_sample_space_job
 list_sample_scenarios = _core_any.list_sample_scenarios
 delete_asset = _core_any.delete_asset
 delete_entry = _core_any.delete_entry
-delete_link = _core_any.delete_link
 extract_properties = _core_any.extract_properties
 get_entry = _core_any.get_entry
 get_entry_history = _core_any.get_entry_history
@@ -37,7 +35,6 @@ get_space = _core_any.get_space
 list_assets = _core_any.list_assets
 list_column_types = _core_any.list_column_types
 list_entries = _core_any.list_entries
-list_links = _core_any.list_links
 list_forms = _core_any.list_forms
 list_spaces = _core_any.list_spaces
 load_hmac_material = _core_any.load_hmac_material
@@ -69,7 +66,6 @@ __all__ = [
     "build_response_signature",
     "build_sql_schema",
     "create_entry",
-    "create_link",
     "create_sample_space",
     "create_sample_space_job",
     "create_space",
@@ -77,7 +73,6 @@ __all__ = [
     "create_sql_session",
     "delete_asset",
     "delete_entry",
-    "delete_link",
     "delete_sql",
     "extract_properties",
     "get_entry",
@@ -96,7 +91,6 @@ __all__ = [
     "list_column_types",
     "list_entries",
     "list_forms",
-    "list_links",
     "list_sample_scenarios",
     "list_spaces",
     "list_sql",

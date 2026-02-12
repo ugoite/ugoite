@@ -27,6 +27,7 @@ def test_list_column_types() -> None:
     assert "timestamp_ns" in types
     assert "timestamp_tz_ns" in types
     assert "uuid" in types
+    assert "row_reference" in types
     assert "binary" in types
     assert "list" in types
     assert "markdown" in types

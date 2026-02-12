@@ -286,6 +286,7 @@ export default function SpaceFormsIndexPane() {
 			<CreateFormDialog
 				open={showCreateFormDialog()}
 				columnTypes={ctx.columnTypes()}
+				formNames={ctx.forms().map((form) => form.name)}
 				onClose={() => setShowCreateFormDialog(false)}
 				onSubmit={handleCreateForm}
 			/>

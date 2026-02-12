@@ -116,9 +116,12 @@ schemas:
               type:
                 type: string
                 enum:
-                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, binary, list, object_list]
+                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, row_reference, binary, list, object_list]
               required:
                 type: boolean
+              target_form:
+                type: string
+                description: Required when type is row_reference; names the target Form/table.
               default:
                 description: Default value for field
                 type: [string, number, boolean, array, object, null]

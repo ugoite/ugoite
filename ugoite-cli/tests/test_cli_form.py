@@ -18,6 +18,7 @@ def test_cli_list_types() -> None:
     assert result.exit_code == 0
     assert "string" in result.stdout
     assert "date" in result.stdout
+    assert "row_reference" in result.stdout
 
 
 def test_cli_form_update(tmp_path: Path) -> None:

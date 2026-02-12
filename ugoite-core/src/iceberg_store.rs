@@ -371,7 +371,7 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
             let element = Arc::new(NestedField::new(element_id, "element", struct_type, false));
             Type::List(ListType::new(element))
         }
-        "markdown" | "string" => Type::Primitive(PrimitiveType::String),
+        "markdown" | "string" | "row_reference" => Type::Primitive(PrimitiveType::String),
         _ => Type::Primitive(PrimitiveType::String),
     })
 }

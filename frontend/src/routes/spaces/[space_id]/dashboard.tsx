@@ -153,6 +153,7 @@ export default function SpaceDashboardRoute() {
 			<CreateFormDialog
 				open={showCreateFormDialog()}
 				columnTypes={columnTypes() || []}
+				formNames={safeForms().map((form) => form.name)}
 				onClose={() => setShowCreateFormDialog(false)}
 				onSubmit={handleCreateForm}
 			/>

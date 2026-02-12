@@ -1,7 +1,6 @@
 """CLI entry point using Typer."""
 
 import json
-import uuid
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -34,7 +33,6 @@ from ugoite.indexer import (
     get_sql_session_rows,
     query_index,
 )
-from ugoite.links import create_link, delete_link, list_links
 from ugoite.logging_utils import setup_logging
 from ugoite.search import search_entries
 from ugoite.space import (
@@ -56,7 +54,6 @@ index_app = typer.Typer(help="Indexer operations")
 form_app = typer.Typer(help="Form management commands")
 space_app = typer.Typer(help="Space management commands")
 asset_app = typer.Typer(help="Asset management commands")
-link_app = typer.Typer(help="Link management commands")
 search_app = typer.Typer(help="Search commands")
 sql_app = typer.Typer(help="SQL linting and completion commands")
 
@@ -65,7 +62,6 @@ app.add_typer(index_app, name="index")
 app.add_typer(form_app, name="form")
 app.add_typer(space_app, name="space")
 app.add_typer(asset_app, name="asset")
-app.add_typer(link_app, name="link")
 app.add_typer(search_app, name="search")
 app.add_typer(sql_app, name="sql")
 
@@ -819,50 +815,6 @@ def cmd_asset_delete(
     except AssetReferencedError as exc:
         raise typer.Exit(code=1) from exc
     typer.echo(f"Asset '{asset_id}' deleted successfully.")
-
-
-@link_app.command("create")
-@handle_cli_errors
-def cmd_link_create(
-    space_path: Annotated[str, typer.Argument(help="Full path to space")],
-    source: Annotated[str, typer.Argument(help="Source entry ID")],
-    target: Annotated[str, typer.Argument(help="Target entry ID")],
-    kind: Annotated[str, typer.Option(help="Link kind")] = "related",
-) -> None:
-    """Create a link between two entries."""
-    setup_logging()
-    link_id = uuid.uuid4().hex
-    link = create_link(
-        space_path,
-        source=source,
-        target=target,
-        kind=kind,
-        link_id=link_id,
-    )
-    typer.echo(json.dumps(link, indent=2))
-
-
-@link_app.command("list")
-@handle_cli_errors
-def cmd_link_list(
-    space_path: Annotated[str, typer.Argument(help="Full path to space")],
-) -> None:
-    """List links in a space."""
-    setup_logging()
-    links = list_links(space_path)
-    typer.echo(json.dumps(links, indent=2))
-
-
-@link_app.command("delete")
-@handle_cli_errors
-def cmd_link_delete(
-    space_path: Annotated[str, typer.Argument(help="Full path to space")],
-    link_id: Annotated[str, typer.Argument(help="Link ID")],
-) -> None:
-    """Delete a link by ID."""
-    setup_logging()
-    delete_link(space_path, link_id)
-    typer.echo(f"Link '{link_id}' deleted successfully.")
 
 
 @search_app.command("keyword")

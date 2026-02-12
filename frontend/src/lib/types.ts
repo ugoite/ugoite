@@ -142,6 +142,7 @@ export interface EntryUpdatePayload {
 export interface FormField {
 	type: string;
 	required: boolean;
+	target_form?: string;
 }
 
 export interface Form {
@@ -236,14 +237,6 @@ export interface SqlSessionRows {
 /** API error response */
 export interface ApiError {
 	detail: string;
-}
-
-/** Link resource */
-export interface SpaceLink {
-	id: string;
-	source: string;
-	target: string;
-	kind: string;
 }
 
 /** Search result entry */

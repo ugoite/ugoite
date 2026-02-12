@@ -131,6 +131,9 @@ using Markdown-friendly rules:
 - **timestamp_ns** → parsed as RFC3339 with nanosecond precision
 - **timestamp_tz_ns** → parsed as RFC3339 with nanosecond precision and normalized to UTC
 - **uuid** → parsed as a canonical UUID string
+- **row_reference** → stored as a string reference (e.g. entry ID or `ugoite://entry/{entry_id}`)
+  and MUST declare a `target_form` in the Form field definition. References resolve against
+  the target Form's `entry_id` metadata column.
 - **binary** → parsed from `base64:` or `hex:` strings and stored as canonical `base64:`
 - **list** → parsed from Markdown bullet lists (e.g. `- item`)
 - **object_list** → parsed from a JSON array of objects (each object must include

@@ -47,10 +47,6 @@ Returns revision history summaries.
 
 Returns available form definitions and their fields.
 
-### `ugoite://{space_id}/links`
-
-Returns all entry-to-entry relationships.
-
 ---
 
 ## Tools
@@ -70,10 +66,6 @@ Pre-defined prompts help AI understand the context:
 ### `analyze_meetings`
 
 > "Find all entries with form='Meeting' and summarize the key decisions."
-
-### `find_related`
-
-> "Given an entry ID, find all related entries via links and shared tags."
 
 ---
 
