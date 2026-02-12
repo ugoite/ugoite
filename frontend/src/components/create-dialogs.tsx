@@ -40,15 +40,31 @@ const resolveTextareaPlaceholder = (def: Form["fields"][string]) =>
 
 type FieldIssueSource = { name: string; type: string; targetForm?: string };
 
-const getRowReferenceIssue = (field: FieldIssueSource) => {
+type FieldIssueContext = {
+	availableForms?: string[];
+	currentFormName?: string;
+};
+
+const getRowReferenceIssue = (field: FieldIssueSource, context?: FieldIssueContext) => {
 	if (field.type !== "row_reference") return null;
 	const targetForm = field.targetForm?.trim();
 	if (!targetForm) return "Target form required for row_reference";
 	if (isReservedMetadataForm(targetForm)) return "Target form is reserved";
+	if (context?.availableForms && context.availableForms.length > 0) {
+		const validTargets = new Set(
+			context.availableForms.map((formName) => formName.trim().toLowerCase()),
+		);
+		if (context.currentFormName?.trim()) {
+			validTargets.add(context.currentFormName.trim().toLowerCase());
+		}
+		if (!validTargets.has(targetForm.toLowerCase())) {
+			return "Target form does not exist";
+		}
+	}
 	return null;
 };
 
-const buildFieldIssues = (fields: FieldIssueSource[]) => {
+const buildFieldIssues = (fields: FieldIssueSource[], context?: FieldIssueContext) => {
 	const issues = new Map<number, string>();
 	const seen = new Map<string, number>();
 	fields.forEach((field, index) => {
@@ -58,7 +74,7 @@ const buildFieldIssues = (fields: FieldIssueSource[]) => {
 			issues.set(index, "Reserved metadata column name");
 			return;
 		}
-		const rowIssue = getRowReferenceIssue(field);
+		const rowIssue = getRowReferenceIssue(field, context);
 		if (rowIssue) {
 			issues.set(index, rowIssue);
 			return;
@@ -396,7 +412,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 		return Array.from(options);
 	});
 
-	const fieldIssues = createMemo(() => buildFieldIssues(fields()));
+	const fieldIssues = createMemo(() =>
+		buildFieldIssues(fields(), {
+			availableForms: props.formNames,
+			currentFormName: name(),
+		}),
+	);
 
 	const nameIssue = createMemo(() =>
 		isReservedMetadataForm(name()) ? "Reserved metadata form name" : "",
@@ -687,7 +708,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
 		return Array.from(options);
 	});
 
-	const fieldIssues = createMemo(() => buildFieldIssues(fields()));
+	const fieldIssues = createMemo(() =>
+		buildFieldIssues(fields(), {
+			availableForms: props.formNames,
+			currentFormName: props.entryForm?.name,
+		}),
+	);
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 	const nameIssue = createMemo(() =>

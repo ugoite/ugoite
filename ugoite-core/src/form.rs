@@ -344,7 +344,7 @@ async fn validate_row_reference_targets(
 
     let mut available: HashSet<String> = list_form_names(op, ws_path)
         .await
-        .unwrap_or_default()
+        .with_context(|| format!("failed to list forms for workspace '{}'", ws_path))?
         .into_iter()
         .collect();
     available.insert(form_name.to_string());
@@ -357,7 +357,9 @@ async fn validate_row_reference_targets(
         let target_form = def
             .get("target_form")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
         if !available.contains(target_form) {
             return Err(anyhow!(
                 "row_reference field '{}' target_form '{}' not found",

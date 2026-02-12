@@ -38,8 +38,11 @@ from ugoite.search import search_entries
 from ugoite.space import (
     SampleSpaceOptions,
     create_sample_space,
+    create_sample_space_job,
     create_space,
+    get_sample_space_job,
     get_space,
+    list_sample_scenarios,
     list_spaces,
     patch_space,
     test_storage_connection,
@@ -185,6 +188,56 @@ def cmd_space_sample_data(
     )
     summary = create_sample_space(root_path, space_id, options=options)
     typer.echo(json.dumps(summary, indent=2))
+
+
+@space_app.command("sample-scenarios")
+@handle_cli_errors
+def cmd_space_sample_scenarios() -> None:
+    """List available sample-data scenarios."""
+    setup_logging()
+    data = list_sample_scenarios()
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("sample-job")
+@handle_cli_errors
+def cmd_space_sample_job(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    scenario: Annotated[
+        str,
+        typer.Option(help="Sample data scenario"),
+    ] = "renewable-ops",
+    entry_count: Annotated[
+        int,
+        typer.Option(help="Approximate total number of entries"),
+    ] = 5000,
+    seed: Annotated[
+        int | None,
+        typer.Option(help="Seed for deterministic generation"),
+    ] = None,
+) -> None:
+    """Create a sample-data generation job."""
+    setup_logging()
+    options = SampleSpaceOptions(
+        scenario=scenario,
+        entry_count=entry_count,
+        seed=seed,
+    )
+    job = create_sample_space_job(root_path, space_id, options=options)
+    typer.echo(json.dumps(job, indent=2))
+
+
+@space_app.command("sample-job-status")
+@handle_cli_errors
+def cmd_space_sample_job_status(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    job_id: Annotated[str, typer.Argument(help="Sample job ID")],
+) -> None:
+    """Get sample-data job status."""
+    setup_logging()
+    data = get_sample_space_job(root_path, job_id)
+    typer.echo(json.dumps(data, indent=2))
 
 
 @space_app.command("patch")

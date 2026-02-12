@@ -21,6 +21,9 @@ build_response_signature = _core_any.build_response_signature
 create_entry = _core_any.create_entry
 create_space = _core_any.create_space
 create_sample_space = _core_any.create_sample_space
+create_sample_space_job = _core_any.create_sample_space_job
+get_sample_space_job = _core_any.get_sample_space_job
+list_sample_scenarios = _core_any.list_sample_scenarios
 delete_asset = _core_any.delete_asset
 delete_entry = _core_any.delete_entry
 extract_properties = _core_any.extract_properties
@@ -64,6 +67,7 @@ __all__ = [
     "build_sql_schema",
     "create_entry",
     "create_sample_space",
+    "create_sample_space_job",
     "create_space",
     "create_sql",
     "create_sql_session",
@@ -75,6 +79,7 @@ __all__ = [
     "get_entry_history",
     "get_entry_revision",
     "get_form",
+    "get_sample_space_job",
     "get_space",
     "get_sql",
     "get_sql_session_count",
@@ -86,6 +91,7 @@ __all__ = [
     "list_column_types",
     "list_entries",
     "list_forms",
+    "list_sample_scenarios",
     "list_spaces",
     "list_sql",
     "load_hmac_material",

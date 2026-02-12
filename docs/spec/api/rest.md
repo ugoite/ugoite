@@ -68,6 +68,76 @@ Content-Type: application/json
 }
 ```
 
+#### List Sample Data Scenarios
+```http
+GET /spaces/sample-data/scenarios
+```
+
+**Response**: `200 OK`
+```json
+[
+  {
+    "id": "renewable-ops",
+    "label": "Renewable operations",
+    "description": "Operations data for renewable energy sites."
+  }
+]
+```
+
+#### Create Sample Data Job
+```http
+POST /spaces/sample-data/jobs
+Content-Type: application/json
+
+{
+  "space_id": "sample-ops",
+  "scenario": "renewable-ops",
+  "entry_count": 5000,
+  "seed": 42
+}
+```
+
+**Response**: `202 Accepted`
+```json
+{
+  "job_id": "job-uuid",
+  "space_id": "sample-ops",
+  "scenario": "renewable-ops",
+  "entry_count": 5000,
+  "status": "queued",
+  "status_message": "Queued",
+  "processed_entries": 0,
+  "total_entries": 5000,
+  "summary": null
+}
+```
+
+#### Get Sample Data Job
+```http
+GET /spaces/sample-data/jobs/{job_id}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "job_id": "job-uuid",
+  "space_id": "sample-ops",
+  "scenario": "renewable-ops",
+  "entry_count": 5000,
+  "status": "completed",
+  "status_message": "Completed",
+  "processed_entries": 5000,
+  "total_entries": 5000,
+  "summary": {
+    "space_id": "sample-ops",
+    "scenario": "renewable-ops",
+    "entry_count": 5000,
+    "form_count": 5,
+    "forms": ["Site", "Array", "Inspection", "MaintenanceTicket", "EnergyReport"]
+  }
+}
+```
+
 #### Get Space
 ```http
 GET /spaces/{id}

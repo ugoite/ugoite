@@ -1,6 +1,7 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
+import type { SampleSpaceJob } from "~/lib/types";
 
 export default function SpacesIndexRoute() {
 	const navigate = useNavigate();
@@ -13,6 +14,8 @@ export default function SpacesIndexRoute() {
 	const [sampleSeed, setSampleSeed] = createSignal("");
 	const [sampleError, setSampleError] = createSignal<string | null>(null);
 	const [isGeneratingSample, setIsGeneratingSample] = createSignal(false);
+	const [sampleJob, setSampleJob] = createSignal<SampleSpaceJob | null>(null);
+	let pollAbortController: AbortController | null = null;
 
 	const buildSamplePayload = () => {
 		const name = sampleSpaceName().trim();
@@ -20,8 +23,8 @@ export default function SpacesIndexRoute() {
 			return { error: "Space name is required." };
 		}
 		const entryCountValue = Number(sampleEntryCount());
-		if (!Number.isFinite(entryCountValue) || entryCountValue <= 0) {
-			return { error: "Entry count must be a positive number." };
+		if (!Number.isFinite(entryCountValue) || entryCountValue < 100) {
+			return { error: "Entry count must be at least 100." };
 		}
 		const seedValue = sampleSeed().trim();
 		const seedNumber = seedValue ? Number(seedValue) : undefined;
@@ -42,6 +45,22 @@ export default function SpacesIndexRoute() {
 		return await spaceApi.list();
 	});
 
+	const [scenarios] = createResource(async () => {
+		return await spaceApi.listSampleScenarios();
+	});
+
+	createEffect(() => {
+		const list = scenarios();
+		if (!list || list.length === 0) return;
+		if (!list.some((scenario) => scenario.id === sampleScenario())) {
+			setSampleScenario(list[0].id);
+		}
+	});
+
+	onCleanup(() => {
+		pollAbortController?.abort();
+	});
+
 	const handleCreate = async () => {
 		const name = newSpaceName().trim();
 		if (!name) return;
@@ -59,6 +78,41 @@ export default function SpacesIndexRoute() {
 		}
 	};
 
+	const handleSampleJobUpdate = async (latest: SampleSpaceJob) => {
+		setSampleJob(latest);
+		if (latest.status === "completed") {
+			if (latest.summary) {
+				await refetch();
+				setSampleSpaceName("");
+				navigate(`/spaces/${latest.summary.space_id}/dashboard`);
+			}
+			return false;
+		}
+		if (latest.status === "failed") {
+			throw new Error(latest.error || "Sample data generation failed.");
+		}
+		return true;
+	};
+
+	const pollSampleJob = async (jobId: string, signal?: AbortSignal) => {
+		const pollIntervalMs = 1200;
+		const timeoutMs = 10 * 60 * 1000;
+		const startAt = Date.now();
+		while (true) {
+			if (signal?.aborted) return;
+			if (Date.now() - startAt > timeoutMs) {
+				throw new Error(
+					"Sample data generation is taking longer than expected. Please check back later.",
+				);
+			}
+			const latest = await spaceApi.getSampleSpaceJob(jobId);
+			if (signal?.aborted) return;
+			const shouldContinue = await handleSampleJobUpdate(latest);
+			if (!shouldContinue) return;
+			await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+		}
+	};
+
 	const handleCreateSample = async () => {
 		const result = buildSamplePayload();
 		if (!result.payload) {
@@ -68,14 +122,22 @@ export default function SpacesIndexRoute() {
 
 		setSampleError(null);
 		setIsGeneratingSample(true);
+		setSampleJob(null);
+		if (pollAbortController) {
+			pollAbortController.abort();
+		}
+		const pollController = new AbortController();
+		pollAbortController = pollController;
 		try {
-			const summary = await spaceApi.createSampleSpace(result.payload);
-			await refetch();
-			setSampleSpaceName("");
-			navigate(`/spaces/${summary.space_id}/dashboard`);
+			const job = await spaceApi.createSampleSpaceJob(result.payload);
+			setSampleJob(job);
+			await pollSampleJob(job.job_id, pollController.signal);
 		} catch (err) {
 			setSampleError(err instanceof Error ? err.message : "Failed to create sample space");
 		} finally {
+			if (pollAbortController === pollController) {
+				pollAbortController = null;
+			}
 			setIsGeneratingSample(false);
 		}
 	};
@@ -135,12 +197,14 @@ export default function SpacesIndexRoute() {
 						value={sampleScenario()}
 						onChange={(e) => setSampleScenario(e.currentTarget.value)}
 					>
-						<option value="renewable-ops">Renewable operations (non-personal)</option>
+						<For each={scenarios() || []}>
+							{(scenario) => <option value={scenario.id}>{scenario.label}</option>}
+						</For>
 					</select>
 					<input
 						type="number"
 						class="ui-input"
-						min="1"
+						min="100"
 						placeholder="Entry count"
 						value={sampleEntryCount()}
 						onInput={(e) => setSampleEntryCount(e.currentTarget.value)}
@@ -167,6 +231,14 @@ export default function SpacesIndexRoute() {
 						<p class="ui-alert ui-alert-error text-sm">{sampleError()}</p>
 					</Show>
 				</div>
+				<Show when={sampleJob()}>
+					<div class="mt-3 text-sm ui-muted">
+						<div>Status: {sampleJob()?.status_message || sampleJob()?.status}</div>
+						<div>
+							Progress: {sampleJob()?.processed_entries} / {sampleJob()?.total_entries}
+						</div>
+					</div>
+				</Show>
 			</section>
 
 			<section class="ui-card">

@@ -32,12 +32,14 @@ from .utils import (
     storage_config_from_root,
     storage_uri_from_root,
     validate_id,
+    validate_uuid,
 )
 
 logger = logging.getLogger(__name__)
 
 EMPTY_INDEX_DATA = {"entries": {}, "form_stats": {}}
 EMPTY_STATS_DATA = {"last_indexed": 0.0, "entry_count": 0, "tag_counts": {}}
+MIN_SAMPLE_ENTRY_COUNT = 100
 
 
 def _resolve_space_paths(
@@ -164,8 +166,8 @@ def create_sample_space(
     config = storage_config_from_root(root_path, fs)
     resolved = options or SampleSpaceOptions()
 
-    if resolved.entry_count < 1:
-        msg_err = "entry_count must be >= 1"
+    if resolved.entry_count < MIN_SAMPLE_ENTRY_COUNT:
+        msg_err = f"entry_count must be >= {MIN_SAMPLE_ENTRY_COUNT}"
         raise ValueError(msg_err)
     if resolved.seed is not None and resolved.seed < 0:
         msg_err = "seed must be >= 0"
@@ -186,6 +188,66 @@ def create_sample_space(
             raise SpaceExistsError(msg) from exc
         if "unknown sample data scenario" in msg.lower():
             raise ValueError(msg) from exc
+        raise
+
+
+def list_sample_scenarios() -> list[dict[str, Any]]:
+    """List available sample-data scenarios."""
+    return ugoite_core.list_sample_scenarios()
+
+
+def create_sample_space_job(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    options: SampleSpaceOptions | None = None,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Create a sample-data generation job."""
+    safe_space_id = validate_id(space_id, "space_id")
+    config = storage_config_from_root(root_path, fs)
+    resolved = options or SampleSpaceOptions()
+
+    if resolved.entry_count < MIN_SAMPLE_ENTRY_COUNT:
+        msg_err = f"entry_count must be >= {MIN_SAMPLE_ENTRY_COUNT}"
+        raise ValueError(msg_err)
+    if resolved.seed is not None and resolved.seed < 0:
+        msg_err = "seed must be >= 0"
+        raise ValueError(msg_err)
+
+    try:
+        return run_async(
+            ugoite_core.create_sample_space_job,
+            config,
+            safe_space_id,
+            resolved.scenario,
+            resolved.entry_count,
+            resolved.seed,
+        )
+    except (RuntimeError, ValueError, OverflowError, TypeError) as exc:
+        msg = str(exc)
+        if "already exists" in msg:
+            raise SpaceExistsError(msg) from exc
+        if "unknown sample data scenario" in msg.lower():
+            raise ValueError(msg) from exc
+        raise
+
+
+def get_sample_space_job(
+    root_path: str | Path,
+    job_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Get sample-data job status."""
+    safe_job_id = validate_uuid(job_id, "job_id")
+    config = storage_config_from_root(root_path, fs)
+    try:
+        return run_async(ugoite_core.get_sample_space_job, config, safe_job_id)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise FileNotFoundError(msg) from exc
         raise
 
 
