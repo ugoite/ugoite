@@ -9,7 +9,17 @@ fn memory_cache() -> &'static Mutex<HashMap<String, Operator>> {
     MEMORY_OPERATORS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn is_gcs_uri(uri: &str) -> bool {
+    uri.starts_with("gcs://") || uri.starts_with("gs://")
+}
+
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
+    if is_gcs_uri(uri) {
+        return Err(anyhow::anyhow!(
+            "GCS storage is disabled in this build. Use fs://, memory://, or s3:// instead"
+        ));
+    }
+
     if uri.starts_with("memory://") {
         let mut cache = memory_cache()
             .lock()

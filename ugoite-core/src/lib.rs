@@ -211,6 +211,10 @@ fn test_storage_connection_py<'a>(
         serde_json::json!({"status": "ok", "mode": "local"})
     } else if uri.starts_with("s3://") {
         serde_json::json!({"status": "ok", "mode": "s3"})
+    } else if uri.starts_with("gcs://") || uri.starts_with("gs://") {
+        return Err(PyValueError::new_err(
+            "GCS storage is disabled in this build. Use fs://, memory://, or s3:// instead",
+        ));
     } else {
         return Err(PyValueError::new_err("Unsupported storage connector"));
     };
