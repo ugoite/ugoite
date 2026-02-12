@@ -1,6 +1,6 @@
 #!/bin/bash
 # Simple smoke tests using curl - no Node.js required
-# Usage: ./scripts/smoke-test.sh
+# Usage: ./e2e/scripts/smoke-test.sh
 
 # Don't exit on error - we want to run all tests
 set +e

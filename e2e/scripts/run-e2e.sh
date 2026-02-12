@@ -1,6 +1,6 @@
 #!/bin/bash
 # E2E test runner script
-# Usage: ./scripts/run-e2e.sh [test-type]
+# Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "entries", or "full" (runs all tests)
 #
 # Environment variables:
@@ -17,7 +17,7 @@ export BROWSERSLIST_IGNORE_OLD_DATA=true
 
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Kill any existing processes on required ports
 echo "Checking for existing processes on ports 8000 and 3000..."
@@ -145,7 +145,7 @@ case "$TEST_TYPE" in
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"
-        echo "Usage: ./scripts/run-e2e.sh [smoke|entries|full]"
+        echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|full]"
         exit 1
         ;;
 esac

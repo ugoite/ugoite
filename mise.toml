@@ -42,12 +42,12 @@ run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
 
 [tasks.e2e]
 description = "Run E2E tests with backend and frontend servers"
-run = "bash scripts/run-e2e.sh full"
+run = "bash e2e/scripts/run-e2e.sh full"
 
 [tasks."e2e:smoke"]
 description = "Run only smoke E2E tests (fast verification)"
-run = "bash scripts/run-e2e.sh smoke"
+run = "bash e2e/scripts/run-e2e.sh smoke"
 
 [tasks."e2e:entries"]
 description = "Run entries E2E tests"
-run = "bash scripts/run-e2e.sh entries"
+run = "bash e2e/scripts/run-e2e.sh entries"
