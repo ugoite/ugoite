@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from collections.abc import Awaitable as AwaitableABC
 from pathlib import Path
-from typing import Any, ParamSpec, TypeVar, cast, overload
+from typing import Any, cast, overload
 
 import fsspec
 from fsspec.core import url_to_fs
@@ -218,57 +218,53 @@ def fs_write_json(
             cast("Any", fs).chmod(path, mode)
 
 
-_P = ParamSpec("_P")
-_T = TypeVar("_T")
-
-
 # ---------------------------------------------------------------------------
 # ugoite-core bridge helpers
 # ---------------------------------------------------------------------------
 
 
 @overload
-def run_async(
-    awaitable_or_factory: Awaitable[_T],
-    *args: _P.args,
-    **kwargs: _P.kwargs,
-) -> _T: ...
+def run_async[**P, T](
+    awaitable_or_factory: Awaitable[T],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> T: ...
 
 
 @overload
-def run_async(
-    awaitable_or_factory: Callable[_P, Awaitable[_T]],
-    *args: _P.args,
-    **kwargs: _P.kwargs,
-) -> _T: ...
+def run_async[**P, T](
+    awaitable_or_factory: Callable[P, Awaitable[T]],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> T: ...
 
 
 @overload
-def run_async(
-    awaitable_or_factory: Callable[_P, _T],
-    *args: _P.args,
-    **kwargs: _P.kwargs,
-) -> _T: ...
+def run_async[**P, T](
+    awaitable_or_factory: Callable[P, T],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> T: ...
 
 
-def run_async(
-    awaitable_or_factory: Awaitable[_T] | Callable[_P, _T | Awaitable[_T]],
-    *args: _P.args,
-    **kwargs: _P.kwargs,
-) -> _T:
+def run_async[**P, T](
+    awaitable_or_factory: Awaitable[T] | Callable[P, T | Awaitable[T]],
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> T:
     """Run an async coroutine from sync code.
 
     Accepts either an awaitable or a callable that returns an awaitable.
     """
 
-    async def _runner() -> _T:
+    async def _runner() -> T:
         if isinstance(awaitable_or_factory, AwaitableABC):
-            return await cast("Awaitable[_T]", awaitable_or_factory)
+            return await cast("Awaitable[T]", awaitable_or_factory)
         if callable(awaitable_or_factory):
             result = awaitable_or_factory(*args, **kwargs)
             if isinstance(result, AwaitableABC):
-                return await cast("Awaitable[_T]", result)
-            return cast("_T", result)
+                return await cast("Awaitable[T]", result)
+            return cast("T", result)
         msg = "Expected awaitable or awaitable factory"
         raise TypeError(msg)
 
@@ -277,7 +273,7 @@ def run_async(
     except RuntimeError:
         return asyncio.run(_runner())
 
-    def _run_in_new_loop() -> _T:
+    def _run_in_new_loop() -> T:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
