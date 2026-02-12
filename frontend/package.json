@@ -15,14 +15,14 @@
 		"@codemirror/lang-sql": "^6.9.0",
 		"@codemirror/lint": "^6.9.4",
 		"@codemirror/state": "^6.5.1",
-		"@codemirror/view": "^6.39.13",
+		"@codemirror/view": "^6.39.14",
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.1",
 		"solid-js": "^1.9.11",
 		"vinxi": "^0.5.11"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.3.14",
+		"@biomejs/biome": "2.3.15",
 		"@solidjs/testing-library": "^0.8.10",
 		"@tailwindcss/vite": "^4.1.18",
 		"@testing-library/dom": "^10.4.0",

@@ -7,6 +7,7 @@ import json
 import os
 import posixpath
 import re
+import uuid
 from collections.abc import Awaitable, Callable
 from collections.abc import Awaitable as AwaitableABC
 from pathlib import Path
@@ -118,6 +119,16 @@ def validate_id(identifier: str, name: str) -> str:
         raise ValueError(msg)
     # Return a sanitized copy - this breaks the taint chain
     return str(identifier)
+
+
+def validate_uuid(val: str, name: str) -> str:
+    """Validate that value is a valid UUID."""
+    try:
+        uuid.UUID(val)
+        return str(val)
+    except ValueError as e:
+        msg = f"Invalid {name}: {val}. Must be a valid UUID."
+        raise ValueError(msg) from e
 
 
 def write_json_secure(
