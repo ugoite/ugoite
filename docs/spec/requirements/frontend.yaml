@@ -214,6 +214,29 @@ requirements:
           tests:
             - should surface validation errors without object placeholders [REQ-FE-043]
 
+  - id: REQ-FE-044
+    title: Frontend multilingual dictionary and locale switching
+    description: |
+      Frontend UI labels MUST support dictionary-based localization loaded from
+      the shared workspace dictionary, with at least English and Japanese.
+      Users MUST be able to switch language from the theme/settings menu and
+      the selected locale MUST persist in localStorage.
+    related_spec:
+      - architecture/frontend-backend-interface.md
+      - tasks/tasks.md#phase-7-5-ui-polish-added
+    priority: medium
+    status: implemented
+    tests:
+      vitest:
+        - file: frontend/src/lib/i18n.test.ts
+          tests:
+            - switches locale and translates labels
+            - applies locale attributes on initialize
+        - file: frontend/src/components/ThemeMenu.test.tsx
+          tests:
+            - shows language options in settings menu
+            - switches locale when language changes
+
   - id: REQ-FE-036
     title: SQL Query Editor
     description: |

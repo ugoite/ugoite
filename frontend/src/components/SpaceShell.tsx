@@ -2,6 +2,7 @@ import { A } from "@solidjs/router";
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 import { loadingState } from "~/lib/loading";
+import { t } from "~/lib/i18n";
 import { ThemeMenu } from "~/components/ThemeMenu";
 
 export type SpaceTopTab = "dashboard" | "search";
@@ -34,14 +35,14 @@ export function SpaceShell(props: SpaceShellProps) {
 								class="ui-tab"
 								classList={{ "ui-tab-active": props.activeTopTab === "dashboard" }}
 							>
-								dashboard
+								{t("spaceShell.top.dashboard")}
 							</A>
 							<A
 								href={`/spaces/${props.spaceId}/search`}
 								class="ui-tab"
 								classList={{ "ui-tab-active": props.activeTopTab === "search" }}
 							>
-								search
+								{t("spaceShell.top.search")}
 							</A>
 						</div>
 					</div>
@@ -63,14 +64,14 @@ export function SpaceShell(props: SpaceShellProps) {
 							class="ui-tab ui-tab-secondary"
 							classList={{ "ui-tab-active": props.activeBottomTab === "object" }}
 						>
-							object
+							{t("spaceShell.bottom.object")}
 						</A>
 						<A
 							href={`/spaces/${props.spaceId}/forms${props.bottomTabHrefSuffix || ""}`}
 							class="ui-tab ui-tab-secondary"
 							classList={{ "ui-tab-active": props.activeBottomTab === "grid" }}
 						>
-							grid
+							{t("spaceShell.bottom.grid")}
 						</A>
 					</div>
 				</div>
