@@ -3,7 +3,7 @@
 ## Space Layout
 
 ```
-global.json                           # Root: space registry
+hmac.json                             # Root: response-signing key material
 spaces/
   {space_id}/                         # Each space is self-contained
     meta.json                         # Space metadata
@@ -19,15 +19,12 @@ spaces/
 
 ## Root Level
 
-### `global.json`
+### `hmac.json`
 
-Space registry and system configuration:
+Root response-signing key material:
 
 ```json
 {
-  "version": 1,
-  "default_storage": "fs:///Users/alex/ugoite",
-  "spaces": ["space-main", "space-research"],
   "hmac_key_id": "key-2025-11-01",
   "hmac_key": "base64-encoded-secret",
   "last_rotation": "2025-11-15T00:00:00Z"

@@ -1,7 +1,8 @@
 """Integrity helpers for entry storage.
 
 This module centralizes checksum and signature logic so tests can mock the
-provider while the production code derives its secret from ``global.json``.
+provider while the production code derives its secret from each space's
+``meta.json``.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ class IntegrityProvider:
         *,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> IntegrityProvider:
-        """Build a provider using the space's root ``global.json``.
+        """Build a provider using the space ``meta.json``.
 
         Args:
             space_path: Absolute path to the space directory.
@@ -43,7 +44,7 @@ class IntegrityProvider:
             An ``IntegrityProvider`` configured with the space's HMAC key.
 
         Raises:
-            FileNotFoundError: If ``global.json`` cannot be located.
+            FileNotFoundError: If ``meta.json`` cannot be located.
             ValueError: If the file does not contain the expected key material.
 
         """
@@ -56,23 +57,9 @@ class IntegrityProvider:
 
         meta: dict[str, Any] = fs_read_json(fs_obj, meta_path)
 
-        storage_root = meta.get("storage", {}).get("root")
-        if not storage_root:
-            msg = "Space metadata missing storage.root"
-            raise ValueError(msg)
-
-        storage_fs, storage_path = get_fs_and_path(storage_root, fs_obj)
-        global_json = fs_join(storage_path, "global.json")
-
-        if not fs_exists(storage_fs, global_json):
-            msg = f"global.json not found for space at {storage_root}"
-            raise FileNotFoundError(msg)
-
-        global_data = fs_read_json(storage_fs, global_json)
-
-        key_b64 = global_data.get("hmac_key")
+        key_b64 = meta.get("hmac_key")
         if not key_b64:
-            msg = "Missing hmac_key in global.json"
+            msg = "Missing hmac_key in meta.json"
             raise ValueError(msg)
 
         try:

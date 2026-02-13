@@ -1,5 +1,4 @@
 // REQ-FE-001: Space selector
-// REQ-FE-002: Automatic default space creation
 // REQ-FE-003: Persist space selection
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createRoot } from "solid-js";
@@ -32,7 +31,7 @@ describe("createSpaceStore", () => {
 		vi.clearAllMocks();
 	});
 
-	it("should create default space when none exist", async () => {
+	it("should keep selection empty when no spaces exist", async () => {
 		await createRoot(async (dispose) => {
 			const store = createSpaceStore();
 
@@ -41,10 +40,9 @@ describe("createSpaceStore", () => {
 
 			const selectedId = await store.loadSpaces();
 
-			expect(selectedId).toBe("default");
-			expect(store.spaces()).toHaveLength(1);
-			expect(store.spaces()[0].id).toBe("default");
-			expect(store.selectedSpaceId()).toBe("default");
+			expect(selectedId).toBe("");
+			expect(store.spaces()).toHaveLength(0);
+			expect(store.selectedSpaceId()).toBeNull();
 			expect(store.initialized()).toBe(true);
 
 			dispose();
@@ -96,29 +94,6 @@ describe("createSpaceStore", () => {
 
 			expect(selectedId).toBe("space-2");
 			expect(store.selectedSpaceId()).toBe("space-2");
-
-			dispose();
-		});
-	});
-
-	it("should create new space", async () => {
-		const existingWs: Space = {
-			id: "existing",
-			name: "existing",
-			created_at: "2025-01-01T00:00:00Z",
-		};
-		seedSpace(existingWs);
-
-		await createRoot(async (dispose) => {
-			const store = createSpaceStore();
-			await store.loadSpaces();
-
-			expect(store.spaces()).toHaveLength(1);
-
-			const newWs = await store.createSpace("new-space");
-
-			expect(newWs.id).toBe("new-space");
-			expect(store.spaces()).toHaveLength(2);
 
 			dispose();
 		});

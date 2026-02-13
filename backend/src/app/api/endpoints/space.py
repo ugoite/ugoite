@@ -8,10 +8,9 @@ import ugoite_core
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import get_root_path
-from app.core.ids import validate_id, validate_uuid
+from app.core.ids import validate_id
 from app.core.storage import space_uri, storage_config_from_root
 from app.models.payloads import (
-    SampleSpaceCreate,
     SpaceConnectionRequest,
     SpaceCreate,
     SpacePatch,
@@ -183,133 +182,6 @@ async def create_space_endpoint(
         "name": payload.name,
         "path": _space_uri(space_id),
     }
-
-
-@router.post("/spaces/sample-data", status_code=status.HTTP_201_CREATED)
-async def create_sample_space_endpoint(
-    payload: SampleSpaceCreate,
-) -> dict[str, Any]:
-    """Create a new space populated with generated sample data."""
-    _validate_path_id(payload.space_id, "space_id")
-    storage_config = _storage_config()
-
-    try:
-        return await ugoite_core.create_sample_space(
-            storage_config,
-            payload.space_id,
-            payload.scenario,
-            payload.entry_count,
-            payload.seed,
-        )
-    except RuntimeError as e:
-        msg = str(e)
-        lowered = msg.lower()
-        if "already exists" in lowered:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=msg,
-            ) from e
-        if "unknown sample data scenario" in lowered:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=msg,
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
-        ) from e
-    except Exception as e:
-        logger.exception("Failed to create sample space")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
-
-
-@router.get("/spaces/sample-data/scenarios")
-async def list_sample_scenarios_endpoint() -> list[dict[str, Any]]:
-    """List available sample-data scenarios."""
-    try:
-        return ugoite_core.list_sample_scenarios()
-    except Exception as e:
-        logger.exception("Failed to list sample data scenarios")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
-
-
-@router.post("/spaces/sample-data/jobs", status_code=status.HTTP_202_ACCEPTED)
-async def create_sample_space_job_endpoint(
-    payload: SampleSpaceCreate,
-) -> dict[str, Any]:
-    """Create a sample-data generation job."""
-    _validate_path_id(payload.space_id, "space_id")
-    storage_config = _storage_config()
-
-    try:
-        return await ugoite_core.create_sample_space_job(
-            storage_config,
-            payload.space_id,
-            payload.scenario,
-            payload.entry_count,
-            payload.seed,
-        )
-    except RuntimeError as e:
-        msg = str(e)
-        lowered = msg.lower()
-        if "already exists" in lowered:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=msg,
-            ) from e
-        if "unknown sample data scenario" in lowered:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=msg,
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
-        ) from e
-    except Exception as e:
-        logger.exception("Failed to create sample space job")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
-
-
-@router.get("/spaces/sample-data/jobs/{job_id}")
-async def get_sample_space_job_endpoint(job_id: str) -> dict[str, Any]:
-    """Get sample-data job status."""
-    try:
-        validate_uuid(job_id, "job_id")
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-    storage_config = _storage_config()
-    try:
-        return await ugoite_core.get_sample_space_job(storage_config, job_id)
-    except RuntimeError as e:
-        msg = str(e)
-        if "not found" in msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg,
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
-        ) from e
-    except Exception as e:
-        logger.exception("Failed to read sample space job")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
 
 
 @router.get("/spaces/{space_id}")

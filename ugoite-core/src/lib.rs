@@ -556,10 +556,11 @@ fn update_entry_index<'a>(
 fn load_hmac_material<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
+    space_id: String,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     pyo3_async_runtimes::tokio::future_into_py::<_, PyObject>(py, async move {
-        let (key_id, secret) = integrity::load_hmac_material(&op)
+        let (key_id, secret) = integrity::load_hmac_material(&op, &space_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Python::with_gil(|py| {

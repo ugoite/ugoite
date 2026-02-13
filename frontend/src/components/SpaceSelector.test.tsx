@@ -14,7 +14,6 @@ describe("SpaceSelector", () => {
 
 	it("should render space options", () => {
 		const onSelect = vi.fn();
-		const onCreate = vi.fn();
 
 		render(() => (
 			<SpaceSelector
@@ -23,7 +22,6 @@ describe("SpaceSelector", () => {
 				loading={false}
 				error={null}
 				onSelect={onSelect}
-				onCreate={onCreate}
 			/>
 		));
 
@@ -38,7 +36,6 @@ describe("SpaceSelector", () => {
 
 	it("should show loading state", () => {
 		const onSelect = vi.fn();
-		const onCreate = vi.fn();
 
 		render(() => (
 			<SpaceSelector
@@ -47,7 +44,6 @@ describe("SpaceSelector", () => {
 				loading={true}
 				error={null}
 				onSelect={onSelect}
-				onCreate={onCreate}
 			/>
 		));
 
@@ -56,7 +52,6 @@ describe("SpaceSelector", () => {
 
 	it("should show error message", () => {
 		const onSelect = vi.fn();
-		const onCreate = vi.fn();
 
 		render(() => (
 			<SpaceSelector
@@ -65,7 +60,6 @@ describe("SpaceSelector", () => {
 				loading={false}
 				error="Failed to load"
 				onSelect={onSelect}
-				onCreate={onCreate}
 			/>
 		));
 
@@ -74,7 +68,6 @@ describe("SpaceSelector", () => {
 
 	it("should call onSelect when space changes", async () => {
 		const onSelect = vi.fn();
-		const onCreate = vi.fn();
 
 		render(() => (
 			<SpaceSelector
@@ -83,7 +76,6 @@ describe("SpaceSelector", () => {
 				loading={false}
 				error={null}
 				onSelect={onSelect}
-				onCreate={onCreate}
 			/>
 		));
 
@@ -91,85 +83,5 @@ describe("SpaceSelector", () => {
 		await fireEvent.change(select, { target: { value: "ws-2" } });
 
 		expect(onSelect).toHaveBeenCalledWith("ws-2");
-	});
-
-	it("should show create form when add button clicked", async () => {
-		const onSelect = vi.fn();
-		const onCreate = vi.fn();
-
-		render(() => (
-			<SpaceSelector
-				spaces={mockSpaces}
-				selectedSpaceId="ws-1"
-				loading={false}
-				error={null}
-				onSelect={onSelect}
-				onCreate={onCreate}
-			/>
-		));
-
-		const addButton = screen.getByTitle("Create new space");
-		await fireEvent.click(addButton);
-
-		expect(screen.getByPlaceholderText("New space name...")).toBeInTheDocument();
-		expect(screen.getByText("Create")).toBeInTheDocument();
-		expect(screen.getByText("Cancel")).toBeInTheDocument();
-	});
-
-	it("should call onCreate when form submitted", async () => {
-		const onSelect = vi.fn();
-		const onCreate = vi.fn();
-
-		render(() => (
-			<SpaceSelector
-				spaces={mockSpaces}
-				selectedSpaceId="ws-1"
-				loading={false}
-				error={null}
-				onSelect={onSelect}
-				onCreate={onCreate}
-			/>
-		));
-
-		// Open create form
-		const addButton = screen.getByTitle("Create new space");
-		await fireEvent.click(addButton);
-
-		// Enter name and submit
-		const input = screen.getByPlaceholderText("New space name...");
-		await fireEvent.input(input, { target: { value: "New Space" } });
-
-		const createButton = screen.getByText("Create");
-		await fireEvent.click(createButton);
-
-		expect(onCreate).toHaveBeenCalledWith("New Space");
-	});
-
-	it("should hide create form when cancel clicked", async () => {
-		const onSelect = vi.fn();
-		const onCreate = vi.fn();
-
-		render(() => (
-			<SpaceSelector
-				spaces={mockSpaces}
-				selectedSpaceId="ws-1"
-				loading={false}
-				error={null}
-				onSelect={onSelect}
-				onCreate={onCreate}
-			/>
-		));
-
-		// Open create form
-		const addButton = screen.getByTitle("Create new space");
-		await fireEvent.click(addButton);
-
-		expect(screen.getByPlaceholderText("New space name...")).toBeInTheDocument();
-
-		// Cancel
-		const cancelButton = screen.getByText("Cancel");
-		await fireEvent.click(cancelButton);
-
-		expect(screen.queryByPlaceholderText("New space name...")).not.toBeInTheDocument();
 	});
 });

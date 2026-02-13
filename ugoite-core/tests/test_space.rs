@@ -26,20 +26,6 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert!(op.exists(&format!("{}/forms/", ws_path)).await?);
     assert!(op.exists(&format!("{}/assets/", ws_path)).await?);
 
-    // Verify global.json exists at root
-    assert!(op.exists("global.json").await?);
-
-    // Verify content of global.json
-    // read() returns bytes (Buffer)
-    let global_bytes = op.read("global.json").await?.to_vec();
-    let global_json: Value = serde_json::from_slice(&global_bytes)?;
-
-    // assert space is in global_json["spaces"]
-    let spaces = global_json.get("spaces").and_then(|v| v.as_array());
-    assert!(spaces.is_some());
-    let exists = spaces.unwrap().iter().any(|v| v.as_str() == Some(ws_id));
-    assert!(exists);
-
     // Verify meta.json content
     let meta_bytes = op.read(&meta_path).await?.to_vec();
     let meta: Value = serde_json::from_slice(&meta_bytes)?;
@@ -68,7 +54,7 @@ async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()>
 
 #[tokio::test]
 /// REQ-STO-004
-async fn test_space_req_sto_004_list_spaces_from_global_json() -> anyhow::Result<()> {
+async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
     space::create_space(&op, "sp-a", "/tmp").await?;
@@ -83,17 +69,13 @@ async fn test_space_req_sto_004_list_spaces_from_global_json() -> anyhow::Result
 
 #[tokio::test]
 /// REQ-STO-008
-async fn test_space_req_sto_008_list_spaces_recovers_from_corrupt_global() -> anyhow::Result<()> {
+async fn test_space_req_sto_008_list_spaces_ignores_missing_meta() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
-    op.write("global.json", b"{invalid json".to_vec()).await?;
+    op.create_dir("spaces/no-meta/").await?;
 
     let listed = space::list_spaces(&op).await?;
     assert!(listed.is_empty());
-
-    let global_bytes = op.read("global.json").await?.to_vec();
-    let global_json: Value = serde_json::from_slice(&global_bytes)?;
-    assert!(global_json.get("spaces").is_some());
 
     Ok(())
 }

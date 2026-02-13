@@ -180,19 +180,12 @@ requirements:
       - api/rest.md#spaces
       - features/spaces.yaml
     priority: medium
-    status: implemented
+    status: planned
     tests:
       pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_sample_space
         - file: ugoite-cli/tests/test_space.py
           tests:
             - test_create_sample_space_req_api_009
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - should create a sample-data space [REQ-API-009]
       rust:
         - file: ugoite-core/tests/test_sample_data.rs
           tests:
@@ -207,18 +200,8 @@ requirements:
       - api/rest.md#spaces
       - features/spaces.yaml
     priority: medium
-    status: implemented
+    status: planned
     tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_list_sample_scenarios_req_api_010
-            - test_create_sample_space_job_req_api_010
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - should list sample-data scenarios [REQ-API-010]
-            - should create and fetch sample-data jobs [REQ-API-010]
       rust:
         - file: ugoite-core/tests/test_sample_data.rs
           tests:
