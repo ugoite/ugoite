@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client";
 
 const spaceId = "default";
@@ -64,7 +64,7 @@ test.describe("UI theme flows", () => {
 			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
 			await page.getByLabel("Query name").fill(queryName);
 			await page.getByRole("button", { name: "Save" }).click();
-			await waitForQueryButton(page, variableQueryName, spaceId);
+			await waitForQueryButton(page, request, variableQueryName, spaceId);
 			await page.goto(`/spaces/${spaceId}/search`, { waitUntil: "networkidle" });
 			await page.getByPlaceholder("Search queries").fill(variableQueryName);
 			await page
@@ -134,23 +134,21 @@ async function waitForQueryForm(page: Page): Promise<void> {
 
 async function waitForQueryButton(
 	page: Page,
+	request: APIRequestContext,
 	name: string,
 	space: string,
 ): Promise<void> {
-	const locator = page.getByRole("button", { name });
-	for (let attempt = 0; attempt < 3; attempt += 1) {
-		try {
-			await locator.waitFor({ state: "visible", timeout: 20_000 });
-			return;
-		} catch (error) {
-			if (attempt === 2) {
-				throw error;
-			}
-			if (attempt === 0) {
-				await page.reload({ waitUntil: "networkidle" });
-			} else {
-				await page.goto(`/spaces/${space}/queries`, { waitUntil: "networkidle" });
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		const response = await request.get(getBackendUrl(`/spaces/${space}/sql`));
+		if (response.ok()) {
+			const list = (await response.json()) as Array<{ id: string; name: string }>;
+			if (list.some((item) => item.name === name)) {
+				await page.waitForLoadState("networkidle");
+				return;
 			}
 		}
+		await page.waitForTimeout(500);
 	}
+
+	throw new Error(`Timed out waiting for query '${name}' to be listed in /spaces/${space}/sql`);
 }
