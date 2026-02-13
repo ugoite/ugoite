@@ -28,7 +28,7 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 
 	onMount(() => {
 		if (!host) return;
-		const lintSource = (view: EditorView) => {
+		const lintSource: Parameters<typeof linter>[0] = (view) => {
 			const diagnostics = sqlLintDiagnostics(view.state.doc.toString());
 			props.onDiagnostics?.(diagnostics);
 			return diagnostics;
@@ -51,7 +51,8 @@ export function SqlQueryEditor(props: SqlQueryEditorProps) {
 		});
 
 		view = new EditorView({ state, parent: host });
-		lintSource(view);
+		const diagnostics = sqlLintDiagnostics(view.state.doc.toString());
+		props.onDiagnostics?.(diagnostics);
 	});
 
 	createEffect(() => {
