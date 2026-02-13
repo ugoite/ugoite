@@ -4,7 +4,7 @@ import type { Space, SpacePatchPayload } from "~/lib/types";
 export interface SpaceSettingsProps {
 	space: Space;
 	onSave: (payload: SpacePatchPayload) => Promise<void>;
-	onTestConnection?: (config: { uri: string }) => Promise<{ status: string }>;
+	onTestConnection?: (config: Record<string, unknown>) => Promise<{ status: string }>;
 }
 
 /**

@@ -18,9 +18,10 @@ export default function SpaceSettingsRoute() {
 		await refetch();
 	};
 
-	const handleTestConnection = async (config: { uri: string }) => {
+	const handleTestConnection = async (config: Record<string, unknown>) => {
+		const uri = typeof config.uri === "string" ? config.uri : "";
 		return await spaceApi.testConnection(spaceId(), {
-			storage_config: { uri: config.uri },
+			storage_config: { uri },
 		});
 	};
 

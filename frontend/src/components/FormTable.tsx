@@ -155,7 +155,7 @@ export function FormTable(props: FormTableProps) {
 	const [isEditMode, setIsEditMode] = createSignal(false);
 	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
 
-	const [entries, { refetch, mutate }] = createResource(
+	const [entries, { refetch }] = createResource(
 		() => {
 			if (!props.spaceId || !props.entryForm?.name) return false;
 			return { id: props.spaceId, formName: props.entryForm.name };
@@ -282,6 +282,8 @@ export function FormTable(props: FormTableProps) {
 
 	const handleCellUpdate = async (entryId: string, field: string, value: string) => {
 		try {
+			const currentRow = entries()?.find((item) => item.id === entryId);
+
 			// Fetch full entry to get content and revision_id
 			const entry = await entryApi.get(props.spaceId, entryId);
 			let updatedMarkdown = entry.content;
@@ -290,7 +292,8 @@ export function FormTable(props: FormTableProps) {
 				if (entry.title === value) return;
 				updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
 			} else {
-				if (String(entry.properties?.[field] ?? "") === value) return;
+				const currentValue = String(currentRow?.properties?.[field] ?? "");
+				if (currentValue === value) return;
 				updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
 			}
 
@@ -298,24 +301,8 @@ export function FormTable(props: FormTableProps) {
 				markdown: updatedMarkdown,
 				parent_revision_id: entry.revision_id,
 			});
-
-			// Partial rendering: update local state with server response
-			mutate((prev) => {
-				if (!prev) return prev;
-				return prev.map((n) => {
-					if (n.id === entryId) {
-						const next = { ...n };
-						if (field === "title") {
-							next.title = value;
-						} else {
-							next.properties = { ...(n.properties || {}), [field]: value };
-						}
-						next.updated_at = updatedEntry.updated_at;
-						return next;
-					}
-					return n;
-				});
-			});
+			void updatedEntry;
+			refetch();
 		} catch (err) {
 			// biome-ignore lint/suspicious/noConsole: error logging
 			console.error("Update failed", err);
