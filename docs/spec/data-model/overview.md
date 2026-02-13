@@ -58,7 +58,7 @@ Reserved metadata column names include (case-insensitive):
 
 `id`, `entry_id`, `title`, `form`, `tags`, `links`, `assets`,
 `created_at`, `updated_at`, `revision_id`, `parent_revision_id`,
-`deleted`, `deleted_at`, `author`, `canvas_position`, `integrity`,
+`deleted`, `deleted_at`, `author`, `integrity`,
 `space_id`, `word_count`.
 
 The metadata column list is treated as an internal system contract and may expand

@@ -520,7 +520,6 @@ class Indexer:
             "word_count": word_count,
             "tags": meta_json.get("tags", []),
             "links": meta_json.get("links", []),
-            "canvas_position": meta_json.get("canvas_position", {}),
             "checksum": (meta_json.get("integrity") or {}).get("checksum"),
             "validation_warnings": warnings,
         }
