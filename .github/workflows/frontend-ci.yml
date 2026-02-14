@@ -46,4 +46,23 @@ jobs:
         run: bun run test:run --reporter=junit --outputFile=vitest-junit.xml
 
       - name: Fail on skipped frontend tests
-        run: python3 .github/scripts/assert_junit_no_skips.py frontend/vitest-junit.xml --label frontend
+        run: |
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("frontend/vitest-junit.xml")
+          if not report.exists():
+            raise SystemExit(f"missing junit report: {report}")
+
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          tests = sum(int(float(s.attrib.get("tests", "0") or 0)) for s in suites)
+          if tests == 0:
+            raise SystemExit("frontend tests: zero executed tests")
+          if skipped > 0:
+            raise SystemExit(f"frontend tests: skipped={skipped} is not allowed")
+          sys.stdout.write(f"frontend tests OK: tests={tests}, skipped={skipped}\n")
+          PY

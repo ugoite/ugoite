@@ -114,7 +114,7 @@ async def create_form_endpoint(
             or "target_form" in lowered
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=msg,
             ) from e
         raise HTTPException(

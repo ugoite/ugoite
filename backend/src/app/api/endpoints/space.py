@@ -93,7 +93,7 @@ async def _validate_entry_markdown_against_form(
                 detail="Failed to load form definition",
             ) from e
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Form not found: {entry_form}",
         ) from e
 
@@ -103,7 +103,7 @@ async def _validate_entry_markdown_against_form(
     )
     if warnings:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=_format_form_validation_errors(warnings),
         )
 
