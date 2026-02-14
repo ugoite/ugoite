@@ -1,0 +1,20 @@
+version: "0.1"
+updated: "2026-02-14"
+page:
+  id: space-query-legacy
+  title: Space Query Legacy
+  route: /spaces/{space_id}/query
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+  body:
+    - id: query-legacy-content
+      type: sql-editor
+      title: Query editor

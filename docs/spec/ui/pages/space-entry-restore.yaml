@@ -1,0 +1,20 @@
+version: "0.1"
+updated: "2026-02-14"
+page:
+  id: space-entry-restore
+  title: Space Entry Restore
+  route: /spaces/{space_id}/entries/{entry_id}/restore
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+  body:
+    - id: restore-action
+      type: button
+      label: Restore
