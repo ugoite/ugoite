@@ -1028,7 +1028,7 @@ fn struct_array_from_fields(
             }
             "list" => list_array_from_values(value, field.as_ref())?,
             "object_list" => object_list_array_from_values(value, field.as_ref())?,
-            "markdown" | "string" | "row_reference" => {
+            "sql" | "markdown" | "string" | "row_reference" => {
                 let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
                 Arc::new(StringArray::from(vec![string_value]))
             }
@@ -1312,7 +1312,7 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, form_def: &Va
                     }
                     Some(Value::Array(items))
                 }),
-            "markdown" | "string" | "row_reference" => column
+            "sql" | "markdown" | "string" | "row_reference" => column
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .and_then(|array| {
