@@ -1,0 +1,259 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: spec/architecture/stack.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/spec/architecture/stack.md</p> <h1>Technology Stack</h1>
+<h2>Overview</h2>
+<p>Ugoite uses a modern stack optimized for local-first operation and AI integration.</p>
+<h2>Core Technologies</h2>
+<h3>ugoite-core (Rust Crate)</h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Rust</td>
+<td>1.75+</td>
+<td>Core language</td>
+</tr>
+<tr>
+<td><a href="https://opendal.apache.org/">OpenDAL</a></td>
+<td>Latest</td>
+<td>Storage abstraction (local, S3, GCS, memory)</td>
+</tr>
+<tr>
+<td><a href="https://serde.rs/">serde</a></td>
+<td>Latest</td>
+<td>JSON serialization</td>
+</tr>
+<tr>
+<td><a href="https://pyo3.rs/">pyo3</a></td>
+<td>Latest</td>
+<td>Python bindings</td>
+</tr>
+<tr>
+<td><a href="https://rustwasm.github.io/wasm-bindgen/">wasm-bindgen</a></td>
+<td>Latest</td>
+<td>WebAssembly bindings (future)</td>
+</tr>
+</tbody></table>
+<h3>ugoite-cli (Python)</h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Python</td>
+<td>3.12+</td>
+<td>Runtime</td>
+</tr>
+<tr>
+<td>Typer</td>
+<td>Latest</td>
+<td>CLI framework</td>
+</tr>
+<tr>
+<td>pyo3 bindings</td>
+<td>-</td>
+<td>Rust core integration</td>
+</tr>
+</tbody></table>
+<h3>Backend (Python/FastAPI)</h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Python</td>
+<td>3.12+</td>
+<td>Runtime</td>
+</tr>
+<tr>
+<td>FastAPI</td>
+<td>Latest</td>
+<td>Web framework</td>
+</tr>
+<tr>
+<td>uvicorn</td>
+<td>Latest</td>
+<td>ASGI server</td>
+</tr>
+<tr>
+<td>Pydantic</td>
+<td>v2</td>
+<td>Request/response validation</td>
+</tr>
+</tbody></table>
+<h3>Frontend (TypeScript/SolidStart)</h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Bun</td>
+<td>Latest</td>
+<td>JavaScript runtime &amp; package manager</td>
+</tr>
+<tr>
+<td>SolidJS</td>
+<td>Latest</td>
+<td>Reactive UI framework</td>
+</tr>
+<tr>
+<td>SolidStart</td>
+<td>Latest</td>
+<td>Full-stack framework</td>
+</tr>
+<tr>
+<td>TailwindCSS</td>
+<td>Latest</td>
+<td>Styling</td>
+</tr>
+</tbody></table>
+<h2>Development Tools</h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>mise</td>
+<td>Task runner and version management</td>
+</tr>
+<tr>
+<td>uv</td>
+<td>Python package management</td>
+</tr>
+<tr>
+<td>ruff</td>
+<td>Python linting and formatting</td>
+</tr>
+<tr>
+<td>ty</td>
+<td>Python type checking</td>
+</tr>
+<tr>
+<td>biome</td>
+<td>TypeScript/JavaScript linting</td>
+</tr>
+<tr>
+<td>pytest</td>
+<td>Python testing</td>
+</tr>
+<tr>
+<td>vitest</td>
+<td>Frontend unit testing</td>
+</tr>
+<tr>
+<td>bun:test</td>
+<td>E2E testing</td>
+</tr>
+</tbody></table>
+<h2>Storage Backends</h2>
+<p>OpenDAL provides unified access to multiple storage systems:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Use Case</th>
+<th>Configuration</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>fs</code></td>
+<td>Local development, personal use</td>
+<td><code>fs:///path/to/data</code></td>
+</tr>
+<tr>
+<td><code>memory</code></td>
+<td>Testing, temporary storage</td>
+<td><code>memory://</code></td>
+</tr>
+<tr>
+<td><code>s3</code></td>
+<td>Cloud storage (AWS, MinIO)</td>
+<td><code>s3://bucket/prefix</code></td>
+</tr>
+<tr>
+<td><code>gcs</code></td>
+<td>Google Cloud Storage</td>
+<td><code>gcs://bucket/prefix</code></td>
+</tr>
+<tr>
+<td><code>azblob</code></td>
+<td>Azure Blob Storage</td>
+<td><code>azblob://container/prefix</code></td>
+</tr>
+</tbody></table>
+<h2>Build Targets</h2>
+<p>The ugoite-core crate compiles to multiple targets:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Native (x86_64, arm64)</td>
+<td>backend &amp; ugoite-cli via pyo3</td>
+</tr>
+<tr>
+<td>WebAssembly</td>
+<td>Browser-based frontend</td>
+</tr>
+<tr>
+<td>Tauri integration</td>
+<td>Desktop application</td>
+</tr>
+</tbody></table>
+<h2>CI/CD Pipeline</h2>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Tools</th>
+<th>Trigger</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lint</td>
+<td>ruff, biome</td>
+<td>Push, PR</td>
+</tr>
+<tr>
+<td>Type Check</td>
+<td>ty, TypeScript</td>
+<td>Push, PR</td>
+</tr>
+<tr>
+<td>Unit Test</td>
+<td>pytest, vitest</td>
+<td>Push, PR</td>
+</tr>
+<tr>
+<td>E2E Test</td>
+<td>bun:test</td>
+<td>Push, PR</td>
+</tr>
+<tr>
+<td>Build</td>
+<td>Docker, Cargo</td>
+<td>Release</td>
+</tr>
+</tbody></table>
+ </article>  </main> </body></html>

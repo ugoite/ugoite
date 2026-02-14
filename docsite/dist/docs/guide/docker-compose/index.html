@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: guide/docker-compose.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/guide/docker-compose.md</p> <h1>Docker Compose Guide</h1>
+<p>This guide describes how to run Ugoite with Docker Compose for local development.
+If you are working inside the devcontainer and Docker is not available, use the
+local dev workflow described in <a href="../../README.md">README.md</a> instead.</p>
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker Engine with Compose v2 (<code>docker compose</code>)</li>
+<li>Optional: enough disk space for the <code>spaces/</code> data directory</li>
+</ul>
+<h2>Start the stack</h2>
+<pre><code class="language-bash">docker compose up --build
+</code></pre>
+<p>The stack exposes:</p>
+<ul>
+<li>Backend API: <a href="http://localhost:8000">http://localhost:8000</a></li>
+<li>Frontend UI: <a href="http://localhost:3000">http://localhost:3000</a></li>
+</ul>
+<p>The backend persists data in <code>./spaces</code> on the host. You can safely remove the
+folder to reset local data.</p>
+<h2>Verify status and logs</h2>
+<pre><code class="language-bash">docker compose ps
+</code></pre>
+<pre><code class="language-bash">docker compose logs -f backend
+</code></pre>
+<pre><code class="language-bash">docker compose logs -f frontend
+</code></pre>
+<h2>Stop the stack</h2>
+<pre><code class="language-bash">docker compose down --remove-orphans
+</code></pre>
+<h2>Reset local data (optional)</h2>
+<pre><code class="language-bash">rm -rf ./spaces
+</code></pre>
+<h2>Notes</h2>
+<ul>
+<li>The backend container enables remote access internally so the frontend can
+reach it across the Compose network.</li>
+<li>If you prefer to run services directly on the host, use the <code>mise</code> tasks
+instead of Docker Compose.</li>
+</ul>
+ </article>  </main> </body></html>

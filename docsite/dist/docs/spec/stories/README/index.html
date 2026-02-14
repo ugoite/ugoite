@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: spec/stories/README.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/spec/stories/README.md</p> <h1>User Stories</h1>
+<p>This directory contains user stories organized by category.</p>
+<h2>Files</h2>
+<ul>
+<li><a href="core.yaml">core.yaml</a> - Essential user scenarios that define the core product</li>
+<li><a href="advanced.yaml">advanced.yaml</a> - Power user and experimental features</li>
+<li><a href="experimental.yaml">experimental.yaml</a> - Future features under consideration</li>
+</ul>
+<h2>Story Format</h2>
+<p>Stories follow a structured YAML format for machine readability:</p>
+<pre><code class="language-yaml">stories:
+  - id: STORY-001
+    title: Short descriptive title
+    type: Category (AI Native, Form, Freedom, etc.)
+    as_a: Role (user, power user, AI agent, etc.)
+    i_want: Desired action or capability
+    so_that: Business value or outcome
+    acceptance_criteria:
+      - Specific, testable criteria
+      - Each criterion maps to tests
+    related_apis:
+      - API endpoints involved
+    requirements:
+      - REQ-* IDs that implement this story
+</code></pre>
+<h2>Story Categories</h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AI Native</td>
+<td>Features leveraging AI and code execution</td>
+</tr>
+<tr>
+<td>Form</td>
+<td>Structured data and form features</td>
+</tr>
+<tr>
+<td>Freedom</td>
+<td>User control and data portability</td>
+</tr>
+<tr>
+<td>Versioning</td>
+<td>History and time travel features</td>
+</tr>
+<tr>
+<td>BYOAI</td>
+<td>Bring Your Own AI integrations</td>
+</tr>
+<tr>
+<td>Live Code</td>
+<td>Interactive code execution</td>
+</tr>
+</tbody></table>
+<h2>Traceability</h2>
+<p>Stories link to:</p>
+<ul>
+<li><strong>Requirements</strong>: <code>REQ-*</code> identifiers in <code>requirements/</code></li>
+<li><strong>APIs</strong>: REST and MCP endpoints in <code>api/</code></li>
+<li><strong>Tests</strong>: Acceptance criteria map to test cases</li>
+</ul>
+<h2>Usage</h2>
+<p>Stories are used to:</p>
+<ol>
+<li>Guide feature development priorities</li>
+<li>Generate acceptance test templates</li>
+<li>Document product capabilities</li>
+<li>Communicate with stakeholders</li>
+</ol>
+<h2>Verification</h2>
+<p>Tests in <code>docs/tests/test_stories.py</code> verify:</p>
+<ul>
+<li>All stories have valid format</li>
+<li>Referenced requirements exist</li>
+<li>Acceptance criteria are testable</li>
+</ul>
+ </article>  </main> </body></html>

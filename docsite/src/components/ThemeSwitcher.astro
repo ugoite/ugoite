@@ -1,0 +1,53 @@
+---
+import themes from "../../../shared/themes/ui-theme-definitions.json";
+---
+
+<div class="flex items-center gap-3">
+  <label for="theme" class="text-sm text-slate-600">Theme</label>
+  <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector>
+    {themes.map((theme) => <option value={theme.id}>{theme.label}</option>)}
+  </select>
+  <label for="mode" class="text-sm text-slate-600">Mode</label>
+  <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+</div>
+
+<script>
+  const themeKey = "ugoite-ui-theme";
+  const modeKey = "ugoite-color-mode";
+  const root = document.documentElement;
+  const themeSelect = document.querySelector("[data-theme-selector]");
+  const modeSelect = document.querySelector("[data-mode-selector]");
+
+  const apply = () => {
+    const theme =
+      themeSelect instanceof HTMLSelectElement ? themeSelect.value : localStorage.getItem(themeKey) || "materialize";
+    const mode =
+      modeSelect instanceof HTMLSelectElement ? modeSelect.value : localStorage.getItem(modeKey) || "light";
+    root.dataset.uiTheme = theme;
+    root.dataset.colorMode = mode;
+    localStorage.setItem(themeKey, theme);
+    localStorage.setItem(modeKey, mode);
+  };
+
+  const initialTheme = localStorage.getItem(themeKey) || "materialize";
+  const initialMode = localStorage.getItem(modeKey) || "light";
+
+  if (themeSelect instanceof HTMLSelectElement) {
+    themeSelect.value = initialTheme;
+    themeSelect.addEventListener("change", () => {
+      apply();
+    });
+  }
+
+  if (modeSelect instanceof HTMLSelectElement) {
+    modeSelect.value = initialMode;
+    modeSelect.addEventListener("change", () => {
+      apply();
+    });
+  }
+
+  apply();
+</script>

@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: tasks/roadmap.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/tasks/roadmap.md</p> <h1>Ugoite Development Roadmap</h1>
+<p><strong>Vision</strong>: &quot;Local-First, AI-Native Knowledge Space for the Post-SaaS Era&quot;<br><strong>Core Principles</strong>: Low Cost, Easy, Freedom</p>
+<p>This roadmap outlines the major milestones planned for Ugoite development.</p>
+<hr>
+<h2>Milestone Overview</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Milestone</th>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>MVP</strong></td>
+<td>✅ Completed</td>
+<td>Minimum Viable Product - Core functionality</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Full Configuration</strong></td>
+<td>✅ Completed</td>
+<td>Codebase unification and architecture refinement</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Markdown as Table</strong></td>
+<td>📋 Planned</td>
+<td>Store entries as Form-backed Iceberg tables with SQL querying</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>User Controlled View</strong></td>
+<td>📋 Planned</td>
+<td>User-defined UI views driven by queries</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>AI-Enabled &amp; AI-Used</strong></td>
+<td>📋 Planned</td>
+<td>Complete MCP integration and AI workflow features</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>User Management</strong></td>
+<td>📋 Planned</td>
+<td>Authentication, authorization, and multi-user support</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Native App</strong></td>
+<td>📋 Planned</td>
+<td>Desktop application with Tauri</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Milestone 1: MVP ✅</h2>
+<p><strong>Archive</strong>: <a href="archive/mvp-milestone.md">archive/mvp-milestone.md</a></p>
+<p>Delivered the foundational architecture and core features:</p>
+<ul>
+<li>Local-first storage with fsspec abstraction</li>
+<li>Entry CRUD with revision history and conflict detection</li>
+<li>Markdown-to-structured-data extraction</li>
+<li>Schema/Form definitions for typed entries</li>
+<li>SolidStart frontend + FastAPI backend</li>
+</ul>
+<hr>
+<h2>Milestone 2: Full Configuration ✅</h2>
+<p><strong>Archive</strong>: <a href="archive/milestone-2-full-configuration.md">archive/milestone-2-full-configuration.md</a></p>
+<p>Focus on codebase quality, consistency, and architecture refinement:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Terminology Unification</strong> - Consolidate &quot;datamodel&quot;, &quot;schema&quot;, &quot;form&quot; to single &quot;form&quot; term</li>
+<li><strong>Rust Core Library</strong> - Extract core logic into a Rust crate for multi-platform use</li>
+<li><strong>Feature Path Consistency</strong> - Standardize directory structure across all modules</li>
+<li><strong>Requirements Automation</strong> - YAML-based requirements with automated test verification</li>
+</ol>
+<h3>Deliverables</h3>
+<ul>
+<li><code>ugoite-core</code> Rust crate with opendal for storage</li>
+<li>Python bindings via pyo3 for ugoite-cli</li>
+<li>Unified feature paths in <code>docs/spec/features.yaml</code></li>
+<li>YAML-based requirements in <code>docs/spec/requirements/</code></li>
+<li>Document consistency tests</li>
+</ul>
+<hr>
+<h2>Milestone 3: Markdown as Table 📋</h2>
+<p><strong>Tasks</strong>: <a href="tasks.md">tasks.md</a></p>
+<p>Focus on storing entries as Form-backed Iceberg tables while preserving the current UI behavior:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Iceberg Storage</strong> - Form-defined fields stored as Iceberg tables per Form</li>
+<li><strong>Form-First Entries</strong> - Entries require a Form; no formless entries</li>
+<li><strong>Deterministic Reconstruction</strong> - Markdown can be reconstructed from table rows</li>
+<li><strong>Ugoite SQL</strong> - Domain-specific SQL for flexible user queries</li>
+</ol>
+<h3>Expected Deliverables</h3>
+<ul>
+<li>Iceberg-backed storage in <code>ugoite-core</code></li>
+<li>Form validation for allowed fields</li>
+<li>SQL query engine over Form data</li>
+</ul>
+<hr>
+<h2>Milestone 4: User Controlled View 📋</h2>
+<p>Focus on enabling user-defined UI views driven by queries:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Query + UI Composition</strong> - Users attach UI components to queries</li>
+<li><strong>Low-Code Views</strong> - Views are expressed as UI-only definitions</li>
+<li><strong>Shareable View Specs</strong> - Views stored in the space and reusable</li>
+</ol>
+<h3>Expected Deliverables</h3>
+<ul>
+<li>View definition format and renderer</li>
+<li>Query-driven UI panels</li>
+<li>Saved, shareable view definitions</li>
+</ul>
+<hr>
+<h2>Milestone 5: AI-Enabled &amp; AI-Used 📋</h2>
+<p>Focus on complete AI integration and workflow automation:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Full MCP Server Implementation</strong> - Complete resource and tool exposure</li>
+<li><strong>AI Workflow Automation</strong> - Scheduled tasks, batch processing via AI</li>
+<li><strong>Vector Search Integration</strong> - FAISS index with embedding support</li>
+<li><strong>Voice-to-Schema</strong> - Audio upload with AI-powered transcription and structuring</li>
+<li><strong>Computational Entries</strong> - Embedded JavaScript execution in entries</li>
+</ol>
+<h3>Expected Deliverables</h3>
+<ul>
+<li>Production-ready MCP server</li>
+<li>Vector search with configurable embedding providers</li>
+<li>Voice memo asset with transcription workflow</li>
+<li>Interactive code block execution in editor</li>
+</ul>
+<hr>
+<h2>Milestone 6: User Management 📋</h2>
+<p>Focus on multi-user support and security:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Authentication</strong> - JWT/OAuth2 support with configurable providers</li>
+<li><strong>Authorization</strong> - Space and entry-level permissions</li>
+<li><strong>Multi-tenant Spaces</strong> - Shared spaces with collaboration</li>
+<li><strong>Audit Logging</strong> - Track all changes with user attribution</li>
+<li><strong>API Keys</strong> - Service account access for automation</li>
+</ol>
+<h3>Expected Deliverables</h3>
+<ul>
+<li>Pluggable auth provider system</li>
+<li>Role-based access control (RBAC)</li>
+<li>Space sharing and invitation system</li>
+<li>Activity audit trail</li>
+</ul>
+<hr>
+<h2>Milestone 7: Native App 📋</h2>
+<p>Focus on desktop application using Tauri:</p>
+<h3>Key Objectives</h3>
+<ol>
+<li><strong>Tauri Desktop App</strong> - Cross-platform (Windows, macOS, Linux)</li>
+<li><strong>Direct Crate Integration</strong> - ugoite-core used directly (not via Python)</li>
+<li><strong>Offline-First Sync</strong> - Background sync with conflict resolution</li>
+<li><strong>System Integration</strong> - File associations, tray icon, keyboard shortcuts</li>
+<li><strong>Mobile Support</strong> - iOS/Android via Tauri Mobile (experimental)</li>
+</ol>
+<h3>Expected Deliverables</h3>
+<ul>
+<li>Standalone desktop application</li>
+<li>Local-only mode with no server dependency</li>
+<li>Optional cloud sync via storage connectors</li>
+<li>Mobile companion apps (experimental)</li>
+</ul>
+<hr>
+<h2>Timeline (Tentative)</h2>
+<pre><code>2026 Q2  |████████████████| Milestone 3: Markdown as Table
+2026 Q3  |████████████████| Milestone 4: User Controlled View
+2026 Q4  |████████████████| Milestone 5: AI-Enabled &amp; AI-Used
+2027 Q1  |████████████████| Milestone 6: User Management
+2027 Q2  |████████████████| Milestone 7: Native App
+</code></pre>
+<hr>
+<h2>Contributing</h2>
+<p>Contributions are welcome! For each milestone:</p>
+<ol>
+<li>Review the current <a href="tasks.md">tasks.md</a> for active work items</li>
+<li>Check <a href="archive/">archive/</a> for completed milestones and lessons learned</li>
+<li>Open an issue to discuss larger changes before submitting a PR</li>
+</ol>
+<hr>
+<h2>Related Documentation</h2>
+<ul>
+<li><a href="../spec/index.md">Specification Index</a> - Technical specifications</li>
+<li><a href="../spec/architecture/overview.md">Architecture Overview</a> - System design</li>
+<li><a href="../../AGENTS.md">AGENTS.md</a> - AI Agent development guide</li>
+</ul>
+ </article>  </main> </body></html>

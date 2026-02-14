@@ -59,3 +59,17 @@ repos:
         language: system
         pass_filenames: false
         files: ^frontend/
+
+      - id: docsite-biome-ci
+        name: docsite biome ci
+        entry: bash -c "cd docsite && bun run lint"
+        language: system
+        pass_filenames: false
+        files: ^docsite/
+
+      - id: docsite-typecheck
+        name: docsite typecheck
+        entry: bash -c "cd docsite && bun run typecheck"
+        language: system
+        pass_filenames: false
+        files: ^docsite/

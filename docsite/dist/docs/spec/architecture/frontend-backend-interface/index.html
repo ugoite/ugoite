@@ -1,0 +1,100 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: spec/architecture/frontend-backend-interface.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/spec/architecture/frontend-backend-interface.md</p> <h1>Frontend–Backend Interface (Behavioral Contracts)</h1>
+<p>This document defines the interaction contracts between the frontend (SolidStart)
+and backend (FastAPI). It complements the REST reference by focusing on behavior
+and responsibility boundaries.</p>
+<h2>Responsibility Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Frontend</th>
+<th>Backend</th>
+<th>Shared Contract</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>State management</td>
+<td>Optimistic updates, local cache, selection/view state</td>
+<td>Persistence, history, indexing</td>
+<td><code>revision_id</code> optimistic concurrency</td>
+</tr>
+<tr>
+<td>Validation</td>
+<td>UI/form validation, basic format checks</td>
+<td>Form validation, business rules, integrity checks</td>
+<td>Request/response models</td>
+</tr>
+<tr>
+<td>Search &amp; query</td>
+<td>Query construction + display</td>
+<td>Indexing, query execution</td>
+<td>Query payload shape</td>
+</tr>
+<tr>
+<td>Code execution</td>
+<td>Code execution UI (future)</td>
+<td>MCP host</td>
+<td>MCP protocol</td>
+</tr>
+</tbody></table>
+<h2>Interaction Patterns</h2>
+<h3>Optimistic Updates &amp; Concurrency</h3>
+<ul>
+<li>Frontend sends updates with <code>parent_revision_id</code>.</li>
+<li>Backend compares <code>parent_revision_id</code> with current head.</li>
+<li>On match: backend persists, appends history, returns new <code>revision_id</code>.</li>
+<li>On mismatch: backend returns <strong>409 Conflict</strong> with the current revision info.</li>
+</ul>
+<h3>Entry Creation &amp; Indexing</h3>
+<ul>
+<li>Frontend sends Markdown; it does not parse Markdown for business logic.</li>
+<li>Backend/CLI parses frontmatter/H2 sections, updates indices, and returns
+extracted properties (via entry list / query / get endpoints).</li>
+</ul>
+<h3>Space Switching</h3>
+<ul>
+<li>Frontend clears selection/editor state on space change.</li>
+<li>Frontend reloads space-scoped resources (entries, forms, etc.).</li>
+</ul>
+<h2>Storage Boundary (Backend ↔ ugoite-core)</h2>
+<ul>
+<li>All filesystem I/O lives in <code>ugoite-core</code> (currently via <code>fsspec</code>, transitioning to OpenDAL).</li>
+<li>Backend is a routing/translation layer and must not perform direct filesystem operations.</li>
+<li>Backend tests must cover <code>fs://</code> and <code>memory://</code> style backends via <code>ugoite-core</code>.</li>
+</ul>
+<h2>Error Handling Standards</h2>
+<table>
+<thead>
+<tr>
+<th>HTTP</th>
+<th>Frontend Behavior</th>
+<th>User Feedback</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>400</td>
+<td>Treat as validation bug; log details</td>
+<td>&quot;Invalid input&quot;</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Remove stale selection; redirect to list</td>
+<td>&quot;Not found&quot;</td>
+</tr>
+<tr>
+<td>409</td>
+<td>Trigger conflict flow</td>
+<td>&quot;Changed on server&quot;</td>
+</tr>
+<tr>
+<td>422</td>
+<td>Highlight invalid fields</td>
+<td>Field-level error</td>
+</tr>
+<tr>
+<td>5xx</td>
+<td>Retry/backoff or show offline mode</td>
+<td>&quot;Server error&quot;</td>
+</tr>
+</tbody></table>
+ </article>  </main> </body></html>

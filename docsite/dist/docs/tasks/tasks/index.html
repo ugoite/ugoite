@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: tasks/tasks.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/tasks/tasks.md</p> <h1>Milestone 3: Markdown as Table</h1>
+<p><strong>Status</strong>: 🟡 In Progress<br><strong>Goal</strong>: Store entries as Iceberg-backed tables while preserving the current UI behavior</p>
+<p>This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Entries become row-based records defined by Forms, and queryable via a domain-specific SQL.</p>
+<hr>
+<h2>Constraints (MUST)</h2>
+<ul>
+<li><strong>No migration path required</strong>: We do not provide any conversion from the current storage format.</li>
+<li><strong>Breaking change is acceptable</strong>: Existing users and data are out of scope.</li>
+<li><strong>Form-first</strong>: Entries can only be created for a defined Form. The current “formless entry” flow is removed.</li>
+<li><strong>Phase 1 UI lock</strong>: Initial implementation must keep the UI behavior <em>exactly</em> as it is today. Only <code>ugoite-core</code> storage changes.</li>
+</ul>
+<hr>
+<h2>Phase 0: Spec Alignment &amp; Form-First Contract</h2>
+<p><strong>Objective</strong>: Align specs and tests with the Iceberg-backed, Form-first model before storage changes.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Update data-model specs to describe Iceberg-backed Form tables and reconstruction rules.</li>
+<li><input checked="" disabled="" type="checkbox"> Document the breaking-change/no-migration decision for Milestone 3.</li>
+<li><input checked="" disabled="" type="checkbox"> Align test coverage with Form-first enforcement requirements.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Specs reflect Form-first storage and Iceberg-backed entries.</li>
+<li><input checked="" disabled="" type="checkbox"> Tests reference Form-first requirements.</li>
+</ul>
+<hr>
+<h2>Phase 1: Iceberg storage for form-defined fields only</h2>
+<p><strong>Objective</strong>: Replace entry storage with Apache Iceberg in <code>ugoite-core</code>, limited to fields defined by the Form schema. H2 sections not in the Form are rejected.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Define Iceberg table layout and schema per Form (entries + revisions tables).</li>
+<li><input checked="" disabled="" type="checkbox"> Define <code>forms/</code> as the Iceberg-managed root and document ownership rules.</li>
+<li><input checked="" disabled="" type="checkbox"> Standardize Form name → Iceberg table name mapping (no form_id directories).</li>
+<li><input checked="" disabled="" type="checkbox"> Update <code>ugoite-core</code> write path to persist entry records via Iceberg (official Rust crate + OpenDAL).</li>
+<li><input checked="" disabled="" type="checkbox"> Update <code>ugoite-core</code> read path to reconstruct Markdown content from Iceberg fields.</li>
+<li><input checked="" disabled="" type="checkbox"> Enforce “Form-defined H2 only” validation in <code>ugoite-core</code>.</li>
+<li><input checked="" disabled="" type="checkbox"> Keep backend and frontend API contracts unchanged.</li>
+<li><input checked="" disabled="" type="checkbox"> Add/update tests in <code>ugoite-core</code> to validate Iceberg round-trip.</li>
+</ul>
+<h3>Legacy → TOBE (directory-structure) Delta</h3>
+<ul>
+<li><strong>Remove per-entry folders</strong>: <code>entries/{entry_id}/</code> with <code>meta.json</code>, <code>content.json</code>, and <code>history/</code> are no longer used.</li>
+<li><strong>Iceberg-managed forms root</strong>: <code>forms/</code> is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.</li>
+<li><strong>Table naming</strong>: Form name is the Iceberg table name; no form_id directories are created.</li>
+<li><strong>Form definitions in Iceberg</strong>: Form fields and schemas live in Iceberg; no per-form JSON files.</li>
+<li><strong>Fixed template</strong>: Default entry template is global (<code># {form_name}</code> with H2 columns), not per form.</li>
+<li><strong>Reconstruction source</strong>: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).</li>
+<li><strong>No index JSON</strong>: <code>index.json</code> and related index files are removed from TOBE; indexes are derived from Iceberg as needed.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Entries are stored in Iceberg tables per Form.</li>
+<li><input checked="" disabled="" type="checkbox"> Entries can be read back with identical Markdown content (current UI behavior preserved).</li>
+<li><input checked="" disabled="" type="checkbox"> Non-Form H2 sections are rejected by <code>ugoite-core</code>.</li>
+</ul>
+<hr>
+<h2>Phase 2: Optional extra attributes in Form schema</h2>
+<p><strong>Objective</strong>: Allow Forms to declare whether extra attributes (non-registered H2 sections) are allowed, and how they are stored.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Extend Form definition to include <code>allow_extra_attributes</code> with options (e.g., <code>deny</code>, <code>allow_json</code>, <code>allow_columns</code>).</li>
+<li><input checked="" disabled="" type="checkbox"> Update validation to enforce the new Form policy.</li>
+<li><input checked="" disabled="" type="checkbox"> Implement storage for extra attributes (JSON column or dynamic columns, as specified).</li>
+<li><input checked="" disabled="" type="checkbox"> Update documentation in <code>docs/spec/data-model/</code> for the new Form rules.</li>
+<li><input checked="" disabled="" type="checkbox"> Add tests that cover both “deny” and “allow” modes.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Form schema can explicitly allow or deny extra attributes.</li>
+<li><input checked="" disabled="" type="checkbox"> Extra attributes are stored deterministically.</li>
+<li><input checked="" disabled="" type="checkbox"> Validation behavior matches the Form policy.</li>
+</ul>
+<hr>
+<h2>Phase 3: Ugoite SQL (Domain-Specific SQL)</h2>
+<p><strong>Objective</strong>: Define and implement an SQL dialect optimized for Ugoite forms and Iceberg storage.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Define Ugoite SQL syntax and capabilities (filter, sort, select, aggregate).</li>
+<li><input checked="" disabled="" type="checkbox"> Map SQL queries to Iceberg scans in <code>ugoite-core</code>.</li>
+<li><input checked="" disabled="" type="checkbox"> Add query validation and error reporting.</li>
+<li><input checked="" disabled="" type="checkbox"> Integrate with existing REST/MCP query endpoints without API changes.</li>
+<li><input checked="" disabled="" type="checkbox"> Add tests for SQL parsing and execution.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Users can query Form data via Ugoite SQL.</li>
+<li><input checked="" disabled="" type="checkbox"> SQL execution returns consistent, deterministic results.</li>
+<li><input checked="" disabled="" type="checkbox"> Query errors are clear and actionable.</li>
+</ul>
+<hr>
+<h2>Phase 4: Metadata Columns, Rich Types, Link URIs, SQL Joins</h2>
+<p><strong>Objective</strong>: Expand the Iceberg-backed data model with reserved metadata columns,
+rich content column types with Markdown-friendly parsing, canonical Ugoite link URIs,
+and broadened Ugoite SQL join capabilities.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Define metadata vs content column ownership rules and reserved names.</li>
+<li><input checked="" disabled="" type="checkbox"> Prevent user-defined form fields from using metadata column names.</li>
+<li><input checked="" disabled="" type="checkbox"> Make metadata column list extensible for future system-owned fields.</li>
+<li><input checked="" disabled="" type="checkbox"> Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).</li>
+<li><input checked="" disabled="" type="checkbox"> Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).</li>
+<li><input checked="" disabled="" type="checkbox"> Introduce Ugoite URI scheme for in-entry links (entry, asset, extensible kinds) and normalize links on write/read.</li>
+<li><input checked="" disabled="" type="checkbox"> Extend Ugoite SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).</li>
+<li><input checked="" disabled="" type="checkbox"> Update shared SQL lint/completion rules to reflect JOIN support and base tables.</li>
+<li><input checked="" disabled="" type="checkbox"> Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.</li>
+<li><input checked="" disabled="" type="checkbox"> Update frontend UX to enforce form-first entry creation and surface form validation warnings.</li>
+<li><input checked="" disabled="" type="checkbox"> Add frontend guardrails for reserved metadata column names and list-friendly field types.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Metadata columns are reserved and cannot be used as user-defined Form fields.</li>
+<li><input checked="" disabled="" type="checkbox"> Content columns support expanded Iceberg types with deterministic Markdown parsing.</li>
+<li><input checked="" disabled="" type="checkbox"> Ugoite link URIs are normalized and persisted consistently.</li>
+<li><input checked="" disabled="" type="checkbox"> Ugoite SQL supports JOIN queries across entries, links, and assets.</li>
+<li><input checked="" disabled="" type="checkbox"> Frontend entry creation is form-first, and validation feedback is visible in the editor UX.</li>
+<li><input checked="" disabled="" type="checkbox"> Form creation/editing UI blocks reserved metadata column names.</li>
+</ul>
+<hr>
+<h2>Phase 5: SQL Form (Metadata Form) + CRUD</h2>
+<p><strong>Objective</strong>: Define and implement a system-owned SQL Form to persist SQL queries
+and variables with full CRUD support, while preventing user-defined Forms from
+using the reserved SQL form name.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Define the SQL Form schema as a metadata Form with reserved name protection.</li>
+<li><input checked="" disabled="" type="checkbox"> Add SQL variable object-list type and validation rules in the data model spec.</li>
+<li><input checked="" disabled="" type="checkbox"> Extend REST API and ugoite-core with SQL CRUD operations.</li>
+<li><input checked="" disabled="" type="checkbox"> Add tests covering SQL CRUD and reserved SQL Form name rejection.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> SQL Form is system-owned; users cannot create a Form with the SQL name.</li>
+<li><input checked="" disabled="" type="checkbox"> SQL records store SQL text and a list of typed variables (type, name, description).</li>
+<li><input checked="" disabled="" type="checkbox"> SQL CRUD operations are available via API and core bindings.</li>
+<li><input checked="" disabled="" type="checkbox"> Tests confirm reserved form name enforcement and SQL CRUD behavior.</li>
+</ul>
+<hr>
+<h2>Phase 5.5: SQL Session Redesign</h2>
+<p><strong>Objective</strong>: Redefine SQL session handling so it remains stateless beyond
+OpenDAL storage, without relying on RDBs or external job queues.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Sessions store <strong>metadata only</strong> in <code>meta.json</code> (no result rows).</li>
+<li><input checked="" disabled="" type="checkbox"> <code>create_sql</code> creates corresponding <strong>materialized view metadata</strong> under
+  <code>spaces/{space_id}/materialized_views/</code>.</li>
+<li><input checked="" disabled="" type="checkbox"> SQL updates/deletes synchronize materialized view metadata refresh/removal.</li>
+<li><input checked="" disabled="" type="checkbox"> Session metadata stores snapshot ID and paging hints for fast re-queries.</li>
+<li><input checked="" disabled="" type="checkbox"> Sessions are short-lived (target: ~10 minutes) and shareable across API servers.</li>
+<li><input checked="" disabled="" type="checkbox"> Update <code>docs/spec</code> data model, API, and SQL docs to reflect the redesign.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> SQL sessions store metadata only and are re-executable.</li>
+<li><input checked="" disabled="" type="checkbox"> <code>materialized_views/</code> lifecycle is synchronized with saved SQL.</li>
+<li><input checked="" disabled="" type="checkbox"> Session metadata includes snapshot and paging details.</li>
+<li><input checked="" disabled="" type="checkbox"> Specs in <code>docs/spec</code> are updated consistently.</li>
+</ul>
+<hr>
+<h2>Phase 6: UI Redesign Spec + Validation</h2>
+<p><strong>Objective</strong>: Define page-level UI specs for the new simplified space UI,
+and add automated validation that frontend tests load and verify the spec.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Define page-level YAML specs under <code>docs/spec/ui/pages/</code>.</li>
+<li><input checked="" disabled="" type="checkbox"> Add an implementation status flag to each page spec (default: unimplemented).</li>
+<li><input checked="" disabled="" type="checkbox"> Document the UI spec entry point in the spec index.</li>
+<li><input checked="" disabled="" type="checkbox"> Add frontend tests that load all UI spec YAML files and validate links and component types.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Each space UI page is defined in a YAML spec.</li>
+<li><input checked="" disabled="" type="checkbox"> Specs include shared space UI chrome (top tabs + settings button).</li>
+<li><input checked="" disabled="" type="checkbox"> Frontend tests validate page links and component type registry.</li>
+</ul>
+<hr>
+<h2>Phase 7: UI Redesign Implementation (Planned)</h2>
+<p><strong>Objective</strong>: Implement the new UI described in the page-level YAML specs.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Build the new space-wide layout with floating top tabs and settings button.</li>
+<li><input checked="" disabled="" type="checkbox"> Implement the dashboard view with prominent space name.</li>
+<li><input checked="" disabled="" type="checkbox"> Implement query list, query create, and query variable input flows.</li>
+<li><input checked="" disabled="" type="checkbox"> Implement object (entries) view with grid list and entry detail navigation.</li>
+<li><input checked="" disabled="" type="checkbox"> Implement form grid view with search/sort/filter, copy-paste grid, and CSV export.</li>
+<li><input checked="" disabled="" type="checkbox"> Wire bottom view tabs between object and grid.</li>
+<li><input checked="" disabled="" type="checkbox"> Connect UI components to existing APIs without changing backend contracts.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> UI matches the new simplified layout and navigation model.</li>
+<li><input checked="" disabled="" type="checkbox"> All workflows are functional with existing backend APIs.</li>
+</ul>
+<hr>
+<h2>Phase 7.5: UI Polish (Added)</h2>
+<p><strong>Objective</strong>: Keep the existing UI structure while adding mobile responsiveness and unified theming, with a settings icon that lets users switch UI themes.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Mobile responsiveness (top bar/nav/cards/forms)</li>
+<li><input disabled="" type="checkbox"> Define theme tokens using the recommended Tailwind v4 <code>@theme</code> pattern</li>
+<li><input disabled="" type="checkbox"> Unify colors/shadows/radii/sizing via theme tokens (no <code>@apply</code>)</li>
+<li><input disabled="" type="checkbox"> Add a settings icon in the top bar to switch UI themes</li>
+<li><input disabled="" type="checkbox"> UI themes: <code>materialize</code> / <code>classic</code> / <code>pop</code></li>
+<li><input disabled="" type="checkbox"> Independent <code>light</code> / <code>dark</code> tone switching</li>
+<li><input disabled="" type="checkbox"> Persist selection state (localStorage)</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> All screens are usable on mobile without layout breakage</li>
+<li><input disabled="" type="checkbox"> Theme switching updates the entire UI immediately</li>
+<li><input disabled="" type="checkbox"> Theme consistency is preserved without <code>@apply</code></li>
+<li><input disabled="" type="checkbox"> Theme selection is available from the settings icon</li>
+</ul>
+<hr>
+<h2>Phase 7.6: Sample Data Space Generator</h2>
+<p><strong>Objective</strong>: Provide a dynamic sample-data generator that creates a new space with 3–6 forms and roughly 5,000 entries, using a neutral, meaningful story that demonstrates the app without touching privacy, hierarchy, or ideology.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Define a neutral, operational scenario (non-personal data) and form schema set (3–6 forms)</li>
+<li><input disabled="" type="checkbox"> Implement dynamic sample data generation in <code>ugoite-core</code> (seeded randomness, configurable entry count)</li>
+<li><input disabled="" type="checkbox"> Add REST API endpoint to create a sample-data space with a few parameters</li>
+<li><input disabled="" type="checkbox"> Add CLI command to generate a sample-data space</li>
+<li><input disabled="" type="checkbox"> Add UI flow to generate a sample-data space (name, scenario, size, seed)</li>
+<li><input disabled="" type="checkbox"> Add tests and requirement mappings (core + API + CLI + frontend)</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> A sample-data space can be generated from UI/CLI/API with a few inputs</li>
+<li><input disabled="" type="checkbox"> The generated space contains 3–6 forms and approximately 5,000 entries by default</li>
+<li><input disabled="" type="checkbox"> The data is dynamically generated (seeded, not fixed)</li>
+<li><input disabled="" type="checkbox"> Scenario content avoids privacy, hierarchy, and ideology</li>
+</ul>
+<hr>
+<h2>Phase 7.7: Sample Data Generator Hardening + Async + Scenarios</h2>
+<p><strong>Objective</strong>: Eliminate UI/UX errors in sample-data generation, make generation non-blocking at higher volumes, and expand neutral scenario options without compliance risk.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Tighten requirements and validation so UI never renders a placeholder like [object Object]</li>
+<li><input disabled="" type="checkbox"> Make sample-data generation asynchronous with progress/state reporting (no UI freeze)</li>
+<li><input disabled="" type="checkbox"> Add at least five additional neutral, non-personal, non-ideological sample scenarios</li>
+<li><input disabled="" type="checkbox"> Ensure scenario catalog is deterministic and test-covered</li>
+<li><input disabled="" type="checkbox"> Add tests and requirement mappings for all new behaviors</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Sample-data generation UI never displays [object Object]-style placeholders</li>
+<li><input disabled="" type="checkbox"> Generation completes without blocking the UI at large data sizes</li>
+<li><input disabled="" type="checkbox"> At least five new compliant scenarios are available and selectable</li>
+<li><input disabled="" type="checkbox"> Tests reference requirements and validate async state handling</li>
+</ul>
+<hr>
+<h2>Phase 7.8: Frontend Proxy Robustness for /spaces</h2>
+<p><strong>Objective</strong>: Eliminate intermittent /spaces proxy connection failures during local dev.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Identify root cause of ECONNREFUSED for /spaces during dev</li>
+<li><input disabled="" type="checkbox"> Implement a fix or a safe fallback if backend is not yet ready</li>
+<li><input disabled="" type="checkbox"> Add minimal test/diagnostic coverage where appropriate</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> /spaces requests no longer fail with ECONNREFUSED during normal dev startup</li>
+<li><input disabled="" type="checkbox"> Error handling is explicit and user-facing if backend is unavailable</li>
+</ul>
+<hr>
+<h2>Phase 7.9: About Page from docs</h2>
+<p><strong>Objective</strong>: Replace the placeholder About page with real content sourced from docs.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Define the canonical doc source(s) under docs/ for About content</li>
+<li><input disabled="" type="checkbox"> Implement About page rendering from docs content</li>
+<li><input disabled="" type="checkbox"> Ensure updates to docs are reflected in About without code changes</li>
+<li><input disabled="" type="checkbox"> Add tests for About content loading and rendering</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> About page shows real content derived from docs</li>
+<li><input disabled="" type="checkbox"> Content stays in sync with docs updates</li>
+<li><input disabled="" type="checkbox"> Tests cover loading path and expected sections</li>
+</ul>
+<hr>
+<h2>Phase 7.10: Home Copy Refresh</h2>
+<p><strong>Objective</strong>: Rewrite the home screen messaging to align with current docs and positioning.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Review docs/spec and docs/guide for updated positioning</li>
+<li><input disabled="" type="checkbox"> Replace home copy with new, consistent messaging</li>
+<li><input disabled="" type="checkbox"> Add tests to lock in key messaging elements</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Home copy reflects current documentation and product framing</li>
+<li><input disabled="" type="checkbox"> Key messages are test-covered</li>
+</ul>
+<hr>
+<h2>Phase 7.11: Query Results Progress Behavior</h2>
+<p><strong>Objective</strong>: Fix persistent progress indicators in Query Results.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Identify progress state lifecycle in Query Results view</li>
+<li><input disabled="" type="checkbox"> Ensure progress ends when results are ready or on error</li>
+<li><input disabled="" type="checkbox"> Add tests for progress completion behavior</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Progress bar stops when results are loaded or error is shown</li>
+<li><input disabled="" type="checkbox"> Tests cover normal and error completion</li>
+</ul>
+<hr>
+<h2>Phase 7.12: Replace Entry-Link Endpoint with Row-Reference Column Type</h2>
+<p><strong>Objective</strong>: Remove unnecessary cross-entrypoint link creation and replace with a typed row-reference field in Forms.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Remove API endpoint(s) and implementation for cross-entrypoint link creation</li>
+<li><input disabled="" type="checkbox"> Add Form column type for referencing a row in a specified table (table fixed in column definition)</li>
+<li><input disabled="" type="checkbox"> Ensure metadata includes a row-id column if needed for references</li>
+<li><input disabled="" type="checkbox"> Update validation and UI to support selecting the row-reference column type</li>
+<li><input disabled="" type="checkbox"> Add tests and requirement mappings for reference behavior</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Cross-entrypoint link creation endpoint is removed end-to-end</li>
+<li><input disabled="" type="checkbox"> Forms can define a row-reference column type with target table</li>
+<li><input disabled="" type="checkbox"> Metadata row-id is available and used for references</li>
+<li><input disabled="" type="checkbox"> Tests validate reference creation and validation rules</li>
+</ul>
+<hr>
+<h2>Phase 7.13: Default Data Dir for dev</h2>
+<p><strong>Objective</strong>: When running dev without user-specified data dir, create a temp data directory under /tmp and use it for OpenDAL.</p>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Detect missing user data-dir configuration in dev</li>
+<li><input disabled="" type="checkbox"> Create a unique /tmp subdirectory and use it as OpenDAL data dir</li>
+<li><input disabled="" type="checkbox"> Ensure behavior is consistent across backend/frontend dev flows</li>
+<li><input disabled="" type="checkbox"> Add tests and update docs as needed</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Running dev defaults to a temp /tmp data dir when not specified</li>
+<li><input disabled="" type="checkbox"> OpenDAL uses the temp dir without errors</li>
+<li><input disabled="" type="checkbox"> Tests cover defaulting logic</li>
+</ul>
+<hr>
+<h2>Phase 8: Terminology Rebrand (Space/Form/Entry/Asset)</h2>
+<p><strong>Objective</strong>: Rename the core terminology across specs, docs, code, file paths, and data model
+without migration, removing the old labels entirely before production.</p>
+<h3>Rebrand Plan</h3>
+<ul>
+<li><strong>Scope</strong>: Entire repository (docs/spec, API, frontend, backend, ugoite-core, ugoite-cli, tests, e2e, scripts, data-model paths)</li>
+<li><strong>Owner</strong>: @tohboeh5 / Agent</li>
+<li><strong>Verification</strong>:<ul>
+<li><code>mise run test</code> passes</li>
+<li><code>mise run e2e</code> passes</li>
+<li>No legacy terms remain after string search</li>
+</ul>
+</li>
+</ul>
+<h3>Work Plan (Phase 8 execution)</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Update spec terminology cross-check (docs/spec index, data-model, API, UI specs)</li>
+<li><input disabled="" type="checkbox"> Rename API routes/endpoints + payload fields (backend + OpenAPI + MCP docs)</li>
+<li><input disabled="" type="checkbox"> Rename core storage paths and Iceberg/OpenDAL references</li>
+<li><input disabled="" type="checkbox"> Rename frontend UI routes, components, copy, and types</li>
+<li><input disabled="" type="checkbox"> Rename CLI commands and help text</li>
+<li><input disabled="" type="checkbox"> Rename tests, fixtures, and test data to match new terms</li>
+<li><input disabled="" type="checkbox"> Sweep and remove legacy terms from repo (string + filename search)</li>
+<li><input disabled="" type="checkbox"> Validate with <code>mise run test</code> and <code>mise run e2e</code></li>
+</ul>
+<h3>Key Tasks</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Add a rebrand plan with scope, owner, and verification steps.</li>
+<li><input disabled="" type="checkbox"> Update specs under <code>docs/spec/</code> to use Space/Form/Entry/Asset terminology.</li>
+<li><input disabled="" type="checkbox"> Update docs, UI copy, and API descriptions to the new terms.</li>
+<li><input disabled="" type="checkbox"> Rename code symbols, route paths, filenames, and datamodel references (OpenDAL/Iceberg) to match.</li>
+<li><input disabled="" type="checkbox"> Remove all legacy terms from the repository (pre-rebrand labels).</li>
+<li><input disabled="" type="checkbox"> Update tests and fixtures to match new names and semantics.</li>
+<li><input disabled="" type="checkbox"> Verify <code>mise run test</code> and <code>mise run e2e</code> pass.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> No legacy terms remain in the repository (including file names and data paths).</li>
+<li><input disabled="" type="checkbox"> All specs and docs consistently use Space/Form/Entry/Asset.</li>
+<li><input disabled="" type="checkbox"> Tests pass for unit, integration, and e2e.</li>
+</ul>
+<hr>
+<h2>Phase 9: Full Repository Rebrand Completion (Legacy → Space/Form/Entry/Asset)</h2>
+<p><strong>Objective</strong>: Remove all legacy terms and complete the repository-wide rename to
+Space/Form/Entry/Asset across docs/spec, code, API, UI, tests, fixtures, and
+storage paths (OpenDAL/Iceberg).</p>
+<h3>Work Summary (Phase 9 execution)</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Sweep docs/spec for legacy terms and update references, examples, and diagrams.</li>
+<li><input disabled="" type="checkbox"> Rename API routes, payload fields, and OpenAPI/MCP docs to new terms.</li>
+<li><input disabled="" type="checkbox"> Rename code symbols, modules, and file paths across backend, frontend, ugoite-core, ugoite-cli.</li>
+<li><input disabled="" type="checkbox"> Update storage paths, datamodel references, and OpenDAL/Iceberg layouts.</li>
+<li><input disabled="" type="checkbox"> Update tests, fixtures, and test data to new terms and semantics.</li>
+<li><input disabled="" type="checkbox"> Verify no legacy terms remain via full-repo search.</li>
+<li><input disabled="" type="checkbox"> Confirm <code>mise run test</code> and <code>mise run e2e</code> pass before push.</li>
+</ul>
+<h3>Acceptance Criteria</h3>
+<ul>
+<li><input disabled="" type="checkbox"> Zero occurrences of legacy terms in repository (including file names and data paths).</li>
+<li><input disabled="" type="checkbox"> Specs/docs/API/UI all use Space/Form/Entry/Asset consistently.</li>
+<li><input disabled="" type="checkbox"> All tests (unit/integration/e2e) pass.</li>
+</ul>
+<hr>
+<h2>Definition of Done</h2>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> All phases completed with acceptance criteria met.</li>
+<li><input checked="" disabled="" type="checkbox"> Tests pass (unit, integration, e2e).</li>
+<li><input checked="" disabled="" type="checkbox"> Documentation updated and consistent with the new storage model.</li>
+</ul>
+<hr>
+<h2>References</h2>
+<ul>
+<li><a href="roadmap.md">Roadmap</a></li>
+<li><a href="../spec/index.md">Specification Index</a></li>
+<li><a href="../spec/data-model/overview.md">Data Model Overview</a></li>
+</ul>
+ </article>  </main> </body></html>

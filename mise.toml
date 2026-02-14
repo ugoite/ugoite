@@ -23,6 +23,7 @@ uv = "latest"
 [tasks.setup]
 run = [
 	"mise run //backend:install",
+	"mise run //docsite:install",
 	"mise run //frontend:install",
 	"mise run //ugoite-cli:install",
 	"mise run //ugoite-core:install",

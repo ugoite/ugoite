@@ -1,0 +1,26 @@
+[tasks.install]
+run = "bun install"
+
+[tasks.lint]
+run = "bun run lint"
+
+[tasks.format]
+run = "bun run format"
+
+[tasks."format:check"]
+run = "bun run format:check"
+
+[tasks.typecheck]
+run = "bun run typecheck"
+
+[tasks.check]
+depends = ["lint", "format:check", "typecheck"]
+
+[tasks.test]
+depends = ["check"]
+
+[tasks.build]
+run = "bun run build"
+
+[tasks.dev]
+run = "bun run dev"

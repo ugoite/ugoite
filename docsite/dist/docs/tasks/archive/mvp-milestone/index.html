@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: tasks/archive/mvp-milestone.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/tasks/archive/mvp-milestone.md</p> <h1>Milestone 1: Minimum Viable Product (MVP)</h1>
+<p><strong>Status</strong>: ✅ Completed (January 2026)<br><strong>Goal</strong>: A working local-first knowledge management app with core features operational</p>
+<p>This milestone established the foundational architecture and core features of Ugoite, proving the concept of a &quot;Local-First, AI-Native Knowledge Space.&quot;</p>
+<hr>
+<h2>Summary</h2>
+<p>The MVP milestone delivered:</p>
+<ul>
+<li>Full CRUD operations for spaces, entries, and assets</li>
+<li>Markdown-to-structured-data extraction (H2 headers as fields)</li>
+<li>Schema/Form definitions for typed entry templates</li>
+<li>Version history with optimistic concurrency control</li>
+<li>Wasm-based JavaScript sandbox for AI code execution (MCP <code>run_script</code>)</li>
+<li>Frontend with SolidStart + Bun, Backend with FastAPI + fsspec</li>
+<li>Comprehensive test coverage (pytest, vitest, e2e with Bun)</li>
+</ul>
+<hr>
+<h2>Checkpoints</h2>
+<h3>Checkpoint 1: Project Scaffolding</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Setup monorepo structure (backend, frontend, ugoite-cli)</li>
+<li><input checked="" disabled="" type="checkbox"> Configure mise tasks for development</li>
+<li><input checked="" disabled="" type="checkbox"> Setup Docker Compose and Dev Container</li>
+<li><input checked="" disabled="" type="checkbox"> CI/CD with GitHub Actions (Python CI, Frontend CI, E2E)</li>
+</ul>
+<h3>Checkpoint 2: Storage Layer (ugoite-cli)</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> fsspec abstraction for all I/O operations</li>
+<li><input checked="" disabled="" type="checkbox"> Space creation with directory structure</li>
+<li><input checked="" disabled="" type="checkbox"> Entry CRUD with revision history</li>
+<li><input checked="" disabled="" type="checkbox"> HMAC signing for data integrity</li>
+<li><input checked="" disabled="" type="checkbox"> Memory filesystem support for testing</li>
+</ul>
+<h3>Checkpoint 3: Backend API</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> FastAPI REST endpoints for spaces, entries, forms</li>
+<li><input checked="" disabled="" type="checkbox"> Query endpoint with structured filters</li>
+<li><input checked="" disabled="" type="checkbox"> Search endpoint (keyword-based)</li>
+<li><input checked="" disabled="" type="checkbox"> Asset upload and linking</li>
+<li><input checked="" disabled="" type="checkbox"> Middleware for security headers and HMAC</li>
+</ul>
+<h3>Checkpoint 4: Frontend Core</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> SolidStart application with routing</li>
+<li><input checked="" disabled="" type="checkbox"> Space selector with persistence</li>
+<li><input checked="" disabled="" type="checkbox"> Entry list and Markdown editor</li>
+<li><input checked="" disabled="" type="checkbox"> Optimistic updates with conflict detection</li>
+<li><input checked="" disabled="" type="checkbox"> Schema/Form table view with sorting and filtering</li>
+</ul>
+<h3>Checkpoint 5: AI Integration</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Wasm sandbox (wasmtime + QuickJS)</li>
+<li><input checked="" disabled="" type="checkbox"> <code>host.call()</code> for API access from sandbox</li>
+<li><input checked="" disabled="" type="checkbox"> MCP Server endpoints (resources, tools)</li>
+<li><input checked="" disabled="" type="checkbox"> Fuel limits for infinite loop prevention</li>
+</ul>
+<h3>Checkpoint 6: Polish &amp; Documentation</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> Comprehensive requirements mapping (<code>docs/spec/requirements/*.yaml</code>)</li>
+<li><input checked="" disabled="" type="checkbox"> E2E tests covering all critical paths</li>
+<li><input checked="" disabled="" type="checkbox"> Specification documents (01-07)</li>
+</ul>
+<hr>
+<h2>Technical Decisions</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Storage</td>
+<td>fsspec (no RDB)</td>
+<td>Local-first, portable, cloud-agnostic</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>SolidStart + Bun</td>
+<td>Fast, reactive, modern DX</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>FastAPI</td>
+<td>Async Python, OpenAPI support</td>
+</tr>
+<tr>
+<td>AI Interface</td>
+<td>MCP + Wasm</td>
+<td>Secure code execution, standard protocol</td>
+</tr>
+<tr>
+<td>Data Format</td>
+<td>JSON + Markdown</td>
+<td>Human-readable, diffable, portable</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Lessons Learned</h2>
+<ol>
+<li><strong>fsspec abstraction works well</strong> - Memory filesystem made testing fast and reliable</li>
+<li><strong>Optimistic concurrency is essential</strong> - revision_id tracking prevents data loss</li>
+<li><strong>Wasm sandbox provides strong isolation</strong> - Fuel limits effectively prevent infinite loops</li>
+<li><strong>Markdown sections as fields</strong> - Successfully bridges the &quot;text vs. database&quot; gap</li>
+</ol>
+<hr>
+<h2>Next Steps</h2>
+<p>See <a href="../roadmap.md">roadmap.md</a> for future milestones.</p>
+ </article>  </main> </body></html>

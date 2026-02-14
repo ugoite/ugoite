@@ -1,0 +1,191 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Docs: spec/requirements/README.md</title><link rel="stylesheet" href="/_astro/_slug_.DCtb3bYL.css"></head> <body> <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4"> <a href="/" class="text-lg font-semibold">Ugoite Docsite</a> <nav class="flex items-center gap-4 text-sm"> <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a> <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a> <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a> </nav> <div class="flex items-center gap-3"> <label for="theme" class="text-sm text-slate-600">Theme</label> <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector> <option value="materialize">Materialize</option><option value="classic">Classic</option><option value="pop">Pop</option> </select> <label for="mode" class="text-sm text-slate-600">Mode</label> <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector> <option value="light">Light</option> <option value="dark">Dark</option> </select> </div> <script type="module">const o="ugoite-ui-theme",l="ugoite-color-mode",m=document.documentElement,e=document.querySelector("[data-theme-selector]"),t=document.querySelector("[data-mode-selector]"),a=()=>{const c=e instanceof HTMLSelectElement?e.value:localStorage.getItem(o)||"materialize",n=t instanceof HTMLSelectElement?t.value:localStorage.getItem(l)||"light";m.dataset.uiTheme=c,m.dataset.colorMode=n,localStorage.setItem(o,c),localStorage.setItem(l,n)},i=localStorage.getItem(o)||"materialize",s=localStorage.getItem(l)||"light";e instanceof HTMLSelectElement&&(e.value=i,e.addEventListener("change",()=>{a()}));t instanceof HTMLSelectElement&&(t.value=s,t.addEventListener("change",()=>{a()}));a();</script> </header> <main class="mx-auto max-w-6xl px-4 pb-16">  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);"> <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/spec/requirements/README.md</p> <h1>Requirements Documentation</h1>
+<p>This directory contains machine-readable requirement definitions for Ugoite.</p>
+<h2>Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Category</th>
+<th>Prefix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="storage.yaml">storage.yaml</a></td>
+<td>Storage &amp; Data Model</td>
+<td>REQ-STO-*</td>
+</tr>
+<tr>
+<td><a href="entry.yaml">entry.yaml</a></td>
+<td>Entry Management</td>
+<td>REQ-ENTRY-*</td>
+</tr>
+<tr>
+<td><a href="index.yaml">index.yaml</a></td>
+<td>Indexer</td>
+<td>REQ-IDX-*</td>
+</tr>
+<tr>
+<td><a href="integrity.yaml">integrity.yaml</a></td>
+<td>Data Integrity</td>
+<td>REQ-INT-*</td>
+</tr>
+<tr>
+<td><a href="security.yaml">security.yaml</a></td>
+<td>Security</td>
+<td>REQ-SEC-*</td>
+</tr>
+<tr>
+<td><a href="api.yaml">api.yaml</a></td>
+<td>REST API</td>
+<td>REQ-API-*</td>
+</tr>
+<tr>
+<td><a href="frontend.yaml">frontend.yaml</a></td>
+<td>Frontend UI</td>
+<td>REQ-FE-*</td>
+</tr>
+<tr>
+<td><a href="e2e.yaml">e2e.yaml</a></td>
+<td>End-to-End</td>
+<td>REQ-E2E-*</td>
+</tr>
+<tr>
+<td><a href="ops.yaml">ops.yaml</a></td>
+<td>Operations &amp; Dev Environment</td>
+<td>REQ-OPS-*</td>
+</tr>
+<tr>
+<td><a href="form.yaml">form.yaml</a></td>
+<td>Form Management</td>
+<td>REQ-FORM-*</td>
+</tr>
+<tr>
+<td><a href="links.yaml">links.yaml</a></td>
+<td>Link Management</td>
+<td>REQ-LNK-*</td>
+</tr>
+<tr>
+<td><a href="search.yaml">search.yaml</a></td>
+<td>Search</td>
+<td>REQ-SRCH-*</td>
+</tr>
+</tbody></table>
+<h2>Requirement Format</h2>
+<p>Each YAML file follows this structure:</p>
+<pre><code class="language-yaml">category: Category Name
+prefix: REQ-XXX
+
+requirements:
+  - id: REQ-XXX-001
+    title: Short descriptive title
+    description: |
+      Full description of what the system MUST/SHOULD do.
+    related_spec:
+      - architecture/overview.md#section
+      - stories/core.yaml#STORY-001
+    priority: high | medium | low
+    status: implemented | planned | deprecated
+    tests:
+      pytest:
+        - file: path/to/test.py
+          tests:
+            - test_function_name
+      vitest:
+        - file: path/to/test.ts
+          tests:
+            - test name in describe block
+      e2e:
+        - file: e2e/test.ts
+          tests:
+            - test name
+</code></pre>
+<h2>Requirement ID Convention</h2>
+<ul>
+<li><code>REQ-STO-###</code> - Storage &amp; data model requirements</li>
+<li><code>REQ-ENTRY-###</code> - Entry management requirements</li>
+<li><code>REQ-IDX-###</code> - Indexer requirements</li>
+<li><code>REQ-INT-###</code> - Integrity requirements</li>
+<li><code>REQ-SEC-###</code> - Security requirements</li>
+<li><code>REQ-API-###</code> - API requirements</li>
+<li><code>REQ-FE-###</code> - Frontend requirements</li>
+<li><code>REQ-E2E-###</code> - End-to-end requirements</li>
+<li><code>REQ-FORM-###</code> - Form management requirements</li>
+<li><code>REQ-LNK-###</code> - Link requirements</li>
+<li><code>REQ-SRCH-###</code> - Search requirements</li>
+</ul>
+<h2>Test Mapping</h2>
+<p>Each requirement lists the tests that verify it:</p>
+<ul>
+<li><strong>pytest</strong>: Python tests in <code>ugoite-cli/tests/</code> and <code>backend/tests/</code></li>
+<li><strong>vitest</strong>: TypeScript tests in <code>frontend/src/**/*.test.ts(x)</code></li>
+<li><strong>e2e</strong>: End-to-end tests in <code>e2e/</code></li>
+</ul>
+<h2>Verification Tests</h2>
+<p>Automated tests in <code>docs/tests/</code> verify requirements consistency:</p>
+<h3><code>test_requirements.py</code></h3>
+<pre><code class="language-python">def test_all_requirements_have_tests():
+    &quot;&quot;&quot;Every requirement must have at least one associated test.&quot;&quot;&quot;
+    # Loads all YAML files and checks tests array is non-empty
+
+def test_all_tests_reference_valid_requirements():
+    &quot;&quot;&quot;Tests that claim to verify requirements must reference valid REQ-* IDs.&quot;&quot;&quot;
+    # Scans test files for REQ-* mentions and validates against YAML
+
+def test_no_orphan_tests():
+    &quot;&quot;&quot;Flag tests that don&#39;t map to any requirement.&quot;&quot;&quot;
+    # Reports tests not listed in any requirement&#39;s tests array
+
+def test_requirement_ids_are_unique():
+    &quot;&quot;&quot;Ensure no duplicate requirement IDs.&quot;&quot;&quot;
+
+def test_required_fields_present():
+    &quot;&quot;&quot;All requirements have id, title, description, tests.&quot;&quot;&quot;
+</code></pre>
+<h2>Adding New Requirements</h2>
+<ol>
+<li>Determine the appropriate category (storage, entry, etc.)</li>
+<li>Find the next available ID number in that file</li>
+<li>Add the requirement with all required fields</li>
+<li>Add tests that verify the requirement</li>
+<li>Update the test files to reference the requirement ID</li>
+<li>Run <code>docs/tests/test_requirements.py</code> to verify</li>
+</ol>
+<h2>Coverage Report</h2>
+<p>Generate a coverage report with:</p>
+<pre><code class="language-bash">python docs/tests/generate_coverage_report.py
+</code></pre>
+<p>This produces:</p>
+<ul>
+<li>Total requirements by category</li>
+<li>Implemented vs planned requirements</li>
+<li>Test coverage percentage</li>
+<li>Orphan tests list</li>
+</ul>
+<h2>Migration from 07_requirements.md</h2>
+<p>This YAML-based system replaces the previous <code>07_requirements.md</code> file (now removed after migration):</p>
+<table>
+<thead>
+<tr>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Markdown tables</td>
+<td>YAML structures</td>
+</tr>
+<tr>
+<td>Manual test lists</td>
+<td>Parseable test references</td>
+</tr>
+<tr>
+<td>Single file</td>
+<td>Organized by category</td>
+</tr>
+<tr>
+<td>Human-readable only</td>
+<td>Machine + human readable</td>
+</tr>
+</tbody></table>
+<p>The conversion was done during Milestone 2 (Full Configuration).</p>
+ </article>  </main> </body></html>
