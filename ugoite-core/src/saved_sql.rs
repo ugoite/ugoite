@@ -40,7 +40,7 @@ fn sql_form_definition() -> Value {
         "name": SQL_FORM_NAME,
         "version": 1,
         "fields": {
-            "sql": {"type": "markdown", "required": true},
+            "sql": {"type": "sql", "required": true},
             "variables": {"type": "object_list", "required": false}
         },
         "allow_extra_attributes": "deny"
