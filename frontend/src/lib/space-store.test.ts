@@ -1,4 +1,5 @@
 // REQ-FE-001: Space selector
+// REQ-FE-002: No client-side default space creation
 // REQ-FE-003: Persist space selection
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createRoot } from "solid-js";

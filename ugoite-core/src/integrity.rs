@@ -104,7 +104,7 @@ pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(Stri
     Ok((key_id, secret))
 }
 
-async fn load_root_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
+pub async fn load_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
     let path = "hmac.json";
     if !op.exists(path).await? {
         let mut key_bytes = [0u8; 32];
@@ -132,7 +132,7 @@ async fn load_root_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
 }
 
 pub async fn build_response_signature(op: &Operator, body: &[u8]) -> Result<(String, String)> {
-    let (key_id, secret) = load_root_hmac_material(op).await?;
+    let (key_id, secret) = load_response_hmac_material(op).await?;
     type HmacSha256 = Hmac<Sha256>;
     let mut mac = HmacSha256::new_from_slice(&secret)?;
     mac.update(body);

@@ -574,6 +574,26 @@ fn load_hmac_material<'a>(
 }
 
 #[pyfunction]
+fn load_response_hmac_material<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py::<_, PyObject>(py, async move {
+        let (key_id, secret) = integrity::load_response_hmac_material(&op)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| {
+            let secret_bytes = PyBytes::new(py, &secret);
+            let key_id_obj = key_id.into_py_any(py)?;
+            let secret_obj = secret_bytes.into_py_any(py)?;
+            let tuple = PyTuple::new(py, [key_id_obj, secret_obj])?;
+            tuple.into_py_any(py)
+        })
+    })
+}
+
+#[pyfunction]
 fn list_forms<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
@@ -998,6 +1018,7 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_entries, m)?)?;
     m.add_function(wrap_pyfunction!(build_response_signature, m)?)?;
     m.add_function(wrap_pyfunction!(load_hmac_material, m)?)?;
+    m.add_function(wrap_pyfunction!(load_response_hmac_material, m)?)?;
 
     Ok(())
 }

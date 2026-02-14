@@ -176,6 +176,8 @@ requirements:
       The API MUST provide a way to generate a sample-data space with a small
       set of input parameters (space id, scenario, entry count, seed), backed
       by ugoite-core dynamic generation.
+      Backend REST exposure is currently unshipped (planned), while ugoite-core
+      implementation and tests are retained for future re-exposure.
     related_spec:
       - api/rest.md#spaces
       - features/spaces.yaml
@@ -196,6 +198,8 @@ requirements:
     description: |
       The API MUST expose a catalog of sample-data scenarios and support
       asynchronous sample-data generation jobs with status reporting.
+      Backend REST exposure is currently unshipped (planned), while ugoite-core
+      implementation and tests are retained for future re-exposure.
     related_spec:
       - api/rest.md#spaces
       - features/spaces.yaml
