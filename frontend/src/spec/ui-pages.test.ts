@@ -21,6 +21,7 @@ type PageSpec = {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
 const pagesDir = path.join(repoRoot, "docs/spec/ui/pages");
+const routesDir = path.join(repoRoot, "frontend/src/routes/spaces/[space_id]");
 
 const allowedComponentTypes = new Set([
 	"tab-bar",
@@ -71,6 +72,38 @@ const loadPages = () => {
 		};
 	});
 	return pages;
+};
+
+const collectRouteFiles = (dir: string): string[] => {
+	const entries = readdirSync(dir);
+	const files: string[] = [];
+	for (const entry of entries) {
+		const fullPath = path.join(dir, entry);
+		const stats = statSync(fullPath);
+		if (stats.isDirectory()) {
+			files.push(...collectRouteFiles(fullPath));
+			continue;
+		}
+		if (entry.endsWith(".tsx") && !entry.endsWith(".test.tsx")) {
+			files.push(fullPath);
+		}
+	}
+	return files;
+};
+
+const segmentFromFile = (segment: string) => {
+	if (segment === "index") return "";
+	if (segment.startsWith("[") && segment.endsWith("]")) {
+		return `{${segment.slice(1, -1)}}`;
+	}
+	return segment;
+};
+
+const routeFromFilePath = (filePath: string) => {
+	const relative = path.relative(routesDir, filePath).replace(/\\/g, "/");
+	const withoutExt = relative.replace(/\.tsx$/, "");
+	const segments = withoutExt.split("/").map(segmentFromFile).filter(Boolean);
+	return `/spaces/{space_id}${segments.length ? `/${segments.join("/")}` : ""}`;
 };
 
 const collectTargets = (value: unknown, targets: string[]) => {
@@ -141,6 +174,31 @@ describe("UI spec YAML registry", () => {
 			for (const target of targets) {
 				expect(pageIds.has(target), `${filePath} references missing page: ${target}`).toBe(true);
 			}
+		}
+	});
+
+	it("REQ-FE-040: validates docs pages map to implemented routes", () => {
+		const pages = loadPages();
+		const routes = new Set(collectRouteFiles(routesDir).map(routeFromFilePath));
+		for (const { spec, filePath } of pages) {
+			const route = spec.page?.route;
+			expect(route, `${filePath} missing route`).toBeTruthy();
+			expect(routes.has(String(route)), `${filePath} route not implemented: ${String(route)}`).toBe(
+				true,
+			);
+		}
+	});
+
+	it("REQ-FE-040: validates implemented routes are documented", () => {
+		const pages = loadPages();
+		const documented = new Set(
+			pages.map(({ spec }) => spec.page?.route).filter((route): route is string => Boolean(route)),
+		);
+		const routes = new Set(collectRouteFiles(routesDir).map(routeFromFilePath));
+		for (const route of routes) {
+			expect(documented.has(route), `missing docs/spec/ui/pages entry for route: ${route}`).toBe(
+				true,
+			);
 		}
 	});
 

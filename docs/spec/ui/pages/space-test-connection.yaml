@@ -1,0 +1,20 @@
+version: "0.1"
+updated: "2026-02-14"
+page:
+  id: space-test-connection
+  title: Space Test Connection
+  route: /spaces/{space_id}/test-connection
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+  body:
+    - id: connection-form
+      type: form
+      title: Connection test

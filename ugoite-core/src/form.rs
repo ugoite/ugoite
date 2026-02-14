@@ -21,6 +21,7 @@ pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
 pub async fn list_column_types() -> Result<Vec<String>> {
     Ok(vec![
         "string".to_string(),
+        "sql".to_string(),
         "markdown".to_string(),
         "number".to_string(),
         "double".to_string(),

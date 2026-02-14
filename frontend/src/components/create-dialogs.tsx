@@ -39,6 +39,8 @@ const resolveInputType = (def: Form["fields"][string]) => {
 const resolveTextareaPlaceholder = (def: Form["fields"][string]) =>
 	def.type === "object_list" ? "[]" : "Enter value";
 
+const columnTypeSelectClass = "ui-input ui-input-sm w-auto min-w-[10rem] flex-shrink-0";
+
 type FieldIssueSource = { name: string; type: string; targetForm?: string };
 
 type FieldIssueContext = {
@@ -765,7 +767,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="ui-input ui-input-sm"
+												class={columnTypeSelectClass}
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
@@ -1052,7 +1054,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="ui-input ui-input-sm"
+												class={columnTypeSelectClass}
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
