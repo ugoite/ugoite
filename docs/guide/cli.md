@@ -46,3 +46,22 @@ uv run ugoite create-space ./spaces demo
   directory as the Docker Compose setup for consistency.
 - If you use another directory, ensure it is writable and backed by local
   storage.
+
+## Endpoint routing mode
+
+CLI can run in three modes, and stores the selection in `~/.ugoite/cli-endpoints.json`.
+
+- `core`: call `ugoite-core` directly (default)
+- `backend`: call backend REST endpoints directly (e.g. `http://localhost:8000`)
+- `api`: call the frontend-proxied API base (e.g. `http://localhost:3000/api`)
+
+```bash
+# Show current setting
+uv run ugoite config show
+
+# Route commands to backend directly
+uv run ugoite config set --mode backend --backend-url http://localhost:8000
+
+# Route commands to API endpoint
+uv run ugoite config set --mode api --api-url http://localhost:3000/api
+```

@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 from ugoite_core import build_sql_schema, lint_sql, sql_completions
@@ -15,6 +15,15 @@ from ugoite.assets import (
     delete_asset,
     list_assets,
     save_asset,
+)
+from ugoite.endpoint_config import (
+    EndpointConfig,
+    EndpointMode,
+    load_endpoint_config,
+    parse_space_id,
+    request_json,
+    resolve_base_url,
+    save_endpoint_config,
 )
 from ugoite.entries import (
     create_entry,
@@ -56,6 +65,7 @@ space_app = typer.Typer(help="Space management commands")
 asset_app = typer.Typer(help="Asset management commands")
 search_app = typer.Typer(help="Search commands")
 sql_app = typer.Typer(help="SQL linting and completion commands")
+config_app = typer.Typer(help="CLI endpoint routing settings")
 
 app.add_typer(entry_app, name="entry")
 app.add_typer(index_app, name="index")
@@ -64,8 +74,22 @@ app.add_typer(space_app, name="space")
 app.add_typer(asset_app, name="asset")
 app.add_typer(search_app, name="search")
 app.add_typer(sql_app, name="sql")
+app.add_typer(config_app, name="config")
 
 DEFAULT_NOTE_CONTENT = "# New Entry\n"
+
+
+def _endpoint_config() -> EndpointConfig:
+    return load_endpoint_config()
+
+
+def _remote_base_url() -> str | None:
+    return resolve_base_url(_endpoint_config())
+
+
+def _remote_or_none(path: str) -> tuple[str | None, str]:
+    base = _remote_base_url()
+    return base, parse_space_id(path)
 
 
 def handle_cli_errors[R](func: Callable[..., R]) -> Callable[..., R]:
@@ -124,6 +148,57 @@ def _parse_json_list(value: str | None, label: str) -> list[dict[str, Any]] | No
     return payload
 
 
+@config_app.command("show")
+@handle_cli_errors
+def cmd_config_show() -> None:
+    """Show persisted CLI endpoint routing configuration."""
+    setup_logging()
+    config = _endpoint_config()
+    typer.echo(
+        json.dumps(
+            {
+                "mode": config.mode,
+                "backend_url": config.backend_url,
+                "api_url": config.api_url,
+            },
+            indent=2,
+        ),
+    )
+
+
+@config_app.command("set")
+@handle_cli_errors
+def cmd_config_set(
+    mode: Annotated[
+        str,
+        typer.Option(help="Routing mode: core | backend | api"),
+    ],
+    backend_url: Annotated[
+        str,
+        typer.Option(help="Base URL used when mode=backend"),
+    ] = "http://localhost:8000",
+    api_url: Annotated[
+        str,
+        typer.Option(help="Base URL used when mode=api"),
+    ] = "http://localhost:3000/api",
+) -> None:
+    """Persist CLI endpoint routing configuration to ~/.ugoite/."""
+    setup_logging()
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in {"core", "backend", "api"}:
+        msg = "mode must be one of: core, backend, api"
+        raise typer.BadParameter(msg)
+    endpoint_mode = cast("EndpointMode", normalized_mode)
+
+    config = EndpointConfig(
+        mode=endpoint_mode,
+        backend_url=backend_url.strip() or EndpointConfig.backend_url,
+        api_url=api_url.strip() or EndpointConfig.api_url,
+    )
+    path = save_endpoint_config(config)
+    typer.echo(f"Saved endpoint config to {path}")
+
+
 @app.command("create-space")
 @handle_cli_errors
 def cmd_create_space(
@@ -132,7 +207,15 @@ def cmd_create_space(
 ) -> None:
     """Create a new space."""
     setup_logging()
-    create_space(root_path, space_id)
+    base_url = _remote_base_url()
+    if base_url is None:
+        create_space(root_path, space_id)
+    else:
+        request_json(
+            "POST",
+            f"{base_url}/spaces",
+            payload={"name": space_id},
+        )
     typer.echo(
         f"Space '{space_id}' created successfully at '{root_path}'",
     )
@@ -145,7 +228,11 @@ def cmd_space_list(
 ) -> None:
     """List all spaces under the root path."""
     setup_logging()
-    data = list_spaces(root_path)
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = list_spaces(root_path)
+    else:
+        data = request_json("GET", f"{base_url}/spaces")
     typer.echo(json.dumps(data, indent=2))
 
 
@@ -157,7 +244,11 @@ def cmd_space_get(
 ) -> None:
     """Get space metadata."""
     setup_logging()
-    data = get_space(root_path, space_id)
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = get_space(root_path, space_id)
+    else:
+        data = request_json("GET", f"{base_url}/spaces/{space_id}")
     typer.echo(json.dumps(data, indent=2))
 
 
@@ -301,7 +392,15 @@ def cmd_entry_create(
 ) -> None:
     """Create a new entry in a space."""
     setup_logging()
-    create_entry(space_path, entry_id, content, author=author)
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        create_entry(space_path, entry_id, content, author=author)
+    else:
+        request_json(
+            "POST",
+            f"{base_url}/spaces/{space_id}/entries",
+            payload={"id": entry_id, "content": content},
+        )
     typer.echo(f"Entry '{entry_id}' created successfully.")
 
 
@@ -312,7 +411,11 @@ def cmd_entry_list(
 ) -> None:
     """List entries in a space."""
     setup_logging()
-    entries = list_entries(space_path)
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        entries = list_entries(space_path)
+    else:
+        entries = request_json("GET", f"{base_url}/spaces/{space_id}/entries")
     typer.echo(json.dumps(entries, indent=2))
 
 
@@ -324,7 +427,11 @@ def cmd_entry_get(
 ) -> None:
     """Get a single entry by ID."""
     setup_logging()
-    entry = get_entry(space_path, entry_id)
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        entry = get_entry(space_path, entry_id)
+    else:
+        entry = request_json("GET", f"{base_url}/spaces/{space_id}/entries/{entry_id}")
     typer.echo(json.dumps(entry, indent=2))
 
 
