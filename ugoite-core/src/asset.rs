@@ -77,7 +77,12 @@ pub async fn save_asset(
     if let Err(error) =
         entry::create_entry(op, ws_path, &asset_id, &entry_content, "system", &integrity).await
     {
-        let _ = op.delete(&asset_path).await;
+        if let Err(cleanup_error) = op.delete(&asset_path).await {
+            eprintln!(
+                "failed to cleanup asset file after metadata create failure (asset_id={}, path={}): {}",
+                asset_id, asset_path, cleanup_error
+            );
+        }
         return Err(error);
     }
 
@@ -197,7 +202,12 @@ pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Resul
         return Err(anyhow!("Asset {} not found", asset_id));
     }
 
-    let _ = entry::delete_entry(op, ws_path, asset_id, false).await;
+    if let Err(error) = entry::delete_entry(op, ws_path, asset_id, false).await {
+        eprintln!(
+            "failed to cleanup asset metadata entry after file delete (asset_id={}, ws_path={}): {}",
+            asset_id, ws_path, error
+        );
+    }
 
     Ok(())
 }
