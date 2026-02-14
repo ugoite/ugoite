@@ -25,10 +25,12 @@ const modes: { value: ColorMode; label: TranslationKey }[] = [
 	{ value: "dark", label: "themeMenu.mode.dark" },
 ];
 
-const primaryColors: { value: PrimaryColor; label: TranslationKey }[] = PRIMARY_COLORS.map((color) => ({
-	value: color.id,
-	label: `themeMenu.primary.${color.id}` as TranslationKey,
-}));
+const primaryColors: { value: PrimaryColor; label: TranslationKey }[] = PRIMARY_COLORS.map(
+	(color) => ({
+		value: color.id,
+		label: `themeMenu.primary.${color.id}` as TranslationKey,
+	}),
+);
 
 const locales: { value: Locale; label: TranslationKey }[] = [
 	{ value: "en", label: "themeMenu.locale.en" },
