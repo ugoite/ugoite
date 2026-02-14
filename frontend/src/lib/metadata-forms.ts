@@ -1,4 +1,4 @@
-export const RESERVED_METADATA_CLASSES = ["SQL"] as const;
+export const RESERVED_METADATA_CLASSES = ["SQL", "Assets"] as const;
 
 const RESERVED_METADATA_CLASS_SET = new Set(
 	RESERVED_METADATA_CLASSES.map((name) => name.trim().toLowerCase()),
