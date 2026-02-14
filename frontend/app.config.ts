@@ -1,6 +1,7 @@
 import { defineConfig } from "@solidjs/start/config";
 import tailwindcss from "@tailwindcss/vite";
 import type { ProxyOptions } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 const env =
 	(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
@@ -30,7 +31,34 @@ export default defineConfig({
 		errorHandler: "~/error-handler",
 	},
 	vite: {
-		plugins: [tailwindcss()],
+		plugins: [
+			tailwindcss(),
+			VitePWA({
+				registerType: "autoUpdate",
+				injectRegister: "auto",
+				includeAssets: ["favicon.ico"],
+				manifest: {
+					name: "Ugoite",
+					short_name: "Ugoite",
+					description: "Local-first, AI-native knowledge space",
+					theme_color: "#111827",
+					background_color: "#111827",
+					display: "standalone",
+					start_url: "/",
+					scope: "/",
+					icons: [
+						{
+							src: "/favicon.ico",
+							sizes: "64x64 32x32 24x24 16x16",
+							type: "image/x-icon",
+						},
+					],
+				},
+				workbox: {
+					globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+				},
+			}),
+		],
 		server: {
 			proxy: proxyRule,
 			fs: {

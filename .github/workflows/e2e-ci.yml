@@ -21,6 +21,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Restore Playwright and e2e node cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            e2e/node_modules
+          key: ${{ runner.os }}-e2e-${{ hashFiles('e2e/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-e2e-
+
       - name: Setup mise (install tools and dependencies)
         uses: jdx/mise-action@v3
         with:

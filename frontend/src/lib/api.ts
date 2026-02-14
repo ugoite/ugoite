@@ -24,7 +24,11 @@ export const joinUrl = (base: string, path = "/"): string => {
 	return `${b}/${p}`;
 };
 
-export const apiFetch = async (path = "/", options?: RequestInit) => {
+export type ApiFetchOptions = RequestInit & {
+	trackLoading?: boolean;
+};
+
+export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
 	const base = getBackendBase();
 	let url: string;
 	if (/^https?:\/\//.test(base)) {
@@ -33,10 +37,16 @@ export const apiFetch = async (path = "/", options?: RequestInit) => {
 		// relative path; base probably like '/api'
 		url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 	}
-	loadingState.start();
+	const shouldTrackLoading = options?.trackLoading ?? true;
+	if (shouldTrackLoading) {
+		loadingState.start();
+	}
+	const { trackLoading: _trackLoading, ...requestInit } = options ?? {};
 	try {
-		return await fetch(url, options);
+		return await fetch(url, requestInit);
 	} finally {
-		loadingState.stop();
+		if (shouldTrackLoading) {
+			loadingState.stop();
+		}
 	}
 };

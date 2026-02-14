@@ -15,6 +15,30 @@ import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { EntryRecord } from "~/lib/types";
 
+const RESERVED_METADATA_WARNING = "Reserved metadata columns are system-owned and cannot be used";
+
+function buildInitialEntryContent(
+	formTemplate: string,
+	title: string,
+	formName: string,
+	requiredValues: Record<string, string>,
+) {
+	let initialContent = ensureFormFrontmatter(replaceFirstH1(formTemplate, title), formName);
+	for (const [name, value] of Object.entries(requiredValues)) {
+		if (!value.trim()) continue;
+		initialContent = updateH2Section(initialContent, name, value.trim());
+	}
+	return initialContent;
+}
+
+function toCreateEntryAlertMessage(error: unknown) {
+	const message = error instanceof Error ? error.message : "Failed to create entry";
+	if (message.includes(RESERVED_METADATA_WARNING)) {
+		return "入力形式を確認してください。属性は Markdown の `## フィールド名` 見出しで入力し、list は `- item` または1行1値、boolean は true/false を使ってください。";
+	}
+	return message;
+}
+
 export default function SpaceEntriesIndexPane() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
@@ -112,18 +136,19 @@ export default function SpaceEntriesIndexPane() {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
 		}
-		let initialContent = ensureFormFrontmatter(replaceFirstH1(formDef.template, title), formName);
-		for (const [name, value] of Object.entries(requiredValues)) {
-			if (!value.trim()) continue;
-			initialContent = updateH2Section(initialContent, name, value.trim());
-		}
+		const initialContent = buildInitialEntryContent(
+			formDef.template,
+			title,
+			formName,
+			requiredValues,
+		);
 
 		try {
 			const result = await ctx.entryStore.createEntry(initialContent);
 			setShowCreateEntryDialog(false);
 			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create entry");
+			alert(toCreateEntryAlertMessage(e));
 		}
 	};
 
