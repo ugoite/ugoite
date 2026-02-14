@@ -1,0 +1,38 @@
+{
+  "en": {
+    "nav.home": "Home",
+    "nav.spaces": "Spaces",
+    "nav.about": "About",
+    "spaceShell.top.dashboard": "dashboard",
+    "spaceShell.top.search": "search",
+    "spaceShell.bottom.object": "object",
+    "spaceShell.bottom.grid": "grid",
+    "themeMenu.settingsAria": "Theme settings",
+    "themeMenu.uiTheme": "UI Theme",
+    "themeMenu.colorMode": "Color Mode",
+    "themeMenu.language": "Language",
+    "themeMenu.spaceSettings": "Space settings",
+    "themeMenu.mode.light": "light",
+    "themeMenu.mode.dark": "dark",
+    "themeMenu.locale.en": "English",
+    "themeMenu.locale.ja": "日本語"
+  },
+  "ja": {
+    "nav.home": "ホーム",
+    "nav.spaces": "スペース",
+    "nav.about": "このアプリについて",
+    "spaceShell.top.dashboard": "ダッシュボード",
+    "spaceShell.top.search": "検索",
+    "spaceShell.bottom.object": "オブジェクト",
+    "spaceShell.bottom.grid": "グリッド",
+    "themeMenu.settingsAria": "テーマ設定",
+    "themeMenu.uiTheme": "UIテーマ",
+    "themeMenu.colorMode": "カラーモード",
+    "themeMenu.language": "言語",
+    "themeMenu.spaceSettings": "スペース設定",
+    "themeMenu.mode.light": "ライト",
+    "themeMenu.mode.dark": "ダーク",
+    "themeMenu.locale.en": "English",
+    "themeMenu.locale.ja": "日本語"
+  }
+}

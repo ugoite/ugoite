@@ -1,4 +1,5 @@
 import { useLocation } from "@solidjs/router";
+import { t } from "~/lib/i18n";
 
 export default function Nav() {
 	const location = useLocation();
@@ -17,7 +18,7 @@ export default function Nav() {
 			<ul class="ui-nav-list">
 				<li>
 					<a href="/" class="ui-nav-link" classList={{ "ui-nav-link-active": active("/") }}>
-						Home
+						{t("nav.home")}
 					</a>
 				</li>
 				<li>
@@ -26,7 +27,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/spaces") }}
 					>
-						Spaces
+						{t("nav.spaces")}
 					</a>
 				</li>
 				<li>
@@ -35,7 +36,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/about") }}
 					>
-						About
+						{t("nav.about")}
 					</a>
 				</li>
 			</ul>

@@ -1,8 +1,10 @@
 import { A } from "@solidjs/router";
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
+import { locale, setLocale, t } from "~/lib/i18n";
 import { colorMode, setColorMode, setUiTheme, uiTheme } from "~/lib/ui-theme";
 import { UI_THEMES } from "~/themes/registry";
+import type { Locale, TranslationKey } from "~/lib/i18n";
 import type { ColorMode, UiTheme } from "~/lib/ui-theme";
 
 const themes: { value: UiTheme; label: string }[] = UI_THEMES.map((theme) => ({
@@ -10,9 +12,14 @@ const themes: { value: UiTheme; label: string }[] = UI_THEMES.map((theme) => ({
 	label: theme.label,
 }));
 
-const modes: { value: ColorMode; label: string }[] = [
-	{ value: "light", label: "light" },
-	{ value: "dark", label: "dark" },
+const modes: { value: ColorMode; label: TranslationKey }[] = [
+	{ value: "light", label: "themeMenu.mode.light" },
+	{ value: "dark", label: "themeMenu.mode.dark" },
+];
+
+const locales: { value: Locale; label: TranslationKey }[] = [
+	{ value: "en", label: "themeMenu.locale.en" },
+	{ value: "ja", label: "themeMenu.locale.ja" },
 ];
 
 interface ThemeMenuProps {
@@ -56,11 +63,11 @@ export function ThemeMenu(props: ThemeMenuProps) {
 			<button
 				type="button"
 				class="ui-icon-button"
-				aria-label="Theme settings"
+				aria-label={t("themeMenu.settingsAria")}
 				aria-expanded={open()}
 				onClick={() => setOpen((value) => !value)}
 			>
-				<span class="ui-sr-only">Theme settings</span>
+				<span class="ui-sr-only">{t("themeMenu.settingsAria")}</span>
 				<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<path
 						stroke-linecap="round"
@@ -73,7 +80,7 @@ export function ThemeMenu(props: ThemeMenuProps) {
 			<Show when={open()}>
 				<div class="ui-menu-panel">
 					<div class="ui-menu-section">
-						<p class="ui-menu-title">UI Theme</p>
+						<p class="ui-menu-title">{t("themeMenu.uiTheme")}</p>
 						<div class="ui-menu-options">
 							<For each={themes}>
 								{(theme) => (
@@ -92,7 +99,7 @@ export function ThemeMenu(props: ThemeMenuProps) {
 						</div>
 					</div>
 					<div class="ui-menu-section">
-						<p class="ui-menu-title">Color Mode</p>
+						<p class="ui-menu-title">{t("themeMenu.colorMode")}</p>
 						<div class="ui-menu-options">
 							<For each={modes}>
 								{(mode) => (
@@ -104,14 +111,33 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											checked={colorMode() === mode.value}
 											onChange={() => setColorMode(mode.value)}
 										/>
-										<span>{mode.label}</span>
+										<span>{t(mode.label)}</span>
+									</label>
+								)}
+							</For>
+						</div>
+					</div>
+					<div class="ui-menu-section">
+						<p class="ui-menu-title">{t("themeMenu.language")}</p>
+						<div class="ui-menu-options">
+							<For each={locales}>
+								{(currentLocale) => (
+									<label class="ui-radio">
+										<input
+											type="radio"
+											name="locale"
+											value={currentLocale.value}
+											checked={locale() === currentLocale.value}
+											onChange={() => setLocale(currentLocale.value)}
+										/>
+										<span>{t(currentLocale.label)}</span>
 									</label>
 								)}
 							</For>
 						</div>
 					</div>
 					<A class="ui-menu-link" href={`/spaces/${props.spaceId}/settings`}>
-						Space settings
+						{t("themeMenu.spaceSettings")}
 					</A>
 				</div>
 			</Show>

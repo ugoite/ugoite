@@ -1,12 +1,14 @@
 // REQ-API-001: Space CRUD
 // REQ-API-002: Entry CRUD
 import { describe, it, expect, beforeEach } from "vitest";
+import { http, HttpResponse } from "msw";
 import { assetApi } from "./asset-api";
 import { formApi } from "./form-api";
 import { entryApi, RevisionConflictError } from "./entry-api";
 import { searchApi } from "./search-api";
 import { spaceApi } from "./space-api";
 import { resetMockData, seedSpace, seedEntry } from "~/test/mocks/handlers";
+import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
 
 describe("spaceApi", () => {
@@ -47,6 +49,28 @@ describe("spaceApi", () => {
 		it("should throw error for duplicate space", async () => {
 			await spaceApi.create("my-space");
 			await expect(spaceApi.create("my-space")).rejects.toThrow("already exists");
+		});
+
+		it("should surface validation errors without object placeholders [REQ-FE-043]", async () => {
+			server.use(
+				http.post("http://localhost:3000/api/spaces", () =>
+					HttpResponse.json(
+						{
+							detail: [
+								{
+									loc: ["body", "name"],
+									msg: "Input should be at least 1 character",
+									type: "string_too_short",
+								},
+							],
+						},
+						{ status: 422 },
+					),
+				),
+			);
+
+			await expect(spaceApi.create("")).rejects.toThrow("Input should be at least 1 character");
+			await expect(spaceApi.create("")).rejects.not.toThrow("[object Object]");
 		});
 	});
 
