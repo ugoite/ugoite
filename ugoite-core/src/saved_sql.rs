@@ -277,7 +277,6 @@ pub async fn create_sql<I: IntegrityProvider>(
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         links: Vec::new(),
-        canvas_position: Value::Object(Map::new()),
         created_at: timestamp,
         updated_at: timestamp,
         fields: Value::Object(fields),

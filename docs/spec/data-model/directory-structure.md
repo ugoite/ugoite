@@ -107,7 +107,6 @@ entry_id: string
 title: string
 tags: list<string>
 links: list<struct<id: string, target: string, kind: string>>
-canvas_position: struct<x: double, y: double>
 created_at: timestamp
 updated_at: timestamp
 fields: struct<...>

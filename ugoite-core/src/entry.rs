@@ -70,8 +70,6 @@ pub struct EntryMeta {
     #[serde(default)]
     pub links: Vec<Link>,
     #[serde(default)]
-    pub canvas_position: Value,
-    #[serde(default)]
     pub created_at: f64,
     #[serde(default)]
     pub updated_at: f64,
@@ -94,8 +92,6 @@ pub struct EntryRow {
     pub tags: Vec<String>,
     #[serde(default)]
     pub links: Vec<Link>,
-    #[serde(default)]
-    pub canvas_position: Value,
     pub created_at: f64,
     pub updated_at: f64,
     #[serde(default)]
@@ -715,18 +711,6 @@ fn list_assets_array_from_values(
     Ok(Arc::new(list_builder.finish()))
 }
 
-fn struct_array_from_canvas(canvas: &Value, struct_fields: &Fields) -> Result<ArrayRef> {
-    let mut arrays = Vec::new();
-    for field in struct_fields {
-        let value = canvas.get(field.name()).and_then(|v| v.as_f64());
-        let array: ArrayRef = Arc::new(Float64Array::from(vec![value]));
-        arrays.push(array);
-    }
-    let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
-        .map_err(|e| anyhow!("Failed to build canvas struct array: {}", e))?;
-    Ok(Arc::new(struct_array))
-}
-
 fn struct_array_from_integrity(
     integrity: &IntegrityPayload,
     struct_fields: &Fields,
@@ -919,36 +903,6 @@ fn list_assets_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Valu
     }
 
     Ok(assets)
-}
-
-fn canvas_from_struct_array(struct_array: &StructArray, row: usize) -> Value {
-    if struct_array.is_null(row) {
-        return Value::Object(Map::new());
-    }
-    let x_col = struct_array
-        .column_by_name("x")
-        .and_then(|col| col.as_any().downcast_ref::<Float64Array>());
-    let y_col = struct_array
-        .column_by_name("y")
-        .and_then(|col| col.as_any().downcast_ref::<Float64Array>());
-    let mut map = Map::new();
-    if let Some(col) = x_col {
-        if !col.is_null(row) {
-            map.insert(
-                "x".to_string(),
-                Value::Number(serde_json::Number::from_f64(col.value(row)).unwrap()),
-            );
-        }
-    }
-    if let Some(col) = y_col {
-        if !col.is_null(row) {
-            map.insert(
-                "y".to_string(),
-                Value::Number(serde_json::Number::from_f64(col.value(row)).unwrap()),
-            );
-        }
-    }
-    Value::Object(map)
 }
 
 fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> IntegrityPayload {
@@ -1399,7 +1353,6 @@ fn entry_rows_from_batches(
         let titles = column_as::<StringArray>(batch, "title")?;
         let tags = column_as::<ListArray>(batch, "tags")?;
         let links = column_as::<ListArray>(batch, "links")?;
-        let canvas_positions = column_as::<StructArray>(batch, "canvas_position")?;
         let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
         let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
         let fields = column_as::<StructArray>(batch, "fields")?;
@@ -1418,7 +1371,6 @@ fn entry_rows_from_batches(
 
             let tags_value = list_strings_from_array(tags, row_idx);
             let links_value = list_links_from_array(links, row_idx, entry_ids.value(row_idx))?;
-            let canvas_value = canvas_from_struct_array(canvas_positions, row_idx);
             let assets_value = list_assets_from_array(assets, row_idx)?;
             let integrity_value = integrity_from_struct_array(integrity, row_idx);
 
@@ -1454,7 +1406,6 @@ fn entry_rows_from_batches(
                 form: form_name.to_string(),
                 tags: tags_value,
                 links: links_value,
-                canvas_position: canvas_value,
                 created_at: if created_at.is_null(row_idx) {
                     0.0
                 } else {
@@ -1577,10 +1528,6 @@ fn entry_row_to_record_batch(
             "title" => Arc::new(StringArray::from(vec![Some(row.title.clone())])),
             "tags" => list_array_from_strings(&row.tags, field.as_ref())?,
             "links" => list_links_array_from_links(&row.links, field.as_ref())?,
-            "canvas_position" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_canvas(&row.canvas_position, &struct_fields)?
-            }
             "created_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
                 to_timestamp_micros(row.created_at),
             )])),
@@ -1938,7 +1885,6 @@ pub async fn create_entry<I: IntegrityProvider>(
         form: form_name.clone(),
         tags,
         links: Vec::new(),
-        canvas_position: Value::Object(Map::new()),
         created_at: timestamp,
         updated_at: timestamp,
         fields: Value::Object(fields),
@@ -1990,7 +1936,6 @@ pub async fn create_entry<I: IntegrityProvider>(
         form: Some(form_name),
         tags: entry_row.tags.clone(),
         links: entry_row.links.clone(),
-        canvas_position: entry_row.canvas_position.clone(),
         created_at: timestamp,
         updated_at: timestamp,
         integrity: IntegrityPayload {
@@ -2017,7 +1962,6 @@ pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
             "tags": row.tags,
             "properties": merged_fields,
             "links": row.links,
-            "canvas_position": row.canvas_position,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }));
@@ -2062,7 +2006,6 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         "form": row.form,
         "tags": row.tags,
         "links": row.links,
-        "canvas_position": row.canvas_position,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "integrity": serde_json::to_value(row.integrity)?,
