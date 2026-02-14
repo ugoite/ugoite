@@ -7,7 +7,7 @@ requirements:
   - id: REQ-FE-001
     title: Space Selector
     description: |
-      Select, switch, and create spaces.
+      Select and switch spaces.
     related_spec:
       - stories/core.yaml#STORY-003
     priority: high
@@ -20,22 +20,18 @@ requirements:
             - should show loading state
             - should show error message
             - should call onSelect when space changes
-            - should show create form when add button clicked
-            - should call onCreate when form submitted
-            - should hide create form when cancel clicked
         - file: frontend/src/lib/space-store.test.ts
           tests:
-            - should create default space when none exist
+            - should keep selection empty when no spaces exist
             - should select existing default space
             - should restore persisted space selection
-            - should create new space
             - should select space and persist choice
             - should not select non-existent space
 
   - id: REQ-FE-002
-    title: Automatic Default Space Creation
+    title: No Client-side Default Space Creation
     description: |
-      Automatically create "default" space when none exist.
+      Frontend MUST NOT auto-create spaces when none exist.
     related_spec:
       - architecture/overview.md
     priority: medium
@@ -44,7 +40,7 @@ requirements:
       vitest:
         - file: frontend/src/lib/space-store.test.ts
           tests:
-            - should create default space when none exist
+            - should keep selection empty when no spaces exist
 
   - id: REQ-FE-003
     title: Persist Space Selection

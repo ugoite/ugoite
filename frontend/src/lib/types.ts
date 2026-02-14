@@ -19,47 +19,6 @@ export interface SpacePatchPayload {
 	settings?: Record<string, unknown>;
 }
 
-/** Sample space creation payload */
-export interface SampleSpaceCreatePayload {
-	space_id: string;
-	scenario: string;
-	entry_count?: number;
-	seed?: number;
-}
-
-/** Sample space creation response */
-export interface SampleSpaceSummary {
-	space_id: string;
-	scenario: string;
-	entry_count: number;
-	form_count: number;
-	forms: string[];
-}
-
-export type SampleJobStatus = "queued" | "running" | "completed" | "failed";
-
-export interface SampleSpaceScenario {
-	id: string;
-	label: string;
-	description: string;
-}
-
-export interface SampleSpaceJob {
-	job_id: string;
-	space_id: string;
-	scenario: string;
-	entry_count: number;
-	seed?: number;
-	status: SampleJobStatus;
-	status_message?: string | null;
-	processed_entries: number;
-	total_entries: number;
-	started_at?: string | null;
-	completed_at?: string | null;
-	error?: string | null;
-	summary?: SampleSpaceSummary | null;
-}
-
 /** Test connection payload */
 export interface TestConnectionPayload {
 	storage_config: Record<string, unknown>;

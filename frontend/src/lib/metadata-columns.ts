@@ -13,7 +13,6 @@ export const RESERVED_METADATA_COLUMNS = [
 	"deleted",
 	"deleted_at",
 	"author",
-	"canvas_position",
 	"integrity",
 	"space_id",
 	"word_count",

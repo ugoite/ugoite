@@ -277,13 +277,6 @@ schemas:
               kind:
                 type: string
                 enum: [related, parent, child, reference]
-        canvas_position:
-          type: object
-          properties:
-            x:
-              type: number
-            y:
-              type: number
         created_at:
           type: string
           format: date-time

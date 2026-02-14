@@ -583,7 +583,6 @@ async fn build_record(
         "tags": row.tags,
         "links": row.links,
         "assets": row.assets,
-        "canvas_position": row.canvas_position,
         "checksum": row.integrity.checksum,
         "validation_warnings": Value::Array(warnings),
     });

@@ -428,21 +428,6 @@ fn build_entries_schema(form_def: &Value) -> Result<Schema> {
         false,
     ))));
 
-    let canvas_struct = Type::Struct(StructType::new(vec![
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "x",
-            Type::Primitive(PrimitiveType::Double),
-            false,
-        )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "y",
-            Type::Primitive(PrimitiveType::Double),
-            false,
-        )),
-    ]));
-
     let fields_struct = build_fields_struct(form_def, &mut counter)?;
 
     let assets_struct = Type::Struct(StructType::new(vec![
@@ -511,12 +496,6 @@ fn build_entries_schema(form_def: &Value) -> Result<Schema> {
             next_id(&mut counter),
             "links",
             links_type,
-            false,
-        )),
-        Arc::new(NestedField::new(
-            next_id(&mut counter),
-            "canvas_position",
-            canvas_struct,
             false,
         )),
         Arc::new(NestedField::new(

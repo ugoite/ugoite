@@ -5,7 +5,6 @@ import hashlib
 import hmac
 import io
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -44,73 +43,6 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     ws_path = temp_space_root / "spaces" / "test-ws"
     assert ws_path.exists()
     assert (ws_path / "meta.json").exists()
-
-
-def test_create_sample_space(test_client: TestClient, temp_space_root: Path) -> None:
-    """REQ-API-009: Create a sample-data space via API."""
-    payload = {
-        "space_id": "sample-ws",
-        "scenario": "renewable-ops",
-        "entry_count": 120,
-        "seed": 42,
-    }
-
-    response = test_client.post("/spaces/sample-data", json=payload)
-    assert response.status_code == 201
-    data = response.json()
-    assert data["space_id"] == "sample-ws"
-    assert data["scenario"] == "renewable-ops"
-    assert data["entry_count"] == 120
-    assert 3 <= data["form_count"] <= 6
-
-    list_response = test_client.get("/spaces")
-    assert any(ws["id"] == "sample-ws" for ws in list_response.json())
-
-
-def test_list_sample_scenarios_req_api_010(
-    test_client: TestClient,
-    temp_space_root: Path,
-) -> None:
-    """REQ-API-010: List available sample data scenarios."""
-    response = test_client.get("/spaces/sample-data/scenarios")
-    assert response.status_code == 200
-    data = response.json()
-    assert any(item["id"] == "renewable-ops" for item in data)
-    assert any(item["id"] == "supply-chain" for item in data)
-
-
-def test_create_sample_space_job_req_api_010(
-    test_client: TestClient,
-    temp_space_root: Path,
-) -> None:
-    """REQ-API-010: Create and poll a sample-data job."""
-    payload = {
-        "space_id": "sample-job",
-        "scenario": "renewable-ops",
-        "entry_count": 100,
-        "seed": 42,
-    }
-
-    response = test_client.post("/spaces/sample-data/jobs", json=payload)
-    assert response.status_code == 202
-    job = response.json()
-    assert job["space_id"] == "sample-job"
-    assert job["status"] in {"queued", "running", "completed"}
-    assert job["job_id"]
-
-    job_id = job["job_id"]
-    for _ in range(600):
-        status_response = test_client.get(f"/spaces/sample-data/jobs/{job_id}")
-        assert status_response.status_code == 200
-        latest = status_response.json()
-        if latest["status"] == "completed":
-            assert latest["summary"]["space_id"] == "sample-job"
-            break
-        if latest["status"] == "failed":
-            pytest.fail(latest.get("error") or "Sample job failed")
-        time.sleep(0.1)
-    else:
-        pytest.fail("Sample job did not complete in time")
 
 
 def test_create_space_conflict(
@@ -872,7 +804,7 @@ def test_middleware_hmac_signature(
     """Test that HMAC signature header matches the response body."""
     response = test_client.get("/")
 
-    global_data = json.loads((temp_space_root / "global.json").read_text())
+    global_data = json.loads((temp_space_root / "hmac.json").read_text())
     secret = base64.b64decode(global_data["hmac_key"])
     expected_signature = hmac.new(
         secret,

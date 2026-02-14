@@ -5,7 +5,6 @@ use hmac::{Hmac, Mac};
 use opendal::Operator;
 use rand::RngExt;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 pub trait IntegrityProvider {
@@ -34,7 +33,7 @@ impl RealIntegrityProvider {
     }
 
     pub async fn from_space(op: &Operator, _space_name: &str) -> Result<Self> {
-        let (_key_id, secret) = load_hmac_material(op).await?;
+        let (_key_id, secret) = load_hmac_material(op, _space_name).await?;
         Ok(Self::new(secret))
     }
 }
@@ -55,42 +54,47 @@ impl IntegrityProvider for RealIntegrityProvider {
     }
 }
 
-async fn ensure_global_json(op: &Operator) -> Result<()> {
-    if op.exists("global.json").await? {
+async fn ensure_space_hmac(op: &Operator, space_name: &str) -> Result<()> {
+    let meta_path = format!("spaces/{}/meta.json", space_name);
+    if !op.exists(&meta_path).await? {
+        return Err(anyhow!("Space not found: {}", space_name));
+    }
+    let bytes = op.read(&meta_path).await?;
+    let mut meta: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+    let has_key = meta
+        .get("hmac_key")
+        .and_then(|v| v.as_str())
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if has_key {
         return Ok(());
     }
-
     let mut key_bytes = [0u8; 32];
     rand::rng().fill(&mut key_bytes);
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
     let key_id = format!("key-{}", Uuid::new_v4().simple());
 
-    let payload = serde_json::json!({
-        "version": 1,
-        "default_storage": "",
-        "spaces": [],
-        "hmac_key_id": key_id,
-        "hmac_key": hmac_key,
-        "last_rotation": Utc::now().to_rfc3339(),
-    });
+    meta["hmac_key_id"] = serde_json::Value::String(key_id);
+    meta["hmac_key"] = serde_json::Value::String(hmac_key);
+    meta["last_rotation"] = serde_json::Value::String(Utc::now().to_rfc3339());
 
-    op.write("global.json", serde_json::to_vec_pretty(&payload)?)
+    op.write(&meta_path, serde_json::to_vec_pretty(&meta)?)
         .await?;
     Ok(())
 }
 
-pub async fn load_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
-    ensure_global_json(op).await?;
+pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(String, Vec<u8>)> {
+    ensure_space_hmac(op, space_name).await?;
 
-    let bytes = op.read("global.json").await?;
-    let global_config: HashMap<String, serde_json::Value> =
-        serde_json::from_slice(&bytes.to_vec())?;
+    let meta_path = format!("spaces/{}/meta.json", space_name);
+    let bytes = op.read(&meta_path).await?;
+    let meta: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
 
-    let key_b64 = global_config
+    let key_b64 = meta
         .get("hmac_key")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("hmac_key missing in global.json"))?;
-    let key_id = global_config
+        .ok_or_else(|| anyhow!("hmac_key missing in space meta.json"))?;
+    let key_id = meta
         .get("hmac_key_id")
         .and_then(|v| v.as_str())
         .unwrap_or("default")
@@ -100,8 +104,35 @@ pub async fn load_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
     Ok((key_id, secret))
 }
 
+pub async fn load_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
+    let path = "hmac.json";
+    if !op.exists(path).await? {
+        let mut key_bytes = [0u8; 32];
+        rand::rng().fill(&mut key_bytes);
+        let payload = serde_json::json!({
+            "hmac_key_id": format!("key-{}", Uuid::new_v4().simple()),
+            "hmac_key": general_purpose::STANDARD.encode(key_bytes),
+            "last_rotation": Utc::now().to_rfc3339(),
+        });
+        op.write(path, serde_json::to_vec_pretty(&payload)?).await?;
+    }
+    let bytes = op.read(path).await?;
+    let payload: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+    let key_b64 = payload
+        .get("hmac_key")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("hmac_key missing in hmac.json"))?;
+    let key_id = payload
+        .get("hmac_key_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default")
+        .to_string();
+    let secret = general_purpose::STANDARD.decode(key_b64)?;
+    Ok((key_id, secret))
+}
+
 pub async fn build_response_signature(op: &Operator, body: &[u8]) -> Result<(String, String)> {
-    let (key_id, secret) = load_hmac_material(op).await?;
+    let (key_id, secret) = load_response_hmac_material(op).await?;
     type HmacSha256 = Hmac<Sha256>;
     let mut mac = HmacSha256::new_from_slice(&secret)?;
     mac.update(body);

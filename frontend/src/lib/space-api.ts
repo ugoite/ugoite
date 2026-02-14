@@ -1,12 +1,4 @@
-import type {
-	SampleSpaceCreatePayload,
-	SampleSpaceJob,
-	SampleSpaceScenario,
-	SampleSpaceSummary,
-	TestConnectionPayload,
-	Space,
-	SpacePatchPayload,
-} from "./types";
+import type { TestConnectionPayload, Space, SpacePatchPayload } from "./types";
 import { apiFetch } from "./api";
 
 const parseErrorDetail = (detail: unknown): string => {
@@ -63,54 +55,6 @@ export const spaceApi = {
 			throw new Error(await formatApiError(res, `Failed to create space: ${res.statusText}`));
 		}
 		return (await res.json()) as { id: string; name: string };
-	},
-
-	/** Create a sample-data space */
-	async createSampleSpace(payload: SampleSpaceCreatePayload): Promise<SampleSpaceSummary> {
-		const res = await apiFetch("/spaces/sample-data", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		});
-		if (!res.ok) {
-			throw new Error(
-				await formatApiError(res, `Failed to create sample space: ${res.statusText}`),
-			);
-		}
-		return (await res.json()) as SampleSpaceSummary;
-	},
-
-	/** List sample-data scenarios */
-	async listSampleScenarios(): Promise<SampleSpaceScenario[]> {
-		const res = await apiFetch("/spaces/sample-data/scenarios");
-		if (!res.ok) {
-			throw new Error(
-				await formatApiError(res, `Failed to list sample scenarios: ${res.statusText}`),
-			);
-		}
-		return (await res.json()) as SampleSpaceScenario[];
-	},
-
-	/** Create a sample-data generation job */
-	async createSampleSpaceJob(payload: SampleSpaceCreatePayload): Promise<SampleSpaceJob> {
-		const res = await apiFetch("/spaces/sample-data/jobs", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		});
-		if (!res.ok) {
-			throw new Error(await formatApiError(res, `Failed to create sample job: ${res.statusText}`));
-		}
-		return (await res.json()) as SampleSpaceJob;
-	},
-
-	/** Get a sample-data generation job */
-	async getSampleSpaceJob(jobId: string): Promise<SampleSpaceJob> {
-		const res = await apiFetch(`/spaces/sample-data/jobs/${jobId}`);
-		if (!res.ok) {
-			throw new Error(await formatApiError(res, `Failed to get sample job: ${res.statusText}`));
-		}
-		return (await res.json()) as SampleSpaceJob;
 	},
 
 	/** Get space by ID */

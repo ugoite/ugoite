@@ -3,7 +3,7 @@
 REQ-STO-001: Storage abstraction using fsspec.
 REQ-STO-002: Space directory structure.
 REQ-STO-003: File permissions.
-REQ-STO-004: Space management via global.json.
+REQ-STO-004: Space management via spaces directory.
 REQ-STO-005: Prevent duplicate space creation.
 """
 
@@ -42,16 +42,6 @@ def test_create_space_scaffolding(
     assert fs.exists(fs_join(ws_path, "forms"))
     assert fs.exists(fs_join(ws_path, "assets"))
 
-    # Verify global.json exists at root
-    global_json_path = fs_join(root, "global.json")
-    assert fs.exists(global_json_path)
-
-    # Verify global.json content includes the new space
-    with fs.open(global_json_path, "r") as f:
-        global_data = json.load(f)
-        assert "spaces" in global_data
-        assert ws_id in global_data["spaces"]
-
     # Verify meta.json content
     with fs.open(fs_join(ws_path, "meta.json"), "r") as f:
         meta = json.load(f)
@@ -59,6 +49,8 @@ def test_create_space_scaffolding(
         assert meta["name"] == ws_id
         assert "created_at" in meta
         assert "storage" in meta
+        assert "hmac_key" in meta
+        assert "hmac_key_id" in meta
 
     # Permission enforcement is handled by the core storage layer.
 
