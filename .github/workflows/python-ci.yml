@@ -11,13 +11,14 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.93.0
           components: rustfmt, clippy
 
       - name: Restore Rust cache
@@ -68,14 +69,23 @@ jobs:
 
       - name: Run pytest (backend)
         working-directory: ./backend
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../backend-pytest.xml
+
+      - name: Fail on skipped backend tests
+        run: python3 .github/scripts/assert_junit_no_skips.py backend-pytest.xml --label backend
 
       - name: Run pytest (cli)
         working-directory: ./ugoite-cli
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../cli-pytest.xml
+
+      - name: Fail on skipped cli tests
+        run: python3 .github/scripts/assert_junit_no_skips.py cli-pytest.xml --label ugoite-cli
 
       - name: Run docs consistency tests
-        run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
+        run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=docs-pytest.xml
+
+      - name: Fail on skipped docs tests
+        run: python3 .github/scripts/assert_junit_no_skips.py docs-pytest.xml --label docs
 
       - name: Build core (maturin)
         working-directory: ./ugoite-core
@@ -83,7 +93,10 @@ jobs:
 
       - name: Run pytest (core)
         working-directory: ./ugoite-core
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../core-pytest.xml
+
+      - name: Fail on skipped core tests
+        run: python3 .github/scripts/assert_junit_no_skips.py core-pytest.xml --label ugoite-core
 
       - name: Run cargo test (core)
         working-directory: ./ugoite-core

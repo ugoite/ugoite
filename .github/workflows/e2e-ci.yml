@@ -10,7 +10,7 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -42,4 +42,10 @@ jobs:
         run: mise run setup
 
       - name: Run E2E tests
+        env:
+          PLAYWRIGHT_CI_REPORTER: junit
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
         run: mise run e2e
+
+      - name: Fail on skipped e2e tests
+        run: python3 .github/scripts/assert_junit_no_skips.py e2e/test-results/junit.xml --label e2e
