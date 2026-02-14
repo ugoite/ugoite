@@ -1,8 +1,29 @@
 ---
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { marked } from "marked";
+import { Marked } from "marked";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+const safeMarked = new Marked({
+  gfm: true,
+});
+
+safeMarked.use({
+  renderer: {
+    html(token) {
+      return escapeHtml(token.text);
+    },
+  },
+});
 
 export async function getStaticPaths() {
   const docsRoot = path.resolve(process.cwd(), "../docs");
@@ -32,7 +53,7 @@ const slugPath = String(Astro.params.slug || "").replace(/^\/+/, "");
 const relativePath = `${slugPath}.md`;
 const fullPath = path.join(docsRoot, relativePath);
 const markdown = await fs.readFile(fullPath, "utf-8");
-const html = marked.parse(markdown);
+const html = safeMarked.parse(markdown);
 ---
 
 <BaseLayout title={`Docs: ${relativePath}`}>

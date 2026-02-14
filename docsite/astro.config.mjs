@@ -3,11 +3,11 @@ import { defineConfig } from "astro/config";
 
 export default defineConfig({
 	integrations: [tailwind()],
-	site: "https://example.com",
+	site: process.env.DOCSITE_ORIGIN ?? "http://localhost:4321",
 	vite: {
 		server: {
 			fs: {
-				allow: [".."],
+				allow: ["../docs", "../shared"],
 			},
 		},
 	},
