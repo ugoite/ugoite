@@ -36,6 +36,9 @@ const localeStore = createRoot(() => {
 	const [locale, setLocaleInternal] = createSignal<Locale>(readStoredLocale() ?? "en");
 
 	const setLocale = (nextLocale: Locale) => {
+		if (!availableLocales.has(nextLocale)) {
+			return;
+		}
 		setLocaleInternal(nextLocale);
 		const storage = safeStorage();
 		storage?.setItem(LOCALE_STORAGE_KEY, nextLocale);

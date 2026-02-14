@@ -4,7 +4,7 @@ import { isServer } from "solid-js/web";
 import { locale, setLocale, t } from "~/lib/i18n";
 import { colorMode, setColorMode, setUiTheme, uiTheme } from "~/lib/ui-theme";
 import { UI_THEMES } from "~/themes/registry";
-import type { Locale } from "~/lib/i18n";
+import type { Locale, TranslationKey } from "~/lib/i18n";
 import type { ColorMode, UiTheme } from "~/lib/ui-theme";
 
 const themes: { value: UiTheme; label: string }[] = UI_THEMES.map((theme) => ({
@@ -12,12 +12,12 @@ const themes: { value: UiTheme; label: string }[] = UI_THEMES.map((theme) => ({
 	label: theme.label,
 }));
 
-const modes: { value: ColorMode; label: string }[] = [
+const modes: { value: ColorMode; label: TranslationKey }[] = [
 	{ value: "light", label: "themeMenu.mode.light" },
 	{ value: "dark", label: "themeMenu.mode.dark" },
 ];
 
-const locales: { value: Locale; label: string }[] = [
+const locales: { value: Locale; label: TranslationKey }[] = [
 	{ value: "en", label: "themeMenu.locale.en" },
 	{ value: "ja", label: "themeMenu.locale.ja" },
 ];

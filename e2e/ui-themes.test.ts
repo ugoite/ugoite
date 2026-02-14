@@ -41,8 +41,7 @@ test.describe("UI theme flows", () => {
 			});
 			expect([200, 201]).toContain(variableQueryRes.status());
 
-			await page.goto(`/spaces/${spaceId}/dashboard`);
-			await page.waitForLoadState("networkidle");
+			await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
 
 			const settingsButton = page.getByRole("button", { name: "Theme settings" });
 			await settingsButton.click();
@@ -58,14 +57,14 @@ test.describe("UI theme flows", () => {
 			await page.getByRole("heading", { name: "Filters" }).waitFor();
 			await page.getByRole("button", { name: "Close" }).click();
 
-			await page.goto(`/spaces/${spaceId}/queries/new`, { waitUntil: "networkidle" });
+			await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
 			await waitForQueryForm(page);
 
 			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
 			await page.getByLabel("Query name").fill(queryName);
 			await page.getByRole("button", { name: "Save" }).click();
 			await waitForQueryButton(page, request, variableQueryName, spaceId);
-			await page.goto(`/spaces/${spaceId}/search`, { waitUntil: "networkidle" });
+			await gotoWithRetry(page, `/spaces/${spaceId}/search`);
 			await page.getByPlaceholder("Search queries").fill(variableQueryName);
 			await page
 				.getByRole("button", { name: variableQueryName })
@@ -151,4 +150,18 @@ async function waitForQueryButton(
 	}
 
 	throw new Error(`Timed out waiting for query '${name}' to be listed in /spaces/${space}/sql`);
+}
+
+async function gotoWithRetry(page: Page, path: string): Promise<void> {
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			await page.goto(path, { waitUntil: "networkidle" });
+			return;
+		} catch (error) {
+			if (attempt === 2) {
+				throw error;
+			}
+			await page.waitForTimeout(500);
+		}
+	}
 }
