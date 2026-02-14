@@ -23,8 +23,9 @@ export const buildEntryMarkdownByMode = (
 	mode: EntryInputMode,
 ): string => {
 	if (mode === "markdown") {
-		const markdown = values.__markdown?.trim();
-		if (markdown) return markdown;
+		const originalMarkdown = values.__markdown;
+		const trimmedMarkdown = originalMarkdown?.trim();
+		if (trimmedMarkdown) return originalMarkdown as string;
 	}
 	return buildEntryMarkdownFromFields(formDef, title, values);
 };

@@ -113,6 +113,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
 	const [requiredValues, setRequiredValues] = createSignal<Record<string, string>>({});
 	const [markdownInput, setMarkdownInput] = createSignal("");
+	const [lastGeneratedMarkdown, setLastGeneratedMarkdown] = createSignal("");
+	const [initializedFormName, setInitializedFormName] = createSignal("");
 	const [chatStep, setChatStep] = createSignal(0);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
@@ -204,6 +206,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setTitle("");
 		setInputMode("webform");
 		setMarkdownInput("");
+		setLastGeneratedMarkdown("");
+		setInitializedFormName("");
 		setChatStep(0);
 		const defaultForm = props.defaultForm?.trim();
 		if (defaultForm && props.forms.some((entryForm) => entryForm.name === defaultForm)) {
@@ -222,6 +226,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!form) {
 			setRequiredValues({});
 			setMarkdownInput("");
+			setLastGeneratedMarkdown("");
+			setInitializedFormName("");
+			return;
+		}
+		if (initializedFormName() === form.name) {
 			return;
 		}
 		const defaults: Record<string, string> = {};
@@ -230,7 +239,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			defaults[name] = buildDefaultValue(name, def);
 		}
 		setRequiredValues(defaults);
-		setMarkdownInput(buildEntryMarkdownFromFields(form, title().trim() || form.name, defaults));
+		const generated = buildEntryMarkdownFromFields(form, title().trim() || form.name, defaults);
+		setMarkdownInput(generated);
+		setLastGeneratedMarkdown(generated);
+		setInitializedFormName(form.name);
 		setChatStep(0);
 	});
 
@@ -238,9 +250,17 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		const form = selectedFormDef();
 		if (!form) return;
 		if (inputMode() !== "markdown") return;
-		setMarkdownInput(
-			buildEntryMarkdownFromFields(form, title().trim() || form.name, requiredValues()),
+		const generated = buildEntryMarkdownFromFields(
+			form,
+			title().trim() || form.name,
+			requiredValues(),
 		);
+		const current = markdownInput();
+		const previousGenerated = lastGeneratedMarkdown();
+		if (current === "" || current === previousGenerated) {
+			setMarkdownInput(generated);
+		}
+		setLastGeneratedMarkdown(generated);
 	});
 
 	const handleSubmit = (e: Event) => {
@@ -261,6 +281,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setTitle("");
 			setSelectedForm("");
 			setMarkdownInput("");
+			setLastGeneratedMarkdown("");
 			setChatStep(0);
 			return;
 		}
@@ -275,6 +296,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setTitle("");
 		setSelectedForm("");
 		setMarkdownInput("");
+		setLastGeneratedMarkdown("");
 		setChatStep(0);
 	};
 
