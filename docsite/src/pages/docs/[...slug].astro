@@ -108,7 +108,9 @@ const html = safeMarked.parse(markdown);
 
 <BaseLayout title={`Docs: ${relativePath}`}>
   <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);">
-    <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/{relativePath}</p>
+    <p class="mb-4 text-xs" style="color: var(--doc-muted);">
+      <span data-l10n-key="source_prefix">Source:</span> /docs/{relativePath}
+    </p>
     <Fragment set:html={html} />
   </article>
 </BaseLayout>

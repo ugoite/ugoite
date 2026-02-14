@@ -17,11 +17,11 @@ const { title } = Astro.props;
   </head>
   <body>
     <header class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-      <a href="/" class="text-lg font-semibold">Ugoite Docsite</a>
+      <a href="/" class="text-lg font-semibold" data-l10n-key="brand">Ugoite Docsite</a>
       <nav class="flex items-center gap-4 text-sm">
-        <a href="/docs/guide/cli" class="underline-offset-2 hover:underline">CLI Guide</a>
-        <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline">REST API</a>
-        <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline">MCP API</a>
+        <a href="/docs/guide/cli" class="underline-offset-2 hover:underline" data-l10n-key="nav_cli">CLI Guide</a>
+        <a href="/docs/spec/api/rest" class="underline-offset-2 hover:underline" data-l10n-key="nav_rest">REST API</a>
+        <a href="/docs/spec/api/mcp" class="underline-offset-2 hover:underline" data-l10n-key="nav_mcp">MCP API</a>
       </nav>
       <ThemeSwitcher />
     </header>

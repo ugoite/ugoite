@@ -4,14 +4,14 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 <BaseLayout title="Ugoite Docsite">
   <section class="rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);">
-    <h1 class="text-3xl font-bold">Ugoite Documentation</h1>
-    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+    <h1 class="text-3xl font-bold" data-l10n-key="home_title">Ugoite Documentation</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);" data-l10n-key="home_desc">
       This site renders the main project docs from the repository <code>docs/</code> directory.
     </p>
     <ul class="mt-4 list-disc space-y-1 pl-6 text-sm">
-      <li><a class="underline" href="/docs/guide/cli">CLI Guide</a></li>
-      <li><a class="underline" href="/docs/spec/api/rest">REST API Spec</a></li>
-      <li><a class="underline" href="/docs/spec/api/mcp">MCP API Spec</a></li>
+      <li><a class="underline" href="/docs/guide/cli" data-l10n-key="home_link_cli">CLI Guide</a></li>
+      <li><a class="underline" href="/docs/spec/api/rest" data-l10n-key="home_link_rest">REST API Spec</a></li>
+      <li><a class="underline" href="/docs/spec/api/mcp" data-l10n-key="home_link_mcp">MCP API Spec</a></li>
     </ul>
   </section>
 </BaseLayout>
