@@ -13,6 +13,36 @@ function escapeHtml(raw: string): string {
     .replaceAll("'", "&#39;");
 }
 
+function escapeAttribute(raw: string): string {
+  return escapeHtml(raw).replaceAll("`", "&#96;");
+}
+
+function sanitizeUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+
+  if (
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../") ||
+    trimmed.startsWith("#")
+  ) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, "https://example.local");
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return trimmed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 const safeMarked = new Marked({
   gfm: true,
 });
@@ -21,6 +51,26 @@ safeMarked.use({
   renderer: {
     html(token) {
       return escapeHtml(token.text);
+    },
+    link({ href, title, text }) {
+      const safeHref = sanitizeUrl(href);
+      const safeText = escapeHtml(text ?? href ?? "link");
+      if (!safeHref) {
+        return safeText;
+      }
+
+      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+      return `<a href="${escapeAttribute(safeHref)}"${titleAttr} rel="noopener noreferrer">${safeText}</a>`;
+    },
+    image({ href, title, text }) {
+      const safeSrc = sanitizeUrl(href);
+      if (!safeSrc) {
+        return "";
+      }
+
+      const safeAlt = escapeAttribute(text ?? "");
+      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+      return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr} loading="lazy" decoding="async" />`;
     },
   },
 });
