@@ -27,6 +27,11 @@ components:
           - materialize
           - classic
           - pop
+        primary_colors:
+          - violet
+          - blue
+          - emerald
+          - amber
         color_modes:
           - light
           - dark

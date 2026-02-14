@@ -2,10 +2,18 @@ import { A } from "@solidjs/router";
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import { locale, setLocale, t } from "~/lib/i18n";
-import { colorMode, setColorMode, setUiTheme, uiTheme } from "~/lib/ui-theme";
+import {
+	colorMode,
+	primaryColor,
+	setColorMode,
+	setPrimaryColor,
+	setUiTheme,
+	uiTheme,
+} from "~/lib/ui-theme";
+import { PRIMARY_COLORS } from "~/themes/color-registry";
 import { UI_THEMES } from "~/themes/registry";
 import type { Locale, TranslationKey } from "~/lib/i18n";
-import type { ColorMode, UiTheme } from "~/lib/ui-theme";
+import type { ColorMode, PrimaryColor, UiTheme } from "~/lib/ui-theme";
 
 const themes: { value: UiTheme; label: string }[] = UI_THEMES.map((theme) => ({
 	value: theme.id,
@@ -16,6 +24,11 @@ const modes: { value: ColorMode; label: TranslationKey }[] = [
 	{ value: "light", label: "themeMenu.mode.light" },
 	{ value: "dark", label: "themeMenu.mode.dark" },
 ];
+
+const primaryColors: { value: PrimaryColor; label: TranslationKey }[] = PRIMARY_COLORS.map((color) => ({
+	value: color.id,
+	label: `themeMenu.primary.${color.id}` as TranslationKey,
+}));
 
 const locales: { value: Locale; label: TranslationKey }[] = [
 	{ value: "en", label: "themeMenu.locale.en" },
@@ -112,6 +125,25 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											onChange={() => setColorMode(mode.value)}
 										/>
 										<span>{t(mode.label)}</span>
+									</label>
+								)}
+							</For>
+						</div>
+					</div>
+					<div class="ui-menu-section">
+						<p class="ui-menu-title">{t("themeMenu.primaryColor")}</p>
+						<div class="ui-menu-options">
+							<For each={primaryColors}>
+								{(color) => (
+									<label class="ui-radio">
+										<input
+											type="radio"
+											name="primary-color"
+											value={color.value}
+											checked={primaryColor() === color.value}
+											onChange={() => setPrimaryColor(color.value)}
+										/>
+										<span>{t(color.label)}</span>
 									</label>
 								)}
 							</For>

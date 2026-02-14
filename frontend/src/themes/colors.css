@@ -1,0 +1,77 @@
+:root,
+:root:not([data-color-mode]),
+:root[data-color-mode="light"] {
+	--ui-surface-1: oklch(0.985 0.012 258);
+	--ui-surface-2: oklch(0.962 0.018 260);
+	--ui-surface-3: oklch(0.93 0.026 262);
+	--ui-foreground: oklch(0.18 0.04 260);
+	--ui-foreground-muted: oklch(0.46 0.035 260);
+	--ui-border: oklch(0.84 0.03 260);
+	--ui-danger: oklch(0.62 0.22 28);
+	--ui-success: oklch(0.63 0.19 150);
+	--ui-warning: oklch(0.77 0.17 82);
+	color-scheme: light;
+}
+
+:root[data-color-mode="dark"] {
+	--ui-surface-1: oklch(0.16 0.03 262);
+	--ui-surface-2: oklch(0.2 0.035 266);
+	--ui-surface-3: oklch(0.24 0.04 270);
+	--ui-foreground: oklch(0.92 0.02 262);
+	--ui-foreground-muted: oklch(0.72 0.028 262);
+	--ui-border: oklch(0.31 0.04 266);
+	--ui-danger: oklch(0.72 0.21 28);
+	--ui-success: oklch(0.72 0.19 150);
+	--ui-warning: oklch(0.82 0.17 84);
+	color-scheme: dark;
+}
+
+:root,
+:root:not([data-primary-color]),
+:root[data-primary-color="violet"] {
+	--ui-accent: oklch(0.64 0.2 275);
+	--ui-accent-strong: oklch(0.56 0.24 279);
+	--ui-accent-foreground: oklch(0.985 0.014 258);
+}
+
+:root[data-primary-color="violet"][data-color-mode="dark"] {
+	--ui-accent: oklch(0.79 0.2 278);
+	--ui-accent-strong: oklch(0.85 0.22 282);
+	--ui-accent-foreground: oklch(0.12 0.03 262);
+}
+
+:root[data-primary-color="blue"] {
+	--ui-accent: oklch(0.65 0.16 252);
+	--ui-accent-strong: oklch(0.57 0.18 252);
+	--ui-accent-foreground: oklch(0.985 0.014 258);
+}
+
+:root[data-primary-color="blue"][data-color-mode="dark"] {
+	--ui-accent: oklch(0.8 0.16 252);
+	--ui-accent-strong: oklch(0.86 0.18 252);
+	--ui-accent-foreground: oklch(0.12 0.03 262);
+}
+
+:root[data-primary-color="emerald"] {
+	--ui-accent: oklch(0.66 0.17 158);
+	--ui-accent-strong: oklch(0.58 0.19 158);
+	--ui-accent-foreground: oklch(0.985 0.014 258);
+}
+
+:root[data-primary-color="emerald"][data-color-mode="dark"] {
+	--ui-accent: oklch(0.81 0.17 158);
+	--ui-accent-strong: oklch(0.87 0.19 158);
+	--ui-accent-foreground: oklch(0.12 0.03 262);
+}
+
+:root[data-primary-color="amber"] {
+	--ui-accent: oklch(0.75 0.16 86);
+	--ui-accent-strong: oklch(0.67 0.18 86);
+	--ui-accent-foreground: oklch(0.18 0.04 260);
+}
+
+:root[data-primary-color="amber"][data-color-mode="dark"] {
+	--ui-accent: oklch(0.84 0.16 86);
+	--ui-accent-strong: oklch(0.9 0.18 86);
+	--ui-accent-foreground: oklch(0.12 0.03 262);
+}
