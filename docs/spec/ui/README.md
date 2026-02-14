@@ -1,7 +1,11 @@
 # UI Specifications
 
-This directory defines page-level UI specifications for the space-scoped UI redesign.
-Each page is specified as a YAML document under ui/pages/.
+This directory defines UI specifications for the space-scoped UI redesign.
+
+- Reusable UI elements (header/footer/shell/navigation primitives) are specified under `ui/components/`.
+- Page-level specifications are specified under `ui/pages/`.
+
+The frontend implementation and this spec set are validated by tests to ensure route/page parity and link consistency.
 
 ## Pages
 
@@ -13,3 +17,17 @@ Each page is specified as a YAML document under ui/pages/.
 - space-entry-detail
 - space-form-grid
 - space-settings
+- space-home
+- space-assets
+- space-asset-detail
+- space-links
+- space-link-detail
+- space-query-legacy
+- space-sql
+- space-sql-detail
+- space-test-connection
+- space-form-types
+- space-form-detail
+- space-entry-history
+- space-entry-revision
+- space-entry-restore
