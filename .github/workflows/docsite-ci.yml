@@ -1,0 +1,53 @@
+name: Docsite CI
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            docsite/node_modules
+          key: ${{ runner.os }}-docsite-bun-${{ hashFiles('docsite/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-docsite-bun-
+
+      - name: Install dependencies
+        working-directory: ./docsite
+        run: bun install
+
+      - name: Lint
+        working-directory: ./docsite
+        run: bun run lint
+
+      - name: Format check
+        working-directory: ./docsite
+        run: bun run format:check
+
+      - name: Typecheck
+        working-directory: ./docsite
+        run: bun run typecheck
+
+      - name: Build
+        working-directory: ./docsite
+        run: bun run build
