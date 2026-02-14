@@ -31,7 +31,7 @@ run = [
 ]
 
 [tasks.dev]
-depends = ["//backend:dev", "//frontend:dev"]
+depends = ["//backend:dev", "//frontend:dev", "//docsite:dev"]
 
 [tasks.test]
 depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "test:docs"]
