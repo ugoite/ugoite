@@ -29,6 +29,8 @@ export interface Asset {
 	id: string;
 	name: string;
 	path: string;
+	link?: string;
+	uploaded_at?: string;
 }
 
 /** Entry record (from index) */

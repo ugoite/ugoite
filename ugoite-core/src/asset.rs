@@ -1,16 +1,55 @@
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entry;
+use crate::form;
+use crate::integrity::RealIntegrityProvider;
+
+const ASSET_FORM_NAME: &str = "Assets";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct AssetInfo {
     pub id: String,
     pub name: String,
     pub path: String,
+    pub link: String,
+    pub uploaded_at: String,
+}
+
+fn asset_form_definition() -> serde_json::Value {
+    serde_json::json!({
+        "name": ASSET_FORM_NAME,
+        "version": 1,
+        "fields": {
+            "name": {"type": "string", "required": true},
+            "link": {"type": "string", "required": true},
+            "uploaded_at": {"type": "timestamp", "required": true}
+        },
+        "allow_extra_attributes": "deny"
+    })
+}
+
+async fn ensure_asset_form(op: &Operator, ws_path: &str) -> Result<()> {
+    form::upsert_metadata_form(op, ws_path, &asset_form_definition()).await
+}
+
+fn space_id_from_ws_path(ws_path: &str) -> String {
+    ws_path
+        .trim_end_matches('/')
+        .split('/')
+        .next_back()
+        .unwrap_or(ws_path)
+        .to_string()
+}
+
+fn build_asset_entry_content(name: &str, link: &str, uploaded_at: &str) -> String {
+    format!(
+        "---\nform: {ASSET_FORM_NAME}\n---\n# {name}\n\n## name\n{name}\n\n## link\n{link}\n\n## uploaded_at\n{uploaded_at}\n"
+    )
 }
 
 pub async fn save_asset(
@@ -19,6 +58,7 @@ pub async fn save_asset(
     filename: &str,
     content: &[u8],
 ) -> Result<AssetInfo> {
+    ensure_asset_form(op, ws_path).await?;
     let asset_id = Uuid::new_v4().to_string();
     let safe_name = if filename.is_empty() {
         asset_id.clone()
@@ -27,15 +67,55 @@ pub async fn save_asset(
     };
     let relative_path = format!("assets/{}_{}", asset_id, safe_name);
     let asset_path = format!("{}/{}", ws_path, relative_path);
+    let link = format!("ugoite://asset/{asset_id}");
+    let uploaded_at = Utc::now().to_rfc3339();
     op.write(&asset_path, content.to_vec()).await?;
+
+    let space_id = space_id_from_ws_path(ws_path);
+    let integrity = RealIntegrityProvider::from_space(op, &space_id).await?;
+    let entry_content = build_asset_entry_content(&safe_name, &link, &uploaded_at);
+    if let Err(error) =
+        entry::create_entry(op, ws_path, &asset_id, &entry_content, "system", &integrity).await
+    {
+        let _ = op.delete(&asset_path).await;
+        return Err(error);
+    }
+
     Ok(AssetInfo {
         id: asset_id,
         name: safe_name,
         path: relative_path,
+        link,
+        uploaded_at,
     })
 }
 
 pub async fn list_assets(op: &Operator, ws_path: &str) -> Result<Vec<AssetInfo>> {
+    ensure_asset_form(op, ws_path).await?;
+    let mut metadata_by_id = std::collections::HashMap::new();
+    if let Ok(form_def) = form::read_form_definition(op, ws_path, ASSET_FORM_NAME).await {
+        if let Ok(rows) = entry::list_form_entry_rows(op, ws_path, ASSET_FORM_NAME, &form_def).await
+        {
+            for row in rows {
+                if row.deleted {
+                    continue;
+                }
+                let fields = row.fields.as_object();
+                let link = fields
+                    .and_then(|f| f.get("link"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let uploaded_at = fields
+                    .and_then(|f| f.get("uploaded_at"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                metadata_by_id.insert(row.entry_id, (link, uploaded_at));
+            }
+        }
+    }
+
     let assets_path = format!("{}/assets/", ws_path);
     if !op.exists(&assets_path).await? {
         return Ok(vec![]);
@@ -52,10 +132,16 @@ pub async fn list_assets(op: &Operator, ws_path: &str) -> Result<Vec<AssetInfo>>
                 continue;
             }
             if let Some((id, original)) = name.split_once('_') {
+                let (link, uploaded_at) = metadata_by_id
+                    .get(id)
+                    .cloned()
+                    .unwrap_or((format!("ugoite://asset/{id}"), String::new()));
                 assets.push(AssetInfo {
                     id: id.to_string(),
                     name: original.to_string(),
                     path: format!("assets/{}", name),
+                    link,
+                    uploaded_at,
                 });
             }
         }
@@ -110,6 +196,8 @@ pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Resul
     if !deleted {
         return Err(anyhow!("Asset {} not found", asset_id));
     }
+
+    let _ = entry::delete_entry(op, ws_path, asset_id, false).await;
 
     Ok(())
 }
