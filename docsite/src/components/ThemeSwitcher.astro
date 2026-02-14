@@ -31,33 +31,49 @@ import { DOCSITE_I18N } from "../lib/i18n";
 
   const localeMap = messages;
 
+  let activeLocale = "";
+
+  const setLocalizedText = (node, value) => {
+    if (!value) return;
+    const textNode = Array.from(node.childNodes).find(
+      (child) => child.nodeType === Node.TEXT_NODE,
+    );
+    if (textNode) {
+      textNode.textContent = value;
+      return;
+    }
+    node.prepend(document.createTextNode(value));
+  };
+
   const applyLocale = (locale) => {
-    const bundle = localeMap[locale] || localeMap.en;
-    root.lang = locale;
-    root.dataset.docLocale = locale;
-    localStorage.setItem(localeKey, locale);
+    const resolvedLocale = localeMap[locale] ? locale : "en";
+    if (activeLocale === resolvedLocale) return;
+
+    activeLocale = resolvedLocale;
+    const bundle = localeMap[resolvedLocale] || localeMap.en;
+    root.lang = resolvedLocale;
+    root.dataset.docLocale = resolvedLocale;
+    localStorage.setItem(localeKey, resolvedLocale);
 
     document.querySelectorAll("[data-l10n-key]").forEach((node) => {
       const key = node.getAttribute("data-l10n-key");
       if (!key) return;
       const value = bundle[key] || localeMap.en[key];
       if (!value) return;
-      node.textContent = value;
+      setLocalizedText(node, value);
     });
   };
 
-  const apply = () => {
+  const applyThemeAndMode = () => {
     const theme =
       themeSelect instanceof HTMLSelectElement ? themeSelect.value : localStorage.getItem(themeKey) || "materialize";
     const mode =
       modeSelect instanceof HTMLSelectElement ? modeSelect.value : localStorage.getItem(modeKey) || "light";
-    const locale =
-      localeSelect instanceof HTMLSelectElement ? localeSelect.value : localStorage.getItem(localeKey) || "en";
+
     root.dataset.uiTheme = theme;
     root.dataset.colorMode = mode;
     localStorage.setItem(themeKey, theme);
     localStorage.setItem(modeKey, mode);
-    applyLocale(locale);
   };
 
   const initialTheme = localStorage.getItem(themeKey) || "materialize";
@@ -67,23 +83,24 @@ import { DOCSITE_I18N } from "../lib/i18n";
   if (themeSelect instanceof HTMLSelectElement) {
     themeSelect.value = initialTheme;
     themeSelect.addEventListener("change", () => {
-      apply();
+      applyThemeAndMode();
     });
   }
 
   if (modeSelect instanceof HTMLSelectElement) {
     modeSelect.value = initialMode;
     modeSelect.addEventListener("change", () => {
-      apply();
+      applyThemeAndMode();
     });
   }
 
   if (localeSelect instanceof HTMLSelectElement) {
     localeSelect.value = initialLocale;
     localeSelect.addEventListener("change", () => {
-      apply();
+      applyLocale(localeSelect.value);
     });
   }
 
-  apply();
+  applyThemeAndMode();
+  applyLocale(initialLocale);
 </script>
