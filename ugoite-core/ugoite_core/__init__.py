@@ -4,6 +4,10 @@ from contextlib import suppress
 from typing import Any, cast
 
 from . import _ugoite_core as _core
+from .entry_input_modes import (
+    compose_entry_markdown_from_chat,
+    compose_entry_markdown_from_fields,
+)
 from .sql_rules import (
     SqlLintDiagnostic,
     build_sql_schema,
@@ -66,6 +70,8 @@ __all__ = [
     "SqlLintDiagnostic",
     "build_response_signature",
     "build_sql_schema",
+    "compose_entry_markdown_from_chat",
+    "compose_entry_markdown_from_fields",
     "create_entry",
     "create_sample_space",
     "create_sample_space_job",

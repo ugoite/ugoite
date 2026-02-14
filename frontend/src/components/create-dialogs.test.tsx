@@ -170,6 +170,77 @@ describe("CreateEntryDialog", () => {
 		expect((startsAtInput as HTMLInputElement).value).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
 		expect((countInput as HTMLInputElement).value).toBe("0");
 	});
+
+	it("REQ-FE-037: supports markdown mode submission", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "# Meeting\n\n## Date\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "My Markdown Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+
+		const markdownArea = screen.getByRole("textbox", { name: "Markdown input" });
+		fireEvent.input(markdownArea, {
+			target: { value: "# My Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"My Markdown Entry",
+			"Meeting",
+			expect.objectContaining({
+				__markdown: "# My Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
+			}),
+			"markdown",
+		);
+	});
+
+	it("REQ-FE-037: keeps user-edited markdown when title changes", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "# Meeting\n\n## Date\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+
+		const markdownArea = screen.getByRole("textbox", { name: "Markdown input" });
+		const customMarkdown = "# Custom\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14\n";
+		fireEvent.input(markdownArea, { target: { value: customMarkdown } });
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Updated title" },
+		});
+
+		expect(
+			(screen.getByRole("textbox", { name: "Markdown input" }) as HTMLTextAreaElement).value,
+		).toBe(customMarkdown);
+	});
 });
 
 describe("EditFormDialog", () => {
