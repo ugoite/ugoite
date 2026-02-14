@@ -60,3 +60,19 @@ requirements:
             - "REQ-E2E-003: UI flows work in materialize theme"
             - "REQ-E2E-003: UI flows work in classic theme"
             - "REQ-E2E-003: UI flows work in pop theme"
+
+  - id: REQ-E2E-004
+    title: Dynamic Navigation Stability
+    description: |
+      Frontend route traversal across internal links and transitions MUST not
+      produce browser console errors, runtime page errors, or SolidJS fallback
+      error screens.
+    related_spec:
+      - testing/strategy.md
+    priority: high
+    status: implemented
+    tests:
+      e2e:
+        - file: e2e/navigation.test.ts
+          tests:
+            - "REQ-E2E-004: dynamic traversal has no console or SolidJS errors"
