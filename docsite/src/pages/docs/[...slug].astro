@@ -124,7 +124,7 @@ const breadcrumbs = parts.map((part, index) => ({
         </>
       ))}
     </nav>
-    <p class="mt-2 text-xs" style="color: var(--doc-muted);">Source: /docs/{relativePath}</p>
+    <p class="mt-2 text-xs" style="color: var(--doc-muted);"><span data-l10n-key="source_prefix">Source:</span> /docs/{relativePath}</p>
   </section>
   <article class="prose doc-prose max-w-none">
     <Fragment set:html={html} />

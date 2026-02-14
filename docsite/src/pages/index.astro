@@ -6,15 +6,14 @@ import { navSections } from "../lib/navigation";
 <BaseLayout title="Ugoite Docsite" description="Ugoite documentation portal for specs, APIs, guides, and tasks.">
   <section class="doc-card">
     <span class="doc-badge">Local-First / AI-Native</span>
-    <h1 class="mt-3 text-4xl font-bold tracking-tight">Build with confidence using the live Ugoite specs</h1>
-    <p class="mt-3 text-sm" style="color: var(--doc-muted);">
-      This portal renders repository-backed documentation from <code>docs/</code>, so implementation and documentation stay aligned.
-      Explore architecture, data model, API contracts, and UI specs from a single, searchable structure.
+    <h1 class="mt-3 text-4xl font-bold tracking-tight" data-l10n-key="home_title">Ugoite Documentation</h1>
+    <p class="mt-3 text-sm" style="color: var(--doc-muted);" data-l10n-key="home_desc">
+      This site renders the main project docs from the repository <code>docs/</code> directory.
     </p>
     <div class="mt-5 flex flex-wrap gap-2 text-sm">
-      <a href="/docs/spec/index" class="rounded-full px-4 py-2" style="background: var(--doc-accent-soft); color: var(--doc-accent);">Open Spec Index</a>
-      <a href="/docs/tasks/tasks" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);">View Milestone Tasks</a>
-      <a href="/docs/spec/api/rest" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);">REST API</a>
+      <a href="/docs/guide/cli" class="rounded-full px-4 py-2" style="background: var(--doc-accent-soft); color: var(--doc-accent);" data-l10n-key="home_link_cli">CLI Guide</a>
+      <a href="/docs/spec/api/rest" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);" data-l10n-key="home_link_rest">REST API Spec</a>
+      <a href="/docs/spec/api/mcp" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);" data-l10n-key="home_link_mcp">MCP API Spec</a>
     </div>
   </section>
 

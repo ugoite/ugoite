@@ -1,6 +1,6 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
-import { navSections, topLinks } from "../lib/navigation";
+import { navSections } from "../lib/navigation";
 import "../styles.css";
 
 export interface Props {
@@ -21,13 +21,11 @@ const { title, description } = Astro.props;
   <body>
     <header class="mx-auto max-w-6xl px-4 py-4">
       <div class="doc-card flex flex-wrap items-center justify-between gap-4 py-3">
-        <a href="/" class="text-xl font-semibold tracking-tight">Ugoite Docs</a>
+        <a href="/" class="text-xl font-semibold tracking-tight" data-l10n-key="brand">Ugoite Docsite</a>
         <nav class="flex flex-wrap items-center gap-3 text-sm">
-          {topLinks.map((item) => (
-            <a href={item.href} class="rounded-full px-3 py-1.5 hover:opacity-80">
-              {item.title}
-            </a>
-          ))}
+          <a href="/docs/guide/cli" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_cli">CLI Guide</a>
+          <a href="/docs/spec/api/rest" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_rest">REST API</a>
+          <a href="/docs/spec/api/mcp" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_mcp">MCP API</a>
         </nav>
         <ThemeSwitcher />
       </div>

@@ -1,31 +1,75 @@
 ---
 import themes from "../../../shared/themes/ui-theme-definitions.json";
+import { DOCSITE_I18N } from "../lib/i18n";
 ---
 
 <div class="flex items-center gap-3">
-  <label for="theme" class="text-sm text-slate-600">Theme</label>
+  <label for="theme" class="text-sm text-slate-600" data-l10n-key="theme_label">Theme</label>
   <select id="theme" class="rounded-md border px-2 py-1 text-sm" data-theme-selector>
     {themes.map((theme) => <option value={theme.id}>{theme.label}</option>)}
   </select>
-  <label for="mode" class="text-sm text-slate-600">Mode</label>
+  <label for="mode" class="text-sm text-slate-600" data-l10n-key="mode_label">Mode</label>
   <select id="mode" class="rounded-md border px-2 py-1 text-sm" data-mode-selector>
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
+    <option value="light" data-l10n-key="mode_light">Light</option>
+    <option value="dark" data-l10n-key="mode_dark">Dark</option>
+  </select>
+  <label for="lang" class="text-sm text-slate-600" data-l10n-key="language_label">Language</label>
+  <select id="lang" class="rounded-md border px-2 py-1 text-sm" data-locale-selector>
+    <option value="en">English</option>
+    <option value="ja">日本語</option>
   </select>
 </div>
 
-<script>
+<script define:vars={{ messages: DOCSITE_I18N }}>
   const themeKey = "ugoite-ui-theme";
   const modeKey = "ugoite-color-mode";
+  const localeKey = "ugoite-docsite-locale";
   const root = document.documentElement;
   const themeSelect = document.querySelector("[data-theme-selector]");
   const modeSelect = document.querySelector("[data-mode-selector]");
+  const localeSelect = document.querySelector("[data-locale-selector]");
 
-  const apply = () => {
+  const localeMap = messages;
+
+  let activeLocale = "";
+
+  const setLocalizedText = (node, value) => {
+    if (!value) return;
+    const textNode = Array.from(node.childNodes).find(
+      (child) => child.nodeType === Node.TEXT_NODE,
+    );
+    if (textNode) {
+      textNode.textContent = value;
+      return;
+    }
+    node.prepend(document.createTextNode(value));
+  };
+
+  const applyLocale = (locale) => {
+    const resolvedLocale = localeMap[locale] ? locale : "en";
+    if (activeLocale === resolvedLocale) return;
+
+    activeLocale = resolvedLocale;
+    const bundle = localeMap[resolvedLocale] || localeMap.en;
+    root.lang = resolvedLocale;
+    root.dataset.docLocale = resolvedLocale;
+    localStorage.setItem(localeKey, resolvedLocale);
+
+    document.querySelectorAll("[data-l10n-key]").forEach((node) => {
+      const key = node.getAttribute("data-l10n-key");
+      if (!key) return;
+      const value = bundle[key] || localeMap.en[key];
+      if (!value) return;
+      setLocalizedText(node, value);
+    });
+  };
+
+  const applyThemeAndMode = () => {
     const theme =
       themeSelect instanceof HTMLSelectElement ? themeSelect.value : localStorage.getItem(themeKey) || "materialize";
     const mode =
       modeSelect instanceof HTMLSelectElement ? modeSelect.value : localStorage.getItem(modeKey) || "light";
+
     root.dataset.uiTheme = theme;
     root.dataset.colorMode = mode;
     localStorage.setItem(themeKey, theme);
@@ -34,20 +78,29 @@ import themes from "../../../shared/themes/ui-theme-definitions.json";
 
   const initialTheme = localStorage.getItem(themeKey) || "materialize";
   const initialMode = localStorage.getItem(modeKey) || "light";
+  const initialLocale = localStorage.getItem(localeKey) || "en";
 
   if (themeSelect instanceof HTMLSelectElement) {
     themeSelect.value = initialTheme;
     themeSelect.addEventListener("change", () => {
-      apply();
+      applyThemeAndMode();
     });
   }
 
   if (modeSelect instanceof HTMLSelectElement) {
     modeSelect.value = initialMode;
     modeSelect.addEventListener("change", () => {
-      apply();
+      applyThemeAndMode();
     });
   }
 
-  apply();
+  if (localeSelect instanceof HTMLSelectElement) {
+    localeSelect.value = initialLocale;
+    localeSelect.addEventListener("change", () => {
+      applyLocale(localeSelect.value);
+    });
+  }
+
+  applyThemeAndMode();
+  applyLocale(initialLocale);
 </script>
