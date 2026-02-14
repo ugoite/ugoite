@@ -17,6 +17,7 @@ export const sqlSessionApi = {
 	async get(spaceId: string, sessionId: string): Promise<SqlSession> {
 		const res = await apiFetch(
 			`/spaces/${encodeURIComponent(spaceId)}/sql-sessions/${encodeURIComponent(sessionId)}`,
+			{ trackLoading: false },
 		);
 		if (!res.ok) {
 			throw new Error(`Failed to load SQL session: ${res.statusText}`);
@@ -27,6 +28,7 @@ export const sqlSessionApi = {
 	async count(spaceId: string, sessionId: string): Promise<number> {
 		const res = await apiFetch(
 			`/spaces/${encodeURIComponent(spaceId)}/sql-sessions/${encodeURIComponent(sessionId)}/count`,
+			{ trackLoading: false },
 		);
 		if (!res.ok) {
 			throw new Error(`Failed to load SQL session count: ${res.statusText}`);
@@ -47,6 +49,7 @@ export const sqlSessionApi = {
 		});
 		const res = await apiFetch(
 			`/spaces/${encodeURIComponent(spaceId)}/sql-sessions/${encodeURIComponent(sessionId)}/rows?${params.toString()}`,
+			{ trackLoading: false },
 		);
 		if (!res.ok) {
 			throw new Error(`Failed to load SQL session rows: ${res.statusText}`);

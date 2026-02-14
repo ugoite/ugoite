@@ -118,6 +118,17 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		return Object.entries(form.fields || {}).filter(([, def]) => def.required);
 	});
 
+	const inputGuidance = createMemo(() => {
+		const form = selectedFormDef();
+		if (!form) return [] as string[];
+		const types = new Set(Object.values(form.fields || {}).map((field) => field.type));
+		const hints = ["属性は作成後に Markdown の `## フィールド名` 見出しで編集できます。"];
+		if (types.has("list")) hints.push("list は `- item` または 1行1値で入力。");
+		if (types.has("boolean")) hints.push("boolean は true/false, yes/no, on/off, 1/0 を使用。");
+		if (types.has("row_reference")) hints.push("row_reference は対象 Form の entry_id を入力。");
+		return hints;
+	});
+
 	const buildDefaultValue = (name: string, field: Form["fields"][string]) => {
 		if (name.toLowerCase() === "sql") return "SELECT * FROM entries LIMIT 50";
 		switch (field.type) {
@@ -309,6 +320,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 										</div>
 									)}
 								</Show>
+							</div>
+						</Show>
+
+						<Show when={selectedFormDef() && inputGuidance().length > 0}>
+							<div class="ui-alert ui-alert-warning text-xs space-y-1">
+								<For each={inputGuidance()}>{(hint) => <p>{hint}</p>}</For>
 							</div>
 						</Show>
 

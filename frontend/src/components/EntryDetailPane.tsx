@@ -1,21 +1,32 @@
-import { createEffect, createResource, createSignal, onCleanup, Show, For } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createResource,
+	createSignal,
+	onCleanup,
+	Show,
+	For,
+} from "solid-js";
 import type { Accessor } from "solid-js";
 import { isServer } from "solid-js/web";
 import { AssetUploader } from "~/components/AssetUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { assetApi } from "~/lib/asset-api";
 import { entryApi, RevisionConflictError } from "~/lib/entry-api";
-import type { Asset } from "~/lib/types";
+import { updateH2Section } from "~/lib/markdown";
+import type { Asset, Form } from "~/lib/types";
 
 export interface EntryDetailPaneProps {
 	spaceId: Accessor<string>;
 	entryId: Accessor<string>;
+	forms?: Accessor<Form[]>;
 	onDeleted: () => void;
 	onAfterSave?: () => void;
 }
 
 const CLASS_VALIDATION_MARKER = "Form validation failed:";
 const UNKNOWN_FIELDS_MARKER = "Unknown form fields:";
+const BOOLEAN_VALUE_REGEX = /^(true|false|yes|no|on|off|1|0)$/i;
 
 function parseFormValidationError(message: string) {
 	if (!message.includes(CLASS_VALIDATION_MARKER)) return null;
@@ -55,6 +66,89 @@ function parseUnknownFieldsError(message: string) {
 
 function parseValidationErrorMessage(message: string) {
 	return parseFormValidationError(message) || parseUnknownFieldsError(message);
+}
+
+function normalizeFieldName(fieldName: string) {
+	return fieldName.trim().toLowerCase();
+}
+
+function parseMarkdownH2Sections(markdown: string) {
+	const lines = markdown.split(/\r?\n/);
+	const sections: Array<{ title: string; content: string }> = [];
+	let activeTitle: string | null = null;
+	let buffer: string[] = [];
+
+	const pushActive = () => {
+		if (!activeTitle) return;
+		sections.push({ title: activeTitle, content: buffer.join("\n").trim() });
+	};
+
+	for (const line of lines) {
+		const heading = /^##\s+(.+?)\s*$/.exec(line);
+		if (heading) {
+			pushActive();
+			activeTitle = heading[1];
+			buffer = [];
+			continue;
+		}
+		if (activeTitle) {
+			buffer.push(line);
+		}
+	}
+
+	pushActive();
+	return sections;
+}
+
+function buildEditorGuidance(form: Form | null, markdown: string) {
+	if (!form) {
+		return {
+			missingRequired: [] as string[],
+			unknownSections: [] as string[],
+			typeIssues: [] as string[],
+		};
+	}
+
+	const sections = parseMarkdownH2Sections(markdown);
+	const sectionMap = new Map<string, { title: string; content: string }>();
+	for (const section of sections) {
+		sectionMap.set(normalizeFieldName(section.title), section);
+	}
+
+	const formFields = Object.entries(form.fields || {});
+	const knownFieldNames = new Set(formFields.map(([fieldName]) => normalizeFieldName(fieldName)));
+
+	const missingRequired = formFields
+		.filter(
+			([fieldName, fieldDef]) =>
+				fieldDef.required && !sectionMap.has(normalizeFieldName(fieldName)),
+		)
+		.map(([fieldName]) => fieldName);
+
+	const unknownSections = sections
+		.filter((section) => !knownFieldNames.has(normalizeFieldName(section.title)))
+		.map((section) => section.title);
+
+	const typeIssues: string[] = [];
+	for (const [fieldName, fieldDef] of formFields) {
+		const section = sectionMap.get(normalizeFieldName(fieldName));
+		if (!section) continue;
+		const value = section.content.trim();
+		if (!value) continue;
+		if (fieldDef.type === "boolean" && !BOOLEAN_VALUE_REGEX.test(value)) {
+			typeIssues.push(`${fieldName}: boolean は true/false, yes/no, on/off, 1/0 を使用`);
+		}
+		if (
+			fieldDef.type === "list" &&
+			!value.includes("\n") &&
+			!value.startsWith("-") &&
+			value.includes(",")
+		) {
+			typeIssues.push(`${fieldName}: list は "- item" または1行1値を使用`);
+		}
+	}
+
+	return { missingRequired, unknownSections, typeIssues };
 }
 
 async function fetchWithTimeout<T>(
@@ -110,6 +204,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 		},
 	);
 
+	const currentForm = createMemo(() => {
+		const formName = entry()?.form?.trim();
+		if (!formName) return null;
+		const availableForms = props.forms?.() ?? [];
+		return availableForms.find((candidate) => candidate.name === formName) ?? null;
+	});
+
+	const editorGuidance = createMemo(() => buildEditorGuidance(currentForm(), editorContent()));
+
 	let assetsAbortController: AbortController | null = null;
 	createEffect(() => {
 		if (isServer) return;
@@ -151,7 +254,21 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 		setValidationError(null);
 	};
 
-	const resolveSaveContext = () => {
+	const handleInsertMissingHeadings = () => {
+		const missingRequired = editorGuidance().missingRequired;
+		if (missingRequired.length === 0) return;
+		let nextContent = editorContent();
+		for (const fieldName of missingRequired) {
+			nextContent = updateH2Section(nextContent, fieldName, "");
+		}
+		handleContentChange(nextContent);
+	};
+
+	type SaveContext =
+		| { ok: true; wsId: string; entryId: string; revisionId: string }
+		| { ok: false; reason: string };
+
+	const resolveSaveContext = (): SaveContext => {
 		const wsId = props.spaceId();
 		const entryId = props.entryId();
 		const revisionId = currentRevisionId() || entry()?.revision_id;
@@ -343,6 +460,44 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 										<ul class="mt-2 list-disc pl-5 space-y-1">
 											<For each={error().items}>{(item) => <li>{item}</li>}</For>
 										</ul>
+									</div>
+								)}
+							</Show>
+							<Show when={currentForm()}>
+								{(entryForm) => (
+									<div class="mx-4 mt-4 ui-alert ui-alert-warning text-sm space-y-2">
+										<div class="flex items-center justify-between gap-2">
+											<p class="font-semibold">
+												属性は <code>## フィールド名</code> 見出しで入力
+											</p>
+											<Show when={editorGuidance().missingRequired.length > 0}>
+												<button
+													type="button"
+													onClick={handleInsertMissingHeadings}
+													class="ui-button ui-button-secondary ui-button-sm text-xs"
+												>
+													不足H2を追加
+												</button>
+											</Show>
+										</div>
+										<p class="text-xs ui-muted">
+											Form: {entryForm().name} / 例: <code>## status</code>
+										</p>
+										<Show when={editorGuidance().missingRequired.length > 0}>
+											<p class="text-xs ui-text-danger">
+												必須セクション不足: {editorGuidance().missingRequired.join(", ")}
+											</p>
+										</Show>
+										<Show when={editorGuidance().unknownSections.length > 0}>
+											<p class="text-xs ui-text-danger">
+												未定義セクション: {editorGuidance().unknownSections.join(", ")}
+											</p>
+										</Show>
+										<Show when={editorGuidance().typeIssues.length > 0}>
+											<ul class="text-xs ui-text-danger list-disc pl-4 space-y-1">
+												<For each={editorGuidance().typeIssues}>{(item) => <li>{item}</li>}</For>
+											</ul>
+										</Show>
 									</div>
 								)}
 							</Show>
