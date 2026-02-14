@@ -55,6 +55,10 @@ CLI can run in three modes, and stores the selection in `~/.ugoite/cli-endpoints
 - `backend`: call backend REST endpoints directly (e.g. `http://localhost:8000`)
 - `api`: call the frontend-proxied API base (e.g. `http://localhost:3000/api`)
 
+When mode is `backend` or `api`, path arguments such as `root_path`/`space_path`
+are used only to derive a space ID (`.../spaces/<space_id>`), and filesystem I/O
+is performed on the remote server (not the local path).
+
 ```bash
 # Show current setting
 uv run ugoite config show

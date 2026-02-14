@@ -7,7 +7,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 EndpointMode = Literal["core", "backend", "api"]
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
@@ -15,6 +15,7 @@ JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "Jso
 _CONFIG_DIRNAME = ".ugoite"
 _CONFIG_FILENAME = "cli-endpoints.json"
 _HTTP_ERROR_STATUS = 400
+_DEFAULT_HTTP_TIMEOUT_SECONDS = 30
 
 
 @dataclass
@@ -83,12 +84,33 @@ def parse_space_id(space_path_or_id: str) -> str:
     """Extract space id from full path (.../spaces/<id>) or return raw id."""
     text = space_path_or_id.strip().rstrip("/")
     if not text:
-        return text
+        msg = "space id/path must not be empty"
+        raise ValueError(msg)
 
     if "/spaces/" in text:
         return text.split("/spaces/")[-1].split("/")[0]
 
-    return Path(text).name or text
+    candidate = Path(text).name or text
+    if not candidate.strip():
+        msg = "space id/path must not be empty"
+        raise ValueError(msg)
+    return candidate
+
+
+def encode_path_component(value: str) -> str:
+    """Percent-encode a path segment for safe URL construction."""
+    return quote(value, safe="")
+
+
+def _extract_http_error_detail(raw_body: str) -> str:
+    detail = raw_body
+    try:
+        payload_obj = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return detail
+    if isinstance(payload_obj, dict):
+        return str(payload_obj.get("detail", raw_body))
+    return detail
 
 
 def request_json(
@@ -96,6 +118,7 @@ def request_json(
     url: str,
     *,
     payload: dict[str, JsonValue] | None = None,
+    timeout_seconds: int = _DEFAULT_HTTP_TIMEOUT_SECONDS,
 ) -> JsonValue:
     """Execute an HTTP JSON request and return parsed JSON payload."""
     parsed = urlparse(url)
@@ -117,25 +140,23 @@ def request_json(
         if parsed.scheme == "https"
         else http.client.HTTPConnection
     )
+    conn: http.client.HTTPConnection | None = None
     try:
-        conn = conn_cls(parsed.netloc, timeout=30)
+        conn = conn_cls(parsed.netloc, timeout=timeout_seconds)
         conn.request(method.upper(), path, body=body, headers=headers)
         response = conn.getresponse()
+        status_code = response.status
         raw_body = response.read().decode("utf-8")
-        conn.close()
     except OSError as exc:
         msg = f"Connection failed: {exc}"
         raise RuntimeError(msg) from exc
+    finally:
+        if conn is not None:
+            conn.close()
 
-    if response.status >= _HTTP_ERROR_STATUS:
-        detail = raw_body
-        try:
-            payload_obj = json.loads(raw_body)
-            if isinstance(payload_obj, dict):
-                detail = str(payload_obj.get("detail", raw_body))
-        except json.JSONDecodeError:
-            pass
-        msg = f"HTTP {response.status}: {detail}"
+    if status_code >= _HTTP_ERROR_STATUS:
+        detail = _extract_http_error_detail(raw_body)
+        msg = f"HTTP {status_code}: {detail}"
         raise RuntimeError(msg)
 
     if not raw_body:

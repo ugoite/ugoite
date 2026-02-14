@@ -53,6 +53,7 @@ def test_space_list_uses_remote_endpoint_when_backend_mode(
     def fake_request_json(
         method: str,
         url: str,
+        *,
         payload: dict[str, object] | None = None,
     ) -> list[dict[str, str]]:
         assert payload is None
@@ -66,3 +67,50 @@ def test_space_list_uses_remote_endpoint_when_backend_mode(
     assert result.exit_code == 0
     assert calls == [("GET", "http://localhost:8000/spaces")]
     assert '"id": "default"' in result.stdout
+
+
+def test_entry_create_remote_payload_includes_author(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-004: Remote entry create forwards author for parity with core mode."""
+    monkeypatch.setattr(
+        "ugoite.cli._endpoint_config",
+        lambda: EndpointConfig(mode="backend"),
+    )
+
+    seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(
+        method: str,
+        url: str,
+        *,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        seen.append((method, url, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr("ugoite.cli.request_json", fake_request_json)
+
+    result = runner.invoke(
+        app,
+        [
+            "entry",
+            "create",
+            "root/spaces/default",
+            "entry-1",
+            "--content",
+            "# body",
+            "--author",
+            "alice",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert seen == [
+        (
+            "POST",
+            "http://localhost:8000/spaces/default/entries",
+            {"id": "entry-1", "content": "# body", "author": "alice"},
+        ),
+    ]

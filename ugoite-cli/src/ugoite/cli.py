@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import typer
 from ugoite_core import build_sql_schema, lint_sql, sql_completions
@@ -19,6 +19,7 @@ from ugoite.assets import (
 from ugoite.endpoint_config import (
     EndpointConfig,
     EndpointMode,
+    encode_path_component,
     load_endpoint_config,
     parse_space_id,
     request_json,
@@ -185,10 +186,15 @@ def cmd_config_set(
     """Persist CLI endpoint routing configuration to ~/.ugoite/."""
     setup_logging()
     normalized_mode = mode.strip().lower()
-    if normalized_mode not in {"core", "backend", "api"}:
+    if normalized_mode == "core":
+        endpoint_mode: EndpointMode = "core"
+    elif normalized_mode == "backend":
+        endpoint_mode = "backend"
+    elif normalized_mode == "api":
+        endpoint_mode = "api"
+    else:
         msg = "mode must be one of: core, backend, api"
         raise typer.BadParameter(msg)
-    endpoint_mode = cast("EndpointMode", normalized_mode)
 
     config = EndpointConfig(
         mode=endpoint_mode,
@@ -210,14 +216,16 @@ def cmd_create_space(
     base_url = _remote_base_url()
     if base_url is None:
         create_space(root_path, space_id)
+        location_msg = f" at '{root_path}'"
     else:
         request_json(
             "POST",
             f"{base_url}/spaces",
             payload={"name": space_id},
         )
+        location_msg = ""
     typer.echo(
-        f"Space '{space_id}' created successfully at '{root_path}'",
+        f"Space '{space_id}' created successfully{location_msg}",
     )
 
 
@@ -248,7 +256,8 @@ def cmd_space_get(
     if base_url is None:
         data = get_space(root_path, space_id)
     else:
-        data = request_json("GET", f"{base_url}/spaces/{space_id}")
+        encoded_space_id = encode_path_component(space_id)
+        data = request_json("GET", f"{base_url}/spaces/{encoded_space_id}")
     typer.echo(json.dumps(data, indent=2))
 
 
@@ -396,10 +405,11 @@ def cmd_entry_create(
     if base_url is None:
         create_entry(space_path, entry_id, content, author=author)
     else:
+        encoded_space_id = encode_path_component(space_id)
         request_json(
             "POST",
-            f"{base_url}/spaces/{space_id}/entries",
-            payload={"id": entry_id, "content": content},
+            f"{base_url}/spaces/{encoded_space_id}/entries",
+            payload={"id": entry_id, "content": content, "author": author},
         )
     typer.echo(f"Entry '{entry_id}' created successfully.")
 
@@ -415,7 +425,8 @@ def cmd_entry_list(
     if base_url is None:
         entries = list_entries(space_path)
     else:
-        entries = request_json("GET", f"{base_url}/spaces/{space_id}/entries")
+        encoded_space_id = encode_path_component(space_id)
+        entries = request_json("GET", f"{base_url}/spaces/{encoded_space_id}/entries")
     typer.echo(json.dumps(entries, indent=2))
 
 
@@ -431,7 +442,12 @@ def cmd_entry_get(
     if base_url is None:
         entry = get_entry(space_path, entry_id)
     else:
-        entry = request_json("GET", f"{base_url}/spaces/{space_id}/entries/{entry_id}")
+        encoded_space_id = encode_path_component(space_id)
+        encoded_entry_id = encode_path_component(entry_id)
+        entry = request_json(
+            "GET",
+            f"{base_url}/spaces/{encoded_space_id}/entries/{encoded_entry_id}",
+        )
     typer.echo(json.dumps(entry, indent=2))
 
 
