@@ -32,6 +32,8 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: false
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,mode=max,scope=backend-image
           build-contexts: |
             core=./ugoite-core
             module=./ugoite-cli
@@ -42,5 +44,7 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: false
+          cache-from: type=gha,scope=frontend-image
+          cache-to: type=gha,mode=max,scope=frontend-image
           build-contexts: |
             shared=./shared
