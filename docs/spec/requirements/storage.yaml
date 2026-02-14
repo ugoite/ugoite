@@ -67,9 +67,9 @@ requirements:
             - test_create_space_scaffolding
 
   - id: REQ-STO-004
-    title: Space Management via global.json
+    title: Space Management via spaces directory
     description: |
-      global.json maintains space registry and HMAC keys.
+      spaces/ directory and each space's meta.json maintain space registry metadata.
     related_spec:
       - data-model/overview.md#directory-structure
     priority: high
@@ -87,7 +87,7 @@ requirements:
         - file: ugoite-core/tests/test_space.rs
           tests:
             - test_space_req_sto_002_create_space_scaffolding
-            - test_space_req_sto_004_list_spaces_from_global_json
+            - test_space_req_sto_004_list_spaces_from_directory
 
   - id: REQ-STO-005
     title: Prevent Duplicate Space Creation
@@ -152,11 +152,10 @@ requirements:
             - test_assets_memory
 
   - id: REQ-STO-008
-    title: Resilient global.json parsing
+    title: Resilient directory-based space listing
     description: |
-      Listing spaces MUST NOT fail when global.json is corrupt.
-      The system MUST recover by restoring a default global.json and
-      return an empty space list.
+      Listing spaces MUST NOT fail when directories without meta.json exist.
+      The system MUST ignore incomplete directories and return valid spaces only.
     related_spec:
       - data-model/file-schemas.yaml#global
     priority: high
@@ -165,7 +164,7 @@ requirements:
       rust:
         - file: ugoite-core/tests/test_space.rs
           tests:
-            - test_space_req_sto_008_list_spaces_recovers_from_corrupt_global
+            - test_space_req_sto_008_list_spaces_ignores_missing_meta
 
   - id: REQ-STO-009
     title: Resilient space listing API

@@ -38,6 +38,7 @@ list_entries = _core_any.list_entries
 list_forms = _core_any.list_forms
 list_spaces = _core_any.list_spaces
 load_hmac_material = _core_any.load_hmac_material
+load_response_hmac_material = _core_any.load_response_hmac_material
 migrate_form = _core_any.migrate_form
 patch_space = _core_any.patch_space
 query_index = _core_any.query_index
@@ -95,6 +96,7 @@ __all__ = [
     "list_spaces",
     "list_sql",
     "load_hmac_material",
+    "load_response_hmac_material",
     "load_sql_rules",
     "migrate_form",
     "patch_space",

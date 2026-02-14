@@ -37,7 +37,7 @@ export function createSpaceStore() {
 		}
 	}
 
-	/** Load all spaces and ensure a default exists */
+	/** Load all spaces and select an available space */
 	async function loadSpaces(): Promise<string> {
 		setLoading(true);
 		setError(null);
@@ -61,12 +61,11 @@ export function createSpaceStore() {
 				return DEFAULT_SPACE_ID;
 			}
 
-			// If no spaces exist, create the default one
+			// No client-side space creation; remain unselected when list is empty
 			if (fetchedSpaces.length === 0) {
-				const created = await createSpace(DEFAULT_SPACE_ID);
-				setSelectedSpaceId(created.id);
+				setSelectedSpaceId(null);
 				setInitialized(true);
-				return created.id;
+				return "";
 			}
 
 			// Otherwise, select the first available space
@@ -79,37 +78,6 @@ export function createSpaceStore() {
 			throw e;
 		} finally {
 			setLoading(false);
-		}
-	}
-
-	/** Create a new space */
-	async function createSpace(name: string): Promise<Space> {
-		setError(null);
-		try {
-			const result = await spaceApi.create(name);
-			// Reload spaces to get full space object
-			await loadSpacesOnly();
-			const newSpace = spaces().find((space) => space.id === result.id);
-			return (
-				newSpace || {
-					id: result.id,
-					name: result.name,
-					created_at: new Date().toISOString(),
-				}
-			);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to create space");
-			throw e;
-		}
-	}
-
-	/** Load spaces without changing selection */
-	async function loadSpacesOnly(): Promise<void> {
-		try {
-			const fetchedSpaces = await spaceApi.list();
-			setSpaces(fetchedSpaces);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to load spaces");
 		}
 	}
 
@@ -130,7 +98,6 @@ export function createSpaceStore() {
 
 		// Actions
 		loadSpaces,
-		createSpace,
 		selectSpace,
 	};
 }

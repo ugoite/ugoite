@@ -176,23 +176,18 @@ requirements:
       The API MUST provide a way to generate a sample-data space with a small
       set of input parameters (space id, scenario, entry count, seed), backed
       by ugoite-core dynamic generation.
+      Backend REST exposure is currently unshipped (planned), while ugoite-core
+      implementation and tests are retained for future re-exposure.
     related_spec:
       - api/rest.md#spaces
       - features/spaces.yaml
     priority: medium
-    status: implemented
+    status: planned
     tests:
       pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_sample_space
         - file: ugoite-cli/tests/test_space.py
           tests:
             - test_create_sample_space_req_api_009
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - should create a sample-data space [REQ-API-009]
       rust:
         - file: ugoite-core/tests/test_sample_data.rs
           tests:
@@ -203,22 +198,14 @@ requirements:
     description: |
       The API MUST expose a catalog of sample-data scenarios and support
       asynchronous sample-data generation jobs with status reporting.
+      Backend REST exposure is currently unshipped (planned), while ugoite-core
+      implementation and tests are retained for future re-exposure.
     related_spec:
       - api/rest.md#spaces
       - features/spaces.yaml
     priority: medium
-    status: implemented
+    status: planned
     tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_list_sample_scenarios_req_api_010
-            - test_create_sample_space_job_req_api_010
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - should list sample-data scenarios [REQ-API-010]
-            - should create and fetch sample-data jobs [REQ-API-010]
       rust:
         - file: ugoite-core/tests/test_sample_data.rs
           tests:

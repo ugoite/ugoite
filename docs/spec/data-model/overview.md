@@ -25,7 +25,6 @@ Ugoite's data model is built on these principles:
 See [directory-structure.md](directory-structure.md) for the full space layout.
 
 ```
-global.json                    # Space registry
 spaces/
   {space_id}/
     meta.json                  # Space metadata
@@ -173,7 +172,8 @@ and can be regenerated. The Iceberg-managed layout is the only source of truth.
 ## Integrity
 
 All data is signed with HMAC:
-- Key stored in `global.json`
+- Root response-signing key stored in `hmac.json`
+- Space integrity keys stored in each `spaces/{space_id}/meta.json`
 - Signature stored alongside entry and revision rows
 - Checksum (SHA-256) for tamper detection
 

@@ -1,27 +1,12 @@
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
-use opendal::Operator;
+use futures::TryStreamExt;
+use opendal::{EntryMode, Operator};
 use pyo3::prelude::*;
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-#[derive(Serialize, Deserialize, Debug)]
-struct GlobalConfig {
-    #[serde(default)]
-    version: u32,
-    #[serde(default)]
-    default_storage: String,
-    #[serde(default)]
-    spaces: Vec<String>,
-    #[serde(default)]
-    hmac_key_id: String,
-    #[serde(default)]
-    hmac_key: String,
-    #[serde(default)]
-    last_rotation: String,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SpaceMeta {
@@ -71,7 +56,7 @@ fn storage_type_and_root(root_uri: &str) -> (String, String, String) {
     )
 }
 
-fn default_global_config(default_storage: &str) -> GlobalConfig {
+fn generate_hmac_material() -> (String, String, String) {
     let now_iso = Utc::now().to_rfc3339();
     let key_id = format!("key-{}", uuid::Uuid::new_v4().simple());
 
@@ -81,27 +66,7 @@ fn default_global_config(default_storage: &str) -> GlobalConfig {
         .expect("Failed to generate secure random bytes");
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
 
-    GlobalConfig {
-        version: 1,
-        default_storage: default_storage.to_string(),
-        spaces: Vec::new(),
-        hmac_key_id: key_id,
-        hmac_key,
-        last_rotation: now_iso,
-    }
-}
-
-// Ensure global.json exists with HMAC keys
-async fn ensure_global_json(op: &Operator, root_uri: &str) -> Result<()> {
-    let global_path = "global.json";
-    if op.exists(global_path).await? {
-        return Ok(());
-    }
-
-    let config = default_global_config(root_uri);
-    let json_bytes = serde_json::to_vec_pretty(&config)?;
-    op.write(global_path, json_bytes).await?;
-    Ok(())
+    (key_id, hmac_key, now_iso)
 }
 
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
@@ -120,18 +85,22 @@ pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<
     }
 
     // 2. Create meta.json
-    let (storage_type, storage_root, scheme) = storage_type_and_root(root_path);
+    let (storage_type, storage_root, _scheme) = storage_type_and_root(root_path);
     let created_at = Utc::now().timestamp_millis() as f64 / 1000.0;
+    let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
 
-    let meta = SpaceMeta {
-        id: name.to_string(),
-        name: name.to_string(),
-        created_at,
-        storage: StorageConfig {
-            storage_type,
-            root: storage_root.clone(),
+    let meta = serde_json::json!({
+        "id": name,
+        "name": name,
+        "created_at": created_at,
+        "storage": {
+            "type": storage_type,
+            "root": storage_root,
         },
-    };
+        "hmac_key_id": hmac_key_id,
+        "hmac_key": hmac_key,
+        "last_rotation": last_rotation,
+    });
     let meta_json = serde_json::to_vec_pretty(&meta)?;
     op.write(&format!("{}/meta.json", ws_path), meta_json)
         .await?;
@@ -146,57 +115,39 @@ pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<
     )
     .await?;
 
-    // 4. Update global.json
-    let default_storage = if scheme == "file" || scheme == "fs" {
-        format!("fs://{}", storage_root)
-    } else {
-        root_path.to_string()
-    };
-    ensure_global_json(op, &default_storage).await?;
-    update_global_json(op, name).await?;
-
-    Ok(())
-}
-
-async fn update_global_json(op: &Operator, space_id: &str) -> Result<()> {
-    let global_path = "global.json";
-
-    let mut config: GlobalConfig = if op.exists(global_path).await? {
-        let bytes = op.read(global_path).await?;
-        serde_json::from_slice(&bytes.to_vec()).unwrap_or_else(|_| default_global_config(""))
-    } else {
-        // Should have been created by ensure_global_json
-        return Err(anyhow!("global.json missing"));
-    };
-
-    if !config.spaces.contains(&space_id.to_string()) {
-        config.spaces.push(space_id.to_string());
-        let json_bytes = serde_json::to_vec_pretty(&config)?;
-        op.write(global_path, json_bytes).await?;
-    }
-
     Ok(())
 }
 
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
-    let global_path = "global.json";
-    if !op.exists(global_path).await? {
+    let spaces_root = "spaces/";
+    if !op.exists(spaces_root).await? {
         return Ok(vec![]);
     }
 
-    let bytes = op.read(global_path).await?;
-    let config: GlobalConfig = match serde_json::from_slice(&bytes.to_vec()) {
-        Ok(config) => config,
-        Err(_) => {
-            let fallback = default_global_config("");
-            if let Ok(json_bytes) = serde_json::to_vec_pretty(&fallback) {
-                let _ = op.write(global_path, json_bytes).await;
-            }
-            return Ok(vec![]);
+    let mut spaces = Vec::new();
+    let mut lister = op.lister(spaces_root).await?;
+    while let Some(entry) = lister.try_next().await? {
+        if entry.metadata().mode() != EntryMode::DIR {
+            continue;
         }
-    };
+        let space_id = entry
+            .name()
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("");
+        if space_id.is_empty() {
+            continue;
+        }
+        let meta_path = format!("spaces/{}/meta.json", space_id);
+        if op.exists(&meta_path).await? {
+            spaces.push(space_id.to_string());
+        }
+    }
 
-    Ok(config.spaces)
+    spaces.sort();
+    spaces.dedup();
+    Ok(spaces)
 }
 
 pub async fn get_space(op: &Operator, name: &str) -> Result<SpaceMeta> {
