@@ -18,6 +18,7 @@ This directory contains machine-readable requirement definitions for Ugoite.
 | [form.yaml](form.yaml) | Form Management | REQ-FORM-* |
 | [links.yaml](links.yaml) | Link Management | REQ-LNK-* |
 | [search.yaml](search.yaml) | Search | REQ-SRCH-* |
+| [oss.yaml](oss.yaml) | OSS Governance | REQ-OSS-* |
 
 ## Requirement Format
 
@@ -65,6 +66,7 @@ requirements:
 - `REQ-FORM-###` - Form management requirements
 - `REQ-LNK-###` - Link requirements
 - `REQ-SRCH-###` - Search requirements
+- `REQ-OSS-###` - OSS governance requirements
 
 ## Test Mapping
 

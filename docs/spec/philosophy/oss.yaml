@@ -1,0 +1,39 @@
+category: OSS Philosophy
+
+principles:
+  - id: PHIL-OSS-001
+    title: Abstraction-Layer Freedom
+    description: |
+      最新の抽象化レイヤーを採用し、実装詳細から利用者を解放する。
+      OpenDAL/OpenAPI/Iceberg/ugoite-core などの境界を通じて
+      ベンダーロックインを避け、CLI・API・Agent・Frontend・将来の
+      Native App まで同一データに接続可能な自由を確保する。
+    related_policies:
+      - POL-OSS-001
+
+  - id: PHIL-OSS-002
+    title: Serverless-First Minimal Nodes
+    description: |
+      ノード数を最小化し、必要最小限のレイヤーのみを持つ。
+      理想形はクライアントが storage/AI を直接活用できる構成であり、
+      API は段階的移行のための制御点として責務を限定して保持する。
+    related_policies:
+      - POL-OSS-002
+
+  - id: PHIL-OSS-003
+    title: Build Rules, Not Artifacts
+    description: |
+      使い捨てのモノを増やすより、再発防止と自動化可能なルールを優先する。
+      実装変更時には恒久対策のテストを伴わせ、ドキュメントも実装と
+      検証ルールで接続し続ける。
+    related_policies:
+      - POL-OSS-003
+
+  - id: PHIL-OSS-004
+    title: Constrained Freedom for AI
+    description: |
+      AI に十分な実行自由度を与えつつ、信頼できるルールで監督する。
+      人間はすべてを逐次追跡するのではなく、CI・静的解析・権限制御・
+      承認済みツールチェーンでリスクと価値を同時に管理する。
+    related_policies:
+      - POL-OSS-004

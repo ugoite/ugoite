@@ -1,0 +1,51 @@
+category: OSS Policy
+
+policies:
+  - id: POL-OSS-001
+    title: Adopt Open Abstractions for Portability
+    description: |
+      ストレージ、実行経路、問い合わせ系を抽象化レイヤー越しに統一し、
+      特定ベンダーや単一クライアントへの結合を禁止する。
+    based_on_philosophy:
+      - PHIL-OSS-001
+    related_requirements:
+      - REQ-OSS-001
+    related_specifications:
+      - SPEC-OSS-001
+
+  - id: POL-OSS-002
+    title: Keep Deployment Topology Minimal
+    description: |
+      ノード追加は最終手段とし、機能追加時も既存ノード内で責務分離を
+      優先する。APIは移行期の境界管理に限定し、クライアント直結可能性を
+      維持する。
+    based_on_philosophy:
+      - PHIL-OSS-002
+    related_requirements:
+      - REQ-OSS-002
+    related_specifications:
+      - SPEC-OSS-002
+
+  - id: POL-OSS-003
+    title: Enforce Rule-Oriented Development
+    description: |
+      修正時は再発防止テストを必須とし、仕様・要件・実装の追跡可能性を
+      自動検証で維持する。属人的な運用手順に依存しない。
+    based_on_philosophy:
+      - PHIL-OSS-003
+    related_requirements:
+      - REQ-OSS-003
+    related_specifications:
+      - SPEC-OSS-003
+
+  - id: POL-OSS-004
+    title: Expand AI Autonomy Under Verified Controls
+    description: |
+      AI の実行経路は許可済みツールとガードレール内に限定し、
+      厳格な CI・lint・レビューで追跡可能性を担保する。
+    based_on_philosophy:
+      - PHIL-OSS-004
+    related_requirements:
+      - REQ-OSS-004
+    related_specifications:
+      - SPEC-OSS-004

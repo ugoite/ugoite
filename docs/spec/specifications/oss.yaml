@@ -1,0 +1,46 @@
+category: OSS Specifications
+
+specifications:
+  - id: SPEC-OSS-001
+    title: Multi-Surface Access via Shared Core and Open Interfaces
+    description: |
+      ugoite-core と標準化されたインターフェースを通じて、CLI/API/Agent/
+      Frontend/将来クライアントが共通データ操作を再利用できること。
+    related_policies:
+      - POL-OSS-001
+    related_requirements:
+      - REQ-OSS-001
+    status: planned
+
+  - id: SPEC-OSS-002
+    title: Minimal Node Runtime and Explicit Layer Responsibilities
+    description: |
+      実行ノードを最小化しつつ、frontend/backend/core の責務境界を明示し、
+      必要時のみレイヤーを追加できる設計を維持すること。
+    related_policies:
+      - POL-OSS-002
+    related_requirements:
+      - REQ-OSS-002
+    status: planned
+
+  - id: SPEC-OSS-003
+    title: Spec-to-Test Traceability Automation
+    description: |
+      方針・要件・仕様のリンク整合性を自動テストし、片方向リンクや
+      孤立項目を CI で検出すること。
+    related_policies:
+      - POL-OSS-003
+    related_requirements:
+      - REQ-OSS-003
+    status: implemented
+
+  - id: SPEC-OSS-004
+    title: Trusted Toolchain Boundary for AI Actions
+    description: |
+      AI が利用できる操作面を信頼済みツール群に限定し、CI・lint・レビューで
+      検証可能な変更のみを採用できる仕組みを維持すること。
+    related_policies:
+      - POL-OSS-004
+    related_requirements:
+      - REQ-OSS-004
+    status: planned

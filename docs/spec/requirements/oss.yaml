@@ -1,0 +1,82 @@
+category: OSS Governance
+prefix: REQ-OSS
+
+requirements:
+  - id: REQ-OSS-001
+    title: Policy-Requirement Links Must Be Bidirectional
+    description: |
+      OSS方針と要件の関連は必ず相互参照で定義され、どちらか片側だけの
+      リンクを禁止する。
+    related_spec:
+      - policies/oss.yaml#POL-OSS-001
+      - specifications/oss.yaml#SPEC-OSS-001
+    related_policies:
+      - POL-OSS-001
+    related_specifications:
+      - SPEC-OSS-001
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_oss_traceability.py
+          tests:
+            - test_oss_req_001_policy_requirement_links_bidirectional
+
+  - id: REQ-OSS-002
+    title: Policy-Specification Links Must Be Bidirectional
+    description: |
+      OSS方針と仕様の関連は必ず相互参照で定義され、参照整合性が維持される。
+    related_spec:
+      - policies/oss.yaml#POL-OSS-002
+      - specifications/oss.yaml#SPEC-OSS-002
+    related_policies:
+      - POL-OSS-002
+    related_specifications:
+      - SPEC-OSS-002
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_oss_traceability.py
+          tests:
+            - test_oss_req_002_policy_spec_links_bidirectional
+
+  - id: REQ-OSS-003
+    title: Requirement-Specification Links Must Be Bidirectional
+    description: |
+      OSS要件と仕様の関連は必ず相互参照で定義され、整合性違反をテストで
+      検出できること。
+    related_spec:
+      - requirements/oss.yaml#REQ-OSS-003
+      - specifications/oss.yaml#SPEC-OSS-003
+    related_policies:
+      - POL-OSS-003
+    related_specifications:
+      - SPEC-OSS-003
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_oss_traceability.py
+          tests:
+            - test_oss_req_003_requirement_spec_links_bidirectional
+
+  - id: REQ-OSS-004
+    title: No Orphan Items Across Policy/Requirement/Specification
+    description: |
+      方針・要件・仕様の各項目は最低1つ以上の相互リンクを持ち、
+      宙ぶらりんの項目を禁止する。
+    related_spec:
+      - policies/oss.yaml#POL-OSS-004
+      - specifications/oss.yaml#SPEC-OSS-004
+    related_policies:
+      - POL-OSS-004
+    related_specifications:
+      - SPEC-OSS-004
+    priority: high
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_oss_traceability.py
+          tests:
+            - test_oss_req_004_no_orphan_governance_items

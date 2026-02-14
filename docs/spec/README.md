@@ -10,6 +10,7 @@ Start here:
 - **Architecture**: [architecture/](architecture/)
 - **API**: [api/](api/)
 - **Data Model**: [data-model/](data-model/)
+- **OSS Governance** (YAML): [philosophy/](philosophy/), [policies/](policies/), [specifications/](specifications/)
 - **Stories** (YAML): [stories/](stories/)
 - **Requirements** (YAML + test mapping): [requirements/](requirements/)
 - **Feature Registry** (API-level): [features/](features/)
