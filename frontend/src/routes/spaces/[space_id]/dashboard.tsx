@@ -3,8 +3,8 @@ import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { CreateEntryDialog, CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { createEntryStore } from "~/lib/entry-store";
+import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { formApi } from "~/lib/form-api";
-import { ensureFormFrontmatter, replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { spaceApi } from "~/lib/space-api";
 import type { FormCreatePayload } from "~/lib/types";
 
@@ -52,6 +52,7 @@ export default function SpaceDashboardRoute() {
 		title: string,
 		formName: string,
 		requiredValues: Record<string, string>,
+		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
 			alert("Please select a form to create an entry.");
@@ -62,11 +63,7 @@ export default function SpaceDashboardRoute() {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
 		}
-		let initialContent = ensureFormFrontmatter(replaceFirstH1(formDef.template, title), formName);
-		for (const [name, value] of Object.entries(requiredValues)) {
-			if (!value.trim()) continue;
-			initialContent = updateH2Section(initialContent, name, value.trim());
-		}
+		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
 
 		try {
 			const result = await entryStore.createEntry(initialContent);

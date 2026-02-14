@@ -25,6 +25,9 @@ and responsibility boundaries.
 ### Entry Creation & Indexing
 
 - Frontend sends Markdown; it does not parse Markdown for business logic.
+- Frontend supports multiple authoring modes for form-first entries: Markdown,
+  Web form, and Chat Q&A. Web form/Chat are transformed to Markdown before API
+  submission.
 - Backend/CLI parses frontmatter/H2 sections, updates indices, and returns
   extracted properties (via entry list / query / get endpoints).
 

@@ -4,8 +4,10 @@ import type {
 	EntryRecord,
 	EntryRevision,
 	EntryUpdatePayload,
+	Form,
 } from "./types";
 import { apiFetch } from "./api";
+import { buildEntryMarkdownByMode } from "./entry-input";
 
 /**
  * Entry API client
@@ -55,6 +57,39 @@ export const entryApi = {
 			throw new Error(error.detail || `Failed to create entry: ${res.statusText}`);
 		}
 		return (await res.json()) as { id: string; revision_id: string };
+	},
+
+	/** Create a new entry from markdown editor input */
+	async createFromMarkdown(
+		spaceId: string,
+		markdown: string,
+		id?: string,
+	): Promise<{ id: string; revision_id: string }> {
+		return await this.create(spaceId, { id, content: markdown });
+	},
+
+	/** Create a new entry from webform field input */
+	async createFromWebform(
+		spaceId: string,
+		formDef: Form,
+		title: string,
+		fieldValues: Record<string, string>,
+		id?: string,
+	): Promise<{ id: string; revision_id: string }> {
+		const markdown = buildEntryMarkdownByMode(formDef, title, fieldValues, "webform");
+		return await this.create(spaceId, { id, content: markdown });
+	},
+
+	/** Create a new entry from chat-style Q&A input */
+	async createFromChat(
+		spaceId: string,
+		formDef: Form,
+		title: string,
+		answers: Record<string, string>,
+		id?: string,
+	): Promise<{ id: string; revision_id: string }> {
+		const markdown = buildEntryMarkdownByMode(formDef, title, answers, "chat");
+		return await this.create(spaceId, { id, content: markdown });
 	},
 
 	/** Update a entry (requires parent_revision_id for optimistic locking) */

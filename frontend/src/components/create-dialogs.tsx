@@ -8,6 +8,7 @@ import {
 	onMount,
 	onCleanup,
 } from "solid-js";
+import { buildEntryMarkdownFromFields, type EntryInputMode } from "~/lib/entry-input";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
 import { RESERVED_METADATA_CLASSES, isReservedMetadataForm } from "~/lib/metadata-forms";
@@ -94,7 +95,12 @@ export interface CreateEntryDialogProps {
 	forms: Form[];
 	defaultForm?: string;
 	onClose: () => void;
-	onSubmit: (title: string, formName: string, requiredValues: Record<string, string>) => void;
+	onSubmit: (
+		title: string,
+		formName: string,
+		requiredValues: Record<string, string>,
+		inputMode?: EntryInputMode,
+	) => void;
 }
 
 /**
@@ -103,8 +109,11 @@ export interface CreateEntryDialogProps {
 export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [title, setTitle] = createSignal("");
 	const [selectedForm, setSelectedForm] = createSignal("");
+	const [inputMode, setInputMode] = createSignal<EntryInputMode>("webform");
 	const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
 	const [requiredValues, setRequiredValues] = createSignal<Record<string, string>>({});
+	const [markdownInput, setMarkdownInput] = createSignal("");
+	const [chatStep, setChatStep] = createSignal(0);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 
@@ -123,6 +132,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!form) return [] as string[];
 		const types = new Set(Object.values(form.fields || {}).map((field) => field.type));
 		const hints = ["属性は作成後に Markdown の `## フィールド名` 見出しで編集できます。"];
+		if (inputMode() === "chat") {
+			hints.push("Chat は必須フィールドを1つずつ質問して入力します。");
+		}
+		if (inputMode() === "markdown") {
+			hints.push("Markdown はそのまま保存されます（frontmatter/form の整合性は backend で検証）。");
+		}
 		if (types.has("list")) hints.push("list は `- item` または 1行1値で入力。");
 		if (types.has("boolean")) hints.push("boolean は true/false, yes/no, on/off, 1/0 を使用。");
 		if (types.has("row_reference")) hints.push("row_reference は対象 Form の entry_id を入力。");
@@ -187,6 +202,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!props.open) return;
 		setErrorMessage(null);
 		setTitle("");
+		setInputMode("webform");
+		setMarkdownInput("");
+		setChatStep(0);
 		const defaultForm = props.defaultForm?.trim();
 		if (defaultForm && props.forms.some((entryForm) => entryForm.name === defaultForm)) {
 			setSelectedForm(defaultForm);
@@ -203,6 +221,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		const form = selectedFormDef();
 		if (!form) {
 			setRequiredValues({});
+			setMarkdownInput("");
 			return;
 		}
 		const defaults: Record<string, string> = {};
@@ -211,6 +230,17 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			defaults[name] = buildDefaultValue(name, def);
 		}
 		setRequiredValues(defaults);
+		setMarkdownInput(buildEntryMarkdownFromFields(form, title().trim() || form.name, defaults));
+		setChatStep(0);
+	});
+
+	createEffect(() => {
+		const form = selectedFormDef();
+		if (!form) return;
+		if (inputMode() !== "markdown") return;
+		setMarkdownInput(
+			buildEntryMarkdownFromFields(form, title().trim() || form.name, requiredValues()),
+		);
 	});
 
 	const handleSubmit = (e: Event) => {
@@ -221,6 +251,19 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setErrorMessage("Please provide a title and select a form.");
 			return;
 		}
+		if (inputMode() === "markdown") {
+			const markdown = markdownInput().trim();
+			if (!markdown) {
+				setErrorMessage("Please provide markdown content.");
+				return;
+			}
+			props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
+			setTitle("");
+			setSelectedForm("");
+			setMarkdownInput("");
+			setChatStep(0);
+			return;
+		}
 		const missing = requiredFields()
 			.map(([name]) => name)
 			.filter((name) => !(requiredValues()[name] || "").trim());
@@ -228,9 +271,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setErrorMessage(`Please fill required fields: ${missing.join(", ")}.`);
 			return;
 		}
-		props.onSubmit(entryTitle, formName, requiredValues());
+		props.onSubmit(entryTitle, formName, requiredValues(), inputMode());
 		setTitle("");
 		setSelectedForm("");
+		setMarkdownInput("");
+		setChatStep(0);
 	};
 
 	return (
@@ -323,13 +368,52 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</div>
 						</Show>
 
+						<div class="ui-field">
+							<p class="ui-label">Input mode</p>
+							<div class="flex flex-wrap gap-2">
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "webform" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => setInputMode("webform")}
+								>
+									Web form
+								</button>
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "markdown" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => setInputMode("markdown")}
+								>
+									Markdown
+								</button>
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "chat" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => setInputMode("chat")}
+								>
+									Chat
+								</button>
+							</div>
+						</div>
+
 						<Show when={selectedFormDef() && inputGuidance().length > 0}>
 							<div class="ui-alert ui-alert-warning text-xs space-y-1">
 								<For each={inputGuidance()}>{(hint) => <p>{hint}</p>}</For>
 							</div>
 						</Show>
 
-						<Show when={requiredFields().length > 0}>
+						<Show when={inputMode() === "markdown" && selectedFormDef()}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">Markdown input</p>
+								<textarea
+									aria-label="Markdown input"
+									class="ui-input ui-textarea mt-3 min-h-56"
+									value={markdownInput()}
+									onInput={(e) => setMarkdownInput(e.currentTarget.value)}
+								/>
+							</div>
+						</Show>
+
+						<Show when={inputMode() === "webform" && requiredFields().length > 0}>
 							<div class="ui-card">
 								<p class="text-sm font-semibold">Required fields</p>
 								<div class="ui-stack-sm mt-3">
@@ -374,6 +458,81 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 										}}
 									</For>
 								</div>
+							</div>
+						</Show>
+
+						<Show when={inputMode() === "chat" && requiredFields().length > 0}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">Chat input</p>
+								<p class="text-xs ui-muted mt-1">
+									Question {Math.min(chatStep() + 1, requiredFields().length)} /{" "}
+									{requiredFields().length}
+								</p>
+								<Show when={requiredFields()[chatStep()]}>
+									{(current) => {
+										const [name, def] = current();
+										const value = requiredValues()[name] ?? "";
+										const useTextarea = isTextareaField(name, def);
+										const inputType = resolveInputType(def);
+										return (
+											<div class="ui-field mt-3">
+												<label class="ui-label" for={`chat-${name}`}>
+													{name}
+													<span class="ui-muted ml-2 text-xs">({def.type})</span>
+												</label>
+												<Show
+													when={!useTextarea}
+													fallback={
+														<textarea
+															id={`chat-${name}`}
+															class="ui-input ui-textarea"
+															value={value}
+															onInput={(e) =>
+																setRequiredValues((prev) => ({
+																	...prev,
+																	[name]: e.currentTarget.value,
+																}))
+															}
+														/>
+													}
+												>
+													<input
+														id={`chat-${name}`}
+														type={inputType}
+														class="ui-input"
+														value={value}
+														onInput={(e) =>
+															setRequiredValues((prev) => ({
+																...prev,
+																[name]: e.currentTarget.value,
+															}))
+														}
+													/>
+												</Show>
+												<div class="mt-3 flex items-center justify-between">
+													<button
+														type="button"
+														class="ui-button ui-button-secondary text-xs"
+														disabled={chatStep() <= 0}
+														onClick={() => setChatStep((prev) => Math.max(0, prev - 1))}
+													>
+														Previous question
+													</button>
+													<button
+														type="button"
+														class="ui-button ui-button-secondary text-xs"
+														disabled={chatStep() >= requiredFields().length - 1}
+														onClick={() =>
+															setChatStep((prev) => Math.min(requiredFields().length - 1, prev + 1))
+														}
+													>
+														Next question
+													</button>
+												</div>
+											</div>
+										);
+									}}
+								</Show>
 							</div>
 						</Show>
 

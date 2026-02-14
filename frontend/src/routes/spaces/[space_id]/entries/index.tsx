@@ -10,34 +10,10 @@ import {
 } from "solid-js";
 import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
-import { ensureFormFrontmatter, replaceFirstH1, updateH2Section } from "~/lib/markdown";
+import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { EntryRecord } from "~/lib/types";
-
-const RESERVED_METADATA_WARNING = "Reserved metadata columns are system-owned and cannot be used";
-
-function buildInitialEntryContent(
-	formTemplate: string,
-	title: string,
-	formName: string,
-	requiredValues: Record<string, string>,
-) {
-	let initialContent = ensureFormFrontmatter(replaceFirstH1(formTemplate, title), formName);
-	for (const [name, value] of Object.entries(requiredValues)) {
-		if (!value.trim()) continue;
-		initialContent = updateH2Section(initialContent, name, value.trim());
-	}
-	return initialContent;
-}
-
-function toCreateEntryAlertMessage(error: unknown) {
-	const message = error instanceof Error ? error.message : "Failed to create entry";
-	if (message.includes(RESERVED_METADATA_WARNING)) {
-		return "入力形式を確認してください。属性は Markdown の `## フィールド名` 見出しで入力し、list は `- item` または1行1値、boolean は true/false を使ってください。";
-	}
-	return message;
-}
 
 export default function SpaceEntriesIndexPane() {
 	const navigate = useNavigate();
@@ -126,6 +102,7 @@ export default function SpaceEntriesIndexPane() {
 		title: string,
 		formName: string,
 		requiredValues: Record<string, string>,
+		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
 			alert("Please select a form to create an entry.");
@@ -136,19 +113,14 @@ export default function SpaceEntriesIndexPane() {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
 		}
-		const initialContent = buildInitialEntryContent(
-			formDef.template,
-			title,
-			formName,
-			requiredValues,
-		);
+		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
 
 		try {
 			const result = await ctx.entryStore.createEntry(initialContent);
 			setShowCreateEntryDialog(false);
 			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 		} catch (e) {
-			alert(toCreateEntryAlertMessage(e));
+			alert(e instanceof Error ? e.message : "Failed to create entry");
 		}
 	};
 
