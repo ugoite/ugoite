@@ -765,7 +765,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="ui-input ui-input-sm"
+												class="ui-input ui-input-sm w-auto min-w-[10rem] flex-shrink-0"
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
@@ -1052,7 +1052,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 											<select
 												value={field().type}
 												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class="ui-input ui-input-sm"
+												class="ui-input ui-input-sm w-auto min-w-[10rem] flex-shrink-0"
 											>
 												<For each={props.columnTypes}>
 													{(type) => <option value={type}>{type}</option>}
