@@ -104,11 +104,29 @@ const relativePath = `${slugPath}.md`;
 const fullPath = path.join(docsRoot, relativePath);
 const markdown = await fs.readFile(fullPath, "utf-8");
 const html = safeMarked.parse(markdown);
+const parts = slugPath.split("/").filter(Boolean);
+const breadcrumbs = parts.map((part, index) => ({
+  label: part,
+  href: `/docs/${parts.slice(0, index + 1).join("/")}`,
+}));
 ---
 
-<BaseLayout title={`Docs: ${relativePath}`}>
-  <article class="prose max-w-none rounded-xl border p-6" style="background: var(--doc-card); border-color: var(--doc-border);">
-    <p class="mb-4 text-xs" style="color: var(--doc-muted);">Source: /docs/{relativePath}</p>
+<BaseLayout title={`Docs: ${relativePath}`} description={`Repository source: /docs/${relativePath}`}>
+  <section class="doc-card mb-4">
+    <nav class="text-xs" style="color: var(--doc-muted);">
+      <a href="/">home</a>
+      <span> / </span>
+      <a href="/docs/spec/index">docs</a>
+      {breadcrumbs.map((crumb) => (
+        <>
+          <span> / </span>
+          <a href={crumb.href}>{crumb.label}</a>
+        </>
+      ))}
+    </nav>
+    <p class="mt-2 text-xs" style="color: var(--doc-muted);">Source: /docs/{relativePath}</p>
+  </section>
+  <article class="prose doc-prose max-w-none">
     <Fragment set:html={html} />
   </article>
 </BaseLayout>

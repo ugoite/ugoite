@@ -1,38 +1,8 @@
+@import "../../shared/themes/ui-theme-docsite.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-:root {
-	--doc-bg: #f8fafc;
-	--doc-fg: #0f172a;
-	--doc-muted: #475569;
-	--doc-border: #cbd5e1;
-	--doc-card: #ffffff;
-}
-
-:root[data-ui-theme="classic"] {
-	--doc-bg: #f7f7f7;
-	--doc-fg: #1f2937;
-	--doc-muted: #4b5563;
-	--doc-border: #d1d5db;
-	--doc-card: #ffffff;
-}
-
-:root[data-ui-theme="pop"] {
-	--doc-bg: #fff1f7;
-	--doc-fg: #3b0764;
-	--doc-muted: #6b21a8;
-	--doc-border: #f9a8d4;
-	--doc-card: #ffffff;
-}
-
-:root[data-color-mode="dark"] {
-	--doc-bg: #0f172a;
-	--doc-fg: #e2e8f0;
-	--doc-muted: #94a3b8;
-	--doc-border: #334155;
-	--doc-card: #111827;
-}
 
 body {
 	background: var(--doc-bg);
@@ -47,6 +17,66 @@ body {
 		Arial,
 		"Apple Color Emoji",
 		"Segoe UI Emoji";
+}
+
+a {
+	color: var(--doc-accent);
+}
+
+@layer components {
+	.doc-shell {
+		display: grid;
+		grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+		gap: 1rem;
+	}
+
+	.doc-sidebar {
+		position: sticky;
+		top: 1rem;
+		height: fit-content;
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		border-radius: var(--doc-radius-lg);
+		box-shadow: var(--doc-shadow-sm);
+		padding: 1rem;
+	}
+
+	.doc-card {
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		border-radius: var(--doc-radius-lg);
+		box-shadow: var(--doc-shadow-sm);
+		padding: 1.25rem;
+	}
+
+	.doc-badge {
+		display: inline-flex;
+		align-items: center;
+		border-radius: 999px;
+		padding: 0.2rem 0.65rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		background: var(--doc-accent-soft);
+		color: var(--doc-accent);
+	}
+
+	.doc-prose {
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		border-radius: var(--doc-radius-lg);
+		box-shadow: var(--doc-shadow-sm);
+		padding: 1.25rem;
+	}
+
+	@media (max-width: 960px) {
+		.doc-shell {
+			grid-template-columns: 1fr;
+		}
+
+		.doc-sidebar {
+			position: static;
+		}
+	}
 }
 
 .prose pre {
