@@ -1,4 +1,3 @@
-:root,
 :root:not([data-ui-theme]),
 :root[data-ui-theme="materialize"] {
 	--doc-radius-sm: var(--ui-radius-sm, 0.6rem);
