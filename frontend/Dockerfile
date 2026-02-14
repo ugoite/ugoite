@@ -12,6 +12,7 @@ FROM base AS release
 COPY --from=install /temp/dev/node_modules node_modules
 COPY ./ ./
 COPY --from=shared ./sql/ugoite-sql-rules.json /usr/src/shared/sql/ugoite-sql-rules.json
+COPY --from=shared ./i18n/ui.json /usr/src/shared/i18n/ui.json
 
 # Build the frontend application
 RUN bun run build
