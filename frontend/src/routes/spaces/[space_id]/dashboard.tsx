@@ -1,12 +1,15 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
+import { AssetUploader } from "~/components/AssetUploader";
 import { CreateEntryDialog, CreateFormDialog } from "~/components/create-dialogs";
+import { assetApi } from "~/lib/asset-api";
 import { SpaceShell } from "~/components/SpaceShell";
 import { createEntryStore } from "~/lib/entry-store";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { formApi } from "~/lib/form-api";
 import { spaceApi } from "~/lib/space-api";
 import type { FormCreatePayload } from "~/lib/types";
+import type { Asset } from "~/lib/types";
 
 export default function SpaceDashboardRoute() {
 	const params = useParams<{ space_id: string }>();
@@ -15,6 +18,7 @@ export default function SpaceDashboardRoute() {
 	const entryStore = createEntryStore(spaceId);
 	const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
 	const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
+	const [assetActionError, setAssetActionError] = createSignal<string | null>(null);
 
 	const [space] = createResource(async () => {
 		return await spaceApi.get(spaceId());
@@ -33,6 +37,14 @@ export default function SpaceDashboardRoute() {
 		async (wsId) => {
 			if (!wsId) return [];
 			return await formApi.listTypes(wsId);
+		},
+	);
+
+	const [assets, { refetch: refetchAssets }] = createResource(
+		() => spaceId(),
+		async (wsId) => {
+			if (!wsId) return [] as Asset[];
+			return await assetApi.list(wsId);
 		},
 	);
 
@@ -71,6 +83,23 @@ export default function SpaceDashboardRoute() {
 			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "Failed to create entry");
+		}
+	};
+
+	const handleAssetUpload = async (file: File): Promise<Asset> => {
+		setAssetActionError(null);
+		const created = await assetApi.upload(spaceId(), file, file.name);
+		await refetchAssets();
+		return created;
+	};
+
+	const handleAssetRemove = async (assetId: string) => {
+		setAssetActionError(null);
+		try {
+			await assetApi.delete(spaceId(), assetId);
+			await refetchAssets();
+		} catch (error) {
+			setAssetActionError(error instanceof Error ? error.message : "Failed to delete asset");
 		}
 	};
 
@@ -137,6 +166,23 @@ export default function SpaceDashboardRoute() {
 								Browse forms
 							</A>
 						</div>
+					</section>
+					<section class="ui-card ui-stack-sm">
+						<div>
+							<h2 class="text-lg font-semibold">Assets</h2>
+							<p class="text-sm ui-muted">Upload files and keep catalog metadata in sync.</p>
+						</div>
+						<AssetUploader
+							assets={assets() || []}
+							onUpload={handleAssetUpload}
+							onRemove={handleAssetRemove}
+						/>
+						<Show when={assetActionError()}>
+							<p class="ui-alert ui-alert-error text-sm">{assetActionError()}</p>
+						</Show>
+						<Show when={assets.loading}>
+							<p class="text-sm ui-muted">Loading assets...</p>
+						</Show>
 					</section>
 				</div>
 			</div>

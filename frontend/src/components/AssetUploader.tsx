@@ -116,6 +116,12 @@ export function AssetUploader(props: AssetUploaderProps) {
 									<div class="flex-1 min-w-0">
 										<p class="text-sm font-medium truncate">{asset.name}</p>
 										<p class="text-xs ui-muted">{asset.path}</p>
+										<Show when={asset.link}>
+											<p class="text-xs ui-muted truncate">{asset.link}</p>
+										</Show>
+										<Show when={asset.uploaded_at}>
+											<p class="text-xs ui-muted">{asset.uploaded_at}</p>
+										</Show>
 									</div>
 								</div>
 								<Show when={props.onRemove}>
