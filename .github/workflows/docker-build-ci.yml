@@ -14,7 +14,7 @@ permissions:
 jobs:
   docker-build:
     name: Docker Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -32,8 +32,12 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: false
-          cache-from: type=gha,scope=backend-image
-          cache-to: type=gha,mode=max,scope=backend-image
+          cache-from: |
+            type=gha,scope=backend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=backend-image
+            type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             core=./ugoite-core
             module=./ugoite-cli
@@ -44,7 +48,11 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: false
-          cache-from: type=gha,scope=frontend-image
-          cache-to: type=gha,mode=max,scope=frontend-image
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-image
+            type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             shared=./shared

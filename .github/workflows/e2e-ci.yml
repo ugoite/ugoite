@@ -10,7 +10,7 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -42,4 +42,29 @@ jobs:
         run: mise run setup
 
       - name: Run E2E tests
+        env:
+          PLAYWRIGHT_CI_REPORTER: junit
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
         run: mise run e2e
+
+      - name: Fail on skipped e2e tests
+        run: |
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("e2e/test-results/junit.xml")
+          if not report.exists():
+            raise SystemExit(f"missing junit report: {report}")
+
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          tests = sum(int(float(s.attrib.get("tests", "0") or 0)) for s in suites)
+          if tests == 0:
+            raise SystemExit("e2e tests: zero executed tests")
+          if skipped > 0:
+            raise SystemExit(f"e2e tests: skipped={skipped} is not allowed")
+          sys.stdout.write(f"e2e tests OK: tests={tests}, skipped={skipped}\n")
+          PY

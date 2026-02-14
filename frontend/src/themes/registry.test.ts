@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { PRIMARY_COLORS } from "./color-registry";
 import { UI_THEMES } from "./registry";
 import { REQUIRED_THEME_TOKENS } from "./tokens";
 
@@ -15,8 +16,6 @@ describe("Theme registry", () => {
 			expect(fs.existsSync(cssPath)).toBe(true);
 			const content = fs.readFileSync(cssPath, "utf-8");
 			expect(content).toContain(`data-ui-theme="${theme.id}"`);
-			expect(content).toContain("--ui-surface-1");
-			expect(content).toContain('data-color-mode="dark"');
 			for (const token of REQUIRED_THEME_TOKENS) {
 				expect(content).toContain(token);
 			}
@@ -27,6 +26,7 @@ describe("Theme registry", () => {
 	it("REQ-FE-041: imports each theme stylesheet", () => {
 		const appCssPath = path.resolve(process.cwd(), "src/app.css");
 		const content = fs.readFileSync(appCssPath, "utf-8");
+		expect(content).toContain('@import "./themes/colors.css";');
 		for (const theme of UI_THEMES) {
 			expect(content).toContain(`@import "./themes/${theme.id}.css";`);
 		}
@@ -39,9 +39,17 @@ describe("Theme registry", () => {
 	});
 
 	it("REQ-FE-041: maps neutral colors to theme tokens", () => {
-		const appCssPath = path.resolve(process.cwd(), "src/app.css");
-		const content = fs.readFileSync(appCssPath, "utf-8");
-		expect(content).toContain("--color-white: var(--ui-surface-1)");
-		expect(content).toContain("--color-black: var(--ui-foreground)");
+		const colorCssPath = path.resolve(process.cwd(), "src/themes/colors.css");
+		const content = fs.readFileSync(colorCssPath, "utf-8");
+		expect(content).toContain("--ui-surface-1");
+		expect(content).toContain("--ui-foreground");
+		expect(content).toContain('data-color-mode="dark"');
+		expect(content).toContain('data-primary-color="violet"');
+	});
+
+	it("REQ-FE-041: defines primary color options in English", () => {
+		for (const color of PRIMARY_COLORS) {
+			expect(hasJapanese(color.label)).toBe(false);
+		}
 	});
 });

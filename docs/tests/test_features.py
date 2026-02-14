@@ -6,7 +6,6 @@ REQ-API-004: Feature registry paths and functions must exist.
 from __future__ import annotations
 
 import re
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +105,11 @@ def _assert_function_exists(file_path: Path, function_name: str) -> None:
         raise AssertionError(message)
 
 
+def _contains_route_handlers(file_path: Path) -> bool:
+    contents = _read_text(file_path)
+    return "@router." in contents
+
+
 def _iter_api_entries() -> list[dict[str, Any]]:
     manifest = _load_yaml(FEATURES_DIR / "features.yaml")
     files = manifest.get("files", [])
@@ -157,7 +161,7 @@ def test_feature_paths_exist() -> None:
 
 
 def test_no_undeclared_feature_modules() -> None:
-    """REQ-API-004: Warn on undeclared API endpoint modules."""
+    """REQ-API-004: API endpoint modules must be declared in features specs."""
     entries = _iter_api_entries()
     declared_backend_files = {
         (REPO_ROOT / entry["backend"]["file"]).resolve()
@@ -167,16 +171,14 @@ def test_no_undeclared_feature_modules() -> None:
     actual_backend_files = {
         path.resolve()
         for path in ENDPOINTS_DIR.glob("*.py")
-        if path.name != "__init__.py"
+        if path.name != "__init__.py" and _contains_route_handlers(path)
     }
 
     extras = sorted(actual_backend_files - declared_backend_files)
     if extras:
         extras_list = ", ".join(str(path.relative_to(REPO_ROOT)) for path in extras)
-        warnings.warn(
-            f"Undeclared endpoint modules: {extras_list}",
-            stacklevel=2,
-        )
+        message = f"Undeclared endpoint modules: {extras_list}"
+        raise AssertionError(message)
 
 
 def test_frontend_paths_match_routes() -> None:

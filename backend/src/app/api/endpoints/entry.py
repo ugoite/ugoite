@@ -51,7 +51,7 @@ async def create_entry_endpoint(
             ) from e
         if "form" in str(e).lower() or "unknown" in str(e).lower():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(e),
             ) from e
         raise HTTPException(
@@ -176,7 +176,7 @@ async def update_entry_endpoint(
             ) from e
         if "form" in msg.lower() or "unknown" in msg.lower():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=msg,
             ) from e
         raise HTTPException(

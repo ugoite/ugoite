@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./themes/colors.css";
 @import "./themes/materialize.css";
 @import "./themes/classic.css";
 @import "./themes/pop.css";
@@ -170,7 +171,7 @@ a:hover {
 	top: 0;
 	left: 0;
 	right: 0;
-	z-index: 50;
+	z-index: 70;
 	display: flex;
 	justify-content: center;
 	pointer-events: none;
@@ -227,7 +228,7 @@ a:hover {
 	font-weight: 600;
 	border-radius: var(--ui-radius-pill);
 	color: var(--ui-foreground-muted);
-	transition: all 0.2s ease;
+	transition: all var(--ui-motion-fast) ease;
 	white-space: nowrap;
 	scroll-snap-align: center;
 }
@@ -262,7 +263,7 @@ a:hover {
 	background: color-mix(in oklch, var(--ui-surface-2) 85%, transparent 15%);
 	border: var(--ui-border-width) solid var(--ui-border);
 	box-shadow: var(--ui-shadow-sm);
-	transition: all 0.2s ease;
+	transition: all var(--ui-motion-fast) ease;
 }
 
 .ui-icon-button:focus-visible {

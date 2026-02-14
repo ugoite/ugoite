@@ -14,6 +14,7 @@ COPY ./ ./
 COPY --from=shared ./sql/ugoite-sql-rules.json /usr/src/shared/sql/ugoite-sql-rules.json
 COPY --from=shared ./i18n/ui.json /usr/src/shared/i18n/ui.json
 COPY --from=shared ./themes/ui-theme-definitions.json /usr/src/shared/themes/ui-theme-definitions.json
+COPY --from=shared ./themes/primary-color-definitions.json /usr/src/shared/themes/primary-color-definitions.json
 
 # Build the frontend application
 RUN bun run build

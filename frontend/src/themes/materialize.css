@@ -3,18 +3,6 @@
 :root[data-ui-theme="materialize"] {
 	--ui-font-sans: var(--font-sans);
 	--ui-font-mono: var(--font-mono);
-	--ui-surface-1: oklch(0.985 0.012 258);
-	--ui-surface-2: oklch(0.962 0.018 260);
-	--ui-surface-3: oklch(0.93 0.026 262);
-	--ui-foreground: oklch(0.18 0.04 260);
-	--ui-foreground-muted: oklch(0.46 0.035 260);
-	--ui-border: oklch(0.84 0.03 260);
-	--ui-accent: oklch(0.64 0.2 275);
-	--ui-accent-strong: oklch(0.56 0.24 279);
-	--ui-accent-foreground: oklch(0.985 0.014 258);
-	--ui-danger: oklch(0.62 0.22 28);
-	--ui-success: oklch(0.63 0.19 150);
-	--ui-warning: oklch(0.77 0.17 82);
 	--ui-border-width: 1px;
 	--ui-radius-sm: 0.6rem;
 	--ui-radius-md: 1.1rem;
@@ -46,37 +34,7 @@
 	--ui-shadow-md: 0 10px 24px rgb(16 24 40 / 0.18);
 	--ui-shadow-lg: 0 18px 40px rgb(16 24 40 / 0.22);
 	--ui-shadow-xl: 0 26px 56px rgb(16 24 40 / 0.26);
-}
-
-:root[data-ui-theme="materialize"][data-color-mode="dark"] {
-	--ui-surface-1: oklch(0.16 0.03 262);
-	--ui-surface-2: oklch(0.2 0.035 266);
-	--ui-surface-3: oklch(0.24 0.04 270);
-	--ui-foreground: oklch(0.92 0.02 262);
-	--ui-foreground-muted: oklch(0.72 0.028 262);
-	--ui-border: oklch(0.31 0.04 266);
-	--ui-accent: oklch(0.79 0.2 278);
-	--ui-accent-strong: oklch(0.85 0.22 282);
-	--ui-accent-foreground: oklch(0.12 0.03 262);
-	--ui-danger: oklch(0.72 0.21 28);
-	--ui-success: oklch(0.72 0.19 150);
-	--ui-warning: oklch(0.82 0.17 84);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root:not([data-color-mode]) {
-		--ui-surface-1: oklch(0.16 0.03 262);
-		--ui-surface-2: oklch(0.2 0.035 266);
-		--ui-surface-3: oklch(0.24 0.04 270);
-		--ui-foreground: oklch(0.92 0.02 262);
-		--ui-foreground-muted: oklch(0.72 0.028 262);
-		--ui-border: oklch(0.31 0.04 266);
-		--ui-accent: oklch(0.79 0.2 278);
-		--ui-accent-strong: oklch(0.85 0.22 282);
-		--ui-accent-foreground: oklch(0.12 0.03 262);
-		--ui-danger: oklch(0.72 0.21 28);
-		--ui-success: oklch(0.72 0.19 150);
-		--ui-warning: oklch(0.82 0.17 84);
-		color-scheme: dark;
-	}
+	--ui-motion-fast: 0.2s;
+	--ui-motion-medium: 0.35s;
+	--ui-motion-slow: 0.55s;
 }

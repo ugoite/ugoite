@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.8
       - name: Restore Bun cache
         uses: actions/cache@v4
         with:
@@ -32,7 +32,7 @@ jobs:
       - name: Setup Biome
         uses: biomejs/setup-biome@v2
         with:
-          version: latest
+          version: 2.3.15
       - name: Run Biome
         working-directory: ./frontend
         run: biome ci .
@@ -43,4 +43,26 @@ jobs:
 
       - name: Run Vitest
         working-directory: ./frontend
-        run: bun run test:run
+        run: bun run test:run --reporter=junit --outputFile=vitest-junit.xml
+
+      - name: Fail on skipped frontend tests
+        run: |
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("frontend/vitest-junit.xml")
+          if not report.exists():
+            raise SystemExit(f"missing junit report: {report}")
+
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          tests = sum(int(float(s.attrib.get("tests", "0") or 0)) for s in suites)
+          if tests == 0:
+            raise SystemExit("frontend tests: zero executed tests")
+          if skipped > 0:
+            raise SystemExit(f"frontend tests: skipped={skipped} is not allowed")
+          sys.stdout.write(f"frontend tests OK: tests={tests}, skipped={skipped}\n")
+          PY

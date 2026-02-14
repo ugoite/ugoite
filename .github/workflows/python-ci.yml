@@ -11,13 +11,14 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.93.0
           components: rustfmt, clippy
 
       - name: Restore Rust cache
@@ -68,14 +69,56 @@ jobs:
 
       - name: Run pytest (backend)
         working-directory: ./backend
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../backend-pytest.xml
+
+      - name: Fail on skipped backend tests
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("backend-pytest.xml")
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          if skipped > 0:
+              raise SystemExit(f"backend tests: skipped={skipped} is not allowed")
+          PY
 
       - name: Run pytest (cli)
         working-directory: ./ugoite-cli
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../cli-pytest.xml
+
+      - name: Fail on skipped cli tests
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("cli-pytest.xml")
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          if skipped > 0:
+              raise SystemExit(f"ugoite-cli tests: skipped={skipped} is not allowed")
+          PY
 
       - name: Run docs consistency tests
-        run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
+        run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=docs-pytest.xml
+
+      - name: Fail on skipped docs tests
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("docs-pytest.xml")
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          if skipped > 0:
+              raise SystemExit(f"docs tests: skipped={skipped} is not allowed")
+          PY
 
       - name: Build core (maturin)
         working-directory: ./ugoite-core
@@ -83,7 +126,21 @@ jobs:
 
       - name: Run pytest (core)
         working-directory: ./ugoite-core
-        run: uv run pytest
+        run: uv run pytest -W error --junitxml=../core-pytest.xml
+
+      - name: Fail on skipped core tests
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("core-pytest.xml")
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+          if skipped > 0:
+              raise SystemExit(f"ugoite-core tests: skipped={skipped} is not allowed")
+          PY
 
       - name: Run cargo test (core)
         working-directory: ./ugoite-core
