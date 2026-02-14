@@ -1,0 +1,20 @@
+version: "0.1"
+updated: "2026-02-14"
+page:
+  id: space-asset-detail
+  title: Space Asset Detail
+  route: /spaces/{space_id}/assets/{asset_id}
+  implementation: implemented
+components:
+  shared:
+    - id: top-tabs
+      type: tab-bar
+      position: top-center-floating
+    - id: settings-button
+      type: floating-icon-button
+      position: top-right-floating
+      icon: settings
+  body:
+    - id: asset-detail
+      type: list
+      title: Asset metadata

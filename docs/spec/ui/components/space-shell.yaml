@@ -1,0 +1,15 @@
+version: "0.1"
+updated: "2026-02-14"
+component_group:
+  id: space-shell-shared
+  title: Space Shell Shared Components
+components:
+  - id: top-tabs
+    type: tab-bar
+    position: top-center-floating
+    notes: Shared top navigation tabs for all space pages.
+  - id: settings-button
+    type: floating-icon-button
+    position: top-right-floating
+    icon: settings
+    notes: Shared settings entry point for theme/language/preferences.
