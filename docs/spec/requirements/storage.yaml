@@ -20,6 +20,13 @@ requirements:
           tests:
             - test_create_space_scaffolding
             - test_create_space_s3_unimplemented
+        - file: ugoite-cli/tests/test_endpoint_config.py
+          tests:
+            - test_endpoint_config_roundtrip_uses_home_directory
+            - test_resolve_base_url_by_mode
+        - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+          tests:
+            - test_cli_config_set_and_show
         - file: ugoite-cli/tests/test_indexer.py
           tests:
             - test_indexer_run_once
@@ -79,6 +86,12 @@ requirements:
         - file: ugoite-cli/tests/test_space.py
           tests:
             - test_create_space_scaffolding
+        - file: ugoite-cli/tests/test_endpoint_config.py
+          tests:
+            - test_parse_space_id_from_path_and_id
+        - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+          tests:
+            - test_space_list_uses_remote_endpoint_when_backend_mode
         - file: ugoite-cli/tests/test_integrity.py
           tests:
             - test_integrity_provider_for_space_success
