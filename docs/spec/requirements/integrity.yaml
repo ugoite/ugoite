@@ -1,62 +1,93 @@
-# Integrity Requirements
-
 category: Data Integrity
 prefix: REQ-INT
-
 requirements:
-  - id: REQ-INT-001
-    title: HMAC Signature
-    description: |
-      Sign all data revisions with locally generated key to prevent tampering.
-    related_spec:
-      - security/overview.md
-      - data-model/overview.md#integrity
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_integrity.py
-          tests:
-            - test_integrity_provider_for_space_success
-            - test_integrity_provider_missing_hmac_key
-            - test_integrity_provider_invalid_hmac_key
-        - file: ugoite-cli/tests/test_entries.py
-          tests:
-            - test_entry_history_append
-      rust:
-        - file: ugoite-core/tests/test_integrity.rs
-          tests:
-            - test_integrity_req_int_001_fake_integrity_provider
-            - test_integrity_req_int_001_real_integrity_provider
+- set_id: REQCAT-INTEGRITY
+  source_file: requirements/integrity.yaml
+  scope: Data integrity and consistency requirements.
+  linked_policies:
+  - POL-004
+  - POL-005
+  - POL-008
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-QUALITY-ERROR
+  - SPEC-TESTING-STRATEGY
+  id: REQ-INT-001
+  title: HMAC Signature
+  description: 'Sign all data revisions with locally generated key to prevent tampering.
 
-  - id: REQ-INT-002
-    title: Checksum Verification
-    description: |
-      Calculate and store checksums for reconstructed entry content.
-    related_spec:
-      - data-model/overview.md#integrity
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_entries.py
-          tests:
-            - test_entry_history_append
-      rust:
-        - file: ugoite-core/tests/test_entry.rs
-          tests:
-            - test_entry_req_entry_005_entry_history_append
+    '
+  related_spec:
+  - security/overview.md
+  - data-model/overview.md#integrity
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_integrity.py
+      tests:
+      - test_integrity_provider_for_space_success
+      - test_integrity_provider_missing_hmac_key
+      - test_integrity_provider_invalid_hmac_key
+    - file: ugoite-cli/tests/test_entries.py
+      tests:
+      - test_entry_history_append
+    rust:
+    - file: ugoite-core/tests/test_integrity.rs
+      tests:
+      - test_integrity_req_int_001_fake_integrity_provider
+      - test_integrity_req_int_001_real_integrity_provider
+- set_id: REQCAT-INTEGRITY
+  source_file: requirements/integrity.yaml
+  scope: Data integrity and consistency requirements.
+  linked_policies:
+  - POL-004
+  - POL-005
+  - POL-008
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-QUALITY-ERROR
+  - SPEC-TESTING-STRATEGY
+  id: REQ-INT-002
+  title: Checksum Verification
+  description: 'Calculate and store checksums for reconstructed entry content.
 
-  - id: REQ-INT-003
-    title: HMAC Signature for API Responses
-    description: |
-      Add HMAC signature header to API responses.
-    related_spec:
-      - security/overview.md
-    priority: low
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_middleware_hmac_signature
+    '
+  related_spec:
+  - data-model/overview.md#integrity
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_entries.py
+      tests:
+      - test_entry_history_append
+    rust:
+    - file: ugoite-core/tests/test_entry.rs
+      tests:
+      - test_entry_req_entry_005_entry_history_append
+- set_id: REQCAT-INTEGRITY
+  source_file: requirements/integrity.yaml
+  scope: Data integrity and consistency requirements.
+  linked_policies:
+  - POL-004
+  - POL-005
+  - POL-008
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-QUALITY-ERROR
+  - SPEC-TESTING-STRATEGY
+  id: REQ-INT-003
+  title: HMAC Signature for API Responses
+  description: 'Add HMAC signature header to API responses.
+
+    '
+  related_spec:
+  - security/overview.md
+  priority: low
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_middleware_hmac_signature

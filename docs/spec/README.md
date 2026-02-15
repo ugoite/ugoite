@@ -12,7 +12,7 @@ Start here:
 - **Data Model**: [data-model/](data-model/)
 - **Stories** (YAML): [stories/](stories/)
 - **Requirements** (YAML + test mapping): [requirements/](requirements/)
-- **Governance Taxonomy** (YAML): [philosophy/](philosophy/), [policies/](policies/), [requirements-defined/](requirements-defined/), [specifications-defined/](specifications-defined/)
+- **Governance Taxonomy** (YAML): [philosophy/](philosophy/), [policies/](policies/), [requirements/](requirements/), [specifications.yaml](specifications.yaml)
 - **Feature Registry** (API-level): [features/](features/)
 - **Security & Testing**: [security/](security/), [testing/](testing/)
 

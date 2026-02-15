@@ -1,16 +1,26 @@
 category: Link Management
 prefix: REQ-LNK
-
 requirements:
-  - id: REQ-LNK-004
-    title: Normalize Ugoite Link URIs
-    description: |
-      Markdown content MUST normalize Ugoite link URIs (e.g. entry and asset
-      links) into canonical ugoite:// forms during create/update.
-    priority: medium
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_entry.rs
-          tests:
-            - test_entry_req_lnk_004_normalize_ugoite_link_uris
+- set_id: REQCAT-LINKS
+  source_file: requirements/links.yaml
+  scope: Entry-link graph behavior and consistency requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-LNK-004
+  title: Normalize Ugoite Link URIs
+  description: 'Markdown content MUST normalize Ugoite link URIs (e.g. entry and asset
+
+    links) into canonical ugoite:// forms during create/update.
+
+    '
+  priority: medium
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_entry.rs
+      tests:
+      - test_entry_req_lnk_004_normalize_ugoite_link_uris

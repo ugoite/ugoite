@@ -53,8 +53,8 @@ Ugoite is a knowledge management system built on three core principles:
 ### Governance Taxonomy
 - [Philosophy](philosophy/foundation.yaml) - Constitutional-level ideals
 - [Policies](policies/policies.yaml) - Implementation policies across layers
-- [Defined Requirement Sets](requirements-defined/requirements.yaml) - Existing requirement categories as governed sets
-- [Defined Specifications](specifications-defined/specifications.yaml) - Existing canonical specification artifacts
+- [Requirements with embedded governance metadata](requirements/api.yaml) - Requirement sets are embedded per requirement item
+- [Specifications Catalog](specifications.yaml) - Flat machine-readable specification catalog
 
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model

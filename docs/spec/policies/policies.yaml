@@ -2,88 +2,165 @@ category: Implementation Policies
 version: 1
 language: en
 last_updated: 2026-02-15
-
 policies:
-  - id: POL-001
-    title: Storage and Query Portability
-    summary: Keep storage and query surfaces portable and vendor-neutral.
-    linked_requirements: [REQCAT-STORAGE, REQCAT-API, REQCAT-INDEX]
-    linked_specifications: [SPEC-ARCH-OVERVIEW, SPEC-DM-OVERVIEW, SPEC-FEATURES-SQL]
-
-  - id: POL-002
-    title: Rust Core as Canonical Logic Layer
-    summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
-    linked_requirements: [REQCAT-API, REQCAT-ENTRY, REQCAT-INDEX, REQCAT-STORAGE]
-    linked_specifications: [SPEC-ARCH-OVERVIEW, SPEC-ARCH-DECISIONS, SPEC-API-REST]
-
-  - id: POL-003
-    title: Minimal Node Deployment
-    summary: Optimize for low-node, serverless-oriented deployments.
-    linked_requirements: [REQCAT-OPS, REQCAT-STORAGE, REQCAT-SECURITY]
-    linked_specifications: [SPEC-ARCH-STACK, SPEC-ARCH-FUTURE, SPEC-TESTING-CICD]
-
-  - id: POL-004
-    title: Backend as Thin API Adapter
-    summary: Keep backend responsibility focused on protocol and orchestration boundaries.
-    linked_requirements: [REQCAT-API, REQCAT-INTEGRITY, REQCAT-SECURITY]
-    linked_specifications: [SPEC-ARCH-INTERFACE, SPEC-API-REST, SPEC-API-OPENAPI]
-
-  - id: POL-005
-    title: CLI as First-Class Operator Surface
-    summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
-    linked_requirements: [REQCAT-OPS, REQCAT-E2E, REQCAT-INTEGRITY]
-    linked_specifications: [SPEC-ARCH-STACK, SPEC-TESTING-STRATEGY, SPEC-TESTING-CICD]
-
-  - id: POL-006
-    title: Frontend Contract Discipline
-    summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
-    linked_requirements: [REQCAT-FRONTEND, REQCAT-E2E, REQCAT-API]
-    linked_specifications: [SPEC-ARCH-INTERFACE, SPEC-UI-OVERVIEW, SPEC-UI-PAGES]
-
-  - id: POL-007
-    title: Form and Entry Schema Governance
-    summary: Enforce stable, typed entry/form behavior through documented schema contracts.
-    linked_requirements: [REQCAT-FORM, REQCAT-ENTRY, REQCAT-ASSET]
-    linked_specifications: [SPEC-DM-SCHEMA, SPEC-STORIES-CORE, SPEC-UI-PAGES]
-
-  - id: POL-008
-    title: Requirement-to-Test Traceability
-    summary: Require machine-readable linkage from requirement to executable tests.
-    linked_requirements: [REQCAT-API, REQCAT-OPS, REQCAT-E2E, REQCAT-INTEGRITY]
-    linked_specifications: [SPEC-TESTING-STRATEGY, SPEC-TESTING-CICD, SPEC-QUALITY-ERROR]
-
-  - id: POL-009
-    title: Quality Gates Before Integration
-    summary: Apply strict linting, typing, and regression gates before merging and release.
-    linked_requirements: [REQCAT-OPS, REQCAT-E2E, REQCAT-FRONTEND]
-    linked_specifications: [SPEC-TESTING-CICD, SPEC-TESTING-STRATEGY, SPEC-PRODUCT-METRICS]
-
-  - id: POL-010
-    title: AI Under Trusted Tooling
-    summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
-    linked_requirements: [REQCAT-SECURITY, REQCAT-OPS, REQCAT-API]
-    linked_specifications: [SPEC-SECURITY-OVERVIEW, SPEC-SECURITY-SANDBOX, SPEC-ARCH-FUTURE]
-
-  - id: POL-011
-    title: Security and Isolation by Default
-    summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
-    linked_requirements: [REQCAT-SECURITY, REQCAT-API, REQCAT-STORAGE]
-    linked_specifications: [SPEC-SECURITY-OVERVIEW, SPEC-SECURITY-SANDBOX, SPEC-API-MCP]
-
-  - id: POL-012
-    title: Search and Linking as Core Knowledge Operations
-    summary: Treat search, links, and graph-like traversal as first-class capabilities.
-    linked_requirements: [REQCAT-SEARCH, REQCAT-LINKS, REQCAT-INDEX]
-    linked_specifications: [SPEC-FEATURES-REGISTRY, SPEC-STORIES-ADVANCED, SPEC-API-REST]
-
-  - id: POL-013
-    title: Spec-Driven Product Iteration
-    summary: Evolve product behavior through explicit specifications before implementation drift.
-    linked_requirements: [REQCAT-ENTRY, REQCAT-FRONTEND, REQCAT-API, REQCAT-OPS]
-    linked_specifications: [SPEC-STORIES-CORE, SPEC-STORIES-ADVANCED, SPEC-PRODUCT-METRICS]
-
-  - id: POL-014
-    title: Compatibility Through Explicit Evolution
-    summary: Manage change using explicit deprecation and migration guidance across layers.
-    linked_requirements: [REQCAT-API, REQCAT-FRONTEND, REQCAT-STORAGE, REQCAT-ENTRY]
-    linked_specifications: [SPEC-ARCH-DECISIONS, SPEC-ARCH-FUTURE, SPEC-API-OPENAPI]
+- id: POL-001
+  title: Storage and Query Portability
+  summary: Keep storage and query surfaces portable and vendor-neutral.
+  linked_requirements:
+  - REQCAT-STORAGE
+  - REQCAT-API
+  - REQCAT-INDEX
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-DM-SQL-SESSIONS
+- id: POL-002
+  title: Rust Core as Canonical Logic Layer
+  summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
+  linked_requirements:
+  - REQCAT-API
+  - REQCAT-ENTRY
+  - REQCAT-INDEX
+  - REQCAT-STORAGE
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  - SPEC-API-REST
+- id: POL-003
+  title: Minimal Node Deployment
+  summary: Optimize for low-node, serverless-oriented deployments.
+  linked_requirements:
+  - REQCAT-OPS
+  - REQCAT-STORAGE
+  - REQCAT-SECURITY
+  linked_specifications:
+  - SPEC-ARCH-STACK
+  - SPEC-ARCH-FUTURE
+  - SPEC-TESTING-CICD
+- id: POL-004
+  title: Backend as Thin API Adapter
+  summary: Keep backend responsibility focused on protocol and orchestration boundaries.
+  linked_requirements:
+  - REQCAT-API
+  - REQCAT-INTEGRITY
+  - REQCAT-SECURITY
+  linked_specifications:
+  - SPEC-ARCH-INTERFACE
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+- id: POL-005
+  title: CLI as First-Class Operator Surface
+  summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
+  linked_requirements:
+  - REQCAT-OPS
+  - REQCAT-E2E
+  - REQCAT-INTEGRITY
+  linked_specifications:
+  - SPEC-ARCH-STACK
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+- id: POL-006
+  title: Frontend Contract Discipline
+  summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
+  linked_requirements:
+  - REQCAT-FRONTEND
+  - REQCAT-E2E
+  - REQCAT-API
+  linked_specifications:
+  - SPEC-ARCH-INTERFACE
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+- id: POL-007
+  title: Form and Entry Schema Governance
+  summary: Enforce stable, typed entry/form behavior through documented schema contracts.
+  linked_requirements:
+  - REQCAT-FORM
+  - REQCAT-ENTRY
+  - REQCAT-ASSET
+  linked_specifications:
+  - SPEC-DM-SCHEMA
+  - SPEC-STORIES-CORE
+  - SPEC-UI-PAGES
+- id: POL-008
+  title: Requirement-to-Test Traceability
+  summary: Require machine-readable linkage from requirement to executable tests.
+  linked_requirements:
+  - REQCAT-API
+  - REQCAT-OPS
+  - REQCAT-E2E
+  - REQCAT-INTEGRITY
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-QUALITY-ERROR
+- id: POL-009
+  title: Quality Gates Before Integration
+  summary: Apply strict linting, typing, and regression gates before merging and release.
+  linked_requirements:
+  - REQCAT-OPS
+  - REQCAT-E2E
+  - REQCAT-FRONTEND
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-PRODUCT-METRICS
+- id: POL-010
+  title: AI Under Trusted Tooling
+  summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
+  linked_requirements:
+  - REQCAT-SECURITY
+  - REQCAT-OPS
+  - REQCAT-API
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-FUTURE
+- id: POL-011
+  title: Security and Isolation by Default
+  summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
+  linked_requirements:
+  - REQCAT-SECURITY
+  - REQCAT-API
+  - REQCAT-STORAGE
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-API-MCP
+- id: POL-012
+  title: Search and Linking as Core Knowledge Operations
+  summary: Treat search, links, and graph-like traversal as first-class capabilities.
+  linked_requirements:
+  - REQCAT-SEARCH
+  - REQCAT-LINKS
+  - REQCAT-INDEX
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+- id: POL-013
+  title: Spec-Driven Product Iteration
+  summary: Evolve product behavior through explicit specifications before implementation drift.
+  linked_requirements:
+  - REQCAT-ENTRY
+  - REQCAT-FRONTEND
+  - REQCAT-API
+  - REQCAT-OPS
+  linked_specifications:
+  - SPEC-STORIES-CORE
+  - SPEC-STORIES-ADVANCED
+  - SPEC-PRODUCT-METRICS
+  - SPEC-STORIES-EXPERIMENTAL
+- id: POL-014
+  title: Compatibility Through Explicit Evolution
+  summary: Manage change using explicit deprecation and migration guidance across layers.
+  linked_requirements:
+  - REQCAT-API
+  - REQCAT-FRONTEND
+  - REQCAT-STORAGE
+  - REQCAT-ENTRY
+  linked_specifications:
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-API-OPENAPI
+  - SPEC-DM-DIRECTORY

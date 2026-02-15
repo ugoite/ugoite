@@ -1,59 +1,109 @@
-# Operations & Dev Environment Requirements
-
 category: Operations & Dev Environment
 prefix: REQ-OPS
-
 requirements:
-  - id: REQ-OPS-001
-    title: Developer Guides for Local Runs
-    description: |
-      Provide English documentation for Docker Compose and CLI usage. Shell
-      command snippets must remain syntactically valid for bash.
-    related_spec:
-      - ../guide/docker-compose.md
-      - ../guide/cli.md
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: docs/tests/test_guides.py
-          tests:
-            - test_docs_req_ops_001_guides_exist
-            - test_docs_req_ops_001_shell_blocks_parse
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-001
+  title: Developer Guides for Local Runs
+  description: 'Provide English documentation for Docker Compose and CLI usage. Shell
 
-  - id: REQ-OPS-002
-    title: Docker Build CI Validation
-    description: |
-      CI MUST validate Docker image builds for backend and frontend to ensure
-      containerized environments remain buildable.
-    related_spec:
-      - testing/ci-cd.md
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: docs/tests/test_guides.py
-          tests:
-            - test_docs_req_ops_002_docker_build_ci_declared
+    command snippets must remain syntactically valid for bash.
 
-  - id: REQ-OPS-003
-    title: Governance Taxonomy Link Integrity
-    description: |
-      Governance taxonomy YAMLs (philosophy, policies, defined requirement sets,
-      and defined specifications) MUST exist under docs/spec and maintain
-      bidirectional references across policy↔requirement, policy↔specification,
-      and requirement↔specification links with no dangling items.
-    related_spec:
-      - philosophy/foundation.yaml
-      - policies/policies.yaml
-      - requirements-defined/requirements.yaml
-      - specifications-defined/specifications.yaml
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: docs/tests/test_spec_governance.py
-          tests:
-            - test_req_ops_003_governance_files_exist
-            - test_req_ops_003_ids_and_links_are_structurally_valid
-            - test_req_ops_003_bidirectional_links_hold
+    '
+  related_spec:
+  - ../guide/docker-compose.md
+  - ../guide/cli.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_001_guides_exist
+      - test_docs_req_ops_001_shell_blocks_parse
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-002
+  title: Docker Build CI Validation
+  description: 'CI MUST validate Docker image builds for backend and frontend to ensure
+
+    containerized environments remain buildable.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_002_docker_build_ci_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-003
+  title: Governance Taxonomy Link Integrity
+  description: 'Governance taxonomy YAMLs (philosophy, policies, requirements with
+
+    embedded set metadata, and flat specifications catalog) MUST exist under
+
+    docs/spec and maintain bidirectional references across policy↔requirement,
+
+    policy↔specification, and requirement↔specification links with no dangling
+
+    items.
+
+    '
+  related_spec:
+  - philosophy/foundation.yaml
+  - policies/policies.yaml
+  - requirements/ops.yaml
+  - specifications.yaml
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_spec_governance.py
+      tests:
+      - test_req_ops_003_governance_files_exist
+      - test_req_ops_003_ids_and_links_are_structurally_valid
+      - test_req_ops_003_bidirectional_links_hold
