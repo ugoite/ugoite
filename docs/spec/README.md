@@ -10,8 +10,11 @@ Start here:
 - **Architecture**: [architecture/](architecture/)
 - **API**: [api/](api/)
 - **Data Model**: [data-model/](data-model/)
+- **Philosophy** (YAML): [philosophy/](philosophy/)
+- **Policies** (YAML): [policies/](policies/)
 - **Stories** (YAML): [stories/](stories/)
 - **Requirements** (YAML + test mapping): [requirements/](requirements/)
+- **Specifications Catalog** (YAML): [specifications/](specifications/)
 - **Feature Registry** (API-level): [features/](features/)
 - **Security & Testing**: [security/](security/), [testing/](testing/)
 

@@ -1,0 +1,165 @@
+version: "1.0"
+updated: "2026-02"
+category: Engineering Policies
+
+policies:
+  - id: POL-001
+    title: Abstraction-First Portability
+    description: Prefer replaceable abstraction layers for storage and execution.
+    related_requirements:
+      - REQ-STO-*
+      - REQ-IDX-*
+      - REQ-SRCH-*
+    related_specifications:
+      - SPEC-ARCH-002
+      - SPEC-DM-001
+      - SPEC-DM-003
+      - SPEC-FEAT-002
+
+  - id: POL-002
+    title: Minimal Runtime Topology
+    description: Keep always-on nodes minimal and justify each additional service.
+    related_requirements:
+      - REQ-STO-*
+      - REQ-OPS-*
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-ARCH-002
+      - SPEC-QA-001
+
+  - id: POL-003
+    title: Rule-Centric Engineering
+    description: Convert recurring manual work into explicit, enforceable rules.
+    related_requirements:
+      - REQ-OPS-*
+      - REQ-E2E-*
+      - REQ-API-005
+    related_specifications:
+      - SPEC-QA-001
+      - SPEC-QA-002
+      - SPEC-STORY-001
+
+  - id: POL-004
+    title: AI Guardrails by Design
+    description: Allow broad AI autonomy only inside trusted, auditable constraints.
+    related_requirements:
+      - REQ-SEC-*
+      - REQ-INT-*
+      - REQ-E2E-*
+    related_specifications:
+      - SPEC-SEC-001
+      - SPEC-QA-001
+      - SPEC-API-002
+
+  - id: POL-005
+    title: Core-First Responsibility Separation
+    description: Business logic belongs in core; API and CLI remain thin adapters.
+    related_requirements:
+      - REQ-STO-*
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-API-*
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-API-001
+      - SPEC-DM-002
+      - SPEC-DM-003
+
+  - id: POL-006
+    title: Contract-First API Design
+    description: API behavior is defined by stable contracts and verifiable docs.
+    related_requirements:
+      - REQ-API-*
+      - REQ-SEC-*
+      - REQ-FORM-*
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-API-001
+      - SPEC-API-002
+      - SPEC-API-003
+      - SPEC-FEAT-001
+
+  - id: POL-007
+    title: Thin Frontend, Stable Routes
+    description: Frontend focuses on interaction and delegates durable logic outward.
+    related_requirements:
+      - REQ-FE-*
+      - REQ-E2E-*
+    related_specifications:
+      - SPEC-UI-001
+      - SPEC-UI-002
+      - SPEC-FEAT-001
+
+  - id: POL-008
+    title: Form-First Structured Content
+    description: Treat Form definitions as the primary contract for structured content.
+    related_requirements:
+      - REQ-FORM-*
+      - REQ-ENTRY-*
+      - REQ-FE-*
+      - REQ-LNK-*
+      - REQ-ASSET-*
+    related_specifications:
+      - SPEC-DM-001
+      - SPEC-DM-002
+      - SPEC-UI-001
+      - SPEC-STORY-001
+
+  - id: POL-009
+    title: Search and Query as Core Capability
+    description: Structured and keyword retrieval must be first-class and consistent.
+    related_requirements:
+      - REQ-IDX-*
+      - REQ-SRCH-*
+      - REQ-LNK-*
+    related_specifications:
+      - SPEC-FEAT-001
+      - SPEC-FEAT-002
+      - SPEC-API-001
+
+  - id: POL-010
+    title: Security and Integrity Defaults
+    description: Integrity checks and secure-by-default behavior are mandatory.
+    related_requirements:
+      - REQ-SEC-*
+      - REQ-INT-*
+    related_specifications:
+      - SPEC-SEC-001
+      - SPEC-DM-002
+      - SPEC-API-001
+
+  - id: POL-011
+    title: End-to-End Traceability
+    description: Policy, requirement, spec, and tests must remain machine-traceable.
+    related_requirements:
+      - REQ-API-*
+      - REQ-API-005
+      - REQ-E2E-*
+      - REQ-OPS-*
+      - REQ-FE-*
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-IDX-*
+      - REQ-STO-*
+      - REQ-INT-*
+      - REQ-SEC-*
+      - REQ-SRCH-*
+      - REQ-LNK-*
+      - REQ-ASSET-*
+    related_specifications:
+      - SPEC-QA-001
+      - SPEC-FEAT-001
+      - SPEC-API-003
+
+  - id: POL-012
+    title: Operations as Product Quality
+    description: Development workflow and CI quality are part of product reliability.
+    related_requirements:
+      - REQ-OPS-*
+      - REQ-E2E-*
+      - REQ-API-*
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-QA-001
+      - SPEC-QA-002
+      - SPEC-PROD-001

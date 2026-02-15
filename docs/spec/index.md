@@ -27,6 +27,12 @@ Ugoite is a knowledge management system built on three core principles:
 - [Frontend–Backend Interface](architecture/frontend-backend-interface.md) - Behavioral contracts and boundaries
 - [Future-Proofing](architecture/future-proofing.md) - Experimental direction (BYOAI, multi-platform core)
 
+### Philosophy & Policies
+- [OSS Philosophy](philosophy/philosophy.yaml) - Foundational principles (constitution-level)
+- [Engineering Policies](policies/policies.yaml) - Implementation-level policy layer
+- [Specification Catalog](specifications/specifications.yaml) - Canonical spec catalog with links
+- [Requirement Relationship Map](specifications/requirements-links.yaml) - Requirement ↔ policy/spec mapping
+
 ### Features & Stories
 - [Features Registry](features/README.md) - API-level feature registry across modules
 - [Ugoite SQL](features/sql.md) - SQL dialect for structured queries

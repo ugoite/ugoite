@@ -1,0 +1,53 @@
+version: "1.0"
+updated: "2026-02"
+category: OSS Philosophy
+
+philosophies:
+  - id: PHI-001
+    title: Freedom Through Modern Abstraction Layers
+    statement: |
+      Ugoite adopts modern abstraction layers to maximize user freedom over
+      data, compute, and integration choices. OpenDAL-backed storage,
+      a Rust-based core, and open analytical interfaces are preferred so users
+      can avoid vendor lock-in and connect from CLI, API, agents, frontend,
+      and future native clients.
+    implications:
+      - Prefer open protocols, open formats, and replaceable infrastructure.
+      - Keep a stable core that can be embedded in multiple application layers.
+      - Preserve interoperability for future query and analytics backends.
+
+  - id: PHI-002
+    title: Serverless-Oriented, Minimal-Node Architecture
+    statement: |
+      Ugoite minimizes always-on nodes and treats infrastructure as optional.
+      The ideal topology is a small number of containers plus storage, with
+      direct client-to-capability integration where security allows. Extra
+      layers may exist, but only when responsibility boundaries require them.
+    implications:
+      - Design for least operational burden and minimal fixed infrastructure.
+      - Keep responsibilities explicit when introducing API or worker layers.
+      - Prefer direct access patterns over unnecessary service fan-out.
+
+  - id: PHI-003
+    title: Build Rules, Not Artifacts
+    statement: |
+      Ugoite prioritizes durable rules over fragile one-off artifacts.
+      Implementation should encode repeatable safeguards (tests, contracts,
+      automation), and product interactions should let users define reusable
+      rules rather than repeatedly performing near-identical manual operations.
+    implications:
+      - Every meaningful fix should reduce recurrence through tests.
+      - Documentation should be connected to executable checks where possible.
+      - Product workflows should elevate reusable intent over repetitive actions.
+
+  - id: PHI-004
+    title: Let AI Move Freely Inside Trusted Guardrails
+    statement: |
+      Ugoite embraces AI leverage while containing risk through explicit,
+      testable constraints. Humans define and audit the guardrails (CI,
+      policy checks, trusted tool surfaces), while AI operates with broad
+      autonomy inside those boundaries.
+    implications:
+      - Strengthen CI and policy checks as the primary trust mechanism.
+      - Expose trusted tools for AI-assisted operations on private data.
+      - Optimize for high AI throughput with strong traceability.

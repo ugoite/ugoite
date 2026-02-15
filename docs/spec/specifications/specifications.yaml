@@ -1,0 +1,258 @@
+version: "1.0"
+updated: "2026-02"
+category: Canonical Specification Catalog
+
+specifications:
+  - id: SPEC-ARCH-001
+    title: System Architecture Baseline
+    sources:
+      - architecture/overview.md
+      - architecture/stack.md
+      - architecture/frontend-backend-interface.md
+    related_policies:
+      - POL-002
+      - POL-005
+      - POL-006
+      - POL-012
+    related_requirements:
+      - REQ-STO-*
+      - REQ-API-*
+      - REQ-OPS-*
+
+  - id: SPEC-ARCH-002
+    title: Future-Proofing and Portability
+    sources:
+      - architecture/future-proofing.md
+      - architecture/decisions.md
+    related_policies:
+      - POL-001
+      - POL-002
+    related_requirements:
+      - REQ-STO-*
+      - REQ-IDX-*
+      - REQ-OPS-*
+
+  - id: SPEC-DM-001
+    title: Data Model Foundations
+    sources:
+      - data-model/overview.md
+    related_policies:
+      - POL-001
+      - POL-008
+    related_requirements:
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-STO-*
+      - REQ-LNK-*
+      - REQ-ASSET-*
+      - REQ-IDX-*
+
+  - id: SPEC-DM-002
+    title: Data File Schemas
+    sources:
+      - data-model/file-schemas.yaml
+    related_policies:
+      - POL-005
+      - POL-008
+      - POL-010
+    related_requirements:
+      - REQ-FORM-*
+      - REQ-ENTRY-*
+      - REQ-INT-*
+
+  - id: SPEC-DM-003
+    title: Space Layout and SQL Sessions
+    sources:
+      - data-model/directory-structure.md
+      - data-model/sql-sessions.md
+    related_policies:
+      - POL-001
+      - POL-005
+    related_requirements:
+      - REQ-STO-*
+      - REQ-API-008
+
+  - id: SPEC-API-001
+    title: REST API Contract
+    sources:
+      - api/rest.md
+    related_policies:
+      - POL-005
+      - POL-006
+      - POL-009
+      - POL-010
+    related_requirements:
+      - REQ-API-*
+      - REQ-FE-*
+      - REQ-E2E-*
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-SRCH-*
+      - REQ-SEC-*
+
+  - id: SPEC-API-002
+    title: MCP Agent Contract
+    sources:
+      - api/mcp.md
+    related_policies:
+      - POL-004
+      - POL-006
+    related_requirements:
+      - REQ-API-*
+      - REQ-SEC-*
+
+  - id: SPEC-API-003
+    title: OpenAPI Machine Contract
+    sources:
+      - api/openapi.yaml
+    related_policies:
+      - POL-006
+      - POL-011
+    related_requirements:
+      - REQ-API-*
+      - REQ-E2E-*
+
+  - id: SPEC-FEAT-001
+    title: API Feature Registry
+    sources:
+      - features/features.yaml
+      - features/spaces.yaml
+      - features/entries.yaml
+      - features/forms.yaml
+      - features/assets.yaml
+      - features/links.yaml
+      - features/search.yaml
+      - features/sql.yaml
+    related_policies:
+      - POL-006
+      - POL-007
+      - POL-009
+      - POL-011
+    related_requirements:
+      - REQ-API-*
+      - REQ-FE-*
+      - REQ-IDX-*
+      - REQ-SRCH-*
+      - REQ-LNK-*
+      - REQ-ASSET-*
+
+  - id: SPEC-FEAT-002
+    title: Ugoite SQL Dialect
+    sources:
+      - features/sql.md
+    related_policies:
+      - POL-001
+      - POL-009
+    related_requirements:
+      - REQ-IDX-008
+      - REQ-IDX-009
+      - REQ-SRCH-*
+
+  - id: SPEC-UI-001
+    title: UI Page Specifications
+    sources:
+      - ui/pages/space-home.yaml
+      - ui/pages/space-dashboard.yaml
+      - ui/pages/space-entries-object.yaml
+      - ui/pages/space-entry-detail.yaml
+      - ui/pages/space-entry-history.yaml
+      - ui/pages/space-entry-revision.yaml
+      - ui/pages/space-entry-restore.yaml
+      - ui/pages/space-form-grid.yaml
+      - ui/pages/space-form-detail.yaml
+      - ui/pages/space-form-types.yaml
+      - ui/pages/space-assets.yaml
+      - ui/pages/space-asset-detail.yaml
+      - ui/pages/space-links.yaml
+      - ui/pages/space-link-detail.yaml
+      - ui/pages/space-search.yaml
+      - ui/pages/space-sql.yaml
+      - ui/pages/space-sql-detail.yaml
+      - ui/pages/space-query-create.yaml
+      - ui/pages/space-query-legacy.yaml
+      - ui/pages/space-query-variables.yaml
+      - ui/pages/space-settings.yaml
+      - ui/pages/space-test-connection.yaml
+    related_policies:
+      - POL-007
+      - POL-008
+    related_requirements:
+      - REQ-FE-*
+      - REQ-E2E-*
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-SRCH-*
+      - REQ-LNK-*
+      - REQ-ASSET-*
+
+  - id: SPEC-UI-002
+    title: UI Component Shell Baseline
+    sources:
+      - ui/components/space-shell.yaml
+    related_policies:
+      - POL-007
+    related_requirements:
+      - REQ-FE-*
+
+  - id: SPEC-SEC-001
+    title: Security Posture and Sandbox
+    sources:
+      - security/overview.md
+      - security/sandbox.md
+    related_policies:
+      - POL-004
+      - POL-010
+    related_requirements:
+      - REQ-SEC-*
+      - REQ-INT-*
+
+  - id: SPEC-QA-001
+    title: Testing Strategy and CI/CD
+    sources:
+      - testing/strategy.md
+      - testing/ci-cd.md
+    related_policies:
+      - POL-002
+      - POL-003
+      - POL-004
+      - POL-011
+      - POL-012
+    related_requirements:
+      - REQ-E2E-*
+      - REQ-OPS-*
+      - REQ-API-005
+
+  - id: SPEC-QA-002
+    title: Error Handling Quality Standard
+    sources:
+      - quality/error-handling.md
+    related_policies:
+      - POL-003
+      - POL-012
+    related_requirements:
+      - REQ-OPS-*
+      - REQ-API-*
+
+  - id: SPEC-STORY-001
+    title: Product Story Definitions
+    sources:
+      - stories/core.yaml
+      - stories/advanced.yaml
+      - stories/experimental.yaml
+    related_policies:
+      - POL-003
+      - POL-008
+    related_requirements:
+      - REQ-ENTRY-*
+      - REQ-FORM-*
+      - REQ-IDX-*
+
+  - id: SPEC-PROD-001
+    title: Product Success Metrics
+    sources:
+      - product/success-metrics.md
+    related_policies:
+      - POL-012
+    related_requirements:
+      - REQ-OPS-*
+      - REQ-E2E-*

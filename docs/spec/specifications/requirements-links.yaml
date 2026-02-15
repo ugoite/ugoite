@@ -1,0 +1,181 @@
+version: "1.0"
+updated: "2026-02"
+category: Requirement Relationship Map
+
+requirement_links:
+  - requirement_selector: REQ-STO-*
+    related_policies:
+      - POL-001
+      - POL-002
+      - POL-005
+      - POL-011
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-ARCH-002
+      - SPEC-DM-001
+      - SPEC-DM-003
+
+  - requirement_selector: REQ-ENTRY-*
+    related_policies:
+      - POL-005
+      - POL-008
+      - POL-011
+    related_specifications:
+      - SPEC-DM-001
+      - SPEC-DM-002
+      - SPEC-API-001
+      - SPEC-UI-001
+      - SPEC-STORY-001
+
+  - requirement_selector: REQ-FORM-*
+    related_policies:
+      - POL-005
+      - POL-006
+      - POL-008
+      - POL-011
+    related_specifications:
+      - SPEC-DM-001
+      - SPEC-DM-002
+      - SPEC-API-001
+      - SPEC-UI-001
+      - SPEC-STORY-001
+
+  - requirement_selector: REQ-IDX-*
+    related_policies:
+      - POL-001
+      - POL-009
+      - POL-011
+    related_specifications:
+      - SPEC-ARCH-002
+      - SPEC-DM-001
+      - SPEC-FEAT-001
+      - SPEC-STORY-001
+
+  - requirement_selector: REQ-IDX-008
+    related_policies:
+      - POL-009
+    related_specifications:
+      - SPEC-FEAT-002
+
+  - requirement_selector: REQ-IDX-009
+    related_policies:
+      - POL-009
+    related_specifications:
+      - SPEC-FEAT-002
+
+  - requirement_selector: REQ-SRCH-*
+    related_policies:
+      - POL-001
+      - POL-009
+      - POL-011
+    related_specifications:
+      - SPEC-API-001
+      - SPEC-FEAT-001
+      - SPEC-FEAT-002
+      - SPEC-UI-001
+
+  - requirement_selector: REQ-API-*
+    related_policies:
+      - POL-005
+      - POL-006
+      - POL-011
+      - POL-012
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-API-001
+      - SPEC-API-002
+      - SPEC-API-003
+      - SPEC-FEAT-001
+      - SPEC-QA-002
+
+  - requirement_selector: REQ-API-005
+    related_policies:
+      - POL-003
+    related_specifications:
+      - SPEC-QA-001
+
+  - requirement_selector: REQ-API-008
+    related_policies:
+      - POL-005
+      - POL-006
+      - POL-011
+      - POL-012
+    related_specifications:
+      - SPEC-DM-003
+
+  - requirement_selector: REQ-FE-*
+    related_policies:
+      - POL-007
+      - POL-008
+      - POL-011
+    related_specifications:
+      - SPEC-API-001
+      - SPEC-FEAT-001
+      - SPEC-UI-001
+      - SPEC-UI-002
+
+  - requirement_selector: REQ-E2E-*
+    related_policies:
+      - POL-003
+      - POL-004
+      - POL-007
+      - POL-011
+      - POL-012
+    related_specifications:
+      - SPEC-API-001
+      - SPEC-API-003
+      - SPEC-UI-001
+      - SPEC-QA-001
+      - SPEC-PROD-001
+
+  - requirement_selector: REQ-OPS-*
+    related_policies:
+      - POL-002
+      - POL-003
+      - POL-011
+      - POL-012
+    related_specifications:
+      - SPEC-ARCH-001
+      - SPEC-ARCH-002
+      - SPEC-QA-001
+      - SPEC-QA-002
+      - SPEC-PROD-001
+
+  - requirement_selector: REQ-SEC-*
+    related_policies:
+      - POL-004
+      - POL-006
+      - POL-010
+      - POL-011
+    related_specifications:
+      - SPEC-API-001
+      - SPEC-API-002
+      - SPEC-SEC-001
+
+  - requirement_selector: REQ-INT-*
+    related_policies:
+      - POL-004
+      - POL-010
+      - POL-011
+    related_specifications:
+      - SPEC-DM-002
+      - SPEC-SEC-001
+
+  - requirement_selector: REQ-LNK-*
+    related_policies:
+      - POL-008
+      - POL-009
+      - POL-011
+    related_specifications:
+      - SPEC-DM-001
+      - SPEC-FEAT-001
+      - SPEC-UI-001
+
+  - requirement_selector: REQ-ASSET-*
+    related_policies:
+      - POL-008
+      - POL-011
+    related_specifications:
+      - SPEC-DM-001
+      - SPEC-FEAT-001
+      - SPEC-UI-001
