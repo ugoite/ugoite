@@ -11,9 +11,9 @@ export const DOCSITE_I18N: Record<DocsiteLocale, Record<string, string>> = {
 		language_label: "Language",
 		mode_light: "Light",
 		mode_dark: "Dark",
-		home_title: "Ugoite Documentation",
+		home_title: "Ship with confidence from one source of truth",
 		home_desc:
-			"This site renders the main project docs from the repository docs/ directory.",
+			"Ugoite Docsite renders docs/ directly and organizes architecture, API, requirements, and governance into one readable map.",
 		home_link_cli: "CLI Guide",
 		home_link_rest: "REST API Spec",
 		home_link_mcp: "MCP API Spec",
@@ -29,9 +29,9 @@ export const DOCSITE_I18N: Record<DocsiteLocale, Record<string, string>> = {
 		language_label: "言語",
 		mode_light: "ライト",
 		mode_dark: "ダーク",
-		home_title: "Ugoite ドキュメント",
+		home_title: "単一の信頼できる情報源で、確信を持って開発する",
 		home_desc:
-			"このサイトは、リポジトリ内の docs/ ディレクトリにある主要ドキュメントをそのまま表示します。",
+			"Ugoite Docsite は docs/ を直接レンダリングし、アーキテクチャ・API・要件・ガバナンスを読みやすい情報マップとして整理します。",
 		home_link_cli: "CLI ガイド",
 		home_link_rest: "REST API 仕様",
 		home_link_mcp: "MCP API 仕様",

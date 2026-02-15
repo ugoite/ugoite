@@ -1,14 +1,24 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
-import { navSections } from "../lib/navigation";
+import { navSections, topLinks } from "../lib/navigation";
 import "../styles.css";
 
 export interface Props {
   title: string;
   description?: string;
+  showSidebar?: boolean;
 }
 
-const { title, description } = Astro.props;
+const { title, description, showSidebar = true } = Astro.props;
+const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+
+const isActivePath = (href: string): boolean => {
+  const normalizedHref = href.replace(/\/+$/, "") || "/";
+  if (normalizedHref === "/") {
+    return currentPath === "/";
+  }
+  return currentPath === normalizedHref || currentPath.startsWith(`${normalizedHref}/`);
+};
 ---
 
 <html lang="en">
@@ -19,44 +29,63 @@ const { title, description } = Astro.props;
     <meta name="description" content={description ?? "Ugoite repository-backed documentation."} />
   </head>
   <body>
-    <header class="mx-auto max-w-6xl px-4 py-4">
+    <header class="mx-auto max-w-[88rem] px-4 py-4 md:px-6">
       <div class="doc-card flex flex-wrap items-center justify-between gap-4 py-3">
         <a href="/" class="text-xl font-semibold tracking-tight" data-l10n-key="brand">Ugoite Docsite</a>
-        <nav class="flex flex-wrap items-center gap-3 text-sm">
-          <a href="/docs/guide/cli" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_cli">CLI Guide</a>
-          <a href="/docs/spec/api/rest" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_rest">REST API</a>
-          <a href="/docs/spec/api/mcp" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_mcp">MCP API</a>
+        <nav class="flex flex-wrap items-center gap-2 text-sm">
+          {topLinks.map((link) => (
+            <a
+              href={link.href}
+              class:list={{
+                "doc-pill": true,
+                "doc-pill-active": isActivePath(link.href),
+              }}
+            >
+              {link.title}
+            </a>
+          ))}
         </nav>
         <ThemeSwitcher />
       </div>
     </header>
-    <main class="mx-auto max-w-6xl px-4 pb-16">
-      <div class="doc-shell">
-        <aside class="doc-sidebar">
-          <p class="text-xs font-semibold uppercase tracking-wide" style="color: var(--doc-muted);">Navigation</p>
-          <div class="mt-3 space-y-4">
-            {navSections.map((section) => (
-              <section>
-                <h2 class="text-sm font-semibold">{section.title}</h2>
-                <ul class="mt-2 space-y-1 text-sm" style="color: var(--doc-muted);">
-                  {section.items.map((item) => (
-                    <li>
-                      <a href={item.href} class="block rounded px-2 py-1 hover:opacity-80">{item.title}</a>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        </aside>
-        <section>
+    <main class="mx-auto max-w-[88rem] px-4 pb-16 md:px-6">
+      <div class:list={{ "doc-shell": showSidebar, "doc-shell-standalone": !showSidebar }}>
+        {showSidebar && (
+          <aside class="doc-sidebar">
+            <p class="doc-sidebar-label">Knowledge Map</p>
+            <div class="mt-4 space-y-5">
+              {navSections.map((section) => (
+                <section>
+                  <h2 class="text-sm font-semibold">{section.title}</h2>
+                  {section.description && <p class="mt-1 text-xs doc-muted">{section.description}</p>}
+                  <ul class="mt-2 space-y-1.5 text-sm">
+                    {section.items.map((item) => (
+                      <li>
+                        <a
+                          href={item.href}
+                          class:list={{
+                            "doc-nav-link": true,
+                            "doc-nav-link-active": isActivePath(item.href),
+                          }}
+                        >
+                          {item.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </aside>
+        )}
+        <section class="min-w-0">
           <slot />
         </section>
       </div>
     </main>
-    <footer class="mx-auto max-w-6xl px-4 pb-10 text-xs" style="color: var(--doc-muted);">
+    <footer class="mx-auto max-w-[88rem] px-4 pb-10 text-xs md:px-6">
       <div class="doc-card flex flex-wrap items-center justify-between gap-2 py-2">
-        <span>Repository-backed documentation from docs/ and docs/spec.</span>
+        <span class="doc-muted">Repository-backed documentation from docs/ and docs/spec.</span>
         <a href="/docs/spec/index">Open specification index</a>
       </div>
     </footer>

@@ -2,7 +2,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Marked } from "marked";
+import { parse as parseYaml } from "yaml";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { navSections } from "../../lib/navigation";
 
 function escapeHtml(raw: string): string {
   return raw
@@ -43,9 +45,96 @@ function sanitizeUrl(raw: string | null | undefined): string | null {
   return null;
 }
 
+function slugifyHeading(raw: string): string {
+  return raw
+    .toLowerCase()
+    .trim()
+    .replace(/[`*_~]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+type Heading = {
+  level: number;
+  text: string;
+  id: string;
+};
+
+function createYamlSummary(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `Array (${value.length})`;
+  }
+  if (value && typeof value === "object") {
+    return `Object (${Object.keys(value).length})`;
+  }
+  if (typeof value === "string") {
+    return value.length > 96 ? `${value.slice(0, 96)}…` : value;
+  }
+  return String(value);
+}
+
+function renderYamlNode(value: unknown, depth = 0): string {
+  if (value === null || value === undefined) {
+    return "<span class=\"doc-yaml-empty\">null</span>";
+  }
+
+  if (typeof value === "string") {
+    const escaped = escapeHtml(value);
+    if (value.includes("\n")) {
+      return `<pre><code>${escaped}</code></pre>`;
+    }
+    return `<code>${escaped}</code>`;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `<code>${escapeHtml(String(value))}</code>`;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "<span class=\"doc-yaml-empty\">[]</span>";
+    const allScalars = value.every(
+      (entry) => entry === null || ["string", "number", "boolean"].includes(typeof entry),
+    );
+
+    if (allScalars) {
+      return `<ul class=\"doc-yaml-list\">${value
+        .map((entry) => `<li>${renderYamlNode(entry, depth + 1)}</li>`)
+        .join("")}</ul>`;
+    }
+
+    return `<div class=\"doc-yaml-stack\">${value
+      .map((entry, index) => {
+        const itemLabel = `item_${index + 1}`;
+        return `<details class=\"doc-yaml-details\" ${depth < 2 ? "open" : ""}><summary>${itemLabel} · ${escapeHtml(createYamlSummary(entry))}</summary>${renderYamlNode(entry, depth + 1)}</details>`;
+      })
+      .join("")}</div>`;
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return "<span class=\"doc-yaml-empty\">{}</span>";
+    }
+
+    return `<div class=\"doc-yaml-stack\">${entries
+      .map(([key, entryValue]) => {
+        const summary = createYamlSummary(entryValue);
+        const content = renderYamlNode(entryValue, depth + 1);
+        return `<details class=\"doc-yaml-details\" ${depth < 2 ? "open" : ""}><summary><code>${escapeHtml(key)}</code><span class=\"doc-yaml-summary\">${escapeHtml(summary)}</span></summary>${content}</details>`;
+      })
+      .join("")}</div>`;
+  }
+
+  return `<code>${escapeHtml(String(value))}</code>`;
+}
+
 const safeMarked = new Marked({
   gfm: true,
 });
+
+const headings: Heading[] = [];
+const headingCounter = new Map<string, number>();
 
 safeMarked.use({
   renderer: {
@@ -72,48 +161,112 @@ safeMarked.use({
       const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
       return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr} loading="lazy" decoding="async" />`;
     },
+    heading({ tokens, depth }) {
+      const rawText = this.parser.parseInline(tokens);
+      const baseId = slugifyHeading(rawText);
+      const count = headingCounter.get(baseId) ?? 0;
+      headingCounter.set(baseId, count + 1);
+      const resolvedId = count === 0 ? baseId : `${baseId}-${count + 1}`;
+
+      headings.push({
+        level: depth,
+        text: rawText,
+        id: resolvedId,
+      });
+
+      return `<h${depth} id="${escapeAttribute(resolvedId)}">${rawText}</h${depth}>`;
+    },
   },
 });
 
 export async function getStaticPaths() {
   const docsRoot = path.resolve(process.cwd(), "../docs");
-  const walkMarkdownFiles = async (dir: string): Promise<string[]> => {
+  const walkDocFiles = async (dir: string): Promise<string[]> => {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = await Promise.all(
       entries.map(async (entry) => {
         const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) return await walkMarkdownFiles(fullPath);
-        if (entry.isFile() && entry.name.endsWith(".md")) return [fullPath];
+        if (entry.isDirectory()) return await walkDocFiles(fullPath);
+        if (
+          entry.isFile() &&
+          (entry.name.endsWith(".md") || entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))
+        ) {
+          return [fullPath];
+        }
         return [];
       })
     );
     return files.flat();
   };
 
-  const markdownFiles = await walkMarkdownFiles(docsRoot);
-  return markdownFiles.map((file) => {
+  const docFiles = await walkDocFiles(docsRoot);
+  const bySlug = new Map<string, string>();
+
+  for (const file of docFiles) {
     const relative = path.relative(docsRoot, file).replace(/\\/g, "/");
-    const slug = relative.replace(/\.md$/, "");
-    return { params: { slug } };
-  });
+    const slug = relative.replace(/\.(md|yaml|yml)$/i, "");
+    const extensionPriority = relative.endsWith(".md") ? 3 : relative.endsWith(".yaml") ? 2 : 1;
+    const existing = bySlug.get(slug);
+
+    if (!existing) {
+      bySlug.set(slug, relative);
+      continue;
+    }
+
+    const existingPriority = existing.endsWith(".md") ? 3 : existing.endsWith(".yaml") ? 2 : 1;
+    if (extensionPriority > existingPriority) {
+      bySlug.set(slug, relative);
+    }
+  }
+
+  return Array.from(bySlug.keys()).map((slug) => ({ params: { slug } }));
 }
 
 const docsRoot = path.resolve(process.cwd(), "../docs");
 const slugPath = String(Astro.params.slug || "").replace(/^\/+/, "");
-const relativePath = `${slugPath}.md`;
+
+const candidatePaths = [`${slugPath}.md`, `${slugPath}.yaml`, `${slugPath}.yml`];
+let relativePath: string | null = null;
+
+for (const candidate of candidatePaths) {
+  try {
+    await fs.access(path.join(docsRoot, candidate));
+    relativePath = candidate;
+    break;
+  } catch {
+    continue;
+  }
+}
+
+if (!relativePath) {
+  throw new Error(`Document not found for slug: ${slugPath}`);
+}
+
 const fullPath = path.join(docsRoot, relativePath);
-const markdown = await fs.readFile(fullPath, "utf-8");
-const html = safeMarked.parse(markdown);
+const source = await fs.readFile(fullPath, "utf-8");
+const isYaml = relativePath.endsWith(".yaml") || relativePath.endsWith(".yml");
+const html = isYaml ? renderYamlNode(parseYaml(source)) : safeMarked.parse(source);
+
 const parts = slugPath.split("/").filter(Boolean);
 const breadcrumbs = parts.map((part, index) => ({
-  label: part,
+  label: part.replaceAll("-", " "),
   href: `/docs/${parts.slice(0, index + 1).join("/")}`,
 }));
+
+const currentDocPath = `/docs/${slugPath}`;
+const relatedLinks = navSections
+  .flatMap((section) => section.items)
+  .filter((item) => item.href !== currentDocPath)
+  .filter((item) => {
+    const scope = slugPath.split("/").slice(0, 2).join("/");
+    return scope.length > 0 ? item.href.includes(scope) : true;
+  })
+  .slice(0, 6);
 ---
 
 <BaseLayout title={`Docs: ${relativePath}`} description={`Repository source: /docs/${relativePath}`}>
   <section class="doc-card mb-4">
-    <nav class="text-xs" style="color: var(--doc-muted);">
+    <nav class="text-xs doc-muted">
       <a href="/">home</a>
       <span> / </span>
       <a href="/docs/spec/index">docs</a>
@@ -124,9 +277,43 @@ const breadcrumbs = parts.map((part, index) => ({
         </>
       ))}
     </nav>
-    <p class="mt-2 text-xs" style="color: var(--doc-muted);"><span data-l10n-key="source_prefix">Source:</span> /docs/{relativePath}</p>
+    <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+      <span class="doc-badge">{isYaml ? "YAML" : "Markdown"}</span>
+      <span class="doc-muted"><span data-l10n-key="source_prefix">Source:</span> /docs/{relativePath}</span>
+    </div>
   </section>
-  <article class="prose doc-prose max-w-none">
-    <Fragment set:html={html} />
-  </article>
+
+  <div class="doc-content-grid">
+    <article class="prose doc-prose max-w-none">
+      <Fragment set:html={html} />
+    </article>
+
+    <aside class="doc-aside">
+      {headings.length > 0 && (
+        <section>
+          <h2 class="text-sm font-semibold">On this page</h2>
+          <ul class="mt-2 space-y-1 text-sm">
+            {headings
+              .filter((heading) => heading.level <= 3)
+              .map((heading) => (
+                <li class:list={{ "pl-3": heading.level === 3 }}>
+                  <a href={`#${heading.id}`} class="doc-inline-link">{heading.text}</a>
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
+
+      <section class="mt-5">
+        <h2 class="text-sm font-semibold">Related docs</h2>
+        <ul class="mt-2 space-y-1.5 text-sm">
+          {relatedLinks.map((link) => (
+            <li>
+              <a href={link.href} class="doc-inline-link">{link.title}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </aside>
+  </div>
 </BaseLayout>
