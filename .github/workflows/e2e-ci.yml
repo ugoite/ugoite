@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
 
       - name: Restore Playwright and e2e node cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/ms-playwright
