@@ -1,0 +1,83 @@
+category: Defined Requirement Sets
+version: 1
+language: en
+last_updated: 2026-02-15
+
+requirement_sets:
+  - id: REQCAT-API
+    source_file: requirements/api.yaml
+    scope: REST API contracts and service behavior requirements.
+    linked_policies: [POL-001, POL-002, POL-004, POL-006, POL-008, POL-010, POL-011, POL-013, POL-014]
+    linked_specifications: [SPEC-API-REST, SPEC-API-OPENAPI, SPEC-API-MCP, SPEC-ARCH-INTERFACE]
+
+  - id: REQCAT-ASSET
+    source_file: requirements/asset.yaml
+    scope: Asset lifecycle and metadata handling requirements.
+    linked_policies: [POL-007]
+    linked_specifications: [SPEC-DM-SCHEMA, SPEC-FEATURES-REGISTRY]
+
+  - id: REQCAT-E2E
+    source_file: requirements/e2e.yaml
+    scope: End-to-end confidence and cross-layer behavior requirements.
+    linked_policies: [POL-005, POL-006, POL-008, POL-009]
+    linked_specifications: [SPEC-TESTING-STRATEGY, SPEC-TESTING-CICD, SPEC-UI-OVERVIEW]
+
+  - id: REQCAT-ENTRY
+    source_file: requirements/entry.yaml
+    scope: Entry creation, mutation, revision, and retrieval requirements.
+    linked_policies: [POL-002, POL-007, POL-013, POL-014]
+    linked_specifications: [SPEC-STORIES-CORE, SPEC-DM-OVERVIEW, SPEC-API-REST]
+
+  - id: REQCAT-FORM
+    source_file: requirements/form.yaml
+    scope: Form structure, validation, and lifecycle requirements.
+    linked_policies: [POL-007]
+    linked_specifications: [SPEC-DM-SCHEMA, SPEC-STORIES-CORE, SPEC-UI-PAGES]
+
+  - id: REQCAT-FRONTEND
+    source_file: requirements/frontend.yaml
+    scope: Frontend route, component, and interaction requirements.
+    linked_policies: [POL-006, POL-009, POL-013, POL-014]
+    linked_specifications: [SPEC-UI-OVERVIEW, SPEC-UI-PAGES, SPEC-ARCH-INTERFACE]
+
+  - id: REQCAT-INDEX
+    source_file: requirements/index.yaml
+    scope: Indexing and query engine behavior requirements.
+    linked_policies: [POL-001, POL-002, POL-012]
+    linked_specifications: [SPEC-DM-OVERVIEW, SPEC-FEATURES-SQL, SPEC-API-REST]
+
+  - id: REQCAT-INTEGRITY
+    source_file: requirements/integrity.yaml
+    scope: Data integrity and consistency requirements.
+    linked_policies: [POL-004, POL-005, POL-008]
+    linked_specifications: [SPEC-DM-OVERVIEW, SPEC-QUALITY-ERROR, SPEC-TESTING-STRATEGY]
+
+  - id: REQCAT-LINKS
+    source_file: requirements/links.yaml
+    scope: Entry-link graph behavior and consistency requirements.
+    linked_policies: [POL-012]
+    linked_specifications: [SPEC-FEATURES-REGISTRY, SPEC-STORIES-ADVANCED, SPEC-API-REST]
+
+  - id: REQCAT-OPS
+    source_file: requirements/ops.yaml
+    scope: Operational quality, workflow, and automation requirements.
+    linked_policies: [POL-003, POL-005, POL-008, POL-009, POL-010, POL-013]
+    linked_specifications: [SPEC-TESTING-CICD, SPEC-TESTING-STRATEGY, SPEC-ARCH-STACK]
+
+  - id: REQCAT-SEARCH
+    source_file: requirements/search.yaml
+    scope: Search behavior and discoverability requirements.
+    linked_policies: [POL-012]
+    linked_specifications: [SPEC-FEATURES-REGISTRY, SPEC-STORIES-ADVANCED, SPEC-API-REST]
+
+  - id: REQCAT-SECURITY
+    source_file: requirements/security.yaml
+    scope: Security controls, integrity protections, and isolation requirements.
+    linked_policies: [POL-003, POL-004, POL-010, POL-011]
+    linked_specifications: [SPEC-SECURITY-OVERVIEW, SPEC-SECURITY-SANDBOX, SPEC-ARCH-INTERFACE]
+
+  - id: REQCAT-STORAGE
+    source_file: requirements/storage.yaml
+    scope: Storage architecture, data persistence, and portability requirements.
+    linked_policies: [POL-001, POL-002, POL-003, POL-011, POL-014]
+    linked_specifications: [SPEC-ARCH-OVERVIEW, SPEC-DM-DIRECTORY, SPEC-DM-OVERVIEW]

@@ -35,3 +35,25 @@ requirements:
         - file: docs/tests/test_guides.py
           tests:
             - test_docs_req_ops_002_docker_build_ci_declared
+
+  - id: REQ-OPS-003
+    title: Governance Taxonomy Link Integrity
+    description: |
+      Governance taxonomy YAMLs (philosophy, policies, defined requirement sets,
+      and defined specifications) MUST exist under docs/spec and maintain
+      bidirectional references across policy↔requirement, policy↔specification,
+      and requirement↔specification links with no dangling items.
+    related_spec:
+      - philosophy/foundation.yaml
+      - policies/policies.yaml
+      - requirements-defined/requirements.yaml
+      - specifications-defined/specifications.yaml
+    priority: medium
+    status: implemented
+    tests:
+      pytest:
+        - file: docs/tests/test_spec_governance.py
+          tests:
+            - test_req_ops_003_governance_files_exist
+            - test_req_ops_003_ids_and_links_are_structurally_valid
+            - test_req_ops_003_bidirectional_links_hold

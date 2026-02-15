@@ -50,6 +50,12 @@ Ugoite is a knowledge management system built on three core principles:
 - [Requirements Overview](requirements/README.md) - How requirements are tracked
 - Requirements by category: [storage](requirements/storage.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [ops](requirements/ops.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
 
+### Governance Taxonomy
+- [Philosophy](philosophy/foundation.yaml) - Constitutional-level ideals
+- [Policies](policies/policies.yaml) - Implementation policies across layers
+- [Defined Requirement Sets](requirements-defined/requirements.yaml) - Existing requirement categories as governed sets
+- [Defined Specifications](specifications-defined/specifications.yaml) - Existing canonical specification artifacts
+
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model
 - [Testing Strategy](testing/strategy.md) - TDD approach and test organization
