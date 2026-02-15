@@ -1,213 +1,422 @@
-# REST API Requirements
-
 category: REST API
 prefix: REQ-API
-
 requirements:
-  - id: REQ-API-001
-    title: Space CRUD
-    description: |
-      Create, retrieve, and list spaces.
-    related_spec:
-      - api/rest.md#spaces
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_space
-            - test_list_spaces
-            - test_get_space
-            - test_get_space_not_found
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - spaceApi.list
-            - spaceApi.create
-      e2e:
-        - file: e2e/smoke.test.ts
-          tests:
-            - GET /spaces returns list
-            - GET /spaces includes default space
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-001
+  title: Space CRUD
+  description: 'Create, retrieve, and list spaces.
 
-  - id: REQ-API-002
-    title: Entry CRUD
-    description: |
-      Create, retrieve, update, and delete entries.
-    related_spec:
-      - api/rest.md#entries
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_entry
-            - test_list_entries
-            - test_get_entry
-            - test_update_entry
-            - test_delete_entry
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - entryApi.list
-            - entryApi.create
-            - entryApi.get
-            - entryApi.update
-            - entryApi.delete
-      e2e:
-        - file: e2e/entries.test.ts
-          tests:
-            - POST /spaces/default/entries creates a new entry
-            - GET /spaces/default/entries returns entry list
-            - PUT /spaces/default/entries/:id updates entry
-            - DELETE /spaces/default/entries/:id removes entry
+    '
+  related_spec:
+  - api/rest.md#spaces
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_create_space
+      - test_list_spaces
+      - test_get_space
+      - test_get_space_not_found
+    vitest:
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - spaceApi.list
+      - spaceApi.create
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - GET /spaces returns list
+      - GET /spaces includes default space
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-002
+  title: Entry CRUD
+  description: 'Create, retrieve, update, and delete entries.
 
-  - id: REQ-API-004
-    title: Feature Registry Consistency
-    description: |
-      API feature registry entries MUST match implemented backend and frontend
-      paths, files, and functions.
-    related_spec:
-      - features/README.md
-      - features/features.yaml
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: docs/tests/test_features.py
-          tests:
-            - test_feature_paths_exist
-            - test_no_undeclared_feature_modules
+    '
+  related_spec:
+  - api/rest.md#entries
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_create_entry
+      - test_list_entries
+      - test_get_entry
+      - test_update_entry
+      - test_delete_entry
+    vitest:
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - entryApi.list
+      - entryApi.create
+      - entryApi.get
+      - entryApi.update
+      - entryApi.delete
+    e2e:
+    - file: e2e/entries.test.ts
+      tests:
+      - POST /spaces/default/entries creates a new entry
+      - GET /spaces/default/entries returns entry list
+      - PUT /spaces/default/entries/:id updates entry
+      - DELETE /spaces/default/entries/:id removes entry
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-004
+  title: Feature Registry Consistency
+  description: 'API feature registry entries MUST match implemented backend and frontend
 
-  - id: REQ-API-005
-    title: Requirements Traceability Automation
-    description: |
-      Requirements MUST be defined in YAML and validated against test references
-      in backend, frontend, ugoite-cli, and ugoite-core.
-    related_spec:
-      - requirements/README.md
-      - testing/strategy.md
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: docs/tests/test_requirements.py
-          tests:
-            - test_requirement_ids_are_unique
-            - test_required_fields_present
-            - test_all_requirements_have_tests
-            - test_all_tests_reference_valid_requirements
-            - test_no_orphan_tests
+    paths, files, and functions.
 
-  - id: REQ-API-006
-    title: Saved SQL CRUD
-    description: |
-      The API MUST expose CRUD operations for saved SQL entries, including
-      validation of SQL variable objects.
-    related_spec:
-      - api/rest.md#sql-saved-queries
-      - features/sql.md#saved-sql-form
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_sql.py
-          tests:
-            - test_sql_req_api_006_crud
-        - file: ugoite-cli/tests/test_saved_sql.py
-          tests:
-            - test_saved_sql_req_api_006_crud
-      rust:
-        - file: ugoite-core/tests/test_saved_sql.rs
-          tests:
-            - test_saved_sql_req_api_006_crud
+    '
+  related_spec:
+  - features/README.md
+  - features/features.yaml
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_features.py
+      tests:
+      - test_feature_paths_exist
+      - test_no_undeclared_feature_modules
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-005
+  title: Requirements Traceability Automation
+  description: 'Requirements MUST be defined in YAML and validated against test references
 
-  - id: REQ-API-007
-    title: Saved SQL variable embedding and SQL validity
-    description: |
-      Saved SQL entries MUST embed each declared variable in the SQL text using
-      {{variable_name}} placeholders, and the SQL must be valid Ugoite SQL after
-      substituting placeholders with literal values.
-    related_spec:
-      - api/rest.md#sql-saved-queries
-      - features/sql.md#saved-sql-form
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_sql.py
-          tests:
-            - test_sql_req_api_007_validation
-        - file: ugoite-cli/tests/test_saved_sql.py
-          tests:
-            - test_saved_sql_req_api_007_validation
-      rust:
-        - file: ugoite-core/tests/test_saved_sql.rs
-          tests:
-            - test_saved_sql_req_api_007_validation_errors
+    in backend, frontend, ugoite-cli, and ugoite-core.
 
-  - id: REQ-API-008
-    title: SQL session query API
-    description: |
-      The API MUST create SQL query sessions and provide status, count, rows,
-      and stream endpoints for paged retrieval.
-    related_spec:
-      - api/rest.md#sql-sessions
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_query_entries_sql
-      rust:
-        - file: ugoite-core/tests/test_sql_sessions.rs
-          tests:
-            - test_sql_sessions_req_api_008_end_to_end
-        - file: ugoite-core/tests/test_materialized_view.rs
-          tests:
-            - test_materialized_view_req_api_008_metadata_lifecycle
+    '
+  related_spec:
+  - requirements/README.md
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_requirements.py
+      tests:
+      - test_requirement_ids_are_unique
+      - test_required_fields_present
+      - test_all_requirements_have_tests
+      - test_all_tests_reference_valid_requirements
+      - test_no_orphan_tests
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-006
+  title: Saved SQL CRUD
+  description: 'The API MUST expose CRUD operations for saved SQL entries, including
 
-  - id: REQ-API-009
-    title: Sample data space generation
-    description: |
-      The API MUST provide a way to generate a sample-data space with a small
-      set of input parameters (space id, scenario, entry count, seed), backed
-      by ugoite-core dynamic generation.
-      Backend REST exposure is currently unshipped (planned), while ugoite-core
-      implementation and tests are retained for future re-exposure.
-    related_spec:
-      - api/rest.md#spaces
-      - features/spaces.yaml
-    priority: medium
-    status: planned
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_sample_space_req_api_009
-      rust:
-        - file: ugoite-core/tests/test_sample_data.rs
-          tests:
-            - test_sample_data_req_api_009_create_sample_space
+    validation of SQL variable objects.
 
-  - id: REQ-API-010
-    title: Sample data scenarios and async jobs
-    description: |
-      The API MUST expose a catalog of sample-data scenarios and support
-      asynchronous sample-data generation jobs with status reporting.
-      Backend REST exposure is currently unshipped (planned), while ugoite-core
-      implementation and tests are retained for future re-exposure.
-    related_spec:
-      - api/rest.md#spaces
-      - features/spaces.yaml
-    priority: medium
-    status: planned
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_sample_data.rs
-          tests:
-            - test_sample_data_req_api_010_list_scenarios
-            - test_sample_data_req_api_010_job_lifecycle
+    '
+  related_spec:
+  - api/rest.md#sql-saved-queries
+  - features/sql.md#saved-sql-form
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_sql.py
+      tests:
+      - test_sql_req_api_006_crud
+    - file: ugoite-cli/tests/test_saved_sql.py
+      tests:
+      - test_saved_sql_req_api_006_crud
+    rust:
+    - file: ugoite-core/tests/test_saved_sql.rs
+      tests:
+      - test_saved_sql_req_api_006_crud
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-007
+  title: Saved SQL variable embedding and SQL validity
+  description: 'Saved SQL entries MUST embed each declared variable in the SQL text using
+
+    {{variable_name}} placeholders, and the SQL must be valid Ugoite SQL after
+
+    substituting placeholders with literal values.
+
+    '
+  related_spec:
+  - api/rest.md#sql-saved-queries
+  - features/sql.md#saved-sql-form
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_sql.py
+      tests:
+      - test_sql_req_api_007_validation
+    - file: ugoite-cli/tests/test_saved_sql.py
+      tests:
+      - test_saved_sql_req_api_007_validation
+    rust:
+    - file: ugoite-core/tests/test_saved_sql.rs
+      tests:
+      - test_saved_sql_req_api_007_validation_errors
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-008
+  title: SQL session query API
+  description: 'The API MUST create SQL query sessions and provide status, count, rows,
+
+    and stream endpoints for paged retrieval.
+
+    '
+  related_spec:
+  - api/rest.md#sql-sessions
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_query_entries_sql
+    rust:
+    - file: ugoite-core/tests/test_sql_sessions.rs
+      tests:
+      - test_sql_sessions_req_api_008_end_to_end
+    - file: ugoite-core/tests/test_materialized_view.rs
+      tests:
+      - test_materialized_view_req_api_008_metadata_lifecycle
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-009
+  title: Sample data space generation
+  description: 'The API MUST provide a way to generate a sample-data space with a small
+
+    set of input parameters (space id, scenario, entry count, seed), backed
+
+    by ugoite-core dynamic generation.
+
+    Backend REST exposure is currently unshipped (planned), while ugoite-core
+
+    implementation and tests are retained for future re-exposure.
+
+    '
+  related_spec:
+  - api/rest.md#spaces
+  - features/spaces.yaml
+  priority: medium
+  status: planned
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_sample_space_req_api_009
+    rust:
+    - file: ugoite-core/tests/test_sample_data.rs
+      tests:
+      - test_sample_data_req_api_009_create_sample_space
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-010
+  title: Sample data scenarios and async jobs
+  description: 'The API MUST expose a catalog of sample-data scenarios and support
+
+    asynchronous sample-data generation jobs with status reporting.
+
+    Backend REST exposure is currently unshipped (planned), while ugoite-core
+
+    implementation and tests are retained for future re-exposure.
+
+    '
+  related_spec:
+  - api/rest.md#spaces
+  - features/spaces.yaml
+  priority: medium
+  status: planned
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_sample_data.rs
+      tests:
+      - test_sample_data_req_api_010_list_scenarios
+      - test_sample_data_req_api_010_job_lifecycle

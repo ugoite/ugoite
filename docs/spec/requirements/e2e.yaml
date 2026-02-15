@@ -1,78 +1,127 @@
-# End-to-End Requirements
-
 category: End-to-End
 prefix: REQ-E2E
-
 requirements:
-  - id: REQ-E2E-001
-    title: Frontend Accessibility
-    description: |
-      Frontend correctly returns HTML with proper content types.
-    related_spec:
-      - testing/strategy.md
-    priority: high
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/smoke.test.ts
-          tests:
-            - GET / returns HTML with DOCTYPE
-            - GET / has correct content-type
-            - GET /spaces returns HTML
-            - GET /spaces/default/entries/:id returns HTML
-            - GET /about returns HTML
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-001
+  title: Frontend Accessibility
+  description: 'Frontend correctly returns HTML with proper content types.
 
-  - id: REQ-E2E-002
-    title: API-Frontend Integration
-    description: |
-      Backend API and frontend work together correctly.
-    related_spec:
-      - testing/strategy.md
-    priority: high
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/smoke.test.ts
-          tests:
-            - GET /spaces returns list
-            - GET /spaces includes default space
-            - GET /spaces/default/entries returns list
-        - file: e2e/entries.test.ts
-          tests:
-            - POST /spaces/default/entries creates a new entry
-            - PUT /spaces/default/entries/:id updates entry
-            - DELETE /spaces/default/entries/:id removes entry
+    '
+  related_spec:
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - GET / returns HTML with DOCTYPE
+      - GET / has correct content-type
+      - GET /spaces returns HTML
+      - GET /spaces/default/entries/:id returns HTML
+      - GET /about returns HTML
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-002
+  title: API-Frontend Integration
+  description: 'Backend API and frontend work together correctly.
 
-  - id: REQ-E2E-003
-    title: Theme-aware UI Flows
-    description: |
-      The UI MUST support core space workflows across all supported themes and
-      color modes, including navigation, query flows, and entry detail access.
-    related_spec:
-      - ui/README.md
-      - tasks/tasks.md#phase-7-5-uiの洗練化-追加
-    priority: high
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/ui-themes.test.ts
-          tests:
-            - "REQ-E2E-003: UI flows work in materialize theme"
-            - "REQ-E2E-003: UI flows work in classic theme"
-            - "REQ-E2E-003: UI flows work in pop theme"
+    '
+  related_spec:
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - GET /spaces returns list
+      - GET /spaces includes default space
+      - GET /spaces/default/entries returns list
+    - file: e2e/entries.test.ts
+      tests:
+      - POST /spaces/default/entries creates a new entry
+      - PUT /spaces/default/entries/:id updates entry
+      - DELETE /spaces/default/entries/:id removes entry
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-003
+  title: Theme-aware UI Flows
+  description: 'The UI MUST support core space workflows across all supported themes and
 
-  - id: REQ-E2E-004
-    title: Dynamic Navigation Stability
-    description: |
-      Frontend route traversal across internal links and transitions MUST not
-      produce browser console errors, runtime page errors, or SolidJS fallback
-      error screens.
-    related_spec:
-      - testing/strategy.md
-    priority: high
-    status: implemented
-    tests:
-      e2e:
-        - file: e2e/navigation.test.ts
-          tests:
-            - "REQ-E2E-004: dynamic traversal has no console or SolidJS errors"
+    color modes, including navigation, query flows, and entry detail access.
+
+    '
+  related_spec:
+  - ui/README.md
+  - tasks/tasks.md#phase-7-5-uiの洗練化-追加
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/ui-themes.test.ts
+      tests:
+      - 'REQ-E2E-003: UI flows work in materialize theme'
+      - 'REQ-E2E-003: UI flows work in classic theme'
+      - 'REQ-E2E-003: UI flows work in pop theme'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-004
+  title: Dynamic Navigation Stability
+  description: 'Frontend route traversal across internal links and transitions MUST not
+
+    produce browser console errors, runtime page errors, or SolidJS fallback
+
+    error screens.
+
+    '
+  related_spec:
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/navigation.test.ts
+      tests:
+      - 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors'

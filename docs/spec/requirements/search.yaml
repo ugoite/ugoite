@@ -1,43 +1,71 @@
 category: Search
 prefix: REQ-SRCH
-
 requirements:
-  - id: REQ-SRCH-001
-    title: Keyword search
-    description: |
-      Users must be able to search entries by keyword.
-    priority: high
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_search.rs
-          tests:
-            - test_search_req_srch_001_keyword_search
+- set_id: REQCAT-SEARCH
+  source_file: requirements/search.yaml
+  scope: Search behavior and discoverability requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-SRCH-001
+  title: Keyword search
+  description: 'Users must be able to search entries by keyword.
 
-  - id: REQ-SRCH-002
-    title: Index fallback search
-    description: |
-      Search must fall back to content scanning if index misses.
-    priority: medium
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_search.rs
-          tests:
-            - test_search_req_srch_002_fallback_scan
+    '
+  priority: high
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_search.rs
+      tests:
+      - test_search_req_srch_001_keyword_search
+- set_id: REQCAT-SEARCH
+  source_file: requirements/search.yaml
+  scope: Search behavior and discoverability requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-SRCH-002
+  title: Index fallback search
+  description: 'Search must fall back to content scanning if index misses.
 
-  - id: REQ-SRCH-003
-    title: Ugoite SQL lint and completion rules
-    description: |
-      The system MUST provide shared Ugoite SQL linting and completion rules
-      for UI and CLI usage, sourced from a common config in the project root.
-    related_spec:
-      - features/sql.md
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_sql_rules.py
-          tests:
-            - test_cli_sql_lint_reports_errors
-            - test_cli_sql_complete_suggests_tables
+    '
+  priority: medium
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_search.rs
+      tests:
+      - test_search_req_srch_002_fallback_scan
+- set_id: REQCAT-SEARCH
+  source_file: requirements/search.yaml
+  scope: Search behavior and discoverability requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-SRCH-003
+  title: Ugoite SQL lint and completion rules
+  description: 'The system MUST provide shared Ugoite SQL linting and completion rules
+
+    for UI and CLI usage, sourced from a common config in the project root.
+
+    '
+  related_spec:
+  - features/sql.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_sql_rules.py
+      tests:
+      - test_cli_sql_lint_reports_errors
+      - test_cli_sql_complete_suggests_tables

@@ -1,192 +1,305 @@
-# Indexer Requirements
-
 category: Indexer
 prefix: REQ-IDX
-
 requirements:
-  - id: REQ-IDX-001
-    title: Structured Cache via Live Indexer
-    description: |
-      Derive materialized indexes from Iceberg tables on entry changes.
-    related_spec:
-      - architecture/overview.md#structure-from-text-engine
-      - data-model/overview.md#indices
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_indexer_run_once
-            - test_aggregate_stats
-            - test_aggregate_stats_includes_field_usage
-        - file: backend/tests/test_api_reindexing.py
-          tests:
-            - test_update_entry_reflects_in_query
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_001_reindex_writes_index_files
-            - test_index_req_idx_001_extract_properties_returns_object
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-001
+  title: Structured Cache via Live Indexer
+  description: 'Derive materialized indexes from Iceberg tables on entry changes.
 
+    '
+  related_spec:
+  - architecture/overview.md#structure-from-text-engine
+  - data-model/overview.md#indices
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_indexer_run_once
+      - test_aggregate_stats
+      - test_aggregate_stats_includes_field_usage
+    - file: backend/tests/test_api_reindexing.py
+      tests:
+      - test_update_entry_reflects_in_query
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_001_reindex_writes_index_files
+      - test_index_req_idx_001_extract_properties_returns_object
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-002
+  title: Form Validation
+  description: 'Validate properties against form definitions and generate warnings.
 
-  - id: REQ-IDX-002
-    title: Form Validation
-    description: |
-      Validate properties against form definitions and generate warnings.
-    related_spec:
-      - stories/core.yaml#STORY-002
-      - data-model/overview.md#forms
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_validate_properties_missing_required
-            - test_validate_properties_valid
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_002_validate_properties
+    '
+  related_spec:
+  - stories/core.yaml#STORY-002
+  - data-model/overview.md#forms
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_validate_properties_missing_required
+      - test_validate_properties_valid
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_002_validate_properties
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-003
+  title: Structured Queries
+  description: 'Execute structured queries against the index.
 
-  - id: REQ-IDX-003
-    title: Structured Queries
-    description: |
-      Execute structured queries against the index.
-    related_spec:
-      - stories/core.yaml#STORY-005
-      - api/rest.md#structured-query
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_query_index
-            - test_query_index_by_tag
-        - file: backend/tests/test_api.py
-          tests:
-            - test_query_entries
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_003_query_index
+    '
+  related_spec:
+  - stories/core.yaml#STORY-005
+  - api/rest.md#structured-query
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_query_index
+      - test_query_index_by_tag
+    - file: backend/tests/test_api.py
+      tests:
+      - test_query_entries
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_003_query_index
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-004
+  title: Inverted Index Generation
+  description: 'Generate inverted index for keyword search from Iceberg data.
 
-  - id: REQ-IDX-004
-    title: Inverted Index Generation
-    description: |
-      Generate inverted index for keyword search from Iceberg data.
-    related_spec:
-      - data-model/overview.md#indices
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_indexer_generates_inverted_index
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_004_inverted_index_generation
+    '
+  related_spec:
+  - data-model/overview.md#indices
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_indexer_generates_inverted_index
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_004_inverted_index_generation
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-005
+  title: Word Count Calculation
+  description: 'Calculate word count as an automatic property.
 
-  - id: REQ-IDX-005
-    title: Word Count Calculation
-    description: |
-      Calculate word count as an automatic property.
-    related_spec:
-      - data-model/overview.md#properties-extraction
-    priority: low
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_indexer_computes_word_count
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_005_word_count
+    '
+  related_spec:
+  - data-model/overview.md#properties-extraction
+  priority: low
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_indexer_computes_word_count
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_005_word_count
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-006
+  title: Indexing via Watch Loop
+  description: 'Trigger indexer in response to Iceberg table changes.
 
-  - id: REQ-IDX-006
-    title: Indexing via Watch Loop
-    description: |
-      Trigger indexer in response to Iceberg table changes.
-    related_spec:
-      - architecture/overview.md#structure-from-text-engine
-    priority: low
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_indexer_watch_loop_triggers_run
+    '
+  related_spec:
+  - architecture/overview.md#structure-from-text-engine
+  priority: low
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_indexer_watch_loop_triggers_run
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-007
+  title: Hybrid Search Endpoint
+  description: 'Expose GET /spaces/{space_id}/search using the inverted index (keyword)
 
-  - id: REQ-IDX-007
-    title: Hybrid Search Endpoint
-    description: |
-      Expose GET /spaces/{space_id}/search using the inverted index (keyword)
-      and falling back to a simple scan when the index is absent.
-    related_spec:
-      - stories/core.yaml#STORY-005
-      - api/rest.md#keyword-search
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_search_returns_matches
+    and falling back to a simple scan when the index is absent.
 
-  - id: REQ-IDX-008
-    title: Ugoite SQL Query Execution
-    description: |
-      Execute Ugoite SQL queries against Iceberg-derived entry records via the
-      existing /spaces/{space_id}/query endpoint.
-    related_spec:
-      - features/sql.md
-      - api/rest.md#structured-query
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_query_entries_sql
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_008_query_sql
+    '
+  related_spec:
+  - stories/core.yaml#STORY-005
+  - api/rest.md#keyword-search
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_search_returns_matches
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-008
+  title: Ugoite SQL Query Execution
+  description: 'Execute Ugoite SQL queries against Iceberg-derived entry records via the
 
-  - id: REQ-IDX-009
-    title: Ugoite SQL JOIN Support
-    description: |
-      Ugoite SQL MUST support JOIN queries across entries, links, and assets
-      using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
-      constraints.
-    related_spec:
-      - features/sql.md
-    priority: high
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_009_query_sql_joins
+    existing /spaces/{space_id}/query endpoint.
 
-  - id: REQ-IDX-010
-    title: Rich Content Column Parsing
-    description: |
-      Validation MUST parse Markdown into expanded content column types,
-      including lists, booleans, integers, floats, timestamps, time, UUIDs,
-      and binary payloads.
-    related_spec:
-      - data-model/overview.md#content-column-types--markdown-parsing
-    priority: high
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_index.rs
-          tests:
-            - test_index_req_idx_010_rich_content_parsing
+    '
+  related_spec:
+  - features/sql.md
+  - api/rest.md#structured-query
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_query_entries_sql
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_008_query_sql
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-009
+  title: Ugoite SQL JOIN Support
+  description: 'Ugoite SQL MUST support JOIN queries across entries, links, and assets
+
+    using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
+
+    constraints.
+
+    '
+  related_spec:
+  - features/sql.md
+  priority: high
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_009_query_sql_joins
+- set_id: REQCAT-INDEX
+  source_file: requirements/index.yaml
+  scope: Indexing and query engine behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-012
+  linked_specifications:
+  - SPEC-DM-OVERVIEW
+  - SPEC-FEATURES-SQL
+  - SPEC-API-REST
+  id: REQ-IDX-010
+  title: Rich Content Column Parsing
+  description: 'Validation MUST parse Markdown into expanded content column types,
+
+    including lists, booleans, integers, floats, timestamps, time, UUIDs,
+
+    and binary payloads.
+
+    '
+  related_spec:
+  - data-model/overview.md#content-column-types--markdown-parsing
+  priority: high
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_index.rs
+      tests:
+      - test_index_req_idx_010_rich_content_parsing

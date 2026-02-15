@@ -1,197 +1,331 @@
-# Storage & Data Model Requirements
-
 category: Storage & Data Model
 prefix: REQ-STO
-
 requirements:
-  - id: REQ-STO-001
-    title: Storage Abstraction Using fsspec/OpenDAL
-    description: |
-      System MUST use fsspec (current) or OpenDAL (future Rust core) for all I/O operations.
-      No direct filesystem calls allowed outside the storage abstraction layer.
-    related_spec:
-      - architecture/overview.md#module-responsibilities
-      - stories/core.yaml#STORY-003
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_space_scaffolding
-            - test_create_space_s3_unimplemented
-        - file: ugoite-cli/tests/test_endpoint_config.py
-          tests:
-            - test_endpoint_config_roundtrip_uses_home_directory
-            - test_resolve_base_url_by_mode
-        - file: ugoite-cli/tests/test_cli_endpoint_routing.py
-          tests:
-            - test_cli_config_set_and_show
-        - file: ugoite-cli/tests/test_indexer.py
-          tests:
-            - test_indexer_run_once
-      rust:
-        - file: ugoite-core/tests/test_space.rs
-          tests:
-            - test_space_req_sto_002_create_space_scaffolding
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-001
+  title: Storage Abstraction Using fsspec/OpenDAL
+  description: 'System MUST use fsspec (current) or OpenDAL (future Rust core) for all I/O operations.
 
-  - id: REQ-STO-002
-    title: Space Directory Structure
-    description: |
-      Space has the following structure:
-      - meta.json, settings.json
-      - forms/ (Iceberg-managed Form tables)
-      - assets/
-    related_spec:
-      - data-model/directory-structure.md
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_space_scaffolding
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_space
-      rust:
-        - file: ugoite-core/tests/test_space.rs
-          tests:
-            - test_space_req_sto_002_create_space_scaffolding
+    No direct filesystem calls allowed outside the storage abstraction layer.
 
-  - id: REQ-STO-003
-    title: File Permissions (chmod 600)
-    description: |
-      Apply chmod 600 to data directories to ensure privacy on local filesystem.
-    related_spec:
-      - security/overview.md
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_space_scaffolding
+    '
+  related_spec:
+  - architecture/overview.md#module-responsibilities
+  - stories/core.yaml#STORY-003
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_space_scaffolding
+      - test_create_space_s3_unimplemented
+    - file: ugoite-cli/tests/test_endpoint_config.py
+      tests:
+      - test_endpoint_config_roundtrip_uses_home_directory
+      - test_resolve_base_url_by_mode
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+      tests:
+      - test_cli_config_set_and_show
+    - file: ugoite-cli/tests/test_indexer.py
+      tests:
+      - test_indexer_run_once
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_002_create_space_scaffolding
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-002
+  title: Space Directory Structure
+  description: 'Space has the following structure:
 
-  - id: REQ-STO-004
-    title: Space Management via spaces directory
-    description: |
-      spaces/ directory and each space's meta.json maintain space registry metadata.
-    related_spec:
-      - data-model/overview.md#directory-structure
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_space_scaffolding
-        - file: ugoite-cli/tests/test_endpoint_config.py
-          tests:
-            - test_parse_space_id_from_path_and_id
-        - file: ugoite-cli/tests/test_cli_endpoint_routing.py
-          tests:
-            - test_space_list_uses_remote_endpoint_when_backend_mode
-        - file: ugoite-cli/tests/test_integrity.py
-          tests:
-            - test_integrity_provider_for_space_success
-            - test_integrity_provider_missing_hmac_key
-      rust:
-        - file: ugoite-core/tests/test_space.rs
-          tests:
-            - test_space_req_sto_002_create_space_scaffolding
-            - test_space_req_sto_004_list_spaces_from_directory
+    - meta.json, settings.json
 
-  - id: REQ-STO-005
-    title: Prevent Duplicate Space Creation
-    description: |
-      Returns 409 error when attempting to create a space with an existing ID.
-    related_spec:
-      - api/rest.md#create-space
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: ugoite-cli/tests/test_space.py
-          tests:
-            - test_create_space_idempotency
-        - file: backend/tests/test_api.py
-          tests:
-            - test_create_space_conflict
-      rust:
-        - file: ugoite-core/tests/test_space.rs
-          tests:
-            - test_space_req_sto_005_create_space_idempotency
-      vitest:
-        - file: frontend/src/lib/client.test.ts
-          tests:
-            - should throw error for duplicate space
+    - forms/ (Iceberg-managed Form tables)
 
-  - id: REQ-STO-006
-    title: Storage Connector Validation
-    description: |
-      Spaces MUST accept storage connector updates and provide
-      a validation endpoint before committing changes.
-    related_spec:
-      - stories/core.yaml#STORY-003
-      - api/rest.md#test-connection
-    priority: medium
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_update_space_storage_connector
-            - test_test_connection_endpoint
+    - assets/
 
-  - id: REQ-STO-007
-    title: Backend IO Separation & Multi-fsspec Coverage
-    description: |
-      All filesystem interactions MUST remain inside ugoite-cli via fsspec/OpenDAL.
-      Backend MUST operate correctly across multiple storage implementations
-      (at least file and memory) using the shared library.
-    related_spec:
-      - architecture/overview.md#module-responsibilities
-      - architecture/decisions.md#adr-006
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api_memory.py
-          tests:
-            - test_create_space_memory
-            - test_create_entry_memory
-            - test_update_entry_and_search_memory
-            - test_assets_memory
+    '
+  related_spec:
+  - data-model/directory-structure.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_space_scaffolding
+    - file: backend/tests/test_api.py
+      tests:
+      - test_create_space
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_002_create_space_scaffolding
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-003
+  title: File Permissions (chmod 600)
+  description: 'Apply chmod 600 to data directories to ensure privacy on local filesystem.
 
-  - id: REQ-STO-008
-    title: Resilient directory-based space listing
-    description: |
-      Listing spaces MUST NOT fail when directories without meta.json exist.
-      The system MUST ignore incomplete directories and return valid spaces only.
-    related_spec:
-      - data-model/file-schemas.yaml#global
-    priority: high
-    status: implemented
-    tests:
-      rust:
-        - file: ugoite-core/tests/test_space.rs
-          tests:
-            - test_space_req_sto_008_list_spaces_ignores_missing_meta
+    '
+  related_spec:
+  - security/overview.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_space_scaffolding
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-004
+  title: Space Management via spaces directory
+  description: 'spaces/ directory and each space''s meta.json maintain space registry metadata.
 
-  - id: REQ-STO-009
-    title: Resilient space listing API
-    description: |
-      The backend MUST return a successful response for space listing
-      even if storage roots are missing or core space listing fails.
-      Local filesystem roots MUST be created automatically when absent.
-    related_spec:
-      - api/rest.md#list-spaces
-    priority: high
-    status: implemented
-    tests:
-      pytest:
-        - file: backend/tests/test_api.py
-          tests:
-            - test_list_spaces_missing_root_creates_default
-            - test_list_spaces_handles_core_failure
+    '
+  related_spec:
+  - data-model/overview.md#directory-structure
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_space_scaffolding
+    - file: ugoite-cli/tests/test_endpoint_config.py
+      tests:
+      - test_parse_space_id_from_path_and_id
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+      tests:
+      - test_space_list_uses_remote_endpoint_when_backend_mode
+    - file: ugoite-cli/tests/test_integrity.py
+      tests:
+      - test_integrity_provider_for_space_success
+      - test_integrity_provider_missing_hmac_key
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_002_create_space_scaffolding
+      - test_space_req_sto_004_list_spaces_from_directory
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-005
+  title: Prevent Duplicate Space Creation
+  description: 'Returns 409 error when attempting to create a space with an existing ID.
+
+    '
+  related_spec:
+  - api/rest.md#create-space
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_space.py
+      tests:
+      - test_create_space_idempotency
+    - file: backend/tests/test_api.py
+      tests:
+      - test_create_space_conflict
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_005_create_space_idempotency
+    vitest:
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - should throw error for duplicate space
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-006
+  title: Storage Connector Validation
+  description: 'Spaces MUST accept storage connector updates and provide
+
+    a validation endpoint before committing changes.
+
+    '
+  related_spec:
+  - stories/core.yaml#STORY-003
+  - api/rest.md#test-connection
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_update_space_storage_connector
+      - test_test_connection_endpoint
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-007
+  title: Backend IO Separation & Multi-fsspec Coverage
+  description: 'All filesystem interactions MUST remain inside ugoite-cli via fsspec/OpenDAL.
+
+    Backend MUST operate correctly across multiple storage implementations
+
+    (at least file and memory) using the shared library.
+
+    '
+  related_spec:
+  - architecture/overview.md#module-responsibilities
+  - architecture/decisions.md#adr-006
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api_memory.py
+      tests:
+      - test_create_space_memory
+      - test_create_entry_memory
+      - test_update_entry_and_search_memory
+      - test_assets_memory
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-008
+  title: Resilient directory-based space listing
+  description: 'Listing spaces MUST NOT fail when directories without meta.json exist.
+
+    The system MUST ignore incomplete directories and return valid spaces only.
+
+    '
+  related_spec:
+  - data-model/file-schemas.yaml#global
+  priority: high
+  status: implemented
+  tests:
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_008_list_spaces_ignores_missing_meta
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-009
+  title: Resilient space listing API
+  description: 'The backend MUST return a successful response for space listing
+
+    even if storage roots are missing or core space listing fails.
+
+    Local filesystem roots MUST be created automatically when absent.
+
+    '
+  related_spec:
+  - api/rest.md#list-spaces
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_list_spaces_missing_root_creates_default
+      - test_list_spaces_handles_core_failure

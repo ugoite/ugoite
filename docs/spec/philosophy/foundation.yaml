@@ -1,0 +1,37 @@
+category: Philosophy
+version: 1
+language: en
+last_updated: 2026-02-15
+
+philosophies:
+  - id: PHIL-001
+    title: Freedom Through Modern Abstraction Layers
+    statement: |
+      Ugoite maximizes user freedom by adopting modern abstraction layers that
+      reduce lock-in and preserve optionality. Storage abstraction, a reusable
+      Rust core, open table formats, and portable protocols are treated as
+      first-class architectural assets.
+
+  - id: PHIL-002
+    title: Serverless-Oriented Minimal Node Topology
+    statement: |
+      Ugoite minimizes persistent nodes and infrastructure coupling. The target
+      operating model is a small number of composable runtime nodes where
+      clients can directly integrate with storage and AI services when safe,
+      while keeping transitional adapters only where they are currently needed.
+
+  - id: PHIL-003
+    title: Build Rules, Not Disposable Artifacts
+    statement: |
+      Ugoite prioritizes durable rules over one-off artifacts. Specifications,
+      code, and tests are coupled so behavior can be re-validated continuously,
+      and user workflows are designed to encode reusable intent rather than
+      repetitive manual steps.
+
+  - id: PHIL-004
+    title: Give AI Freedom Inside Trusted Constraints
+    statement: |
+      Ugoite treats AI as a force multiplier that should move quickly inside
+      explicit boundaries. Strict CI, typed interfaces, trusted tools, and
+      policy-linked specifications allow high AI autonomy while keeping risk
+      observable and governable.
