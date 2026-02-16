@@ -1,0 +1,28 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { getFeatureGroups } from "../../../../lib/spec-data";
+
+const groups = await getFeatureGroups();
+const toc = groups.map((group) => ({ id: group.kind, title: group.kind }));
+---
+
+<BaseLayout title="API Catalog | Ugoite Docsite" description="API list grouped by feature domain." toc={toc}>
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">API Catalog</span>
+    <h1 class="mt-3 text-3xl font-bold">API 一覧（グループ別）</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+      docs/spec/features から API を再構成し、分かりやすいドメイン単位で閲覧できます。
+    </p>
+  </section>
+
+  <section class="doc-grid-cards">
+    {groups.map((group) => (
+      <article id={group.kind} class="doc-card">
+        <p class="doc-pill">{group.kind}</p>
+        <h2 class="mt-2 text-lg font-semibold">{group.apis.length} endpoints</h2>
+        <p class="mt-2 text-sm" style="color: var(--doc-muted);">Method, backend path, CLI command をグラフィカルに確認できます。</p>
+        <a href={`/app/api-storage/apis/${group.kind}`} class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open domain</a>
+      </article>
+    ))}
+  </section>
+</BaseLayout>

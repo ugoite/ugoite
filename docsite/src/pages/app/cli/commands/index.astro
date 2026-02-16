@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { getFeatureGroups } from "../../../../lib/spec-data";
+
+const groups = await getFeatureGroups();
+const toc = groups.map((group) => ({ id: group.kind, title: group.kind }));
+---
+
+<BaseLayout title="CLI Commands | Ugoite Docsite" description="CLI commands grouped by feature domains." toc={toc}>
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">CLI Commands</span>
+    <h1 class="mt-3 text-3xl font-bold">コマンド一覧（グループ別）</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">docs/spec/features から CLI コマンドを抽出して表示します。</p>
+  </section>
+
+  <section class="doc-grid-cards">
+    {groups.map((group) => (
+      <article id={group.kind} class="doc-card">
+        <p class="doc-pill">{group.kind}</p>
+        <h2 class="mt-2 text-lg font-semibold">{group.apis.filter((api) => Boolean(api.ugoite_cli?.command)).length} commands</h2>
+        <a href={`/app/cli/commands/${group.kind}`} class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open domain</a>
+      </article>
+    ))}
+  </section>
+</BaseLayout>

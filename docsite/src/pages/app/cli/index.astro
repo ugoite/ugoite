@@ -1,0 +1,26 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import TerminalCommand from "../../../components/TerminalCommand.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "setup", title: "Setup" },
+];
+---
+
+<BaseLayout title="CLI | Ugoite Docsite" description="CLI capabilities and setup." toc={toc} related={[{ href: "/app/cli/commands", label: "Open command catalog" }]}>
+  <section id="overview" class="doc-card doc-card-hero">
+    <span class="doc-pill">CLI</span>
+    <h1 class="mt-3 text-3xl font-bold">CLI から操作可能なこと</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">Space 管理、entry 操作、履歴確認、検索/SQL 実行などをスクリプタブルに実行できます。</p>
+  </section>
+
+  <section id="setup" class="doc-card">
+    <h2 class="text-xl font-semibold">セットアップ</h2>
+    <div class="mt-3 grid gap-3">
+      <TerminalCommand command="mise run setup" />
+      <TerminalCommand command="cd ugoite-cli && uv run ugoite --help" />
+      <TerminalCommand command="cd ugoite-cli && uv run ugoite space list" />
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,39 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import TerminalCommand from "../../../../components/TerminalCommand.astro";
+import { getFeatureGroups } from "../../../../lib/spec-data";
+
+export async function getStaticPaths() {
+  const groups = await getFeatureGroups();
+  return groups.map((group) => ({ params: { kind: group.kind } }));
+}
+
+const groups = await getFeatureGroups();
+const kind = Astro.params.kind ?? "";
+const current = groups.find((group) => group.kind === kind);
+
+if (!current) {
+  throw new Error(`Unknown command group: ${kind}`);
+}
+
+const commandRows = current.apis.filter((api) => Boolean(api.ugoite_cli?.command));
+const toc = commandRows.map((api) => ({ id: api.id, title: api.id }));
+---
+
+<BaseLayout title={`CLI Domain: ${current.kind}`} description={`CLI commands for ${current.kind}.`} toc={toc} related={[{ href: "/app/cli/commands", label: "Back to command catalog" }]}>
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">Domain: {current.kind}</span>
+    <h1 class="mt-3 text-3xl font-bold">{current.kind} コマンド</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">ターミナル風 UI で表示し、コピーボタンでそのまま貼り付け可能です。</p>
+  </section>
+
+  {commandRows.map((api) => (
+    <section id={api.id} class="doc-card">
+      <h2 class="text-lg font-semibold">{api.id}</h2>
+      <p class="mt-1 text-sm" style="color: var(--doc-muted);">{api.method} {api.backend.path}</p>
+      <div class="mt-3">
+        <TerminalCommand command={api.ugoite_cli?.command ?? ""} />
+      </div>
+    </section>
+  ))}
+</BaseLayout>

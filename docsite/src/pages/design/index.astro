@@ -1,0 +1,63 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "north-star", title: "North Star" },
+  { id: "relation-map", title: "Relation Map" },
+  { id: "lanes", title: "Knowledge Lanes" },
+];
+---
+
+<BaseLayout
+  title="Design Principles | Ugoite Docsite"
+  description="Philosophy, policies, requirements, and features relationship overview."
+  toc={toc}
+>
+  <section id="north-star" class="doc-card doc-card-hero">
+    <span class="doc-pill">Design Principles</span>
+    <h1 class="mt-3 text-3xl font-bold">全体思想と具体策のつながり</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+      Ugoite は「思想 → 具体策の指針 → 要件/機能」の連結で設計され、各要素は `docs/spec` の機械可読データに紐づきます。
+    </p>
+  </section>
+
+  <section id="relation-map" class="doc-card">
+    <h2 class="text-xl font-semibold">設計関係グラフ</h2>
+    <div class="mt-4 doc-diagram">
+      <div class="doc-flow">
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>思想一覧</strong><br /><a href="/design/philosophy">docs/spec/philosophy</a></div>
+          <div class="doc-node"><strong>指針一覧</strong><br /><a href="/design/policies">docs/spec/policies</a></div>
+        </div>
+        <div class="doc-arrow">↓ translates into ↓</div>
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>要件一覧</strong><br /><a href="/design/requirements">docs/spec/requirements</a></div>
+          <div class="doc-node"><strong>機能一覧</strong><br /><a href="/design/features">docs/spec/features</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="lanes" class="doc-grid-cards">
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">思想一覧ページ</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">プロジェクト全体を包括する設計思想を一覧化。</p>
+      <a href="/design/philosophy" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">具体策の指針一覧</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">実装ポリシーと関連仕様の橋渡しを可視化。</p>
+      <a href="/design/policies" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">要件一覧</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">REQCAT ごとにグループ化し、優先度・状態を俯瞰。</p>
+      <a href="/design/requirements" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">機能一覧</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">API/CLI/Core/Frontend の実装責務をグループ表示。</p>
+      <a href="/design/features" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+  </section>
+</BaseLayout>

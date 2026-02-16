@@ -1,0 +1,27 @@
+---
+export interface Props {
+  command: string;
+}
+
+const { command } = Astro.props;
+const commandId = `cmd-${command.replaceAll(/[^a-zA-Z0-9]/g, "-")}`;
+---
+
+<pre class="doc-terminal" id={commandId}><button class="doc-copy" data-target={commandId} type="button">Copy</button><code>{command}</code></pre>
+
+<script>
+  const root = document.currentScript?.previousElementSibling;
+  const button = root?.querySelector("button[data-target]");
+  if (button) {
+    button.addEventListener("click", async () => {
+      const targetId = button.getAttribute("data-target");
+      const target = targetId ? document.getElementById(targetId) : null;
+      const text = target?.querySelector("code")?.textContent ?? "";
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.textContent = "Copy";
+      }, 900);
+    });
+  }
+</script>

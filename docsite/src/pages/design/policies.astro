@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getPolicies } from "../../lib/spec-data";
+
+const policies = await getPolicies();
+const toc = policies.map((item) => ({ id: item.id.toLowerCase(), title: item.id }));
+---
+
+<BaseLayout title="Policies | Ugoite Docsite" description="Policy list derived from docs/spec/policies." toc={toc}>
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">docs/spec/policies</span>
+    <h1 class="mt-3 text-3xl font-bold">具体策の指針一覧</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">思想を実装規律へ落とすポリシーを要約表示します。</p>
+  </section>
+
+  <section class="doc-grid-cards">
+    {policies.map((item) => (
+      <article id={item.id.toLowerCase()} class="doc-card">
+        <p class="doc-pill">{item.id}</p>
+        <h2 class="mt-2 text-lg font-semibold">{item.title}</h2>
+        <p class="mt-2 text-sm" style="color: var(--doc-muted);">{item.summary}</p>
+      </article>
+    ))}
+  </section>
+</BaseLayout>
