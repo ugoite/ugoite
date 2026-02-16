@@ -1,36 +1,42 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { navSections } from "../lib/navigation";
+
+const highlights = [
+  {
+    title: "Local-First Storage",
+    description: "Your knowledge space runs on portable block storage with no mandatory central SaaS dependency.",
+  },
+  {
+    title: "AI-Native Workflows",
+    description: "Specifications, policies, and requirements are linked so AI actions remain traceable and governable.",
+  },
+  {
+    title: "Multi-Surface Control",
+    description: "Operate from API, CLI, or frontend while sharing one durable core logic and data model.",
+  },
+];
 ---
 
-<BaseLayout title="Ugoite Docsite" description="Ugoite documentation portal for specs, APIs, guides, and tasks.">
-  <section class="doc-card">
-    <span class="doc-badge">Local-First / AI-Native</span>
-    <h1 class="mt-3 text-4xl font-bold tracking-tight" data-l10n-key="home_title">Ugoite Documentation</h1>
-    <p class="mt-3 text-sm" style="color: var(--doc-muted);" data-l10n-key="home_desc">
-      This site renders the main project docs from the repository <code>docs/</code> directory.
+<BaseLayout title="Ugoite Docsite" description="Graphical knowledge architecture documentation for Ugoite.">
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">Local-First / AI-Native Knowledge Space</span>
+    <h1 class="mt-3 text-6xl font-black tracking-tight">Ugoite</h1>
+    <p class="mt-2 text-2xl font-semibold" style="color: var(--doc-muted);">let your local knowledge move</p>
+    <p class="mt-4 max-w-3xl text-sm" style="color: var(--doc-muted);">
+      Ugoite lets teams run a private, portable knowledge space from anywhere by combining block storage, local APIs, and an AI-ready operation model.
     </p>
     <div class="mt-5 flex flex-wrap gap-2 text-sm">
-      <a href="/docs/guide/cli" class="rounded-full px-4 py-2" style="background: var(--doc-accent-soft); color: var(--doc-accent);" data-l10n-key="home_link_cli">CLI Guide</a>
-      <a href="/docs/spec/api/rest" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);" data-l10n-key="home_link_rest">REST API Spec</a>
-      <a href="/docs/spec/api/mcp" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);" data-l10n-key="home_link_mcp">MCP API Spec</a>
+      <a href="/design" class="rounded-full px-4 py-2" style="background: var(--doc-accent-soft); color: var(--doc-accent);">Design Principles</a>
+      <a href="/app" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);">App Features</a>
+      <a href="/docs/spec/index" class="rounded-full border px-4 py-2" style="border-color: var(--doc-border);">Source Spec</a>
     </div>
   </section>
 
-  <section class="mt-4 grid gap-4 md:grid-cols-2">
-    {navSections.map((section) => (
+  <section class="doc-grid-cards">
+    {highlights.map((item) => (
       <article class="doc-card">
-        <h2 class="text-lg font-semibold">{section.title}</h2>
-        <ul class="mt-3 space-y-2 text-sm" style="color: var(--doc-muted);">
-          {section.items.map((item) => (
-            <li>
-              <a href={item.href} class="flex items-center justify-between rounded px-2 py-1 hover:opacity-80">
-                <span>{item.title}</span>
-                <span aria-hidden="true">→</span>
-              </a>
-            </li>
-          ))}
-        </ul>
+        <h2 class="text-lg font-semibold">{item.title}</h2>
+        <p class="mt-2 text-sm" style="color: var(--doc-muted);">{item.description}</p>
       </article>
     ))}
   </section>

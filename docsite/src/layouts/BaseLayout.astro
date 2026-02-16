@@ -1,14 +1,16 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
-import { navSections } from "../lib/navigation";
+import { navSections, topLinks } from "../lib/navigation";
 import "../styles.css";
 
 export interface Props {
   title: string;
   description?: string;
+  toc?: Array<{ id: string; title: string }>;
+  related?: Array<{ href: string; label: string }>;
 }
 
-const { title, description } = Astro.props;
+const { title, description, toc = [], related = [] } = Astro.props;
 ---
 
 <html lang="en">
@@ -19,19 +21,19 @@ const { title, description } = Astro.props;
     <meta name="description" content={description ?? "Ugoite repository-backed documentation."} />
   </head>
   <body>
-    <header class="mx-auto max-w-6xl px-4 py-4">
-      <div class="doc-card flex flex-wrap items-center justify-between gap-4 py-3">
-        <a href="/" class="text-xl font-semibold tracking-tight" data-l10n-key="brand">Ugoite Docsite</a>
-        <nav class="flex flex-wrap items-center gap-3 text-sm">
-          <a href="/docs/guide/cli" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_cli">CLI Guide</a>
-          <a href="/docs/spec/api/rest" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_rest">REST API</a>
-          <a href="/docs/spec/api/mcp" class="rounded-full px-3 py-1.5 hover:opacity-80" data-l10n-key="nav_mcp">MCP API</a>
+    <header class="mx-auto max-w-7xl px-4 py-4">
+      <div class="doc-card doc-header">
+        <a href="/" class="text-xl font-semibold tracking-tight">Ugoite Docsite</a>
+        <nav class="doc-toplinks text-sm">
+          {topLinks.map((item) => (
+            <a href={item.href} class="rounded-full px-3 py-1.5 hover:opacity-85">{item.title}</a>
+          ))}
         </nav>
         <ThemeSwitcher />
       </div>
     </header>
-    <main class="mx-auto max-w-6xl px-4 pb-16">
-      <div class="doc-shell">
+    <main class="mx-auto max-w-7xl px-4 pb-16">
+      <div class="doc-shell-3col">
         <aside class="doc-sidebar">
           <p class="text-xs font-semibold uppercase tracking-wide" style="color: var(--doc-muted);">Navigation</p>
           <div class="mt-3 space-y-4">
@@ -49,15 +51,37 @@ const { title, description } = Astro.props;
             ))}
           </div>
         </aside>
-        <section>
+        <section class="space-y-4">
           <slot />
         </section>
+        <aside class="doc-right">
+          {toc.length > 0 && (
+            <section class="doc-card">
+              <h2 class="text-sm font-semibold">On this page</h2>
+              <ul class="mt-2 space-y-1 text-sm" style="color: var(--doc-muted);">
+                {toc.map((item) => (
+                  <li><a href={`#${item.id}`}>{item.title}</a></li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {related.length > 0 && (
+            <section class="doc-card">
+              <h2 class="text-sm font-semibold">Related docs</h2>
+              <ul class="mt-2 space-y-1 text-sm" style="color: var(--doc-muted);">
+                {related.map((item) => (
+                  <li><a href={item.href}>{item.label}</a></li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </aside>
       </div>
     </main>
-    <footer class="mx-auto max-w-6xl px-4 pb-10 text-xs" style="color: var(--doc-muted);">
+    <footer class="mx-auto max-w-7xl px-4 pb-10 text-xs" style="color: var(--doc-muted);">
       <div class="doc-card flex flex-wrap items-center justify-between gap-2 py-2">
-        <span>Repository-backed documentation from docs/ and docs/spec.</span>
-        <a href="/docs/spec/index">Open specification index</a>
+        <span>Local-first documentation sourced from repository specs.</span>
+        <a href="/docs/spec/index">Browse source specification</a>
       </div>
     </footer>
   </body>

@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getPhilosophies } from "../../lib/spec-data";
+
+const philosophies = await getPhilosophies();
+const toc = philosophies.map((item) => ({ id: item.id.toLowerCase(), title: item.id }));
+---
+
+<BaseLayout title="Philosophy | Ugoite Docsite" description="Philosophy list derived from docs/spec/philosophy." toc={toc}>
+  <section class="doc-card doc-card-hero">
+    <span class="doc-pill">docs/spec/philosophy</span>
+    <h1 class="mt-3 text-3xl font-bold">思想一覧</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">全体を包括する思想をカード化して表示します。</p>
+  </section>
+
+  <section class="doc-grid-cards">
+    {philosophies.map((item) => (
+      <article id={item.id.toLowerCase()} class="doc-card">
+        <p class="doc-pill">{item.id}</p>
+        <h2 class="mt-2 text-lg font-semibold">{item.title}</h2>
+        <p class="mt-2 text-sm" style="color: var(--doc-muted);">{item.summary}</p>
+      </article>
+    ))}
+  </section>
+</BaseLayout>

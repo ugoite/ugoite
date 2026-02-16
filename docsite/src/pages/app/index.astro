@@ -1,0 +1,55 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "message", title: "Message" },
+  { id: "architecture", title: "Architecture" },
+  { id: "surfaces", title: "Surfaces" },
+];
+---
+
+<BaseLayout title="App Features | Ugoite Docsite" description="Application capability overview with architecture map." toc={toc}>
+  <section id="message" class="doc-card doc-card-hero">
+    <span class="doc-pill">Application</span>
+    <h1 class="mt-3 text-3xl font-bold">どこからでも自分たち専用のローカルナレッジスペースを動かせる</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+      Ugoite は block storage + local API + CLI + frontend を一体化し、同じデータを複数操作面から安全に扱えます。
+    </p>
+  </section>
+
+  <section id="architecture" class="doc-card">
+    <h2 class="text-xl font-semibold">アーキテクチャ図</h2>
+    <div class="mt-4 doc-diagram">
+      <div class="doc-flow">
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>Frontend</strong><br />UI operations</div>
+          <div class="doc-node"><strong>CLI</strong><br />Automation / scripts</div>
+          <div class="doc-node"><strong>API</strong><br />Serverless-ready FastAPI</div>
+        </div>
+        <div class="doc-arrow">↓ shared domain logic ↓</div>
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>ugoite-core</strong><br />Canonical logic layer</div>
+          <div class="doc-node"><strong>OpenDAL + Block Storage</strong><br />S3 / local / compatible backends</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="surfaces" class="doc-grid-cards">
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">API とブロックストレージ</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">シンプルな API、OpenDAL、セットアップ手順、API 一覧、データモデルを整理。</p>
+      <a href="/app/api-storage" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">CLI</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">CLI で可能な操作とコマンド一覧をターミナル風UIで説明。</p>
+      <a href="/app/cli" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+    <article class="doc-card">
+      <h2 class="text-lg font-semibold">Frontend</h2>
+      <p class="mt-2 text-sm" style="color: var(--doc-muted);">UI ルート仕様を一覧化し、E2E スクショ参照つきで解説。</p>
+      <a href="/app/frontend" class="mt-3 inline-flex rounded-full border px-3 py-1.5 text-sm" style="border-color: var(--doc-border);">Open</a>
+    </article>
+  </section>
+</BaseLayout>

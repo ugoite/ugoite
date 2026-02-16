@@ -30,6 +30,25 @@ a {
 		gap: 1rem;
 	}
 
+	.doc-shell-3col {
+		display: grid;
+		grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(14rem, 18rem);
+		gap: 1rem;
+	}
+
+	.doc-header {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.doc-toplinks {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
 	.doc-sidebar {
 		position: sticky;
 		top: 1rem;
@@ -41,12 +60,148 @@ a {
 		padding: 1rem;
 	}
 
+	.doc-right {
+		position: sticky;
+		top: 1rem;
+		height: fit-content;
+		display: grid;
+		gap: 0.8rem;
+	}
+
 	.doc-card {
 		border: var(--doc-border-width) solid var(--doc-border);
 		background: var(--doc-card);
 		border-radius: var(--doc-radius-lg);
 		box-shadow: var(--doc-shadow-sm);
 		padding: 1.25rem;
+	}
+
+	.doc-card-hero {
+		background:
+			linear-gradient(145deg, color-mix(in oklab, var(--doc-accent-soft) 70%, var(--doc-card)) 0%, var(--doc-card) 42%),
+			var(--doc-card);
+	}
+
+	.doc-grid-cards {
+		display: grid;
+		gap: 0.9rem;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+	}
+
+	.doc-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.2rem 0.6rem;
+		border-radius: 999px;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.03em;
+		background: var(--doc-accent-soft);
+		color: var(--doc-accent);
+	}
+
+	.doc-kpi {
+		font-size: 1.8rem;
+		font-weight: 800;
+		letter-spacing: -0.03em;
+	}
+
+	.doc-diagram {
+		border: var(--doc-border-width) solid var(--doc-border);
+		border-radius: var(--doc-radius-lg);
+		padding: 1rem;
+		background: color-mix(in oklab, var(--doc-accent-soft) 25%, var(--doc-card));
+	}
+
+	.doc-diagram-grid {
+		display: grid;
+		gap: 0.75rem;
+		grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+	}
+
+	.doc-node {
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		border-radius: var(--doc-radius-md);
+		padding: 0.7rem;
+		text-align: center;
+		box-shadow: var(--doc-shadow-sm);
+	}
+
+	.doc-flow {
+		display: grid;
+		gap: 0.55rem;
+	}
+
+	.doc-arrow {
+		text-align: center;
+		font-weight: 700;
+		color: var(--doc-muted);
+	}
+
+	.doc-table {
+		width: 100%;
+		border-collapse: collapse;
+		border: var(--doc-border-width) solid var(--doc-border);
+		border-radius: var(--doc-radius-md);
+		overflow: hidden;
+	}
+
+	.doc-table th,
+	.doc-table td {
+		padding: 0.55rem 0.65rem;
+		border-bottom: var(--doc-border-width) solid var(--doc-border);
+		text-align: left;
+		vertical-align: top;
+	}
+
+	.doc-table th {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--doc-muted);
+		background: color-mix(in oklab, var(--doc-accent-soft) 20%, var(--doc-card));
+	}
+
+	.doc-console {
+		border: var(--doc-border-width) solid var(--doc-border);
+		border-radius: var(--doc-radius-md);
+		background: color-mix(in oklab, var(--doc-fg) 7%, var(--doc-card));
+		padding: 0.9rem;
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	.doc-terminal {
+		position: relative;
+		border: var(--doc-border-width) solid var(--doc-border);
+		border-radius: var(--doc-radius-md);
+		padding: 0.8rem;
+		font-size: 0.8rem;
+		background: color-mix(in oklab, var(--doc-bg) 62%, var(--doc-card));
+		overflow-x: auto;
+	}
+
+	.doc-copy {
+		position: absolute;
+		top: 0.4rem;
+		right: 0.4rem;
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		border-radius: 999px;
+		padding: 0.2rem 0.55rem;
+		font-size: 0.7rem;
+	}
+
+	.doc-tree {
+		white-space: pre;
+		overflow-x: auto;
+		font-size: 0.82rem;
+		padding: 1rem;
+		border: var(--doc-border-width) dashed var(--doc-border);
+		border-radius: var(--doc-radius-md);
+		background: color-mix(in oklab, var(--doc-accent-soft) 15%, var(--doc-card));
 	}
 
 	.doc-badge {
@@ -69,12 +224,21 @@ a {
 	}
 
 	@media (max-width: 960px) {
-		.doc-shell {
+		.doc-shell,
+		.doc-shell-3col {
 			grid-template-columns: 1fr;
 		}
 
 		.doc-sidebar {
 			position: static;
+		}
+
+		.doc-right {
+			position: static;
+		}
+
+		.doc-header {
+			grid-template-columns: 1fr;
 		}
 	}
 }

@@ -1,0 +1,28 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "setup", title: "Setup" },
+];
+---
+
+<BaseLayout title="Frontend | Ugoite Docsite" description="Frontend capabilities and setup guidance." toc={toc} related={[{ href: "/app/frontend/pages", label: "Open page catalog" }]}>
+  <section id="overview" class="doc-card doc-card-hero">
+    <span class="doc-pill">Frontend</span>
+    <h1 class="mt-3 text-3xl font-bold">UI から操作可能なこと</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+      Space 操作、entry 管理、検索、SQL、フォーム運用をブラウザから実行できます。API + block storage 構成と同じ基盤を前提にしています。
+    </p>
+  </section>
+
+  <section id="setup" class="doc-card">
+    <h2 class="text-xl font-semibold">セットアップ（API + block storage と同じ）</h2>
+    <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm" style="color: var(--doc-muted);">
+      <li>依存関係を導入: `mise run setup`</li>
+      <li>バックエンド起動: `cd backend && uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000`</li>
+      <li>フロントエンド起動: `cd frontend && BACKEND_URL=http://localhost:8000 bun run dev`</li>
+      <li>画面操作検証: `mise run e2e`</li>
+    </ol>
+  </section>
+</BaseLayout>

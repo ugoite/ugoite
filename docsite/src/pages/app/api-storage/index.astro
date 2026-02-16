@@ -1,0 +1,58 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "detailed-architecture", title: "Detailed Architecture" },
+  { id: "setup", title: "Setup" },
+];
+
+const setupSteps = [
+  "Install dependencies: `mise run setup`",
+  "Start backend/frontend/docsite: `mise run dev`",
+  "Set storage root for local run: `UGOITE_ROOT=/path/to/spaces`",
+  "Run API checks: `curl http://localhost:8000/spaces`",
+];
+---
+
+<BaseLayout title="API & Block Storage | Ugoite Docsite" description="Serverless-ready API and OpenDAL block storage architecture." toc={toc}>
+  <section id="overview" class="doc-card doc-card-hero">
+    <span class="doc-pill">API + Block Storage</span>
+    <h1 class="mt-3 text-3xl font-bold">サーバーレス運用可能な API と OpenDAL ベースのストレージ</h1>
+    <p class="mt-2 text-sm" style="color: var(--doc-muted);">
+      API は薄いアダプタ層として振る舞い、実データ操作は core と OpenDAL 経由でブロックストレージへ委譲されます。
+    </p>
+  </section>
+
+  <section id="detailed-architecture" class="doc-card">
+    <h2 class="text-xl font-semibold">詳細アーキテクチャ図</h2>
+    <div class="mt-4 doc-diagram">
+      <div class="doc-flow">
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>Client</strong><br />Browser / CLI / MCP</div>
+          <div class="doc-node"><strong>FastAPI</strong><br />Protocol boundary</div>
+          <div class="doc-node"><strong>ugoite-core</strong><br />Business logic</div>
+        </div>
+        <div class="doc-arrow">↓</div>
+        <div class="doc-diagram-grid">
+          <div class="doc-node"><strong>OpenDAL</strong><br />Storage abstraction</div>
+          <div class="doc-node"><strong>Block Storage</strong><br />S3 / local fs / compatible object store</div>
+          <div class="doc-node"><strong>Space Directory</strong><br />Portable data layout</div>
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 flex flex-wrap gap-2 text-sm">
+      <a href="/app/api-storage/apis" class="rounded-full border px-3 py-1.5" style="border-color: var(--doc-border);">API 一覧</a>
+      <a href="/app/api-storage/data-model" class="rounded-full border px-3 py-1.5" style="border-color: var(--doc-border);">データモデル</a>
+    </div>
+  </section>
+
+  <section id="setup" class="doc-card">
+    <h2 class="text-xl font-semibold">セットアップ</h2>
+    <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm" style="color: var(--doc-muted);">
+      {setupSteps.map((step) => (
+        <li>{step}</li>
+      ))}
+    </ol>
+  </section>
+</BaseLayout>
