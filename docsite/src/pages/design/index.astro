@@ -1,0 +1,112 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "relation-graph", title: "Relation Graph" },
+  { id: "explore", title: "Explore" },
+];
+---
+
+<BaseLayout
+  title="Design Principles | Ugoite"
+  description="The design framework connecting philosophy, policies, requirements, and features."
+  toc={toc}
+>
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">Design Principles</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        From Philosophy to Features
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 40rem; line-height: 1.6;">
+        Ugoite is designed through a layered governance model. Overarching philosophies drive concrete policies, which translate into traceable requirements and deliverable features. Every element links back to machine-readable YAML specifications.
+      </p>
+    </div>
+  </section>
+
+  <!-- Relation graph -->
+  <section id="relation-graph" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Design Relation Graph</h2>
+    <div class="doc-diagram">
+      <div class="doc-arch-flow">
+        <!-- Row 1: Philosophy -->
+        <div class="doc-arch-row" style="max-width: 20rem;">
+          <div class="doc-arch-node" style="flex: 1; border-color: var(--doc-accent);">
+            <div class="doc-arch-node-icon">💡</div>
+            <div class="doc-arch-node-title">Philosophy</div>
+            <div class="doc-arch-node-desc">Core values & beliefs</div>
+          </div>
+        </div>
+
+        <div class="doc-arch-connector">
+          <div class="doc-arch-connector-line"></div>
+          <span>drives</span>
+          <div class="doc-arch-connector-line"></div>
+        </div>
+
+        <!-- Row 2: Policies -->
+        <div class="doc-arch-row" style="max-width: 20rem;">
+          <div class="doc-arch-node" style="flex: 1;">
+            <div class="doc-arch-node-icon">📋</div>
+            <div class="doc-arch-node-title">Policies</div>
+            <div class="doc-arch-node-desc">Concrete implementation guidelines</div>
+          </div>
+        </div>
+
+        <div class="doc-arch-connector">
+          <div class="doc-arch-connector-line"></div>
+          <span>translates into</span>
+          <div class="doc-arch-connector-line"></div>
+        </div>
+
+        <!-- Row 3: Requirements + Features -->
+        <div class="doc-arch-row">
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">✅</div>
+            <div class="doc-arch-node-title">Requirements</div>
+            <div class="doc-arch-node-desc">Testable specifications</div>
+          </div>
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">⚙️</div>
+            <div class="doc-arch-node-title">Features</div>
+            <div class="doc-arch-node-desc">Delivered capabilities</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Explore cards -->
+  <section id="explore">
+    <div class="doc-grid">
+      <a href="/design/philosophy" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💡</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">Philosophy</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Overarching design beliefs that shape every decision in the project.</p>
+        <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/philosophy</span>
+      </a>
+
+      <a href="/design/policies" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📋</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">Policies</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Concrete guidelines that translate philosophy into engineering practice.</p>
+        <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/policies</span>
+      </a>
+
+      <a href="/design/requirements" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">✅</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">Requirements</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Grouped, testable requirements with priority and status tracking.</p>
+        <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/requirements</span>
+      </a>
+
+      <a href="/design/features" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚙️</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">Features</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">API, CLI, and core capabilities organized by functional domain.</p>
+        <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/features</span>
+      </a>
+    </div>
+  </section>
+</BaseLayout>

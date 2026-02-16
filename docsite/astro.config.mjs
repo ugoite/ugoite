@@ -7,7 +7,7 @@ export default defineConfig({
 	vite: {
 		server: {
 			fs: {
-				allow: ["../docs", "../shared"],
+				allow: ["../docs", "../shared", "."],
 			},
 		},
 	},

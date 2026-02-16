@@ -1,0 +1,78 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "directory", title: "Directory Structure" },
+  { id: "specs", title: "Source Specs" },
+];
+
+const treeData = [
+  { name: "spaces/", indent: 0, isFolder: true },
+  { name: "{space_id}/", indent: 1, isFolder: true },
+  { name: "meta.json", indent: 2, isFolder: false },
+  { name: "settings.json", indent: 2, isFolder: false },
+  { name: "forms/", indent: 2, isFolder: true },
+  { name: "assets/", indent: 2, isFolder: true },
+  { name: "{hash}.{ext}", indent: 3, isFolder: false },
+  { name: "materialized_views/", indent: 2, isFolder: true },
+  { name: "sql_sessions/", indent: 2, isFolder: true },
+  { name: "{session_id}/", indent: 3, isFolder: true },
+  { name: "meta.json", indent: 4, isFolder: false },
+];
+---
+
+<BaseLayout title="Data Model | Ugoite" description="Space directory structure and file schemas." toc={toc}
+  related={[{ href: "/app/api-storage", label: "API & Storage" }, { href: "/docs/spec/data-model/overview", label: "Spec: Overview" }]}>
+
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">docs/spec/data-model</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">Data Model</h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+        A portable space directory structure forms the foundation, with Iceberg/OpenDAL managed regions separated from human-readable data.
+      </p>
+    </div>
+  </section>
+
+  <section id="directory" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Directory Structure</h2>
+    <div class="doc-tree">
+      {treeData.map((item) => {
+        const prefix = "  ".repeat(item.indent);
+        const connector = item.indent > 0 ? "├── " : "";
+        return (
+          <div>
+            <span style="color: var(--doc-muted);">{prefix}{connector}</span>
+            <span class={item.isFolder ? "doc-tree-folder" : "doc-tree-file"}>{item.name}</span>
+          </div>
+        );
+      })}
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 1rem; line-height: 1.6;">
+      The <code>forms/</code> directory is managed by Iceberg — its internal layout is not specified. Logical table contracts take precedence over physical file structure.
+    </p>
+  </section>
+
+  <section id="specs" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Source Specifications</h2>
+    <div class="doc-grid-3">
+      <a href="/docs/spec/data-model/overview" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+        <h3 style="font-size: 0.875rem; font-weight: 600;">overview.md</h3>
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">High-level data model description</p>
+      </a>
+      <a href="/docs/spec/data-model/directory-structure" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+        <h3 style="font-size: 0.875rem; font-weight: 600;">directory-structure.md</h3>
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">Detailed directory layout</p>
+      </a>
+      <a href="/docs/spec/data-model/file-schemas" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+        <h3 style="font-size: 0.875rem; font-weight: 600;">file-schemas.yaml</h3>
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">JSON Schema definitions</p>
+      </a>
+      <a href="/docs/spec/data-model/sql-sessions" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+        <h3 style="font-size: 0.875rem; font-weight: 600;">sql-sessions.md</h3>
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">SQL session lifecycle</p>
+      </a>
+    </div>
+  </section>
+</BaseLayout>

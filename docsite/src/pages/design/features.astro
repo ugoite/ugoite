@@ -1,0 +1,59 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getFeatureGroups } from "../../lib/spec-data";
+
+const groups = await getFeatureGroups();
+const toc = groups.map((g) => ({ id: g.kind.toLowerCase(), title: g.kind }));
+const totalApis = groups.reduce((sum, g) => sum + g.apis.length, 0);
+---
+
+<BaseLayout title="Features | Ugoite" description="Feature catalog grouped by domain." toc={toc}
+  related={[{ href: "/design/requirements", label: "Requirements" }, { href: "/app/api-storage/apis", label: "API Catalog" }]}>
+
+  <section class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">docs/spec/features</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">Features</h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+        {groups.length} feature domains with {totalApis} operations spanning API, CLI, core, and frontend layers.
+      </p>
+    </div>
+  </section>
+
+  {groups.map((group) => (
+    <section id={group.kind.toLowerCase()} class="doc-card">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1rem;">
+        <div>
+          <h2 style="font-size: 1.125rem; font-weight: 700;">{group.kind}</h2>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.25rem;">{group.apis.length} operations</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <a href={`/app/api-storage/apis/${group.kind}`} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">API Docs</a>
+          <a href={`/app/cli/commands/${group.kind}`} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">CLI Docs</a>
+        </div>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>API Path</th>
+              <th>CLI Command</th>
+              <th>Core Function</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.apis.map((api) => (
+              <tr>
+                <td><span class="doc-pill" style="font-size: 0.625rem;">{api.method}</span></td>
+                <td><code style="font-size: 0.75rem;">{api.backend.path}</code></td>
+                <td><code style="font-size: 0.75rem;">{api.ugoite_cli?.command ?? "—"}</code></td>
+                <td style="font-size: 0.75rem; color: var(--doc-muted);">{api.ugoite_core.function}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  ))}
+</BaseLayout>

@@ -1,0 +1,32 @@
+---
+export interface Props {
+  command: string;
+}
+
+const { command } = Astro.props;
+const uid = `cmd-${Math.random().toString(36).slice(2, 10)}`;
+---
+
+<div class="doc-terminal" id={uid}>
+  <div class="doc-terminal-header">
+    <span class="doc-terminal-dot doc-terminal-dot-red"></span>
+    <span class="doc-terminal-dot doc-terminal-dot-yellow"></span>
+    <span class="doc-terminal-dot doc-terminal-dot-green"></span>
+  </div>
+  <button class="doc-copy-btn" data-copy-for={uid} type="button">Copy</button>
+  <code class="doc-terminal-prompt">{command}</code>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>("button[data-copy-for]").forEach((btn) => {
+    if (btn.dataset.listenerAttached) return;
+    btn.dataset.listenerAttached = "1";
+    btn.addEventListener("click", async () => {
+      const targetId = btn.getAttribute("data-copy-for") ?? "";
+      const code = document.getElementById(targetId)?.querySelector("code")?.textContent ?? "";
+      await navigator.clipboard.writeText(code);
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+    });
+  });
+</script>

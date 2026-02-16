@@ -1,0 +1,71 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import ApiConsole from "../../../../components/ApiConsole.astro";
+import { getFeatureGroups, type FeatureApi } from "../../../../lib/spec-data";
+
+export async function getStaticPaths() {
+  const groups = await getFeatureGroups();
+  return groups.map((group) => ({ params: { kind: group.kind } }));
+}
+
+const groups = await getFeatureGroups();
+const kind = Astro.params.kind ?? "";
+const current = groups.find((g) => g.kind === kind);
+
+if (!current) {
+  throw new Error(`Unknown API group: ${kind}`);
+}
+
+const toc = current.apis.map((api) => ({ id: api.id, title: `${api.method} ${api.backend.path}` }));
+
+function feFile(api: FeatureApi): string {
+  return api.frontend ? api.frontend.file : "—";
+}
+function feFunc(api: FeatureApi): string {
+  return api.frontend ? api.frontend.function : "—";
+}
+function cliFile(api: FeatureApi): string {
+  return api.ugoite_cli ? api.ugoite_cli.file : "—";
+}
+function cliCmd(api: FeatureApi): string {
+  return api.ugoite_cli?.command || "—";
+}
+---
+
+<BaseLayout title={`${current.kind} API | Ugoite`} description={`API endpoints for the ${current.kind} domain.`} toc={toc}
+  related={[{ href: "/app/api-storage/apis", label: "Back to Catalog" }, { href: `/app/cli/commands/${current.kind}`, label: "CLI Commands" }]}>
+
+  <section class="doc-card-hero">
+    <div class="relative z-10">
+      <span class="doc-pill">Domain: {current.kind}</span>
+      <h1 class="text-3xl font-extrabold mt-3 tracking-tight">{current.kind} API</h1>
+      <p class="mt-2 text-sm" style="color:var(--doc-muted)">
+        {current.apis.length} endpoints. Enter a target domain to generate curl commands. No data is sent externally.
+      </p>
+    </div>
+  </section>
+
+  {current.apis.map((api) => (
+    <section id={api.id} class="doc-card">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <span class="doc-pill">{api.method}</span>
+        <code class="text-sm font-semibold">{api.backend.path}</code>
+        <span class="text-xs ml-auto" style="color:var(--doc-muted)">{api.id}</span>
+      </div>
+
+      <div class="doc-table-wrap mb-4">
+        <table class="doc-table">
+          <thead><tr><th>Layer</th><th>File</th><th>Function</th></tr></thead>
+          <tbody>
+            <tr><td>Backend</td><td class="text-xs">{api.backend.file}</td><td class="text-xs font-mono">{api.backend.function}</td></tr>
+            <tr><td>Frontend</td><td class="text-xs">{feFile(api)}</td><td class="text-xs font-mono">{feFunc(api)}</td></tr>
+            <tr><td>CLI</td><td class="text-xs">{cliFile(api)}</td><td class="text-xs font-mono">{cliCmd(api)}</td></tr>
+            <tr><td>Core</td><td class="text-xs">{api.ugoite_core.file}</td><td class="text-xs font-mono">{api.ugoite_core.function}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ApiConsole method={api.method} endpoint={api.backend.path} />
+    </section>
+  ))}
+</BaseLayout>

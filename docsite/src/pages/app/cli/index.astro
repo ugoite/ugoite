@@ -1,0 +1,56 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import TerminalCommand from "../../../components/TerminalCommand.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "setup", title: "Setup" },
+  { id: "commands", title: "Commands" },
+];
+---
+
+<BaseLayout title="CLI | Ugoite" description="Command-line interface for scriptable knowledge management." toc={toc}
+  related={[{ href: "/app", label: "App Overview" }, { href: "/app/cli/commands", label: "Command Catalog" }]}>
+
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">CLI</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        Command-Line Interface
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 40rem; line-height: 1.6;">
+        Scriptable access to your knowledge space. Manage spaces, entries, forms, search, and SQL sessions directly from the terminal — ideal for automation and CI/CD pipelines.
+      </p>
+    </div>
+  </section>
+
+  <section id="setup" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Setup</h2>
+    <div style="display: grid; gap: 0.75rem;">
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Install dependencies</p>
+        <TerminalCommand command="mise run setup" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Check the CLI is available</p>
+        <TerminalCommand command="cd ugoite-cli && uv run ugoite --help" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. List spaces</p>
+        <TerminalCommand command="cd ugoite-cli && uv run ugoite space list" />
+      </div>
+    </div>
+  </section>
+
+  <section id="commands">
+    <a href="/app/cli/commands" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; display: block;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <h2 style="font-size: 1.125rem; font-weight: 700;">Browse Command Catalog</h2>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.25rem;">All CLI commands organized by feature domain with copy-to-clipboard support.</p>
+        </div>
+        <span style="font-size: 1.5rem;">→</span>
+      </div>
+    </a>
+  </section>
+</BaseLayout>
