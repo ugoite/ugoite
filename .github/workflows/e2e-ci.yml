@@ -7,6 +7,9 @@ on:
   pull_request:
     branches:
       - main
+  merge_group:
+    branches:
+      - main
 
 jobs:
   e2e:
@@ -22,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Restore Playwright and e2e node cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/ms-playwright

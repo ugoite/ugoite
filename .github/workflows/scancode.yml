@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - main
+  merge_group:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -25,7 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Restore ScanCode caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/pip
