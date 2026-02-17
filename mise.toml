@@ -45,6 +45,10 @@ run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
 description = "Run E2E tests with backend and frontend servers"
 run = "bash e2e/scripts/run-e2e.sh full"
 
+[tasks.screenshot]
+description = "Capture UI page screenshots for docsite"
+run = "bash e2e/scripts/run-e2e.sh screenshot"
+
 [tasks."e2e:smoke"]
 description = "Run only smoke E2E tests (fast verification)"
 run = "bash e2e/scripts/run-e2e.sh smoke"

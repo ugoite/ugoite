@@ -6,337 +6,354 @@ const docsRoot = path.resolve(process.cwd(), "../docs");
 const specRoot = path.join(docsRoot, "spec");
 
 export type LinkItem = {
-  id: string;
-  title: string;
-  summary?: string;
+	id: string;
+	title: string;
+	summary?: string;
 };
 
 export type RequirementGroup = {
-  setId: string;
-  sourceFile: string;
-  scope: string;
-  requirements: Array<{
-    id: string;
-    title: string;
-    priority?: string;
-    status?: string;
-  }>;
+	setId: string;
+	sourceFile: string;
+	scope: string;
+	requirements: Array<{
+		id: string;
+		title: string;
+		priority?: string;
+		status?: string;
+	}>;
 };
 
 export type FeatureApi = {
-  id: string;
-  method: string;
-  backend: {
-    path: string;
-    file: string;
-    function: string;
-  };
-  frontend?: {
-    path: string;
-    file: string;
-    function: string;
-  };
-  ugoite_core: {
-    file: string;
-    function: string;
-  };
-  ugoite_cli?: {
-    command?: string;
-    file: string;
-    function: string;
-  };
+	id: string;
+	method: string;
+	backend: {
+		path: string;
+		file: string;
+		function: string;
+	};
+	frontend?: {
+		path: string;
+		file: string;
+		function: string;
+	};
+	ugoite_core: {
+		file: string;
+		function: string;
+	};
+	ugoite_cli?: {
+		command?: string;
+		file: string;
+		function: string;
+	};
 };
 
 export type FeatureGroup = {
-  kind: string;
-  file: string;
-  apis: FeatureApi[];
+	kind: string;
+	file: string;
+	apis: FeatureApi[];
 };
 
 export type UiPageSpec = {
-  fileName: string;
-  id: string;
-  title: string;
-  route: string;
-  implementation?: string;
+	fileName: string;
+	id: string;
+	title: string;
+	route: string;
+	implementation?: string;
 };
 
 export type UiPageDetail = UiPageSpec & {
-  updated?: string;
-  version?: string;
-  raw: Record<string, unknown>;
+	updated?: string;
+	version?: string;
+	raw: Record<string, unknown>;
 };
 
 type FeatureRegistry = {
-  files?: Array<{
-    kind: string;
-    file: string;
-  }>;
+	files?: Array<{
+		kind: string;
+		file: string;
+	}>;
 };
 
 async function readYaml<T>(absolutePath: string): Promise<T> {
-  const raw = await fs.readFile(absolutePath, "utf-8");
-  return YAML.parse(raw) as T;
+	const raw = await fs.readFile(absolutePath, "utf-8");
+	return YAML.parse(raw) as T;
 }
 
 function sortByTitle<T extends { title: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => a.title.localeCompare(b.title));
+	return [...items].sort((a, b) => a.title.localeCompare(b.title));
 }
 
 export async function getPhilosophies(): Promise<LinkItem[]> {
-  const filePath = path.join(specRoot, "philosophy/foundation.yaml");
-  const data = await readYaml<{ philosophies?: Array<{ id: string; title: string; statement?: string }> }>(filePath);
-  return sortByTitle(
-    (data.philosophies ?? []).map((item) => ({
-      id: item.id,
-      title: item.title,
-      summary: item.statement?.trim(),
-    }))
-  );
+	const filePath = path.join(specRoot, "philosophy/foundation.yaml");
+	const data = await readYaml<{
+		philosophies?: Array<{ id: string; title: string; statement?: string }>;
+	}>(filePath);
+	return sortByTitle(
+		(data.philosophies ?? []).map((item) => ({
+			id: item.id,
+			title: item.title,
+			summary: item.statement?.trim(),
+		})),
+	);
 }
 
 export async function getPhilosophyById(id: string): Promise<LinkItem | null> {
-  const items = await getPhilosophies();
-  return items.find((item) => item.id === id) ?? null;
+	const items = await getPhilosophies();
+	return items.find((item) => item.id === id) ?? null;
 }
 
 export async function getPolicies(): Promise<LinkItem[]> {
-  const filePath = path.join(specRoot, "policies/policies.yaml");
-  const data = await readYaml<{ policies?: Array<{ id: string; title: string; summary?: string }> }>(filePath);
-  return sortByTitle(
-    (data.policies ?? []).map((item) => ({
-      id: item.id,
-      title: item.title,
-      summary: item.summary,
-    }))
-  );
+	const filePath = path.join(specRoot, "policies/policies.yaml");
+	const data = await readYaml<{
+		policies?: Array<{ id: string; title: string; summary?: string }>;
+	}>(filePath);
+	return sortByTitle(
+		(data.policies ?? []).map((item) => ({
+			id: item.id,
+			title: item.title,
+			summary: item.summary,
+		})),
+	);
 }
 
 export async function getPolicyById(id: string): Promise<LinkItem | null> {
-  const items = await getPolicies();
-  return items.find((item) => item.id === id) ?? null;
+	const items = await getPolicies();
+	return items.find((item) => item.id === id) ?? null;
 }
 
 export async function getRequirementGroups(): Promise<RequirementGroup[]> {
-  const reqDir = path.join(specRoot, "requirements");
-  const files = (await fs.readdir(reqDir)).filter((name) => name.endsWith(".yaml"));
-  const groups: RequirementGroup[] = [];
+	const reqDir = path.join(specRoot, "requirements");
+	const files = (await fs.readdir(reqDir)).filter((name) =>
+		name.endsWith(".yaml"),
+	);
+	const groups: RequirementGroup[] = [];
 
-  for (const fileName of files) {
-    const fullPath = path.join(reqDir, fileName);
-    const data = await readYaml<{
-      requirements?: Array<{
-        set_id: string;
-        source_file: string;
-        scope?: string;
-        id: string;
-        title: string;
-        priority?: string;
-        status?: string;
-      }>;
-    }>(fullPath);
+	for (const fileName of files) {
+		const fullPath = path.join(reqDir, fileName);
+		const data = await readYaml<{
+			requirements?: Array<{
+				set_id: string;
+				source_file: string;
+				scope?: string;
+				id: string;
+				title: string;
+				priority?: string;
+				status?: string;
+			}>;
+		}>(fullPath);
 
-    const entries = data.requirements ?? [];
-    if (entries.length === 0) continue;
+		const entries = data.requirements ?? [];
+		if (entries.length === 0) continue;
 
-    const first = entries[0];
-    groups.push({
-      setId: first.set_id,
-      sourceFile: first.source_file,
-      scope: first.scope ?? "",
-      requirements: sortByTitle(
-        entries.map((entry) => ({
-          id: entry.id,
-          title: entry.title,
-          priority: entry.priority,
-          status: entry.status,
-        }))
-      ),
-    });
-  }
+		const first = entries[0];
+		groups.push({
+			setId: first.set_id,
+			sourceFile: first.source_file,
+			scope: first.scope ?? "",
+			requirements: sortByTitle(
+				entries.map((entry) => ({
+					id: entry.id,
+					title: entry.title,
+					priority: entry.priority,
+					status: entry.status,
+				})),
+			),
+		});
+	}
 
-  return groups.sort((a, b) => a.setId.localeCompare(b.setId));
+	return groups.sort((a, b) => a.setId.localeCompare(b.setId));
 }
 
 export async function getFeatureGroups(): Promise<FeatureGroup[]> {
-  const registryPath = path.join(specRoot, "features/features.yaml");
-  const registry = await readYaml<FeatureRegistry>(registryPath);
-  const files = registry.files ?? [];
-  const groups: FeatureGroup[] = [];
+	const registryPath = path.join(specRoot, "features/features.yaml");
+	const registry = await readYaml<FeatureRegistry>(registryPath);
+	const files = registry.files ?? [];
+	const groups: FeatureGroup[] = [];
 
-  for (const entry of files) {
-    const fullPath = path.join(specRoot, "features", entry.file);
-    const data = await readYaml<{ kind?: string; apis?: FeatureApi[] }>(fullPath);
-    groups.push({
-      kind: data.kind ?? entry.kind,
-      file: entry.file,
-      apis: data.apis ?? [],
-    });
-  }
+	for (const entry of files) {
+		const fullPath = path.join(specRoot, "features", entry.file);
+		const data = await readYaml<{ kind?: string; apis?: FeatureApi[] }>(
+			fullPath,
+		);
+		groups.push({
+			kind: data.kind ?? entry.kind,
+			file: entry.file,
+			apis: data.apis ?? [],
+		});
+	}
 
-  return groups.sort((a, b) => a.kind.localeCompare(b.kind));
+	return groups.sort((a, b) => a.kind.localeCompare(b.kind));
 }
 
 export async function getUiPages(): Promise<UiPageSpec[]> {
-  const uiPagesDir = path.join(specRoot, "ui/pages");
-  const files = (await fs.readdir(uiPagesDir)).filter((name) => name.endsWith(".yaml"));
-  const pages: UiPageSpec[] = [];
+	const uiPagesDir = path.join(specRoot, "ui/pages");
+	const files = (await fs.readdir(uiPagesDir)).filter((name) =>
+		name.endsWith(".yaml"),
+	);
+	const pages: UiPageSpec[] = [];
 
-  for (const fileName of files) {
-    const fullPath = path.join(uiPagesDir, fileName);
-    const data = await readYaml<{
-      page?: {
-        id?: string;
-        title?: string;
-        route?: string;
-        implementation?: string;
-      };
-    }>(fullPath);
-    if (!data.page?.id || !data.page.title || !data.page.route) continue;
+	for (const fileName of files) {
+		const fullPath = path.join(uiPagesDir, fileName);
+		const data = await readYaml<{
+			page?: {
+				id?: string;
+				title?: string;
+				route?: string;
+				implementation?: string;
+			};
+		}>(fullPath);
+		if (!data.page?.id || !data.page.title || !data.page.route) continue;
 
-    pages.push({
-      fileName,
-      id: data.page.id,
-      title: data.page.title,
-      route: data.page.route,
-      implementation: data.page.implementation,
-    });
-  }
+		pages.push({
+			fileName,
+			id: data.page.id,
+			title: data.page.title,
+			route: data.page.route,
+			implementation: data.page.implementation,
+		});
+	}
 
-  return pages.sort((a, b) => a.title.localeCompare(b.title));
+	return pages.sort((a, b) => a.title.localeCompare(b.title));
 }
 
 export async function getUiPageById(id: string): Promise<UiPageDetail | null> {
-  const uiPagesDir = path.join(specRoot, "ui/pages");
-  const files = (await fs.readdir(uiPagesDir)).filter((name) => name.endsWith(".yaml"));
+	const uiPagesDir = path.join(specRoot, "ui/pages");
+	const files = (await fs.readdir(uiPagesDir)).filter((name) =>
+		name.endsWith(".yaml"),
+	);
 
-  for (const fileName of files) {
-    const fullPath = path.join(uiPagesDir, fileName);
-    const data = await readYaml<Record<string, unknown>>(fullPath);
-    const page = (data.page ?? {}) as {
-      id?: string;
-      title?: string;
-      route?: string;
-      implementation?: string;
-    };
+	for (const fileName of files) {
+		const fullPath = path.join(uiPagesDir, fileName);
+		const data = await readYaml<Record<string, unknown>>(fullPath);
+		const page = (data.page ?? {}) as {
+			id?: string;
+			title?: string;
+			route?: string;
+			implementation?: string;
+		};
 
-    if (page.id !== id || !page.title || !page.route) {
-      continue;
-    }
+		if (page.id !== id || !page.title || !page.route) {
+			continue;
+		}
 
-    return {
-      fileName,
-      id: page.id,
-      title: page.title,
-      route: page.route,
-      implementation: page.implementation,
-      version: typeof data.version === "string" ? data.version : undefined,
-      updated: typeof data.updated === "string" ? data.updated : undefined,
-      raw: data,
-    };
-  }
+		return {
+			fileName,
+			id: page.id,
+			title: page.title,
+			route: page.route,
+			implementation: page.implementation,
+			version: typeof data.version === "string" ? data.version : undefined,
+			updated: typeof data.updated === "string" ? data.updated : undefined,
+			raw: data,
+		};
+	}
 
-  return null;
+	return null;
 }
 
 export function getDocsRoot(): string {
-  return docsRoot;
+	return docsRoot;
 }
 
 export function getSpecRoot(): string {
-  return specRoot;
+	return specRoot;
 }
 
 /* ─── Relationship graph data ─── */
 
 export type PolicyDetail = {
-  id: string;
-  title: string;
-  summary?: string;
-  linkedRequirements: string[];
-  linkedSpecifications: string[];
+	id: string;
+	title: string;
+	summary?: string;
+	linkedRequirements: string[];
+	linkedSpecifications: string[];
 };
 
 export type SpecEntry = {
-  id: string;
-  sourceFile: string;
-  linkedPolicies: string[];
-  linkedRequirements: string[];
+	id: string;
+	sourceFile: string;
+	linkedPolicies: string[];
+	linkedRequirements: string[];
 };
 
 export async function getPoliciesDetailed(): Promise<PolicyDetail[]> {
-  const filePath = path.join(specRoot, "policies/policies.yaml");
-  const data = await readYaml<{
-    policies?: Array<{
-      id: string;
-      title: string;
-      summary?: string;
-      linked_requirements?: string[];
-      linked_specifications?: string[];
-    }>;
-  }>(filePath);
-  return (data.policies ?? []).map((p) => ({
-    id: p.id,
-    title: p.title,
-    summary: p.summary,
-    linkedRequirements: p.linked_requirements ?? [],
-    linkedSpecifications: p.linked_specifications ?? [],
-  }));
+	const filePath = path.join(specRoot, "policies/policies.yaml");
+	const data = await readYaml<{
+		policies?: Array<{
+			id: string;
+			title: string;
+			summary?: string;
+			linked_requirements?: string[];
+			linked_specifications?: string[];
+		}>;
+	}>(filePath);
+	return (data.policies ?? []).map((p) => ({
+		id: p.id,
+		title: p.title,
+		summary: p.summary,
+		linkedRequirements: p.linked_requirements ?? [],
+		linkedSpecifications: p.linked_specifications ?? [],
+	}));
 }
 
 export async function getSpecifications(): Promise<SpecEntry[]> {
-  const filePath = path.join(specRoot, "specifications.yaml");
-  const data = await readYaml<
-    Array<{
-      id: string;
-      source_file: string;
-      linked_policies?: string[];
-      linked_requirements?: string[];
-    }>
-  >(filePath);
-  return (data ?? []).map((s) => ({
-    id: s.id,
-    sourceFile: s.source_file,
-    linkedPolicies: s.linked_policies ?? [],
-    linkedRequirements: s.linked_requirements ?? [],
-  }));
+	const filePath = path.join(specRoot, "specifications.yaml");
+	const data =
+		await readYaml<
+			Array<{
+				id: string;
+				source_file: string;
+				linked_policies?: string[];
+				linked_requirements?: string[];
+			}>
+		>(filePath);
+	return (data ?? []).map((s) => ({
+		id: s.id,
+		sourceFile: s.source_file,
+		linkedPolicies: s.linked_policies ?? [],
+		linkedRequirements: s.linked_requirements ?? [],
+	}));
 }
 
-export async function getRequirementToFeatureEdges(): Promise<Array<{ requirement: string; feature: string }>> {
-  const specs = await getSpecifications();
-  const features = await getFeatureGroups();
+export async function getRequirementToFeatureEdges(): Promise<
+	Array<{ requirement: string; feature: string }>
+> {
+	const specs = await getSpecifications();
+	const features = await getFeatureGroups();
 
-  const featureByFile = new Map<string, string>();
-  for (const feature of features) {
-    featureByFile.set(`features/${feature.file}`, feature.kind);
-  }
+	const featureByFile = new Map<string, string>();
+	for (const feature of features) {
+		featureByFile.set(`features/${feature.file}`, feature.kind);
+	}
 
-  const edges = new Set<string>();
-  for (const spec of specs) {
-    const featureKind = featureByFile.get(spec.sourceFile);
-    if (!featureKind) continue;
+	const edges = new Set<string>();
+	for (const spec of specs) {
+		const featureKind = featureByFile.get(spec.sourceFile);
+		if (!featureKind) continue;
 
-    for (const requirement of spec.linkedRequirements) {
-      edges.add(`${requirement}::${featureKind}`);
-    }
-  }
+		for (const requirement of spec.linkedRequirements) {
+			edges.add(`${requirement}::${featureKind}`);
+		}
+	}
 
-  return [...edges].map((edge) => {
-    const [requirement, feature] = edge.split("::");
-    return { requirement, feature };
-  });
+	return [...edges].map((edge) => {
+		const [requirement, feature] = edge.split("::");
+		return { requirement, feature };
+	});
 }
 
-export async function getFeatureKindsLinkedToRequirements(requirementIds: string[]): Promise<string[]> {
-  const edges = await getRequirementToFeatureEdges();
-  const requirementSet = new Set(requirementIds);
-  const linked = new Set<string>();
+export async function getFeatureKindsLinkedToRequirements(
+	requirementIds: string[],
+): Promise<string[]> {
+	const edges = await getRequirementToFeatureEdges();
+	const requirementSet = new Set(requirementIds);
+	const linked = new Set<string>();
 
-  for (const edge of edges) {
-    if (requirementSet.has(edge.requirement)) {
-      linked.add(edge.feature);
-    }
-  }
+	for (const edge of edges) {
+		if (requirementSet.has(edge.requirement)) {
+			linked.add(edge.feature);
+		}
+	}
 
-  return [...linked].sort((a, b) => a.localeCompare(b));
+	return [...linked].sort((a, b) => a.localeCompare(b));
 }

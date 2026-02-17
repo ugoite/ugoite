@@ -1,7 +1,7 @@
 #!/bin/bash
 # E2E test runner script
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "entries", or "full" (runs all tests)
+#   test-type: "smoke", "entries", "screenshot", or "full" (runs standard tests)
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -140,12 +140,15 @@ case "$TEST_TYPE" in
     entries)
         npm run test:entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
+    screenshot)
+        npm run test:screenshot -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+        ;;
     full)
         npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
         ;;
     *)
         echo "Unknown test type: $TEST_TYPE"
-        echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|full]"
+        echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|screenshot|full]"
         exit 1
         ;;
 esac
