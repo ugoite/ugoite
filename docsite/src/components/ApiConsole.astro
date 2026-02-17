@@ -22,10 +22,9 @@ const uid = `console-${Math.random().toString(36).slice(2, 10)}`;
   <p class="mt-2 text-xs" style="color: var(--doc-muted);">No data is sent to external servers. Commands run locally only.</p>
 </div>
 
-<script is:inline>
+<script is:inline define:vars={{ uid }}>
   {
-    const container = document.currentScript?.previousElementSibling?.previousElementSibling?.previousElementSibling;
-    const root = document.currentScript?.parentElement?.querySelector('.doc-console');
+    const root = document.getElementById(uid);
     if (root) {
       const input = root.querySelector("[data-domain-input]");
       const output = root.querySelector("[data-curl-output]");
@@ -33,8 +32,24 @@ const uid = `console-${Math.random().toString(36).slice(2, 10)}`;
       const method = root.getAttribute("data-method") ?? "GET";
       const endpoint = root.getAttribute("data-endpoint") ?? "/";
 
+      const safeDomain = (rawValue) => {
+        const value = typeof rawValue === "string" ? rawValue.trim() : "";
+        if (!value) return "http://localhost:8000";
+
+        try {
+          const parsed = new URL(value);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return "http://localhost:8000";
+          }
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "http://localhost:8000";
+        }
+      };
+
       const refresh = () => {
-        const domain = input instanceof HTMLInputElement ? input.value.replace(/\/$/, "") : "http://localhost:8000";
+        const rawValue = input instanceof HTMLInputElement ? input.value : "http://localhost:8000";
+        const domain = safeDomain(rawValue);
         if (output) output.textContent = `curl -X ${method.toUpperCase()} ${domain}${endpoint}`;
       };
 

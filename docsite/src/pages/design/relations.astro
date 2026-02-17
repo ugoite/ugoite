@@ -1,51 +1,24 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { getPhilosophies, getPoliciesDetailed, getRequirementGroups, getFeatureGroups } from "../../lib/spec-data";
+import {
+  getFeatureGroups,
+  getPhilosophies,
+  getPoliciesDetailed,
+  getRequirementGroups,
+  getRequirementToFeatureEdges,
+} from "../../lib/spec-data";
 
 const philosophies = await getPhilosophies();
 const policies = await getPoliciesDetailed();
 const reqGroups = await getRequirementGroups();
 const featureGroups = await getFeatureGroups();
+const reqToFeature = await getRequirementToFeatureEdges();
 
-// Build adjacency data for rendering
-const reqCatSet = new Set(reqGroups.map((g) => g.setId));
-const featureKindSet = new Set(featureGroups.map((g) => g.kind));
-
-// Policy → ReqCat edges
-type Edge = { from: string; to: string };
-const policyToReq: Edge[] = [];
-for (const pol of policies) {
-  for (const req of pol.linkedRequirements) {
-    if (reqCatSet.has(req)) {
-      policyToReq.push({ from: pol.id, to: req });
-    }
-  }
-}
-
-// Map requirement categories to feature groups loosely by keyword matching
-const reqToFeature: Edge[] = [];
-const reqToFeatureMapping: Record<string, string[]> = {
-  "REQCAT-API": ["spaces", "entries", "forms", "assets", "search", "sql", "links"],
-  "REQCAT-ENTRY": ["entries"],
-  "REQCAT-FORM": ["forms"],
-  "REQCAT-STORAGE": ["spaces"],
-  "REQCAT-INDEX": ["sql", "search"],
-  "REQCAT-ASSET": ["assets"],
-  "REQCAT-SEARCH": ["search"],
-  "REQCAT-LINKS": ["links"],
-  "REQCAT-FRONTEND": [],
-  "REQCAT-SECURITY": [],
-  "REQCAT-E2E": [],
-  "REQCAT-INTEGRITY": [],
-  "REQCAT-OPS": [],
-};
-
-for (const [reqCat, features] of Object.entries(reqToFeatureMapping)) {
-  for (const feat of features) {
-    if (featureKindSet.has(feat)) {
-      reqToFeature.push({ from: reqCat, to: feat });
-    }
-  }
+const reqToFeatureMap = new Map<string, string[]>();
+for (const edge of reqToFeature) {
+  const items = reqToFeatureMap.get(edge.requirement) ?? [];
+  items.push(edge.feature);
+  reqToFeatureMap.set(edge.requirement, items);
 }
 
 const toc = [
@@ -89,7 +62,7 @@ const toc = [
         <div class="doc-relation-layer-label">Philosophy</div>
         <div class="doc-relation-nodes">
           {philosophies.map((p) => (
-            <a href={`/design/philosophy#${p.id.toLowerCase()}`} class="doc-relation-node doc-relation-node--phil" title={p.title}>
+            <a href={`/design/philosophy/${p.id.toLowerCase()}`} class="doc-relation-node doc-relation-node--phil" title={p.title}>
               <span class="doc-relation-node-id">{p.id}</span>
               <span class="doc-relation-node-title">{p.title.length > 30 ? p.title.substring(0, 28) + "…" : p.title}</span>
             </a>
@@ -109,7 +82,12 @@ const toc = [
         <div class="doc-relation-layer-label">Policies</div>
         <div class="doc-relation-nodes doc-relation-nodes--wrap">
           {policies.map((p) => (
-            <a href={`/design/policies#${p.id.toLowerCase()}`} class="doc-relation-node doc-relation-node--pol" title={`${p.title}\n→ ${p.linkedRequirements.join(", ")}`}>
+            <a
+              href={`/design/policies/${p.id.toLowerCase()}`}
+              class="doc-relation-node doc-relation-node--pol"
+              title={`${p.title} → ${p.linkedRequirements.join(", ")}`}
+              aria-label={`${p.title} linked requirements: ${p.linkedRequirements.join(", ")}`}
+            >
               <span class="doc-relation-node-id">{p.id}</span>
               <span class="doc-relation-node-title">{p.title.length > 24 ? p.title.substring(0, 22) + "…" : p.title}</span>
               <span class="doc-relation-node-badge">{p.linkedRequirements.length} reqs</span>
@@ -132,7 +110,12 @@ const toc = [
           {reqGroups.map((g) => {
             const linkedPolicies = policies.filter((p) => p.linkedRequirements.includes(g.setId));
             return (
-              <a href={`/design/requirements#${g.setId.toLowerCase()}`} class="doc-relation-node doc-relation-node--req" title={`${g.scope}\n← ${linkedPolicies.map(p => p.id).join(", ")}`}>
+              <a
+                href={`/design/requirements#${g.setId.toLowerCase()}`}
+                class="doc-relation-node doc-relation-node--req"
+                title={`${g.scope} ← ${linkedPolicies.map((p) => p.id).join(", ")}`}
+                aria-label={`${g.setId} linked features: ${(reqToFeatureMap.get(g.setId) ?? []).join(", ") || "none"}`}
+              >
                 <span class="doc-relation-node-id">{g.setId}</span>
                 <span class="doc-relation-node-title">{g.requirements.length} reqs</span>
                 <span class="doc-relation-node-badge">{linkedPolicies.length} policies</span>
@@ -177,7 +160,7 @@ const toc = [
             <span class="doc-pill">{pol.id}</span>
           </div>
           <h3 style="font-size: 0.9375rem; font-weight: 700; margin-bottom: 0.5rem;">
-            <a href={`/design/policies#${pol.id.toLowerCase()}`} style="color: inherit;">{pol.title}</a>
+            <a href={`/design/policies/${pol.id.toLowerCase()}`} style="color: inherit;">{pol.title}</a>
           </h3>
           <p style="font-size: 0.75rem; color: var(--doc-muted); line-height: 1.6; margin-bottom: 0.75rem;">{pol.summary}</p>
 

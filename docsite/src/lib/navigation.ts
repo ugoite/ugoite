@@ -1,6 +1,9 @@
+import { getPhilosophies, getPoliciesDetailed, getUiPages } from "./spec-data";
+
 export type NavItem = {
 	title: string;
 	href: string;
+	items?: NavItem[];
 };
 
 export type NavSection = {
@@ -20,8 +23,8 @@ export const navSections: NavSection[] = [
 		title: "Design Principles",
 		items: [
 			{ title: "Overview", href: "/design" },
-			{ title: "Philosophy", href: "/design/philosophy" },
-			{ title: "Policies", href: "/design/policies" },
+			{ title: "Philosophy", href: "/design/philosophy", items: [] },
+			{ title: "Policies", href: "/design/policies", items: [] },
 			{ title: "Requirements", href: "/design/requirements" },
 			{ title: "Features", href: "/design/features" },
 			{ title: "Relation Map", href: "/design/relations" },
@@ -37,7 +40,7 @@ export const navSections: NavSection[] = [
 			{ title: "CLI", href: "/app/cli" },
 			{ title: "CLI Commands", href: "/app/cli/commands" },
 			{ title: "Frontend", href: "/app/frontend" },
-			{ title: "UI Pages", href: "/app/frontend/pages" },
+			{ title: "UI Pages", href: "/app/frontend/pages", items: [] },
 		],
 	},
 	{
@@ -56,4 +59,43 @@ export function titleFromSegment(segment: string): string {
 	return segment
 		.replaceAll("-", " ")
 		.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export async function getNavSectionsWithChildren(): Promise<NavSection[]> {
+	const [philosophies, policies, uiPages] = await Promise.all([
+		getPhilosophies(),
+		getPoliciesDetailed(),
+		getUiPages(),
+	]);
+
+	const sections = structuredClone(navSections);
+
+	const design = sections.find((section) => section.title === "Design Principles");
+	const app = sections.find((section) => section.title === "Application");
+
+	const philosophyItem = design?.items.find((item) => item.href === "/design/philosophy");
+	if (philosophyItem) {
+		philosophyItem.items = philosophies.map((item) => ({
+			title: item.id,
+			href: `/design/philosophy/${item.id.toLowerCase()}`,
+		}));
+	}
+
+	const policyItem = design?.items.find((item) => item.href === "/design/policies");
+	if (policyItem) {
+		policyItem.items = policies.map((item) => ({
+			title: item.id,
+			href: `/design/policies/${item.id.toLowerCase()}`,
+		}));
+	}
+
+	const uiPagesItem = app?.items.find((item) => item.href === "/app/frontend/pages");
+	if (uiPagesItem) {
+		uiPagesItem.items = uiPages.map((item) => ({
+			title: item.id,
+			href: `/app/frontend/pages/${item.id}`,
+		}));
+	}
+
+	return sections;
 }

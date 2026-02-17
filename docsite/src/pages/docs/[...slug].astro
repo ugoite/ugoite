@@ -157,6 +157,16 @@ const breadcrumbs = parts.map((part, index) => ({
 
 const related = await getRelatedLinks(relativePath);
 
+function toneClass(value: string): string {
+  const key = value.toLowerCase();
+  if (key === "high" || key === "must") return "doc-tone-danger";
+  if (key === "medium" || key === "should") return "doc-tone-warning";
+  if (key === "low" || key === "implemented") return "doc-tone-success";
+  if (key === "planned") return "doc-tone-info";
+  if (key === "draft") return "doc-tone-muted";
+  return "doc-tone-default";
+}
+
 function renderCellValue(cellValue: unknown, key: string): string {
   if (Array.isArray(cellValue)) {
     if (cellValue.length === 0) return `<td style="font-size:0.8125rem;color:var(--doc-muted);">—</td>`;
@@ -183,9 +193,8 @@ function renderCellValue(cellValue: unknown, key: string): string {
   }
   if (key === "priority" || key === "status") {
     const v = String(cellValue ?? "");
-    const colorMap: Record<string, string> = { high: "#dc2626", medium: "#d97706", low: "#16a34a", implemented: "#16a34a", planned: "#2563eb", draft: "#6b7280" };
-    const clr = colorMap[v.toLowerCase()] ?? "var(--doc-fg)";
-    return `<td><span style="font-size:0.6875rem;font-weight:600;color:${clr};text-transform:uppercase;letter-spacing:0.05em;">${escapeHtml(v)}</span></td>`;
+    const cls = toneClass(v);
+    return `<td><span class="doc-badge-tone ${cls}">${escapeHtml(v)}</span></td>`;
   }
   return `<td style="font-size:0.8125rem;">${escapeHtml(String(cellValue ?? ""))}</td>`;
 }
@@ -239,12 +248,10 @@ function renderYamlAsHtml(value: unknown, depth = 0): string {
           // Build header with id + status badges
           let headerRight = "";
           if (priorityVal) {
-            const colorMap: Record<string, string> = { high: "#dc2626", medium: "#d97706", low: "#16a34a" };
-            headerRight += `<span class="doc-pill" style="font-size:0.5625rem;background:${colorMap[priorityVal.toLowerCase()] ?? "var(--doc-accent)"};color:white;">${escapeHtml(priorityVal)}</span>`;
+            headerRight += `<span class="doc-pill ${toneClass(priorityVal)}" style="font-size:0.5625rem;">${escapeHtml(priorityVal)}</span>`;
           }
           if (statusVal) {
-            const sColorMap: Record<string, string> = { implemented: "#16a34a", planned: "#2563eb", draft: "#6b7280" };
-            headerRight += `<span class="doc-pill" style="font-size:0.5625rem;background:${sColorMap[statusVal.toLowerCase()] ?? "var(--doc-muted)"};color:white;margin-left:0.25rem;">${escapeHtml(statusVal)}</span>`;
+            headerRight += `<span class="doc-pill ${toneClass(statusVal)}" style="font-size:0.5625rem;margin-left:0.25rem;">${escapeHtml(statusVal)}</span>`;
           }
 
           const skipKeys = new Set(["id", "title", "description", "priority", "status", ...sharedKeys]);
@@ -352,10 +359,10 @@ async function getRelatedLinks(sourceFile: string): Promise<Array<{ href: string
 
     const links: Array<{ href: string; label: string }> = [];
     for (const policy of hit.linked_policies ?? []) {
-      links.push({ href: "/design/policies", label: `Policy ${policy}` });
+      links.push({ href: `/design/policies/${policy.toLowerCase()}`, label: `Policy ${policy}` });
     }
     for (const requirement of hit.linked_requirements ?? []) {
-      links.push({ href: "/design/requirements", label: `Requirement ${requirement}` });
+      links.push({ href: `/design/requirements#${requirement.toLowerCase()}`, label: `Requirement ${requirement}` });
     }
     return links;
   } catch {

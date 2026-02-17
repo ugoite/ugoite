@@ -1,6 +1,6 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
-import { navSections, topLinks } from "../lib/navigation";
+import { getNavSectionsWithChildren, topLinks } from "../lib/navigation";
 import "../styles.css";
 
 export interface Props {
@@ -12,8 +12,8 @@ export interface Props {
 }
 
 const { title, description, toc = [], related = [], fullWidth = false } = Astro.props;
-const hasSidebar = !fullWidth;
 const hasRight = toc.length > 0 || related.length > 0;
+const navSections = await getNavSectionsWithChildren();
 ---
 
 <html lang="en">
@@ -24,7 +24,18 @@ const hasRight = toc.length > 0 || related.length > 0;
     <meta name="description" content={description ?? "Ugoite — local-first, AI-native knowledge space documentation."} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      />
+    </noscript>
   </head>
   <body>
     <header class="site-header">
@@ -50,7 +61,16 @@ const hasRight = toc.length > 0 || related.length > 0;
             <div class="doc-sidebar-section">
               <div class="doc-sidebar-title">{section.title}</div>
               {section.items.map((item) => (
-                <a href={item.href} class="doc-sidebar-link">{item.title}</a>
+                <div>
+                  <a href={item.href} class="doc-sidebar-link">{item.title}</a>
+                  {item.items && item.items.length > 0 && (
+                    <div class="doc-sidebar-children">
+                      {item.items.map((child) => (
+                        <a href={child.href} class="doc-sidebar-link doc-sidebar-link-child">{child.title}</a>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           ))}
@@ -84,7 +104,16 @@ const hasRight = toc.length > 0 || related.length > 0;
             <div class="doc-sidebar-section">
               <div class="doc-sidebar-title">{section.title}</div>
               {section.items.map((item) => (
-                <a href={item.href} class="doc-sidebar-link">{item.title}</a>
+                <div>
+                  <a href={item.href} class="doc-sidebar-link">{item.title}</a>
+                  {item.items && item.items.length > 0 && (
+                    <div class="doc-sidebar-children">
+                      {item.items.map((child) => (
+                        <a href={child.href} class="doc-sidebar-link doc-sidebar-link-child">{child.title}</a>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           ))}
