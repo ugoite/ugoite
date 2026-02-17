@@ -61,7 +61,10 @@ try {
             </div>
             <h2 style="font-size: 1rem; font-weight: 700; margin: 0;">{page.title}</h2>
             <code style="font-size: 0.6875rem; color: var(--doc-muted); margin-top: 0.25rem; display: block;">{page.route}</code>
-            <div style="margin-top: 0.75rem;">
+            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+              <a href={`/app/frontend/pages/${page.id}`} class="doc-btn doc-btn-primary" style="font-size: 0.6875rem; padding: 0.25rem 0.625rem;">
+                Details
+              </a>
               <a href={`/docs/spec/ui/pages/${page.fileName.replace(/\.yaml$/, "")}`} class="doc-btn doc-btn-outline" style="font-size: 0.6875rem; padding: 0.25rem 0.625rem;">
                 View Spec
               </a>

@@ -125,3 +125,6 @@ requirements:
     - file: e2e/navigation.test.ts
       tests:
       - 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors'
+    - file: e2e/ui-pages-screenshots.test.ts
+      tests:
+      - 'REQ-E2E-004: export screenshots for all UI page specs'

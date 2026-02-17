@@ -61,6 +61,12 @@ export type UiPageSpec = {
   implementation?: string;
 };
 
+export type UiPageDetail = UiPageSpec & {
+  updated?: string;
+  version?: string;
+  raw: Record<string, unknown>;
+};
+
 type FeatureRegistry = {
   files?: Array<{
     kind: string;
@@ -89,6 +95,11 @@ export async function getPhilosophies(): Promise<LinkItem[]> {
   );
 }
 
+export async function getPhilosophyById(id: string): Promise<LinkItem | null> {
+  const items = await getPhilosophies();
+  return items.find((item) => item.id === id) ?? null;
+}
+
 export async function getPolicies(): Promise<LinkItem[]> {
   const filePath = path.join(specRoot, "policies/policies.yaml");
   const data = await readYaml<{ policies?: Array<{ id: string; title: string; summary?: string }> }>(filePath);
@@ -99,6 +110,11 @@ export async function getPolicies(): Promise<LinkItem[]> {
       summary: item.summary,
     }))
   );
+}
+
+export async function getPolicyById(id: string): Promise<LinkItem | null> {
+  const items = await getPolicies();
+  return items.find((item) => item.id === id) ?? null;
 }
 
 export async function getRequirementGroups(): Promise<RequirementGroup[]> {
@@ -190,6 +206,39 @@ export async function getUiPages(): Promise<UiPageSpec[]> {
   return pages.sort((a, b) => a.title.localeCompare(b.title));
 }
 
+export async function getUiPageById(id: string): Promise<UiPageDetail | null> {
+  const uiPagesDir = path.join(specRoot, "ui/pages");
+  const files = (await fs.readdir(uiPagesDir)).filter((name) => name.endsWith(".yaml"));
+
+  for (const fileName of files) {
+    const fullPath = path.join(uiPagesDir, fileName);
+    const data = await readYaml<Record<string, unknown>>(fullPath);
+    const page = (data.page ?? {}) as {
+      id?: string;
+      title?: string;
+      route?: string;
+      implementation?: string;
+    };
+
+    if (page.id !== id || !page.title || !page.route) {
+      continue;
+    }
+
+    return {
+      fileName,
+      id: page.id,
+      title: page.title,
+      route: page.route,
+      implementation: page.implementation,
+      version: typeof data.version === "string" ? data.version : undefined,
+      updated: typeof data.updated === "string" ? data.updated : undefined,
+      raw: data,
+    };
+  }
+
+  return null;
+}
+
 export function getDocsRoot(): string {
   return docsRoot;
 }
@@ -251,4 +300,43 @@ export async function getSpecifications(): Promise<SpecEntry[]> {
     linkedPolicies: s.linked_policies ?? [],
     linkedRequirements: s.linked_requirements ?? [],
   }));
+}
+
+export async function getRequirementToFeatureEdges(): Promise<Array<{ requirement: string; feature: string }>> {
+  const specs = await getSpecifications();
+  const features = await getFeatureGroups();
+
+  const featureByFile = new Map<string, string>();
+  for (const feature of features) {
+    featureByFile.set(`features/${feature.file}`, feature.kind);
+  }
+
+  const edges = new Set<string>();
+  for (const spec of specs) {
+    const featureKind = featureByFile.get(spec.sourceFile);
+    if (!featureKind) continue;
+
+    for (const requirement of spec.linkedRequirements) {
+      edges.add(`${requirement}::${featureKind}`);
+    }
+  }
+
+  return [...edges].map((edge) => {
+    const [requirement, feature] = edge.split("::");
+    return { requirement, feature };
+  });
+}
+
+export async function getFeatureKindsLinkedToRequirements(requirementIds: string[]): Promise<string[]> {
+  const edges = await getRequirementToFeatureEdges();
+  const requirementSet = new Set(requirementIds);
+  const linked = new Set<string>();
+
+  for (const edge of edges) {
+    if (requirementSet.has(edge.requirement)) {
+      linked.add(edge.feature);
+    }
+  }
+
+  return [...linked].sort((a, b) => a.localeCompare(b));
 }

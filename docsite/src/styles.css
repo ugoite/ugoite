@@ -154,6 +154,18 @@ a:hover {
 		background: var(--doc-accent-soft);
 	}
 
+	.doc-sidebar-children {
+		margin-left: 0.75rem;
+		padding-left: 0.5rem;
+		border-left: 1px dashed var(--doc-border);
+	}
+
+	.doc-sidebar-link-child {
+		font-size: 0.75rem;
+		padding-top: 0.2rem;
+		padding-bottom: 0.2rem;
+	}
+
 	/* Right sidebar / TOC */
 	.doc-right {
 		position: sticky;
@@ -260,6 +272,44 @@ a:hover {
 	.doc-pill-warning {
 		background: var(--doc-warning-soft);
 		color: var(--doc-warning);
+	}
+
+	.doc-badge-tone {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.doc-tone-default {
+		color: var(--doc-fg);
+	}
+
+	.doc-tone-danger {
+		background: var(--doc-warning);
+		color: #fff;
+	}
+
+	.doc-tone-warning {
+		background: var(--doc-warning);
+		color: #fff;
+	}
+
+	.doc-tone-success {
+		background: var(--doc-success);
+		color: #fff;
+	}
+
+	.doc-tone-info {
+		background: var(--doc-accent);
+		color: #fff;
+	}
+
+	.doc-tone-muted {
+		background: var(--doc-muted);
+		color: #fff;
 	}
 
 	/* Buttons */
