@@ -16,3 +16,7 @@ description = "Run entries E2E tests only"
 [tasks."test:forms"]
 run = "npm run test:forms"
 description = "Run form E2E tests only"
+
+[tasks."test:screenshot"]
+run = "npm run test:screenshot"
+description = "Export docsite screenshots from UI page specs"

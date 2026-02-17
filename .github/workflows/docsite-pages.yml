@@ -24,24 +24,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup mise (install tools and dependencies)
+        uses: jdx/mise-action@v3
         with:
-          bun-version: 1.3.8
+          install: true
+          cache: true
+          experimental: true
 
-      - name: Cache Bun dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            docsite/node_modules
-          key: ${{ runner.os }}-docsite-bun-${{ hashFiles('docsite/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-docsite-bun-
+      - name: Install project dependencies
+        run: mise run setup
 
-      - name: Install dependencies
-        working-directory: ./docsite
-        run: bun install
+      - name: Capture UI screenshots
+        run: mise run screenshot
 
       - name: Build
         working-directory: ./docsite

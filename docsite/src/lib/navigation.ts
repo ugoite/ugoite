@@ -70,10 +70,14 @@ export async function getNavSectionsWithChildren(): Promise<NavSection[]> {
 
 	const sections = structuredClone(navSections);
 
-	const design = sections.find((section) => section.title === "Design Principles");
+	const design = sections.find(
+		(section) => section.title === "Design Principles",
+	);
 	const app = sections.find((section) => section.title === "Application");
 
-	const philosophyItem = design?.items.find((item) => item.href === "/design/philosophy");
+	const philosophyItem = design?.items.find(
+		(item) => item.href === "/design/philosophy",
+	);
 	if (philosophyItem) {
 		philosophyItem.items = philosophies.map((item) => ({
 			title: item.id,
@@ -81,7 +85,9 @@ export async function getNavSectionsWithChildren(): Promise<NavSection[]> {
 		}));
 	}
 
-	const policyItem = design?.items.find((item) => item.href === "/design/policies");
+	const policyItem = design?.items.find(
+		(item) => item.href === "/design/policies",
+	);
 	if (policyItem) {
 		policyItem.items = policies.map((item) => ({
 			title: item.id,
@@ -89,7 +95,9 @@ export async function getNavSectionsWithChildren(): Promise<NavSection[]> {
 		}));
 	}
 
-	const uiPagesItem = app?.items.find((item) => item.href === "/app/frontend/pages");
+	const uiPagesItem = app?.items.find(
+		(item) => item.href === "/app/frontend/pages",
+	);
 	if (uiPagesItem) {
 		uiPagesItem.items = uiPages.map((item) => ({
 			title: item.id,
