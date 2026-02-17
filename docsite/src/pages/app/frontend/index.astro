@@ -1,0 +1,67 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import TerminalCommand from "../../../components/TerminalCommand.astro";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "setup", title: "Setup" },
+  { id: "pages", title: "Pages" },
+];
+---
+
+<BaseLayout title="Frontend | Ugoite" description="SolidStart UI for visual knowledge management." toc={toc}
+  related={[{ href: "/app", label: "App Overview" }, { href: "/app/frontend/pages", label: "UI Page Catalog" }]}>
+
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">Frontend</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        Frontend UI
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 40rem; line-height: 1.6;">
+        A SolidStart browser interface for visual knowledge management. Manage spaces, entries, forms, search, and SQL — powered by the same API and block storage backend.
+      </p>
+    </div>
+  </section>
+
+  <section id="setup" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Setup</h2>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-bottom: 1rem; line-height: 1.6;">
+      The frontend shares the same infrastructure as the API & Block Storage setup. All you need is to start both backend and frontend servers.
+    </p>
+    <div style="display: grid; gap: 0.75rem;">
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Install dependencies</p>
+        <TerminalCommand command="mise run setup" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Start backend</p>
+        <TerminalCommand command="cd backend && uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Start frontend</p>
+        <TerminalCommand command="cd frontend && BACKEND_URL=http://localhost:8000 bun run dev" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. Run E2E tests</p>
+        <TerminalCommand command="mise run e2e" />
+      </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. Export UI screenshots</p>
+        <TerminalCommand command="mise run screenshot" />
+      </div>
+    </div>
+  </section>
+
+  <section id="pages">
+    <a href="/app/frontend/pages" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; display: block;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <h2 style="font-size: 1.125rem; font-weight: 700;">Browse UI Page Catalog</h2>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.25rem;">All UI pages parsed from spec YAML with E2E screenshot references.</p>
+        </div>
+        <span style="font-size: 1.5rem;">→</span>
+      </div>
+    </a>
+  </section>
+</BaseLayout>

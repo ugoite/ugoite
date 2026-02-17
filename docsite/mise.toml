@@ -24,3 +24,6 @@ run = "bun run build"
 
 [tasks.dev]
 run = "bun run dev"
+
+[tasks.screenshot]
+run = "bash ../e2e/scripts/run-e2e.sh screenshot"

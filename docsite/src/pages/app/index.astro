@@ -1,0 +1,113 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const toc = [
+  { id: "vision", title: "Vision" },
+  { id: "architecture", title: "Architecture" },
+  { id: "surfaces", title: "Control Surfaces" },
+];
+---
+
+<BaseLayout title="Application | Ugoite" description="Application architecture and control surfaces." toc={toc}>
+  <section id="vision" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">Application</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        Run Your Knowledge Space From Anywhere
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 40rem; line-height: 1.6;">
+        Ugoite unifies block storage, a local API, CLI, and frontend into a cohesive system. The same data is safely operated through multiple surfaces backed by a single core logic layer.
+      </p>
+    </div>
+  </section>
+
+  <!-- Architecture diagram -->
+  <section id="architecture" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">System Architecture</h2>
+    <div class="doc-diagram">
+      <div class="doc-arch-flow">
+        <!-- Control surfaces -->
+        <div class="doc-arch-row">
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">🖥️</div>
+            <div class="doc-arch-node-title">Frontend</div>
+            <div class="doc-arch-node-desc">SolidStart UI</div>
+          </div>
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">⌨️</div>
+            <div class="doc-arch-node-title">CLI</div>
+            <div class="doc-arch-node-desc">Terminal automation</div>
+          </div>
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">🔌</div>
+            <div class="doc-arch-node-title">REST API</div>
+            <div class="doc-arch-node-desc">FastAPI adapter</div>
+          </div>
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">🤖</div>
+            <div class="doc-arch-node-title">MCP</div>
+            <div class="doc-arch-node-desc">AI integration</div>
+          </div>
+        </div>
+
+        <div class="doc-arch-connector">
+          <div class="doc-arch-connector-line"></div>
+          <span>shared domain logic</span>
+          <div class="doc-arch-connector-line"></div>
+        </div>
+
+        <!-- Core -->
+        <div class="doc-arch-row" style="max-width: 20rem;">
+          <div class="doc-arch-node" style="flex: 1; border-color: var(--doc-accent);">
+            <div class="doc-arch-node-icon">🧬</div>
+            <div class="doc-arch-node-title">ugoite-core</div>
+            <div class="doc-arch-node-desc">Rust + Python canonical logic</div>
+          </div>
+        </div>
+
+        <div class="doc-arch-connector">
+          <div class="doc-arch-connector-line"></div>
+          <span>storage abstraction</span>
+          <div class="doc-arch-connector-line"></div>
+        </div>
+
+        <!-- Storage -->
+        <div class="doc-arch-row">
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">📦</div>
+            <div class="doc-arch-node-title">OpenDAL</div>
+            <div class="doc-arch-node-desc">Storage abstraction layer</div>
+          </div>
+          <div class="doc-arch-node">
+            <div class="doc-arch-node-icon">☁️</div>
+            <div class="doc-arch-node-title">Block Storage</div>
+            <div class="doc-arch-node-desc">S3/local/compatible</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Surface cards -->
+  <section id="surfaces">
+    <div class="doc-grid">
+      <a href="/app/api-storage" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔌</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">API & Block Storage</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Serverless-ready API with OpenDAL-powered storage. Architecture details, setup guide, and interactive API console.</p>
+      </a>
+
+      <a href="/app/cli" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⌨️</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">CLI</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Scriptable terminal interface for space management, entries, search, and SQL operations.</p>
+      </a>
+
+      <a href="/app/frontend" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🖥️</div>
+        <h3 style="font-size: 1rem; font-weight: 700;">Frontend</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">SolidStart browser UI for visual knowledge management. E2E-tested page catalog with screenshots.</p>
+      </a>
+    </div>
+  </section>
+</BaseLayout>

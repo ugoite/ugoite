@@ -1,0 +1,38 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { getFeatureGroups } from "../../../../lib/spec-data";
+
+const groups = await getFeatureGroups();
+const toc = groups.map((g) => ({ id: g.kind, title: g.kind }));
+const totalEndpoints = groups.reduce((sum, g) => sum + g.apis.length, 0);
+---
+
+<BaseLayout title="API Catalog | Ugoite" description="REST API endpoints organized by feature domain." toc={toc}
+  related={[{ href: "/app/api-storage", label: "API & Storage Overview" }]}>
+
+  <section class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">API Catalog</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">API Catalog</h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+        {groups.length} domains, {totalEndpoints} endpoints. Select a domain to explore endpoints with an interactive curl console.
+      </p>
+    </div>
+  </section>
+
+  <div class="doc-grid">
+    {groups.map((group) => (
+      <a href={`/app/api-storage/apis/${group.kind}`} id={group.kind} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+          <span class="doc-pill">{group.kind}</span>
+          <span style="font-size: 0.75rem; color: var(--doc-muted);">{group.apis.length} endpoints</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.375rem;">
+          {group.apis.map((api) => (
+            <span class="doc-pill doc-pill-outline" style="font-size: 0.625rem;">{api.method} {api.backend.path.split("/").pop()}</span>
+          ))}
+        </div>
+      </a>
+    ))}
+  </div>
+</BaseLayout>

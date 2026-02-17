@@ -1,0 +1,87 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import {
+  getFeatureKindsLinkedToRequirements,
+  getPoliciesDetailed,
+  getSpecifications,
+} from "../../../lib/spec-data";
+
+export async function getStaticPaths() {
+  const policies = await getPoliciesDetailed();
+  return policies.map((item) => ({ params: { id: item.id.toLowerCase() } }));
+}
+
+const policies = await getPoliciesDetailed();
+const specs = await getSpecifications();
+const id = String(Astro.params.id ?? "").toUpperCase();
+const policy = policies.find((item) => item.id === id);
+
+if (!policy) {
+  throw new Error(`Unknown policy: ${id}`);
+}
+
+const linkedFeatures = await getFeatureKindsLinkedToRequirements(policy.linkedRequirements);
+
+const specPathById = new Map(specs.map((item) => [item.id, item.sourceFile]));
+
+const toc = [
+  { id: "summary", title: "Summary" },
+  { id: "requirements", title: "Related Requirements" },
+  { id: "features", title: "Related Features" },
+  { id: "specs", title: "Linked Specs" },
+];
+---
+
+<BaseLayout
+  title={`${policy.id} | Policy | Ugoite`}
+  description={policy.summary}
+  toc={toc}
+  related={[
+    { href: "/design/policies", label: "Policies Index" },
+    { href: "/design/relations", label: "Relation Map" },
+  ]}
+>
+  <section class="doc-card-hero">
+    <span class="doc-pill">{policy.id}</span>
+    <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem;">{policy.title}</h1>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem;">Derived from docs/spec/policies/policies.yaml</p>
+  </section>
+
+  <section id="summary" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Summary</h2>
+    <p style="color: var(--doc-muted); line-height: 1.7;">{policy.summary}</p>
+  </section>
+
+  <section id="requirements" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Requirements</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {policy.linkedRequirements.map((requirement) => (
+        <a href={`/design/requirements#${requirement.toLowerCase()}`} class="doc-pill doc-pill-outline">{requirement}</a>
+      ))}
+    </div>
+  </section>
+
+  <section id="features" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Features</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {linkedFeatures.map((feature) => (
+        <a href={`/app/api-storage/apis/${feature}`} class="doc-pill doc-pill-outline">{feature}</a>
+      ))}
+    </div>
+  </section>
+
+  <section id="specs" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Linked Specifications</h2>
+    <div style="display: grid; gap: 0.5rem;">
+      {policy.linkedSpecifications.map((specId) => {
+        const source = specPathById.get(specId);
+        return (
+          <a href={source ? `/docs/spec/${source.replace(/\.(md|ya?ml)$/i, "")}` : "/docs/spec/index"} class="doc-sidebar-link" style="display: block;">
+            <span class="doc-pill doc-pill-outline" style="margin-right: 0.5rem;">{specId}</span>
+            <span style="font-size: 0.75rem; color: var(--doc-muted);">{source ?? "spec index"}</span>
+          </a>
+        );
+      })}
+    </div>
+  </section>
+</BaseLayout>
