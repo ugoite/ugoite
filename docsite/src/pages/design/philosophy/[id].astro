@@ -1,0 +1,100 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import {
+  getFeatureKindsLinkedToRequirements,
+  getPhilosophies,
+  getPoliciesDetailed,
+} from "../../../lib/spec-data";
+
+export async function getStaticPaths() {
+  const philosophies = await getPhilosophies();
+  return philosophies.map((item) => ({ params: { id: item.id.toLowerCase() } }));
+}
+
+const philosophies = await getPhilosophies();
+const policies = await getPoliciesDetailed();
+const id = String(Astro.params.id ?? "").toUpperCase();
+const item = philosophies.find((entry) => entry.id === id);
+
+if (!item) {
+  throw new Error(`Unknown philosophy: ${id}`);
+}
+
+const tokenize = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 3);
+
+const philosophyTokens = new Set(tokenize(`${item.title} ${item.summary ?? ""}`));
+const relatedPolicies = [...policies]
+  .map((policy) => {
+    const sourceTokens = tokenize(`${policy.title} ${policy.summary ?? ""}`);
+    const score = sourceTokens.filter((token) => philosophyTokens.has(token)).length;
+    return { policy, score };
+  })
+  .sort((a, b) => b.score - a.score || a.policy.id.localeCompare(b.policy.id))
+  .slice(0, 6)
+  .map((entry) => entry.policy);
+
+const requirementIds = [...new Set(relatedPolicies.flatMap((policy) => policy.linkedRequirements))].sort((a, b) =>
+  a.localeCompare(b),
+);
+const featureKinds = await getFeatureKindsLinkedToRequirements(requirementIds);
+
+const toc = [
+  { id: "statement", title: "Statement" },
+  { id: "policies", title: "Related Policies" },
+  { id: "requirements", title: "Related Requirements" },
+  { id: "features", title: "Related Features" },
+];
+---
+
+<BaseLayout
+  title={`${item.id} | Philosophy | Ugoite`}
+  description={item.summary}
+  toc={toc}
+  related={[
+    { href: "/design/philosophy", label: "Philosophy Index" },
+    { href: "/design/relations", label: "Relation Map" },
+  ]}
+>
+  <section class="doc-card-hero">
+    <span class="doc-pill">{item.id}</span>
+    <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem;">{item.title}</h1>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem;">Derived from docs/spec/philosophy/foundation.yaml</p>
+  </section>
+
+  <section id="statement" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Statement</h2>
+    <p style="color: var(--doc-muted); line-height: 1.7;">{item.summary}</p>
+  </section>
+
+  <section id="policies" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Policies</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {relatedPolicies.map((policy) => (
+        <a href={`/design/policies/${policy.id.toLowerCase()}`} class="doc-pill doc-pill-outline">{policy.id}</a>
+      ))}
+    </div>
+  </section>
+
+  <section id="requirements" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Requirements</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {requirementIds.map((requirement) => (
+        <a href={`/design/requirements#${requirement.toLowerCase()}`} class="doc-pill doc-pill-outline">{requirement}</a>
+      ))}
+    </div>
+  </section>
+
+  <section id="features" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Features</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {featureKinds.map((feature) => (
+        <a href={`/app/api-storage/apis/${feature}`} class="doc-pill doc-pill-outline">{feature}</a>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

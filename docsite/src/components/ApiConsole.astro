@@ -1,0 +1,69 @@
+---
+export interface Props {
+  method: string;
+  endpoint: string;
+}
+
+const { method, endpoint } = Astro.props;
+const uid = `console-${Math.random().toString(36).slice(2, 10)}`;
+---
+
+<div class="doc-console" id={uid} data-method={method} data-endpoint={endpoint}>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <div class="flex-1">
+      <label class="block text-xs font-medium mb-1" style="color: var(--doc-muted);">Target domain</label>
+      <input type="url" value="http://localhost:8000" class="doc-console-input" data-domain-input />
+    </div>
+    <button type="button" class="doc-btn doc-btn-outline" style="white-space: nowrap;" data-copy-curl>Copy curl</button>
+  </div>
+  <div class="doc-terminal mt-3" style="margin: 0;">
+    <code data-curl-output>{`curl -X ${method.toUpperCase()} http://localhost:8000${endpoint}`}</code>
+  </div>
+  <p class="mt-2 text-xs" style="color: var(--doc-muted);">No data is sent to external servers. Commands run locally only.</p>
+</div>
+
+<script is:inline define:vars={{ uid }}>
+  {
+    const root = document.getElementById(uid);
+    if (root) {
+      const input = root.querySelector("[data-domain-input]");
+      const output = root.querySelector("[data-curl-output]");
+      const copyBtn = root.querySelector("[data-copy-curl]");
+      const method = root.getAttribute("data-method") ?? "GET";
+      const endpoint = root.getAttribute("data-endpoint") ?? "/";
+
+      const safeDomain = (rawValue) => {
+        const value = typeof rawValue === "string" ? rawValue.trim() : "";
+        if (!value) return "http://localhost:8000";
+
+        try {
+          const parsed = new URL(value);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return "http://localhost:8000";
+          }
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "http://localhost:8000";
+        }
+      };
+
+      const refresh = () => {
+        const rawValue = input instanceof HTMLInputElement ? input.value : "http://localhost:8000";
+        const domain = safeDomain(rawValue);
+        if (output) output.textContent = `curl -X ${method.toUpperCase()} ${domain}${endpoint}`;
+      };
+
+      input?.addEventListener("input", refresh);
+      refresh();
+
+      copyBtn?.addEventListener("click", async () => {
+        const text = output?.textContent ?? "";
+        await navigator.clipboard.writeText(text);
+        if (copyBtn instanceof HTMLElement) {
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => { copyBtn.textContent = "Copy curl"; }, 1200);
+        }
+      });
+    }
+  }
+</script>

@@ -1,0 +1,81 @@
+---
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { getUiPages } from "../../../../lib/spec-data";
+
+const pages = await getUiPages();
+const toc = pages.map((p) => ({ id: p.id, title: p.title }));
+const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const screenshotBase = `${baseUrl}screenshots/`;
+
+// Check which screenshots exist
+const screenshotDir = path.resolve(process.cwd(), "public/screenshots");
+let availableScreenshots: Set<string> = new Set();
+try {
+  const files = await fs.readdir(screenshotDir);
+  availableScreenshots = new Set(files.filter((f) => f.endsWith(".png")));
+} catch {
+  // Directory may not exist yet
+}
+---
+
+<BaseLayout title="UI Pages | Ugoite" description="Frontend page catalog from docs/spec/ui/pages." toc={toc}
+  related={[{ href: "/app/frontend", label: "Frontend Overview" }]}>
+
+  <section class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">docs/spec/ui/pages</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">UI Page Catalog</h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+        {pages.length} pages parsed from spec YAML. Screenshots are captured by <code>mise run screenshot</code>.
+      </p>
+    </div>
+  </section>
+
+  <div class="doc-grid">
+    {pages.map((page) => {
+      const screenshotFile = `${page.id}.png`;
+      const hasScreenshot = availableScreenshots.has(screenshotFile);
+      return (
+        <div id={page.id} class="doc-card doc-card-hover" style="overflow: hidden; padding: 0;">
+          {/* Screenshot area */}
+          <div style="background: var(--doc-bg-subtle); border-bottom: var(--doc-border-width) solid var(--doc-border); height: 10rem; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            {hasScreenshot ? (
+              <img
+                src={`${screenshotBase}${screenshotFile}`}
+                alt={`${page.title} screenshot`}
+                style="width: 100%; height: 100%; object-fit: cover; object-position: top;"
+                loading="lazy"
+              />
+            ) : (
+              <div style="text-align: center; color: var(--doc-muted);">
+                <div style="font-size: 2rem; margin-bottom: 0.25rem;">🖥️</div>
+                <div style="font-size: 0.6875rem;">Screenshot pending</div>
+              </div>
+            )}
+          </div>
+          {/* Info */}
+          <div style="padding: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+              <span class="doc-pill" style="font-size: 0.5625rem;">{page.id}</span>
+              <span class="doc-pill doc-pill-outline" style="font-size: 0.5625rem;">{page.implementation ?? "—"}</span>
+            </div>
+            <h2 style="font-size: 1rem; font-weight: 700; margin: 0;">{page.title}</h2>
+            <code style="font-size: 0.6875rem; color: var(--doc-muted); margin-top: 0.25rem; display: block;">{page.route}</code>
+            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+              <a href={`/app/frontend/pages/${page.id}`} class="doc-btn doc-btn-primary" style="font-size: 0.6875rem; padding: 0.25rem 0.625rem;">
+                Details
+              </a>
+              <a href={`/docs/spec/ui/pages/${page.fileName.replace(/\.yaml$/, "")}`} class="doc-btn doc-btn-outline" style="font-size: 0.6875rem; padding: 0.25rem 0.625rem;">
+                View Spec
+              </a>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</BaseLayout>

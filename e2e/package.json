@@ -3,10 +3,11 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"test": "playwright test",
+		"test": "playwright test --grep-invert @screenshot",
 		"test:smoke": "playwright test smoke.test.ts",
 		"test:entries": "playwright test entries.test.ts",
-		"test:forms": "playwright test forms.test.ts"
+		"test:forms": "playwright test forms.test.ts",
+		"test:screenshot": "playwright test ui-pages-screenshots.test.ts"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.58.2",

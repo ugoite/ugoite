@@ -1,56 +1,112 @@
+/* ─── Ugoite Docsite Theme System ───
+ *  Themes control SHAPE (radius, shadows, borders, visual density).
+ *  Colors are set independently via --doc-accent-* variables.
+ *  Default accent: deep blue (#1e3a5f / #2563eb).
+ */
+
+/* ─── Default color: Deep Blue ─── */
+:root {
+	--doc-accent: #1e3a8a;
+	--doc-accent-hover: #1e40af;
+	--doc-accent-soft: rgba(30, 58, 138, 0.08);
+	--doc-accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+	--doc-success: #10b981;
+	--doc-success-soft: rgba(16, 185, 129, 0.08);
+	--doc-warning: #f59e0b;
+	--doc-warning-soft: rgba(245, 158, 11, 0.08);
+}
+
+/* ─── Theme: Materialize (default) ─── rounded, elevated, material-depth ─── */
 :root:not([data-ui-theme]),
 :root[data-ui-theme="materialize"] {
-	--doc-radius-sm: var(--ui-radius-sm, 0.6rem);
-	--doc-radius-md: var(--ui-radius-md, 1.1rem);
-	--doc-radius-lg: var(--ui-radius-lg, 1.6rem);
-	--doc-shadow-sm: var(--ui-shadow-sm, 0 2px 8px rgb(16 24 40 / 0.12));
-	--doc-shadow-md: var(--ui-shadow-md, 0 10px 24px rgb(16 24 40 / 0.18));
-	--doc-border-width: var(--ui-border-width, 1px);
-	--doc-bg: #f7fafc;
+	--doc-radius-sm: 0.5rem;
+	--doc-radius-md: 0.75rem;
+	--doc-radius-lg: 1rem;
+	--doc-radius-xl: 1.5rem;
+	--doc-shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.05);
+	--doc-shadow-md: 0 4px 16px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06);
+	--doc-shadow-lg: 0 12px 40px rgb(0 0 0 / 0.14), 0 4px 12px rgb(0 0 0 / 0.06);
+	--doc-border-width: 1px;
+	--doc-card-hover-lift: -2px;
+
+	--doc-bg: #fafbfc;
+	--doc-bg-subtle: #f1f5f9;
 	--doc-fg: #0f172a;
-	--doc-muted: #475569;
-	--doc-border: #cbd5e1;
+	--doc-muted: #64748b;
+	--doc-border: #e2e8f0;
 	--doc-card: #ffffff;
-	--doc-accent: #6366f1;
-	--doc-accent-soft: #e0e7ff;
+
+	--doc-header-bg: rgba(255, 255, 255, 0.82);
+	--doc-header-blur: 14px;
+	--doc-hero-gradient: linear-gradient(135deg, rgba(30, 58, 138, 0.06) 0%, rgba(37, 99, 235, 0.04) 50%, rgba(59, 130, 246, 0.02) 100%);
 }
 
+/* ─── Theme: Classic ─── minimal, stark, no-frills ─── */
 :root[data-ui-theme="classic"] {
-	--doc-radius-sm: var(--ui-radius-sm, 0.1rem);
-	--doc-radius-md: var(--ui-radius-md, 0.2rem);
-	--doc-radius-lg: var(--ui-radius-lg, 0.3rem);
-	--doc-shadow-sm: var(--ui-shadow-sm, 0 1px 0 rgb(0 0 0 / 0.02));
-	--doc-shadow-md: var(--ui-shadow-md, 0 1px 2px rgb(0 0 0 / 0.04));
-	--doc-bg: #f7f7f7;
-	--doc-fg: #1f2937;
-	--doc-muted: #4b5563;
+	--doc-radius-sm: 0.125rem;
+	--doc-radius-md: 0.25rem;
+	--doc-radius-lg: 0.375rem;
+	--doc-radius-xl: 0.5rem;
+	--doc-shadow-sm: none;
+	--doc-shadow-md: 0 1px 3px rgb(0 0 0 / 0.05);
+	--doc-shadow-lg: 0 2px 8px rgb(0 0 0 / 0.08);
+	--doc-border-width: 1px;
+	--doc-card-hover-lift: 0px;
+
+	--doc-bg: #ffffff;
+	--doc-bg-subtle: #f8f9fa;
+	--doc-fg: #111827;
+	--doc-muted: #6b7280;
 	--doc-border: #d1d5db;
 	--doc-card: #ffffff;
-	--doc-accent: #2563eb;
-	--doc-accent-soft: #dbeafe;
+
+	--doc-header-bg: rgba(255, 255, 255, 0.95);
+	--doc-header-blur: 4px;
+	--doc-hero-gradient: linear-gradient(180deg, rgba(30, 58, 138, 0.03) 0%, transparent 100%);
 }
 
+/* ─── Theme: Pop ─── bold, exaggerated, playful ─── */
 :root[data-ui-theme="pop"] {
-	--doc-radius-sm: var(--ui-radius-sm, 1.3rem);
-	--doc-radius-md: var(--ui-radius-md, 1.9rem);
-	--doc-radius-lg: var(--ui-radius-lg, 2.8rem);
-	--doc-shadow-sm: var(--ui-shadow-sm, 0 8px 18px rgb(255 80 200 / 0.26));
-	--doc-shadow-md: var(--ui-shadow-md, 0 22px 44px rgb(255 80 200 / 0.32));
-	--doc-bg: #fff1f7;
-	--doc-fg: #3b0764;
-	--doc-muted: #6b21a8;
-	--doc-border: #f9a8d4;
+	--doc-radius-sm: 0.875rem;
+	--doc-radius-md: 1.25rem;
+	--doc-radius-lg: 1.75rem;
+	--doc-radius-xl: 2.5rem;
+	--doc-shadow-sm: 0 3px 10px rgb(0 0 0 / 0.1);
+	--doc-shadow-md: 0 8px 30px rgb(0 0 0 / 0.14);
+	--doc-shadow-lg: 0 20px 60px rgb(0 0 0 / 0.18);
+	--doc-border-width: 2px;
+	--doc-card-hover-lift: -4px;
+
+	--doc-bg: #f8faff;
+	--doc-bg-subtle: #eef2ff;
+	--doc-fg: #0c1a3d;
+	--doc-muted: #475569;
+	--doc-border: #c7d2fe;
 	--doc-card: #ffffff;
-	--doc-accent: #db2777;
-	--doc-accent-soft: #fce7f3;
+
+	--doc-header-bg: rgba(248, 250, 255, 0.88);
+	--doc-header-blur: 20px;
+	--doc-hero-gradient: linear-gradient(135deg, rgba(30, 58, 138, 0.08) 0%, rgba(99, 102, 241, 0.06) 40%, rgba(236, 72, 153, 0.04) 100%);
 }
 
+/* ─── Dark mode overlay ─── applies on top of any theme ─── */
 :root[data-color-mode="dark"] {
-	--doc-bg: #0f172a;
+	--doc-bg: #0b0f1a;
+	--doc-bg-subtle: #111827;
 	--doc-fg: #e2e8f0;
 	--doc-muted: #94a3b8;
-	--doc-border: #334155;
+	--doc-border: #1e293b;
 	--doc-card: #111827;
-	--doc-accent: #818cf8;
-	--doc-accent-soft: #312e81;
+	--doc-accent: #60a5fa;
+	--doc-accent-hover: #93c5fd;
+	--doc-accent-soft: rgba(96, 165, 250, 0.12);
+	--doc-accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #60a5fa 100%);
+	--doc-success: #34d399;
+	--doc-success-soft: rgba(52, 211, 153, 0.12);
+	--doc-warning: #fbbf24;
+	--doc-warning-soft: rgba(251, 191, 36, 0.12);
+
+	--doc-header-bg: rgba(11, 15, 26, 0.88);
+	--doc-header-blur: 12px;
+	--doc-hero-gradient: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(59, 130, 246, 0.05) 50%, rgba(30, 58, 138, 0.03) 100%);
 }

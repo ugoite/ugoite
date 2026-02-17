@@ -1,0 +1,51 @@
+---
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import TerminalCommand from "../../../../components/TerminalCommand.astro";
+import { getFeatureGroups } from "../../../../lib/spec-data";
+
+export async function getStaticPaths() {
+  const groups = await getFeatureGroups();
+  return groups.map((group) => ({ params: { kind: group.kind } }));
+}
+
+const groups = await getFeatureGroups();
+const kind = Astro.params.kind ?? "";
+const current = groups.find((g) => g.kind === kind);
+
+if (!current) {
+  throw new Error(`Unknown command group: ${kind}`);
+}
+
+const commandRows = current.apis.filter((api) => Boolean(api.ugoite_cli?.command));
+const toc = commandRows.map((api) => ({ id: api.id, title: api.id }));
+---
+
+<BaseLayout title={`${current.kind} Commands | Ugoite`} description={`CLI commands for the ${current.kind} domain.`} toc={toc}
+  related={[{ href: "/app/cli/commands", label: "Back to Catalog" }, { href: `/app/api-storage/apis/${current.kind}`, label: "API Docs" }]}>
+
+  <section class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">Domain: {current.kind}</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">{current.kind} Commands</h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+        {commandRows.length} CLI commands with terminal-style display and one-click copy.
+      </p>
+    </div>
+  </section>
+
+  {commandRows.length === 0 ? (
+    <div class="doc-card">
+      <p style="color: var(--doc-muted); font-size: 0.875rem;">No CLI commands registered for this domain yet.</p>
+    </div>
+  ) : (
+    commandRows.map((api) => (
+      <section id={api.id} class="doc-card">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <h2 style="font-size: 1rem; font-weight: 700;">{api.id}</h2>
+          <span class="doc-pill doc-pill-outline" style="font-size: 0.625rem;">{api.method} {api.backend.path}</span>
+        </div>
+        <TerminalCommand command={api.ugoite_cli?.command ?? ""} />
+      </section>
+    ))
+  )}
+</BaseLayout>
