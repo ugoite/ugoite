@@ -13,10 +13,10 @@ This roadmap outlines the major milestones planned for Ugoite development.
 |---|-----------|--------|-------------|
 | 1 | **MVP** | ✅ Completed | Minimum Viable Product - Core functionality |
 | 2 | **Full Configuration** | ✅ Completed | Codebase unification and architecture refinement |
-| 3 | **Markdown as Table** | 📋 Planned | Store entries as Form-backed Iceberg tables with SQL querying |
-| 4 | **User Controlled View** | 📋 Planned | User-defined UI views driven by queries |
-| 5 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
-| 6 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
+| 3 | **Markdown as Table** | ✅ Completed | Store entries as Form-backed Iceberg tables with SQL querying |
+| 4 | **User Management** | 📋 Planned | Authentication, authorization, and multi-user support |
+| 5 | **User Controlled View** | 📋 Planned | User-defined UI views driven by queries |
+| 6 | **AI-Enabled & AI-Used** | 📋 Planned | Complete MCP integration and AI workflow features |
 | 7 | **Native App** | 📋 Planned | Desktop application with Tauri |
 
 ---
@@ -55,9 +55,9 @@ Focus on codebase quality, consistency, and architecture refinement:
 
 ---
 
-## Milestone 3: Markdown as Table 📋
+## Milestone 3: Markdown as Table ✅
 
-**Tasks**: [tasks.md](tasks.md)
+**Archive**: [archive/milestone-3-markdown-as-table.md](archive/milestone-3-markdown-as-table.md)
 
 Focus on storing entries as Form-backed Iceberg tables while preserving the current UI behavior:
 
@@ -74,42 +74,9 @@ Focus on storing entries as Form-backed Iceberg tables while preserving the curr
 
 ---
 
-## Milestone 4: User Controlled View 📋
+## Milestone 4: User Management 📋
 
-Focus on enabling user-defined UI views driven by queries:
-
-### Key Objectives
-1. **Query + UI Composition** - Users attach UI components to queries
-2. **Low-Code Views** - Views are expressed as UI-only definitions
-3. **Shareable View Specs** - Views stored in the space and reusable
-
-### Expected Deliverables
-- View definition format and renderer
-- Query-driven UI panels
-- Saved, shareable view definitions
-
----
-
-## Milestone 5: AI-Enabled & AI-Used 📋
-
-Focus on complete AI integration and workflow automation:
-
-### Key Objectives
-1. **Full MCP Server Implementation** - Complete resource and tool exposure
-2. **AI Workflow Automation** - Scheduled tasks, batch processing via AI
-3. **Vector Search Integration** - FAISS index with embedding support
-4. **Voice-to-Schema** - Audio upload with AI-powered transcription and structuring
-5. **Computational Entries** - Embedded JavaScript execution in entries
-
-### Expected Deliverables
-- Production-ready MCP server
-- Vector search with configurable embedding providers
-- Voice memo asset with transcription workflow
-- Interactive code block execution in editor
-
----
-
-## Milestone 6: User Management 📋
+**Tasks**: [tasks.md](tasks.md)
 
 Focus on multi-user support and security:
 
@@ -125,6 +92,41 @@ Focus on multi-user support and security:
 - Role-based access control (RBAC)
 - Space sharing and invitation system
 - Activity audit trail
+
+---
+
+## Milestone 5: User Controlled View 📋
+
+Focus on enabling user-defined UI views driven by queries:
+
+### Key Objectives
+1. **Query + UI Composition** - Users attach UI components to queries
+2. **Low-Code Views** - Views are expressed as UI-only definitions
+3. **Shareable View Specs** - Views stored in the space and reusable
+
+### Expected Deliverables
+- View definition format and renderer
+- Query-driven UI panels
+- Saved, shareable view definitions
+
+---
+
+## Milestone 6: AI-Enabled & AI-Used 📋
+
+Focus on complete AI integration and workflow automation:
+
+### Key Objectives
+1. **Full MCP Server Implementation** - Complete resource and tool exposure
+2. **AI Workflow Automation** - Scheduled tasks, batch processing via AI
+3. **Vector Search Integration** - FAISS index with embedding support
+4. **Voice-to-Schema** - Audio upload with AI-powered transcription and structuring
+5. **Computational Entries** - Embedded JavaScript execution in entries
+
+### Expected Deliverables
+- Production-ready MCP server
+- Vector search with configurable embedding providers
+- Voice memo asset with transcription workflow
+- Interactive code block execution in editor
 
 ---
 
@@ -151,9 +153,9 @@ Focus on desktop application using Tauri:
 
 ```
 2026 Q2  |████████████████| Milestone 3: Markdown as Table
-2026 Q3  |████████████████| Milestone 4: User Controlled View
-2026 Q4  |████████████████| Milestone 5: AI-Enabled & AI-Used
-2027 Q1  |████████████████| Milestone 6: User Management
+2026 Q3  |████████████████| Milestone 4: User Management
+2026 Q4  |████████████████| Milestone 5: User Controlled View
+2027 Q1  |████████████████| Milestone 6: AI-Enabled & AI-Used
 2027 Q2  |████████████████| Milestone 7: Native App
 ```
 
