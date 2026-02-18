@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../lib/base-path";
 
 const toc = [
   { id: "overview", title: "Overview" },
@@ -57,19 +58,19 @@ const treeData = [
   <section id="specs" class="doc-card">
     <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Source Specifications</h2>
     <div class="doc-grid-3">
-      <a href="/docs/spec/data-model/overview" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+      <a href={withBasePath("/docs/spec/data-model/overview")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
         <h3 style="font-size: 0.875rem; font-weight: 600;">overview.md</h3>
         <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">High-level data model description</p>
       </a>
-      <a href="/docs/spec/data-model/directory-structure" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+      <a href={withBasePath("/docs/spec/data-model/directory-structure")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
         <h3 style="font-size: 0.875rem; font-weight: 600;">directory-structure.md</h3>
         <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">Detailed directory layout</p>
       </a>
-      <a href="/docs/spec/data-model/file-schemas" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+      <a href={withBasePath("/docs/spec/data-model/file-schemas")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
         <h3 style="font-size: 0.875rem; font-weight: 600;">file-schemas.yaml</h3>
         <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">JSON Schema definitions</p>
       </a>
-      <a href="/docs/spec/data-model/sql-sessions" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
+      <a href={withBasePath("/docs/spec/data-model/sql-sessions")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; padding: 1rem;">
         <h3 style="font-size: 0.875rem; font-weight: 600;">sql-sessions.md</h3>
         <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.25rem;">SQL session lifecycle</p>
       </a>

@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
 
 const toc = [
   { id: "overview", title: "Overview" },
@@ -80,28 +81,28 @@ const toc = [
   <!-- Explore cards -->
   <section id="explore">
     <div class="doc-grid">
-      <a href="/design/philosophy" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/design/philosophy")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">💡</div>
         <h3 style="font-size: 1rem; font-weight: 700;">Philosophy</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Overarching design beliefs that shape every decision in the project.</p>
         <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/philosophy</span>
       </a>
 
-      <a href="/design/policies" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/design/policies")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📋</div>
         <h3 style="font-size: 1rem; font-weight: 700;">Policies</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Concrete guidelines that translate philosophy into engineering practice.</p>
         <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/policies</span>
       </a>
 
-      <a href="/design/requirements" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/design/requirements")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">✅</div>
         <h3 style="font-size: 1rem; font-weight: 700;">Requirements</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Grouped, testable requirements with priority and status tracking.</p>
         <span class="doc-pill" style="margin-top: 0.75rem;">docs/spec/requirements</span>
       </a>
 
-      <a href="/design/features" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/design/features")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚙️</div>
         <h3 style="font-size: 1rem; font-weight: 700;">Features</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">API, CLI, and core capabilities organized by functional domain.</p>

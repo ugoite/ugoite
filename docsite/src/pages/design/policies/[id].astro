@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../lib/base-path";
 import {
   getFeatureKindsLinkedToRequirements,
   getPoliciesDetailed,
@@ -56,7 +57,7 @@ const toc = [
     <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Requirements</h2>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
       {policy.linkedRequirements.map((requirement) => (
-        <a href={`/design/requirements#${requirement.toLowerCase()}`} class="doc-pill doc-pill-outline">{requirement}</a>
+        <a href={withBasePath(`/design/requirements#${requirement.toLowerCase()}`)} class="doc-pill doc-pill-outline">{requirement}</a>
       ))}
     </div>
   </section>
@@ -65,7 +66,7 @@ const toc = [
     <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Features</h2>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
       {linkedFeatures.map((feature) => (
-        <a href={`/app/api-storage/apis/${feature}`} class="doc-pill doc-pill-outline">{feature}</a>
+        <a href={withBasePath(`/app/api-storage/apis/${feature}`)} class="doc-pill doc-pill-outline">{feature}</a>
       ))}
     </div>
   </section>
@@ -76,7 +77,7 @@ const toc = [
       {policy.linkedSpecifications.map((specId) => {
         const source = specPathById.get(specId);
         return (
-          <a href={source ? `/docs/spec/${source.replace(/\.(md|ya?ml)$/i, "")}` : "/docs/spec/index"} class="doc-sidebar-link" style="display: block;">
+          <a href={source ? withBasePath(`/docs/spec/${source.replace(/\.(md|ya?ml)$/i, "")}`) : withBasePath("/docs/spec/index")} class="doc-sidebar-link" style="display: block;">
             <span class="doc-pill doc-pill-outline" style="margin-right: 0.5rem;">{specId}</span>
             <span style="font-size: 0.75rem; color: var(--doc-muted);">{source ?? "spec index"}</span>
           </a>
