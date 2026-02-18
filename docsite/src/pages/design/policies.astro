@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
 import { getPolicies } from "../../lib/spec-data";
 
 const policies = await getPolicies();
@@ -21,7 +22,7 @@ const toc = policies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
 
   <div class="doc-grid">
     {policies.map((p) => (
-      <a href={`/design/policies/${p.id.toLowerCase()}`} id={p.id.toLowerCase()} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath(`/design/policies/${p.id.toLowerCase()}`)} id={p.id.toLowerCase()} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <span class="doc-pill" style="margin-bottom: 0.75rem;">{p.id}</span>
         <h2 style="font-size: 1rem; font-weight: 700;">{p.title}</h2>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">{p.summary}</p>
