@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
 import {
   getFeatureGroups,
   getPhilosophies,
@@ -62,7 +63,7 @@ const toc = [
         <div class="doc-relation-layer-label">Philosophy</div>
         <div class="doc-relation-nodes">
           {philosophies.map((p) => (
-            <a href={`/design/philosophy/${p.id.toLowerCase()}`} class="doc-relation-node doc-relation-node--phil" title={p.title}>
+            <a href={withBasePath(`/design/philosophy/${p.id.toLowerCase()}`)} class="doc-relation-node doc-relation-node--phil" title={p.title}>
               <span class="doc-relation-node-id">{p.id}</span>
               <span class="doc-relation-node-title">{p.title.length > 30 ? p.title.substring(0, 28) + "…" : p.title}</span>
             </a>
@@ -83,7 +84,7 @@ const toc = [
         <div class="doc-relation-nodes doc-relation-nodes--wrap">
           {policies.map((p) => (
             <a
-              href={`/design/policies/${p.id.toLowerCase()}`}
+              href={withBasePath(`/design/policies/${p.id.toLowerCase()}`)}
               class="doc-relation-node doc-relation-node--pol"
               title={`${p.title} → ${p.linkedRequirements.join(", ")}`}
               aria-label={`${p.title} linked requirements: ${p.linkedRequirements.join(", ")}`}
@@ -111,7 +112,7 @@ const toc = [
             const linkedPolicies = policies.filter((p) => p.linkedRequirements.includes(g.setId));
             return (
               <a
-                href={`/design/requirements#${g.setId.toLowerCase()}`}
+                href={withBasePath(`/design/requirements#${g.setId.toLowerCase()}`)}
                 class="doc-relation-node doc-relation-node--req"
                 title={`${g.scope} ← ${linkedPolicies.map((p) => p.id).join(", ")}`}
                 aria-label={`${g.setId} linked features: ${(reqToFeatureMap.get(g.setId) ?? []).join(", ") || "none"}`}
@@ -137,7 +138,7 @@ const toc = [
         <div class="doc-relation-layer-label">Features</div>
         <div class="doc-relation-nodes">
           {featureGroups.map((g) => (
-            <a href={`/design/features#${g.kind.toLowerCase()}`} class="doc-relation-node doc-relation-node--feat" title={`${g.apis.length} operations`}>
+            <a href={withBasePath(`/design/features#${g.kind.toLowerCase()}`)} class="doc-relation-node doc-relation-node--feat" title={`${g.apis.length} operations`}>
               <span class="doc-relation-node-id">{g.kind}</span>
               <span class="doc-relation-node-title">{g.apis.length} ops</span>
             </a>
@@ -160,7 +161,7 @@ const toc = [
             <span class="doc-pill">{pol.id}</span>
           </div>
           <h3 style="font-size: 0.9375rem; font-weight: 700; margin-bottom: 0.5rem;">
-            <a href={`/design/policies/${pol.id.toLowerCase()}`} style="color: inherit;">{pol.title}</a>
+            <a href={withBasePath(`/design/policies/${pol.id.toLowerCase()}`)} style="color: inherit;">{pol.title}</a>
           </h3>
           <p style="font-size: 0.75rem; color: var(--doc-muted); line-height: 1.6; margin-bottom: 0.75rem;">{pol.summary}</p>
 
@@ -169,7 +170,7 @@ const toc = [
               <div style="font-size: 0.6875rem; font-weight: 600; color: var(--doc-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Requirements</div>
               <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
                 {pol.linkedRequirements.map((req) => (
-                  <a href={`/design/requirements#${req.toLowerCase()}`} class="doc-pill doc-pill-outline" style="font-size: 0.625rem; text-decoration: none;">{req}</a>
+                  <a href={withBasePath(`/design/requirements#${req.toLowerCase()}`)} class="doc-pill doc-pill-outline" style="font-size: 0.625rem; text-decoration: none;">{req}</a>
                 ))}
               </div>
             </div>

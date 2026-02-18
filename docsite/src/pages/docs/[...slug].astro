@@ -4,6 +4,7 @@ import path from "node:path";
 import { Marked } from "marked";
 import YAML from "yaml";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
 import { titleFromSegment } from "../../lib/navigation";
 
 type TocItem = {
@@ -152,7 +153,7 @@ const html = isYaml
 const parts = slugPath.split("/").filter(Boolean);
 const breadcrumbs = parts.map((part, index) => ({
   label: titleFromSegment(part),
-  href: `/docs/${parts.slice(0, index + 1).join("/")}`,
+  href: withBasePath(`/docs/${parts.slice(0, index + 1).join("/")}`),
 }));
 
 const related = await getRelatedLinks(relativePath);
@@ -359,10 +360,10 @@ async function getRelatedLinks(sourceFile: string): Promise<Array<{ href: string
 
     const links: Array<{ href: string; label: string }> = [];
     for (const policy of hit.linked_policies ?? []) {
-      links.push({ href: `/design/policies/${policy.toLowerCase()}`, label: `Policy ${policy}` });
+      links.push({ href: withBasePath(`/design/policies/${policy.toLowerCase()}`), label: `Policy ${policy}` });
     }
     for (const requirement of hit.linked_requirements ?? []) {
-      links.push({ href: `/design/requirements#${requirement.toLowerCase()}`, label: `Requirement ${requirement}` });
+      links.push({ href: withBasePath(`/design/requirements#${requirement.toLowerCase()}`), label: `Requirement ${requirement}` });
     }
     return links;
   } catch {
@@ -374,9 +375,9 @@ async function getRelatedLinks(sourceFile: string): Promise<Array<{ href: string
 <BaseLayout title={`Docs: ${relativePath}`} description={`Repository source: /docs/${relativePath}`} toc={toc} related={related}>
   <div class="doc-card" style="padding: 0.75rem 1rem; margin-bottom: 1rem;">
     <nav style="font-size: 0.75rem; color: var(--doc-muted);">
-      <a href="/">home</a>
+      <a href={withBasePath("/")}>home</a>
       <span> / </span>
-      <a href="/docs/spec/index">docs</a>
+      <a href={withBasePath("/docs/spec/index")}>docs</a>
       {breadcrumbs.map((crumb) => (
         <>
           <span> / </span>

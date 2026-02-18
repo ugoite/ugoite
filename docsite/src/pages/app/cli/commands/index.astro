@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../../lib/base-path";
 import { getFeatureGroups } from "../../../../lib/spec-data";
 
 const groups = await getFeatureGroups();
@@ -24,7 +25,7 @@ const totalCommands = groups.reduce((sum, g) => sum + g.apis.filter((a) => Boole
     {groups.map((group) => {
       const cmdCount = group.apis.filter((a) => Boolean(a.ugoite_cli?.command)).length;
       return (
-        <a href={`/app/cli/commands/${group.kind}`} id={group.kind} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+        <a href={withBasePath(`/app/cli/commands/${group.kind}`)} id={group.kind} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
             <span class="doc-pill">{group.kind}</span>
             <span style="font-size: 0.75rem; color: var(--doc-muted);">{cmdCount} commands</span>

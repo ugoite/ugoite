@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
 import { getFeatureGroups } from "../../lib/spec-data";
 
 const groups = await getFeatureGroups();
@@ -28,8 +29,8 @@ const totalApis = groups.reduce((sum, g) => sum + g.apis.length, 0);
           <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.25rem;">{group.apis.length} operations</p>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-          <a href={`/app/api-storage/apis/${group.kind}`} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">API Docs</a>
-          <a href={`/app/cli/commands/${group.kind}`} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">CLI Docs</a>
+          <a href={withBasePath(`/app/api-storage/apis/${group.kind}`)} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">API Docs</a>
+          <a href={withBasePath(`/app/cli/commands/${group.kind}`)} class="doc-btn doc-btn-outline" style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">CLI Docs</a>
         </div>
       </div>
       <div class="doc-table-wrap">
