@@ -1,0 +1,439 @@
+# Milestone 3: Markdown as Table
+
+**Status**: ✅ Completed  
+**Goal**: Store entries as Iceberg-backed tables while preserving the current UI behavior
+
+This milestone replaces the current Markdown-based storage with an Apache Iceberg table model (official Rust crate + OpenDAL), while keeping user experience unchanged. Entries become row-based records defined by Forms, and queryable via a domain-specific SQL.
+
+---
+
+## Constraints (MUST)
+
+- **No migration path required**: We do not provide any conversion from the current storage format.
+- **Breaking change is acceptable**: Existing users and data are out of scope.
+- **Form-first**: Entries can only be created for a defined Form. The current “formless entry” flow is removed.
+- **Phase 1 UI lock**: Initial implementation must keep the UI behavior *exactly* as it is today. Only `ugoite-core` storage changes.
+
+---
+
+## Phase 0: Spec Alignment & Form-First Contract
+
+**Objective**: Align specs and tests with the Iceberg-backed, Form-first model before storage changes.
+
+### Key Tasks
+- [x] Update data-model specs to describe Iceberg-backed Form tables and reconstruction rules.
+- [x] Document the breaking-change/no-migration decision for Milestone 3.
+- [x] Align test coverage with Form-first enforcement requirements.
+
+### Acceptance Criteria
+- [x] Specs reflect Form-first storage and Iceberg-backed entries.
+- [x] Tests reference Form-first requirements.
+
+---
+
+## Phase 1: Iceberg storage for form-defined fields only
+
+**Objective**: Replace entry storage with Apache Iceberg in `ugoite-core`, limited to fields defined by the Form schema. H2 sections not in the Form are rejected.
+
+### Key Tasks
+- [x] Define Iceberg table layout and schema per Form (entries + revisions tables).
+- [x] Define `forms/` as the Iceberg-managed root and document ownership rules.
+- [x] Standardize Form name → Iceberg table name mapping (no form_id directories).
+- [x] Update `ugoite-core` write path to persist entry records via Iceberg (official Rust crate + OpenDAL).
+- [x] Update `ugoite-core` read path to reconstruct Markdown content from Iceberg fields.
+- [x] Enforce “Form-defined H2 only” validation in `ugoite-core`.
+- [x] Keep backend and frontend API contracts unchanged.
+- [x] Add/update tests in `ugoite-core` to validate Iceberg round-trip.
+
+### Legacy → TOBE (directory-structure) Delta
+- **Remove per-entry folders**: `entries/{entry_id}/` with `meta.json`, `content.json`, and `history/` are no longer used.
+- **Iceberg-managed forms root**: `forms/` is the Iceberg-managed root; Iceberg owns all subfolders and table metadata.
+- **Table naming**: Form name is the Iceberg table name; no form_id directories are created.
+- **Form definitions in Iceberg**: Form fields and schemas live in Iceberg; no per-form JSON files.
+- **Fixed template**: Default entry template is global (`# {form_name}` with H2 columns), not per form.
+- **Reconstruction source**: Markdown is reconstructed from Iceberg fields (no free-form H2 storage in Phase 1).
+- **No index JSON**: `index.json` and related index files are removed from TOBE; indexes are derived from Iceberg as needed.
+
+### Acceptance Criteria
+- [x] Entries are stored in Iceberg tables per Form.
+- [x] Entries can be read back with identical Markdown content (current UI behavior preserved).
+- [x] Non-Form H2 sections are rejected by `ugoite-core`.
+
+---
+
+## Phase 2: Optional extra attributes in Form schema
+
+**Objective**: Allow Forms to declare whether extra attributes (non-registered H2 sections) are allowed, and how they are stored.
+
+### Key Tasks
+- [x] Extend Form definition to include `allow_extra_attributes` with options (e.g., `deny`, `allow_json`, `allow_columns`).
+- [x] Update validation to enforce the new Form policy.
+- [x] Implement storage for extra attributes (JSON column or dynamic columns, as specified).
+- [x] Update documentation in `docs/spec/data-model/` for the new Form rules.
+- [x] Add tests that cover both “deny” and “allow” modes.
+
+### Acceptance Criteria
+- [x] Form schema can explicitly allow or deny extra attributes.
+- [x] Extra attributes are stored deterministically.
+- [x] Validation behavior matches the Form policy.
+
+---
+
+## Phase 3: Ugoite SQL (Domain-Specific SQL)
+
+**Objective**: Define and implement an SQL dialect optimized for Ugoite forms and Iceberg storage.
+
+### Key Tasks
+- [x] Define Ugoite SQL syntax and capabilities (filter, sort, select, aggregate).
+- [x] Map SQL queries to Iceberg scans in `ugoite-core`.
+- [x] Add query validation and error reporting.
+- [x] Integrate with existing REST/MCP query endpoints without API changes.
+- [x] Add tests for SQL parsing and execution.
+
+### Acceptance Criteria
+- [x] Users can query Form data via Ugoite SQL.
+- [x] SQL execution returns consistent, deterministic results.
+- [x] Query errors are clear and actionable.
+
+---
+
+## Phase 4: Metadata Columns, Rich Types, Link URIs, SQL Joins
+
+**Objective**: Expand the Iceberg-backed data model with reserved metadata columns,
+rich content column types with Markdown-friendly parsing, canonical Ugoite link URIs,
+and broadened Ugoite SQL join capabilities.
+
+### Key Tasks
+- [x] Define metadata vs content column ownership rules and reserved names.
+- [x] Prevent user-defined form fields from using metadata column names.
+- [x] Make metadata column list extensible for future system-owned fields.
+- [x] Expand content column types to additional Iceberg primitives (time, timestamp_tz, timestamp_ns, uuid, binary, etc.).
+- [x] Update Markdown parsing to produce typed values (including bullet-list parsing for list fields).
+- [x] Introduce Ugoite URI scheme for in-entry links (entry, asset, extensible kinds) and normalize links on write/read.
+- [x] Extend Ugoite SQL to support richer JOIN clauses (RIGHT/FULL/CROSS, USING/NATURAL).
+- [x] Update shared SQL lint/completion rules to reflect JOIN support and base tables.
+- [x] Add tests for metadata column validation, rich type parsing, link URI normalization, and JOIN execution.
+- [x] Update frontend UX to enforce form-first entry creation and surface form validation warnings.
+- [x] Add frontend guardrails for reserved metadata column names and list-friendly field types.
+
+### Acceptance Criteria
+- [x] Metadata columns are reserved and cannot be used as user-defined Form fields.
+- [x] Content columns support expanded Iceberg types with deterministic Markdown parsing.
+- [x] Ugoite link URIs are normalized and persisted consistently.
+- [x] Ugoite SQL supports JOIN queries across entries, links, and assets.
+- [x] Frontend entry creation is form-first, and validation feedback is visible in the editor UX.
+- [x] Form creation/editing UI blocks reserved metadata column names.
+
+---
+
+## Phase 5: SQL Form (Metadata Form) + CRUD
+
+**Objective**: Define and implement a system-owned SQL Form to persist SQL queries
+and variables with full CRUD support, while preventing user-defined Forms from
+using the reserved SQL form name.
+
+### Key Tasks
+- [x] Define the SQL Form schema as a metadata Form with reserved name protection.
+- [x] Add SQL variable object-list type and validation rules in the data model spec.
+- [x] Extend REST API and ugoite-core with SQL CRUD operations.
+- [x] Add tests covering SQL CRUD and reserved SQL Form name rejection.
+
+### Acceptance Criteria
+- [x] SQL Form is system-owned; users cannot create a Form with the SQL name.
+- [x] SQL records store SQL text and a list of typed variables (type, name, description).
+- [x] SQL CRUD operations are available via API and core bindings.
+- [x] Tests confirm reserved form name enforcement and SQL CRUD behavior.
+
+---
+
+## Phase 5.5: SQL Session Redesign
+
+**Objective**: Redefine SQL session handling so it remains stateless beyond
+OpenDAL storage, without relying on RDBs or external job queues.
+
+### Key Tasks
+- [x] Sessions store **metadata only** in `meta.json` (no result rows).
+- [x] `create_sql` creates corresponding **materialized view metadata** under
+	`spaces/{space_id}/materialized_views/`.
+- [x] SQL updates/deletes synchronize materialized view metadata refresh/removal.
+- [x] Session metadata stores snapshot ID and paging hints for fast re-queries.
+- [x] Sessions are short-lived (target: ~10 minutes) and shareable across API servers.
+- [x] Update `docs/spec` data model, API, and SQL docs to reflect the redesign.
+
+### Acceptance Criteria
+- [x] SQL sessions store metadata only and are re-executable.
+- [x] `materialized_views/` lifecycle is synchronized with saved SQL.
+- [x] Session metadata includes snapshot and paging details.
+- [x] Specs in `docs/spec` are updated consistently.
+
+---
+
+## Phase 6: UI Redesign Spec + Validation
+
+**Objective**: Define page-level UI specs for the new simplified space UI,
+and add automated validation that frontend tests load and verify the spec.
+
+### Key Tasks
+- [x] Define page-level YAML specs under `docs/spec/ui/pages/`.
+- [x] Add an implementation status flag to each page spec (default: unimplemented).
+- [x] Document the UI spec entry point in the spec index.
+- [x] Add frontend tests that load all UI spec YAML files and validate links and component types.
+
+### Acceptance Criteria
+- [x] Each space UI page is defined in a YAML spec.
+- [x] Specs include shared space UI chrome (top tabs + settings button).
+- [x] Frontend tests validate page links and component type registry.
+
+---
+
+## Phase 7: UI Redesign Implementation (Planned)
+
+**Objective**: Implement the new UI described in the page-level YAML specs.
+
+### Key Tasks
+- [x] Build the new space-wide layout with floating top tabs and settings button.
+- [x] Implement the dashboard view with prominent space name.
+- [x] Implement query list, query create, and query variable input flows.
+- [x] Implement object (entries) view with grid list and entry detail navigation.
+- [x] Implement form grid view with search/sort/filter, copy-paste grid, and CSV export.
+- [x] Wire bottom view tabs between object and grid.
+- [x] Connect UI components to existing APIs without changing backend contracts.
+
+### Acceptance Criteria
+- [x] UI matches the new simplified layout and navigation model.
+- [x] All workflows are functional with existing backend APIs.
+
+---
+
+## Phase 7.5: UI Polish (Added)
+
+**Objective**: Keep the existing UI structure while adding mobile responsiveness and unified theming, with a settings icon that lets users switch UI themes.
+
+### Key Tasks
+- [x] Mobile responsiveness (top bar/nav/cards/forms)
+- [x] Define theme tokens using the recommended Tailwind v4 `@theme` pattern
+- [x] Unify colors/shadows/radii/sizing via theme tokens (no `@apply`)
+- [x] Add a settings icon in the top bar to switch UI themes
+- [x] UI themes: `materialize` / `classic` / `pop`
+- [x] Independent `light` / `dark` tone switching
+- [x] Persist selection state (localStorage)
+
+### Acceptance Criteria
+- [x] All screens are usable on mobile without layout breakage
+- [x] Theme switching updates the entire UI immediately
+- [x] Theme consistency is preserved without `@apply`
+- [x] Theme selection is available from the settings icon
+
+---
+
+## Phase 7.6: Sample Data Space Generator
+
+**Objective**: Provide a dynamic sample-data generator that creates a new space with 3–6 forms and roughly 5,000 entries, using a neutral, meaningful story that demonstrates the app without touching privacy, hierarchy, or ideology.
+
+### Key Tasks
+- [x] Define a neutral, operational scenario (non-personal data) and form schema set (3–6 forms)
+- [x] Implement dynamic sample data generation in `ugoite-core` (seeded randomness, configurable entry count)
+- [x] Add REST API endpoint to create a sample-data space with a few parameters
+- [x] Add CLI command to generate a sample-data space
+- [x] Add UI flow to generate a sample-data space (name, scenario, size, seed)
+- [x] Add tests and requirement mappings (core + API + CLI + frontend)
+
+### Acceptance Criteria
+- [x] A sample-data space can be generated from UI/CLI/API with a few inputs
+- [x] The generated space contains 3–6 forms and approximately 5,000 entries by default
+- [x] The data is dynamically generated (seeded, not fixed)
+- [x] Scenario content avoids privacy, hierarchy, and ideology
+
+---
+
+## Phase 7.7: Sample Data Generator Hardening + Async + Scenarios
+
+**Objective**: Eliminate UI/UX errors in sample-data generation, make generation non-blocking at higher volumes, and expand neutral scenario options without compliance risk.
+
+### Key Tasks
+- [x] Tighten requirements and validation so UI never renders a placeholder like [object Object]
+- [x] Make sample-data generation asynchronous with progress/state reporting (no UI freeze)
+- [x] Add at least five additional neutral, non-personal, non-ideological sample scenarios
+- [x] Ensure scenario catalog is deterministic and test-covered
+- [x] Add tests and requirement mappings for all new behaviors
+
+### Acceptance Criteria
+- [x] Sample-data generation UI never displays [object Object]-style placeholders
+- [x] Generation completes without blocking the UI at large data sizes
+- [x] At least five new compliant scenarios are available and selectable
+- [x] Tests reference requirements and validate async state handling
+
+---
+
+## Phase 7.8: Frontend Proxy Robustness for /spaces
+
+**Objective**: Eliminate intermittent /spaces proxy connection failures during local dev.
+
+### Key Tasks
+- [x] Identify root cause of ECONNREFUSED for /spaces during dev
+- [x] Implement a fix or a safe fallback if backend is not yet ready
+- [x] Add minimal test/diagnostic coverage where appropriate
+
+### Acceptance Criteria
+- [x] /spaces requests no longer fail with ECONNREFUSED during normal dev startup
+- [x] Error handling is explicit and user-facing if backend is unavailable
+
+---
+
+## Phase 7.9: About Page from docs
+
+**Objective**: Replace the placeholder About page with real content sourced from docs.
+
+### Key Tasks
+- [x] Define the canonical doc source(s) under docs/ for About content
+- [x] Implement About page rendering from docs content
+- [x] Ensure updates to docs are reflected in About without code changes
+- [x] Add tests for About content loading and rendering
+
+### Acceptance Criteria
+- [x] About page shows real content derived from docs
+- [x] Content stays in sync with docs updates
+- [x] Tests cover loading path and expected sections
+
+---
+
+## Phase 7.10: Home Copy Refresh
+
+**Objective**: Rewrite the home screen messaging to align with current docs and positioning.
+
+### Key Tasks
+- [x] Review docs/spec and docs/guide for updated positioning
+- [x] Replace home copy with new, consistent messaging
+- [x] Add tests to lock in key messaging elements
+
+### Acceptance Criteria
+- [x] Home copy reflects current documentation and product framing
+- [x] Key messages are test-covered
+
+---
+
+## Phase 7.11: Query Results Progress Behavior
+
+**Objective**: Fix persistent progress indicators in Query Results.
+
+### Key Tasks
+- [x] Identify progress state lifecycle in Query Results view
+- [x] Ensure progress ends when results are ready or on error
+- [x] Add tests for progress completion behavior
+
+### Acceptance Criteria
+- [x] Progress bar stops when results are loaded or error is shown
+- [x] Tests cover normal and error completion
+
+---
+
+## Phase 7.12: Replace Entry-Link Endpoint with Row-Reference Column Type
+
+**Objective**: Remove unnecessary cross-entrypoint link creation and replace with a typed row-reference field in Forms.
+
+### Key Tasks
+- [x] Remove API endpoint(s) and implementation for cross-entrypoint link creation
+- [x] Add Form column type for referencing a row in a specified table (table fixed in column definition)
+- [x] Ensure metadata includes a row-id column if needed for references
+- [x] Update validation and UI to support selecting the row-reference column type
+- [x] Add tests and requirement mappings for reference behavior
+
+### Acceptance Criteria
+- [x] Cross-entrypoint link creation endpoint is removed end-to-end
+- [x] Forms can define a row-reference column type with target table
+- [x] Metadata row-id is available and used for references
+- [x] Tests validate reference creation and validation rules
+
+---
+
+## Phase 7.13: Default Data Dir for dev
+
+**Objective**: When running dev without user-specified data dir, create a temp data directory under /tmp and use it for OpenDAL.
+
+### Key Tasks
+- [x] Detect missing user data-dir configuration in dev
+- [x] Create a unique /tmp subdirectory and use it as OpenDAL data dir
+- [x] Ensure behavior is consistent across backend/frontend dev flows
+- [x] Add tests and update docs as needed
+
+### Acceptance Criteria
+- [x] Running dev defaults to a temp /tmp data dir when not specified
+- [x] OpenDAL uses the temp dir without errors
+- [x] Tests cover defaulting logic
+
+---
+
+## Phase 8: Terminology Rebrand (Space/Form/Entry/Asset)
+
+**Objective**: Rename the core terminology across specs, docs, code, file paths, and data model
+without migration, removing the old labels entirely before production.
+
+### Rebrand Plan
+- **Scope**: Entire repository (docs/spec, API, frontend, backend, ugoite-core, ugoite-cli, tests, e2e, scripts, data-model paths)
+- **Owner**: @tohboeh5 / Agent
+- **Verification**:
+	- `mise run test` passes
+	- `mise run e2e` passes
+	- No legacy terms remain after string search
+
+### Work Plan (Phase 8 execution)
+- [x] Update spec terminology cross-check (docs/spec index, data-model, API, UI specs)
+- [x] Rename API routes/endpoints + payload fields (backend + OpenAPI + MCP docs)
+- [x] Rename core storage paths and Iceberg/OpenDAL references
+- [x] Rename frontend UI routes, components, copy, and types
+- [x] Rename CLI commands and help text
+- [x] Rename tests, fixtures, and test data to match new terms
+- [x] Sweep and remove legacy terms from repo (string + filename search)
+- [x] Validate with `mise run test` and `mise run e2e`
+
+### Key Tasks
+- [x] Add a rebrand plan with scope, owner, and verification steps.
+- [x] Update specs under `docs/spec/` to use Space/Form/Entry/Asset terminology.
+- [x] Update docs, UI copy, and API descriptions to the new terms.
+- [x] Rename code symbols, route paths, filenames, and datamodel references (OpenDAL/Iceberg) to match.
+- [x] Remove all legacy terms from the repository (pre-rebrand labels).
+- [x] Update tests and fixtures to match new names and semantics.
+- [x] Verify `mise run test` and `mise run e2e` pass.
+
+### Acceptance Criteria
+- [x] No legacy terms remain in the repository (including file names and data paths).
+- [x] All specs and docs consistently use Space/Form/Entry/Asset.
+- [x] Tests pass for unit, integration, and e2e.
+
+---
+
+## Phase 9: Full Repository Rebrand Completion (Legacy → Space/Form/Entry/Asset)
+
+**Objective**: Remove all legacy terms and complete the repository-wide rename to
+Space/Form/Entry/Asset across docs/spec, code, API, UI, tests, fixtures, and
+storage paths (OpenDAL/Iceberg).
+
+### Work Summary (Phase 9 execution)
+- [x] Sweep docs/spec for legacy terms and update references, examples, and diagrams.
+- [x] Rename API routes, payload fields, and OpenAPI/MCP docs to new terms.
+- [x] Rename code symbols, modules, and file paths across backend, frontend, ugoite-core, ugoite-cli.
+- [x] Update storage paths, datamodel references, and OpenDAL/Iceberg layouts.
+- [x] Update tests, fixtures, and test data to new terms and semantics.
+- [x] Verify no legacy terms remain via full-repo search.
+- [x] Confirm `mise run test` and `mise run e2e` pass before push.
+
+### Acceptance Criteria
+- [x] Zero occurrences of legacy terms in repository (including file names and data paths).
+- [x] Specs/docs/API/UI all use Space/Form/Entry/Asset consistently.
+- [x] All tests (unit/integration/e2e) pass.
+
+---
+
+## Definition of Done
+
+- [x] All phases completed with acceptance criteria met.
+- [x] Tests pass (unit, integration, e2e).
+- [x] Documentation updated and consistent with the new storage model.
+
+---
+
+## References
+
+- [Roadmap](roadmap.md)
+- [Specification Index](../spec/index.md)
+- [Data Model Overview](../spec/data-model/overview.md)
