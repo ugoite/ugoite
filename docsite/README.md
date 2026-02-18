@@ -23,4 +23,4 @@ DOCSITE_BASE=/ugoite DOCSITE_ORIGIN=https://example.com bun run build
 ```
 
 - `DOCSITE_BASE`: mount path (for example `/`, `/ugoite`, `/docs/ugoite`)
-- `DOCSITE_ORIGIN`: public origin used for canonical URLs
+- `DOCSITE_ORIGIN`: public site origin (used for Astro `site` config / absolute URL generation)
