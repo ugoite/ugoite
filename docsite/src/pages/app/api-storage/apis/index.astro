@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../../lib/base-path";
 import { getFeatureGroups } from "../../../../lib/spec-data";
 
 const groups = await getFeatureGroups();
@@ -22,7 +23,7 @@ const totalEndpoints = groups.reduce((sum, g) => sum + g.apis.length, 0);
 
   <div class="doc-grid">
     {groups.map((group) => (
-      <a href={`/app/api-storage/apis/${group.kind}`} id={group.kind} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath(`/app/api-storage/apis/${group.kind}`)} id={group.kind} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
           <span class="doc-pill">{group.kind}</span>
           <span style="font-size: 0.75rem; color: var(--doc-muted);">{group.apis.length} endpoints</span>

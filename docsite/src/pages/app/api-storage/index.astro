@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import TerminalCommand from "../../../components/TerminalCommand.astro";
+import { withBasePath } from "../../../lib/base-path";
 
 const toc = [
   { id: "overview", title: "Overview" },
@@ -119,12 +120,12 @@ const toc = [
   <!-- Explore -->
   <section id="explore">
     <div class="doc-grid">
-      <a href="/app/api-storage/apis" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/app/api-storage/apis")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📡</div>
         <h3 style="font-size: 1rem; font-weight: 700;">API Catalog</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Browse all endpoints by domain with interactive curl console.</p>
       </a>
-      <a href="/app/api-storage/data-model" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+      <a href={withBasePath("/app/api-storage/data-model")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📁</div>
         <h3 style="font-size: 1rem; font-weight: 700;">Data Model</h3>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Space directory structure and file schema visual reference.</p>

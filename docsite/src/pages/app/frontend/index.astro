@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import TerminalCommand from "../../../components/TerminalCommand.astro";
+import { withBasePath } from "../../../lib/base-path";
 
 const toc = [
   { id: "overview", title: "Overview" },
@@ -54,7 +55,7 @@ const toc = [
   </section>
 
   <section id="pages">
-    <a href="/app/frontend/pages" class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; display: block;">
+    <a href={withBasePath("/app/frontend/pages")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; display: block;">
       <div style="display: flex; align-items: center; justify-content: space-between;">
         <div>
           <h2 style="font-size: 1.125rem; font-weight: 700;">Browse UI Page Catalog</h2>
