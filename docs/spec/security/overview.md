@@ -2,18 +2,19 @@
 
 ## Strategy
 
-Ugoite implements a **Local-Only by Default** security model:
+Ugoite implements an **Authenticated Access by Default** security model:
 
 | Mode | Description |
 |------|-------------|
-| **Default** | API binds to localhost only, no authentication required |
-| **Remote** | When exposed beyond loopback, authentication MUST be enabled |
+| **Default (localhost)** | API binds to localhost by default, but still requires authenticated user sessions |
+| **Remote** | When exposed beyond loopback, authentication remains mandatory |
 
 ## Network Isolation
 
 ### Localhost Binding
 - API binds ONLY to `127.0.0.1` by default
 - Prevents external network access without explicit configuration
+- Localhost binding does not bypass authentication
 
 ### Remote Access
 - Blocked by default
@@ -44,19 +45,34 @@ Ugoite implements a **Local-Only by Default** security model:
 
 ## Authentication (Future)
 
-When authentication is required (Milestone 4):
+Milestone 4 baseline enforces user authentication for every client channel (UI,
+CLI via backend, MCP over HTTP, and future native clients). Authentication is
+space-scoped and uses the following profile:
 
 | Method | Use Case |
 |--------|----------|
-| API Key | Service account access |
-| Bearer Token | User sessions |
-| OAuth Proxy | Enterprise SSO |
+| Passkey (WebAuthn) | Primary user login, passwordless by default |
+| OAuth2 (optional link) | External identity linking and optional auto-provisioning |
+| One-time Invite Token | First-time bootstrap enrollment for admin-distributed invites |
+
+### Identity Source
+
+- Default identity store is metadata Form `User` per space.
+- Metadata Form `UserGroup` is also provisioned per space.
+- New OAuth2 users MAY be auto-created in metadata Form `User` when enabled.
+
+### Recovery & Administration
+
+- Space creator becomes initial admin.
+- Admin can delegate admin role to other users.
+- Admin UI MUST support forced credential reset and backup code issuance.
+- Recovery operations MUST be audit logged.
 
 ## Threat Model
 
 ### In Scope
 - Data integrity (tampering prevention)
-- Access control (localhost isolation)
+- Access control (authenticated user identity + form-level authorization)
 - Input validation
 
 ### Out of Scope (User Responsibility)
@@ -69,3 +85,4 @@ When authentication is required (Milestone 4):
 
 1. **Data Corruption**: Restore from revision history
 2. **Key Compromise**: Rotate `hmac_key` in `global.json`
+3. **Credential Recovery**: Admin performs forced reset and issues backup codes

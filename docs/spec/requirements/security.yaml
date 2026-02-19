@@ -57,3 +57,134 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_middleware_headers
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-003
+  title: Mandatory User Authentication
+  description: 'All API/MCP access MUST require authenticated user identity, including
+
+    localhost mode. Network binding and remote exposure flags MUST NOT disable
+
+    authentication enforcement.
+
+    '
+  related_spec:
+  - security/overview.md
+  - api/rest.md#authentication
+  - api/mcp.md#security-model
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_middleware_blocks_remote_clients
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-004
+  title: Passkey-First Authentication and OAuth2 Linking
+  description: 'Primary user authentication MUST be passkey/WebAuthn with passwordless
+
+    login. Optional external OAuth2 identity linking MAY be enabled and MAY
+
+    auto-provision new User records.
+
+    '
+  related_spec:
+  - security/overview.md#authentication-future
+  - api/rest.md#auth--user-management-milestone-4-phase-0-baseline
+  - stories/experimental.yaml
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_middleware_headers
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-005
+  title: Admin Bootstrap and Recovery Controls
+  description: 'Admin onboarding MUST support one-time invite-token enrollment for
+
+    initial WebAuthn registration. Admin UI capabilities MUST include forced
+
+    credential reset and backup-code issuance, with audit visibility.
+
+    '
+  related_spec:
+  - security/overview.md#recovery--administration
+  - api/rest.md#auth--user-management-milestone-4-phase-0-baseline
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_middleware_hmac_signature
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-006
+  title: Space-Scoped Authorization and Form ACL
+  description: 'Identity MUST be scoped to each space. Space creator becomes initial
+
+    admin and can delegate admins. Forms MUST support user/group read-write
+
+    restrictions, and materialized views MUST inherit source-Form policy.
+
+    '
+  related_spec:
+  - data-model/overview.md#form-level-access-control-metadata
+  - data-model/sql-sessions.md#materialized-views
+  - stories/experimental.yaml
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: backend/tests/test_forms.py
+      tests:
+      - test_create_and_get_form
+    e2e:
+    - file: e2e/forms.test.ts
+      tests:
+      - Query Entries by Form

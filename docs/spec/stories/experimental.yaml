@@ -15,13 +15,25 @@ stories:
     i_want: to share a space with my team
     so_that: we can collaborate on shared knowledge.
     acceptance_criteria:
-      - Space owner can invite users by email
-      - Invited users can view and edit entries based on permissions
+      - Every client requires authenticated user login for the target space
+      - Primary login uses passkey/WebAuthn without passwords
+      - Admin can issue one-time invite token for first-time registration
+      - Optional OAuth2 account linking is supported and can auto-provision users
+      - Space owner is initial admin and can delegate admin privileges
+      - Form-level read/write permissions can target User or UserGroup
+      - Materialized views inherit access policy from source Forms
+      - Admin can execute forced reset and backup-code issuance with audit visibility
       - Concurrent edits are handled with conflict resolution
     related_apis:
-      - rest: POST /spaces/{space_id}/members
-      - rest: GET /spaces/{space_id}/members
-      - rest: DELETE /spaces/{space_id}/members/{user_id}
+      - rest: POST /spaces/{space_id}/auth/webauthn/register/options
+      - rest: POST /spaces/{space_id}/auth/webauthn/register/verify
+      - rest: POST /spaces/{space_id}/auth/webauthn/authenticate/options
+      - rest: POST /spaces/{space_id}/auth/webauthn/authenticate/verify
+      - rest: POST /spaces/{space_id}/auth/oauth2/link/{provider}
+      - rest: POST /spaces/{space_id}/admin/invitations
+      - rest: POST /spaces/{space_id}/admin/recovery/force-reset
+      - rest: POST /spaces/{space_id}/admin/recovery/backup-codes
+      - rest: POST /spaces/{space_id}/forms/{form_name}/acl
     requirements: []
     milestone: User Management
 

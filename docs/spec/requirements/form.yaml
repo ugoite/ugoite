@@ -221,3 +221,66 @@ requirements:
     - file: ugoite-core/tests/test_form.rs
       tests:
       - test_form_req_form_007_row_reference_requires_target
+- set_id: REQCAT-FORM
+  source_file: requirements/form.yaml
+  scope: Form structure, validation, and lifecycle requirements.
+  linked_policies:
+  - POL-007
+  linked_specifications:
+  - SPEC-DM-SCHEMA
+  - SPEC-STORIES-CORE
+  - SPEC-UI-PAGES
+  id: REQ-FORM-008
+  title: Reserved Identity Metadata Forms
+  description: 'System MUST reserve metadata Form names `User` and `UserGroup` in
+
+    addition to existing metadata Forms, and MUST reject user-authored Form
+
+    definitions that collide with reserved metadata Form names.
+
+    '
+  related_spec:
+  - data-model/overview.md#metadata-forms
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: backend/tests/test_forms.py
+      tests:
+      - test_create_reserved_metadata_form_rejected
+    rust:
+    - file: ugoite-core/tests/test_form.rs
+      tests:
+      - test_form_req_form_006_reject_reserved_metadata_form
+- set_id: REQCAT-FORM
+  source_file: requirements/form.yaml
+  scope: Form structure, validation, and lifecycle requirements.
+  linked_policies:
+  - POL-007
+  linked_specifications:
+  - SPEC-DM-SCHEMA
+  - SPEC-STORIES-CORE
+  - SPEC-UI-PAGES
+  id: REQ-FORM-009
+  title: Mandatory Attribution Metadata
+  description: 'All Form-backed rows MUST persist system-managed attribution metadata.
+
+    At minimum, `author` and `updated_by` MUST be set from authenticated user
+
+    identity, with `updated_by` representing the latest writer.
+
+    '
+  related_spec:
+  - data-model/overview.md#metadata-vs-content-columns
+  - data-model/directory-structure.md#revisions-table-logical-schema
+  priority: high
+  status: planned
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_entries.py
+      tests:
+      - test_entry_author_persistence
+    rust:
+    - file: ugoite-core/tests/test_entry.rs
+      tests:
+      - test_entry_req_entry_003_update_entry_success
