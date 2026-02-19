@@ -8,8 +8,33 @@ The REST API is the primary interface for the frontend and external integrations
 
 ## Authentication
 
-By default, the API binds to localhost only and requires no authentication.
-When `UGOITE_ALLOW_REMOTE=true`, authentication is required (future milestone).
+Current implementation: API is localhost-only by default and does not yet
+enforce user login.
+
+Planned (Milestone 4 / Phase 0 baseline): user authentication will be required
+for all API usage, including localhost mode. `UGOITE_ALLOW_REMOTE=true` only
+controls network exposure and must never disable authentication once auth
+enforcement is implemented.
+
+### Auth & User Management (Milestone 4 Phase 0 Baseline)
+
+Planned endpoint surface (exact payloads may evolve during implementation):
+
+- `POST /spaces/{space_id}/auth/webauthn/register/options`
+- `POST /spaces/{space_id}/auth/webauthn/register/verify`
+- `POST /spaces/{space_id}/auth/webauthn/authenticate/options`
+- `POST /spaces/{space_id}/auth/webauthn/authenticate/verify`
+- `POST /spaces/{space_id}/auth/oauth2/link/{provider}`
+- `POST /spaces/{space_id}/auth/oauth2/callback/{provider}`
+- `POST /spaces/{space_id}/admin/invitations` (one-time invite token)
+- `POST /spaces/{space_id}/admin/recovery/force-reset`
+- `POST /spaces/{space_id}/admin/recovery/backup-codes`
+
+Authorization policy baseline:
+
+- Every request resolves an authenticated `user_id` in the target space.
+- Space creator is initial admin and can grant additional admins.
+- Form-level read/write policy can target `User` and `UserGroup` principals.
 
 ## Endpoints
 
