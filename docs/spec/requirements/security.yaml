@@ -86,9 +86,10 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: backend/tests/test_api.py
+    - file: backend/tests/test_auth.py
       tests:
-      - test_middleware_blocks_remote_clients
+      - test_auth_rejects_unauthenticated_localhost_requests
+      - test_auth_rejects_unauthenticated_remote_requests
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -118,9 +119,10 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: backend/tests/test_api.py
+    - file: backend/tests/test_auth_passkeys_oauth2_linking.py
       tests:
-      - test_middleware_headers
+      - test_passkey_primary_authentication__planned
+      - test_oauth2_account_linking__planned
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -149,9 +151,11 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: backend/tests/test_api.py
+    - file: backend/tests/test_auth_admin_recovery.py
       tests:
-      - test_middleware_hmac_signature
+      - test_admin_invite_token_bootstrap_enrollment__planned
+      - test_admin_forced_reset__planned
+      - test_admin_backup_code_issuance__planned
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -181,10 +185,14 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: backend/tests/test_forms.py
+    - file: backend/tests/test_forms_acl.py
       tests:
-      - test_create_and_get_form
+      - test_form_acl_denies_unauthorized_read_access
+      - test_form_acl_denies_unauthorized_write_access
+      - test_form_acl_allows_group_principal_access
+      - test_materialized_view_inherits_form_acl_policies
     e2e:
-    - file: e2e/forms.test.ts
+    - file: e2e/forms-acl.test.ts
       tests:
-      - Query Entries by Form
+      - Enforces Form ACL Read/Write Restrictions for Space Members
+      - Enforces Materialized View Policy Intersection with Form ACL

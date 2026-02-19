@@ -8,9 +8,13 @@ The REST API is the primary interface for the frontend and external integrations
 
 ## Authentication
 
-User authentication is required for all API usage, including localhost mode.
-`UGOITE_ALLOW_REMOTE=true` only controls network exposure and never disables
-authentication.
+Current implementation: API is localhost-only by default and does not yet
+enforce user login.
+
+Planned (Milestone 4 / Phase 0 baseline): user authentication will be required
+for all API usage, including localhost mode. `UGOITE_ALLOW_REMOTE=true` only
+controls network exposure and must never disable authentication once auth
+enforcement is implemented.
 
 ### Auth & User Management (Milestone 4 Phase 0 Baseline)
 

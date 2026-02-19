@@ -2,19 +2,28 @@
 
 ## Strategy
 
-Ugoite implements an **Authenticated Access by Default** security model:
+Current implementation uses a **Local-Only by Default** model; Milestone 4
+targets an **Authenticated Access by Default** model.
+
+### Milestone 4 Target Model
 
 | Mode | Description |
 |------|-------------|
 | **Default (localhost)** | API binds to localhost by default, but still requires authenticated user sessions |
 | **Remote** | When exposed beyond loopback, authentication remains mandatory |
 
+### Current Implementation Note
+
+- API binds to localhost by default.
+- Remote access requires `UGOITE_ALLOW_REMOTE=true`.
+- User-login enforcement is not yet implemented.
+
 ## Network Isolation
 
 ### Localhost Binding
 - API binds ONLY to `127.0.0.1` by default
 - Prevents external network access without explicit configuration
-- Localhost binding does not bypass authentication
+- In the Milestone 4 target model, localhost binding does not bypass authentication
 
 ### Remote Access
 - Blocked by default

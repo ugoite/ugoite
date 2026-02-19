@@ -4,7 +4,7 @@
 **Goal**: Introduce secure multi-user operation with authentication, authorization, and collaboration while preserving the local-first default model.
 
 This milestone implements the future authentication and collaboration model already referenced in specs, especially:
-- `docs/spec/security/overview.md` (Local-only by default, remote requires auth)
+- `docs/spec/security/overview.md` (current local-only behavior and Milestone 4 auth target)
 - `docs/spec/api/rest.md` and `docs/spec/api/mcp.md` (authentication behavior)
 - `docs/spec/stories/experimental.yaml` (STORY-010 Multi-User Collaboration)
 
@@ -53,11 +53,11 @@ This milestone implements the future authentication and collaboration model alre
 - [ ] Implement auth provider interface (API key, bearer token; OAuth proxy adapter point).
 - [ ] Add secure token/key storage and rotation strategy.
 - [ ] Implement auth middleware and dependency injection for REST/MCP requests.
-- [ ] Keep localhost-no-auth behavior for non-remote mode and document exact policy.
+- [ ] Enforce auth for localhost and remote modes, and document migration from current localhost-no-auth behavior.
 - [ ] Add negative-path handling (expired token, invalid signature, revoked key).
 
 ### Acceptance Criteria
-- [ ] Remote mode denies unauthenticated requests to protected endpoints.
+- [ ] Localhost and remote modes deny unauthenticated requests to protected endpoints.
 - [ ] Auth providers can be configured without changing API contracts.
 - [ ] Identity is available in request context for downstream authorization/audit.
 

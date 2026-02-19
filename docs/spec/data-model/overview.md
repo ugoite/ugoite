@@ -84,13 +84,18 @@ space-scoped authentication and authorization.
 
 ### Form-Level Access Control Metadata
 
-Each Form MAY define authorization metadata for read and write operations:
+Each Form MAY define authorization metadata for read and write operations.
+Canonical field definitions live in `data-model/file-schemas.yaml`
+(`form_definition`).
+
+Current baseline fields are:
 
 - `read_principals`: allowed `User` / `UserGroup` principals
 - `write_principals`: allowed `User` / `UserGroup` principals
 
-When omitted, Form access inherits the default space policy. Access evaluation
-MUST run in `ugoite-core`; backend and other adapters are orchestration only.
+When omitted, Form access inherits the default space policy. Access control
+evaluation MUST run in `ugoite-core`; backend and other adapters are
+orchestration only.
 
 Materialized views derived from one or more Forms inherit the effective access
 policy from those source Forms. If multiple source Forms are referenced, the
