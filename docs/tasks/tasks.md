@@ -4,7 +4,7 @@
 **Goal**: Introduce secure multi-user operation with authentication, authorization, and collaboration while preserving the local-first default model.
 
 This milestone implements the future authentication and collaboration model already referenced in specs, especially:
-- `docs/spec/security/overview.md` (Local-only by default, remote requires auth)
+- `docs/spec/security/overview.md` (current local-only behavior and Milestone 4 auth target)
 - `docs/spec/api/rest.md` and `docs/spec/api/mcp.md` (authentication behavior)
 - `docs/spec/stories/experimental.yaml` (STORY-010 Multi-User Collaboration)
 
@@ -12,8 +12,8 @@ This milestone implements the future authentication and collaboration model alre
 
 ## Constraints (MUST)
 
-- **Local-first remains default**: localhost mode must continue to work with minimal friction.
-- **Remote requires authentication**: when `UGOITE_ALLOW_REMOTE=true`, protected APIs must require auth.
+- **Local-first storage remains default**: data ownership/local storage principles stay unchanged.
+- **Authentication is always required**: localhost and remote mode both require user login.
 - **Core/backend boundary**: business logic and file I/O stay in `ugoite-core`; backend remains API orchestration.
 - **No security-by-obscurity**: access checks must be explicit, testable, and requirement-linked.
 - **Requirements traceability**: all new tests must map to `REQ-*` in `docs/spec/requirements/*.yaml`.
@@ -22,18 +22,25 @@ This milestone implements the future authentication and collaboration model alre
 
 ## Phase 0: Spec & Requirement Baseline
 
-**Objective**: Formalize User Management requirements and align milestone scope across docs/spec and docs/tasks.
+**Objective**: Freeze the User Management baseline spec so implementation can proceed with intentional breaking changes before production rollout.
 
 ### Key Tasks
-- [ ] Add/extend requirements in `docs/spec/requirements/security.yaml` for authn/authz/API keys/audit.
-- [ ] Add collaboration requirements for member invitation and role management.
-- [ ] Cross-link requirements to security/api/stories specs.
-- [ ] Add requirement-to-test mapping placeholders for backend/core/cli/frontend/e2e.
+- [ ] Define **space-scoped mandatory user authentication** in all channels (REST, MCP, UI, CLI via backend).
+- [ ] Define metadata Forms `User` and `UserGroup` as default internal identity store.
+- [ ] Define **passkey/WebAuthn as primary auth** (passwordless) and optional OAuth2 account linking.
+- [ ] Define admin bootstrap with one-time invite token for first WebAuthn registration.
+- [ ] Define recovery controls: admin forced reset + backup-code issuance with admin-audit visibility.
+- [ ] Define authorization ownership model: space creator is initial admin; admin delegation is supported.
+- [ ] Define mandatory Form attribution metadata (`author` / latest updater) for all Form-backed writes.
+- [ ] Define Form-level read/write ACL by `User` or `UserGroup`, and materialized-view ACL inheritance.
+- [ ] Add/extend `REQ-*` requirements and link to `security`, `api`, `data-model`, and `stories` specs.
+- [ ] Add requirement-to-test mapping placeholders (backend/core/cli/frontend/e2e) to keep traceability green.
 
 ### Acceptance Criteria
-- [ ] User Management requirements exist as `REQ-*` entries and are reviewable.
-- [ ] Each requirement has planned test coverage locations.
-- [ ] Milestone 4 scope is consistent across roadmap/spec/tasks.
+- [ ] Requirements covering mandatory auth, passkey primary auth, OAuth2 linking, bootstrap/recovery, and form ACL exist as `REQ-*` entries.
+- [ ] Specs in `security`, `api`, `data-model`, and `stories` are mutually consistent with the baseline.
+- [ ] Requirement mappings include concrete planned coverage locations across backend/core/cli/frontend/e2e.
+- [ ] Breaking-change policy is explicit for pre-production implementation (no migration required in this phase).
 
 ---
 
@@ -46,11 +53,11 @@ This milestone implements the future authentication and collaboration model alre
 - [ ] Implement auth provider interface (API key, bearer token; OAuth proxy adapter point).
 - [ ] Add secure token/key storage and rotation strategy.
 - [ ] Implement auth middleware and dependency injection for REST/MCP requests.
-- [ ] Keep localhost-no-auth behavior for non-remote mode and document exact policy.
+- [ ] Enforce auth for localhost and remote modes, and document migration from current localhost-no-auth behavior.
 - [ ] Add negative-path handling (expired token, invalid signature, revoked key).
 
 ### Acceptance Criteria
-- [ ] Remote mode denies unauthenticated requests to protected endpoints.
+- [ ] Localhost and remote modes deny unauthenticated requests to protected endpoints.
 - [ ] Auth providers can be configured without changing API contracts.
 - [ ] Identity is available in request context for downstream authorization/audit.
 

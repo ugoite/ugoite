@@ -40,6 +40,13 @@ Root response-signing key material:
   "id": "space-main",
   "name": "Personal Knowledge",
   "created_at": "2025-08-12T12:00:00Z",
+  "owner_user_id": "user-admin-001",
+  "admin_user_ids": ["user-admin-001"],
+  "auth": {
+    "mode": "required",
+    "primary": "webauthn",
+    "oauth2_auto_provision": false
+  },
   "storage_config": {
     "uri": "s3://my-bucket/ugoite/space-main",
     "credentials_profile": "default"

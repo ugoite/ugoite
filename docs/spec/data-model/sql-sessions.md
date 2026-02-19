@@ -33,6 +33,10 @@ Materialized views are currently **metadata-only placeholders**. The on-disk
 layout of any future Iceberg-managed tables is owned by Iceberg and will be
 specified when materialization is implemented.
 
+When SQL references Forms with explicit read/write ACL metadata, materialized
+view metadata MUST inherit effective policy from source Forms. Access checks on
+materialized view reads MUST be equivalent to the source Forms.
+
 ### Materialized View Metadata (Optional)
 
 A lightweight metadata file may be stored at:
@@ -47,6 +51,11 @@ Recommended fields:
 {
   "sql_id": "sql-uuid",
   "sql": "SELECT * FROM Meeting",
+  "source_forms": ["Meeting"],
+  "access_policy": {
+    "inherit_from_forms": true,
+    "mode": "intersection"
+  },
   "created_at": "2026-02-10T12:00:00Z",
   "updated_at": "2026-02-10T12:05:00Z",
   "snapshot_id": 42,
