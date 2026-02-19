@@ -57,8 +57,13 @@ Reserved metadata column names include (case-insensitive):
 
 `id`, `entry_id`, `title`, `form`, `tags`, `links`, `assets`,
 `created_at`, `updated_at`, `revision_id`, `parent_revision_id`,
-`deleted`, `deleted_at`, `author`, `integrity`,
+`deleted`, `deleted_at`, `author`, `updated_by`, `integrity`,
 `space_id`, `word_count`.
+
+`author` and `updated_by` are system-managed attribution fields. At save time,
+both MUST resolve to the authenticated user identity, where `updated_by`
+represents the latest writer. Historical edits are reconstructed via Iceberg
+time-travel/snapshots.
 
 The metadata column list is treated as an internal system contract and may expand
 over time; Form creation MUST reject any field name that conflicts with a
@@ -72,7 +77,24 @@ case-insensitive and may expand over time.
 
 Reserved metadata Form names include:
 
-`SQL`
+`SQL`, `User`, `UserGroup`
+
+`User` and `UserGroup` metadata Forms are system-owned identity catalogs for
+space-scoped authentication and authorization.
+
+### Form-Level Access Control Metadata
+
+Each Form MAY define authorization metadata for read and write operations:
+
+- `read_principals`: allowed `User` / `UserGroup` principals
+- `write_principals`: allowed `User` / `UserGroup` principals
+
+When omitted, Form access inherits the default space policy. Access evaluation
+MUST run in `ugoite-core`; backend and other adapters are orchestration only.
+
+Materialized views derived from one or more Forms inherit the effective access
+policy from those source Forms. If multiple source Forms are referenced, the
+effective policy MUST be the intersection (deny-by-default on ambiguity).
 
 ### SQL Materialized Views
 

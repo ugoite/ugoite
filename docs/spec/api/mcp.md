@@ -74,8 +74,11 @@ Pre-defined prompts help AI understand the context:
 ### Authentication
 
 MCP requests inherit the authentication of the HTTP connection:
-- Localhost: No auth required
-- Remote: Bearer token or API key required
+- Localhost: Auth required (session mapped to space-scoped user)
+- Remote: Auth required (passkey-backed session, OAuth2-linked identity, or API key where enabled)
+
+All MCP resource access MUST execute the same form-level read authorization
+checks used by REST APIs.
 
 ### Audit Trail
 
