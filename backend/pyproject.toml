@@ -33,4 +33,4 @@ ugoite-core = { path = "../ugoite-core", editable = true }
 [tool.ruff.lint]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
+"tests/**.py" = ["S101", "S105", "S106", "ARG001", "PLR2004", "ANN401", "E402", "TC003"]
