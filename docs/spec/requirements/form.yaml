@@ -245,13 +245,15 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: backend/tests/test_forms.py
+    - file: backend/tests/test_forms_reserved_identity.py
       tests:
-      - test_create_reserved_metadata_form_rejected
+      - test_form_req_form_008_reject_user_form_name
+      - test_form_req_form_008_reject_usergroup_form_name
     rust:
-    - file: ugoite-core/tests/test_form.rs
+    - file: ugoite-core/tests/test_form_reserved_identity.rs
       tests:
-      - test_form_req_form_006_reject_reserved_metadata_form
+      - test_form_req_form_008_reject_user_form_name
+      - test_form_req_form_008_reject_usergroup_form_name
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -277,10 +279,12 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: backend/tests/test_entry_attribution.py
       tests:
-      - test_entry_author_persistence
+      - test_system_sets_author_and_updated_by_from_identity
+      - test_client_cannot_override_author_or_updated_by
     rust:
-    - file: ugoite-core/tests/test_entry.rs
+    - file: ugoite-core/tests/test_entry_attribution.rs
       tests:
-      - test_entry_req_entry_003_update_entry_success
+      - test_form_req_form_009_system_managed_author_and_updated_by
+      - test_form_req_form_009_reject_client_supplied_author_and_updated_by

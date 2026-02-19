@@ -54,6 +54,26 @@ schemas:
         created_at:
           type: string
           format: date-time
+        owner_user_id:
+          type: string
+          description: Initial space owner user ID (Milestone 4 planned)
+        admin_user_ids:
+          type: array
+          description: Space admin user IDs (Milestone 4 planned)
+          items:
+            type: string
+        auth:
+          type: object
+          description: Authentication configuration (Milestone 4 planned)
+          properties:
+            mode:
+              type: string
+              enum: [required]
+            primary:
+              type: string
+              enum: [webauthn]
+            oauth2_auto_provision:
+              type: boolean
         storage_config:
           type: object
           properties:
@@ -107,6 +127,30 @@ schemas:
           type: string
           enum: [deny, allow_json, allow_columns]
           description: Policy for non-registered H2 sections
+        read_principals:
+          type: array
+          description: Allowed read principals (User/UserGroup) for this Form
+          items:
+            type: object
+            required: [kind, id]
+            properties:
+              kind:
+                type: string
+                enum: [user, user_group]
+              id:
+                type: string
+        write_principals:
+          type: array
+          description: Allowed write principals (User/UserGroup) for this Form
+          items:
+            type: object
+            required: [kind, id]
+            properties:
+              kind:
+                type: string
+                enum: [user, user_group]
+              id:
+                type: string
         fields:
           type: object
           additionalProperties:
@@ -167,6 +211,20 @@ schemas:
           type: string
         sql:
           type: string
+        source_forms:
+          type: array
+          description: Source forms referenced by the SQL/materialized view
+          items:
+            type: string
+        access_policy:
+          type: object
+          description: Effective policy inheritance metadata for the view
+          properties:
+            inherit_from_forms:
+              type: boolean
+            mode:
+              type: string
+              enum: [intersection]
         created_at:
           type: string
           format: date-time
