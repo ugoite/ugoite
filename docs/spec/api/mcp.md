@@ -74,9 +74,9 @@ Pre-defined prompts help AI understand the context:
 ### Authentication
 
 MCP requests inherit the authentication of the HTTP connection:
-- Current implementation: no user-login enforcement yet (network isolation still applies).
-- Planned (Milestone 4): localhost requires auth with a space-scoped user session.
-- Planned (Milestone 4): remote requires auth (passkey-backed session, OAuth2-linked identity, or API key where enabled).
+- Current implementation: localhost and remote-mode MCP HTTP requests require authenticated identity.
+- Supported credentials in Phase 1: bearer token and API key providers.
+- Planned (Milestone 4): passkey-backed session and OAuth2-linked identity.
 
 Planned (Milestone 4): all MCP resource access MUST execute the same form-level
 read authorization checks used by REST APIs.
