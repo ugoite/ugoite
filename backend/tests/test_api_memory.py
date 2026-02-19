@@ -31,7 +31,10 @@ def memory_client(
     # (It reads env var, so it should be fine if patched before call)
 
     # Create a new TestClient to trigger startup with new env
-    with TestClient(app) as client:
+    with TestClient(
+        app,
+        headers={"Authorization": "Bearer test-suite-token"},
+    ) as client:
         yield client
 
 

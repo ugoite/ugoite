@@ -1,6 +1,6 @@
 """API router configuration."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.endpoints import (
     asset,
@@ -11,8 +11,9 @@ from app.api.endpoints import (
     sql_sessions,
 )
 from app.api.endpoints import forms as form_endpoints
+from app.core.auth import require_authenticated_identity
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_authenticated_identity)])
 router.include_router(space.router)
 router.include_router(entry.router)
 router.include_router(form_endpoints.router)

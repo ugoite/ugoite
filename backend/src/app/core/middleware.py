@@ -9,6 +9,7 @@ from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.concurrency import iterate_in_threadpool
 
+from app.core.auth import AuthError, authenticate_request
 from app.core.config import get_root_path
 from app.core.security import (
     build_response_signature,
@@ -17,6 +18,19 @@ from app.core.security import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AUTH_EXEMPT_PATHS = {
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
+
+
+def _is_auth_exempt(path: str) -> bool:
+    if path in _AUTH_EXEMPT_PATHS:
+        return True
+    return path.startswith(("/docs/", "/redoc/"))
 
 
 async def security_middleware(
@@ -45,6 +59,21 @@ async def security_middleware(
         )
         body = bytes(response.body or b"")
         return await _apply_security_headers(response, body, root_path)
+
+    if not _is_auth_exempt(request.url.path):
+        try:
+            request.state.identity = authenticate_request(request)
+        except AuthError as exc:
+            response = JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "detail": exc.detail,
+                    "code": exc.code,
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            body = bytes(response.body or b"")
+            return await _apply_security_headers(response, body, root_path)
 
     # Skip body capture/signing for MCP SSE endpoints as they are streaming
     if request.url.path.startswith("/mcp"):
