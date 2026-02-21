@@ -84,6 +84,113 @@ a:hover {
 		background: var(--doc-accent-soft);
 	}
 
+	.mobile-nav-toggle {
+		display: none;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		border-radius: var(--doc-radius-md);
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: var(--doc-card);
+		color: var(--doc-fg);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		line-height: 1;
+		box-shadow: var(--doc-shadow-sm);
+	}
+
+	.mobile-nav-toggle-icon {
+		position: relative;
+		width: 0.875rem;
+		height: 2px;
+		background: currentColor;
+		border-radius: 999px;
+	}
+
+	.mobile-nav-toggle-icon::before,
+	.mobile-nav-toggle-icon::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		width: 0.875rem;
+		height: 2px;
+		background: currentColor;
+		border-radius: 999px;
+	}
+
+	.mobile-nav-toggle-icon::before {
+		top: -0.3rem;
+	}
+
+	.mobile-nav-toggle-icon::after {
+		top: 0.3rem;
+	}
+
+	.mobile-nav-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 58;
+		background: color-mix(in srgb, var(--doc-bg), black 35%);
+	}
+
+	.mobile-doc-nav {
+		position: fixed;
+		top: 0;
+		left: 0;
+		z-index: 59;
+		width: min(22rem, 88vw);
+		height: 100dvh;
+		background: var(--doc-card);
+		border-right: var(--doc-border-width) solid var(--doc-border);
+		box-shadow: var(--doc-shadow-lg);
+		display: flex;
+		flex-direction: column;
+		transform: translateX(-104%);
+		transition: transform 0.24s ease;
+	}
+
+	.mobile-doc-nav.is-open {
+		transform: translateX(0);
+	}
+
+	.mobile-doc-nav-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.9rem 1rem;
+		border-bottom: var(--doc-border-width) solid var(--doc-border);
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--doc-muted);
+	}
+
+	.mobile-nav-close {
+		border: var(--doc-border-width) solid var(--doc-border);
+		background: transparent;
+		border-radius: var(--doc-radius-sm);
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--doc-fg);
+	}
+
+	.mobile-doc-nav-body {
+		overflow-y: auto;
+		padding: 0.75rem 0.75rem 1rem;
+	}
+
+	.mobile-top-links {
+		margin-bottom: 0.5rem;
+		padding-bottom: 0.5rem;
+		border-bottom: var(--doc-border-width) solid var(--doc-border);
+	}
+
+	body.mobile-nav-open {
+		overflow: hidden;
+	}
+
 	/* Shell */
 	.doc-shell {
 		max-width: 80rem;
@@ -811,12 +918,15 @@ a:hover {
 
 		.doc-sidebar,
 		.doc-right {
-			position: static;
-			max-height: none;
+			display: none;
 		}
 
 		.site-nav {
 			display: none;
+		}
+
+		.mobile-nav-toggle {
+			display: inline-flex;
 		}
 	}
 

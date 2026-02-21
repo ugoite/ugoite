@@ -1,0 +1,28 @@
+---
+import { withBasePath } from "../lib/base-path";
+import type { NavSection } from "../lib/navigation";
+
+export interface Props {
+  navSections: NavSection[];
+}
+
+const { navSections } = Astro.props;
+---
+
+{navSections.map((section) => (
+  <div class="doc-sidebar-section">
+    <div class="doc-sidebar-title">{section.title}</div>
+    {section.items.map((item) => (
+      <div>
+        <a href={withBasePath(item.href)} class="doc-sidebar-link">{item.title}</a>
+        {item.items && item.items.length > 0 && (
+          <div class="doc-sidebar-children">
+            {item.items.map((child) => (
+              <a href={withBasePath(child.href)} class="doc-sidebar-link doc-sidebar-link-child">{child.title}</a>
+            ))}
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+))}
