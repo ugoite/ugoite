@@ -130,17 +130,24 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Persist security-relevant events and user attribution for accountability.
 
 ### Key Tasks
-- [ ] Define audit event schema (actor, action, target, timestamp, outcome, request metadata).
-- [ ] Add event emission for auth, authorization denials, membership, and data mutations.
-- [ ] Add tamper-evident strategy aligned with existing integrity model.
-- [ ] Add query/list APIs for audit events with pagination and filters.
-- [ ] Add retention/redaction policy documentation.
-- [ ] Add tests for event completeness and immutability guarantees.
+- [x] Define audit event schema (actor, action, target, timestamp, outcome, request metadata).
+- [x] Add event emission for auth, authorization denials, membership, and data mutations.
+- [x] Add tamper-evident strategy aligned with existing integrity model.
+- [x] Add query/list APIs for audit events with pagination and filters.
+- [x] Add retention/redaction policy documentation.
+- [x] Add tests for event completeness and immutability guarantees.
+
+### Phase 4 Implementation Notes (2026-02)
+- Audit persistence is implemented in `ugoite-core` (`ugoite_core.audit`) and reused by backend adapters.
+- Events are stored in an append-only JSONL file at `spaces/{space_id}/audit/events.jsonl` with hash chaining (`prev_hash` + `event_hash`) for tamper-evidence.
+- Backend emits audit events for authentication outcomes, authorization denials, and successful mutating HTTP operations.
+- Backend exposes `GET /spaces/{space_id}/audit/events` with offset/limit pagination and `action`/`actor_user_id`/`outcome` filters.
+- Retention is bounded by `UGOITE_AUDIT_RETENTION_MAX_EVENTS` (default: 5000), and request metadata is intentionally redacted to non-secret fields.
 
 ### Acceptance Criteria
-- [ ] Critical security and collaboration events are audit-logged.
-- [ ] Actor attribution is available for user-facing change history.
-- [ ] Audit retrieval is reliable and bounded for large datasets.
+- [x] Critical security and collaboration events are audit-logged.
+- [x] Actor attribution is available for user-facing change history.
+- [x] Audit retrieval is reliable and bounded for large datasets.
 
 ---
 

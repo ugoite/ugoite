@@ -96,3 +96,35 @@ space-scoped and uses the following profile:
 1. **Data Corruption**: Restore from revision history
 2. **Key Compromise**: Rotate `hmac_key` in `global.json`
 3. **Credential Recovery**: Admin performs forced reset and issues backup codes
+
+## Audit Logging
+
+Security-relevant events are stored per space as an append-only audit stream
+in `spaces/{space_id}/audit/events.jsonl`.
+
+### Event Schema
+
+Each event includes:
+- `id`
+- `timestamp`
+- `space_id`
+- `action`
+- `actor_user_id`
+- `outcome` (`success` / `deny` / `error`)
+- `target_type` / `target_id`
+- `request_method` / `request_path` / `request_id`
+- `metadata`
+- `prev_hash` / `event_hash`
+
+### Tamper-Evident Integrity
+
+- Audit events form a hash chain.
+- `event_hash` is computed from the canonical event payload and `prev_hash`.
+- Retrieval verifies the full chain and rejects tampered records.
+
+### Retention and Redaction
+
+- Retention is bounded by `UGOITE_AUDIT_RETENTION_MAX_EVENTS` (default: `5000`).
+- Oldest events are trimmed when the retention bound is exceeded.
+- Stored request metadata excludes sensitive headers and raw credentials.
+

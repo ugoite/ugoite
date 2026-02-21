@@ -240,3 +240,41 @@ requirements:
       tests:
       - "REQ-SEC-007: invitation lifecycle invite/accept/revoke"
       - "REQ-SEC-007: role changes switch admin privileges"
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-008
+  title: Security Audit Logging and Attribution
+  description: 'Security-relevant events MUST be recorded with actor attribution,
+
+    action, outcome, target, and request metadata. Audit logs MUST support
+
+    paginated retrieval with filtering and MUST include tamper-evident integrity
+
+    checks.
+
+    '
+  related_spec:
+  - security/overview.md
+  - api/rest.md#authentication
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_audit.py
+      tests:
+      - test_audit_lists_data_mutation_events
+      - test_audit_logs_authorization_denial
+    - file: ugoite-core/tests/test_audit.py
+      tests:
+      - test_audit_appends_and_lists_events
+      - test_audit_detects_chain_tampering

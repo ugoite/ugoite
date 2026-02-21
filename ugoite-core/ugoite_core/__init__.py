@@ -4,6 +4,12 @@ from contextlib import suppress
 from typing import Any, cast
 
 from . import _ugoite_core as _core
+from .audit import (
+    AuditEventInput,
+    AuditListFilter,
+    append_audit_event,
+    list_audit_events,
+)
 from .auth import (
     AuthError,
     AuthManager,
@@ -108,6 +114,8 @@ __all__ = [
     "AcceptInvitationInput",
     "AccessContext",
     "ActionName",
+    "AuditEventInput",
+    "AuditListFilter",
     "AuthError",
     "AuthManager",
     "AuthorizationError",
@@ -122,6 +130,7 @@ __all__ = [
     "TokenOnlyInvitationProvider",
     "UpdateMemberRoleInput",
     "accept_invitation",
+    "append_audit_event",
     "auth_headers_from_environment",
     "authenticate_headers",
     "build_response_signature",
@@ -156,6 +165,7 @@ __all__ = [
     "is_active_member",
     "lint_sql",
     "list_assets",
+    "list_audit_events",
     "list_column_types",
     "list_entries",
     "list_forms",
