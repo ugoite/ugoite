@@ -128,3 +128,34 @@ requirements:
     - file: e2e/ui-pages-screenshots.test.ts
       tests:
       - 'REQ-E2E-004: export screenshots for all UI page specs'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-005
+  title: Docsite Mobile Navigation Usability
+  description: 'Docsite mobile view MUST provide an uncluttered reading layout and
+
+    expose global/document navigation via a modern drawer interaction instead of
+
+    stacking the full sidebar above content.
+
+    '
+  related_spec:
+  - ui/README.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/docsite-mobile-nav.test.ts
+      tests:
+      - 'REQ-E2E-005: mobile nav opens as drawer and keeps reading area uncluttered'
+      - 'REQ-E2E-005: mobile nav closes by escape and link tap'
