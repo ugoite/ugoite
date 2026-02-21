@@ -225,11 +225,7 @@ async def resolve_access_context(
     identity: RequestIdentity,
 ) -> AccessContext:
     """Resolve role/group context for a principal in a space."""
-    get_space_raw = getattr(_core, "get_space_raw", None)
-    if callable(get_space_raw):
-        space_meta_obj = await get_space_raw(storage_config, space_id)
-    else:
-        space_meta_obj = await _core_any.get_space(storage_config, space_id)
+    space_meta_obj = await _core_any.get_space(storage_config, space_id)
     space_meta = cast("dict[str, Any]", space_meta_obj)
     role = _resolve_role(space_meta, identity)
     groups = _groups_from_space_meta(space_id, identity.user_id, space_meta)
@@ -482,8 +478,6 @@ async def filter_readable_entries(
         try:
             await require_entry_read(storage_config, space_id, identity, entry)
         except AuthorizationError:
-            continue
-        except RuntimeError:
             continue
         filtered.append(entry)
     return filtered

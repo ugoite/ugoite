@@ -32,10 +32,13 @@ async def _persist_form_acl_settings(
     if read_principals is None and write_principals is None:
         return
 
-    get_space_raw = getattr(ugoite_core, "get_space_raw", None)
     existing_form_acls: dict[str, Any] = {}
-    if callable(get_space_raw):
-        space_meta = await get_space_raw(storage_config, space_id)
+    try:
+        space_meta = await ugoite_core.patch_space(
+            storage_config,
+            space_id,
+            json.dumps({}),
+        )
         settings = space_meta.get("settings")
         if isinstance(settings, dict):
             form_acls = settings.get("form_acls")
@@ -45,6 +48,8 @@ async def _persist_form_acl_settings(
                     for key, value in form_acls.items()
                     if isinstance(key, str) and isinstance(value, dict)
                 }
+    except RuntimeError:
+        existing_form_acls = {}
 
     next_form_acls = dict(existing_form_acls)
     acl_entry = dict(next_form_acls.get(form_name, {}))
@@ -192,6 +197,15 @@ async def create_form_endpoint(
         strategies = form_data.pop("strategies", None)
         read_principals = form_data.pop("read_principals", None)
         write_principals = form_data.pop("write_principals", None)
+
+        if read_principals is not None or write_principals is not None:
+            await ugoite_core.require_space_action(
+                storage_config,
+                space_id,
+                identity,
+                "space_admin",
+            )
+
         form_json = json.dumps(form_data)
 
         await ugoite_core.upsert_form(storage_config, space_id, form_json)

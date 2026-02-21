@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,8 +18,12 @@ from app.main import app
 
 
 @pytest.fixture
-def auth_clients(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, TestClient]]:
+def auth_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> Iterator[dict[str, TestClient]]:
     """Provide deterministic multi-user clients for authz tests."""
+    _ = temp_space_root
     monkeypatch.setenv(
         "UGOITE_AUTH_BEARER_TOKENS_JSON",
         json.dumps(
