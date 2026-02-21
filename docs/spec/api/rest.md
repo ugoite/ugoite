@@ -36,6 +36,20 @@ Authorization policy baseline:
 - Space creator is initial admin and can grant additional admins.
 - Form-level read/write policy can target `User` and `UserGroup` principals.
 
+### Audit Logging
+
+Security-relevant audit events are queryable via:
+
+```http
+GET /spaces/{space_id}/audit/events?offset=0&limit=100&action=data.mutation&actor_user_id=user-1&outcome=success
+```
+
+Notes:
+- Access is restricted to space admins.
+- Results are paginated with `offset` and `limit`.
+- Optional filters: `action`, `actor_user_id`, `outcome`.
+- Backend verifies tamper-evident hash-chain integrity before returning events.
+
 ## Endpoints
 
 ### Spaces
