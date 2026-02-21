@@ -1,0 +1,32 @@
+name: PR Require Close Issue Link
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-close-issue-link:
+    runs-on: ubuntu-24.04
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - name: Validate PR body contains close issue link
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const pattern = /(?:^|\n)\s*close:\s*#\d+\s*(?:\n|$)/i;
+
+            if (!pattern.test(body)) {
+              core.setFailed(
+                "PR body must include an issue link line in this exact format: close: #123"
+              );
+            }
