@@ -103,17 +103,25 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Deliver collaborative space sharing aligned with STORY-010.
 
 ### Key Tasks
-- [ ] Define member lifecycle (`invited`, `active`, `revoked`) and invitation rules.
-- [ ] Implement member APIs (`POST/GET/DELETE /spaces/{space_id}/members...`) in backend + core.
-- [ ] Add invite token/email abstraction boundary (provider-agnostic).
-- [ ] Support role assignment and role changes with audit trail hooks.
-- [ ] Implement concurrency-safe membership updates.
-- [ ] Add e2e tests for invitation, accept, revoke, and permission transitions.
+- [x] Define member lifecycle (`invited`, `active`, `revoked`) and invitation rules.
+- [x] Implement member APIs (`POST/GET/DELETE /spaces/{space_id}/members...`) in backend + core.
+- [x] Add invite token/email abstraction boundary (provider-agnostic).
+- [x] Support role assignment and role changes with audit trail hooks.
+- [x] Implement concurrency-safe membership updates.
+- [x] Add e2e tests for invitation, accept, revoke, and permission transitions.
+
+### Phase 3 Implementation Notes (2026-02)
+- Membership lifecycle is implemented in `ugoite-core` (`ugoite_core.membership`) and exposed to backend/CLI/frontend adapters.
+- Core membership primitives now handle invite issuance, token acceptance, role updates, and revocation with provider-agnostic invitation delivery.
+- Space authorization now requires active membership (or owner/admin), so non-members are denied even when authenticated.
+- Backend provides member endpoints under `/spaces/{space_id}/members...` with thin API adapters over core logic.
+- CLI and frontend API clients now expose member management calls without duplicating business logic.
+- Membership writes are serialized per space in core using async lock-based update guards.
 
 ### Acceptance Criteria
-- [ ] Space owner/admin can invite and manage members.
-- [ ] Members can access only permitted spaces/resources.
-- [ ] Collaboration flows satisfy STORY-010 acceptance criteria.
+- [x] Space owner/admin can invite and manage members.
+- [x] Members can access only permitted spaces/resources.
+- [x] Collaboration flows satisfy STORY-010 acceptance criteria.
 
 ---
 

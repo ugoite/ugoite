@@ -1,4 +1,13 @@
-import type { TestConnectionPayload, Space, SpacePatchPayload } from "./types";
+import type {
+	Space,
+	SpaceMember,
+	SpaceMemberAcceptPayload,
+	SpaceMemberInvitePayload,
+	SpaceMemberInviteResponse,
+	SpaceMemberRoleUpdatePayload,
+	SpacePatchPayload,
+	TestConnectionPayload,
+} from "./types";
 import { apiFetch } from "./api";
 
 const parseErrorDetail = (detail: unknown): string => {
@@ -90,5 +99,74 @@ export const spaceApi = {
 			throw new Error(await formatApiError(res, `Failed to test connection: ${res.statusText}`));
 		}
 		return (await res.json()) as { status: string };
+	},
+
+	/** List members in a space */
+	async listMembers(id: string): Promise<SpaceMember[]> {
+		const res = await apiFetch(`/spaces/${id}/members`);
+		if (!res.ok) {
+			throw new Error(await formatApiError(res, `Failed to list members: ${res.statusText}`));
+		}
+		return (await res.json()) as SpaceMember[];
+	},
+
+	/** Invite a member to a space */
+	async inviteMember(
+		id: string,
+		payload: SpaceMemberInvitePayload,
+	): Promise<SpaceMemberInviteResponse> {
+		const res = await apiFetch(`/spaces/${id}/members/invitations`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			throw new Error(await formatApiError(res, `Failed to invite member: ${res.statusText}`));
+		}
+		return (await res.json()) as SpaceMemberInviteResponse;
+	},
+
+	/** Accept invitation token */
+	async acceptInvitation(
+		id: string,
+		payload: SpaceMemberAcceptPayload,
+	): Promise<{ member: SpaceMember }> {
+		const res = await apiFetch(`/spaces/${id}/members/accept`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			throw new Error(await formatApiError(res, `Failed to accept invitation: ${res.statusText}`));
+		}
+		return (await res.json()) as { member: SpaceMember };
+	},
+
+	/** Update role for a member */
+	async updateMemberRole(
+		id: string,
+		memberUserId: string,
+		payload: SpaceMemberRoleUpdatePayload,
+	): Promise<{ member: SpaceMember }> {
+		const res = await apiFetch(`/spaces/${id}/members/${memberUserId}/role`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) {
+			throw new Error(await formatApiError(res, `Failed to update role: ${res.statusText}`));
+		}
+		return (await res.json()) as { member: SpaceMember };
+	},
+
+	/** Revoke a member */
+	async revokeMember(id: string, memberUserId: string): Promise<{ member: SpaceMember }> {
+		const res = await apiFetch(`/spaces/${id}/members/${memberUserId}`, {
+			method: "DELETE",
+		});
+		if (!res.ok) {
+			throw new Error(await formatApiError(res, `Failed to revoke member: ${res.statusText}`));
+		}
+		return (await res.json()) as { member: SpaceMember };
 	},
 };

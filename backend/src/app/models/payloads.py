@@ -91,6 +91,27 @@ class SpaceConnectionRequest(BaseModel):
     storage_config: dict[str, Any]
 
 
+class SpaceMemberInvite(BaseModel):
+    """Space member invitation payload."""
+
+    user_id: str
+    role: Literal["admin", "editor", "viewer"]
+    email: str | None = None
+    expires_in_seconds: int | None = None
+
+
+class SpaceMemberAccept(BaseModel):
+    """Invitation acceptance payload."""
+
+    token: str
+
+
+class SpaceMemberRoleUpdate(BaseModel):
+    """Space member role update payload."""
+
+    role: Literal["admin", "editor", "viewer"]
+
+
 class FormCreate(BaseModel):
     """Form creation payload."""
 

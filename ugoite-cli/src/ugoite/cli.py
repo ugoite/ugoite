@@ -385,6 +385,139 @@ def cmd_space_test_connection(
     typer.echo(json.dumps(result, indent=2))
 
 
+@space_app.command("members")
+@handle_cli_errors
+def cmd_space_members(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+) -> None:
+    """List members in a space (backend/api mode only)."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "space members command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    encoded_space_id = encode_path_component(space_id)
+    members = request_json("GET", f"{base_url}/spaces/{encoded_space_id}/members")
+    typer.echo(json.dumps(members, indent=2))
+
+
+@space_app.command("invite-member")
+@handle_cli_errors
+def cmd_space_invite_member(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+    user_id: Annotated[str, typer.Argument(help="User ID to invite")],
+    role: Annotated[
+        str,
+        typer.Option(help="Role to grant: admin | editor | viewer"),
+    ] = "viewer",
+    email: Annotated[
+        str | None,
+        typer.Option(help="Optional email address for provider-specific delivery"),
+    ] = None,
+    expires_in_seconds: Annotated[
+        int | None,
+        typer.Option(help="Optional token lifetime in seconds"),
+    ] = None,
+) -> None:
+    """Create a member invitation (backend/api mode only)."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "invite-member command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    normalized_role = role.strip().lower()
+    if normalized_role not in {"admin", "editor", "viewer"}:
+        msg = "role must be one of: admin, editor, viewer"
+        raise typer.BadParameter(msg)
+    payload: dict[str, Any] = {
+        "user_id": user_id,
+        "role": normalized_role,
+    }
+    if email:
+        payload["email"] = email
+    if expires_in_seconds is not None:
+        payload["expires_in_seconds"] = expires_in_seconds
+    encoded_space_id = encode_path_component(space_id)
+    response = request_json(
+        "POST",
+        f"{base_url}/spaces/{encoded_space_id}/members/invitations",
+        payload=payload,
+    )
+    typer.echo(json.dumps(response, indent=2))
+
+
+@space_app.command("accept-invite")
+@handle_cli_errors
+def cmd_space_accept_invite(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+    token: Annotated[str, typer.Argument(help="Invitation token")],
+) -> None:
+    """Accept invitation token as current authenticated user."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "accept-invite command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    encoded_space_id = encode_path_component(space_id)
+    response = request_json(
+        "POST",
+        f"{base_url}/spaces/{encoded_space_id}/members/accept",
+        payload={"token": token},
+    )
+    typer.echo(json.dumps(response, indent=2))
+
+
+@space_app.command("set-member-role")
+@handle_cli_errors
+def cmd_space_set_member_role(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+    member_user_id: Annotated[str, typer.Argument(help="Member user ID")],
+    role: Annotated[
+        str,
+        typer.Option(help="Role to grant: admin | editor | viewer"),
+    ],
+) -> None:
+    """Change role for a member (admin only)."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "set-member-role command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    normalized_role = role.strip().lower()
+    if normalized_role not in {"admin", "editor", "viewer"}:
+        msg = "role must be one of: admin, editor, viewer"
+        raise typer.BadParameter(msg)
+    encoded_space_id = encode_path_component(space_id)
+    encoded_member_user_id = encode_path_component(member_user_id)
+    response = request_json(
+        "POST",
+        f"{base_url}/spaces/{encoded_space_id}/members/{encoded_member_user_id}/role",
+        payload={"role": normalized_role},
+    )
+    typer.echo(json.dumps(response, indent=2))
+
+
+@space_app.command("revoke-member")
+@handle_cli_errors
+def cmd_space_revoke_member(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+    member_user_id: Annotated[str, typer.Argument(help="Member user ID")],
+) -> None:
+    """Revoke member access (admin only)."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "revoke-member command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    encoded_space_id = encode_path_component(space_id)
+    encoded_member_user_id = encode_path_component(member_user_id)
+    response = request_json(
+        "DELETE",
+        f"{base_url}/spaces/{encoded_space_id}/members/{encoded_member_user_id}",
+    )
+    typer.echo(json.dumps(response, indent=2))
+
+
 @entry_app.command("create")
 @handle_cli_errors
 def cmd_entry_create(

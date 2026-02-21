@@ -94,3 +94,93 @@ apis:
       command: ugoite space test-connection
       file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_test_connection
+
+  - id: space.members.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/members
+      file: backend/src/app/api/endpoints/members.py
+      function: list_members_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/membership.py
+      function: list_members
+    ugoite_cli:
+      command: ugoite space members
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_members
+
+  - id: space.members.invite
+    method: POST
+    backend:
+      path: /spaces/{space_id}/members/invitations
+      file: backend/src/app/api/endpoints/members.py
+      function: invite_member_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/membership.py
+      function: create_invitation
+    ugoite_cli:
+      command: ugoite space invite-member
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_invite_member
+
+  - id: space.members.accept
+    method: POST
+    backend:
+      path: /spaces/{space_id}/members/accept
+      file: backend/src/app/api/endpoints/members.py
+      function: accept_member_invitation_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/membership.py
+      function: accept_invitation
+    ugoite_cli:
+      command: ugoite space accept-invite
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_accept_invite
+
+  - id: space.members.role
+    method: POST
+    backend:
+      path: /spaces/{space_id}/members/{member_user_id}/role
+      file: backend/src/app/api/endpoints/members.py
+      function: update_member_role_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/membership.py
+      function: update_member_role
+    ugoite_cli:
+      command: ugoite space set-member-role
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_set_member_role
+
+  - id: space.members.revoke
+    method: DELETE
+    backend:
+      path: /spaces/{space_id}/members/{member_user_id}
+      file: backend/src/app/api/endpoints/members.py
+      function: revoke_member_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/membership.py
+      function: revoke_member
+    ugoite_cli:
+      command: ugoite space revoke-member
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_revoke_member
