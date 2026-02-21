@@ -300,15 +300,23 @@ async def require_space_action(
 ) -> AccessContext:
     """Require role-based permission for a space-scoped action."""
     access = await resolve_access_context(storage_config, space_id, identity)
-    if action in _permissions_for_role(access.role):
-        return access
-    _deny(
-        action,
-        (
-            f"Principal '{identity.user_id}' with role '{access.role}' "
-            f"is not allowed to perform '{action}' in space '{space_id}'."
-        ),
-    )
+    if action not in _permissions_for_role(access.role):
+        _deny(
+            action,
+            (
+                f"Principal '{identity.user_id}' with role '{access.role}' "
+                f"is not allowed to perform '{action}' in space '{space_id}'."
+            ),
+        )
+    if identity.scope_enforced and action not in identity.scopes:
+        _deny(
+            action,
+            (
+                f"Principal '{identity.user_id}' is missing required scope "
+                f"'{action}' in space '{space_id}'."
+            ),
+        )
+    return access
 
 
 def _form_name_from_markdown(markdown: str) -> str | None:

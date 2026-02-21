@@ -49,3 +49,4 @@ select = ["ALL"]
 "src/ugoite/indexer.py" = ["ANN401"]
 "src/ugoite/entries.py" = ["PLR0913"]
 "src/ugoite/hmac_manager.py" = ["ARG001"]  # protocol arg is cache key for lru_cache
+"src/ugoite/space.py" = ["PLR0913"]
