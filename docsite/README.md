@@ -13,6 +13,13 @@ mise run //docsite:dev
 
 This site prefers rendering content from the repository `docs/` directory instead of duplicating full prose in `docsite/`.
 
+## Localhost binding convention
+
+Use `localhost` consistently for local URLs in docs and scripts.
+
+- Preferred: `http://localhost:<port>`
+- Avoid mixing with `127.0.0.1` unless a tool explicitly requires it.
+
 ## Deployment (subpath hosting)
 
 When hosting under a subpath (for example `/ugoite`), set `DOCSITE_BASE` at build time.
