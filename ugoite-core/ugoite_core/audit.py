@@ -15,6 +15,7 @@ from typing import Any
 _DEFAULT_AUDIT_LIMIT = 100
 _MAX_AUDIT_LIMIT = 500
 _DEFAULT_AUDIT_RETENTION = 5000
+_MAX_AUDIT_RETENTION = 50000
 _space_locks: dict[str, asyncio.Lock] = {}
 _space_locks_guard = asyncio.Lock()
 
@@ -57,7 +58,22 @@ def _retention_limit() -> int:
         parsed = int(raw)
     except ValueError:
         return _DEFAULT_AUDIT_RETENTION
-    return max(100, parsed)
+    bounded = max(100, parsed)
+    return min(_MAX_AUDIT_RETENTION, bounded)
+
+
+def _validate_space_id(space_id: str) -> str:
+    normalized = space_id.strip()
+    if not normalized:
+        msg = "space_id must not be empty"
+        raise RuntimeError(msg)
+    if normalized in {".", ".."}:
+        msg = "invalid space_id"
+        raise RuntimeError(msg)
+    if normalized != Path(normalized).name:
+        msg = "invalid space_id"
+        raise RuntimeError(msg)
+    return normalized
 
 
 def _event_hash(payload: dict[str, Any], prev_hash: str) -> str:
@@ -105,9 +121,23 @@ def _audit_file_path(storage_config: dict[str, str], space_id: str) -> Path:
     if not uri.startswith("fs://"):
         msg = "audit logging currently supports fs:// storage only"
         raise RuntimeError(msg)
+    safe_space_id = _validate_space_id(space_id)
     root = uri.removeprefix("fs://")
     base = Path(root)
-    return base / "spaces" / space_id / "audit" / "events.jsonl"
+    return base / "spaces" / safe_space_id / "audit" / "events.jsonl"
+
+
+def _rehash_chain(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    prev_hash = "root"
+    rehashed: list[dict[str, Any]] = []
+    for source in events:
+        item = dict(source)
+        item["prev_hash"] = prev_hash
+        item.pop("event_hash", None)
+        item["event_hash"] = _event_hash(item, prev_hash)
+        prev_hash = item["event_hash"]
+        rehashed.append(item)
+    return rehashed
 
 
 async def _read_events(
@@ -154,7 +184,8 @@ async def append_audit_event(
     space_id: str,
     payload: AuditEventInput,
 ) -> dict[str, Any]:
-    """Append a tamper-evident audit event to space settings metadata."""
+    """Append a tamper-evident audit event to the space's JSONL audit log file."""
+    normalized_space_id = _validate_space_id(space_id)
     action = payload.action.strip()
     if not action:
         msg = "audit action must not be empty"
@@ -167,7 +198,7 @@ async def append_audit_event(
 
     lock = await _space_lock(space_id)
     async with lock:
-        events = await _read_events(storage_config, space_id)
+        events = await _read_events(storage_config, normalized_space_id)
         _verify_chain(events)
 
         prev_hash = "root"
@@ -179,7 +210,7 @@ async def append_audit_event(
         event: dict[str, Any] = {
             "id": secrets.token_urlsafe(12),
             "timestamp": _now_iso(),
-            "space_id": space_id,
+            "space_id": normalized_space_id,
             "action": action,
             "actor_user_id": actor_user_id,
             "outcome": _normalize_outcome(payload.outcome),
@@ -198,8 +229,10 @@ async def append_audit_event(
         retention = _retention_limit()
         if len(events) > retention:
             events = events[-retention:]
+            events = _rehash_chain(events)
+            event = events[-1]
 
-        await _write_events(storage_config, space_id, events)
+        await _write_events(storage_config, normalized_space_id, events)
         return event
 
 
@@ -209,9 +242,10 @@ async def list_audit_events(
     filters: AuditListFilter | None = None,
 ) -> dict[str, Any]:
     """List audit events with optional filters and pagination."""
+    normalized_space_id = _validate_space_id(space_id)
     lock = await _space_lock(space_id)
     async with lock:
-        all_events = await _read_events(storage_config, space_id)
+        all_events = await _read_events(storage_config, normalized_space_id)
         _verify_chain(all_events)
 
     options = filters or AuditListFilter()

@@ -100,7 +100,7 @@ space-scoped and uses the following profile:
 ## Audit Logging
 
 Security-relevant events are stored per space as an append-only audit stream
-under space settings metadata.
+in `spaces/{space_id}/audit/events.jsonl`.
 
 ### Event Schema
 
