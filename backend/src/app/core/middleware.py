@@ -98,9 +98,13 @@ async def security_middleware(
     root_path = get_root_path()
     # 1. Localhost Binding Check (unless disabled via env var)
     allow_remote = os.environ.get("UGOITE_ALLOW_REMOTE", "false").lower() == "true"
+    trust_proxy_headers = (
+        os.environ.get("UGOITE_TRUST_PROXY_HEADERS", "false").lower() == "true"
+    )
     client_host = resolve_client_host(
         request.headers,
         request.client.host if request.client else None,
+        trust_proxy_headers=trust_proxy_headers,
     )
 
     if not allow_remote and not is_local_host(client_host):
