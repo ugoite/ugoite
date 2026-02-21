@@ -33,6 +33,18 @@ run = [
 [tasks.dev]
 depends = ["//backend:dev", "//frontend:dev", "//docsite:dev"]
 
+[tasks."dev:backend"]
+description = "Run backend dev server only"
+depends = ["//backend:dev"]
+
+[tasks."dev:frontend"]
+description = "Run frontend dev server only"
+depends = ["//frontend:dev"]
+
+[tasks."dev:docsite"]
+description = "Run docsite dev server only"
+depends = ["//docsite:dev"]
+
 [tasks.test]
 depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "test:docs"]
 description = "Run tests for all packages (ugoite-core, backend, frontend, ugoite-cli)"
