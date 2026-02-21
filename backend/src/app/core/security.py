@@ -24,22 +24,26 @@ LOCAL_CLIENT_SENTINELS: Final[set[str]] = {
 def resolve_client_host(
     headers: Mapping[str, str],
     client_host: str | None,
+    *,
+    trust_proxy_headers: bool = False,
 ) -> str | None:
     """Resolve the client host honoring proxy headers when present.
 
     Args:
         headers: Request headers (case-insensitive mapping provided by Starlette).
         client_host: Host extracted from the ASGI scope.
+        trust_proxy_headers: Whether to honor `X-Forwarded-For` from trusted proxies.
 
     Returns:
         The best-effort remote address string or ``None`` when unavailable.
 
     """
-    forwarded = headers.get("x-forwarded-for")
-    if forwarded:
-        candidate = forwarded.split(",", 1)[0].strip()
-        if candidate:
-            return candidate
+    if trust_proxy_headers:
+        forwarded = headers.get("x-forwarded-for")
+        if forwarded:
+            candidate = forwarded.split(",", 1)[0].strip()
+            if candidate:
+                return candidate
 
     return client_host
 

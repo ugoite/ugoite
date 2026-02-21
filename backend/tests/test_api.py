@@ -819,8 +819,21 @@ def test_middleware_hmac_signature(
     assert response.headers["X-Ugoite-Signature"] == expected_signature
 
 
-def test_middleware_blocks_remote_clients(test_client: TestClient) -> None:
-    """Ensure remote clients are rejected unless explicitly allowed."""
+def test_middleware_ignores_untrusted_forwarded_for(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-001: ignore spoofed forwarded headers in untrusted mode."""
+    response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
+    assert response.status_code == 200
+    assert "X-Ugoite-Signature" in response.headers
+
+
+def test_middleware_blocks_remote_clients_when_proxy_headers_trusted(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-001: trusted proxy mode enforces forwarded remote blocking."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
     response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
