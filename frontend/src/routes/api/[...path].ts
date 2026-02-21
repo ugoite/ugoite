@@ -15,10 +15,38 @@ const hopByHopHeaders = new Set([
 	"content-length",
 ]);
 
-const filterHeaders = (headers: Headers): Headers => {
+const requestHeaderAllowlist = new Set([
+	"accept",
+	"accept-language",
+	"authorization",
+	"content-type",
+	"if-match",
+	"if-none-match",
+	"prefer",
+	"x-request-id",
+	"x-correlation-id",
+	"x-trace-id",
+	"x-b3-traceid",
+	"x-b3-spanid",
+	"traceparent",
+	"tracestate",
+]);
+
+const filterResponseHeaders = (headers: Headers): Headers => {
 	const filtered = new Headers(headers);
 	for (const header of hopByHopHeaders) {
 		filtered.delete(header);
+	}
+	return filtered;
+};
+
+const filterRequestHeaders = (headers: Headers): Headers => {
+	const filtered = new Headers();
+	for (const [name, value] of headers.entries()) {
+		const key = name.toLowerCase();
+		if (requestHeaderAllowlist.has(key)) {
+			filtered.set(key, value);
+		}
 	}
 	return filtered;
 };
@@ -38,7 +66,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 
 	const request = event.request;
 	const targetUrl = buildTargetUrl(request.url, backendUrl);
-	const headers = filterHeaders(request.headers);
+	const headers = filterRequestHeaders(request.headers);
 	if (!headers.has("authorization")) {
 		const proxyBearerToken = process.env.UGOITE_FRONTEND_BEARER_TOKEN;
 		if (proxyBearerToken) {
@@ -60,7 +88,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 
 	try {
 		const response = await fetch(targetUrl, init);
-		const responseHeaders = filterHeaders(response.headers);
+		const responseHeaders = filterResponseHeaders(response.headers);
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
