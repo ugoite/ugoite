@@ -1,7 +1,5 @@
 """Space member and invitation endpoints."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import ugoite_core
@@ -13,7 +11,11 @@ from app.api.endpoints.space import (
     _validate_path_id,
 )
 from app.core.authorization import raise_authorization_http_error, request_identity
-from app.models import payloads
+from app.models.payloads import (
+    SpaceMemberAccept,
+    SpaceMemberInvite,
+    SpaceMemberRoleUpdate,
+)
 
 router = APIRouter()
 
@@ -57,7 +59,7 @@ async def list_members_endpoint(
 )
 async def invite_member_endpoint(
     space_id: str,
-    payload: payloads.SpaceMemberInvite,
+    payload: SpaceMemberInvite,
     request: Request,
 ) -> dict[str, Any]:
     """Create a new invitation for a space member."""
@@ -109,7 +111,7 @@ async def invite_member_endpoint(
 @router.post("/spaces/{space_id}/members/accept")
 async def accept_member_invitation_endpoint(
     space_id: str,
-    payload: payloads.SpaceMemberAccept,
+    payload: SpaceMemberAccept,
     request: Request,
 ) -> dict[str, Any]:
     """Accept a pending invitation token as the authenticated user."""
@@ -150,7 +152,7 @@ async def accept_member_invitation_endpoint(
 async def update_member_role_endpoint(
     space_id: str,
     member_user_id: str,
-    payload: payloads.SpaceMemberRoleUpdate,
+    payload: SpaceMemberRoleUpdate,
     request: Request,
 ) -> dict[str, Any]:
     """Update role assignment for an existing member."""
