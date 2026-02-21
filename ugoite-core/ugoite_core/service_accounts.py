@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import secrets
 from dataclasses import dataclass
@@ -37,7 +34,6 @@ _ALL_SERVICE_SCOPES: frozenset[str] = frozenset(
 )
 
 _API_KEY_HASH_ALGORITHM = "pbkdf2_sha256_v1"
-_API_KEY_HASH_ITERATIONS = 240_000
 
 
 @dataclass(frozen=True)
@@ -141,19 +137,8 @@ def _new_secret() -> str:
     return f"ugsk_{secrets.token_urlsafe(32)}"
 
 
-def _hash_secret(secret: str) -> str:
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
 def _hash_api_key_secret(secret: str, salt: str) -> str:
-    derived = hashlib.pbkdf2_hmac(
-        "sha256",
-        secret.encode("utf-8"),
-        salt.encode("utf-8"),
-        _API_KEY_HASH_ITERATIONS,
-        dklen=32,
-    )
-    return base64.urlsafe_b64encode(derived).decode("ascii")
+    return cast("str", _core_any.hash_service_api_key_secret(secret, salt))
 
 
 def _verify_api_key_secret(key_obj: dict[str, Any], secret: str) -> bool:
@@ -163,16 +148,14 @@ def _verify_api_key_secret(key_obj: dict[str, Any], secret: str) -> bool:
 
     hash_algorithm = key_obj.get("hash_algorithm")
     key_salt = key_obj.get("secret_salt")
-    if (
-        hash_algorithm == _API_KEY_HASH_ALGORITHM
-        and isinstance(key_salt, str)
-        and key_salt
-    ):
-        expected = _hash_api_key_secret(secret, key_salt)
-        return hmac.compare_digest(key_hash, expected)
-
-    expected_legacy = _hash_secret(secret)
-    return hmac.compare_digest(key_hash, expected_legacy)
+    return bool(
+        _core_any.verify_service_api_key_secret(
+            key_hash,
+            secret,
+            hash_algorithm,
+            key_salt,
+        ),
+    )
 
 
 def _key_public_view(key_obj: dict[str, Any]) -> dict[str, Any]:
