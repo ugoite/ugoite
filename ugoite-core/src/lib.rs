@@ -9,6 +9,7 @@ use pyo3::IntoPyObjectExt;
 use serde_json::Value;
 
 pub mod asset;
+pub mod audit;
 pub mod entry;
 pub mod form;
 pub mod iceberg_store;
@@ -216,6 +217,79 @@ fn test_storage_connection_py<'a>(
     };
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         Python::with_gil(|py| json_to_py(py, payload))
+    })
+}
+
+// Audit
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, payload_json, retention_limit=None))]
+fn append_audit_event_py<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    payload_json: String,
+    retention_limit: Option<usize>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let payload: Value = serde_json::from_str(&payload_json)
+        .map_err(|e| PyValueError::new_err(format!("Invalid audit payload JSON: {e}")))?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let appended = audit::append_audit_event(&op, &space_id, &payload, retention_limit)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, appended))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, filters_json=None))]
+fn list_audit_events_py<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    filters_json: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let filters_value = match filters_json {
+        Some(raw) => serde_json::from_str::<Value>(&raw)
+            .map_err(|e| PyValueError::new_err(format!("Invalid audit filters JSON: {e}")))?,
+        None => Value::Null,
+    };
+    let offset = filters_value
+        .get("offset")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(0);
+    let limit = filters_value
+        .get("limit")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(100);
+    let action = filters_value
+        .get("action")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let actor_user_id = filters_value
+        .get("actor_user_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let outcome = filters_value
+        .get("outcome")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let options = audit::AuditListOptions {
+        offset,
+        limit,
+        action,
+        actor_user_id,
+        outcome,
+    };
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let listed = audit::list_audit_events(&op, &space_id, options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, listed))
     })
 }
 
@@ -976,6 +1050,8 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_sample_space_job, m)?)?;
     m.add_function(wrap_pyfunction!(get_sample_space_job, m)?)?;
     m.add_function(wrap_pyfunction!(test_storage_connection_py, m)?)?;
+    m.add_function(wrap_pyfunction!(append_audit_event_py, m)?)?;
+    m.add_function(wrap_pyfunction!(list_audit_events_py, m)?)?;
 
     m.add_function(wrap_pyfunction!(create_entry, m)?)?;
     m.add_function(wrap_pyfunction!(delete_entry, m)?)?;
