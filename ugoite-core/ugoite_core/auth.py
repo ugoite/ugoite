@@ -360,6 +360,10 @@ def _parse_string_set(raw: str | None) -> set[str]:
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 
+def _token_fingerprint(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+
+
 @lru_cache(maxsize=1)
 def get_auth_manager() -> AuthManager:
     """Create and cache authentication manager from environment settings."""
@@ -370,10 +374,10 @@ def get_auth_manager() -> AuthManager:
             bootstrap_token = secrets.token_urlsafe(32)
             logger.warning(
                 "No bearer credentials configured. "
-                "Generated one-time bootstrap token %s; "
+                "Generated one-time bootstrap token fingerprint=%s; "
                 "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
                 "for deterministic startup credentials.",
-                bootstrap_token,
+                _token_fingerprint(bootstrap_token),
             )
         bearer_tokens[bootstrap_token] = _CredentialRecord(
             user_id=os.environ.get("UGOITE_BOOTSTRAP_USER_ID", "bootstrap-user"),
