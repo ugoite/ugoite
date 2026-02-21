@@ -15,7 +15,7 @@ def request_identity(request: Request) -> RequestIdentity:
         return identity
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail={"code": "missing_identity", "message": "Authentication required"},
+        detail="Authentication required",
     )
 
 
