@@ -90,6 +90,7 @@ requirements:
       tests:
       - test_auth_rejects_unauthenticated_localhost_requests
       - test_auth_rejects_unauthenticated_remote_requests
+      - test_auth_rejects_malformed_signed_token_segments
       - test_auth_rejects_invalid_bearer_signature
       - test_auth_rejects_expired_bearer_token
       - test_auth_rejects_revoked_api_key

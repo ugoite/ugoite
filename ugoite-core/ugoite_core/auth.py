@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
-    err_code = code
-    err_detail = detail
-    raise AuthError(err_code, err_detail)
+    raise AuthError(code, detail)
 
 
 def _header_value(headers: dict[str, str] | object, name: str) -> str | None:
@@ -147,9 +145,9 @@ class _BearerTokenProvider:
         try:
             payload = json.loads(payload_bytes.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            err_code = "invalid_signature"
-            err_detail = "Invalid signed token payload"
-            raise AuthError(err_code, err_detail) from exc
+            error_code = "invalid_signature"
+            error_detail = "Invalid signed token payload"
+            raise AuthError(error_code, error_detail) from exc
 
         if not isinstance(payload, dict):
             _raise_auth("invalid_signature", "Invalid signed token payload")
@@ -371,9 +369,11 @@ def get_auth_manager() -> AuthManager:
         if bootstrap_token is None:
             bootstrap_token = secrets.token_urlsafe(32)
             logger.warning(
-                "No bearer credentials configured. Generated one-time bootstrap token; "
+                "No bearer credentials configured. "
+                "Generated one-time bootstrap token %s; "
                 "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
                 "for deterministic startup credentials.",
+                bootstrap_token,
             )
         bearer_tokens[bootstrap_token] = _CredentialRecord(
             user_id=os.environ.get("UGOITE_BOOTSTRAP_USER_ID", "bootstrap-user"),
