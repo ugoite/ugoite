@@ -16,7 +16,8 @@ targets an **Authenticated Access by Default** model.
 
 - API binds to localhost by default.
 - Remote access requires `UGOITE_ALLOW_REMOTE=true`.
-- User-login enforcement is not yet implemented.
+- Protected API/MCP routes require authenticated identity.
+- Phase 1 providers support bearer token and API key authentication.
 
 ## Network Isolation
 

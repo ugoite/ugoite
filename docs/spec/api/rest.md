@@ -8,8 +8,8 @@ The REST API is the primary interface for the frontend and external integrations
 
 ## Authentication
 
-Current implementation: API is localhost-only by default and does not yet
-enforce user login.
+Current implementation: API is localhost-only by default and enforces
+authenticated identity on protected endpoints.
 
 Planned (Milestone 4 / Phase 0 baseline): user authentication will be required
 for all API usage, including localhost mode. `UGOITE_ALLOW_REMOTE=true` only

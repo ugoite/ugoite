@@ -4,6 +4,14 @@ from contextlib import suppress
 from typing import Any, cast
 
 from . import _ugoite_core as _core
+from .auth import (
+    AuthError,
+    AuthManager,
+    RequestIdentity,
+    auth_headers_from_environment,
+    authenticate_headers,
+    clear_auth_manager_cache,
+)
 from .entry_input_modes import (
     compose_entry_markdown_from_chat,
     compose_entry_markdown_from_fields,
@@ -67,9 +75,15 @@ get_sql_session_rows = _core_any.get_sql_session_rows
 get_sql_session_rows_all = _core_any.get_sql_session_rows_all
 
 __all__ = [
+    "AuthError",
+    "AuthManager",
+    "RequestIdentity",
     "SqlLintDiagnostic",
+    "auth_headers_from_environment",
+    "authenticate_headers",
     "build_response_signature",
     "build_sql_schema",
+    "clear_auth_manager_cache",
     "compose_entry_markdown_from_chat",
     "compose_entry_markdown_from_fields",
     "create_entry",
