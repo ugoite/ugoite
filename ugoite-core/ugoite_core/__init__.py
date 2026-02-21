@@ -12,6 +12,21 @@ from .auth import (
     authenticate_headers,
     clear_auth_manager_cache,
 )
+from .authz import (
+    AccessContext,
+    ActionName,
+    AuthorizationError,
+    RoleName,
+    filter_readable_entries,
+    form_name_from_entry,
+    require_entry_read,
+    require_entry_write,
+    require_form_read,
+    require_form_write,
+    require_markdown_write,
+    require_space_action,
+    resolve_access_context,
+)
 from .entry_input_modes import (
     compose_entry_markdown_from_chat,
     compose_entry_markdown_from_fields,
@@ -75,9 +90,13 @@ get_sql_session_rows = _core_any.get_sql_session_rows
 get_sql_session_rows_all = _core_any.get_sql_session_rows_all
 
 __all__ = [
+    "AccessContext",
+    "ActionName",
     "AuthError",
     "AuthManager",
+    "AuthorizationError",
     "RequestIdentity",
+    "RoleName",
     "SqlLintDiagnostic",
     "auth_headers_from_environment",
     "authenticate_headers",
@@ -96,6 +115,8 @@ __all__ = [
     "delete_entry",
     "delete_sql",
     "extract_properties",
+    "filter_readable_entries",
+    "form_name_from_entry",
     "get_entry",
     "get_entry_history",
     "get_entry_revision",
@@ -122,6 +143,13 @@ __all__ = [
     "patch_space",
     "query_index",
     "reindex_all",
+    "require_entry_read",
+    "require_entry_write",
+    "require_form_read",
+    "require_form_write",
+    "require_markdown_write",
+    "require_space_action",
+    "resolve_access_context",
     "restore_entry",
     "save_asset",
     "search_entries",

@@ -6,12 +6,16 @@ import uuid
 from typing import Any
 
 import ugoite_core
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.endpoints.space import (
     _ensure_space_exists,
     _storage_config,
     _validate_path_id,
+)
+from app.core.authorization import (
+    raise_authorization_http_error,
+    request_identity,
 )
 from app.models.payloads import SqlCreate, SqlUpdate
 
@@ -20,14 +24,23 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/spaces/{space_id}/sql")
-async def list_sql_endpoint(space_id: str) -> list[dict[str, Any]]:
+async def list_sql_endpoint(space_id: str, request: Request) -> list[dict[str, Any]]:
     """List all saved SQL entries in a space."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "sql_read",
+        )
         return await ugoite_core.list_sql(storage_config, space_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except Exception as e:
         logger.exception("Failed to list saved SQL")
         raise HTTPException(
@@ -40,8 +53,10 @@ async def list_sql_endpoint(space_id: str) -> list[dict[str, Any]]:
 async def create_sql_endpoint(
     space_id: str,
     payload: SqlCreate,
+    request: Request,
 ) -> dict[str, Any]:
     """Create a new saved SQL entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
@@ -51,6 +66,12 @@ async def create_sql_endpoint(
     sql_id = payload.id or str(uuid.uuid4())
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "sql_write",
+        )
         payload_json = json.dumps(
             {
                 "name": payload.name,
@@ -65,6 +86,8 @@ async def create_sql_endpoint(
             payload_json,
         )
         return {"id": sql_id, "revision_id": entry.get("revision_id", "")}
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         msg = str(e)
         if "already exists" in msg.lower():
@@ -90,15 +113,28 @@ async def create_sql_endpoint(
 
 
 @router.get("/spaces/{space_id}/sql/{sql_id}")
-async def get_sql_endpoint(space_id: str, sql_id: str) -> dict[str, Any]:
+async def get_sql_endpoint(
+    space_id: str,
+    sql_id: str,
+    request: Request,
+) -> dict[str, Any]:
     """Get a saved SQL entry by ID."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "sql_read",
+        )
         return await ugoite_core.get_sql(storage_config, space_id, sql_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():
@@ -123,14 +159,22 @@ async def update_sql_endpoint(
     space_id: str,
     sql_id: str,
     payload: SqlUpdate,
+    request: Request,
 ) -> dict[str, Any]:
     """Update a saved SQL entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "sql_write",
+        )
         payload_json = json.dumps(
             {
                 "name": payload.name,
@@ -146,6 +190,8 @@ async def update_sql_endpoint(
             parent_revision_id=payload.parent_revision_id,
         )
         return {"id": sql_id, "revision_id": entry.get("revision_id", "")}
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         msg = str(e)
         if "conflict" in msg.lower():
@@ -179,15 +225,24 @@ async def update_sql_endpoint(
     "/spaces/{space_id}/sql/{sql_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_sql_endpoint(space_id: str, sql_id: str) -> None:
+async def delete_sql_endpoint(space_id: str, sql_id: str, request: Request) -> None:
     """Delete a saved SQL entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(sql_id, "sql_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "sql_write",
+        )
         await ugoite_core.delete_sql(storage_config, space_id, sql_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         msg = str(e)
         if "not found" in msg.lower():
