@@ -518,6 +518,49 @@ def cmd_space_revoke_member(
     typer.echo(json.dumps(response, indent=2))
 
 
+@space_app.command("audit-events")
+@handle_cli_errors
+def cmd_space_audit_events(
+    space_path: Annotated[str, typer.Argument(help="Space ID or path")],
+    offset: Annotated[int, typer.Option(help="Pagination offset")] = 0,
+    limit: Annotated[int, typer.Option(help="Pagination limit (max 500)")] = 100,
+    action: Annotated[str | None, typer.Option(help="Optional action filter")] = None,
+    actor_user_id: Annotated[
+        str | None,
+        typer.Option(help="Optional actor user id filter"),
+    ] = None,
+    outcome: Annotated[
+        str | None,
+        typer.Option(help="Optional outcome filter: success | deny | error"),
+    ] = None,
+) -> None:
+    """List space audit events (admin only, backend/api mode only)."""
+    setup_logging()
+    base_url, space_id = _remote_or_none(space_path)
+    if base_url is None:
+        msg = "audit-events command requires backend/api endpoint mode"
+        raise typer.BadParameter(msg)
+    normalized_limit = max(1, min(limit, 500))
+    normalized_offset = max(0, offset)
+    query_items = [f"offset={normalized_offset}", f"limit={normalized_limit}"]
+    if action and action.strip():
+        query_items.append(f"action={encode_path_component(action.strip())}")
+    if actor_user_id and actor_user_id.strip():
+        query_items.append(
+            f"actor_user_id={encode_path_component(actor_user_id.strip())}",
+        )
+    if outcome and outcome.strip():
+        query_items.append(f"outcome={encode_path_component(outcome.strip())}")
+
+    encoded_space_id = encode_path_component(space_id)
+    query = "&".join(query_items)
+    response = request_json(
+        "GET",
+        f"{base_url}/spaces/{encoded_space_id}/audit/events?{query}",
+    )
+    typer.echo(json.dumps(response, indent=2))
+
+
 @entry_app.command("create")
 @handle_cli_errors
 def cmd_entry_create(
