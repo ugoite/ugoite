@@ -141,6 +141,10 @@ def _new_secret() -> str:
     return f"ugsk_{secrets.token_urlsafe(32)}"
 
 
+def _hash_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
 def _hash_api_key_secret(secret: str, salt: str) -> str:
     derived = hashlib.pbkdf2_hmac(
         "sha256",
@@ -159,13 +163,16 @@ def _verify_api_key_secret(key_obj: dict[str, Any], secret: str) -> bool:
 
     hash_algorithm = key_obj.get("hash_algorithm")
     key_salt = key_obj.get("secret_salt")
-    if hash_algorithm != _API_KEY_HASH_ALGORITHM:
-        return False
-    if not isinstance(key_salt, str) or not key_salt:
-        return False
+    if (
+        hash_algorithm == _API_KEY_HASH_ALGORITHM
+        and isinstance(key_salt, str)
+        and key_salt
+    ):
+        expected = _hash_api_key_secret(secret, key_salt)
+        return hmac.compare_digest(key_hash, expected)
 
-    expected = _hash_api_key_secret(secret, key_salt)
-    return hmac.compare_digest(key_hash, expected)
+    expected_legacy = _hash_secret(secret)
+    return hmac.compare_digest(key_hash, expected_legacy)
 
 
 def _key_public_view(key_obj: dict[str, Any]) -> dict[str, Any]:
