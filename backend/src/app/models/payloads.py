@@ -94,10 +94,18 @@ class SpaceConnectionRequest(BaseModel):
 class FormCreate(BaseModel):
     """Form creation payload."""
 
+    class FormPrincipal(BaseModel):
+        """Principal for form ACL metadata."""
+
+        kind: Literal["user", "user_group"]
+        id: str
+
     name: str
     version: int = 1
     template: str
     fields: dict[str, dict[str, Any]]
     allow_extra_attributes: Literal["deny", "allow_json", "allow_columns"] = "deny"
+    read_principals: list[FormPrincipal] | None = None
+    write_principals: list[FormPrincipal] | None = None
     defaults: dict[str, Any] | None = None
     strategies: dict[str, Any] | None = None

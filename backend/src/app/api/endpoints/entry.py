@@ -6,13 +6,17 @@ import uuid
 from typing import Any
 
 import ugoite_core
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.endpoints.space import (
     _ensure_space_exists,
     _storage_config,
     _validate_entry_markdown_against_form,
     _validate_path_id,
+)
+from app.core.authorization import (
+    raise_authorization_http_error,
+    request_identity,
 )
 from app.models.payloads import EntryCreate, EntryRestore, EntryUpdate
 
@@ -27,8 +31,10 @@ logger = logging.getLogger(__name__)
 async def create_entry_endpoint(
     space_id: str,
     payload: EntryCreate,
+    request: Request,
 ) -> dict[str, Any]:
     """Create a new entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
@@ -36,6 +42,17 @@ async def create_entry_endpoint(
     entry_id = payload.id or str(uuid.uuid4())
 
     try:
+        await _validate_entry_markdown_against_form(
+            storage_config,
+            space_id,
+            payload.content,
+        )
+        await ugoite_core.require_markdown_write(
+            storage_config,
+            space_id,
+            identity,
+            payload.content,
+        )
         await ugoite_core.create_entry(
             storage_config,
             space_id,
@@ -43,6 +60,8 @@ async def create_entry_endpoint(
             payload.content,
         )
         entry_data = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise HTTPException(
@@ -69,14 +88,32 @@ async def create_entry_endpoint(
 
 
 @router.get("/spaces/{space_id}/entries")
-async def list_entries_endpoint(space_id: str) -> list[dict[str, Any]]:
+async def list_entries_endpoint(
+    space_id: str,
+    request: Request,
+) -> list[dict[str, Any]]:
     """List all entries in a space."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ugoite_core.list_entries(storage_config, space_id)
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "entry_read",
+        )
+        entries = await ugoite_core.list_entries(storage_config, space_id)
+        return await ugoite_core.filter_readable_entries(
+            storage_config,
+            space_id,
+            identity,
+            entries,
+        )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except Exception as e:
         logger.exception("Failed to list entries")
         raise HTTPException(
@@ -86,15 +123,23 @@ async def list_entries_endpoint(space_id: str) -> list[dict[str, Any]]:
 
 
 @router.get("/spaces/{space_id}/entries/{entry_id}")
-async def get_entry_endpoint(space_id: str, entry_id: str) -> dict[str, Any]:
+async def get_entry_endpoint(
+    space_id: str,
+    entry_id: str,
+    request: Request,
+) -> dict[str, Any]:
     """Get an entry by ID."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
-        return await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_read(storage_config, space_id, identity, entry)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -111,6 +156,8 @@ async def get_entry_endpoint(space_id: str, entry_id: str) -> dict[str, Any]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         ) from e
+    else:
+        return entry
 
 
 @router.put("/spaces/{space_id}/entries/{entry_id}")
@@ -118,12 +165,14 @@ async def update_entry_endpoint(
     space_id: str,
     entry_id: str,
     payload: EntryUpdate,
+    request: Request,
 ) -> dict[str, Any]:
     """Update an existing entry.
 
     Requires parent_revision_id for optimistic concurrency control.
     Returns 409 Conflict if the revision has changed.
     """
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     storage_config = _storage_config()
@@ -133,6 +182,19 @@ async def update_entry_endpoint(
         await _validate_entry_markdown_against_form(
             storage_config,
             space_id,
+            payload.markdown,
+        )
+        current_entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_write(
+            storage_config,
+            space_id,
+            identity,
+            current_entry,
+        )
+        await ugoite_core.require_markdown_write(
+            storage_config,
+            space_id,
+            identity,
             payload.markdown,
         )
         assets_json = json.dumps(payload.assets) if payload.assets is not None else None
@@ -148,6 +210,8 @@ async def update_entry_endpoint(
             "id": entry_id,
             "revision_id": updated_entry.get("revision_id", ""),
         }
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         msg = str(e)
         if "conflict" in msg.lower():
@@ -197,15 +261,26 @@ async def update_entry_endpoint(
 async def delete_entry_endpoint(
     space_id: str,
     entry_id: str,
+    request: Request,
 ) -> dict[str, str]:
     """Tombstone (soft delete) an entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        current_entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_write(
+            storage_config,
+            space_id,
+            identity,
+            current_entry,
+        )
         await ugoite_core.delete_entry(storage_config, space_id, entry_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -230,15 +305,26 @@ async def delete_entry_endpoint(
 async def get_entry_history_endpoint(
     space_id: str,
     entry_id: str,
+    request: Request,
 ) -> dict[str, Any]:
     """Get the revision history for an entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        current_entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_read(
+            storage_config,
+            space_id,
+            identity,
+            current_entry,
+        )
         return await ugoite_core.get_entry_history(storage_config, space_id, entry_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -262,8 +348,10 @@ async def get_entry_revision_endpoint(
     space_id: str,
     entry_id: str,
     revision_id: str,
+    request: Request,
 ) -> dict[str, Any]:
     """Get a specific revision of an entry."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     _validate_path_id(revision_id, "revision_id")
@@ -271,12 +359,21 @@ async def get_entry_revision_endpoint(
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        current_entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_read(
+            storage_config,
+            space_id,
+            identity,
+            current_entry,
+        )
         return await ugoite_core.get_entry_revision(
             storage_config,
             space_id,
             entry_id,
             revision_id,
         )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -300,20 +397,31 @@ async def restore_entry_endpoint(
     space_id: str,
     entry_id: str,
     payload: EntryRestore,
+    request: Request,
 ) -> dict[str, Any]:
     """Restore an entry to a previous revision."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        current_entry = await ugoite_core.get_entry(storage_config, space_id, entry_id)
+        await ugoite_core.require_entry_write(
+            storage_config,
+            space_id,
+            identity,
+            current_entry,
+        )
         entry_data = await ugoite_core.restore_entry(
             storage_config,
             space_id,
             entry_id,
             payload.revision_id,
         )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(

@@ -5,8 +5,12 @@ import logging
 from typing import Any
 
 import ugoite_core
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
+from app.core.authorization import (
+    raise_authorization_http_error,
+    request_identity,
+)
 from app.core.config import get_root_path
 from app.core.ids import validate_id
 from app.core.storage import space_uri, storage_config_from_root
@@ -125,8 +129,9 @@ def _space_uri(space_id: str) -> str:
 
 
 @router.get("/spaces")
-async def list_spaces_endpoint() -> list[dict[str, Any]]:
-    """List all spaces."""
+async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
+    """List spaces visible to the authenticated principal."""
+    identity = request_identity(request)
     storage_config = _storage_config()
     try:
         space_ids = await ugoite_core.list_spaces(storage_config)
@@ -143,7 +148,15 @@ async def list_spaces_endpoint() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for space_id in space_ids:
         try:
+            await ugoite_core.require_space_action(
+                storage_config,
+                space_id,
+                identity,
+                "space_list",
+            )
             results.append(await ugoite_core.get_space(storage_config, space_id))
+        except ugoite_core.AuthorizationError:
+            continue
         except Exception:
             logger.exception("Failed to read space meta %s", space_id)
 
@@ -152,14 +165,31 @@ async def list_spaces_endpoint() -> list[dict[str, Any]]:
 
 @router.post("/spaces", status_code=status.HTTP_201_CREATED)
 async def create_space_endpoint(
+    request: Request,
     payload: SpaceCreate,
 ) -> dict[str, str]:
     """Create a new space."""
+    identity = request_identity(request)
     space_id = payload.name  # Using name as ID for now per simple spec
 
     try:
         storage_config = _storage_config()
         await ugoite_core.create_space(storage_config, space_id)
+        await ugoite_core.patch_space(
+            storage_config,
+            space_id,
+            json.dumps(
+                {
+                    "owner_user_id": identity.user_id,
+                    "admin_user_ids": [identity.user_id],
+                    "settings": {
+                        "owner_user_id": identity.user_id,
+                        "admin_user_ids": [identity.user_id],
+                        "member_roles": {identity.user_id: "owner"},
+                    },
+                },
+            ),
+        )
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise HTTPException(
@@ -185,12 +215,21 @@ async def create_space_endpoint(
 
 
 @router.get("/spaces/{space_id}")
-async def get_space_endpoint(space_id: str) -> dict[str, Any]:
+async def get_space_endpoint(space_id: str, request: Request) -> dict[str, Any]:
     """Get space metadata."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     try:
         storage_config = _storage_config()
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "space_read",
+        )
         return await ugoite_core.get_space(storage_config, space_id)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -213,8 +252,10 @@ async def get_space_endpoint(space_id: str) -> dict[str, Any]:
 async def patch_space_endpoint(
     space_id: str,
     payload: SpacePatch,
+    request: Request,
 ) -> dict[str, Any]:
     """Update space metadata/settings including storage connector."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
 
     # Build patch dict from payload
@@ -228,11 +269,19 @@ async def patch_space_endpoint(
 
     try:
         storage_config = _storage_config()
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "space_admin",
+        )
         return await ugoite_core.patch_space(
             storage_config,
             space_id,
             json.dumps(patch_data),
         )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
         if "not found" in str(e).lower():
             raise HTTPException(
@@ -255,14 +304,24 @@ async def patch_space_endpoint(
 async def test_connection_endpoint(
     space_id: str,
     payload: SpaceConnectionRequest,
+    request: Request,
 ) -> dict[str, Any]:
     """Validate the provided storage connector (stubbed for Milestone 6)."""
+    identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
     try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "space_admin",
+        )
         return await ugoite_core.test_storage_connection(payload.storage_config)
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

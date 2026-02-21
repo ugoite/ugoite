@@ -175,7 +175,16 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
         return Err(anyhow!("Space not found: {}", name));
     }
     let meta_path = format!("spaces/{}/meta.json", name);
-    read_json(op, &meta_path).await
+    let settings_path = format!("spaces/{}/settings.json", name);
+    let mut meta = read_json(op, &meta_path).await?;
+
+    let settings = if op.exists(&settings_path).await? {
+        read_json(op, &settings_path).await?
+    } else {
+        serde_json::json!({})
+    };
+    meta["settings"] = settings;
+    Ok(meta)
 }
 
 pub async fn patch_space(
