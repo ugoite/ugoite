@@ -57,6 +57,7 @@ This milestone implements the future authentication and collaboration model alre
 - [x] Add negative-path handling (expired token, invalid signature, revoked key).
 
 ### Phase 1 Implementation Notes (2026-02)
+- Authentication foundation is implemented in `ugoite-core` (`ugoite_core.auth`) and reused by backend/CLI adapters.
 - Bearer authentication supports static tokens and HMAC-signed tokens with key-id (`kid`) based rotation.
 - API key authentication supports service principals and shared revocation by key-id.
 - Runtime key material is environment-driven (`UGOITE_AUTH_*`) for pre-production breaking changes without migration.
@@ -75,6 +76,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Key Tasks
 - [ ] Define role model (e.g., owner/admin/editor/viewer/service) and permissions matrix.
+- [ ] Keep backend/CLI/frontend channel adapters thin and continue delegating auth/authz policy logic to `ugoite-core`.
 - [ ] Implement space-level access checks (list/read/write/admin operations).
 - [ ] Implement entry/resource-level checks where stricter controls are required.
 - [ ] Add policy evaluation in `ugoite-core` and thin backend adapters.
@@ -151,6 +153,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Key Tasks
 - [ ] Add login/session UX for remote mode and clear localhost-mode messaging.
+- [ ] Ensure frontend and CLI use shared credential env conventions (`UGOITE_AUTH_BEARER_TOKEN` / `UGOITE_AUTH_API_KEY`) when connecting to backend APIs.
 - [ ] Add space member management screens with role editing and revoke flows.
 - [ ] Add frontend handling for authz failures (permission-aware UI states).
 - [ ] Add CLI ergonomics for auth login/profile/token management.

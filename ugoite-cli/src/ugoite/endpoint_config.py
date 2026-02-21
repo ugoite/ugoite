@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote, urlparse
 
+from ugoite_core.auth import auth_headers_from_environment
+
 EndpointMode = Literal["core", "backend", "api"]
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -127,7 +129,7 @@ def request_json(
         raise RuntimeError(msg)
 
     body = None if payload is None else json.dumps(payload)
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", **auth_headers_from_environment()}
     if body is not None:
         headers["Content-Type"] = "application/json"
 
