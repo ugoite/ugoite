@@ -126,9 +126,17 @@ test.describe("Docsite mobile navigation", () => {
 
 		await page.locator(".mobile-nav-toggle").click();
 		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
-		await expect(page.locator(".mobile-nav-overlay")).toBeVisible();
+		const overlay = page.locator(".mobile-nav-overlay");
+		await expect(overlay).toBeVisible();
 
-		await page.locator(".mobile-nav-overlay").click();
+		const overlayBox = await overlay.boundingBox();
+		if (!overlayBox) {
+			throw new Error("Overlay bounding box is unavailable");
+		}
+		await page.mouse.click(
+			overlayBox.x + overlayBox.width - 6,
+			overlayBox.y + Math.min(40, overlayBox.height - 6),
+		);
 		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
 	});
 });
