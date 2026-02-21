@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -17,6 +19,8 @@ from fastapi import Depends, HTTPException, Request, status
 
 SIGNED_TOKEN_PARTS = 3
 AUTH_HEADER_PARTS = 2
+
+logger = logging.getLogger(__name__)
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -117,8 +121,11 @@ class _BearerTokenProvider:
             _raise_auth("invalid_signature", "Malformed signed bearer token")
 
         _, payload_segment, signature_segment = parts
-        payload_bytes = _urlsafe_b64decode(payload_segment)
-        signature_bytes = _urlsafe_b64decode(signature_segment)
+        try:
+            payload_bytes = _urlsafe_b64decode(payload_segment)
+            signature_bytes = _urlsafe_b64decode(signature_segment)
+        except (ValueError, binascii.Error):
+            _raise_auth("invalid_signature", "Malformed signed bearer token")
         return payload_segment, payload_bytes, signature_bytes
 
     def _load_payload(self, payload_bytes: bytes) -> dict[str, object]:
@@ -348,6 +355,11 @@ def get_auth_manager() -> AuthManager:
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
         if bootstrap_token is None:
             bootstrap_token = secrets.token_urlsafe(32)
+            logger.warning(
+                "No bearer credentials configured. Generated one-time bootstrap token; "
+                "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
+                "for deterministic startup credentials.",
+            )
         bearer_tokens[bootstrap_token] = _CredentialRecord(
             user_id=os.environ.get("UGOITE_BOOTSTRAP_USER_ID", "bootstrap-user"),
             principal_type="user",
