@@ -57,6 +57,7 @@ e2e/                # End-to-end tests (Bun)
 - [Specification Index](docs/spec/index.md) - Technical specifications
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
+- [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
 
