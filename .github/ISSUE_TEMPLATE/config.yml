@@ -3,3 +3,8 @@ contact_links:
   - name: GitHub Discussions
     url: https://github.com/ugoite/ugoite/discussions
     about: Please ask and answer questions here.
+  - name: Security vulnerabilities
+    url: https://github.com/ugoite/ugoite/security/advisories/new
+    about: >
+      Please report security vulnerabilities via GitHub Security Advisories
+      using this private form. Do not open public issues for security reports.
