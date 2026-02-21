@@ -186,7 +186,7 @@ requirements:
   - data-model/sql-sessions.md#materialized-views
   - stories/experimental.yaml
   priority: high
-  status: planned
+  status: implemented
   tests:
     pytest:
     - file: backend/tests/test_forms_acl.py
@@ -200,3 +200,43 @@ requirements:
       tests:
       - Enforces Form ACL Read/Write Restrictions for Space Members
       - Enforces Materialized View Policy Intersection with Form ACL
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-007
+  title: Space Membership Lifecycle and Invitation Collaboration
+  description: 'Each space MUST support explicit member lifecycle states (`invited`,
+
+    `active`, `revoked`) with invitation issuance, acceptance, role changes,
+
+    and revocation controls. Membership updates MUST be concurrency-safe and
+
+    must drive effective authorization outcomes for the authenticated user.
+
+    '
+  related_spec:
+  - stories/experimental.yaml
+  - api/rest.md#spaces
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_space_members.py
+      tests:
+      - test_space_member_invite_and_accept_transitions_to_active
+      - test_space_member_role_change_controls_admin_permissions
+      - test_space_member_revoke_removes_access
+    e2e:
+    - file: e2e/space-membership.test.ts
+      tests:
+      - "Invitation lifecycle: invite, accept, revoke"
+      - "Permission transition reflects role changes"

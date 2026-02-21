@@ -96,8 +96,8 @@ def test_form_acl_denies_unauthorized_read_access(
     assert get_response.json()["detail"]["code"] == "forbidden"
 
     list_response = viewer.get(f"/spaces/{space_id}/entries")
-    assert list_response.status_code == 200
-    assert list_response.json() == []
+    assert list_response.status_code == 403
+    assert list_response.json()["detail"]["action"] == "space_read"
 
 
 def test_form_acl_denies_unauthorized_write_access(
@@ -194,4 +194,4 @@ def test_materialized_view_inherits_form_acl_policies(
         json={"settings": {"member_roles": {"viewer-user": "owner"}}},
     )
     assert response.status_code == 403
-    assert response.json()["detail"]["action"] == "space_admin"
+    assert response.json()["detail"]["action"] == "space_read"

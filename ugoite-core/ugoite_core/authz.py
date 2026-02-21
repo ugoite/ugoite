@@ -185,7 +185,9 @@ def _groups_from_space_meta(
     return frozenset(groups)
 
 
-def _resolve_role(space_meta: dict[str, Any], identity: RequestIdentity) -> RoleName:
+def _resolve_role(
+    space_meta: dict[str, Any], identity: RequestIdentity
+) -> RoleName | None:
     settings = space_meta.get("settings")
     settings_map = settings if isinstance(settings, dict) else {}
 
@@ -204,6 +206,29 @@ def _resolve_role(space_meta: dict[str, Any], identity: RequestIdentity) -> Role
     if isinstance(admin_user_ids, list) and identity.user_id in admin_user_ids:
         return "admin"
 
+    membership_configured = any(
+        key in space_meta or key in settings_map
+        for key in ("members", "member_roles", "owner_user_id", "admin_user_ids")
+    )
+
+    members = space_meta.get("members")
+    if isinstance(members, dict):
+        member = members.get(identity.user_id)
+        if isinstance(member, dict):
+            state = member.get("state")
+            role = member.get("role")
+            if state == "active" and isinstance(role, str) and role in _VALID_ROLES:
+                return cast("RoleName", role)
+
+    settings_members = settings_map.get("members")
+    if isinstance(settings_members, dict):
+        member = settings_members.get(identity.user_id)
+        if isinstance(member, dict):
+            state = member.get("state")
+            role = member.get("role")
+            if state == "active" and isinstance(role, str) and role in _VALID_ROLES:
+                return cast("RoleName", role)
+
     member_roles = space_meta.get("member_roles")
     if isinstance(member_roles, dict):
         explicit = member_roles.get(identity.user_id)
@@ -215,6 +240,9 @@ def _resolve_role(space_meta: dict[str, Any], identity: RequestIdentity) -> Role
         explicit = settings_roles.get(identity.user_id)
         if isinstance(explicit, str) and explicit in _VALID_ROLES:
             return cast("RoleName", explicit)
+
+    if membership_configured:
+        return None
 
     return _default_user_role()
 
@@ -228,6 +256,16 @@ async def resolve_access_context(
     space_meta_obj = await _core_any.get_space(storage_config, space_id)
     space_meta = cast("dict[str, Any]", space_meta_obj)
     role = _resolve_role(space_meta, identity)
+    if role is None:
+        _deny(
+            "space_read",
+            (
+                f"Principal '{identity.user_id}' is not an active member "
+                f"of space '{space_id}'."
+            ),
+        )
+        message = "unreachable"
+        raise RuntimeError(message)
     groups = _groups_from_space_meta(space_id, identity.user_id, space_meta)
     settings = space_meta.get("settings")
     settings_map = settings if isinstance(settings, dict) else {}
