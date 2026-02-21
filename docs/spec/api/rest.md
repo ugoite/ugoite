@@ -29,6 +29,11 @@ Planned endpoint surface (exact payloads may evolve during implementation):
 - `POST /spaces/{space_id}/admin/invitations` (one-time invite token)
 - `POST /spaces/{space_id}/admin/recovery/force-reset`
 - `POST /spaces/{space_id}/admin/recovery/backup-codes`
+- `GET /spaces/{space_id}/service-accounts`
+- `POST /spaces/{space_id}/service-accounts`
+- `POST /spaces/{space_id}/service-accounts/{service_account_id}/keys`
+- `POST /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}/rotate`
+- `DELETE /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}`
 
 Authorization policy baseline:
 

@@ -64,12 +64,15 @@ space-scoped and uses the following profile:
 | Passkey (WebAuthn) | Primary user login, passwordless by default |
 | OAuth2 (optional link) | External identity linking and optional auto-provisioning |
 | One-time Invite Token | First-time bootstrap enrollment for admin-distributed invites |
+| Service Account API Key | Non-interactive automation with scoped least-privilege actions |
 
 ### Identity Source
 
 - Default identity store is metadata Form `User` per space.
 - Metadata Form `UserGroup` is also provisioned per space.
 - New OAuth2 users MAY be auto-created in metadata Form `User` when enabled.
+- Service accounts are space-scoped identities with explicit action scopes and
+	one-time reveal API keys.
 
 ### Recovery & Administration
 

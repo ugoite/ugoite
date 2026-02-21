@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal, NoReturn, cast
 
+from .service_accounts import resolve_service_api_key
+
 DEFAULT_UNAUTHORIZED_STATUS_CODE = 401
 SIGNED_TOKEN_PARTS = 3
 AUTH_HEADER_PARTS = 2
@@ -27,6 +29,16 @@ def _raise_auth(code: str, detail: str) -> NoReturn:
 
 
 def _header_value(headers: dict[str, str] | object, name: str) -> str | None:
+    if isinstance(headers, dict):
+        target = name.lower()
+        for key, value in headers.items():
+            if (
+                isinstance(key, str)
+                and key.lower() == target
+                and isinstance(value, str)
+            ):
+                return value
+
     getter = getattr(headers, "get", None)
     if getter is None:
         return None
@@ -51,6 +63,9 @@ class RequestIdentity:
     principal_type: Literal["user", "service"] = "user"
     display_name: str | None = None
     key_id: str | None = None
+    scopes: frozenset[str] = frozenset()
+    scope_enforced: bool = False
+    service_account_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +77,9 @@ class _CredentialRecord:
     display_name: str | None
     key_id: str | None
     disabled: bool
+    scopes: frozenset[str]
+    scope_enforced: bool
+    service_account_id: str | None
 
 
 class AuthError(Exception):
@@ -117,6 +135,9 @@ class _BearerTokenProvider:
             display_name=record.display_name,
             auth_method="bearer",
             key_id=record.key_id,
+            scopes=record.scopes,
+            scope_enforced=record.scope_enforced,
+            service_account_id=record.service_account_id,
         )
 
     def _authenticate_signed_token(self, token: str) -> RequestIdentity:
@@ -209,12 +230,26 @@ class _BearerTokenProvider:
         if display_name is not None and not isinstance(display_name, str):
             _raise_auth("invalid_credentials", "Invalid display name")
 
+        scopes_obj = payload.get("scopes")
+        scopes = (
+            frozenset(scope for scope in scopes_obj if isinstance(scope, str) and scope)
+            if isinstance(scopes_obj, list)
+            else frozenset()
+        )
+        service_account_id_obj = payload.get("service_account_id")
+        service_account_id = (
+            service_account_id_obj if isinstance(service_account_id_obj, str) else None
+        )
+
         return RequestIdentity(
             user_id=user_id,
             principal_type=principal_type,
             display_name=display_name,
             auth_method="bearer",
             key_id=kid,
+            scopes=scopes,
+            scope_enforced=bool(payload.get("scope_enforced", False)),
+            service_account_id=service_account_id,
         )
 
 
@@ -248,6 +283,9 @@ class _ApiKeyProvider:
             display_name=record.display_name,
             auth_method="api_key",
             key_id=record.key_id,
+            scopes=record.scopes,
+            scope_enforced=record.scope_enforced,
+            service_account_id=record.service_account_id,
         )
 
 
@@ -344,12 +382,24 @@ def _parse_record_map(raw: str | None) -> dict[str, _CredentialRecord]:
         if key_id is not None and not isinstance(key_id, str):
             key_id = None
         disabled = bool(data.get("disabled", False))
+        scopes_obj = data.get("scopes")
+        scopes = (
+            frozenset(scope for scope in scopes_obj if isinstance(scope, str) and scope)
+            if isinstance(scopes_obj, list)
+            else frozenset()
+        )
+        service_account_id = data.get("service_account_id")
+        if service_account_id is not None and not isinstance(service_account_id, str):
+            service_account_id = None
         records[credential] = _CredentialRecord(
             user_id=user_id,
             principal_type=principal_type,
             display_name=display_name,
             key_id=key_id,
             disabled=disabled,
+            scopes=scopes,
+            scope_enforced=bool(data.get("scope_enforced", False)),
+            service_account_id=service_account_id,
         )
     return records
 
@@ -381,6 +431,9 @@ def get_auth_manager() -> AuthManager:
             display_name="Local Bootstrap User",
             key_id="bootstrap",
             disabled=False,
+            scopes=frozenset(),
+            scope_enforced=False,
+            service_account_id=None,
         )
 
     api_keys = _parse_record_map(os.environ.get("UGOITE_AUTH_API_KEYS_JSON"))
@@ -393,6 +446,9 @@ def get_auth_manager() -> AuthManager:
             display_name=None,
             key_id=None,
             disabled=False,
+            scopes=frozenset(),
+            scope_enforced=False,
+            service_account_id=None,
         )
 
     signing_secrets = _parse_key_value_map(os.environ.get("UGOITE_AUTH_BEARER_SECRETS"))
@@ -421,6 +477,59 @@ def clear_auth_manager_cache() -> None:
 def authenticate_headers(headers: dict[str, str] | object) -> RequestIdentity:
     """Resolve authenticated identity from request headers."""
     return get_auth_manager().authenticate_headers(headers)
+
+
+async def authenticate_headers_for_space(
+    storage_config: dict[str, str],
+    space_id: str,
+    headers: dict[str, str] | object,
+    *,
+    request_method: str | None = None,
+    request_path: str | None = None,
+    request_id: str | None = None,
+) -> RequestIdentity:
+    """Resolve identity with support for space-scoped service-account API keys."""
+    authorization = _header_value(headers, "authorization")
+    if authorization:
+        return authenticate_headers(headers)
+
+    api_key = _header_value(headers, "x-api-key")
+    if not api_key:
+        return authenticate_headers(headers)
+
+    try:
+        return get_auth_manager().authenticate_headers(headers)
+    except AuthError as exc:
+        if exc.code != "invalid_credentials":
+            raise
+
+    try:
+        resolved = await resolve_service_api_key(
+            storage_config,
+            space_id,
+            api_key,
+            request_method=request_method,
+            request_path=request_path,
+            request_id=request_id,
+        )
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "missing" in message:
+            _raise_auth("missing_credentials", "Missing API key")
+        if "revoked" in message:
+            _raise_auth("revoked_key", "API key has been revoked")
+        _raise_auth("invalid_credentials", "Invalid API key")
+
+    return RequestIdentity(
+        user_id=resolved.user_id,
+        principal_type="service",
+        display_name=resolved.display_name,
+        auth_method="api_key",
+        key_id=resolved.key_id,
+        scopes=resolved.scopes,
+        scope_enforced=True,
+        service_account_id=resolved.service_account_id,
+    )
 
 
 def auth_headers_from_environment() -> dict[str, str]:

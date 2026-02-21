@@ -12,7 +12,11 @@ from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.concurrency import iterate_in_threadpool
 
-from app.core.auth import AuthError, authenticate_request
+from app.core.auth import (
+    AuthError,
+    authenticate_request,
+    authenticate_request_for_space,
+)
 from app.core.config import get_root_path
 from app.core.security import (
     build_response_signature,
@@ -119,7 +123,16 @@ async def security_middleware(
 
     if not _is_auth_exempt(request.url.path):
         try:
-            identity = authenticate_request(request)
+            space_id = _space_id_from_path(request.url.path)
+            storage_config = storage_config_from_root(root_path)
+            if isinstance(space_id, str):
+                identity = await authenticate_request_for_space(
+                    request,
+                    storage_config,
+                    space_id,
+                )
+            else:
+                identity = authenticate_request(request)
             request.state.identity = identity
             await _emit_audit_event(
                 request,

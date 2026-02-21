@@ -202,3 +202,93 @@ apis:
       command: ugoite space audit-events
       file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_audit_events
+
+  - id: space.service_accounts.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/service-accounts
+      file: backend/src/app/api/endpoints/service_accounts.py
+      function: list_service_accounts_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/service_accounts.py
+      function: list_service_accounts
+    ugoite_cli:
+      command: ugoite space service-account-list
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_service_account_list
+
+  - id: space.service_accounts.create
+    method: POST
+    backend:
+      path: /spaces/{space_id}/service-accounts
+      file: backend/src/app/api/endpoints/service_accounts.py
+      function: create_service_account_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/service_accounts.py
+      function: create_service_account
+    ugoite_cli:
+      command: ugoite space service-account-create
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_service_account_create
+
+  - id: space.service_accounts.keys.create
+    method: POST
+    backend:
+      path: /spaces/{space_id}/service-accounts/{service_account_id}/keys
+      file: backend/src/app/api/endpoints/service_accounts.py
+      function: create_service_account_key_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/service_accounts.py
+      function: create_service_account_key
+    ugoite_cli:
+      command: ugoite space service-account-key-create
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_service_account_key_create
+
+  - id: space.service_accounts.keys.rotate
+    method: POST
+    backend:
+      path: /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}/rotate
+      file: backend/src/app/api/endpoints/service_accounts.py
+      function: rotate_service_account_key_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/service_accounts.py
+      function: rotate_service_account_key
+    ugoite_cli:
+      command: ugoite space service-account-key-rotate
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_service_account_key_rotate
+
+  - id: space.service_accounts.keys.revoke
+    method: DELETE
+    backend:
+      path: /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}
+      file: backend/src/app/api/endpoints/service_accounts.py
+      function: revoke_service_account_key_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/service_accounts.py
+      function: revoke_service_account_key
+    ugoite_cli:
+      command: ugoite space service-account-key-revoke
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_service_account_key_revoke
