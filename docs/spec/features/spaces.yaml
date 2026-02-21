@@ -184,3 +184,21 @@ apis:
       command: ugoite space revoke-member
       file: ugoite-cli/src/ugoite/cli.py
       function: cmd_space_revoke_member
+
+  - id: space.audit.list
+    method: GET
+    backend:
+      path: /spaces/{space_id}/audit/events
+      file: backend/src/app/api/endpoints/audit.py
+      function: list_audit_events_endpoint
+    frontend:
+      path: /spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/[space_id]/settings.tsx
+      function: SpaceSettingsRoute
+    ugoite_core:
+      file: ugoite-core/ugoite_core/audit.py
+      function: list_audit_events
+    ugoite_cli:
+      command: ugoite space audit-events
+      file: ugoite-cli/src/ugoite/cli.py
+      function: cmd_space_audit_events
