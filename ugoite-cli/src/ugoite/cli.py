@@ -49,12 +49,17 @@ from ugoite.space import (
     SampleSpaceOptions,
     create_sample_space,
     create_sample_space_job,
+    create_service_account,
+    create_service_account_key,
     create_space,
     get_sample_space_job,
     get_space,
     list_sample_scenarios,
+    list_service_accounts,
     list_spaces,
     patch_space,
+    revoke_service_account_key,
+    rotate_service_account_key,
     test_storage_connection,
 )
 
@@ -258,6 +263,183 @@ def cmd_space_get(
     else:
         encoded_space_id = encode_path_component(space_id)
         data = request_json("GET", f"{base_url}/spaces/{encoded_space_id}")
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("service-account-list")
+@handle_cli_errors
+def cmd_space_service_account_list(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+) -> None:
+    """List service accounts for a space."""
+    setup_logging()
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = list_service_accounts(root_path, space_id)
+    else:
+        encoded_space_id = encode_path_component(space_id)
+        data = request_json(
+            "GET",
+            f"{base_url}/spaces/{encoded_space_id}/service-accounts",
+        )
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("service-account-create")
+@handle_cli_errors
+def cmd_space_service_account_create(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    display_name: Annotated[
+        str,
+        typer.Option(help="Human-readable service account display name"),
+    ],
+    scopes: Annotated[
+        str,
+        typer.Option(help="Comma-separated authz scopes (e.g. entry_read,entry_write)"),
+    ],
+    actor_user_id: Annotated[
+        str,
+        typer.Option(help="Actor user id for core mode writes"),
+    ] = "cli-user",
+) -> None:
+    """Create a scoped service account."""
+    setup_logging()
+    scope_values = [item.strip() for item in scopes.split(",") if item.strip()]
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = create_service_account(
+            root_path,
+            space_id,
+            display_name=display_name,
+            scopes=scope_values,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        encoded_space_id = encode_path_component(space_id)
+        data = request_json(
+            "POST",
+            f"{base_url}/spaces/{encoded_space_id}/service-accounts",
+            payload={"display_name": display_name, "scopes": scope_values},
+        )
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("service-account-key-create")
+@handle_cli_errors
+def cmd_space_service_account_key_create(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    service_account_id: Annotated[str, typer.Argument(help="Service account ID")],
+    key_name: Annotated[str, typer.Option(help="API key name/label")],
+    actor_user_id: Annotated[
+        str,
+        typer.Option(help="Actor user id for core mode writes"),
+    ] = "cli-user",
+) -> None:
+    """Create a one-time reveal API key for a service account."""
+    setup_logging()
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = create_service_account_key(
+            root_path,
+            space_id,
+            service_account_id=service_account_id,
+            key_name=key_name,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        encoded_space_id = encode_path_component(space_id)
+        encoded_account_id = encode_path_component(service_account_id)
+        data = request_json(
+            "POST",
+            f"{base_url}/spaces/{encoded_space_id}/service-accounts/{encoded_account_id}/keys",
+            payload={"key_name": key_name},
+        )
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("service-account-key-rotate")
+@handle_cli_errors
+def cmd_space_service_account_key_rotate(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    service_account_id: Annotated[str, typer.Argument(help="Service account ID")],
+    key_id: Annotated[str, typer.Argument(help="Existing key ID")],
+    key_name: Annotated[
+        str | None,
+        typer.Option(help="Optional replacement key label"),
+    ] = None,
+    actor_user_id: Annotated[
+        str,
+        typer.Option(help="Actor user id for core mode writes"),
+    ] = "cli-user",
+) -> None:
+    """Rotate a service-account API key and reveal replacement secret."""
+    setup_logging()
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = rotate_service_account_key(
+            root_path,
+            space_id,
+            service_account_id=service_account_id,
+            key_id=key_id,
+            actor_user_id=actor_user_id,
+            key_name=key_name,
+        )
+    else:
+        encoded_space_id = encode_path_component(space_id)
+        encoded_account_id = encode_path_component(service_account_id)
+        encoded_key_id = encode_path_component(key_id)
+        payload: dict[str, Any] = {}
+        if key_name is not None:
+            payload["key_name"] = key_name
+        data = request_json(
+            "POST",
+            (
+                f"{base_url}/spaces/{encoded_space_id}/service-accounts/"
+                f"{encoded_account_id}/keys/{encoded_key_id}/rotate"
+            ),
+            payload=payload,
+        )
+    typer.echo(json.dumps(data, indent=2))
+
+
+@space_app.command("service-account-key-revoke")
+@handle_cli_errors
+def cmd_space_service_account_key_revoke(
+    root_path: Annotated[str, typer.Argument(help="Root path for spaces")],
+    space_id: Annotated[str, typer.Argument(help="Space ID")],
+    service_account_id: Annotated[str, typer.Argument(help="Service account ID")],
+    key_id: Annotated[str, typer.Argument(help="Key ID")],
+    actor_user_id: Annotated[
+        str,
+        typer.Option(help="Actor user id for core mode writes"),
+    ] = "cli-user",
+) -> None:
+    """Revoke a service-account API key."""
+    setup_logging()
+    base_url = _remote_base_url()
+    if base_url is None:
+        data = revoke_service_account_key(
+            root_path,
+            space_id,
+            service_account_id=service_account_id,
+            key_id=key_id,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        encoded_space_id = encode_path_component(space_id)
+        encoded_account_id = encode_path_component(service_account_id)
+        encoded_key_id = encode_path_component(key_id)
+        data = request_json(
+            "DELETE",
+            (
+                f"{base_url}/spaces/{encoded_space_id}/service-accounts/"
+                f"{encoded_account_id}/keys/{encoded_key_id}"
+            ),
+        )
     typer.echo(json.dumps(data, indent=2))
 
 

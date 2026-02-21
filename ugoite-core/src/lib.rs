@@ -7,6 +7,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 pub mod asset;
 pub mod audit;
@@ -27,6 +29,34 @@ pub mod sql_session;
 pub mod storage;
 
 use integrity::RealIntegrityProvider;
+
+const API_KEY_HASH_ALGORITHM: &str = "pbkdf2_sha256_v1";
+const API_KEY_HASH_ITERATIONS: u32 = 240_000;
+
+fn hash_service_api_key_secret_impl(secret: &str, salt: &str) -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let mut derived = [0_u8; 32];
+    pbkdf2::pbkdf2_hmac::<Sha256>(
+        secret.as_bytes(),
+        salt.as_bytes(),
+        API_KEY_HASH_ITERATIONS,
+        &mut derived,
+    );
+    URL_SAFE_NO_PAD.encode(derived)
+}
+
+fn verify_digest(stored: &str, computed: &str) -> bool {
+    if stored.len() != computed.len() {
+        return false;
+    }
+    bool::from(stored.as_bytes().ct_eq(computed.as_bytes()))
+}
+
+fn hash_legacy_service_api_key_secret(secret: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    hex::encode(hasher.finalize())
+}
 
 // --- Helpers ---
 
@@ -71,6 +101,35 @@ fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
 }
 
 // --- Bindings ---
+
+#[pyfunction]
+fn hash_service_api_key_secret(secret: String, salt: String) -> PyResult<String> {
+    if salt.is_empty() {
+        return Err(PyValueError::new_err("secret salt must not be empty"));
+    }
+    Ok(hash_service_api_key_secret_impl(&secret, &salt))
+}
+
+#[pyfunction]
+#[pyo3(signature = (key_hash, secret, hash_algorithm=None, secret_salt=None))]
+fn verify_service_api_key_secret(
+    key_hash: String,
+    secret: String,
+    hash_algorithm: Option<String>,
+    secret_salt: Option<String>,
+) -> bool {
+    if hash_algorithm.as_deref() == Some(API_KEY_HASH_ALGORITHM) {
+        if let Some(salt) = secret_salt {
+            if !salt.is_empty() {
+                let expected = hash_service_api_key_secret_impl(&secret, &salt);
+                return verify_digest(&key_hash, &expected);
+            }
+        }
+    }
+
+    let legacy = hash_legacy_service_api_key_secret(&secret);
+    verify_digest(&key_hash, &legacy)
+}
 
 // Space
 
@@ -1043,6 +1102,9 @@ fn get_sql_session_rows_all<'a>(
 /// A Python module implemented in Rust.
 #[pymodule]
 fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(hash_service_api_key_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_service_api_key_secret, m)?)?;
+
     m.add_function(wrap_pyfunction!(list_spaces, m)?)?;
     m.add_function(wrap_pyfunction!(create_space, m)?)?;
     m.add_function(wrap_pyfunction!(create_sample_space, m)?)?;

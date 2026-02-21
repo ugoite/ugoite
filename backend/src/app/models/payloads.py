@@ -112,6 +112,25 @@ class SpaceMemberRoleUpdate(BaseModel):
     role: Literal["admin", "editor", "viewer"]
 
 
+class ServiceAccountCreate(BaseModel):
+    """Service account creation payload."""
+
+    display_name: str
+    scopes: list[str]
+
+
+class ServiceAccountKeyCreate(BaseModel):
+    """Service account key creation payload."""
+
+    key_name: str
+
+
+class ServiceAccountKeyRotate(BaseModel):
+    """Service account key rotation payload."""
+
+    key_name: str | None = None
+
+
 class FormCreate(BaseModel):
     """Form creation payload."""
 

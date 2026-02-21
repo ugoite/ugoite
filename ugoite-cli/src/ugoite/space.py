@@ -372,3 +372,108 @@ def patch_space(
 def test_storage_connection(storage_config: dict[str, Any]) -> dict[str, object]:
     """Validate storage connector payload (stub for now)."""
     return run_async(ugoite_core.test_storage_connection, storage_config)
+
+
+def list_service_accounts(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> list[dict[str, Any]]:
+    """List service accounts in a space."""
+    config = storage_config_from_root(root_path, fs)
+    return run_async(ugoite_core.list_service_accounts, config, space_id)
+
+
+def create_service_account(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    display_name: str,
+    scopes: list[str],
+    actor_user_id: str,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Create a scoped service account in a space."""
+    config = storage_config_from_root(root_path, fs)
+    return run_async(
+        ugoite_core.create_service_account,
+        config,
+        space_id,
+        ugoite_core.CreateServiceAccountInput(
+            display_name=display_name,
+            scopes=scopes,
+            created_by_user_id=actor_user_id,
+        ),
+    )
+
+
+def create_service_account_key(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    service_account_id: str,
+    key_name: str,
+    actor_user_id: str,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Create a service-account API key with one-time secret reveal."""
+    config = storage_config_from_root(root_path, fs)
+    return run_async(
+        ugoite_core.create_service_account_key,
+        config,
+        space_id,
+        ugoite_core.CreateServiceAccountKeyInput(
+            service_account_id=service_account_id,
+            key_name=key_name,
+            created_by_user_id=actor_user_id,
+        ),
+    )
+
+
+def rotate_service_account_key(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    service_account_id: str,
+    key_id: str,
+    actor_user_id: str,
+    key_name: str | None = None,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Rotate a service-account API key and reveal replacement secret once."""
+    config = storage_config_from_root(root_path, fs)
+    return run_async(
+        ugoite_core.rotate_service_account_key,
+        config,
+        space_id,
+        ugoite_core.RotateServiceAccountKeyInput(
+            service_account_id=service_account_id,
+            key_id=key_id,
+            rotated_by_user_id=actor_user_id,
+            key_name=key_name,
+        ),
+    )
+
+
+def revoke_service_account_key(
+    root_path: str | Path,
+    space_id: str,
+    *,
+    service_account_id: str,
+    key_id: str,
+    actor_user_id: str,
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> dict[str, Any]:
+    """Revoke a service-account API key immediately."""
+    config = storage_config_from_root(root_path, fs)
+    return run_async(
+        ugoite_core.revoke_service_account_key,
+        config,
+        space_id,
+        ugoite_core.RevokeServiceAccountKeyInput(
+            service_account_id=service_account_id,
+            key_id=key_id,
+            revoked_by_user_id=actor_user_id,
+        ),
+    )
