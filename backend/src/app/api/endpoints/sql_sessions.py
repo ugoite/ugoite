@@ -53,6 +53,17 @@ async def create_sql_session_endpoint(
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if msg.startswith("UGOITE_SQL_VALIDATION"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=msg,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        ) from exc
     except Exception as e:
         logger.exception("Failed to create SQL session")
         raise HTTPException(
@@ -196,26 +207,12 @@ async def get_sql_session_stream_endpoint(
         raise_authorization_http_error(exc, space_id=space_id)
 
     async def row_generator() -> AsyncGenerator[str]:
-        offset = 0
-        page_size = 200
-        while True:
-            page = await ugoite_core.get_sql_session_rows(
-                storage_config,
-                space_id,
-                session_id,
-                offset,
-                page_size,
-            )
-            rows_obj = page.get("rows") if isinstance(page, dict) else None
-            rows = rows_obj if isinstance(rows_obj, list) else []
-            if not rows:
-                break
-
-            for row in rows:
-                yield f"{json.dumps(row)}\n"
-
-            offset += len(rows)
-            if len(rows) < page_size:
-                break
+        rows = await ugoite_core.get_sql_session_rows_all(
+            storage_config,
+            space_id,
+            session_id,
+        )
+        for row in rows:
+            yield f"{json.dumps(row)}\n"
 
     return StreamingResponse(row_generator(), media_type="application/x-ndjson")
