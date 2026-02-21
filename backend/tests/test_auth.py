@@ -91,6 +91,19 @@ def test_auth_rejects_invalid_bearer_signature(
     assert response.json()["code"] == "invalid_signature"
 
 
+def test_auth_rejects_malformed_signed_token_segments(
+    unauthenticated_client: TestClient,
+) -> None:
+    """REQ-SEC-003: malformed signed-token base64 segments are rejected."""
+    malformed = "v1.@@@.%%%"
+    response = unauthenticated_client.get(
+        "/spaces",
+        headers={"Authorization": f"Bearer {malformed}"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_signature"
+
+
 def test_auth_rejects_expired_bearer_token(
     unauthenticated_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
