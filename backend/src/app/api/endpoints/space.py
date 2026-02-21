@@ -182,10 +182,24 @@ async def create_space_endpoint(
                 {
                     "owner_user_id": identity.user_id,
                     "admin_user_ids": [identity.user_id],
+                    "member_roles": {},
                     "settings": {
                         "owner_user_id": identity.user_id,
                         "admin_user_ids": [identity.user_id],
-                        "member_roles": {identity.user_id: "owner"},
+                        "member_roles": {},
+                        "members": {
+                            identity.user_id: {
+                                "user_id": identity.user_id,
+                                "role": "owner",
+                                "state": "active",
+                                "activated_at": "bootstrap",
+                                "invited_by": identity.user_id,
+                                "invited_at": "bootstrap",
+                                "revoked_at": None,
+                            },
+                        },
+                        "invitations": {},
+                        "membership_version": 1,
                     },
                 },
             ),
