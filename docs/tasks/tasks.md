@@ -139,7 +139,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Phase 4 Implementation Notes (2026-02)
 - Audit persistence is implemented in `ugoite-core` (`ugoite_core.audit`) and reused by backend adapters.
-- Events are stored in space settings metadata with append-only hash chaining (`prev_hash` + `event_hash`) for tamper-evidence.
+- Events are stored in an append-only JSONL file at `spaces/{space_id}/audit/events.jsonl` with hash chaining (`prev_hash` + `event_hash`) for tamper-evidence.
 - Backend emits audit events for authentication outcomes, authorization denials, and successful mutating HTTP operations.
 - Backend exposes `GET /spaces/{space_id}/audit/events` with offset/limit pagination and `action`/`actor_user_id`/`outcome` filters.
 - Retention is bounded by `UGOITE_AUDIT_RETENTION_MAX_EVENTS` (default: 5000), and request metadata is intentionally redacted to non-secret fields.

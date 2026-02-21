@@ -82,3 +82,51 @@ async def test_audit_detects_chain_tampering(tmp_path: pathlib.Path) -> None:
 
     with pytest.raises(RuntimeError, match="integrity"):
         await ugoite_core.list_audit_events(config, "audit-space")
+
+
+@pytest.mark.asyncio
+async def test_audit_retention_preserves_chain_integrity(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-008: retention trimming keeps a valid verifiable hash chain."""
+    monkeypatch.setenv("UGOITE_AUDIT_RETENTION_MAX_EVENTS", "100")
+    root = tmp_path / "storage"
+    root.mkdir()
+    config = {"uri": f"fs://{root}"}
+    await ugoite_core.create_space(config, "audit-space")
+
+    for index in range(101):
+        await ugoite_core.append_audit_event(
+            config,
+            "audit-space",
+            ugoite_core.AuditEventInput(
+                action="entry.update",
+                actor_user_id="alice",
+                outcome="success",
+                target_type="entry",
+                target_id=f"entry-{index}",
+            ),
+        )
+
+    result = await ugoite_core.list_audit_events(config, "audit-space")
+    assert result["total"] == 100
+
+
+@pytest.mark.asyncio
+async def test_audit_rejects_invalid_space_id(tmp_path: pathlib.Path) -> None:
+    """REQ-SEC-008: path traversal style space identifiers are rejected."""
+    root = tmp_path / "storage"
+    root.mkdir()
+    config = {"uri": f"fs://{root}"}
+
+    with pytest.raises(RuntimeError, match="invalid space_id"):
+        await ugoite_core.append_audit_event(
+            config,
+            "../escape",
+            ugoite_core.AuditEventInput(
+                action="entry.create",
+                actor_user_id="alice",
+                outcome="success",
+            ),
+        )
