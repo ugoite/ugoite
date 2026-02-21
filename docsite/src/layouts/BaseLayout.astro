@@ -1,5 +1,6 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
+import DocNavTree from "../components/DocNavTree.astro";
 import { getNavSectionsWithChildren, topLinks } from "../lib/navigation";
 import { withBasePath } from "../lib/base-path";
 import "../styles.css";
@@ -47,9 +48,36 @@ const navSections = await getNavSectionsWithChildren();
             <a href={withBasePath(link.href)}>{link.title}</a>
           ))}
         </nav>
+        <button
+          type="button"
+          class="mobile-nav-toggle"
+          data-mobile-nav-open
+          aria-controls="mobile-doc-nav"
+          aria-expanded="false"
+          aria-label="Open navigation"
+        >
+          <span class="mobile-nav-toggle-icon" aria-hidden="true"></span>
+          Menu
+        </button>
         <ThemeSwitcher />
       </div>
     </header>
+
+    <div class="mobile-nav-overlay" data-mobile-nav-overlay hidden></div>
+    <aside id="mobile-doc-nav" class="mobile-doc-nav" data-mobile-doc-nav aria-hidden="true">
+      <div class="mobile-doc-nav-header">
+        <span>Navigation</span>
+        <button type="button" class="mobile-nav-close" data-mobile-nav-close aria-label="Close navigation">Close</button>
+      </div>
+      <nav class="mobile-doc-nav-body" aria-label="Mobile documentation navigation">
+        <div class="mobile-top-links">
+          {topLinks.map((link) => (
+            <a href={withBasePath(link.href)} class="doc-sidebar-link">{link.title}</a>
+          ))}
+        </div>
+        <DocNavTree navSections={navSections} />
+      </nav>
+    </aside>
 
     {fullWidth ? (
       <main class="doc-shell-full">
@@ -58,23 +86,7 @@ const navSections = await getNavSectionsWithChildren();
     ) : hasRight ? (
       <main class="doc-shell-3col">
         <aside class="doc-sidebar">
-          {navSections.map((section) => (
-            <div class="doc-sidebar-section">
-              <div class="doc-sidebar-title">{section.title}</div>
-              {section.items.map((item) => (
-                <div>
-                  <a href={withBasePath(item.href)} class="doc-sidebar-link">{item.title}</a>
-                  {item.items && item.items.length > 0 && (
-                    <div class="doc-sidebar-children">
-                      {item.items.map((child) => (
-                        <a href={withBasePath(child.href)} class="doc-sidebar-link doc-sidebar-link-child">{child.title}</a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
+          <DocNavTree navSections={navSections} />
         </aside>
         <div class="space-y-6">
           <slot />
@@ -101,23 +113,7 @@ const navSections = await getNavSectionsWithChildren();
     ) : (
       <main class="doc-shell">
         <aside class="doc-sidebar">
-          {navSections.map((section) => (
-            <div class="doc-sidebar-section">
-              <div class="doc-sidebar-title">{section.title}</div>
-              {section.items.map((item) => (
-                <div>
-                  <a href={withBasePath(item.href)} class="doc-sidebar-link">{item.title}</a>
-                  {item.items && item.items.length > 0 && (
-                    <div class="doc-sidebar-children">
-                      {item.items.map((child) => (
-                        <a href={withBasePath(child.href)} class="doc-sidebar-link doc-sidebar-link-child">{child.title}</a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
+          <DocNavTree navSections={navSections} />
         </aside>
         <div class="space-y-6">
           <slot />
@@ -130,5 +126,41 @@ const navSections = await getNavSectionsWithChildren();
         Built from source specs. <a href={withBasePath("/docs/spec/index")}>Browse specification</a>
       </div>
     </footer>
+
+    <script is:inline>
+      (() => {
+        const nav = document.querySelector("[data-mobile-doc-nav]");
+        const overlay = document.querySelector("[data-mobile-nav-overlay]");
+        const openButton = document.querySelector("[data-mobile-nav-open]");
+        const closeButton = document.querySelector("[data-mobile-nav-close]");
+
+        if (!nav || !overlay || !openButton || !closeButton) {
+          return;
+        }
+
+        const setOpen = (isOpen) => {
+          nav.classList.toggle("is-open", isOpen);
+          nav.setAttribute("aria-hidden", String(!isOpen));
+          openButton.setAttribute("aria-expanded", String(isOpen));
+          overlay.toggleAttribute("hidden", !isOpen);
+          document.body.classList.toggle("mobile-nav-open", isOpen);
+        };
+
+        openButton.addEventListener("click", () => setOpen(true));
+        closeButton.addEventListener("click", () => setOpen(false));
+        overlay.addEventListener("click", () => setOpen(false));
+        nav.addEventListener("click", (event) => {
+          const target = event.target;
+          if (target instanceof HTMLAnchorElement) {
+            setOpen(false);
+          }
+        });
+        window.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && nav.classList.contains("is-open")) {
+            setOpen(false);
+          }
+        });
+      })();
+    </script>
   </body>
 </html>
