@@ -38,10 +38,11 @@ async def create_entry_endpoint(
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
-    if payload.id:
+    if payload.id is not None:
         _validate_path_id(payload.id, "entry_id")
-
-    entry_id = payload.id or str(uuid.uuid4())
+        entry_id = payload.id
+    else:
+        entry_id = str(uuid.uuid4())
 
     try:
         await _validate_entry_markdown_against_form(
