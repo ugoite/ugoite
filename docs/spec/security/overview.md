@@ -72,7 +72,7 @@ space-scoped and uses the following profile:
 - Metadata Form `UserGroup` is also provisioned per space.
 - New OAuth2 users MAY be auto-created in metadata Form `User` when enabled.
 - Service accounts are space-scoped identities with explicit action scopes and
-	one-time reveal API keys.
+  one-time reveal API keys.
 
 ### Recovery & Administration
 

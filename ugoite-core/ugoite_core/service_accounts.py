@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -35,6 +36,9 @@ _ALL_SERVICE_SCOPES: frozenset[str] = frozenset(
     },
 )
 
+_API_KEY_HASH_ALGORITHM = "pbkdf2_sha256_v1"
+_API_KEY_HASH_ITERATIONS = 240_000
+
 
 @dataclass(frozen=True)
 class CreateServiceAccountInput:
@@ -52,6 +56,7 @@ class CreateServiceAccountKeyInput:
     service_account_id: str
     key_name: str
     created_by_user_id: str
+    rotated_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -110,7 +115,9 @@ def _normalize_settings(space_meta: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_scopes(scopes: list[str]) -> list[str]:
-    normalized = [scope.strip() for scope in scopes if isinstance(scope, str) and scope]
+    normalized = [
+        scope.strip() for scope in scopes if isinstance(scope, str) and scope.strip()
+    ]
     deduped = sorted(set(normalized))
     if not deduped:
         msg = "service account scopes must not be empty"
@@ -136,6 +143,36 @@ def _new_secret() -> str:
 
 def _hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def _hash_api_key_secret(secret: str, salt: str) -> str:
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        salt.encode("utf-8"),
+        _API_KEY_HASH_ITERATIONS,
+        dklen=32,
+    )
+    return base64.urlsafe_b64encode(derived).decode("ascii")
+
+
+def _verify_api_key_secret(key_obj: dict[str, Any], secret: str) -> bool:
+    key_hash = key_obj.get("secret_hash")
+    if not isinstance(key_hash, str):
+        return False
+
+    hash_algorithm = key_obj.get("hash_algorithm")
+    key_salt = key_obj.get("secret_salt")
+    if (
+        hash_algorithm == _API_KEY_HASH_ALGORITHM
+        and isinstance(key_salt, str)
+        and key_salt
+    ):
+        expected = _hash_api_key_secret(secret, key_salt)
+        return hmac.compare_digest(key_hash, expected)
+
+    expected_legacy = _hash_secret(secret)
+    return hmac.compare_digest(key_hash, expected_legacy)
 
 
 def _key_public_view(key_obj: dict[str, Any]) -> dict[str, Any]:
@@ -277,7 +314,8 @@ async def create_service_account_key(
         raise RuntimeError(msg)
 
     secret = _new_secret()
-    secret_hash = _hash_secret(secret)
+    secret_salt = secrets.token_urlsafe(16)
+    secret_hash = _hash_api_key_secret(secret, secret_salt)
     key_id = _new_key_id()
 
     lock = await _space_lock(space_id)
@@ -299,10 +337,12 @@ async def create_service_account_key(
             "name": key_name,
             "prefix": secret[:12],
             "secret_hash": secret_hash,
+            "secret_salt": secret_salt,
+            "hash_algorithm": _API_KEY_HASH_ALGORITHM,
             "created_at": _now_iso(),
             "created_by_user_id": created_by,
             "revoked_at": None,
-            "rotated_from": None,
+            "rotated_from": payload.rotated_from,
             "last_used_at": None,
             "usage_count": 0,
         }
@@ -429,42 +469,9 @@ async def rotate_service_account_key(
             service_account_id=payload.service_account_id,
             key_name=payload.key_name or f"rotated-{payload.key_id}",
             created_by_user_id=payload.rotated_by_user_id,
+            rotated_from=payload.key_id,
         ),
     )
-
-    created_key_obj = created.get("key")
-    if isinstance(created_key_obj, dict):
-        created_key_obj["rotated_from"] = payload.key_id
-
-        lock = await _space_lock(space_id)
-        async with lock:
-            space_meta_obj = await _core_any.get_space(storage_config, space_id)
-            space_meta = cast("dict[str, Any]", space_meta_obj)
-            settings = _normalize_settings(space_meta)
-            accounts_obj = settings.get("service_accounts")
-            accounts = accounts_obj if isinstance(accounts_obj, dict) else {}
-            account_obj = accounts.get(payload.service_account_id)
-            if isinstance(account_obj, dict):
-                keys_obj = account_obj.get("keys")
-                keys = keys_obj if isinstance(keys_obj, dict) else {}
-                new_key_id = created_key_obj.get("id")
-                if isinstance(new_key_id, str) and isinstance(
-                    keys.get(new_key_id),
-                    dict,
-                ):
-                    keys[new_key_id]["rotated_from"] = payload.key_id
-                    account_obj["keys"] = keys
-                    accounts[payload.service_account_id] = account_obj
-                    settings["service_accounts"] = accounts
-                    await _core_any.patch_space(
-                        storage_config,
-                        space_id,
-                        json.dumps(
-                            {"settings": settings},
-                            separators=(",", ":"),
-                            sort_keys=True,
-                        ),
-                    )
 
     await append_audit_event(
         storage_config,
@@ -495,7 +502,7 @@ async def resolve_service_api_key(
     if not secret:
         msg = "Missing API key"
         raise RuntimeError(msg)
-    hashed = _hash_secret(secret)
+    hashed = secret
 
     matched_result: ServiceApiKeyAuthResult | None = None
     matched_usage_count: int | None = None
@@ -528,10 +535,7 @@ async def resolve_service_api_key(
             for key_id, key_obj in keys.items():
                 if not isinstance(key_id, str) or not isinstance(key_obj, dict):
                     continue
-                key_hash = key_obj.get("secret_hash")
-                if not isinstance(key_hash, str):
-                    continue
-                if not hmac.compare_digest(key_hash, hashed):
+                if not _verify_api_key_secret(key_obj, hashed):
                     continue
 
                 if key_obj.get("revoked_at") is not None:
@@ -540,8 +544,12 @@ async def resolve_service_api_key(
 
                 key_obj["last_used_at"] = _now_iso()
                 usage_count_obj = key_obj.get("usage_count", 0)
-                key_obj["usage_count"] = int(usage_count_obj) + 1
-                matched_usage_count = cast("int", key_obj["usage_count"])
+                try:
+                    usage_count_int = int(usage_count_obj)
+                except (TypeError, ValueError):
+                    usage_count_int = 0
+                key_obj["usage_count"] = usage_count_int + 1
+                matched_usage_count = usage_count_int + 1
                 keys[key_id] = key_obj
                 account_obj["keys"] = keys
                 accounts[service_account_id] = account_obj
