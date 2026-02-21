@@ -70,6 +70,10 @@ def test_space_member_invite_and_accept_transitions_to_active(
     assert invite_response.status_code == 201
     token = invite_response.json()["invitation"]["token"]
 
+    owner_space_response = owner.get(f"/spaces/{space_id}")
+    assert owner_space_response.status_code == 200
+    assert owner_space_response.json().get("settings", {}).get("invitations") == {}
+
     not_member_get = alice.get(f"/spaces/{space_id}")
     assert not_member_get.status_code == 403
 

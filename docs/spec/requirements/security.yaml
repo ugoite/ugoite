@@ -238,5 +238,5 @@ requirements:
     e2e:
     - file: e2e/space-membership.test.ts
       tests:
-      - "Invitation lifecycle: invite, accept, revoke"
-      - "Permission transition reflects role changes"
+      - "REQ-SEC-007: invitation lifecycle invite/accept/revoke"
+      - "REQ-SEC-007: role changes switch admin privileges"

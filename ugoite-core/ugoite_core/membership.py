@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import secrets
 from dataclasses import dataclass
@@ -258,6 +259,10 @@ def _build_member_record(
     }
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 async def list_members(
     storage_config: dict[str, str],
     space_id: str,
@@ -312,8 +317,11 @@ async def create_invitation(
             datetime.now(tz=UTC) + timedelta(seconds=expires_seconds)
         ).isoformat()
 
+        token_hash = _token_hash(token)
+        invitation_id = secrets.token_urlsafe(12)
         invitation = {
-            "token": token,
+            "id": invitation_id,
+            "token_hash": token_hash,
             "user_id": payload.user_id,
             "role": payload.role,
             "email": payload.email,
@@ -323,7 +331,7 @@ async def create_invitation(
             "expires_at": expires_at,
         }
         invitations = settings["invitations"]
-        invitations[token] = invitation
+        invitations[invitation_id] = invitation
 
         members[payload.user_id] = _build_member_record(
             user_id=payload.user_id,
@@ -336,9 +344,12 @@ async def create_invitation(
         _increment_membership_version(settings)
         await _patch_settings(storage_config, space_id, space_meta, settings)
 
+    response_invitation = dict(invitation)
+    response_invitation["token"] = token
+
     delivery = await TokenOnlyInvitationProvider().issue_invitation(
         space_id=space_id,
-        invitation=invitation,
+        invitation=response_invitation,
     )
     event = _audit_event(
         action="member.invite",
@@ -348,7 +359,7 @@ async def create_invitation(
         extra={"role": payload.role},
     )
     return {
-        "invitation": invitation,
+        "invitation": response_invitation,
         "delivery": delivery,
         "audit_event": event,
     }
@@ -371,13 +382,21 @@ async def accept_invitation(
         settings = _normalize_settings(space_meta)
 
         invitations = settings["invitations"]
-        invitation_obj = invitations.get(payload.token)
-        if invitation_obj is None:
+        invitation_key: str | None = None
+        invitation_obj: dict[str, Any] | None = None
+        requested_hash = _token_hash(payload.token)
+        for key, candidate in invitations.items():
+            if not isinstance(key, str) or not isinstance(candidate, dict):
+                continue
+            candidate_hash = candidate.get("token_hash")
+            if isinstance(candidate_hash, str) and candidate_hash == requested_hash:
+                invitation_key = key
+                invitation_obj = candidate
+                break
+
+        if invitation_key is None or invitation_obj is None:
             msg = "Invitation token not found"
             raise RuntimeError(msg)
-        if not isinstance(invitation_obj, dict):
-            msg = "Invitation token record is malformed"
-            raise TypeError(msg)
         if invitation_obj.get("state") != "pending":
             msg = "Invitation token is not pending"
             raise RuntimeError(msg)
@@ -393,7 +412,7 @@ async def accept_invitation(
         expiry = _parse_expiry(invitation_obj.get("expires_at"))
         if expiry and expiry < datetime.now(tz=UTC):
             invitation_obj["state"] = "expired"
-            invitations[payload.token] = invitation_obj
+            invitations[invitation_key] = invitation_obj
             _increment_membership_version(settings)
             await _patch_settings(storage_config, space_id, space_meta, settings)
             msg = "Invitation token expired"
@@ -408,7 +427,7 @@ async def accept_invitation(
         invitation_obj["state"] = "accepted"
         invitation_obj["accepted_at"] = now_iso
         invitation_obj["accepted_by"] = payload.accepted_by_user_id
-        invitations[payload.token] = invitation_obj
+        invitations[invitation_key] = invitation_obj
 
         members = settings["members"]
         members[payload.accepted_by_user_id] = _build_member_record(
@@ -453,8 +472,11 @@ async def update_member_role(
         settings = _normalize_settings(space_meta)
         members = settings["members"]
         member_obj = members.get(payload.member_user_id)
-        if not isinstance(member_obj, dict):
+        if member_obj is None:
             msg = f"Member not found: {payload.member_user_id}"
+            raise RuntimeError(msg)
+        if not isinstance(member_obj, dict):
+            msg = f"Member record malformed: {payload.member_user_id}"
             raise TypeError(msg)
         if member_obj.get("state") == "revoked":
             msg = f"Member is revoked: {payload.member_user_id}"
@@ -495,8 +517,11 @@ async def revoke_member(
 
         members = settings["members"]
         member_obj = members.get(payload.member_user_id)
-        if not isinstance(member_obj, dict):
+        if member_obj is None:
             msg = f"Member not found: {payload.member_user_id}"
+            raise RuntimeError(msg)
+        if not isinstance(member_obj, dict):
+            msg = f"Member record malformed: {payload.member_user_id}"
             raise TypeError(msg)
 
         revoked_at = _now_iso()

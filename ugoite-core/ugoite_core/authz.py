@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from . import _ugoite_core as _core
 
@@ -186,7 +186,8 @@ def _groups_from_space_meta(
 
 
 def _resolve_role(
-    space_meta: dict[str, Any], identity: RequestIdentity
+    space_meta: dict[str, Any],
+    identity: RequestIdentity,
 ) -> RoleName | None:
     settings = space_meta.get("settings")
     settings_map = settings if isinstance(settings, dict) else {}
@@ -264,8 +265,6 @@ async def resolve_access_context(
                 f"of space '{space_id}'."
             ),
         )
-        message = "unreachable"
-        raise RuntimeError(message)
     groups = _groups_from_space_meta(space_id, identity.user_id, space_meta)
     settings = space_meta.get("settings")
     settings_map = settings if isinstance(settings, dict) else {}
@@ -285,7 +284,7 @@ async def resolve_access_context(
     )
 
 
-def _deny(action: ActionName, detail: str) -> None:
+def _deny(action: ActionName, detail: str) -> NoReturn:
     raise AuthorizationError(
         code="forbidden",
         detail=detail,
@@ -310,8 +309,6 @@ async def require_space_action(
             f"is not allowed to perform '{action}' in space '{space_id}'."
         ),
     )
-    message = "unreachable"
-    raise RuntimeError(message)
 
 
 def _form_name_from_markdown(markdown: str) -> str | None:
