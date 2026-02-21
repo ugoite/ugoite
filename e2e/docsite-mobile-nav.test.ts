@@ -1,27 +1,33 @@
 import { expect, test } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 const docsiteDir = fileURLToPath(new URL("../docsite", import.meta.url));
 
-let docsitePort = Number(process.env.DOCSITE_PORT ?? "0");
-let docsiteUrl = process.env.DOCSITE_URL ?? `http://localhost:${docsitePort}`;
+const configuredDocsiteUrl = process.env.DOCSITE_URL;
 const docPath = "/docs/spec/index";
 
 let docsiteProcess: ChildProcess | undefined;
+let docsiteLogs = "";
+let docsiteStartupError: Error | undefined;
+let resolvedDocsiteUrl: string | undefined = configuredDocsiteUrl;
 
 test.describe("Docsite mobile navigation", () => {
 	test.beforeAll(async () => {
-		docsitePort = docsitePort > 0 ? docsitePort : await findAvailablePort();
-		if (docsitePort <= 0) {
-			throw new Error("Unable to allocate port for docsite test server");
-		}
-		docsiteUrl = process.env.DOCSITE_URL ?? `http://localhost:${docsitePort}`;
+		test.setTimeout(180_000);
+
+		docsiteLogs = "";
+		docsiteStartupError = undefined;
+		resolvedDocsiteUrl = configuredDocsiteUrl;
 
 		docsiteProcess = spawn(
 			"bun",
-			["run", "dev", "--port", String(docsitePort), "--strictPort"],
+			[
+				"run",
+				"dev",
+				"--port",
+				"0",
+			],
 			{
 				cwd: docsiteDir,
 				stdio: "pipe",
@@ -31,13 +37,41 @@ test.describe("Docsite mobile navigation", () => {
 			},
 		);
 
+		docsiteProcess.stdout?.on("data", (chunk) => {
+			const text = chunk.toString();
+			docsiteLogs += text;
+			const urlMatches = text.match(/http:\/\/(localhost|127\.0\.0\.1):\d+/g);
+			if (urlMatches && urlMatches.length > 0) {
+				resolvedDocsiteUrl = urlMatches[urlMatches.length - 1];
+			}
+			if (docsiteLogs.length > 20_000) {
+				docsiteLogs = docsiteLogs.slice(-20_000);
+			}
+		});
+
+		docsiteProcess.stderr?.on("data", (chunk) => {
+			docsiteLogs += chunk.toString();
+			if (docsiteLogs.length > 20_000) {
+				docsiteLogs = docsiteLogs.slice(-20_000);
+			}
+		});
+
+		docsiteProcess.on("error", (error) => {
+			docsiteStartupError = error;
+		});
+
 		docsiteProcess.on("exit", (code) => {
 			if (code && code !== 0) {
 				console.warn(`docsite dev server exited with code ${code}`);
 			}
 		});
 
-		await waitForDocsiteReady(docsiteUrl);
+		await waitForDocsiteReady(() => resolvedDocsiteUrl, {
+			timeoutMs: 120_000,
+			getStartupError: () => docsiteStartupError,
+			getProcessExitCode: () => docsiteProcess?.exitCode,
+			getRecentLogs: () => docsiteLogs,
+		});
 	});
 
 	test.afterAll(async () => {
@@ -55,7 +89,7 @@ test.describe("Docsite mobile navigation", () => {
 		page,
 	}) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(`${docsiteUrl}${docPath}`, { waitUntil: "networkidle" });
+		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
 
 		await expect(page.locator(".mobile-nav-toggle")).toBeVisible();
 		await expect(page.locator(".site-nav")).toBeHidden();
@@ -70,7 +104,7 @@ test.describe("Docsite mobile navigation", () => {
 
 	test("REQ-E2E-005: mobile nav closes by escape and link tap", async ({ page }) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(`${docsiteUrl}${docPath}`, { waitUntil: "networkidle" });
+		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
 
 		await page.locator(".mobile-nav-toggle").click();
 		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
@@ -82,12 +116,51 @@ test.describe("Docsite mobile navigation", () => {
 		await page.locator(".mobile-doc-nav .doc-sidebar-link").first().click();
 		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
 	});
+
+	test("REQ-E2E-005: mobile nav closes by overlay click", async ({ page }) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
+
+		await page.locator(".mobile-nav-toggle").click();
+		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
+		await expect(page.locator(".mobile-nav-overlay")).toBeVisible();
+
+		await page.locator(".mobile-nav-overlay").click();
+		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
+	});
 });
 
-async function waitForDocsiteReady(url: string, timeoutMs = 60_000): Promise<void> {
+type ReadyOptions = {
+	timeoutMs: number;
+	getStartupError: () => Error | undefined;
+	getProcessExitCode: () => number | null | undefined;
+	getRecentLogs: () => string;
+};
+
+async function waitForDocsiteReady(
+	getUrl: () => string | undefined,
+	options: ReadyOptions,
+): Promise<void> {
 	const started = Date.now();
-	while (Date.now() - started < timeoutMs) {
+	while (Date.now() - started < options.timeoutMs) {
+		const startupError = options.getStartupError();
+		if (startupError) {
+			throw startupError;
+		}
+
+		const exitCode = options.getProcessExitCode();
+		if (exitCode !== null && exitCode !== undefined) {
+			throw new Error(
+				`Docsite server exited before becoming ready (code=${exitCode}).\n${options.getRecentLogs()}`,
+			);
+		}
+
 		try {
+			const url = getUrl();
+			if (!url) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				continue;
+			}
 			const response = await fetch(url);
 			if (response.ok) {
 				return;
@@ -97,18 +170,12 @@ async function waitForDocsiteReady(url: string, timeoutMs = 60_000): Promise<voi
 		}
 		await new Promise((resolve) => setTimeout(resolve, 500));
 	}
-	throw new Error(`Timed out waiting for docsite server at ${url}`);
+	throw new Error(`Timed out waiting for docsite server at ${getUrl() ?? "<unknown>"}.\n${options.getRecentLogs()}`);
 }
 
-async function findAvailablePort(): Promise<number> {
-	return await new Promise((resolve) => {
-		const server = createServer();
-		server.once("error", () => resolve(0));
-		server.once("listening", () => {
-			const address = server.address();
-			const resolvedPort = typeof address === "object" && address ? address.port : 0;
-			server.close(() => resolve(resolvedPort));
-		});
-		server.listen(0);
-	});
+function getResolvedDocsiteUrl(): string {
+	if (!resolvedDocsiteUrl) {
+		throw new Error("Resolved docsite URL is unavailable");
+	}
+	return resolvedDocsiteUrl;
 }

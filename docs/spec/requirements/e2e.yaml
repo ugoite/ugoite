@@ -159,3 +159,4 @@ requirements:
       tests:
       - 'REQ-E2E-005: mobile nav opens as drawer and keeps reading area uncluttered'
       - 'REQ-E2E-005: mobile nav closes by escape and link tap'
+      - 'REQ-E2E-005: mobile nav closes by overlay click'
