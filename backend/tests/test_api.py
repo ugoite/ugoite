@@ -197,6 +197,25 @@ def test_create_entry_rejects_invalid_client_id(
     assert "Invalid entry_id" in response.json()["detail"]
 
 
+def test_create_entry_rejects_empty_client_id(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-ENTRY-001: entry create rejects empty-but-present client ids."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    _create_form(test_client, "test-ws")
+
+    response = test_client.post(
+        "/spaces/test-ws/entries",
+        json={
+            "id": "",
+            "content": "---\nform: Entry\n---\n# Title\n\n## Body\ntext",
+        },
+    )
+    assert response.status_code == 400
+    assert "Invalid entry_id" in response.json()["detail"]
+
+
 def test_list_entries(
     test_client: TestClient,
     temp_space_root: Path,
