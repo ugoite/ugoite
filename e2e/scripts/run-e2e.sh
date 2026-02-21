@@ -63,7 +63,8 @@ PY
 # Start backend in background
 echo "Starting backend server..."
 cd "$ROOT_DIR/backend"
-UGOITE_ROOT="$E2E_STORAGE_ROOT" UGOITE_ALLOW_REMOTE=true UGOITE_BOOTSTRAP_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" UGOITE_BOOTSTRAP_USER_ID="e2e-user" uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+UGOITE_AUTH_BEARER_TOKENS_JSON='{"local-dev-token":{"user_id":"e2e-user","principal_type":"user"},"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
+UGOITE_ROOT="$E2E_STORAGE_ROOT" UGOITE_ALLOW_REMOTE=true UGOITE_BOOTSTRAP_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" UGOITE_BOOTSTRAP_USER_ID="e2e-user" UGOITE_AUTH_BEARER_TOKENS_JSON="$UGOITE_AUTH_BEARER_TOKENS_JSON" uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Start frontend in background
