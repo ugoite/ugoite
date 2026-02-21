@@ -651,6 +651,49 @@ def test_query_entries_sql(
     assert rows[0]["id"] == "entry-sql-1"
 
 
+def test_sql_session_stream_uses_incremental_row_paging(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-API-008: sql session stream retrieves rows incrementally."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    call_offsets: list[int] = []
+
+    async def _paged_rows(
+        _config: dict[str, str],
+        _space_id: str,
+        _session_id: str,
+        offset: int,
+        _limit: int,
+    ) -> dict[str, object]:
+        call_offsets.append(offset)
+        if offset == 0:
+            return {
+                "rows": [
+                    {"id": "entry-1", "title": "Alpha"},
+                    {"id": "entry-2", "title": "Beta"},
+                ],
+                "total_count": 2,
+            }
+        return {"rows": [], "total_count": 2}
+
+    async def _rows_all(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        msg = "rows_all must not be called"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(ugoite_core, "get_sql_session_rows", _paged_rows)
+    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_all", _rows_all)
+
+    response = test_client.get("/spaces/test-ws/sql-sessions/session-1/stream")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert call_offsets == [0]
+    lines = [line for line in response.text.splitlines() if line.strip()]
+    assert len(lines) == 2
+    assert json.loads(lines[0])["id"] == "entry-1"
+
+
 def test_upload_asset_and_link_to_entry(
     test_client: TestClient,
     temp_space_root: Path,
