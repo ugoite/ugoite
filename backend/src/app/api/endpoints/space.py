@@ -185,6 +185,7 @@ async def create_space_endpoint(
 ) -> dict[str, str]:
     """Create a new space."""
     identity = request_identity(request)
+    _validate_path_id(payload.name, "space_id")
     space_id = payload.name  # Using name as ID for now per simple spec
 
     try:
