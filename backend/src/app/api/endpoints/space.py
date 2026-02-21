@@ -150,8 +150,11 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
     try:
         space_ids = await ugoite_core.list_spaces(storage_config)
     except RuntimeError as exc:
-        logger.warning("Failed to list spaces, returning empty list: %s", exc)
-        return []
+        logger.warning("Failed to list spaces: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list spaces",
+        ) from exc
     except Exception as exc:
         logger.exception("Failed to list spaces")
         raise HTTPException(

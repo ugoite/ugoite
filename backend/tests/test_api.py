@@ -99,7 +99,7 @@ def test_list_spaces_handles_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-STO-009: /spaces returns empty list on core failure."""
+    """REQ-STO-009: /spaces returns explicit error on core failure."""
 
     async def _raise(_config: dict[str, str]) -> list[str]:
         msg = "boom"
@@ -108,8 +108,8 @@ def test_list_spaces_handles_core_failure(
     monkeypatch.setattr(ugoite_core, "list_spaces", _raise)
 
     response = test_client.get("/spaces")
-    assert response.status_code == 200
-    assert response.json() == []
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to list spaces"
 
 
 def test_get_space(
