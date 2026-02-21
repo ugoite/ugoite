@@ -66,7 +66,11 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 			statusText: response.statusText,
 			headers: responseHeaders,
 		});
-	} catch {
+	} catch (error) {
+		const message =
+			`API proxy upstream request failed method=${request.method} target=${targetUrl.toString()} ` +
+			`error=${error instanceof Error ? error.message : String(error)}\n`;
+		process.stderr.write(message);
 		return new Response("Backend service unavailable", { status: 502 });
 	}
 };
