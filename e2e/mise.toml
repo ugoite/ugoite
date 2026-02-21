@@ -20,3 +20,7 @@ description = "Run form E2E tests only"
 [tasks."test:screenshot"]
 run = "npm run test:screenshot"
 description = "Export docsite screenshots from UI page specs"
+
+[tasks."cleanup:artifacts"]
+run = "bash scripts/cleanup-artifacts.sh"
+description = "Remove temporary local review and test artifacts"
