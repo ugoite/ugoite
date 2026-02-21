@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ _DEFAULT_AUDIT_LIMIT = 100
 _MAX_AUDIT_LIMIT = 500
 _DEFAULT_AUDIT_RETENTION = 5000
 _MAX_AUDIT_RETENTION = 50000
+_SPACE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 _space_locks: dict[str, asyncio.Lock] = {}
 _space_locks_guard = asyncio.Lock()
 
@@ -67,10 +69,7 @@ def _validate_space_id(space_id: str) -> str:
     if not normalized:
         msg = "space_id must not be empty"
         raise RuntimeError(msg)
-    if normalized in {".", ".."}:
-        msg = "invalid space_id"
-        raise RuntimeError(msg)
-    if normalized != Path(normalized).name:
+    if _SPACE_ID_PATTERN.fullmatch(normalized) is None:
         msg = "invalid space_id"
         raise RuntimeError(msg)
     return normalized
