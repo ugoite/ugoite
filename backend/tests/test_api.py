@@ -45,6 +45,13 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     assert (ws_path / "meta.json").exists()
 
 
+def test_health_endpoint(test_client: TestClient) -> None:
+    """REQ-OPS-001: health endpoint returns service readiness."""
+    response = test_client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_create_space_rejects_invalid_name(test_client: TestClient) -> None:
     """REQ-API-001: create space rejects names violating identifier rules."""
     response = test_client.post("/spaces", json={"name": "invalid space"})
