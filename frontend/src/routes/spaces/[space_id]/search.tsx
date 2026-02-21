@@ -14,7 +14,16 @@ export default function SpaceSearchRoute() {
 	const [error, setError] = createSignal<string | null>(null);
 	const [runningId, setRunningId] = createSignal<string | null>(null);
 
-	const [queries, { refetch }] = createResource(async () => sqlApi.list(spaceId()));
+	const [queries, { refetch }] = createResource(async () => {
+		try {
+			const result = await sqlApi.list(spaceId());
+			setError(null);
+			return result;
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to load queries.");
+			return [];
+		}
+	});
 
 	const filteredQueries = createMemo(() => {
 		const q = query().trim().toLowerCase();
