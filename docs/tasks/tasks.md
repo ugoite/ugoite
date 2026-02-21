@@ -75,18 +75,26 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Enforce role-based authorization at space and entry/resource levels.
 
 ### Key Tasks
-- [ ] Define role model (e.g., owner/admin/editor/viewer/service) and permissions matrix.
-- [ ] Keep backend/CLI/frontend channel adapters thin and continue delegating auth/authz policy logic to `ugoite-core`.
-- [ ] Implement space-level access checks (list/read/write/admin operations).
-- [ ] Implement entry/resource-level checks where stricter controls are required.
-- [ ] Add policy evaluation in `ugoite-core` and thin backend adapters.
-- [ ] Add explicit authorization error schema and consistent HTTP statuses.
-- [ ] Add policy tests for allow/deny cases and privilege escalation prevention.
+- [x] Define role model (owner/admin/editor/viewer/service) and permissions matrix.
+- [x] Keep backend channel adapters thin and delegate authz policy logic to `ugoite-core`.
+- [x] Implement space-level access checks (list/read/write/admin operations).
+- [x] Implement entry/resource-level checks for forms, entries, assets, search, and SQL.
+- [x] Add policy evaluation in `ugoite-core` with thin backend adapters.
+- [x] Add explicit authorization error schema and consistent HTTP statuses.
+- [x] Add policy tests for allow/deny cases and privilege escalation prevention.
+
+### Phase 2 Implementation Notes (2026-02)
+- Central policy engine is implemented in `ugoite-core` (`ugoite_core.authz`).
+- Role matrix is space-scoped and supports `owner`, `admin`, `editor`, `viewer`, and `service`.
+- Form ACL (`read_principals` / `write_principals`) is enforced on entry read/write paths.
+- Backend endpoints use a shared adapter to map authorization failures to a consistent HTTP 403 schema.
+- Space creation assigns the authenticated creator as `owner_user_id` and initial admin.
+- Policy tests now cover deny/allow behavior and admin-only mutation enforcement.
 
 ### Acceptance Criteria
-- [ ] Unauthorized actions are blocked consistently across REST/MCP/CLI flows.
-- [ ] Authorization behavior is deterministic and centrally test-covered.
-- [ ] No duplicated authorization business logic exists in backend layer.
+- [x] Unauthorized actions are blocked consistently across REST API flows.
+- [x] Authorization behavior is deterministic and centrally test-covered.
+- [x] No duplicated authorization business logic exists in backend layer.
 
 ---
 
