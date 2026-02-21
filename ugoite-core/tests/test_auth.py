@@ -29,30 +29,22 @@ def test_bootstrap_warning_redacts_token_value(
         "UGOITE_AUTH_BEARER_ACTIVE_KIDS",
         "UGOITE_AUTH_REVOKED_KEY_IDS",
     ]
-    original = {key: os.environ.get(key) for key in env_keys}
     bootstrap_value = os.urandom(12).hex()
 
-    try:
-        for key in env_keys:
-            os.environ.pop(key, None)
-        monkeypatch.setattr(
-            "ugoite_core.auth.secrets.token_urlsafe",
-            lambda _: bootstrap_value,
-        )
-        clear_auth_manager_cache()
+    for key in env_keys:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(
+        "ugoite_core.auth.secrets.token_urlsafe",
+        lambda _: bootstrap_value,
+    )
+    clear_auth_manager_cache()
 
-        caplog.set_level(logging.WARNING, logger="ugoite_core.auth")
-        get_auth_manager()
+    caplog.set_level(logging.WARNING, logger="ugoite_core.auth")
+    get_auth_manager()
 
-        messages = [record.getMessage() for record in caplog.records]
-        joined = "\n".join(messages)
-        assert "Generated one-time bootstrap token" in joined
-        assert bootstrap_value not in joined
-        assert "fingerprint=" in joined
-    finally:
-        clear_auth_manager_cache()
-        for key, value in original.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+    messages = [record.getMessage() for record in caplog.records]
+    joined = "\n".join(messages)
+    assert "Generated one-time bootstrap token" in joined
+    assert bootstrap_value not in joined
+    assert "fingerprint=" in joined
+    clear_auth_manager_cache()

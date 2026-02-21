@@ -94,6 +94,9 @@ requirements:
       - test_auth_rejects_invalid_bearer_signature
       - test_auth_rejects_expired_bearer_token
       - test_auth_rejects_revoked_api_key
+    - file: ugoite-core/tests/test_auth.py
+      tests:
+      - test_bootstrap_warning_redacts_token_value
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
