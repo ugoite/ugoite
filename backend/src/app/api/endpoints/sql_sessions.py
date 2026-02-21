@@ -207,12 +207,26 @@ async def get_sql_session_stream_endpoint(
         raise_authorization_http_error(exc, space_id=space_id)
 
     async def row_generator() -> AsyncGenerator[str]:
-        rows = await ugoite_core.get_sql_session_rows_all(
-            storage_config,
-            space_id,
-            session_id,
-        )
-        for row in rows:
-            yield f"{json.dumps(row)}\n"
+        offset = 0
+        page_size = 200
+        while True:
+            page = await ugoite_core.get_sql_session_rows(
+                storage_config,
+                space_id,
+                session_id,
+                offset,
+                page_size,
+            )
+            rows_obj = page.get("rows") if isinstance(page, dict) else None
+            rows = rows_obj if isinstance(rows_obj, list) else []
+            if not rows:
+                break
+
+            for row in rows:
+                yield f"{json.dumps(row)}\n"
+
+            offset += len(rows)
+            if len(rows) < page_size:
+                break
 
     return StreamingResponse(row_generator(), media_type="application/x-ndjson")
