@@ -40,9 +40,12 @@ test.describe("Docsite mobile navigation", () => {
 		docsiteProcess.stdout?.on("data", (chunk) => {
 			const text = chunk.toString();
 			docsiteLogs += text;
-			const urlMatches = text.match(/http:\/\/(localhost|127\.0\.0\.1):\d+/g);
+			const urlMatches = text.match(
+				/http:\/\/(localhost|127\.0\.0\.1):\d+(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?/g,
+			);
 			if (urlMatches && urlMatches.length > 0) {
-				resolvedDocsiteUrl = urlMatches[urlMatches.length - 1];
+				const lastUrl = urlMatches[urlMatches.length - 1];
+				resolvedDocsiteUrl = lastUrl.endsWith("/") ? lastUrl : `${lastUrl}/`;
 			}
 			if (docsiteLogs.length > 20_000) {
 				docsiteLogs = docsiteLogs.slice(-20_000);
@@ -89,7 +92,7 @@ test.describe("Docsite mobile navigation", () => {
 		page,
 	}) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
+		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
 		await expect(page.locator(".mobile-nav-toggle")).toBeVisible();
 		await expect(page.locator(".site-nav")).toBeHidden();
@@ -104,7 +107,7 @@ test.describe("Docsite mobile navigation", () => {
 
 	test("REQ-E2E-005: mobile nav closes by escape and link tap", async ({ page }) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
+		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
 		await page.locator(".mobile-nav-toggle").click();
 		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
@@ -119,7 +122,7 @@ test.describe("Docsite mobile navigation", () => {
 
 	test("REQ-E2E-005: mobile nav closes by overlay click", async ({ page }) => {
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(`${getResolvedDocsiteUrl()}${docPath}`, { waitUntil: "networkidle" });
+		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
 		await page.locator(".mobile-nav-toggle").click();
 		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
@@ -178,4 +181,11 @@ function getResolvedDocsiteUrl(): string {
 		throw new Error("Resolved docsite URL is unavailable");
 	}
 	return resolvedDocsiteUrl;
+}
+
+function buildDocsiteUrl(path: string): string {
+	const baseUrl = getResolvedDocsiteUrl();
+	const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+	const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+	return new URL(normalizedPath, normalizedBase).toString();
 }
