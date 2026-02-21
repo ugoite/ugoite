@@ -281,3 +281,45 @@ requirements:
       tests:
       - test_audit_appends_and_lists_events
       - test_audit_detects_chain_tampering
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-009
+  title: Service Accounts and Scoped API Keys for Automation
+  description: 'Automation access MUST be provided by explicit service accounts
+
+    with least-privilege action scopes. API keys MUST support create/list/revoke/rotate
+
+    workflows with one-time secret reveal, and revoked keys MUST fail authentication
+
+    immediately across REST/MCP channels. Key usage MUST be audit-visible.
+
+    '
+  related_spec:
+  - security/overview.md
+  - api/rest.md#authentication
+  - api/mcp.md#security-model
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-core/tests/test_service_accounts.py
+      tests:
+      - test_service_account_scopes_are_enforced
+      - test_service_account_revoked_key_is_rejected
+      - test_service_account_key_usage_is_audit_logged
+    - file: backend/tests/test_service_accounts.py
+      tests:
+      - test_service_account_scopes_and_revocation_flow
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+      tests:
+      - test_space_service_account_create_routes_to_backend

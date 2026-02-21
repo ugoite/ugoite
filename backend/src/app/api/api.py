@@ -8,6 +8,7 @@ from app.api.endpoints import (
     entry,
     members,
     search,
+    service_accounts,
     space,
     sql,
     sql_sessions,
@@ -18,6 +19,7 @@ from app.core.auth import require_authenticated_identity
 router = APIRouter(dependencies=[Depends(require_authenticated_identity)])
 router.include_router(space.router)
 router.include_router(members.router)
+router.include_router(service_accounts.router)
 router.include_router(entry.router)
 router.include_router(form_endpoints.router)
 router.include_router(asset.router)

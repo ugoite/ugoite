@@ -75,7 +75,7 @@ Pre-defined prompts help AI understand the context:
 
 MCP requests inherit the authentication of the HTTP connection:
 - Current implementation: localhost and remote-mode MCP HTTP requests require authenticated identity.
-- Supported credentials in Phase 1: bearer token and API key providers.
+- Supported credentials: bearer tokens, static API keys, and space-scoped service-account API keys.
 - Planned (Milestone 4): passkey-backed session and OAuth2-linked identity.
 
 Planned (Milestone 4): all MCP resource access MUST execute the same form-level

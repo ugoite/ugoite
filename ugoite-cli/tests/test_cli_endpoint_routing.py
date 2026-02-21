@@ -114,3 +114,50 @@ def test_entry_create_remote_payload_includes_author(
             {"id": "entry-1", "content": "# body", "author": "alice"},
         ),
     ]
+
+
+def test_space_service_account_create_routes_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-009: service-account create uses backend endpoint in remote mode."""
+    monkeypatch.setattr(
+        "ugoite.cli._endpoint_config",
+        lambda: EndpointConfig(mode="backend"),
+    )
+
+    seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(
+        method: str,
+        url: str,
+        *,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        seen.append((method, url, payload))
+        return {"id": "svc-1"}
+
+    monkeypatch.setattr("ugoite.cli.request_json", fake_request_json)
+
+    result = runner.invoke(
+        app,
+        [
+            "space",
+            "service-account-create",
+            "root",
+            "default",
+            "--display-name",
+            "CI Bot",
+            "--scopes",
+            "entry_read,entry_write",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert seen == [
+        (
+            "POST",
+            "http://localhost:8000/spaces/default/service-accounts",
+            {"display_name": "CI Bot", "scopes": ["entry_read", "entry_write"]},
+        ),
+    ]

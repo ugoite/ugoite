@@ -156,17 +156,25 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Provide secure automation access without interactive user login.
 
 ### Key Tasks
-- [ ] Define service account model and key scopes.
-- [ ] Implement key create/list/revoke/rotate APIs with one-time secret reveal.
-- [ ] Enforce least-privilege scopes in authorization checks.
-- [ ] Add key usage metrics/events for monitoring and forensics.
-- [ ] Add CLI support for service-account key workflows.
-- [ ] Add tests for scope enforcement and key revocation propagation.
+- [x] Define service account model and key scopes.
+- [x] Implement key create/list/revoke/rotate APIs with one-time secret reveal.
+- [x] Enforce least-privilege scopes in authorization checks.
+- [x] Add key usage metrics/events for monitoring and forensics.
+- [x] Add CLI support for service-account key workflows.
+- [x] Add tests for scope enforcement and key revocation propagation.
+
+### Phase 5 Implementation Notes (2026-02)
+- Service-account lifecycle is implemented in `ugoite-core` (`ugoite_core.service_accounts`) and persists under space settings as the canonical automation identity store.
+- Backend endpoints are thin adapters over core APIs for list/create/revoke/rotate key workflows with one-time secret reveal semantics.
+- Space-scoped API key authentication is resolved in core (`authenticate_headers_for_space`) and consumed by backend middleware for all `/spaces/{space_id}/...` requests.
+- Scope enforcement is centralized in core authorization (`require_space_action`) using identity-level enforced scopes for service principals.
+- Service-key usage emits audit events (`service_account.key.use`) including request metadata and usage counters for forensic visibility.
+- CLI adds remote/core routing commands for service-account create/list/key management without duplicating authorization logic.
 
 ### Acceptance Criteria
-- [ ] Service accounts can automate scoped operations securely.
-- [ ] Revoked/rotated keys stop working immediately.
-- [ ] Key workflows are documented and tested end-to-end.
+- [x] Service accounts can automate scoped operations securely.
+- [x] Revoked/rotated keys stop working immediately.
+- [x] Key workflows are documented and tested end-to-end.
 
 ---
 
