@@ -45,6 +45,6 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Please provide details about your environment (OS, Browser, Node version, etc.)
+      description: Please provide details about your environment (OS, Browser, Bun version, Python version, Rust toolchain, etc.)
     validations:
       required: false
