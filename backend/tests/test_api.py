@@ -83,7 +83,10 @@ def test_list_spaces_missing_root_creates_default(
     root = tmp_path / "missing-root"
     monkeypatch.setenv("UGOITE_ROOT", str(root))
 
-    with TestClient(app) as client:
+    with TestClient(
+        app,
+        headers={"Authorization": "Bearer test-suite-token"},
+    ) as client:
         response = client.get("/spaces")
 
     assert response.status_code == 200

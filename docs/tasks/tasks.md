@@ -49,17 +49,24 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Establish identity primitives and authentication mechanisms for local and remote modes.
 
 ### Key Tasks
-- [ ] Define identity model (`user_id`, principal type, display metadata, disabled state).
-- [ ] Implement auth provider interface (API key, bearer token; OAuth proxy adapter point).
-- [ ] Add secure token/key storage and rotation strategy.
-- [ ] Implement auth middleware and dependency injection for REST/MCP requests.
-- [ ] Enforce auth for localhost and remote modes, and document migration from current localhost-no-auth behavior.
-- [ ] Add negative-path handling (expired token, invalid signature, revoked key).
+- [x] Define identity model (`user_id`, principal type, display metadata, disabled state).
+- [x] Implement auth provider interface (API key, bearer token; OAuth proxy adapter point).
+- [x] Add secure token/key storage and rotation strategy.
+- [x] Implement auth middleware and dependency injection for REST/MCP requests.
+- [x] Enforce auth for localhost and remote modes, and document migration from current localhost-no-auth behavior.
+- [x] Add negative-path handling (expired token, invalid signature, revoked key).
+
+### Phase 1 Implementation Notes (2026-02)
+- Authentication foundation is implemented in `ugoite-core` (`ugoite_core.auth`) and reused by backend/CLI adapters.
+- Bearer authentication supports static tokens and HMAC-signed tokens with key-id (`kid`) based rotation.
+- API key authentication supports service principals and shared revocation by key-id.
+- Runtime key material is environment-driven (`UGOITE_AUTH_*`) for pre-production breaking changes without migration.
+- `request.state.identity` is populated for REST and MCP HTTP requests.
 
 ### Acceptance Criteria
-- [ ] Localhost and remote modes deny unauthenticated requests to protected endpoints.
-- [ ] Auth providers can be configured without changing API contracts.
-- [ ] Identity is available in request context for downstream authorization/audit.
+- [x] Localhost and remote modes deny unauthenticated requests to protected endpoints.
+- [x] Auth providers can be configured without changing API contracts.
+- [x] Identity is available in request context for downstream authorization/audit.
 
 ---
 
@@ -69,6 +76,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Key Tasks
 - [ ] Define role model (e.g., owner/admin/editor/viewer/service) and permissions matrix.
+- [ ] Keep backend/CLI/frontend channel adapters thin and continue delegating auth/authz policy logic to `ugoite-core`.
 - [ ] Implement space-level access checks (list/read/write/admin operations).
 - [ ] Implement entry/resource-level checks where stricter controls are required.
 - [ ] Add policy evaluation in `ugoite-core` and thin backend adapters.
@@ -145,6 +153,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Key Tasks
 - [ ] Add login/session UX for remote mode and clear localhost-mode messaging.
+- [ ] Ensure frontend and CLI use shared credential env conventions (`UGOITE_AUTH_BEARER_TOKEN` / `UGOITE_AUTH_API_KEY`) when connecting to backend APIs.
 - [ ] Add space member management screens with role editing and revoke flows.
 - [ ] Add frontend handling for authz failures (permission-aware UI states).
 - [ ] Add CLI ergonomics for auth login/profile/token management.

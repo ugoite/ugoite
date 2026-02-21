@@ -83,13 +83,17 @@ requirements:
   - api/rest.md#authentication
   - api/mcp.md#security-model
   priority: high
-  status: planned
+  status: implemented
   tests:
     pytest:
     - file: backend/tests/test_auth.py
       tests:
       - test_auth_rejects_unauthenticated_localhost_requests
       - test_auth_rejects_unauthenticated_remote_requests
+      - test_auth_rejects_malformed_signed_token_segments
+      - test_auth_rejects_invalid_bearer_signature
+      - test_auth_rejects_expired_bearer_token
+      - test_auth_rejects_revoked_api_key
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
