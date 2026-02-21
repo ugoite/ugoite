@@ -32,3 +32,5 @@ select = ["ALL"]
 # patterns that we intentionally allow. Centralize those exceptions here
 # instead of using inline `# noqa` comments.
 "tests/**.py" = ["S101", "ARG001", "PLR2004", "ANN401", "E402"]
+"ugoite_core/authz.py" = ["C901", "PLR0911", "PLR0912"]
+"ugoite_core/membership.py" = ["C901", "PLR0915"]

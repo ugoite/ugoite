@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.api.endpoints import (
     asset,
     entry,
+    members,
     search,
     space,
     sql,
@@ -15,6 +16,7 @@ from app.core.auth import require_authenticated_identity
 
 router = APIRouter(dependencies=[Depends(require_authenticated_identity)])
 router.include_router(space.router)
+router.include_router(members.router)
 router.include_router(entry.router)
 router.include_router(form_endpoints.router)
 router.include_router(asset.router)

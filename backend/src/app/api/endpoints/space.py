@@ -128,6 +128,20 @@ def _space_uri(space_id: str) -> str:
     return space_uri(get_root_path(), space_id)
 
 
+def _sanitize_space_meta(space_meta: dict[str, Any]) -> dict[str, Any]:
+    """Redact sensitive membership secrets before API response serialization."""
+    sanitized = dict(space_meta)
+    settings_obj = sanitized.get("settings")
+    if not isinstance(settings_obj, dict):
+        return sanitized
+
+    settings = dict(settings_obj)
+    if "invitations" in settings:
+        settings["invitations"] = {}
+    sanitized["settings"] = settings
+    return sanitized
+
+
 @router.get("/spaces")
 async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
     """List spaces visible to the authenticated principal."""
@@ -154,7 +168,8 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
                 identity,
                 "space_list",
             )
-            results.append(await ugoite_core.get_space(storage_config, space_id))
+            space_meta = await ugoite_core.get_space(storage_config, space_id)
+            results.append(_sanitize_space_meta(space_meta))
         except ugoite_core.AuthorizationError:
             continue
         except Exception:
@@ -182,10 +197,24 @@ async def create_space_endpoint(
                 {
                     "owner_user_id": identity.user_id,
                     "admin_user_ids": [identity.user_id],
+                    "member_roles": {},
                     "settings": {
                         "owner_user_id": identity.user_id,
                         "admin_user_ids": [identity.user_id],
-                        "member_roles": {identity.user_id: "owner"},
+                        "member_roles": {},
+                        "members": {
+                            identity.user_id: {
+                                "user_id": identity.user_id,
+                                "role": "owner",
+                                "state": "active",
+                                "activated_at": "bootstrap",
+                                "invited_by": identity.user_id,
+                                "invited_at": "bootstrap",
+                                "revoked_at": None,
+                            },
+                        },
+                        "invitations": {},
+                        "membership_version": 1,
                     },
                 },
             ),
@@ -227,7 +256,8 @@ async def get_space_endpoint(space_id: str, request: Request) -> dict[str, Any]:
             identity,
             "space_read",
         )
-        return await ugoite_core.get_space(storage_config, space_id)
+        space_meta = await ugoite_core.get_space(storage_config, space_id)
+        return _sanitize_space_meta(space_meta)
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
@@ -275,11 +305,12 @@ async def patch_space_endpoint(
             identity,
             "space_admin",
         )
-        return await ugoite_core.patch_space(
+        updated_space = await ugoite_core.patch_space(
             storage_config,
             space_id,
             json.dumps(patch_data),
         )
+        return _sanitize_space_meta(updated_space)
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
