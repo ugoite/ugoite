@@ -56,3 +56,6 @@ run = "bash e2e/scripts/run-e2e.sh smoke"
 [tasks."e2e:entries"]
 description = "Run entries E2E tests"
 run = "bash e2e/scripts/run-e2e.sh entries"
+[tasks."smoke:local"]
+description = "Run quick local backend/frontend smoke checks"
+run = "bash scripts/local-smoke-check.sh"
