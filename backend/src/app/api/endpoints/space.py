@@ -131,11 +131,13 @@ def _space_uri(space_id: str) -> str:
 def _sanitize_space_meta(space_meta: dict[str, Any]) -> dict[str, Any]:
     """Redact sensitive membership secrets before API response serialization."""
     sanitized = dict(space_meta)
+    sanitized.pop("hmac_key", None)
     settings_obj = sanitized.get("settings")
     if not isinstance(settings_obj, dict):
         return sanitized
 
     settings = dict(settings_obj)
+    settings.pop("hmac_key", None)
     if "invitations" in settings:
         settings["invitations"] = {}
     sanitized["settings"] = settings
