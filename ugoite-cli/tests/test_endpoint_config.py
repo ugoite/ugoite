@@ -149,3 +149,60 @@ def test_request_json_preserves_structured_http_error_fields(
         request_json("GET", "http://localhost:8000/spaces")
 
     assert "action=entry_write" in str(exc_info.value)
+
+
+def test_request_json_retries_idempotent_methods_with_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-004: request_json retries transient GET failures with backoff."""
+    attempts: list[int] = []
+
+    class FakeResponse:
+        status = 200
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    class FakeConnection:
+        def __init__(self, _netloc: str, timeout: int) -> None:
+            _ = timeout
+
+        def request(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            body: str | None,
+            headers: dict[str, str],
+        ) -> None:
+            assert body is None
+            assert headers["Accept"] == "application/json"
+            attempts.append(1)
+            if len(attempts) < 3:
+                msg = "transient"
+                raise OSError(msg)
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+        def close(self) -> None:
+            return None
+
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(
+        "ugoite.endpoint_config.http.client.HTTPConnection",
+        FakeConnection,
+    )
+
+    def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(
+        "ugoite.endpoint_config.time.sleep",
+        _record_sleep,
+    )
+
+    assert request_json("GET", "http://localhost:8000/spaces") == {"ok": True}
+    assert len(attempts) == 3
+    assert sleeps == [0.1, 0.2]
