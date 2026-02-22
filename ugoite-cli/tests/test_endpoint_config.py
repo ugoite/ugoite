@@ -148,9 +148,13 @@ def test_request_json_retries_idempotent_methods_with_backoff(
         "ugoite.endpoint_config.http.client.HTTPConnection",
         FakeConnection,
     )
+
+    def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
     monkeypatch.setattr(
         "ugoite.endpoint_config.time.sleep",
-        lambda seconds: sleeps.append(seconds),
+        _record_sleep,
     )
 
     assert request_json("GET", "http://localhost:8000/spaces") == {"ok": True}
