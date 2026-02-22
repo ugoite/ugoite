@@ -52,6 +52,24 @@ const filterRequestHeaders = (headers: Headers): Headers => {
 	return filtered;
 };
 
+const resolveRequestId = (headers: Headers): string => {
+	const existingRequestId =
+		headers.get("x-request-id") ?? headers.get("x-correlation-id") ?? headers.get("x-trace-id");
+	if (existingRequestId && existingRequestId.trim().length > 0) {
+		return existingRequestId;
+	}
+	return crypto.randomUUID();
+};
+
+const ensureRequestId = (headers: Headers): string => {
+	const requestId = resolveRequestId(headers);
+	headers.set("x-request-id", requestId);
+	if (!headers.has("x-correlation-id")) {
+		headers.set("x-correlation-id", requestId);
+	}
+	return requestId;
+};
+
 const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
@@ -113,6 +131,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	const request = event.request;
 	const targetUrl = buildTargetUrl(request.url, backendUrl);
 	const headers = filterRequestHeaders(request.headers);
+	const requestId = ensureRequestId(headers);
 	applyProxyCredentials(headers);
 
 	const timeoutMs = resolveProxyTimeoutMs();
@@ -135,6 +154,9 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	try {
 		const response = await fetch(targetUrl, init);
 		const responseHeaders = filterResponseHeaders(response.headers);
+		if (!responseHeaders.has("x-request-id")) {
+			responseHeaders.set("x-request-id", requestId);
+		}
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
