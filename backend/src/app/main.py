@@ -28,18 +28,22 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
-    root_path: Path | str = get_root_path()
-    storage_config = storage_config_from_root(root_path)
-    try:
-        await ugoite_core.create_space(storage_config, "default")
-        logger.info("Created default space at startup")
-    except RuntimeError as exc:  # pragma: no cover - best effort guard
-        if "already exists" in str(exc).lower():
-            logger.info("Default space already exists")
-        else:
+    should_bootstrap_default_space = (
+        os.environ.get("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "false").lower() == "true"
+    )
+    if should_bootstrap_default_space:
+        root_path: Path | str = get_root_path()
+        storage_config = storage_config_from_root(root_path)
+        try:
+            await ugoite_core.create_space(storage_config, "default")
+            logger.info("Created default space at startup")
+        except RuntimeError as exc:  # pragma: no cover - best effort guard
+            if "already exists" in str(exc).lower():
+                logger.info("Default space already exists")
+            else:
+                logger.warning("Failed to ensure default space: %s", exc)
+        except (OSError, ValueError) as exc:  # pragma: no cover - best effort guard
             logger.warning("Failed to ensure default space: %s", exc)
-    except (OSError, ValueError) as exc:  # pragma: no cover - best effort guard
-        logger.warning("Failed to ensure default space: %s", exc)
 
     yield
     # Shutdown (if needed)

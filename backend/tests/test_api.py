@@ -112,6 +112,7 @@ def test_list_spaces_missing_root_creates_default(
     """REQ-STO-009: /spaces succeeds with missing root path."""
     root = tmp_path / "missing-root"
     monkeypatch.setenv("UGOITE_ROOT", str(root))
+    monkeypatch.setenv("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true")
 
     with TestClient(
         app,
@@ -123,6 +124,26 @@ def test_list_spaces_missing_root_creates_default(
     data = response.json()
     assert any(ws["id"] == "default" for ws in data)
     assert root.exists()
+
+
+def test_list_spaces_missing_root_does_not_bootstrap_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """REQ-STO-009: startup stays read-only unless bootstrap is enabled."""
+    root = tmp_path / "missing-root-no-bootstrap"
+    monkeypatch.setenv("UGOITE_ROOT", str(root))
+    monkeypatch.delenv("UGOITE_BOOTSTRAP_DEFAULT_SPACE", raising=False)
+
+    with TestClient(
+        app,
+        headers={"Authorization": "Bearer test-suite-token"},
+    ) as client:
+        response = client.get("/spaces")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert all(ws["id"] != "default" for ws in data)
 
 
 def test_list_spaces_handles_core_failure(
