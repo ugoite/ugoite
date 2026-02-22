@@ -58,6 +58,7 @@ This milestone implements the future authentication and collaboration model alre
 
 ### Phase 1 Implementation Notes (2026-02)
 - Authentication foundation is implemented in `ugoite-core` (`ugoite_core.auth`) and reused by backend/CLI adapters.
+- Base authentication verification now runs in Rust (`ugoite-core/src/auth.rs`); Python `ugoite_core.auth` is a thin adapter surface.
 - Bearer authentication supports static tokens and HMAC-signed tokens with key-id (`kid`) based rotation.
 - API key authentication supports service principals and shared revocation by key-id.
 - Runtime key material is environment-driven (`UGOITE_AUTH_*`) for pre-production breaking changes without migration.
@@ -200,10 +201,10 @@ This milestone implements the future authentication and collaboration model alre
 
 ## Verification Matrix
 
-- [ ] `mise run test` passes.
-- [ ] `mise run e2e` passes.
+- [x] `mise run test` passes.
+- [x] `mise run e2e` passes.
 - [ ] Requirement coverage check confirms all new `REQ-*` are linked to tests.
-- [ ] Security regression checks pass for localhost and remote modes.
+- [x] Security regression checks pass for localhost and remote modes.
 
 ---
 
