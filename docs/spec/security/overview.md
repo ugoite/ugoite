@@ -55,6 +55,9 @@ targets an **Authenticated Access by Default** model.
 
 ## Authentication (Future)
 
+Canonical machine-readable auth contract: `security/authentication-overview.yaml`.
+
+
 Milestone 4 baseline enforces user authentication for every client channel (UI,
 CLI via backend, MCP over HTTP, and future native clients). Authentication is
 space-scoped and uses the following profile:
