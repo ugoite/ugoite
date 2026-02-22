@@ -73,11 +73,11 @@ cd "$ROOT_DIR/frontend"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
 if [ "$FRONTEND_MODE" = "prod" ]; then
     echo "Building frontend for production..."
-    BACKEND_URL=http://localhost:8000 UGOITE_FRONTEND_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run build
+    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run build
     echo "Starting production frontend server..."
-    BACKEND_URL=http://localhost:8000 UGOITE_FRONTEND_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" NODE_ENV=production bun run start &
+    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" NODE_ENV=production bun run start &
 else
-    BACKEND_URL=http://localhost:8000 UGOITE_FRONTEND_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run dev &
+    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run dev &
 fi
 FRONTEND_PID=$!
 

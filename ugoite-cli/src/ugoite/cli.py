@@ -1,6 +1,8 @@
 """CLI entry point using Typer."""
 
 import json
+import os
+import shlex
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -72,6 +74,7 @@ asset_app = typer.Typer(help="Asset management commands")
 search_app = typer.Typer(help="Search commands")
 sql_app = typer.Typer(help="SQL linting and completion commands")
 config_app = typer.Typer(help="CLI endpoint routing settings")
+auth_app = typer.Typer(help="Authentication helpers for remote endpoint modes")
 
 app.add_typer(entry_app, name="entry")
 app.add_typer(index_app, name="index")
@@ -81,8 +84,11 @@ app.add_typer(asset_app, name="asset")
 app.add_typer(search_app, name="search")
 app.add_typer(sql_app, name="sql")
 app.add_typer(config_app, name="config")
+app.add_typer(auth_app, name="auth")
 
 DEFAULT_NOTE_CONTENT = "# New Entry\n"
+_MASK_VISIBLE_CHARS = 4
+_MASK_MIN_LENGTH = 8
 
 
 def _endpoint_config() -> EndpointConfig:
@@ -152,6 +158,80 @@ def _parse_json_list(value: str | None, label: str) -> list[dict[str, Any]] | No
             msg = f"{label} must contain JSON objects"
             raise typer.BadParameter(msg)
     return payload
+
+
+def _mask_secret(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        return ""
+    if len(stripped) <= _MASK_MIN_LENGTH:
+        return "*" * len(stripped)
+    return f"{stripped[:_MASK_VISIBLE_CHARS]}...{stripped[-_MASK_VISIBLE_CHARS:]}"
+
+
+@auth_app.command("profile")
+@handle_cli_errors
+def cmd_auth_profile() -> None:
+    """Show active auth setup for backend/api endpoint mode."""
+    setup_logging()
+    endpoint = _endpoint_config()
+    bearer = os.environ.get("UGOITE_AUTH_BEARER_TOKEN", "")
+    api_key = os.environ.get("UGOITE_AUTH_API_KEY", "")
+    payload = {
+        "endpoint_mode": endpoint.mode,
+        "base_url": resolve_base_url(endpoint),
+        "active_method": "bearer"
+        if bearer.strip()
+        else ("api_key" if api_key.strip() else None),
+        "bearer_token": _mask_secret(bearer),
+        "api_key": _mask_secret(api_key),
+        "hint": (
+            "Set UGOITE_AUTH_BEARER_TOKEN or UGOITE_AUTH_API_KEY "
+            "before remote commands."
+        ),
+    }
+    typer.echo(json.dumps(payload, indent=2))
+
+
+@auth_app.command("login")
+@handle_cli_errors
+def cmd_auth_login(
+    bearer_token: Annotated[
+        str | None,
+        typer.Option(help="Bearer token for Authorization header"),
+    ] = None,
+    api_key: Annotated[
+        str | None,
+        typer.Option(help="API key for X-API-Key header"),
+    ] = None,
+) -> None:
+    """Print export commands for shared auth env vars used by CLI/frontend."""
+    setup_logging()
+    bearer = (bearer_token or "").strip()
+    key = (api_key or "").strip()
+    if bool(bearer) == bool(key):
+        msg = "Provide exactly one of --bearer-token or --api-key"
+        raise typer.BadParameter(msg)
+
+    if bearer:
+        safe_bearer = shlex.quote(bearer)
+        typer.echo(f"export UGOITE_AUTH_BEARER_TOKEN={safe_bearer}")
+        typer.echo("unset UGOITE_AUTH_API_KEY")
+    else:
+        safe_key = shlex.quote(key)
+        typer.echo(f"export UGOITE_AUTH_API_KEY={safe_key}")
+        typer.echo("unset UGOITE_AUTH_BEARER_TOKEN")
+
+    typer.echo("Apply in current shell, then run `ugoite auth profile` to verify.")
+
+
+@auth_app.command("token-clear")
+@handle_cli_errors
+def cmd_auth_token_clear() -> None:
+    """Print shell commands to clear shared auth env credentials."""
+    setup_logging()
+    typer.echo("unset UGOITE_AUTH_BEARER_TOKEN")
+    typer.echo("unset UGOITE_AUTH_API_KEY")
 
 
 @config_app.command("show")
