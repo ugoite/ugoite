@@ -89,6 +89,22 @@ def test_list_spaces(
     assert len(data) == 2
 
 
+def test_list_spaces_redacts_hmac_key(test_client: TestClient) -> None:
+    """REQ-API-001: /spaces MUST NOT expose hmac_key secrets."""
+    test_client.post("/spaces", json={"name": "secret-space"})
+
+    list_response = test_client.get("/spaces")
+    assert list_response.status_code == 200
+    spaces = list_response.json()
+    target = next(space for space in spaces if space["id"] == "secret-space")
+    assert "hmac_key" not in target
+
+    detail_response = test_client.get("/spaces/secret-space")
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert "hmac_key" not in detail
+
+
 def test_list_spaces_missing_root_creates_default(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
