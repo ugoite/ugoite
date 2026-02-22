@@ -80,7 +80,7 @@ In `backend` / `api` modes, CLI and frontend share the same credential env conve
 
 ```bash
 # Print export commands for current shell
-uv run ugoite auth login --bearer-token <token>
+uv run ugoite auth login --bearer-token TOKEN_VALUE
 
 # Inspect active auth setup
 uv run ugoite auth profile

@@ -190,6 +190,7 @@ export default function SpaceSettingsRoute() {
 						</label>
 					</div>
 					<button
+						type="button"
 						class="ui-button ui-button-primary w-fit"
 						onClick={handleInvite}
 						disabled={memberActionPending()}
@@ -252,6 +253,7 @@ export default function SpaceSettingsRoute() {
 												</select>
 											</Show>
 											<button
+												type="button"
 												class="ui-button ui-button-secondary text-sm"
 												onClick={() => void revokeMember(member.user_id)}
 												disabled={
