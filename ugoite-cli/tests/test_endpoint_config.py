@@ -105,6 +105,52 @@ def test_request_json_closes_connection_on_error(
     assert closed["value"] is True
 
 
+def test_request_json_preserves_structured_http_error_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-004: request_json surfaces code/action from structured error payloads."""
+
+    class FakeResponse:
+        status = 403
+
+        def read(self) -> bytes:
+            return (
+                b'{"detail":{"detail":"Forbidden by policy","code":"forbidden",'
+                b'"action":"entry_write"}}'
+            )
+
+    class FakeConnection:
+        def __init__(self, _netloc: str, timeout: int) -> None:
+            _ = timeout
+
+        def request(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            body: str | None,
+            headers: dict[str, str],
+        ) -> None:
+            assert body is None
+            assert headers["Accept"] == "application/json"
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "ugoite.endpoint_config.http.client.HTTPConnection",
+        FakeConnection,
+    )
+
+    with pytest.raises(RuntimeError, match="code=forbidden") as exc_info:
+        request_json("GET", "http://localhost:8000/spaces")
+
+    assert "action=entry_write" in str(exc_info.value)
+
+
 def test_request_json_retries_idempotent_methods_with_backoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
