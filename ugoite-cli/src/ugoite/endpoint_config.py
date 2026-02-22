@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -19,6 +20,8 @@ _CONFIG_DIRNAME = ".ugoite"
 _CONFIG_FILENAME = "cli-endpoints.json"
 _HTTP_ERROR_STATUS = 400
 _DEFAULT_HTTP_TIMEOUT_SECONDS = 30
+_MAX_IDEMPOTENT_RETRIES = 2
+_INITIAL_RETRY_BACKOFF_SECONDS = 0.1
 
 
 @dataclass
@@ -147,6 +150,71 @@ def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
     return parsed
 
 
+def _is_idempotent_http_method(method: str) -> bool:
+    return method.upper() in {"GET", "HEAD", "OPTIONS"}
+
+
+@dataclass(frozen=True)
+class _HttpRequestSpec:
+    method: str
+    netloc: str
+    path: str
+    headers: dict[str, str]
+    body: str | None
+    timeout_seconds: int
+
+
+def _perform_http_request(
+    conn_cls: type[http.client.HTTPConnection],
+    request_spec: _HttpRequestSpec,
+) -> tuple[int, str]:
+    attempts = 1 + (
+        _MAX_IDEMPOTENT_RETRIES
+        if _is_idempotent_http_method(request_spec.method)
+        else 0
+    )
+    last_error: OSError | None = None
+
+    for attempt in range(attempts):
+        conn: http.client.HTTPConnection | None = None
+        result: tuple[int, str] | None = None
+        try:
+            conn = conn_cls(
+                request_spec.netloc,
+                timeout=request_spec.timeout_seconds,
+            )
+            conn.request(
+                request_spec.method.upper(),
+                request_spec.path,
+                body=request_spec.body,
+                headers=request_spec.headers,
+            )
+            response = conn.getresponse()
+            status_code = response.status
+            raw_body = response.read().decode("utf-8")
+            result = (status_code, raw_body)
+        except OSError as exc:
+            last_error = exc
+            if attempt >= attempts - 1:
+                msg = f"Connection failed: {exc}"
+                raise RuntimeError(msg) from exc
+            backoff = _INITIAL_RETRY_BACKOFF_SECONDS * (2**attempt)
+            time.sleep(backoff)
+        finally:
+            if conn is not None:
+                conn.close()
+
+        if result is not None:
+            return result
+
+    message = (
+        f"Connection failed: {last_error}"
+        if last_error is not None
+        else "Connection failed"
+    )
+    raise RuntimeError(message)
+
+
 def request_json(
     method: str,
     url: str,
@@ -174,20 +242,16 @@ def request_json(
         if parsed.scheme == "https"
         else http.client.HTTPConnection
     )
-    conn: http.client.HTTPConnection | None = None
     resolved_timeout_seconds = _resolve_timeout_seconds(timeout_seconds)
-    try:
-        conn = conn_cls(parsed.netloc, timeout=resolved_timeout_seconds)
-        conn.request(method.upper(), path, body=body, headers=headers)
-        response = conn.getresponse()
-        status_code = response.status
-        raw_body = response.read().decode("utf-8")
-    except OSError as exc:
-        msg = f"Connection failed: {exc}"
-        raise RuntimeError(msg) from exc
-    finally:
-        if conn is not None:
-            conn.close()
+    request_spec = _HttpRequestSpec(
+        method=method,
+        netloc=parsed.netloc,
+        path=path,
+        headers=headers,
+        body=body,
+        timeout_seconds=resolved_timeout_seconds,
+    )
+    status_code, raw_body = _perform_http_request(conn_cls, request_spec)
 
     if status_code >= _HTTP_ERROR_STATUS:
         detail = _extract_http_error_detail(raw_body)
