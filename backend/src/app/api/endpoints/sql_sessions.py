@@ -53,6 +53,17 @@ async def create_sql_session_endpoint(
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if msg.startswith("UGOITE_SQL_VALIDATION"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=msg,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=msg,
+        ) from exc
     except Exception as e:
         logger.exception("Failed to create SQL session")
         raise HTTPException(
