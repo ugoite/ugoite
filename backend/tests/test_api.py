@@ -163,6 +163,31 @@ def test_list_spaces_handles_core_failure(
     assert response.json()["detail"] == "Failed to list spaces"
 
 
+def test_list_spaces_fails_when_space_meta_read_errors(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-009: /spaces fails explicitly when per-space metadata read fails."""
+
+    async def _list_spaces(_config: dict[str, str]) -> list[str]:
+        return ["ws-a"]
+
+    async def _allow(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def _raise_get_space(*_args: object, **_kwargs: object) -> dict[str, object]:
+        msg = "meta read failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(ugoite_core, "list_spaces", _list_spaces)
+    monkeypatch.setattr(ugoite_core, "require_space_action", _allow)
+    monkeypatch.setattr(ugoite_core, "get_space", _raise_get_space)
+
+    response = test_client.get("/spaces")
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to read space metadata"
+
+
 def test_get_space(
     test_client: TestClient,
     temp_space_root: Path,
