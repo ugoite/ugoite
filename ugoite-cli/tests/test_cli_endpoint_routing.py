@@ -184,3 +184,21 @@ def test_auth_profile_reads_shared_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert '"active_method": "api_key"' in result.stdout
     assert '"api_key": "api-...-xyz"' in result.stdout
     assert '"api_key": "' in result.stdout
+
+
+def test_auth_overview_prints_core_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-003: auth overview renders ugoite-core capability snapshot."""
+    monkeypatch.setattr(
+        "ugoite.cli.export_authentication_overview",
+        lambda: {
+            "version": "m4-auth-rust-base-v1",
+            "enforcement": {"mandatory_authentication": True},
+        },
+    )
+
+    result = runner.invoke(app, ["auth", "overview"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert '"version": "m4-auth-rust-base-v1"' in result.stdout
+    assert '"mandatory_authentication": true' in result.stdout

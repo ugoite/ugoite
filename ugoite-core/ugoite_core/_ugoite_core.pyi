@@ -148,3 +148,11 @@ def load_hmac_material(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[tuple[str, bytes]]: ...
+def authenticate_headers_core(
+    *args: object,
+    **kwargs: object,
+) -> dict[str, object]: ...
+def auth_capabilities_snapshot_core(
+    *args: object,
+    **kwargs: object,
+) -> dict[str, object]: ...
