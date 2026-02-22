@@ -1,0 +1,1 @@
+Issue #311 closure artifact
