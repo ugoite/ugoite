@@ -177,8 +177,12 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
             results.append(_sanitize_space_meta(space_meta))
         except ugoite_core.AuthorizationError:
             continue
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to read space meta %s", space_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to read space metadata",
+            ) from exc
 
     return results
 
