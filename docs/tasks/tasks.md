@@ -183,18 +183,18 @@ This milestone implements the future authentication and collaboration model alre
 **Objective**: Expose user-management behavior clearly in frontend and developer workflows.
 
 ### Key Tasks
-- [ ] Add login/session UX for remote mode and clear localhost-mode messaging.
-- [ ] Ensure frontend and CLI use shared credential env conventions (`UGOITE_AUTH_BEARER_TOKEN` / `UGOITE_AUTH_API_KEY`) when connecting to backend APIs.
-- [ ] Add space member management screens with role editing and revoke flows.
-- [ ] Add frontend handling for authz failures (permission-aware UI states).
-- [ ] Add CLI ergonomics for auth login/profile/token management.
-- [ ] Update docs/guide and API docs with setup, troubleshooting, and examples.
-- [ ] Add integration/e2e coverage for full user lifecycle.
+- [x] Add login/session UX for remote mode and clear localhost-mode messaging.
+- [x] Ensure frontend and CLI use shared credential env conventions (`UGOITE_AUTH_BEARER_TOKEN` / `UGOITE_AUTH_API_KEY`) when connecting to backend APIs.
+- [x] Add space member management screens with role editing and revoke flows.
+- [x] Add frontend handling for authz failures (permission-aware UI states).
+- [x] Add CLI ergonomics for auth login/profile/token management.
+- [x] Update docs/guide and API docs with setup, troubleshooting, and examples.
+- [x] Add integration/e2e coverage for full user lifecycle.
 
 ### Acceptance Criteria
-- [ ] Remote users can sign in and manage collaboration from UI/CLI.
-- [ ] Permission errors are understandable and actionable.
-- [ ] Documentation supports first-time setup without guesswork.
+- [x] Remote users can sign in and manage collaboration from UI/CLI.
+- [x] Permission errors are understandable and actionable.
+- [x] Documentation supports first-time setup without guesswork.
 
 ---
 

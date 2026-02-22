@@ -7,7 +7,7 @@ When the spaces page returns `Unauthorized`, validate these items in order:
 2. Confirm frontend proxy target.
    - `BACKEND_URL` must point to the backend reachable by the frontend process.
 3. Confirm auth token wiring.
-   - Frontend server should receive `UGOITE_FRONTEND_BEARER_TOKEN`.
+   - Frontend server should receive `UGOITE_AUTH_BEARER_TOKEN`.
 4. Confirm token exists in backend auth source.
    - Include the token in `UGOITE_AUTH_BEARER_TOKENS_JSON` or bootstrap settings.
 5. Retry with clean browser session.
