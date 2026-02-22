@@ -956,6 +956,23 @@ def test_middleware_hmac_signature(
     assert response.headers["X-Ugoite-Signature"] == expected_signature
 
 
+def test_middleware_signs_non_streaming_mcp_prefixed_paths(
+    test_client: TestClient,
+) -> None:
+    """REQ-INT-003: non-streaming /mcp* paths MUST still be response-signed."""
+    if not hasattr(app.state, "mcp_test_route_registered"):
+
+        @app.get("/mcp-test-json")
+        async def _mcp_test_json() -> dict[str, str]:
+            return {"status": "ok"}
+
+        app.state.mcp_test_route_registered = True
+
+    response = test_client.get("/mcp-test-json")
+    assert response.status_code == 200
+    assert "X-Ugoite-Signature" in response.headers
+
+
 def test_middleware_ignores_untrusted_forwarded_for(
     test_client: TestClient,
 ) -> None:

@@ -169,11 +169,13 @@ async def security_middleware(
             body = bytes(response.body or b"")
             return await _apply_security_headers(response, body, root_path)
 
-    # Skip body capture/signing for MCP SSE endpoints as they are streaming
-    if request.url.path.startswith("/mcp"):
-        return await call_next(request)
-
     response = await call_next(request)
+
+    # Skip body capture/signing only for SSE responses that cannot be buffered
+    content_type = response.headers.get("content-type", "")
+    if content_type.lower().startswith("text/event-stream"):
+        return response
+
     body = await _capture_response_body(response)
 
     if response.status_code == status.HTTP_403_FORBIDDEN:
