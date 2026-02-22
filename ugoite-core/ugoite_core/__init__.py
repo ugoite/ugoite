@@ -18,6 +18,7 @@ from .auth import (
     authenticate_headers,
     authenticate_headers_for_space,
     clear_auth_manager_cache,
+    export_authentication_overview,
 )
 from .authz import (
     AccessContext,
@@ -167,6 +168,7 @@ __all__ = [
     "delete_asset",
     "delete_entry",
     "delete_sql",
+    "export_authentication_overview",
     "extract_properties",
     "filter_readable_entries",
     "form_name_from_entry",

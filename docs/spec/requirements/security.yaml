@@ -97,6 +97,9 @@ requirements:
     - file: ugoite-core/tests/test_auth.py
       tests:
       - test_bootstrap_warning_redacts_token_value
+    - file: ugoite-core/tests/test_auth_overview_consistency.py
+      tests:
+      - test_auth_overview_matches_security_yaml_contract
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.

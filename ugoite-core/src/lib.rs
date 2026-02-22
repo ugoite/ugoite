@@ -12,6 +12,7 @@ use subtle::ConstantTimeEq;
 
 pub mod asset;
 pub mod audit;
+pub mod auth;
 pub mod entry;
 pub mod form;
 pub mod iceberg_store;
@@ -69,7 +70,7 @@ fn get_operator(_py: Python<'_>, config: &Bound<'_, PyDict>) -> PyResult<Operato
     storage::operator_from_uri(&uri).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
+pub(crate) fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
     match value {
         Value::Null => Ok(py.None()),
         Value::Bool(b) => b.into_py_any(py),
@@ -129,6 +130,71 @@ fn verify_service_api_key_secret(
 
     let legacy = hash_legacy_service_api_key_secret(&secret);
     verify_digest(&key_hash, &legacy)
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    authorization=None,
+    api_key=None,
+    bearer_tokens_json=None,
+    api_keys_json=None,
+    bearer_secrets=None,
+    active_kids=None,
+    revoked_key_ids=None,
+    bootstrap_token=None,
+    bootstrap_user_id=None,
+))]
+fn authenticate_headers_core(
+    py: Python<'_>,
+    authorization: Option<String>,
+    api_key: Option<String>,
+    bearer_tokens_json: Option<String>,
+    api_keys_json: Option<String>,
+    bearer_secrets: Option<String>,
+    active_kids: Option<String>,
+    revoked_key_ids: Option<String>,
+    bootstrap_token: Option<String>,
+    bootstrap_user_id: Option<String>,
+) -> PyResult<PyObject> {
+    let result = auth::authenticate_headers_core(
+        authorization.as_deref(),
+        api_key.as_deref(),
+        bearer_tokens_json.as_deref(),
+        api_keys_json.as_deref(),
+        bearer_secrets.as_deref(),
+        active_kids.as_deref(),
+        revoked_key_ids.as_deref(),
+        bootstrap_token.as_deref(),
+        bootstrap_user_id.as_deref(),
+    );
+    json_to_py(py, result)
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    bearer_tokens_json=None,
+    api_keys_json=None,
+    bearer_secrets=None,
+    active_kids=None,
+    revoked_key_ids=None,
+))]
+fn auth_capabilities_snapshot_core(
+    py: Python<'_>,
+    bearer_tokens_json: Option<String>,
+    api_keys_json: Option<String>,
+    bearer_secrets: Option<String>,
+    active_kids: Option<String>,
+    revoked_key_ids: Option<String>,
+) -> PyResult<PyObject> {
+    let result = auth::auth_capabilities_snapshot(
+        bearer_tokens_json.as_deref(),
+        api_keys_json.as_deref(),
+        bearer_secrets.as_deref(),
+        active_kids.as_deref(),
+        revoked_key_ids.as_deref(),
+    );
+    json_to_py(py, result)
 }
 
 // Space
@@ -1104,6 +1170,8 @@ fn get_sql_session_rows_all<'a>(
 fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hash_service_api_key_secret, m)?)?;
     m.add_function(wrap_pyfunction!(verify_service_api_key_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(authenticate_headers_core, m)?)?;
+    m.add_function(wrap_pyfunction!(auth_capabilities_snapshot_core, m)?)?;
 
     m.add_function(wrap_pyfunction!(list_spaces, m)?)?;
     m.add_function(wrap_pyfunction!(create_space, m)?)?;

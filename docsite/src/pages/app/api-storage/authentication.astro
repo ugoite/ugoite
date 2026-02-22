@@ -1,0 +1,97 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../lib/base-path";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "flow", title: "Auth Flow" },
+  { id: "providers", title: "Providers" },
+  { id: "spec", title: "Spec Source" },
+];
+
+const identityFields = [
+  "user_id",
+  "principal_type",
+  "display_name",
+  "auth_method",
+  "key_id",
+  "scopes",
+  "scope_enforced",
+  "service_account_id",
+];
+---
+
+<BaseLayout
+  title="Authentication Model | Ugoite"
+  description="Rust-core authentication foundation and channel integration overview."
+  toc={toc}
+  related={[
+    { href: "/app/api-storage", label: "API & Storage" },
+    { href: "/docs/spec/security/authentication-overview", label: "Security Auth YAML" },
+    { href: "/docs/spec/security/overview", label: "Security Overview" },
+  ]}
+>
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">ugoite-core auth base</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        Mandatory Authentication by Default
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 42rem; line-height: 1.6;">
+        Authentication is resolved in Rust core first. Backend, CLI, and frontend adapters remain thin and consume the same identity model.
+      </p>
+    </div>
+  </section>
+
+  <section id="flow" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Auth Flow</h2>
+    <div class="doc-diagram">
+      <div class="doc-arch-flow">
+        <div class="doc-arch-row">
+          <div class="doc-arch-node"><div class="doc-arch-node-title">Frontend / CLI / MCP</div><div class="doc-arch-node-desc">Sends Bearer or X-API-Key</div></div>
+        </div>
+        <div class="doc-arch-connector"><div class="doc-arch-connector-line"></div><span>headers</span><div class="doc-arch-connector-line"></div></div>
+        <div class="doc-arch-row">
+          <div class="doc-arch-node" style="border-color: var(--doc-accent);"><div class="doc-arch-node-title">ugoite-core (Rust)</div><div class="doc-arch-node-desc">Token/API key verification + identity resolution</div></div>
+        </div>
+        <div class="doc-arch-connector"><div class="doc-arch-connector-line"></div><span>identity</span><div class="doc-arch-connector-line"></div></div>
+        <div class="doc-arch-row">
+          <div class="doc-arch-node"><div class="doc-arch-node-title">Backend AuthZ Adapter</div><div class="doc-arch-node-desc">Space/Form policy checks only</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="providers" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Providers & Identity Model</h2>
+    <div class="doc-grid-3">
+      <div class="doc-card">
+        <h3 style="font-size: 0.95rem; font-weight: 700;">Bearer</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Static token and signed token (kid-based) verification.</p>
+      </div>
+      <div class="doc-card">
+        <h3 style="font-size: 0.95rem; font-weight: 700;">API Key</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Static API key and space-scoped service-account key support.</p>
+      </div>
+      <div class="doc-card">
+        <h3 style="font-size: 0.95rem; font-weight: 700;">Enforcement</h3>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">Localhost and remote mode both require authentication.</p>
+      </div>
+    </div>
+
+    <h3 style="font-size: 1rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.75rem;">Identity Fields</h3>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      {identityFields.map((field) => (
+        <span class="doc-pill doc-pill-outline">{field}</span>
+      ))}
+    </div>
+  </section>
+
+  <section id="spec" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Spec Source</h2>
+    <p style="font-size: 0.875rem; color: var(--doc-muted); margin-bottom: 0.75rem;">
+      The canonical YAML contract is used for docs rendering and consistency tests against the ugoite-core export output.
+    </p>
+    <a href={withBasePath("/docs/spec/security/authentication-overview")} class="doc-pill" style="text-decoration: none;">Open authentication-overview.yaml</a>
+  </section>
+</BaseLayout>
