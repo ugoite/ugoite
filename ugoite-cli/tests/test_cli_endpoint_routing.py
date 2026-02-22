@@ -161,3 +161,25 @@ def test_space_service_account_create_routes_to_backend(
             {"display_name": "CI Bot", "scopes": ["entry_read", "entry_write"]},
         ),
     ]
+
+
+def test_auth_login_prints_shared_env_exports() -> None:
+    """REQ-SEC-003: auth login emits shared credential env conventions."""
+    result = runner.invoke(
+        app,
+        ["auth", "login", "--bearer-token", "token-123"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0
+    assert 'export UGOITE_AUTH_BEARER_TOKEN="token-123"' in result.stdout
+    assert "unset UGOITE_AUTH_API_KEY" in result.stdout
+
+
+def test_auth_profile_reads_shared_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """REQ-SEC-003: auth profile reports shared credential env values."""
+    monkeypatch.setenv("UGOITE_AUTH_API_KEY", "api-key-xyz")
+    result = runner.invoke(app, ["auth", "profile"], catch_exceptions=False)
+    assert result.exit_code == 0
+    assert '"active_method": "api_key"' in result.stdout
+    assert '"api_key": "api-...-xyz"' in result.stdout
+    assert '"api_key": "' in result.stdout

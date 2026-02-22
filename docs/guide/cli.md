@@ -69,3 +69,22 @@ uv run ugoite config set --mode backend --backend-url http://localhost:8000
 # Route commands to API endpoint
 uv run ugoite config set --mode api --api-url http://localhost:3000/api
 ```
+
+
+## Auth profile commands
+
+In `backend` / `api` modes, CLI and frontend share the same credential env conventions:
+
+- `UGOITE_AUTH_BEARER_TOKEN`
+- `UGOITE_AUTH_API_KEY`
+
+```bash
+# Print export commands for current shell
+uv run ugoite auth login --bearer-token <token>
+
+# Inspect active auth setup
+uv run ugoite auth profile
+
+# Print unset commands
+uv run ugoite auth token-clear
+```
