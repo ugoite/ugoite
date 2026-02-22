@@ -68,8 +68,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	const targetUrl = buildTargetUrl(request.url, backendUrl);
 	const headers = filterRequestHeaders(request.headers);
 	if (!headers.has("authorization")) {
-		const proxyBearerToken =
-			process.env.UGOITE_AUTH_BEARER_TOKEN ?? process.env.UGOITE_FRONTEND_BEARER_TOKEN;
+		const proxyBearerToken = process.env.UGOITE_AUTH_BEARER_TOKEN;
 		if (proxyBearerToken) {
 			headers.set("authorization", `Bearer ${proxyBearerToken}`);
 		}
