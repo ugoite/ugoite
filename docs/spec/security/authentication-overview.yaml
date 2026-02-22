@@ -1,0 +1,39 @@
+{
+  "version": "m4-auth-rust-base-v1",
+  "enforcement": {
+    "mandatory_authentication": true,
+    "localhost_requires_authentication": true,
+    "remote_requires_authentication": true
+  },
+  "providers": {
+    "bearer": {
+      "supports_static_tokens": true,
+      "supports_signed_tokens": true,
+      "active_kids_source": "UGOITE_AUTH_BEARER_ACTIVE_KIDS"
+    },
+    "api_key": {
+      "supports_static_api_keys": true,
+      "supports_space_service_account_keys": true,
+      "revocation_source": "UGOITE_AUTH_REVOKED_KEY_IDS"
+    }
+  },
+  "identity_model": {
+    "principal_types": ["user", "service"],
+    "fields": [
+      "user_id",
+      "principal_type",
+      "display_name",
+      "auth_method",
+      "key_id",
+      "scopes",
+      "scope_enforced",
+      "service_account_id"
+    ]
+  },
+  "channels": [
+    "backend(rest)",
+    "backend(mcp)",
+    "cli(via backend)",
+    "frontend(via backend)"
+  ]
+}
