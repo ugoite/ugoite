@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -27,6 +28,7 @@ class EndpointConfig:
     mode: EndpointMode = "core"
     backend_url: str = "http://localhost:8000"
     api_url: str = "http://localhost:3000/api"
+    timeout_seconds: int = _DEFAULT_HTTP_TIMEOUT_SECONDS
 
 
 def endpoint_config_path() -> Path:
@@ -58,10 +60,15 @@ def load_endpoint_config() -> EndpointConfig:
     if not isinstance(api_url, str) or not api_url.strip():
         api_url = EndpointConfig.api_url
 
+    timeout_seconds = payload.get("timeout_seconds", _DEFAULT_HTTP_TIMEOUT_SECONDS)
+    if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
+        timeout_seconds = _DEFAULT_HTTP_TIMEOUT_SECONDS
+
     return EndpointConfig(
         mode=mode,
         backend_url=backend_url,
         api_url=api_url,
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -115,12 +122,37 @@ def _extract_http_error_detail(raw_body: str) -> str:
     return detail
 
 
+def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
+    if timeout_seconds is not None:
+        if timeout_seconds <= 0:
+            msg = "timeout_seconds must be a positive integer"
+            raise RuntimeError(msg)
+        return timeout_seconds
+
+    config_timeout = load_endpoint_config().timeout_seconds
+    resolved = config_timeout if config_timeout > 0 else _DEFAULT_HTTP_TIMEOUT_SECONDS
+
+    env_timeout = os.environ.get("UGOITE_HTTP_TIMEOUT_SECONDS")
+    if env_timeout is None:
+        return resolved
+
+    try:
+        parsed = int(env_timeout)
+    except ValueError as exc:
+        msg = "UGOITE_HTTP_TIMEOUT_SECONDS must be a positive integer"
+        raise RuntimeError(msg) from exc
+    if parsed <= 0:
+        msg = "UGOITE_HTTP_TIMEOUT_SECONDS must be a positive integer"
+        raise RuntimeError(msg)
+    return parsed
+
+
 def request_json(
     method: str,
     url: str,
     *,
     payload: dict[str, JsonValue] | None = None,
-    timeout_seconds: int = _DEFAULT_HTTP_TIMEOUT_SECONDS,
+    timeout_seconds: int | None = None,
 ) -> JsonValue:
     """Execute an HTTP JSON request and return parsed JSON payload."""
     parsed = urlparse(url)
@@ -143,8 +175,9 @@ def request_json(
         else http.client.HTTPConnection
     )
     conn: http.client.HTTPConnection | None = None
+    resolved_timeout_seconds = _resolve_timeout_seconds(timeout_seconds)
     try:
-        conn = conn_cls(parsed.netloc, timeout=timeout_seconds)
+        conn = conn_cls(parsed.netloc, timeout=resolved_timeout_seconds)
         conn.request(method.upper(), path, body=body, headers=headers)
         response = conn.getresponse()
         status_code = response.status
