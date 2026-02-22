@@ -171,12 +171,13 @@ def test_auth_login_prints_shared_env_exports() -> None:
         catch_exceptions=False,
     )
     assert result.exit_code == 0
-    assert 'export UGOITE_AUTH_BEARER_TOKEN="token-123"' in result.stdout
+    assert "export UGOITE_AUTH_BEARER_TOKEN=token-123" in result.stdout
     assert "unset UGOITE_AUTH_API_KEY" in result.stdout
 
 
 def test_auth_profile_reads_shared_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """REQ-SEC-003: auth profile reports shared credential env values."""
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_TOKEN", raising=False)
     monkeypatch.setenv("UGOITE_AUTH_API_KEY", "api-key-xyz")
     result = runner.invoke(app, ["auth", "profile"], catch_exceptions=False)
     assert result.exit_code == 0

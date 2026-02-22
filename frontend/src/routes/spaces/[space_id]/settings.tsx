@@ -9,6 +9,7 @@ const managedRoles = ["admin", "editor", "viewer"] as const;
 type ManagedRole = (typeof managedRoles)[number];
 
 const toMessage = (value: unknown): string => {
+	if (typeof value === "string" && value.trim()) return value;
 	if (value instanceof Error && value.message.trim()) return value.message;
 	return "";
 };
@@ -210,6 +211,12 @@ export default function SpaceSettingsRoute() {
 
 					<Show when={members.loading}>
 						<p class="text-sm ui-muted">Loading members...</p>
+					</Show>
+					<Show when={members.error}>
+						<p class="text-sm ui-text-danger">
+							Failed to load members
+							<Show when={toMessage(members.error)}>{`: ${toMessage(members.error)}`}</Show>
+						</p>
 					</Show>
 					<Show when={!members.loading && !members.error && (members() || []).length === 0}>
 						<p class="text-sm ui-muted">No members found.</p>

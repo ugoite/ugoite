@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -213,10 +214,12 @@ def cmd_auth_login(
         raise typer.BadParameter(msg)
 
     if bearer:
-        typer.echo(f'export UGOITE_AUTH_BEARER_TOKEN="{bearer}"')
+        safe_bearer = shlex.quote(bearer)
+        typer.echo(f"export UGOITE_AUTH_BEARER_TOKEN={safe_bearer}")
         typer.echo("unset UGOITE_AUTH_API_KEY")
     else:
-        typer.echo(f'export UGOITE_AUTH_API_KEY="{key}"')
+        safe_key = shlex.quote(key)
+        typer.echo(f"export UGOITE_AUTH_API_KEY={safe_key}")
         typer.echo("unset UGOITE_AUTH_BEARER_TOKEN")
 
     typer.echo("Apply in current shell, then run `ugoite auth profile` to verify.")
