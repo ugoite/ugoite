@@ -746,6 +746,32 @@ def test_sql_session_stream_uses_incremental_row_paging(
     assert json.loads(lines[0])["id"] == "entry-1"
 
 
+def test_create_sql_session_validation_error_returns_422(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-API-008: sql session creation maps SQL validation errors to 422."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    async def _raise(
+        _config: dict[str, str],
+        _space_id: str,
+        _sql: str,
+    ) -> dict[str, object]:
+        msg = "UGOITE_SQL_VALIDATION: invalid sql"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(ugoite_core, "create_sql_session", _raise)
+
+    response = test_client.post(
+        "/spaces/test-ws/sql-sessions",
+        json={"sql": "SELECT FROM"},
+    )
+
+    assert response.status_code == 422
+    assert "UGOITE_SQL_VALIDATION" in response.json()["detail"]
+
+
 def test_upload_asset_and_link_to_entry(
     test_client: TestClient,
     temp_space_root: Path,
