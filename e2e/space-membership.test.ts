@@ -111,4 +111,41 @@ test.describe("Space Membership", () => {
 			await bob.dispose();
 		}
 	});
+
+	test("REQ-SEC-007: members endpoint reflects lifecycle states", async ({ playwright }) => {
+		const owner = await authContext(playwright, OWNER_TOKEN);
+		const alice = await authContext(playwright, ALICE_TOKEN);
+
+		try {
+			const spaceId = await createSpace(owner);
+
+			const invite = await owner.post(
+				getBackendUrl(`/spaces/${spaceId}/members/invitations`),
+				{ data: { user_id: "alice-user", role: "viewer" } },
+			);
+			expect(invite.status()).toBe(201);
+			const inviteBody = (await invite.json()) as {
+				invitation: { token: string };
+			};
+
+			const listedAfterInvite = await owner.get(getBackendUrl(`/spaces/${spaceId}/members`));
+			expect(listedAfterInvite.status()).toBe(200);
+			const invitedMembers = (await listedAfterInvite.json()) as Array<{ user_id: string; state: string }>;
+			expect(invitedMembers.some((member) => member.user_id === "alice-user" && member.state === "invited")).toBeTruthy();
+
+			const accept = await alice.post(getBackendUrl(`/spaces/${spaceId}/members/accept`), {
+				data: { token: inviteBody.invitation.token },
+			});
+			expect(accept.status()).toBe(200);
+
+			const listedAfterAccept = await owner.get(getBackendUrl(`/spaces/${spaceId}/members`));
+			expect(listedAfterAccept.status()).toBe(200);
+			const activeMembers = (await listedAfterAccept.json()) as Array<{ user_id: string; state: string }>;
+			expect(activeMembers.some((member) => member.user_id === "alice-user" && member.state === "active")).toBeTruthy();
+		} finally {
+			await owner.dispose();
+			await alice.dispose();
+		}
+	});
+
 });
