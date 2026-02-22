@@ -10,8 +10,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 import ugoite_core
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.api import router as api_router
 from app.core.config import get_root_path
@@ -67,6 +68,26 @@ app.add_middleware(
 )
 
 app.middleware("http")(security_middleware)
+
+
+@app.exception_handler(HTTPException)
+async def handle_http_exception(_request: Request, exc: HTTPException) -> JSONResponse:
+    """Sanitize server-side HTTP error details before returning to clients."""
+    detail = exc.detail
+    if (
+        exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
+        and isinstance(detail, str)
+        and not detail.startswith("Failed to ")
+    ):
+        detail = {
+            "code": "internal_error",
+            "message": "Internal server error",
+        }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail},
+        headers=exc.headers,
+    )
 
 
 @app.get("/")
