@@ -738,6 +738,7 @@ def test_sql_session_stream_uses_incremental_row_paging(
     assert len(lines) == 2
     assert json.loads(lines[0])["id"] == "entry-1"
 
+
 def test_create_sql_session_validation_error_returns_422(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -762,7 +763,6 @@ def test_create_sql_session_validation_error_returns_422(
 
     assert response.status_code == 422
     assert "UGOITE_SQL_VALIDATION" in response.json()["detail"]
-
 
 
 def test_upload_asset_and_link_to_entry(
