@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from ugoite_core import build_sql_schema, lint_sql, sql_completions
+from ugoite_core import (
+    build_sql_schema,
+    export_authentication_overview,
+    lint_sql,
+    sql_completions,
+)
 
 from ugoite import saved_sql
 from ugoite.assets import (
@@ -232,6 +237,14 @@ def cmd_auth_token_clear() -> None:
     setup_logging()
     typer.echo("unset UGOITE_AUTH_BEARER_TOKEN")
     typer.echo("unset UGOITE_AUTH_API_KEY")
+
+
+@auth_app.command("overview")
+@handle_cli_errors
+def cmd_auth_overview() -> None:
+    """Print authentication capabilities snapshot from ugoite-core."""
+    setup_logging()
+    typer.echo(json.dumps(export_authentication_overview(), indent=2, sort_keys=True))
 
 
 @config_app.command("show")
