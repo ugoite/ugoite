@@ -1,0 +1,1 @@
+Issue #312 closure artifact
