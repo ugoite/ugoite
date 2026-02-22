@@ -71,3 +71,7 @@ run = "bash e2e/scripts/run-e2e.sh entries"
 [tasks."smoke:local"]
 description = "Run quick local backend/frontend smoke checks"
 run = "bash scripts/local-smoke-check.sh"
+
+[tasks."cleanup:ports"]
+description = "Kill stale local dev servers on standard ports"
+run = "bash scripts/cleanup-dev-ports.sh"
