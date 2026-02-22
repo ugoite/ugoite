@@ -117,9 +117,34 @@ def _extract_http_error_detail(raw_body: str) -> str:
         payload_obj = json.loads(raw_body)
     except json.JSONDecodeError:
         return detail
-    if isinstance(payload_obj, dict):
-        return str(payload_obj.get("detail", raw_body))
-    return detail
+
+    if not isinstance(payload_obj, dict):
+        return detail
+
+    parsed_detail = payload_obj.get("detail", raw_body)
+    if not isinstance(parsed_detail, dict):
+        return str(parsed_detail)
+
+    detail_value = parsed_detail.get("detail")
+    if not isinstance(detail_value, str) or not detail_value.strip():
+        detail_value = parsed_detail.get("message")
+    message = (
+        detail_value.strip()
+        if isinstance(detail_value, str) and detail_value.strip()
+        else "request failed"
+    )
+
+    code = parsed_detail.get("code")
+    action = parsed_detail.get("action")
+    extras: list[str] = []
+    if isinstance(code, str) and code.strip():
+        extras.append(f"code={code.strip()}")
+    if isinstance(action, str) and action.strip():
+        extras.append(f"action={action.strip()}")
+
+    if extras:
+        return f"{message} ({', '.join(extras)})"
+    return message
 
 
 def _resolve_timeout_seconds(timeout_seconds: int | None) -> int:
