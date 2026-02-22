@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import secrets
@@ -174,11 +175,26 @@ def _token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
+def _has_valid_bearer_tokens_config() -> bool:
+    raw = os.environ.get("UGOITE_AUTH_BEARER_TOKENS_JSON")
+    if raw is None or not raw.strip():
+        return False
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "UGOITE_AUTH_BEARER_TOKENS_JSON is not valid JSON; "
+            "falling back to bootstrap token configuration.",
+        )
+        return False
+    return isinstance(parsed, dict)
+
+
 @lru_cache(maxsize=1)
 def get_auth_manager() -> AuthManager:
     """Create and cache authentication manager from environment settings."""
     bootstrap_token: str | None = None
-    if not os.environ.get("UGOITE_AUTH_BEARER_TOKENS_JSON"):
+    if not _has_valid_bearer_tokens_config():
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
         if bootstrap_token is None:
             bootstrap_token = secrets.token_urlsafe(32)

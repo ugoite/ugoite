@@ -47,13 +47,6 @@ struct CredentialRecord {
     service_account_id: Option<String>,
 }
 
-fn verify_digest(stored: &str, computed: &str) -> bool {
-    if stored.len() != computed.len() {
-        return false;
-    }
-    bool::from(stored.as_bytes().ct_eq(computed.as_bytes()))
-}
-
 fn parse_json_map(raw: Option<&str>) -> Map<String, Value> {
     let Some(raw_text) = raw else {
         return Map::new();
@@ -248,9 +241,9 @@ fn authenticate_signed_bearer(
         .map_err(|_| CoreAuthError::new("invalid_signature", "Invalid token signing key"))?;
     mac.update(payload_segment.as_bytes());
     let expected = mac.finalize().into_bytes();
-    let expected_hex = hex::encode(expected);
-    let actual_hex = hex::encode(signature_bytes);
-    if !verify_digest(&expected_hex, &actual_hex) {
+    if expected.len() != signature_bytes.len()
+        || !bool::from(expected.as_slice().ct_eq(signature_bytes.as_slice()))
+    {
         return Err(CoreAuthError::new(
             "invalid_signature",
             "Invalid bearer token signature",

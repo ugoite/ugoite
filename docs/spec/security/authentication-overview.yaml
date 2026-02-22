@@ -9,11 +9,16 @@
     "bearer": {
       "supports_static_tokens": true,
       "supports_signed_tokens": true,
+      "configured_static_token_count": 0,
+      "configured_signing_kid_count": 0,
+      "active_kids": [],
       "active_kids_source": "UGOITE_AUTH_BEARER_ACTIVE_KIDS"
     },
     "api_key": {
       "supports_static_api_keys": true,
       "supports_space_service_account_keys": true,
+      "configured_static_api_key_count": 0,
+      "revoked_key_ids": [],
       "revocation_source": "UGOITE_AUTH_REVOKED_KEY_IDS"
     }
   },
