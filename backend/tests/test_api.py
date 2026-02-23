@@ -59,6 +59,12 @@ def test_create_space_rejects_invalid_name(test_client: TestClient) -> None:
     assert "Invalid space_id" in response.json()["detail"]
 
 
+def test_create_space_rejects_excessive_name_length(test_client: TestClient) -> None:
+    """REQ-API-001: create space payload enforces max length constraints."""
+    response = test_client.post("/spaces", json={"name": "a" * 129})
+    assert response.status_code == 422
+
+
 def test_create_space_conflict(
     test_client: TestClient,
     temp_space_root: Path,
@@ -703,6 +709,21 @@ def test_query_entries(
     assert isinstance(response.json(), list)
 
 
+def test_query_entries_rejects_oversized_filter(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-004: Query endpoint rejects oversized filter payloads."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    oversized_value = "x" * 40_000
+    response = test_client.post(
+        "/spaces/test-ws/query",
+        json={"filter": {"note": oversized_value}},
+    )
+    assert response.status_code == 400
+    assert "Query filter too large" in response.json()["detail"]
+
+
 def test_query_entries_sql(
     test_client: TestClient,
     temp_space_root: Path,
@@ -912,6 +933,19 @@ def test_delete_asset_referenced_fails(
     )
     assert delete_res.status_code == 409
     assert "referenced" in delete_res.json()["detail"].lower()
+
+
+def test_delete_asset_not_found_has_consistent_detail(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: Delete asset 404 detail includes resource context."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    delete_res = test_client.delete("/spaces/test-ws/assets/missing-asset")
+    assert delete_res.status_code == 404
+    detail = delete_res.json()["detail"]
+    assert "missing-asset" in detail
+    assert "test-ws" in detail
 
 
 def test_search_returns_matches(

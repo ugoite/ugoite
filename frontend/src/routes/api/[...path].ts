@@ -1,6 +1,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 
 const backendUrl = process.env.BACKEND_URL;
+const defaultProxyTimeoutMs = 15_000;
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -72,20 +73,23 @@ const ensureRequestId = (headers: Headers): string => {
 const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
-	// When the path is exactly /api, fallback to / so we proxy to the backend root.
 	const targetPath = path.length > 0 ? path : "/";
 	return new URL(`${targetPath}${url.search}`, baseUrl);
 };
 
-const proxyRequest = async (event: APIEvent): Promise<Response> => {
-	if (!backendUrl) {
-		return new Response("BACKEND_URL is not configured", { status: 500 });
+const resolveProxyTimeoutMs = (): number => {
+	const rawTimeout = process.env.UGOITE_PROXY_TIMEOUT_MS;
+	if (!rawTimeout) {
+		return defaultProxyTimeoutMs;
 	}
+	const parsed = Number.parseInt(rawTimeout, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return defaultProxyTimeoutMs;
+	}
+	return parsed;
+};
 
-	const request = event.request;
-	const targetUrl = buildTargetUrl(request.url, backendUrl);
-	const headers = filterRequestHeaders(request.headers);
-	const requestId = ensureRequestId(headers);
+const applyProxyCredentials = (headers: Headers): void => {
 	if (!headers.has("authorization")) {
 		const proxyBearerToken = process.env.UGOITE_AUTH_BEARER_TOKEN;
 		if (proxyBearerToken) {
@@ -98,10 +102,46 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 			headers.set("x-api-key", proxyApiKey);
 		}
 	}
+};
+
+const handleProxyError = (
+	error: unknown,
+	requestMethod: string,
+	targetUrl: URL,
+	timeoutMs: number,
+): Response => {
+	if (error instanceof Error && error.name === "AbortError") {
+		process.stderr.write(
+			`API proxy upstream timeout method=${requestMethod} target=${targetUrl.toString()} timeout_ms=${timeoutMs}\n`,
+		);
+		return new Response("Backend request timed out", { status: 504 });
+	}
+	const message =
+		`API proxy upstream request failed method=${requestMethod} target=${targetUrl.toString()} ` +
+		`error=${error instanceof Error ? error.message : String(error)}\n`;
+	process.stderr.write(message);
+	return new Response("Backend service unavailable", { status: 502 });
+};
+
+const proxyRequest = async (event: APIEvent): Promise<Response> => {
+	if (!backendUrl) {
+		return new Response("BACKEND_URL is not configured", { status: 500 });
+	}
+
+	const request = event.request;
+	const targetUrl = buildTargetUrl(request.url, backendUrl);
+	const headers = filterRequestHeaders(request.headers);
+	const requestId = ensureRequestId(headers);
+	applyProxyCredentials(headers);
+
+	const timeoutMs = resolveProxyTimeoutMs();
+	const controller = new AbortController();
+	const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 	const init: RequestInit = {
 		method: request.method,
 		headers,
 		redirect: "manual",
+		signal: controller.signal,
 	};
 
 	if (request.method !== "GET" && request.method !== "HEAD") {
@@ -123,11 +163,9 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 			headers: responseHeaders,
 		});
 	} catch (error) {
-		const message =
-			`API proxy upstream request failed method=${request.method} target=${targetUrl.toString()} ` +
-			`error=${error instanceof Error ? error.message : String(error)}\n`;
-		process.stderr.write(message);
-		return new Response("Backend service unavailable", { status: 502 });
+		return handleProxyError(error, request.method, targetUrl, timeoutMs);
+	} finally {
+		clearTimeout(timeoutHandle);
 	}
 };
 

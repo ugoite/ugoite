@@ -30,6 +30,9 @@ jobs:
           workspaces: |
             ugoite-core
 
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -148,3 +151,7 @@ jobs:
       - name: Run cargo test (core)
         working-directory: ./ugoite-core
         run: cargo test
+
+      - name: Enforce Rust coverage floor (core)
+        working-directory: ./ugoite-core
+        run: cargo llvm-cov --summary-only --fail-under-lines 45

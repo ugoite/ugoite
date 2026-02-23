@@ -1,21 +1,31 @@
 """Pydantic models for the application."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
+
+Identifier = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=128,
+    ),
+]
+BoundedIdentifier = Annotated[str, StringConstraints(max_length=128)]
+ShortText = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
 class SpaceCreate(BaseModel):
     """Space creation payload."""
 
-    name: str
+    name: Identifier
 
 
 class EntryCreate(BaseModel):
     """Entry creation payload."""
 
-    id: str | None = None
-    content: str
+    id: BoundedIdentifier | None = None
+    content: Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
 
 
 class EntryUpdate(BaseModel):
@@ -26,8 +36,8 @@ class EntryUpdate(BaseModel):
     Full support for these fields is planned for future milestones.
     """
 
-    markdown: str
-    parent_revision_id: str
+    markdown: Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
+    parent_revision_id: ShortText
     frontmatter: dict[str, Any] | None = None
     canvas_position: dict[str, Any] | None = None
     assets: list[dict[str, Any]] | None = None
@@ -36,7 +46,7 @@ class EntryUpdate(BaseModel):
 class EntryRestore(BaseModel):
     """Entry restore payload."""
 
-    revision_id: str
+    revision_id: ShortText
 
 
 class QueryRequest(BaseModel):
@@ -54,33 +64,33 @@ class SqlSessionCreate(BaseModel):
 class SqlVariable(BaseModel):
     """SQL variable definition."""
 
-    type: str
-    name: str
-    description: str
+    type: ShortText
+    name: ShortText
+    description: Annotated[str, StringConstraints(min_length=1, max_length=2_000)]
 
 
 class SqlCreate(BaseModel):
     """Saved SQL creation payload."""
 
-    id: str | None = None
-    name: str
-    sql: str
-    variables: list[SqlVariable]
+    id: BoundedIdentifier | None = None
+    name: ShortText
+    sql: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
+    variables: list[SqlVariable] = Field(default_factory=list)
 
 
 class SqlUpdate(BaseModel):
     """Saved SQL update payload."""
 
-    name: str
-    sql: str
-    variables: list[SqlVariable]
-    parent_revision_id: str | None = None
+    name: ShortText
+    sql: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
+    variables: list[SqlVariable] = Field(default_factory=list)
+    parent_revision_id: ShortText | None = None
 
 
 class SpacePatch(BaseModel):
     """Space patch payload for storage connectors/settings."""
 
-    name: str | None = None
+    name: Identifier | None = None
     storage_config: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
 
@@ -94,7 +104,7 @@ class SpaceConnectionRequest(BaseModel):
 class SpaceMemberInvite(BaseModel):
     """Space member invitation payload."""
 
-    user_id: str
+    user_id: ShortText
     role: Literal["admin", "editor", "viewer"]
     email: str | None = None
     expires_in_seconds: int | None = None
@@ -103,7 +113,7 @@ class SpaceMemberInvite(BaseModel):
 class SpaceMemberAccept(BaseModel):
     """Invitation acceptance payload."""
 
-    token: str
+    token: ShortText
 
 
 class SpaceMemberRoleUpdate(BaseModel):
@@ -115,20 +125,20 @@ class SpaceMemberRoleUpdate(BaseModel):
 class ServiceAccountCreate(BaseModel):
     """Service account creation payload."""
 
-    display_name: str
+    display_name: ShortText
     scopes: list[str]
 
 
 class ServiceAccountKeyCreate(BaseModel):
     """Service account key creation payload."""
 
-    key_name: str
+    key_name: ShortText
 
 
 class ServiceAccountKeyRotate(BaseModel):
     """Service account key rotation payload."""
 
-    key_name: str | None = None
+    key_name: ShortText | None = None
 
 
 class FormCreate(BaseModel):
@@ -138,9 +148,9 @@ class FormCreate(BaseModel):
         """Principal for form ACL metadata."""
 
         kind: Literal["user", "user_group"]
-        id: str
+        id: ShortText
 
-    name: str
+    name: Identifier
     version: int = 1
     template: str
     fields: dict[str, dict[str, Any]]

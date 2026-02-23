@@ -71,7 +71,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (frontend + backend):
+Start development (backend + frontend + docsite):
 
 ```bash
 mise run dev
@@ -139,15 +139,15 @@ cd backend
 uv run pytest
 ```
 
-Run all Python tests from repo root:
+Run all tests from repo root:
 
 ```bash
-uv run pytest
+mise run test
 ```
 
 Where you can run this:
 
-- Dev Container: everything needed to run tests is available; run `uv run pytest`.
+- Dev Container: everything needed to run tests is available; run `mise run test`.
 - GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ugoite-cli/`.
 - Local (non-container): install `uv`, then run the commands above.
 
@@ -159,9 +159,9 @@ Frontend tests: check `frontend/package.json`.
 
 See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
 
-- **Milestone 2** (In Progress): Codebase unification, Rust core library
+- **Milestone 2** (Completed): Codebase unification, Rust core library
 - **Milestone 3**: Full AI integration, vector search
-- **Milestone 4**: User management, authentication
+- **Milestone 4** (Phase 1/2 completed): User management, authentication hardening and follow-up tasks
 - **Milestone 5**: Native desktop app (Tauri)
 
 ---

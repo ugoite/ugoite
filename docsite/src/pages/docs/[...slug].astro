@@ -114,10 +114,19 @@ export async function getStaticPaths() {
   };
 
   const docFiles = await walkDocFiles(docsRoot);
-  return docFiles.map((file) => {
+  const extensionPriority = (filePath: string): number => {
+    if (filePath.endsWith(".md")) return 0;
+    if (filePath.endsWith(".yaml")) return 1;
+    return 2;
+  };
+  const orderedFiles = [...docFiles].sort((a, b) => extensionPriority(a) - extensionPriority(b));
+  const seenSlugs = new Set<string>();
+  return orderedFiles.flatMap((file) => {
     const relative = path.relative(docsRoot, file).replace(/\\/g, "/");
     const slug = relative.replace(/\.(md|ya?ml)$/, "");
-    return { params: { slug } };
+    if (seenSlugs.has(slug)) return [];
+    seenSlugs.add(slug);
+    return [{ params: { slug } }];
   });
 }
 
