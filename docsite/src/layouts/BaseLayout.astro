@@ -16,6 +16,7 @@ export interface Props {
 const { title, description, toc = [], related = [], fullWidth = false } = Astro.props;
 const hasRight = toc.length > 0 || related.length > 0;
 const navSections = await getNavSectionsWithChildren();
+const searchIndexUrl = withBasePath("/search-index.json");
 ---
 
 <html lang="en">
@@ -39,7 +40,7 @@ const navSections = await getNavSectionsWithChildren();
       />
     </noscript>
   </head>
-  <body>
+  <body data-search-index-url={searchIndexUrl}>
     <header class="site-header">
       <div class="site-header-inner">
         <a href={withBasePath("/")} class="site-brand">Ugoite</a>
@@ -48,6 +49,17 @@ const navSections = await getNavSectionsWithChildren();
             <a href={withBasePath(link.href)}>{link.title}</a>
           ))}
         </nav>
+        <div class="site-search">
+          <input
+            type="search"
+            class="site-search-input"
+            placeholder="Search docs"
+            aria-label="Search docs"
+            data-doc-search-input
+            autocomplete="off"
+          />
+          <div class="site-search-results" data-doc-search-results hidden></div>
+        </div>
         <button
           type="button"
           class="mobile-nav-toggle"
@@ -133,6 +145,9 @@ const navSections = await getNavSectionsWithChildren();
         const overlay = document.querySelector("[data-mobile-nav-overlay]");
         const openButton = document.querySelector("[data-mobile-nav-open]");
         const closeButton = document.querySelector("[data-mobile-nav-close]");
+        const searchInput = document.querySelector("[data-doc-search-input]");
+        const searchResults = document.querySelector("[data-doc-search-results]");
+        const searchIndexUrl = document.body.dataset.searchIndexUrl ?? "/search-index.json";
 
         if (!nav || !overlay || !openButton || !closeButton) {
           return;
@@ -160,6 +175,62 @@ const navSections = await getNavSectionsWithChildren();
             setOpen(false);
           }
         });
+
+        if (searchInput instanceof HTMLInputElement && searchResults instanceof HTMLDivElement) {
+          let searchIndex = [];
+          let searchLoaded = false;
+
+          const renderResults = (query, results) => {
+            if (query.length < 2 || results.length === 0) {
+              searchResults.hidden = true;
+              searchResults.innerHTML = "";
+              return;
+            }
+
+            searchResults.hidden = false;
+            searchResults.innerHTML = results
+              .slice(0, 8)
+              .map((item) => {
+                const snippet = item.content ? item.content.slice(0, 140) : "";
+                return `<a class="site-search-result" href="${item.href}"><span class="site-search-result-title">${item.title}</span>${snippet ? `<span class=\"site-search-result-snippet\">${snippet}</span>` : ""}</a>`;
+              })
+              .join("");
+          };
+
+          const loadSearchIndex = async () => {
+            if (searchLoaded) return;
+            const response = await fetch(searchIndexUrl);
+            if (!response.ok) return;
+            searchIndex = await response.json();
+            searchLoaded = true;
+          };
+
+          searchInput.addEventListener("input", async () => {
+            const query = searchInput.value.trim().toLowerCase();
+            if (query.length < 2) {
+              renderResults(query, []);
+              return;
+            }
+            await loadSearchIndex();
+            const queryTerms = query.split(/\s+/).filter(Boolean);
+            const matches = searchIndex.filter((item) => {
+              const haystack = `${item.title} ${item.content}`.toLowerCase();
+              return queryTerms.every((term) => haystack.includes(term));
+            });
+            renderResults(query, matches);
+          });
+
+          document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (
+              target instanceof Node &&
+              !searchResults.contains(target) &&
+              target !== searchInput
+            ) {
+              searchResults.hidden = true;
+            }
+          });
+        }
       })();
     </script>
   </body>
