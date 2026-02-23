@@ -29,4 +29,4 @@ jobs:
           runCmd: |
             gh --version
             mise --version
-            python --version
+            bash --version | head -n 1
