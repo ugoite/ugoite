@@ -935,6 +935,18 @@ def test_search_returns_matches(
     assert "alpha" in ids
 
 
+def test_search_rejects_oversized_query(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-004: Search rejects oversized q payloads with explicit 400 error."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    oversized = "q" * 513
+    search_res = test_client.get("/spaces/test-ws/search", params={"q": oversized})
+    assert search_res.status_code == 400
+    assert "Query too long" in search_res.json()["detail"]
+
+
 def test_update_space_storage_connector(
     test_client: TestClient,
     temp_space_root: Path,
