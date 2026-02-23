@@ -5,11 +5,13 @@ import hashlib
 import hmac
 import io
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 import ugoite_core
 from fastapi.testclient import TestClient
+from starlette.responses import StreamingResponse
 
 from app.main import app
 
@@ -1062,6 +1064,26 @@ def test_middleware_signs_non_streaming_mcp_prefixed_paths(
 
     response = test_client.get("/mcp-test-json")
     assert response.status_code == 200
+    assert "X-Ugoite-Signature" in response.headers
+
+
+def test_middleware_replays_chunked_body_without_loss(test_client: TestClient) -> None:
+    """REQ-INT-003: middleware preserves chunked response body while signing."""
+    if not hasattr(app.state, "chunked_route_registered"):
+
+        @app.get("/chunked-test-body")
+        async def _chunked_test_body() -> StreamingResponse:
+            async def _iter() -> AsyncIterator[bytes]:
+                for chunk in (b"a", b"b", b"c"):
+                    yield chunk
+
+            return StreamingResponse(_iter(), media_type="text/plain")
+
+        app.state.chunked_route_registered = True
+
+    response = test_client.get("/chunked-test-body")
+    assert response.status_code == 200
+    assert response.content == b"abc"
     assert "X-Ugoite-Signature" in response.headers
 
 
