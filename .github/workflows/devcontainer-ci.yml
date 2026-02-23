@@ -1,0 +1,32 @@
+name: Devcontainer CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  devcontainer-build-smoke:
+    name: Devcontainer Build and Smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build and smoke test devcontainer
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            gh --version
+            mise --version
+            python3 --version
