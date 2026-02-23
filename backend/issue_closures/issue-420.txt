@@ -1,1 +1,0 @@
-Issue #420 closure artifact

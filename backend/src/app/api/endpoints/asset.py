@@ -122,7 +122,7 @@ async def delete_asset_endpoint(
         if "not found" in msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Not found",
+                detail=f"Asset '{asset_id}' not found in space '{space_id}'.",
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
