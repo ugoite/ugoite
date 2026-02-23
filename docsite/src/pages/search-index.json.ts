@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { APIRoute } from "astro";
+import { withBasePath } from "../lib/base-path";
 import { getNavSectionsWithChildren, topLinks } from "../lib/navigation";
 
 type SearchItem = {
@@ -50,7 +51,7 @@ async function readDocItems(): Promise<SearchItem[]> {
 			const source = await fs.readFile(fullPath, "utf-8");
 			return {
 				title: titleFromPath(relative),
-				href: `/docs/${relative.replace(/\.(md|ya?ml)$/i, "")}`,
+				href: withBasePath(`/docs/${relative.replace(/\.(md|ya?ml)$/i, "")}`),
 				content: toPlainText(source).slice(0, 6000),
 			};
 		}),
@@ -61,11 +62,23 @@ async function readDocItems(): Promise<SearchItem[]> {
 export const GET: APIRoute = async () => {
 	const sections = await getNavSectionsWithChildren();
 	const navItems: SearchItem[] = [
-		...topLinks.map((item) => ({ title: item.title, href: item.href, content: "" })),
+		...topLinks.map((item) => ({
+			title: item.title,
+			href: withBasePath(item.href),
+			content: "",
+		})),
 		...sections.flatMap((section) => [
-			...section.items.map((item) => ({ title: item.title, href: item.href, content: "" })),
+			...section.items.map((item) => ({
+				title: item.title,
+				href: withBasePath(item.href),
+				content: "",
+			})),
 			...section.items.flatMap((item) =>
-				(item.items ?? []).map((child) => ({ title: child.title, href: child.href, content: "" })),
+				(item.items ?? []).map((child) => ({
+					title: child.title,
+					href: withBasePath(child.href),
+					content: "",
+				})),
 			),
 		]),
 	];
