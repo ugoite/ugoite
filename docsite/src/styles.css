@@ -70,18 +70,56 @@ a:hover {
 		gap: 0.25rem;
 	}
 
-	.site-nav a {
+	.site-nav-menu {
+		position: relative;
+	}
+
+	.site-nav-menu > a {
 		padding: 0.375rem 0.875rem;
 		border-radius: var(--doc-radius-md);
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--doc-muted);
 		transition: all 0.15s ease;
+		display: inline-flex;
 	}
 
-	.site-nav a:hover {
+	.site-nav-menu > a:hover {
 		color: var(--doc-fg);
 		background: var(--doc-accent-soft);
+	}
+
+	.site-nav-submenu {
+		position: absolute;
+		top: calc(100% + 0.25rem);
+		left: 0;
+		min-width: 13rem;
+		display: none;
+		flex-direction: column;
+		gap: 0.125rem;
+		padding: 0.375rem;
+		border: var(--doc-border-width) solid var(--doc-border);
+		border-radius: var(--doc-radius-md);
+		background: var(--doc-bg);
+		box-shadow: var(--doc-shadow-lg);
+	}
+
+	.site-nav-submenu a {
+		padding: 0.375rem 0.625rem;
+		border-radius: var(--doc-radius-sm);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--doc-muted);
+	}
+
+	.site-nav-submenu a:hover {
+		color: var(--doc-fg);
+		background: var(--doc-accent-soft);
+	}
+
+	.site-nav-menu:hover .site-nav-submenu,
+	.site-nav-menu:focus-within .site-nav-submenu {
+		display: flex;
 	}
 
 	.site-search {
