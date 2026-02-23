@@ -30,6 +30,13 @@ repos:
         files: \.rs$
         pass_filenames: false
 
+      - id: cargo-coverage-100
+        name: cargo llvm-cov 100 percent
+        entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 100"
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
       - id: ty-backend
         name: "ty: backend type check"
         entry: bash -c "cd backend && uv run ty check ."
