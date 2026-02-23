@@ -34,10 +34,9 @@ async def _persist_form_acl_settings(
 
     existing_form_acls: dict[str, Any] = {}
     try:
-        space_meta = await ugoite_core.patch_space(
+        space_meta = await ugoite_core.get_space(
             storage_config,
             space_id,
-            json.dumps({}),
         )
         settings = space_meta.get("settings")
         if isinstance(settings, dict):
