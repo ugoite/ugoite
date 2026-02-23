@@ -33,8 +33,8 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging() -> None:
-    """Configure the root logger with a JSON formatter on stdout."""
-    handler = logging.StreamHandler(sys.stdout)
+    """Configure the root logger with a JSON formatter on stderr."""
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JSONFormatter())
     root = logging.getLogger()
     # Avoid adding multiple handlers if setup is called multiple times
