@@ -16,7 +16,7 @@ permissions:
 jobs:
   require-close-issue-link:
     runs-on: ubuntu-24.04
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
       - name: Validate PR body contains close issue link
         uses: actions/github-script@v8
