@@ -1,5 +1,5 @@
-import { A } from "@solidjs/router";
-import { createMemo, createResource, For, Show } from "solid-js";
+import { A, useNavigate } from "@solidjs/router";
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
 
 const toMessage = (value: unknown): string => {
@@ -10,9 +10,11 @@ const toMessage = (value: unknown): string => {
 };
 
 export default function SpacesIndexRoute() {
+	const navigate = useNavigate();
 	const [spaces] = createResource(async () => {
 		return await spaceApi.list();
 	});
+	const [redirected, setRedirected] = createSignal(false);
 
 	const authHint = createMemo(() => {
 		const message = toMessage(spaces.error).toLowerCase();
@@ -31,6 +33,21 @@ export default function SpacesIndexRoute() {
 			return "Your identity is authenticated, but this space is not shared with your user yet. Ask a space admin for an invitation.";
 		}
 		return "";
+	});
+
+	createEffect(() => {
+		if (!spaces.error || redirected()) {
+			return;
+		}
+		const message = toMessage(spaces.error).toLowerCase();
+		if (
+			message.includes("401") ||
+			message.includes("authentication") ||
+			message.includes("unauthorized")
+		) {
+			setRedirected(true);
+			navigate("/");
+		}
 	});
 
 	return (
