@@ -7,6 +7,18 @@ import fsspec
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_user_config(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-001: isolate CLI endpoint config per test run."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("UGOITE_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+
 @pytest.fixture(params=["file"])
 def fs_impl(
     request: pytest.FixtureRequest,
