@@ -71,7 +71,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (frontend + backend):
+Start development (backend + frontend + docsite):
 
 ```bash
 mise run dev
