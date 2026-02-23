@@ -17,6 +17,7 @@ EndpointMode = Literal["core", "backend", "api"]
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
 _CONFIG_DIRNAME = ".ugoite"
+_XDG_CONFIG_DIRNAME = "ugoite"
 _CONFIG_FILENAME = "cli-endpoints.json"
 _HTTP_ERROR_STATUS = 400
 _DEFAULT_HTTP_TIMEOUT_SECONDS = 30
@@ -35,7 +36,19 @@ class EndpointConfig:
 
 
 def endpoint_config_path() -> Path:
-    """Return the config file path under ~/.ugoite/."""
+    """Return endpoint config path, honoring explicit env overrides first."""
+    explicit_path = os.environ.get("UGOITE_CLI_CONFIG_PATH")
+    if explicit_path and explicit_path.strip():
+        return Path(explicit_path).expanduser()
+
+    config_home = os.environ.get("UGOITE_CONFIG_HOME")
+    if config_home and config_home.strip():
+        return Path(config_home).expanduser() / _XDG_CONFIG_DIRNAME / _CONFIG_FILENAME
+
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config_home and xdg_config_home.strip():
+        return Path(xdg_config_home).expanduser() / _XDG_CONFIG_DIRNAME / _CONFIG_FILENAME
+
     return Path.home() / _CONFIG_DIRNAME / _CONFIG_FILENAME
 
 
