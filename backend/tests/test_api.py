@@ -59,6 +59,12 @@ def test_create_space_rejects_invalid_name(test_client: TestClient) -> None:
     assert "Invalid space_id" in response.json()["detail"]
 
 
+def test_create_space_rejects_excessive_name_length(test_client: TestClient) -> None:
+    """REQ-API-001: create space payload enforces max length constraints."""
+    response = test_client.post("/spaces", json={"name": "a" * 129})
+    assert response.status_code == 422
+
+
 def test_create_space_conflict(
     test_client: TestClient,
     temp_space_root: Path,
