@@ -21,6 +21,9 @@ def test_endpoint_config_roundtrip_uses_home_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """REQ-STO-001: Persists endpoint config under ~/.ugoite and loads it back."""
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("UGOITE_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
 
     config = EndpointConfig(
@@ -42,6 +45,28 @@ def test_parse_space_id_from_path_and_id() -> None:
     """REQ-STO-004: Handles both full space path and raw space id values."""
     assert parse_space_id("root/spaces/default") == "default"
     assert parse_space_id("default") == "default"
+
+
+def test_endpoint_config_path_honors_explicit_path_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-001: endpoint config path supports UGOITE_CLI_CONFIG_PATH override."""
+    explicit = tmp_path / "custom" / "endpoints.json"
+    monkeypatch.setenv("UGOITE_CLI_CONFIG_PATH", str(explicit))
+
+    assert endpoint_config_path() == explicit
+
+
+def test_endpoint_config_path_uses_config_home_when_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-001: endpoint config path supports UGOITE_CONFIG_HOME override."""
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("UGOITE_CONFIG_HOME", str(tmp_path))
+
+    assert endpoint_config_path() == tmp_path / "ugoite" / "cli-endpoints.json"
 
 
 def test_parse_space_id_rejects_empty_values() -> None:
