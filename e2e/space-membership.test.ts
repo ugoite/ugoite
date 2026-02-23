@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Playwright } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client";
 
-const OWNER_TOKEN = "local-dev-token";
+const OWNER_TOKEN = process.env.E2E_AUTH_BEARER_TOKEN ?? "local-dev-token";
 const ALICE_TOKEN = "alice-token";
 const BOB_TOKEN = "bob-token";
 
