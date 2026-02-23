@@ -11,11 +11,16 @@ import textwrap
 from pathlib import Path
 
 import bashlex
+import tomllib
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
+DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
+FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
+PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
+SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 
@@ -94,6 +99,57 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
             raise AssertionError(message)
 
 
+def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
+    """REQ-OPS-001: mise tool versions must match pinned versions in CI workflows."""
+    mise_data = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    tools = mise_data.get("tools", {})
+    if not isinstance(tools, dict):
+        message = "mise.toml must define [tools]"
+        raise TypeError(message)
+
+    bun_versions = _extract_workflow_pin_values(
+        [DOCSITE_CI_WORKFLOW_PATH, FRONTEND_CI_WORKFLOW_PATH],
+        uses_fragment="setup-bun",
+        key="bun-version",
+    )
+    rust_versions = _extract_workflow_pin_values(
+        [PYTHON_CI_WORKFLOW_PATH],
+        uses_fragment="rust-toolchain",
+        key="toolchain",
+    )
+    python_versions = _extract_workflow_pin_values(
+        [SCANCODE_WORKFLOW_PATH],
+        uses_fragment="scancode-action",
+        key="python-version",
+    )
+
+    if len(bun_versions) != 1:
+        message = f"CI bun-version pins must be consistent: {sorted(bun_versions)}"
+        raise AssertionError(message)
+    if len(rust_versions) != 1:
+        message = f"CI rust toolchain pins must be consistent: {sorted(rust_versions)}"
+        raise AssertionError(message)
+    if len(python_versions) != 1:
+        message = (
+            f"CI python-version pins must be consistent: {sorted(python_versions)}"
+        )
+        raise AssertionError(message)
+
+    bun_version = next(iter(bun_versions))
+    rust_version = next(iter(rust_versions))
+    python_version = next(iter(python_versions))
+
+    if str(tools.get("bun")) != bun_version:
+        message = "mise.toml [tools].bun must match CI bun-version"
+        raise AssertionError(message)
+    if str(tools.get("rust")) != rust_version:
+        message = "mise.toml [tools].rust must match CI rust toolchain"
+        raise AssertionError(message)
+    if str(tools.get("python")) != python_version:
+        message = "mise.toml [tools].python must match CI python-version"
+        raise AssertionError(message)
+
+
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     """REQ-OPS-002: Docker build CI workflow must include backend and frontend."""
     if not WORKFLOW_PATH.exists():
@@ -128,6 +184,50 @@ def _load_workflow() -> dict[str, object]:
     if isinstance(workflow, dict):
         return workflow
     return {}
+
+
+def _extract_workflow_pin_values(
+    workflow_paths: list[Path],
+    *,
+    uses_fragment: str,
+    key: str,
+) -> set[str]:
+    values: set[str] = set()
+    for workflow_path in workflow_paths:
+        value = _extract_workflow_pin_value(
+            workflow_path=workflow_path,
+            uses_fragment=uses_fragment,
+            key=key,
+        )
+        values.add(value)
+    return values
+
+
+def _extract_workflow_pin_value(
+    *,
+    workflow_path: Path,
+    uses_fragment: str,
+    key: str,
+) -> str:
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = f"{workflow_path.name} must define jobs"
+        raise TypeError(message)
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            uses = str(step.get("uses", ""))
+            if uses_fragment not in uses:
+                continue
+            with_block = step.get("with", {})
+            if isinstance(with_block, dict) and key in with_block:
+                return str(with_block[key]).strip().strip('"')
+    message = f"{workflow_path.name} must define pinned {key}"
+    raise AssertionError(message)
 
 
 def _collect_build_steps(workflow: dict[str, object]) -> list[dict[str, object]]:
