@@ -1,0 +1,1 @@
+Issue #288 closure artifact
