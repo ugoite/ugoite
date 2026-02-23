@@ -1,0 +1,86 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { withBasePath } from "../lib/base-path";
+import { getNavSectionsWithChildren, topLinks } from "../lib/navigation";
+
+const navSections = await getNavSectionsWithChildren();
+const records: Array<{ title: string; href: string }> = [];
+
+for (const link of topLinks) {
+  records.push({ title: link.title, href: link.href });
+}
+
+for (const section of navSections) {
+  for (const item of section.items) {
+    records.push({ title: `${section.title} / ${item.title}`, href: item.href });
+    for (const child of item.items ?? []) {
+      records.push({
+        title: `${section.title} / ${item.title} / ${child.title}`,
+        href: child.href,
+      });
+    }
+  }
+}
+
+const deduped = Array.from(
+  new Map(records.map((record) => [record.href, record])).values(),
+);
+---
+
+<BaseLayout title="Search Docs" description="Search the docsite pages and sections.">
+  <section class="doc-card" style="padding: 1rem;">
+    <h1 style="font-size: 1.25rem; font-weight: 700; margin: 0;">Search</h1>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem;">
+      Search page titles and navigate directly to matching docs.
+    </p>
+    <input
+      id="doc-search-query"
+      type="search"
+      placeholder="Search docs..."
+      style="width: 100%; margin-top: 0.75rem; border: var(--doc-border-width) solid var(--doc-border); background: var(--doc-bg); color: var(--doc-fg); border-radius: var(--doc-radius-md); padding: 0.625rem 0.75rem;"
+    />
+  </section>
+
+  <section class="doc-card" style="padding: 1rem; margin-top: 1rem;">
+    <ul id="doc-search-results" style="display: grid; gap: 0.5rem;">
+      {deduped.map((record) => (
+        <li data-search-item data-title={record.title.toLowerCase()}>
+          <a href={withBasePath(record.href)}>{record.title}</a>
+        </li>
+      ))}
+    </ul>
+    <p id="doc-search-empty" style="display: none; font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.75rem;">
+      No matching pages.
+    </p>
+  </section>
+
+  <script is:inline>
+    (() => {
+      const input = document.getElementById("doc-search-query");
+      const items = Array.from(document.querySelectorAll("[data-search-item]"));
+      const empty = document.getElementById("doc-search-empty");
+      if (!(input instanceof HTMLInputElement) || !empty) {
+        return;
+      }
+      const filter = () => {
+        const query = input.value.trim().toLowerCase();
+        let visible = 0;
+        for (const item of items) {
+          const title = item.getAttribute("data-title") ?? "";
+        const show = query.length === 0 || title.includes(query);
+          if (item instanceof HTMLElement) {
+            item.style.display = show ? "" : "none";
+          }
+          if (show) {
+            visible += 1;
+          }
+        }
+        if (empty instanceof HTMLElement) {
+          empty.style.display = visible === 0 ? "" : "none";
+        }
+      };
+      input.addEventListener("input", filter);
+      filter();
+    })();
+  </script>
+</BaseLayout>
