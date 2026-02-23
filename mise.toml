@@ -1,7 +1,5 @@
 min_version = "2025.11.3"
-
-[monorepo]
-config_roots = ["."]
+experimental_monorepo_root = true
 
 [settings]
 experimental = true
