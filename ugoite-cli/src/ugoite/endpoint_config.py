@@ -47,7 +47,9 @@ def endpoint_config_path() -> Path:
 
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config_home and xdg_config_home.strip():
-        return Path(xdg_config_home).expanduser() / _XDG_CONFIG_DIRNAME / _CONFIG_FILENAME
+        return (
+            Path(xdg_config_home).expanduser() / _XDG_CONFIG_DIRNAME / _CONFIG_FILENAME
+        )
 
     return Path.home() / _CONFIG_DIRNAME / _CONFIG_FILENAME
 
