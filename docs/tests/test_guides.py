@@ -84,12 +84,14 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
 
     documented_tasks = sorted(set(re.findall(r"mise run ([a-zA-Z0-9:_-]+)", readme)))
     if not documented_tasks:
-        raise AssertionError("README must include at least one `mise run` command")
+        message = "README must include at least one `mise run` command"
+        raise AssertionError(message)
 
     for task in documented_tasks:
         escaped = re.escape(task)
         if not re.search(rf'^\[tasks\.(?:{escaped}|"{escaped}")\]', mise, re.MULTILINE):
-            raise AssertionError(f"README command drift detected: missing mise task `{task}`")
+            message = f"README command drift detected: missing mise task `{task}`"
+            raise AssertionError(message)
 
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
