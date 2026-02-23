@@ -223,15 +223,12 @@ async def security_middleware(
 
 async def _capture_response_body(response: Response) -> bytes:
     """Consume the response iterator so it can be signed and replayed."""
-    body = b""
     body_iterator = getattr(response, "body_iterator", None)
 
     if body_iterator is None:
         return bytes(response.body or b"")
 
-    async for chunk in body_iterator:
-        body += chunk
-
+    body = b"".join([bytes(chunk) async for chunk in body_iterator])
     response.body_iterator = iterate_in_threadpool(iter([body]))  # type: ignore[attr-defined]
     return body
 
