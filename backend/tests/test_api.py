@@ -920,6 +920,19 @@ def test_delete_asset_referenced_fails(
     assert "referenced" in delete_res.json()["detail"].lower()
 
 
+def test_delete_asset_not_found_has_consistent_detail(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: Delete asset 404 detail includes resource context."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    delete_res = test_client.delete("/spaces/test-ws/assets/missing-asset")
+    assert delete_res.status_code == 404
+    detail = delete_res.json()["detail"]
+    assert "missing-asset" in detail
+    assert "test-ws" in detail
+
+
 def test_search_returns_matches(
     test_client: TestClient,
     temp_space_root: Path,
