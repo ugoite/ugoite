@@ -11,6 +11,7 @@ Identifier = Annotated[
         max_length=128,
     ),
 ]
+BoundedIdentifier = Annotated[str, StringConstraints(max_length=128)]
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
@@ -23,7 +24,7 @@ class SpaceCreate(BaseModel):
 class EntryCreate(BaseModel):
     """Entry creation payload."""
 
-    id: Identifier | None = None
+    id: BoundedIdentifier | None = None
     content: Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
 
 
@@ -71,7 +72,7 @@ class SqlVariable(BaseModel):
 class SqlCreate(BaseModel):
     """Saved SQL creation payload."""
 
-    id: Identifier | None = None
+    id: BoundedIdentifier | None = None
     name: ShortText
     sql: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
     variables: list[SqlVariable] = Field(default_factory=list)
