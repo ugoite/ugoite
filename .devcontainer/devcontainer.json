@@ -29,8 +29,7 @@
 	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
 	"mounts": [
 		"source=frontend_node_modules,target=/workspace/frontend/node_modules,type=volume",
-		"source=backend_venv,target=/workspace/backend/.venv,type=volume",
-		"source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind,consistency=cached"
+		"source=backend_venv,target=/workspace/backend/.venv,type=volume"
 	],
 	"remoteUser": "vscode",
 	"containerEnv": {
@@ -43,5 +42,5 @@
 		"GH_TOKEN": "${localEnv:GH_TOKEN}",
 		"GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
 	},
-	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install && gh auth status >/dev/null 2>&1 && gh auth setup-git && cd /workspace/e2e && npx playwright --version && npx playwright install --with-deps chromium",
+	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && uvx pre-commit install && cd /workspace/e2e && npx playwright --version && npx playwright install --with-deps chromium",
 }
