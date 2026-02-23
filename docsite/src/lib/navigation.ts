@@ -15,6 +15,7 @@ export const topLinks: NavItem[] = [
 	{ title: "Home", href: "/" },
 	{ title: "Design", href: "/design" },
 	{ title: "Application", href: "/app" },
+	{ title: "Search", href: "/search" },
 	{ title: "Source Docs", href: "/docs/spec/index" },
 ];
 
