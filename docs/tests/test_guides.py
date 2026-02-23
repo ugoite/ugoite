@@ -16,6 +16,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
+README_PATH = REPO_ROOT / "README.md"
+MISE_PATH = REPO_ROOT / "mise.toml"
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -73,6 +75,21 @@ def test_docs_req_ops_001_shell_blocks_parse() -> None:
         content = guide_path.read_text(encoding="utf-8")
         for block in _iter_bash_blocks(content):
             _bash_syntax_check(block, guide_path)
+
+
+def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
+    """REQ-OPS-001: README onboarding commands must match root mise commands."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    mise = MISE_PATH.read_text(encoding="utf-8")
+
+    documented_tasks = sorted(set(re.findall(r"mise run ([a-zA-Z0-9:_-]+)", readme)))
+    if not documented_tasks:
+        raise AssertionError("README must include at least one `mise run` command")
+
+    for task in documented_tasks:
+        escaped = re.escape(task)
+        if not re.search(rf'^\[tasks\.(?:{escaped}|"{escaped}")\]', mise, re.MULTILINE):
+            raise AssertionError(f"README command drift detected: missing mise task `{task}`")
 
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
