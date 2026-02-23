@@ -19,6 +19,7 @@ from app.core.authorization import (
 from app.models.payloads import QueryRequest
 
 SQL_ERROR_PREFIX = "UGOITE_SQL_ERROR"
+_MAX_SEARCH_QUERY_LENGTH = 512
 
 
 def _is_sql_error(detail: str) -> bool:
@@ -90,6 +91,11 @@ async def search_endpoint(
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
+    if len(q) > _MAX_SEARCH_QUERY_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Query too long: max {_MAX_SEARCH_QUERY_LENGTH} characters.",
+        )
 
     try:
         await ugoite_core.require_space_action(
