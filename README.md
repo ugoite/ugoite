@@ -159,9 +159,9 @@ Frontend tests: check `frontend/package.json`.
 
 See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
 
-- **Milestone 2** (In Progress): Codebase unification, Rust core library
+- **Milestone 2** (Completed): Codebase unification, Rust core library
 - **Milestone 3**: Full AI integration, vector search
-- **Milestone 4**: User management, authentication
+- **Milestone 4** (Phase 1/2 completed): User management, authentication hardening and follow-up tasks
 - **Milestone 5**: Native desktop app (Tauri)
 
 ---
