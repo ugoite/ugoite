@@ -19,6 +19,7 @@ from app.core.authorization import (
 from app.models.payloads import QueryRequest
 
 SQL_ERROR_PREFIX = "UGOITE_SQL_ERROR"
+_MAX_QUERY_FILTER_BYTES = 32_768
 
 
 def _is_sql_error(detail: str) -> bool:
@@ -46,6 +47,12 @@ async def query_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="SQL queries must use SQL session endpoints.",
         )
+    query_payload = json.dumps(payload.filter)
+    if len(query_payload.encode("utf-8")) > _MAX_QUERY_FILTER_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Query filter too large: max {_MAX_QUERY_FILTER_BYTES} bytes.",
+        )
 
     try:
         await ugoite_core.require_space_action(
@@ -54,7 +61,6 @@ async def query_endpoint(
             identity,
             "entry_read",
         )
-        query_payload = json.dumps(payload.filter)
         rows = await ugoite_core.query_index(storage_config, space_id, query_payload)
         entry_like_rows = [row for row in rows if isinstance(row, dict)]
         return await ugoite_core.filter_readable_entries(

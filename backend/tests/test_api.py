@@ -709,6 +709,21 @@ def test_query_entries(
     assert isinstance(response.json(), list)
 
 
+def test_query_entries_rejects_oversized_filter(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-004: Query endpoint rejects oversized filter payloads."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    oversized_value = "x" * 40_000
+    response = test_client.post(
+        "/spaces/test-ws/query",
+        json={"filter": {"note": oversized_value}},
+    )
+    assert response.status_code == 400
+    assert "Query filter too large" in response.json()["detail"]
+
+
 def test_query_entries_sql(
     test_client: TestClient,
     temp_space_root: Path,
