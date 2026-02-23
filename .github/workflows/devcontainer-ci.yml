@@ -1,0 +1,26 @@
+name: Devcontainer CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+  merge_group:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Build and run devcontainer smoke test
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            mise --version
+            gh --version
+            python --version
