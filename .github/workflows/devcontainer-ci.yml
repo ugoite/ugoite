@@ -29,4 +29,4 @@ jobs:
           runCmd: |
             gh --version
             mise --version
-            python3 --version
+            python --version
