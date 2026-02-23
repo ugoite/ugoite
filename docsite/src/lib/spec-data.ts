@@ -4,6 +4,7 @@ import YAML from "yaml";
 
 const docsRoot = path.resolve(process.cwd(), "../docs");
 const specRoot = path.join(docsRoot, "spec");
+const hiddenUiPageIds = new Set(["space-links", "space-link-detail"]);
 
 export type LinkItem = {
 	id: string;
@@ -203,6 +204,7 @@ export async function getUiPages(): Promise<UiPageSpec[]> {
 			};
 		}>(fullPath);
 		if (!data.page?.id || !data.page.title || !data.page.route) continue;
+		if (hiddenUiPageIds.has(data.page.id)) continue;
 
 		pages.push({
 			fileName,
@@ -233,6 +235,9 @@ export async function getUiPageById(id: string): Promise<UiPageDetail | null> {
 		};
 
 		if (page.id !== id || !page.title || !page.route) {
+			continue;
+		}
+		if (hiddenUiPageIds.has(page.id)) {
 			continue;
 		}
 
