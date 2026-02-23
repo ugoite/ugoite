@@ -139,15 +139,15 @@ cd backend
 uv run pytest
 ```
 
-Run all Python tests from repo root:
+Run all tests from repo root:
 
 ```bash
-uv run pytest
+mise run test
 ```
 
 Where you can run this:
 
-- Dev Container: everything needed to run tests is available; run `uv run pytest`.
+- Dev Container: everything needed to run tests is available; run `mise run test`.
 - GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ugoite-cli/`.
 - Local (non-container): install `uv`, then run the commands above.
 
