@@ -24,6 +24,9 @@ jobs:
           toolchain: 1.93.0
           components: rustfmt, clippy
 
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -148,3 +151,7 @@ jobs:
       - name: Run cargo test (core)
         working-directory: ./ugoite-core
         run: cargo test
+
+      - name: Run rust coverage 100 percent (core)
+        working-directory: ./ugoite-core
+        run: cargo llvm-cov --summary-only --fail-under-lines 100
