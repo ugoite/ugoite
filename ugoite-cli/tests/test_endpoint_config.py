@@ -44,6 +44,28 @@ def test_parse_space_id_from_path_and_id() -> None:
     assert parse_space_id("default") == "default"
 
 
+def test_endpoint_config_path_honors_explicit_path_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-001: endpoint config path supports UGOITE_CLI_CONFIG_PATH override."""
+    explicit = tmp_path / "custom" / "endpoints.json"
+    monkeypatch.setenv("UGOITE_CLI_CONFIG_PATH", str(explicit))
+
+    assert endpoint_config_path() == explicit
+
+
+def test_endpoint_config_path_uses_config_home_when_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-STO-001: endpoint config path supports UGOITE_CONFIG_HOME override."""
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("UGOITE_CONFIG_HOME", str(tmp_path))
+
+    assert endpoint_config_path() == tmp_path / "ugoite" / "cli-endpoints.json"
+
+
 def test_parse_space_id_rejects_empty_values() -> None:
     """REQ-STO-004: Rejects empty or whitespace-only space identifiers."""
     with pytest.raises(ValueError, match="must not be empty"):
