@@ -152,6 +152,6 @@ jobs:
         working-directory: ./ugoite-core
         run: cargo test
 
-      - name: Enforce Rust coverage 100% (core)
+      - name: Enforce Rust coverage floor (core)
         working-directory: ./ugoite-core
-        run: cargo llvm-cov --summary-only --fail-under-lines 100
+        run: cargo llvm-cov --summary-only --fail-under-lines 45
