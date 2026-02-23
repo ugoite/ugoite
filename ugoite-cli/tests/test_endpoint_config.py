@@ -21,6 +21,9 @@ def test_endpoint_config_roundtrip_uses_home_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """REQ-STO-001: Persists endpoint config under ~/.ugoite and loads it back."""
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("UGOITE_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
 
     config = EndpointConfig(

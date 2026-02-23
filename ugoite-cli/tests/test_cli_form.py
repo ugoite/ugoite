@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from ugoite.cli import app
@@ -21,8 +22,13 @@ def test_cli_list_types() -> None:
     assert "row_reference" in result.stdout
 
 
-def test_cli_form_update(tmp_path: Path) -> None:
+def test_cli_form_update(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test updating form via CLI (REQ-FORM-002)."""
+    monkeypatch.delenv("UGOITE_CLI_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("UGOITE_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
     ws_root = tmp_path / "root"
     ws_root.mkdir()
 
