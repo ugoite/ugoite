@@ -34,6 +34,7 @@ requirements:
       tests:
       - test_docs_req_ops_001_guides_exist
       - test_docs_req_ops_001_shell_blocks_parse
+      - test_docs_req_ops_001_env_matrix_matches_runtime_usage
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
