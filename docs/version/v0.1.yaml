@@ -1,0 +1,65 @@
+version: "0.1"
+status: in_progress
+summary: >
+  Foundational releases through user-management and release preparation,
+  aligned with local-first and thin-adapter architecture constraints.
+milestones:
+  - id: mvp
+    status: completed
+    source:
+      - docs/tasks/archive/mvp-milestone.md
+    phases:
+      - id: design
+        status: completed
+      - id: implementation
+        status: completed
+      - id: testing
+        status: completed
+  - id: full-configuration
+    status: completed
+    source:
+      - docs/tasks/archive/milestone-2-full-configuration.md
+    phases:
+      - id: design
+        status: completed
+      - id: implementation
+        status: completed
+      - id: testing
+        status: completed
+  - id: markdown-as-table
+    status: completed
+    source:
+      - docs/tasks/archive/milestone-3-markdown-as-table.md
+    phases:
+      - id: design
+        status: completed
+      - id: implementation
+        status: completed
+      - id: testing
+        status: completed
+  - id: user-management
+    status: in_progress
+    source:
+      - docs/tasks/tasks.md
+    phases:
+      - id: design
+        status: completed
+      - id: implementation
+        status: in_progress
+      - id: testing
+        status: in_progress
+  - id: release-preparation
+    status: planned
+    phases:
+      - id: container-image-deployment
+        status: planned
+        deliverables:
+          - Validate backend/frontend images in staging and production workflows.
+      - id: quickstart-documentation-finalization
+        status: planned
+        deliverables:
+          - Finalize quick-start and tutorial docs for first-time operators.
+      - id: release-notes-drafting
+        status: planned
+        deliverables:
+          - Prepare changelog, known issues, and next-step guidance.

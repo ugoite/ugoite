@@ -107,3 +107,39 @@ requirements:
       - test_req_ops_003_governance_files_exist
       - test_req_ops_003_ids_and_links_are_structurally_valid
       - test_req_ops_003_bidirectional_links_hold
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-004
+  title: Version Milestone Definitions
+  description: 'Version planning MUST be expressed as YAML under docs/version with phase-level
+
+    milestone breakdowns, including release-preparation tasks and future milestones
+    for user-controlled views and AI-enabled workflows.
+
+    '
+  related_spec:
+  - ../tasks/roadmap.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_versions.py
+      tests:
+      - test_docs_req_ops_004_version_files_exist
+      - test_docs_req_ops_004_milestones_are_unnumbered_and_phased
+      - test_docs_req_ops_004_release_preparation_is_explicit
+      - test_docs_req_ops_004_v02_contains_target_milestones
+      - test_docs_req_ops_004_issue_templates_support_phase
