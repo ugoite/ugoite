@@ -7,6 +7,26 @@ body:
     attributes:
       value: |
         Thanks for taking the time to fill out this feature request!
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue Type
+      options:
+        - feature
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      description: Select the active phase (for example, release-preparation).
+      options:
+        - design
+        - implementation
+        - testing
+        - release-preparation
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
