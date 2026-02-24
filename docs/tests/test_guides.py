@@ -23,11 +23,14 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+COLUMN_COUNT_THRESHOLD = 2
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
     re.DOTALL,
 )
+ENV_NAME_PATTERN = re.compile(r"\b(?:UGOITE_[A-Z0-9_]+|E2E_[A-Z0-9_]+|BACKEND_URL)\b")
 
 
 def _iter_bash_blocks(text: str) -> list[str]:
@@ -97,6 +100,37 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
         if not re.search(rf'^\[tasks\.(?:{escaped}|"{escaped}")\]', mise, re.MULTILINE):
             message = f"README command drift detected: missing mise task `{task}`"
             raise AssertionError(message)
+
+
+def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
+    """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
+    matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
+    documented = {
+        line.split("|")[1].strip()
+        for line in matrix_text.splitlines()
+        if line.startswith("|")
+        and len(line.split("|")) > COLUMN_COUNT_THRESHOLD
+        and line.split("|")[1].strip() not in {"Variable", "---"}
+    }
+
+    source_paths = [
+        REPO_ROOT / "docker-compose.yaml",
+        REPO_ROOT / "e2e/scripts/run-e2e.sh",
+        REPO_ROOT / ".github/workflows/e2e-ci.yml",
+        REPO_ROOT / ".github/workflows/frontend-ci.yml",
+        REPO_ROOT / "frontend/src/routes/api/[...path].ts",
+    ]
+
+    referenced: set[str] = set()
+    for source_path in source_paths:
+        text = source_path.read_text(encoding="utf-8")
+        referenced.update(ENV_NAME_PATTERN.findall(text))
+
+    missing = sorted(referenced - documented)
+    if missing:
+        raise AssertionError(
+            "env-matrix.md is missing runtime env vars: " + ", ".join(missing),
+        )
 
 
 def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
