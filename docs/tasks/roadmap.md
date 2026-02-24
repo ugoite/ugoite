@@ -7,6 +7,18 @@ This roadmap outlines the major milestones planned for Ugoite development.
 
 ---
 
+## Version Milestone Sources (Canonical)
+
+Structured, test-validated milestone definitions live in:
+
+- `docs/version/v0.1.yaml`
+- `docs/version/v0.2.yaml`
+
+These YAML files are the canonical source for version planning and phase
+tracking.
+
+---
+
 ## Milestone Overview
 
 | # | Milestone | Status | Description |
