@@ -34,6 +34,19 @@ updates:
     directory: "/ugoite-core"
     schedule:
       interval: "daily"
+    groups:
+      rust-arrow-stack:
+        patterns:
+          - "arrow-*"
+          - "parquet"
+          - "iceberg"
+    ignore:
+      - dependency-name: "arrow-array"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "arrow-schema"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "parquet"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/backend"
