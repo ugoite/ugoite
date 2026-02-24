@@ -9,8 +9,15 @@ This matrix summarizes primary runtime variables by mode.
 | UGOITE_ROOT | optional | required | volume-backed path | test workspace path |
 | UGOITE_ALLOW_REMOTE | optional | required | required | required for API tests |
 | UGOITE_AUTH_BEARER_TOKENS_JSON | optional | required | optional | optional |
+| UGOITE_AUTH_API_KEY | optional | optional | optional | optional |
+| UGOITE_BOOTSTRAP_BEARER_TOKEN | optional | optional | optional | optional |
+| UGOITE_BOOTSTRAP_USER_ID | optional | optional | optional | optional |
+| UGOITE_PROXY_TIMEOUT_MS | optional | optional | optional | optional |
 | E2E_AUTH_BEARER_TOKEN | n/a | required | n/a | required for e2e jobs |
+| E2E_STORAGE_ROOT | n/a | required | n/a | optional |
 | E2E_BACKEND_PORT | n/a | optional | n/a | optional |
 | E2E_FRONTEND_PORT | n/a | optional | n/a | optional |
+| E2E_FRONTEND_MODE | n/a | optional | n/a | optional |
+| E2E_TEST_TIMEOUT_MS | n/a | optional | n/a | optional |
 
 Use mode-specific `.env` files to avoid mixing values between workflows.
