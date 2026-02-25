@@ -1,4 +1,5 @@
 # Ugoite runtime data (created by ugoite during dev)
+hmac.json
 global.json
 spaces/
 !frontend/src/routes/spaces/
