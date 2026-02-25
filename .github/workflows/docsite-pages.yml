@@ -10,6 +10,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  packages: read
 
 concurrency:
   group: pages
@@ -18,26 +19,26 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      CI_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/ugoite-ci-tools:latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - name: Setup mise (install tools and dependencies)
-        uses: jdx/mise-action@v3
-        with:
-          install: true
-          cache: true
-          experimental: true
-
-      - name: Install project dependencies
-        run: mise run setup
+      - name: Pull pre-built CI container
+        run: docker pull "$CI_CONTAINER_IMAGE"
 
       - name: Capture CLI command outputs
         run: |
-          mkdir -p docsite/src/generated
-          python3 - <<'PY'
+          docker run --rm --network host \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$CI_CONTAINER_IMAGE" \
+            bash -lc '
+              mkdir -p docsite/src/generated
+              python3 - <<'"'"'PY'"'"'
           import json
           import subprocess
 
@@ -59,13 +60,23 @@ jobs:
           with open("docsite/src/generated/cli-command-outputs.json", "w", encoding="utf-8") as f:
               json.dump(results, f, ensure_ascii=False, indent=2)
           PY
+            '
 
       - name: Capture UI screenshots
-        run: mise run screenshot
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$CI_CONTAINER_IMAGE" \
+            bash -lc 'mise run screenshot'
 
       - name: Build
-        working-directory: ./docsite
-        run: bun run build
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$CI_CONTAINER_IMAGE" \
+            bash -lc 'cd docsite && bun run build'
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
