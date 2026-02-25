@@ -1,0 +1,9 @@
+status: archived
+description: >
+  Legacy markdown task documents were migrated to versioned YAML sources.
+replaced_paths:
+  - docs/tasks/tasks.md
+  - docs/tasks/roadmap.md
+  - docs/tasks/archive/mvp-milestone.md
+  - docs/tasks/archive/milestone-2-full-configuration.md
+  - docs/tasks/archive/milestone-3-markdown-as-table.md

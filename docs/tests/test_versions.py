@@ -12,6 +12,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION_DIR = REPO_ROOT / "docs" / "version"
+LEGACY_TASKS_DIR = REPO_ROOT / "docs" / "tasks"
 ISSUE_TEMPLATE_DIR = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
 
 
@@ -138,3 +139,36 @@ def test_docs_req_ops_004_issue_templates_support_phase() -> None:
         }
         if "issue_type" not in ids or "phase" not in ids:
             _fail(f"{template_name} must include issue_type and phase fields")
+
+
+def test_docs_req_ops_004_task_sources_are_versioned_yaml() -> None:
+    """REQ-OPS-004: Milestone source mappings must point to versioned YAML files."""
+    for version_path in sorted(VERSION_DIR.glob("v*.yaml")):
+        data = _load_version(version_path)
+        for milestone in _milestones(data, version_path.name):
+            sources = milestone.get("source")
+            if not sources:
+                continue
+            if not isinstance(sources, list):
+                _fail(
+                    f"{version_path.name}:{milestone.get('id')} source must be a list",
+                )
+            for source in sources:
+                source_path = REPO_ROOT / str(source)
+                if not str(source).startswith("docs/version/") or not str(
+                    source,
+                ).endswith(
+                    ".yaml",
+                ):
+                    _fail(
+                        f"{version_path.name}:{milestone.get('id')} source must be "
+                        f"versioned YAML: {source}",
+                    )
+                if not source_path.exists():
+                    _fail(f"missing milestone source file: {source}")
+
+
+def test_docs_req_ops_004_legacy_tasks_directory_removed() -> None:
+    """REQ-OPS-004: Legacy docs/tasks directory must be removed after migration."""
+    if LEGACY_TASKS_DIR.exists():
+        _fail("docs/tasks directory must be removed after versioned YAML migration")

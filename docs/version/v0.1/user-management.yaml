@@ -1,0 +1,13 @@
+version: "0.1"
+milestone: user-management
+status: in_progress
+summary: >
+  Structured task plan for authentication, authorization, collaboration,
+  and audit capabilities delivered in the 0.1 stream.
+phases:
+  - id: design
+    status: completed
+  - id: implementation
+    status: in_progress
+  - id: testing
+    status: in_progress
