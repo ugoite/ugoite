@@ -9,4 +9,4 @@ def get_root_path() -> str | Path:
     root = os.environ.get("UGOITE_ROOT")
     if root:
         return root
-    return Path.cwd()
+    return Path.home() / ".ugoite"
