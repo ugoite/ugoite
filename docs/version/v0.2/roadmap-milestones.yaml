@@ -1,13 +1,8 @@
 version: "0.2"
 status: planned
-summary: >
-  Next release stream focused on user-controlled experiences and deeper
-  AI-native workflows.
 milestones:
   - id: user-controlled-view
     status: planned
-    source:
-      - docs/version/v0.2/roadmap-milestones.yaml
     phases:
       - id: design
         status: planned
@@ -17,8 +12,15 @@ milestones:
         status: planned
   - id: ai-enabled-and-ai-used
     status: planned
-    source:
-      - docs/version/v0.2/roadmap-milestones.yaml
+    phases:
+      - id: design
+        status: planned
+      - id: implementation
+        status: planned
+      - id: testing
+        status: planned
+  - id: native-app
+    status: planned
     phases:
       - id: design
         status: planned
