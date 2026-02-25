@@ -80,3 +80,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^docsite/
+
+      - id: backend-pytest-coverage
+        name: backend pytest coverage (100%)
+        entry: bash -c "cd backend && uv run --with pytest-cov pytest --cov=src --cov-fail-under=100"
+        language: system
+        pass_filenames: false
+        files: ^backend/
