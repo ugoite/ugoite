@@ -17,6 +17,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      packages: read
+    env:
+      CI_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/ugoite-ci-tools:latest
 
     steps:
       - name: Checkout
@@ -24,31 +27,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Restore Playwright and e2e node cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/ms-playwright
-            e2e/node_modules
-          key: ${{ runner.os }}-e2e-${{ hashFiles('e2e/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-e2e-
-
-      - name: Setup mise (install tools and dependencies)
-        uses: jdx/mise-action@v3
-        with:
-          install: true
-          cache: true
-          experimental: true
-
-      - name: Install project dependencies
-        run: mise run setup
+      - name: Pull pre-built CI container
+        run: docker pull "$CI_CONTAINER_IMAGE"
 
       - name: Run E2E tests
         env:
           PLAYWRIGHT_CI_REPORTER: junit
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
-        run: mise run e2e
+        run: |
+          docker run --rm --network host \
+            -e PLAYWRIGHT_CI_REPORTER \
+            -e PLAYWRIGHT_JUNIT_OUTPUT_FILE \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$CI_CONTAINER_IMAGE" \
+            bash -lc 'mise run e2e'
 
       - name: Fail on skipped e2e tests
         run: |
