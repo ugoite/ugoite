@@ -2,12 +2,21 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import TerminalCommand from "../../../components/TerminalCommand.astro";
 import { withBasePath } from "../../../lib/base-path";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const toc = [
   { id: "overview", title: "Overview" },
   { id: "setup", title: "Setup" },
+  { id: "examples", title: "Command Outputs" },
   { id: "commands", title: "Commands" },
 ];
+
+const generatedPath = path.resolve(process.cwd(), "src/generated/cli-command-outputs.json");
+const commandOutputs = await fs
+  .readFile(generatedPath, "utf-8")
+  .then((raw) => JSON.parse(raw) as { command: string; output: string }[])
+  .catch(() => []);
 ---
 
 <BaseLayout title="CLI | Ugoite" description="Command-line interface for scriptable knowledge management." toc={toc}
@@ -42,6 +51,20 @@ const toc = [
       </div>
     </div>
   </section>
+
+  {commandOutputs.length > 0 && (
+    <section id="examples" class="doc-card">
+      <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Captured Command Outputs</h2>
+      <div style="display: grid; gap: 1rem;">
+        {commandOutputs.map((entry) => (
+          <div>
+            <TerminalCommand command={entry.command} />
+            <pre style="margin-top: 0.5rem; font-size: 0.75rem; padding: 0.75rem; border-radius: var(--doc-radius-md); background: var(--doc-bg-subtle); overflow-x: auto;"><code>{entry.output || "(no output)"}</code></pre>
+          </div>
+        ))}
+      </div>
+    </section>
+  )}
 
   <section id="commands">
     <a href={withBasePath("/app/cli/commands")} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit; display: block;">
