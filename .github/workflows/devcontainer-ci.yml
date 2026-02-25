@@ -23,6 +23,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate tool version consistency (REQ-OPS-001)
+        run: |
+          python3 - <<'PY'
+          import re
+          import tomllib
+          from pathlib import Path
+
+          root = Path(".")
+          mise_tools = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8")).get("tools", {})
+          if not isinstance(mise_tools, dict):
+              raise SystemExit("mise.toml [tools] is required")
+
+          def extract_versions(path: Path, key: str) -> set[str]:
+              pattern = re.compile(rf"^\\s*{re.escape(key)}\\s*:\\s*([^\\s#]+)", re.MULTILINE)
+              return {m.group(1).strip().strip('\"').strip(\"'\") for m in pattern.finditer(path.read_text(encoding="utf-8"))}
+
+          bun_versions = extract_versions(root / ".github/workflows/frontend-ci.yml", "bun-version")
+          rust_versions = extract_versions(root / ".github/workflows/python-ci.yml", "toolchain")
+          python_versions = extract_versions(root / ".github/workflows/scancode.yml", "python-version")
+
+          if len(bun_versions) != 1:
+              raise SystemExit(f"inconsistent bun-version pins: {sorted(bun_versions)}")
+          if len(rust_versions) != 1:
+              raise SystemExit(f"inconsistent rust toolchain pins: {sorted(rust_versions)}")
+          if len(python_versions) != 1:
+              raise SystemExit(f"inconsistent python-version pins: {sorted(python_versions)}")
+
+          bun = next(iter(bun_versions))
+          rust = next(iter(rust_versions))
+          python = next(iter(python_versions))
+
+          if str(mise_tools.get("bun")) != bun:
+              raise SystemExit(f"mise [tools].bun ({mise_tools.get('bun')}) != workflow bun-version ({bun})")
+          if str(mise_tools.get("rust")) != rust:
+              raise SystemExit(f"mise [tools].rust ({mise_tools.get('rust')}) != workflow toolchain ({rust})")
+          if str(mise_tools.get("python")) != python:
+              raise SystemExit(f"mise [tools].python ({mise_tools.get('python')}) != workflow python-version ({python})")
+
+          print("tool versions are consistent")
+          PY
+
       - name: Build and smoke test devcontainer
         uses: devcontainers/ci@v0.3
         with:
