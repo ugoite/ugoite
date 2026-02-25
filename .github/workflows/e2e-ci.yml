@@ -28,9 +28,24 @@ jobs:
           persist-credentials: false
 
       - name: Pull pre-built CI container
+        id: pull_container
+        continue-on-error: true
         run: docker pull "$CI_CONTAINER_IMAGE"
 
-      - name: Run E2E tests
+      - name: Setup mise (fallback)
+        if: steps.pull_container.outcome != 'success'
+        uses: jdx/mise-action@v3
+        with:
+          install: true
+          cache: true
+          experimental: true
+
+      - name: Install project dependencies (fallback)
+        if: steps.pull_container.outcome != 'success'
+        run: mise run setup
+
+      - name: Run E2E tests (container)
+        if: steps.pull_container.outcome == 'success'
         env:
           PLAYWRIGHT_CI_REPORTER: junit
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
@@ -42,6 +57,13 @@ jobs:
             -w /workspace \
             "$CI_CONTAINER_IMAGE" \
             bash -lc 'mise run e2e'
+
+      - name: Run E2E tests (fallback)
+        if: steps.pull_container.outcome != 'success'
+        env:
+          PLAYWRIGHT_CI_REPORTER: junit
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
+        run: mise run e2e
 
       - name: Fail on skipped e2e tests
         run: |
