@@ -36,7 +36,7 @@ jobs:
               raise SystemExit("mise.toml [tools] is required")
 
           def extract_versions(path: Path, key: str) -> set[str]:
-              pattern = re.compile(rf"^\\s*{re.escape(key)}\\s*:\\s*([^\\s#]+)", re.MULTILINE)
+              pattern = re.compile(rf"^\s*{re.escape(key)}\s*:\s*([^\s#]+)", re.MULTILINE)
               return {m.group(1).strip().strip('"').strip("'") for m in pattern.finditer(path.read_text(encoding="utf-8"))}
 
           bun_versions = extract_versions(root / ".github/workflows/frontend-ci.yml", "bun-version")
