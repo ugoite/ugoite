@@ -70,6 +70,20 @@ a:hover {
 		gap: 0.25rem;
 	}
 
+	.site-github-link {
+		padding: 0.375rem 0.875rem;
+		border-radius: var(--doc-radius-md);
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--doc-muted);
+		transition: all 0.15s ease;
+	}
+
+	.site-github-link:hover {
+		color: var(--doc-fg);
+		background: var(--doc-accent-soft);
+	}
+
 	.site-nav-menu {
 		position: relative;
 	}
@@ -1014,6 +1028,10 @@ a:hover {
 		}
 
 		.site-nav {
+			display: none;
+		}
+
+		.site-github-link {
 			display: none;
 		}
 
