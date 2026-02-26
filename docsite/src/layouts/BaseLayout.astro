@@ -69,6 +69,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
             );
           })}
         </nav>
+        <a href="https://github.com/ugoite/ugoite" class="site-github-link" target="_blank" rel="noreferrer">GitHub</a>
         <div class="site-search">
           <input
             type="search"
@@ -106,6 +107,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
           {topLinks.map((link) => (
             <a href={withBasePath(link.href)} class="doc-sidebar-link">{link.title}</a>
           ))}
+          <a href="https://github.com/ugoite/ugoite" class="doc-sidebar-link" target="_blank" rel="noreferrer">GitHub</a>
         </div>
         <DocNavTree navSections={navSections} />
       </nav>
