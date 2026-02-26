@@ -1018,7 +1018,9 @@ a:hover {
 		}
 
 		.site-search {
-			display: none;
+			display: block;
+			min-width: 0;
+			flex: 1;
 		}
 
 		.mobile-nav-toggle {
@@ -1027,6 +1029,16 @@ a:hover {
 	}
 
 	@media (max-width: 640px) {
+		.site-header-inner {
+			flex-wrap: wrap;
+			gap: 0.75rem;
+		}
+
+		.site-search {
+			order: 4;
+			width: 100%;
+		}
+
 		.doc-card-hero {
 			padding: 1.5rem 1rem;
 		}
