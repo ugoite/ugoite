@@ -108,9 +108,11 @@ def test_sql_req_api_007_validation(test_client: TestClient) -> None:
     )
     assert invalid_response.status_code == 422
 
+
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import ugoite_core
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""

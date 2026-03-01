@@ -158,9 +158,11 @@ def test_space_member_revoke_removes_access(
     revoked_get = alice.get(f"/spaces/{space_id}")
     assert revoked_get.status_code == 403
 
+
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import ugoite_core
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""

@@ -78,9 +78,11 @@ def test_audit_logs_authorization_denial(
     assert payload["total"] >= 1
     assert any(item.get("outcome") == "deny" for item in payload["items"])
 
+
 from unittest.mock import patch, AsyncMock
 from typing import Any
 import ugoite_core
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""
