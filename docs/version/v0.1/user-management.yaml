@@ -1,0 +1,57 @@
+id: user-management
+version: "0.1"
+status: in_progress
+title: "User Management"
+goal: >
+  Introduce secure multi-user operation with authentication, authorization, and
+  collaboration while preserving the local-first default model.
+phases:
+  - id: design
+    status: completed
+    tasks:
+      - description: "Define space-scoped mandatory user authentication across all channels"
+        done: true
+      - description: "Define passkey/WebAuthn as primary auth with optional OAuth2 linking"
+        done: true
+      - description: "Define admin bootstrap with one-time invite token"
+        done: true
+      - description: "Define authorization ownership model and Form-level ACL"
+        done: true
+      - description: "Add/extend REQ-* requirements and link to security/api/data-model/stories specs"
+        done: true
+  - id: implementation
+    status: in_progress
+    tasks:
+      - description: "Implement identity model and auth provider interface in ugoite-core"
+        done: true
+      - description: "Implement auth middleware and dependency injection for REST/MCP"
+        done: true
+      - description: "Implement RBAC policy engine in ugoite-core with thin backend adapters"
+        done: true
+      - description: "Implement space membership lifecycle (invited/active/revoked)"
+        done: true
+      - description: "Implement member APIs (POST/GET/DELETE /spaces/{space_id}/members)"
+        done: true
+      - description: "Implement audit event schema and append-only JSONL persistence"
+        done: true
+      - description: "Implement service account model and key lifecycle APIs"
+        done: true
+      - description: "Add login/session UX for remote mode in frontend"
+        done: true
+      - description: "Add space member management screens with role editing and revoke flows"
+        done: true
+      - description: "Add CLI ergonomics for auth login/profile/token management"
+        done: true
+  - id: testing
+    status: in_progress
+    tasks:
+      - description: "Auth allow/deny tests and privilege escalation prevention"
+        done: true
+      - description: "Membership invitation/accept/revoke/permission transition e2e tests"
+        done: true
+      - description: "Audit event completeness and immutability guarantee tests"
+        done: true
+      - description: "Scope enforcement and key revocation propagation tests"
+        done: true
+      - description: "Requirement coverage check confirms all new REQ-* are linked to tests"
+        done: false
