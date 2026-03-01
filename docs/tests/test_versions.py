@@ -128,9 +128,25 @@ def test_docs_req_ops_004_milestone_yaml_files_exist() -> None:
         data = _load_version(version_path)
         for milestone in _milestones(data, version_path.name):
             source = milestone.get("source")
-            if not isinstance(source, list):
+            if source is None:
                 continue
-            for src in source:
+            if isinstance(source, str):
+                sources: list[object] = [source]
+            elif isinstance(source, list):
+                sources = list(source)
+            else:
+                _fail(
+                    f"{version_path.name} milestone {milestone.get('id')!r} "
+                    "source must be a string or a list of strings",
+                )
+                continue
+            for src in sources:
+                if not isinstance(src, str) or not src.strip():
+                    _fail(
+                        f"{version_path.name} milestone {milestone.get('id')!r} "
+                        "source entries must be non-empty strings",
+                    )
+                    continue
                 src_path = REPO_ROOT / src
                 if not src_path.exists():
                     _fail(
