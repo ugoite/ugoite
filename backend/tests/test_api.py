@@ -1179,8 +1179,10 @@ import json as _json
 from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi import HTTPException
 from starlette.responses import Response
+
 from app.api.endpoints.search import _is_sql_error
 from app.api.endpoints.space import (
     _sanitize_space_meta,
