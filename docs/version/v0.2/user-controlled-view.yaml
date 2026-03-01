@@ -1,0 +1,33 @@
+id: user-controlled-view
+version: "0.2"
+status: planned
+title: "User Controlled View"
+goal: >
+  Enable user-defined UI views driven by queries, allowing users to attach
+  UI components to queries and share reusable view definitions.
+phases:
+  - id: design
+    status: planned
+    tasks:
+      - description: "Define view definition format and UI-component-to-query composition model"
+        done: false
+      - description: "Design low-code view expression schema stored in space"
+        done: false
+      - description: "Define shareable view spec format and storage location"
+        done: false
+  - id: implementation
+    status: planned
+    tasks:
+      - description: "Implement view definition format and renderer in ugoite-core"
+        done: false
+      - description: "Implement query-driven UI panels in frontend"
+        done: false
+      - description: "Implement saved and shareable view definitions"
+        done: false
+  - id: testing
+    status: planned
+    tasks:
+      - description: "Tests for view definition parsing and rendering"
+        done: false
+      - description: "Tests for query-to-UI composition and persistence"
+        done: false

@@ -122,6 +122,23 @@ def test_docs_req_ops_004_v02_contains_target_milestones() -> None:
         _fail("v0.2.yaml missing milestones: " + ", ".join(missing))
 
 
+def test_docs_req_ops_004_milestone_yaml_files_exist() -> None:
+    """REQ-OPS-004: Source files referenced in version milestones must exist."""
+    for version_path in sorted(VERSION_DIR.glob("v*.yaml")):
+        data = _load_version(version_path)
+        for milestone in _milestones(data, version_path.name):
+            source = milestone.get("source")
+            if not isinstance(source, list):
+                continue
+            for src in source:
+                src_path = REPO_ROOT / src
+                if not src_path.exists():
+                    _fail(
+                        f"{version_path.name} milestone {milestone.get('id')!r} "
+                        f"source file not found: {src}",
+                    )
+
+
 def test_docs_req_ops_004_issue_templates_support_phase() -> None:
     """REQ-OPS-004: Issue templates must include issue_type and phase fields."""
     for template_name in ("bug_report.yml", "feature_request.yml"):
