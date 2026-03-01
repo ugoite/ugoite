@@ -1,0 +1,41 @@
+id: ai-enabled-and-ai-used
+version: "0.2"
+status: planned
+title: "AI-Enabled & AI-Used"
+goal: >
+  Complete MCP integration and AI workflow features including vector search,
+  voice-to-schema, and computational entries.
+phases:
+  - id: design
+    status: planned
+    tasks:
+      - description: "Design full MCP server resource and tool exposure"
+        done: false
+      - description: "Design vector search integration with FAISS and embedding providers"
+        done: false
+      - description: "Design voice-to-schema audio upload and AI transcription workflow"
+        done: false
+      - description: "Design computational entries with embedded JavaScript execution"
+        done: false
+  - id: implementation
+    status: planned
+    tasks:
+      - description: "Implement production-ready MCP server with complete resource/tool coverage"
+        done: false
+      - description: "Implement AI workflow automation (scheduled tasks, batch processing)"
+        done: false
+      - description: "Implement vector search with configurable embedding providers"
+        done: false
+      - description: "Implement voice memo asset with transcription workflow"
+        done: false
+      - description: "Implement interactive code block execution in editor"
+        done: false
+  - id: testing
+    status: planned
+    tasks:
+      - description: "MCP server integration tests for all resources and tools"
+        done: false
+      - description: "Vector search accuracy and performance tests"
+        done: false
+      - description: "Voice transcription and computational entry tests"
+        done: false
