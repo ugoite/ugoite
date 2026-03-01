@@ -1140,3 +1140,75 @@ requirements:
     - file: frontend/src/components/create-dialogs.test.tsx
       tests:
       - 'REQ-FE-039: blocks reserved metadata column names'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-050
+  title: SQL Query Management API Client
+  description: 'The frontend SQL query API client MUST support CRUD operations for saved
+    SQL queries (list, create, get, update, delete) and provide typed error handling.
+
+    '
+  related_spec:
+  - architecture/overview.md
+  - requirements/api.yaml
+  priority: high
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/lib/sql-api.test.ts
+      tests:
+      - lists SQL entries (empty by default)
+      - creates a SQL entry and returns id/revisionId
+      - gets a SQL entry by id
+      - updates a SQL entry
+      - deletes a SQL entry
+      - throws on list failure
+      - throws on get failure
+      - throws on create failure with detail
+      - throws on update failure with detail
+      - throws on delete failure
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-051
+  title: SQL Session Management API Client
+  description: 'The frontend SQL session API client MUST support creating, getting,
+    and querying SQL sessions with typed error handling.
+
+    '
+  related_spec:
+  - architecture/overview.md
+  - requirements/api.yaml
+  priority: high
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/lib/sql-session-api.test.ts
+      tests:
+      - creates a SQL session
+      - gets a SQL session by id
+      - counts rows in a session
+      - fetches rows from a session
+      - throws on create failure
+      - throws on get failure
+      - throws on count failure
+      - throws on rows failure
