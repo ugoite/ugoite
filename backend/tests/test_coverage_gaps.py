@@ -94,7 +94,7 @@ def test_request_identity_missing_raises() -> None:
     """REQ-SEC-003: request_identity raises 401 when no identity is set."""
     request = MagicMock()
     request.state = MagicMock()
-    del request.state.identity  # no identity attribute
+    request.state.identity = None  # no identity set (unauthenticated)
 
     with pytest.raises(HTTPException) as exc_info:
         request_identity(request)
@@ -268,9 +268,8 @@ def test_context_headers_request_none_raises() -> None:
 def test_context_headers_headers_none_raises() -> None:
     """REQ-API-001: _context_headers raises when headers cannot be resolved."""
     ctx = MagicMock()
-    # request has no headers attribute and is not a dict
+    # request has no headers attribute (enforced by the spec) and is not a dict
     request = MagicMock(spec=["method", "url", "path"])
-    del request.headers  # Ensure getattr returns None
     ctx.request_context.request = request
     with pytest.raises(RuntimeError, match="Missing request headers"):
         _context_headers(ctx)

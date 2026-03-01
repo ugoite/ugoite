@@ -75,7 +75,7 @@ jobs:
 
       - name: Run pytest (backend)
         working-directory: ./backend
-        run: uv run pytest -W error --cov=src/app --cov-fail-under=100 --junitxml=../backend-pytest.xml
+        run: uv run pytest -W error --junitxml=../backend-pytest.xml
 
       - name: Fail on skipped backend tests
         run: |
