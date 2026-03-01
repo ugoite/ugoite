@@ -7,7 +7,7 @@ milestones:
   - id: user-controlled-view
     status: planned
     source:
-      - docs/tasks/roadmap.md
+      - docs/version/v0.2/user-controlled-view.yaml
       - docs/spec/ui/README.md
     phases:
       - id: design
@@ -19,7 +19,7 @@ milestones:
   - id: ai-enabled-and-ai-used
     status: planned
     source:
-      - docs/tasks/roadmap.md
+      - docs/version/v0.2/ai-enabled-and-ai-used.yaml
       - docs/spec/stories/experimental.yaml
       - docs/spec/api/mcp.md
     phases:
