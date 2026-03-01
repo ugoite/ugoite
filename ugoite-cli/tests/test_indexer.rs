@@ -127,7 +127,8 @@ fn test_extract_properties_h2_sections() {
     std::fs::write(
         &form_file,
         r#"{"name":"Entry","fields":{"Summary":{"type":"markdown"},"Status":{"type":"text"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file.to_str().unwrap()])
@@ -137,7 +138,14 @@ fn test_extract_properties_h2_sections() {
 
     let content = "---\nform: Entry\n---\n# My Entry\n\n## Summary\n\nThis is the summary.\n\n## Status\n\nactive";
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-h2"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-h2",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create entry");
@@ -173,7 +181,8 @@ fn test_extract_properties_precedence() {
     std::fs::write(
         &form_file,
         r#"{"name":"Entry","fields":{"Section A":{"type":"markdown"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file.to_str().unwrap()])
@@ -183,7 +192,14 @@ fn test_extract_properties_precedence() {
 
     let content = "---\nform: Entry\n---\n# Title Here\n\nContent before sections.\n\n## Section A\n\nValue A.";
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-prec"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-prec",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create entry");
@@ -207,7 +223,8 @@ fn test_query_index() {
         .args([
             "query",
             &space_path,
-            "--sql", "SELECT * FROM entries LIMIT 10",
+            "--sql",
+            "SELECT * FROM entries LIMIT 10",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -230,7 +247,8 @@ fn test_query_index_by_tag() {
         .args([
             "query",
             &space_path,
-            "--sql", "SELECT * FROM entries LIMIT 10",
+            "--sql",
+            "SELECT * FROM entries LIMIT 10",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -261,7 +279,8 @@ fn test_validate_properties_missing_required() {
     std::fs::write(
         &form_file,
         r#"{"name":"Entry","fields":{"Body":{"type":"markdown"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file.to_str().unwrap()])
@@ -271,7 +290,14 @@ fn test_validate_properties_missing_required() {
 
     let content = "---\nform: Entry\n---\ncontent without title section";
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "no-title-entry"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "no-title-entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create entry");
@@ -304,7 +330,8 @@ fn test_validate_properties_valid() {
     std::fs::write(
         &form_file,
         r#"{"name":"Entry","fields":{"Body":{"type":"markdown"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file.to_str().unwrap()])
@@ -312,9 +339,17 @@ fn test_validate_properties_valid() {
         .output()
         .expect("create form");
 
-    let content = "---\nform: Entry\n---\n# Valid Entry\n\n## Body\n\nAll required sections present.";
+    let content =
+        "---\nform: Entry\n---\n# Valid Entry\n\n## Body\n\nAll required sections present.";
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "valid-entry"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "valid-entry",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create entry");
@@ -380,4 +415,3 @@ fn test_indexer_watch_loop_triggers_run() {
     // Should show run subcommand
     assert!(stdout.contains("run") || stdout.contains("index"));
 }
-

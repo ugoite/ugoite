@@ -14,7 +14,10 @@ fn ugoite_bin() -> String {
 }
 
 /// Create a space and an Entry form, return (root, space_path, config_path).
-fn setup_space_with_form(dir: &tempfile::TempDir, space_id: &str) -> (String, String, std::path::PathBuf) {
+fn setup_space_with_form(
+    dir: &tempfile::TempDir,
+    space_id: &str,
+) -> (String, String, std::path::PathBuf) {
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
     let space_path = format!("{root}/spaces/{space_id}");
@@ -93,7 +96,8 @@ fn test_migrate_form_remove_column() {
     std::fs::write(
         &form_file2,
         r#"{"name":"Entry","fields":{"Body":{"type":"markdown"},"Status":{"type":"text"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let update_output = Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file2.to_str().unwrap()])
@@ -120,4 +124,3 @@ fn test_migrate_form_remove_column() {
         String::from_utf8_lossy(&get_output.stderr)
     );
 }
-

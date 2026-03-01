@@ -51,10 +51,12 @@ fn test_create_space_s3_unimplemented() {
         .expect("failed to execute");
 
     // S3 is not supported in core mode; expect failure
-    assert!(!output.status.success() || {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        stderr.contains("not") || stderr.contains("unsupported") || stderr.contains("error")
-    });
+    assert!(
+        !output.status.success() || {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            stderr.contains("not") || stderr.contains("unsupported") || stderr.contains("error")
+        }
+    );
 }
 
 /// REQ-STO-005: Prevent duplicate space creation - returns error for existing space.

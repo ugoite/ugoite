@@ -21,9 +21,12 @@ fn test_cli_config_set_and_show() {
 
     let set_output = Command::new(ugoite_bin())
         .args([
-            "config", "set",
-            "--mode", "backend",
-            "--backend-url", "http://localhost:9000",
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://localhost:9000",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -53,9 +56,12 @@ fn test_space_list_uses_remote_endpoint_when_backend_mode() {
     // Set to backend mode with an unreachable URL
     Command::new(ugoite_bin())
         .args([
-            "config", "set",
-            "--mode", "backend",
-            "--backend-url", "http://127.0.0.1:19999",
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://127.0.0.1:19999",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -85,9 +91,12 @@ fn test_space_service_account_create_routes_to_backend() {
     // Set to backend mode with an unreachable URL
     Command::new(ugoite_bin())
         .args([
-            "config", "set",
-            "--mode", "backend",
-            "--backend-url", "http://127.0.0.1:19999",
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://127.0.0.1:19999",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -96,8 +105,11 @@ fn test_space_service_account_create_routes_to_backend() {
     // Service account creation should attempt to route to backend
     let output = Command::new(ugoite_bin())
         .args([
-            "space", "service-account-create",
-            &root, "my-space", "sa-name",
+            "space",
+            "service-account-create",
+            &root,
+            "my-space",
+            "sa-name",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

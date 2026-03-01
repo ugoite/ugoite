@@ -28,9 +28,12 @@ fn test_cli_sql_lint_reports_errors() {
 
     let output = Command::new(ugoite_bin())
         .args([
-            "sql", "lint",
-            &root, "lint-space",
-            "--sql", "SELECT * FROM nonexistent_table WHERE",
+            "sql",
+            "lint",
+            &root,
+            "lint-space",
+            "--sql",
+            "SELECT * FROM nonexistent_table WHERE",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -60,10 +63,14 @@ fn test_cli_sql_complete_suggests_tables() {
 
     let output = Command::new(ugoite_bin())
         .args([
-            "sql", "complete",
-            &root, "complete-space",
-            "--sql", "SELECT * FROM ",
-            "--cursor", "14",
+            "sql",
+            "complete",
+            &root,
+            "complete-space",
+            "--sql",
+            "SELECT * FROM ",
+            "--cursor",
+            "14",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

@@ -21,9 +21,12 @@ fn test_endpoint_config_roundtrip_uses_home_directory() {
 
     let set_output = Command::new(ugoite_bin())
         .args([
-            "config", "set",
-            "--mode", "backend",
-            "--backend-url", "http://localhost:8080",
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://localhost:8080",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

@@ -51,7 +51,8 @@ fn test_cli_form_update() {
     std::fs::write(
         &form_file,
         r#"{"name":"Entry","fields":{"Body":{"type":"markdown"}}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let update_output = Command::new(ugoite_bin())
         .args(["form", "update", &space_path, form_file.to_str().unwrap()])
@@ -78,4 +79,3 @@ fn test_cli_form_update() {
         String::from_utf8_lossy(&get_output.stderr)
     );
 }
-
