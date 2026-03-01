@@ -57,9 +57,11 @@ def test_service_account_scopes_and_revocation_flow(test_client: TestClient) -> 
     assert rejected_after_revoke.status_code == 401, rejected_after_revoke.text
     assert "revoked" in rejected_after_revoke.text.lower()
 
+
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import ugoite_core
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""

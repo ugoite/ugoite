@@ -153,6 +153,7 @@ def test_auth_rejects_revoked_api_key(
     assert response.status_code == 401
     assert response.json()["code"] == "revoked_key"
 
+
 from unittest.mock import MagicMock
 from fastapi import HTTPException
 from app.core.auth import require_authenticated_identity

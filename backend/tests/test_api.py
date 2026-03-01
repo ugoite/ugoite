@@ -1173,6 +1173,7 @@ def test_update_form_with_migration(
     assert "## priority" in content
     assert "High" in content
 
+
 import asyncio
 import json as _json
 from collections.abc import AsyncGenerator
@@ -1193,6 +1194,7 @@ from app.core.middleware import (
 )
 from app.core.storage import _ensure_local_root, storage_config_from_root
 from app.mcp.server import _context_headers, list_entries
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""

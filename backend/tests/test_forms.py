@@ -208,6 +208,7 @@ def test_form_req_form_007_row_reference_requires_target(space_id: str) -> None:
     response = client.post(f"/spaces/{space_id}/forms", json=valid_form)
     assert response.status_code == 201
 
+
 import asyncio
 from pathlib import Path
 from typing import Any
@@ -217,6 +218,7 @@ import ugoite_core
 from app.api.endpoints.forms import _persist_form_acl_settings
 from app.api.endpoints.space import _format_form_validation_errors
 from app.core.storage import storage_config_from_root
+
 
 def _amock(**kwargs: Any) -> AsyncMock:
     """Return an AsyncMock configured with keyword arguments."""
