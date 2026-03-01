@@ -37,15 +37,15 @@ export function EntryList(props: EntryListProps) {
 	// Unified accessors – controlled=false guarantees internalStore is not null
 	const entries = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).entries();
-		return internalStore?.entries();
+		return internalStore!.entries();
 	});
 	const loading = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).loading();
-		return internalStore?.loading();
+		return internalStore!.loading();
 	});
 	const error = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).error();
-		return internalStore?.error();
+		return internalStore!.error();
 	});
 
 	onMount(() => {
