@@ -1036,7 +1036,7 @@ a:hover {
 
 		.site-search {
 			order: 4;
-			width: 100%;
+			flex: 0 0 100%;
 		}
 
 		.doc-card-hero {
