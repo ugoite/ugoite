@@ -157,3 +157,255 @@ def test_space_member_revoke_removes_access(
 
     revoked_get = alice.get(f"/spaces/{space_id}")
     assert revoked_get.status_code == 403
+
+from typing import Any
+from unittest.mock import AsyncMock, patch
+import ugoite_core
+
+def _amock(**kwargs: Any) -> AsyncMock:
+    """Return an AsyncMock configured with keyword arguments."""
+    return AsyncMock(**kwargs)
+
+
+def test_list_members_success(test_client: TestClient) -> None:
+    """REQ-SEC-007: list members returns the owner as a member."""
+    test_client.post("/spaces", json={"name": "members-list-ws"})
+    response = test_client.get("/spaces/members-list-ws/members")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_list_members_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: list members returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "members-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_read",
+            ),
+        ),
+    ):
+        response = test_client.get("/spaces/members-authz-ws/members")
+    assert response.status_code == 403
+
+
+def test_list_members_not_found_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: list members returns 404 when space not found error occurs."""
+    test_client.post("/spaces", json={"name": "members-notfound-ws"})
+    with patch(
+        "ugoite_core.list_members",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.get("/spaces/members-notfound-ws/members")
+    assert response.status_code == 404
+
+
+def test_list_members_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: list members returns 500 on generic runtime error."""
+    test_client.post("/spaces", json={"name": "members-rt-ws"})
+    with patch(
+        "ugoite_core.list_members",
+        _amock(side_effect=RuntimeError("storage error")),
+    ):
+        response = test_client.get("/spaces/members-rt-ws/members")
+    assert response.status_code == 500
+
+
+def test_invite_member_already_active(test_client: TestClient) -> None:
+    """REQ-SEC-007: invite member returns 409 when member is already active."""
+    test_client.post("/spaces", json={"name": "members-dup-ws"})
+    with patch(
+        "ugoite_core.create_invitation",
+        _amock(side_effect=RuntimeError("member already active")),
+    ):
+        response = test_client.post(
+            "/spaces/members-dup-ws/members/invitations",
+            json={"user_id": "alice", "role": "viewer"},
+        )
+    assert response.status_code == 409
+
+
+def test_invite_member_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: invite member returns 404 when space/user not found."""
+    test_client.post("/spaces", json={"name": "members-inv-404-ws"})
+    with patch(
+        "ugoite_core.create_invitation",
+        _amock(side_effect=RuntimeError("user not found")),
+    ):
+        response = test_client.post(
+            "/spaces/members-inv-404-ws/members/invitations",
+            json={"user_id": "unknown-user", "role": "viewer"},
+        )
+    assert response.status_code == 404
+
+
+def test_invite_member_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: invite member returns 400 on other runtime error."""
+    test_client.post("/spaces", json={"name": "members-inv-rt-ws"})
+    with patch(
+        "ugoite_core.create_invitation",
+        _amock(side_effect=RuntimeError("validation failed")),
+    ):
+        response = test_client.post(
+            "/spaces/members-inv-rt-ws/members/invitations",
+            json={"user_id": "alice-x", "role": "viewer"},
+        )
+    assert response.status_code == 400
+
+
+def test_invite_member_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: invite member returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "members-inv-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_admin",
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/members-inv-authz-ws/members/invitations",
+            json={"user_id": "alice", "role": "viewer"},
+        )
+    assert response.status_code == 403
+
+
+def test_accept_invitation_expired(test_client: TestClient) -> None:
+    """REQ-SEC-007: accept invitation returns 410 when invitation is expired."""
+    test_client.post("/spaces", json={"name": "members-expired-ws"})
+    with patch(
+        "ugoite_core.accept_invitation",
+        _amock(side_effect=RuntimeError("invitation expired")),
+    ):
+        response = test_client.post(
+            "/spaces/members-expired-ws/members/accept",
+            json={"token": "expired-token"},
+        )
+    assert response.status_code == 410
+
+
+def test_accept_invitation_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: accept invitation returns 404 when token not found."""
+    test_client.post("/spaces", json={"name": "members-accept-404-ws"})
+    with patch(
+        "ugoite_core.accept_invitation",
+        _amock(side_effect=RuntimeError("invitation not found")),
+    ):
+        response = test_client.post(
+            "/spaces/members-accept-404-ws/members/accept",
+            json={"token": "bad-token"},
+        )
+    assert response.status_code == 404
+
+
+def test_accept_invitation_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: accept invitation returns 400 on generic runtime error."""
+    test_client.post("/spaces", json={"name": "members-accept-rt-ws"})
+    with patch(
+        "ugoite_core.accept_invitation",
+        _amock(side_effect=RuntimeError("bad request")),
+    ):
+        response = test_client.post(
+            "/spaces/members-accept-rt-ws/members/accept",
+            json={"token": "bad-token"},
+        )
+    assert response.status_code == 400
+
+
+def test_update_member_role_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: update member role returns 404 when member does not exist."""
+    test_client.post("/spaces", json={"name": "members-role-404-ws"})
+    with patch(
+        "ugoite_core.update_member_role",
+        _amock(side_effect=RuntimeError("member not found")),
+    ):
+        response = test_client.post(
+            "/spaces/members-role-404-ws/members/absent-user/role",
+            json={"role": "editor"},
+        )
+    assert response.status_code == 404
+
+
+def test_update_member_role_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: update member role returns 400 on generic runtime error."""
+    test_client.post("/spaces", json={"name": "members-role-rt-ws"})
+    with patch(
+        "ugoite_core.update_member_role",
+        _amock(side_effect=RuntimeError("invalid operation")),
+    ):
+        response = test_client.post(
+            "/spaces/members-role-rt-ws/members/alice/role",
+            json={"role": "editor"},
+        )
+    assert response.status_code == 400
+
+
+def test_update_member_role_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: update member role returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "members-role-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_admin",
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/members-role-authz-ws/members/alice/role",
+            json={"role": "editor"},
+        )
+    assert response.status_code == 403
+
+
+def test_revoke_member_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: revoke member returns 404 when member does not exist."""
+    test_client.post("/spaces", json={"name": "members-revoke-404-ws"})
+    with patch(
+        "ugoite_core.revoke_member",
+        _amock(side_effect=RuntimeError("member not found")),
+    ):
+        response = test_client.delete(
+            "/spaces/members-revoke-404-ws/members/absent-user",
+        )
+    assert response.status_code == 404
+
+
+def test_revoke_member_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: revoke member returns 400 on generic runtime error."""
+    test_client.post("/spaces", json={"name": "members-revoke-rt-ws"})
+    with patch(
+        "ugoite_core.revoke_member",
+        _amock(side_effect=RuntimeError("already revoked")),
+    ):
+        response = test_client.delete(
+            "/spaces/members-revoke-rt-ws/members/alice",
+        )
+    assert response.status_code == 400
+
+
+def test_revoke_member_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-007: revoke member returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "members-revoke-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_admin",
+            ),
+        ),
+    ):
+        response = test_client.delete(
+            "/spaces/members-revoke-authz-ws/members/alice",
+        )
+    assert response.status_code == 403
