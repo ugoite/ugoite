@@ -1,0 +1,39 @@
+id: roadmap
+version: "unknown"
+status: planned
+title: "Development Roadmap"
+goal: >
+  Outline major milestones for Ugoite development from MVP through native app,
+  aligned with the vision of "Local-First, AI-Native Knowledge Space for the Post-SaaS Era".
+phases:
+  - id: design
+    status: in_progress
+    tasks:
+      - description: "Define milestone overview table covering milestones 1-7"
+        done: true
+      - description: "Define canonical version milestone YAML sources"
+        done: true
+      - description: "Document timeline (tentative) for milestones 3-7"
+        done: true
+  - id: implementation
+    status: in_progress
+    tasks:
+      - description: "Milestone 1 MVP - core functionality (v0.1)"
+        done: true
+      - description: "Milestone 2 Full Configuration - architecture refinement (v0.1)"
+        done: true
+      - description: "Milestone 3 Markdown as Table - Iceberg storage + SQL (v0.1)"
+        done: true
+      - description: "Milestone 4 User Management - auth/authz/collaboration (v0.1)"
+        done: false
+      - description: "Milestone 5 User Controlled View - query-driven UI views (v0.2)"
+        done: false
+      - description: "Milestone 6 AI-Enabled & AI-Used - full MCP + vector search (v0.2)"
+        done: false
+      - description: "Milestone 7 Native App - Tauri desktop application"
+        done: false
+  - id: testing
+    status: planned
+    tasks:
+      - description: "All milestones validated via mise run test and mise run e2e"
+        done: false

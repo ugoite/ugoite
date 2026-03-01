@@ -18,21 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.93.0
-          components: rustfmt, clippy
-
-      - name: Restore Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            ugoite-core
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -60,18 +45,6 @@ jobs:
       - name: Run ty check (cli)
         working-directory: ./ugoite-cli
         run: uv run ty check .
-
-      - name: Run ty check (core)
-        working-directory: ./ugoite-core
-        run: uv run ty check .
-
-      - name: Run rustfmt check (core)
-        working-directory: ./ugoite-core
-        run: cargo fmt --check
-
-      - name: Run clippy (core)
-        working-directory: ./ugoite-core
-        run: cargo clippy -- -D warnings
 
       - name: Run pytest (backend)
         working-directory: ./backend
@@ -125,33 +98,3 @@ jobs:
           if skipped > 0:
               raise SystemExit(f"docs tests: skipped={skipped} is not allowed")
           PY
-
-      - name: Build core (maturin)
-        working-directory: ./ugoite-core
-        run: uv run maturin develop
-
-      - name: Run pytest (core)
-        working-directory: ./ugoite-core
-        run: uv run pytest -W error --junitxml=../core-pytest.xml
-
-      - name: Fail on skipped core tests
-        run: |
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          report = Path("core-pytest.xml")
-          root = ET.parse(report).getroot()
-          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
-          if skipped > 0:
-              raise SystemExit(f"ugoite-core tests: skipped={skipped} is not allowed")
-          PY
-
-      - name: Run cargo test (core)
-        working-directory: ./ugoite-core
-        run: cargo test
-
-      - name: Enforce Rust coverage floor (core)
-        working-directory: ./ugoite-core
-        run: cargo llvm-cov --summary-only --fail-under-lines 45

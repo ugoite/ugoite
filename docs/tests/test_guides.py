@@ -20,6 +20,7 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
 DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
 FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
+RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
@@ -147,7 +148,7 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
         key="bun-version",
     )
     rust_versions = _extract_workflow_pin_values(
-        [PYTHON_CI_WORKFLOW_PATH],
+        [RUST_CI_WORKFLOW_PATH],
         uses_fragment="rust-toolchain",
         key="toolchain",
     )
