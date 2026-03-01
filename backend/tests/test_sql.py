@@ -3,6 +3,10 @@
 REQ-API-006: Saved SQL CRUD.
 """
 
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+import ugoite_core
 from fastapi.testclient import TestClient
 
 
@@ -107,11 +111,6 @@ def test_sql_req_api_007_validation(test_client: TestClient) -> None:
         json=invalid_sql,
     )
     assert invalid_response.status_code == 422
-
-
-from typing import Any
-from unittest.mock import AsyncMock, patch
-import ugoite_core
 
 
 def _amock(**kwargs: Any) -> AsyncMock:
