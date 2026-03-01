@@ -133,7 +133,7 @@ requirements:
 
     '
   related_spec:
-  - ../tasks/roadmap.md
+  - ../version/unknown/roadmap.yaml
   priority: medium
   status: implemented
   tests:
@@ -144,4 +144,5 @@ requirements:
       - test_docs_req_ops_004_milestones_are_unnumbered_and_phased
       - test_docs_req_ops_004_release_preparation_is_explicit
       - test_docs_req_ops_004_v02_contains_target_milestones
+      - test_docs_req_ops_004_milestone_yaml_files_exist
       - test_docs_req_ops_004_issue_templates_support_phase

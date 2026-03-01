@@ -7,7 +7,7 @@ milestones:
   - id: mvp
     status: completed
     source:
-      - docs/tasks/archive/mvp-milestone.md
+      - docs/version/v0.1/mvp.yaml
     phases:
       - id: design
         status: completed
@@ -18,7 +18,7 @@ milestones:
   - id: full-configuration
     status: completed
     source:
-      - docs/tasks/archive/milestone-2-full-configuration.md
+      - docs/version/v0.1/full-configuration.yaml
     phases:
       - id: design
         status: completed
@@ -29,7 +29,7 @@ milestones:
   - id: markdown-as-table
     status: completed
     source:
-      - docs/tasks/archive/milestone-3-markdown-as-table.md
+      - docs/version/v0.1/markdown-as-table.yaml
     phases:
       - id: design
         status: completed
@@ -40,7 +40,7 @@ milestones:
   - id: user-management
     status: in_progress
     source:
-      - docs/tasks/tasks.md
+      - docs/version/v0.1/user-management.yaml
     phases:
       - id: design
         status: completed
