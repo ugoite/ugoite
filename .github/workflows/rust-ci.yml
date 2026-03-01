@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
           toolchain: 1.93.0
           components: rustfmt, clippy
@@ -39,7 +39,7 @@ jobs:
             ugoite-core/pyproject.toml
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@0adbae4d29359521325013e359f3079a4539f48a # cargo-llvm-cov
 
       - name: Run ty check (core)
         working-directory: ./ugoite-core
@@ -78,10 +78,6 @@ jobs:
           if skipped > 0:
               raise SystemExit(f"ugoite-core tests: skipped={skipped} is not allowed")
           PY
-
-      - name: Run cargo test (core)
-        working-directory: ./ugoite-core
-        run: cargo test
 
       - name: Enforce Rust coverage floor (core)
         working-directory: ./ugoite-core
