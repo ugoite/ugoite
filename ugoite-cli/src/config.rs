@@ -2,18 +2,13 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointMode {
+    #[default]
     Core,
     Backend,
     Api,
-}
-
-impl Default for EndpointMode {
-    fn default() -> Self {
-        Self::Core
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
