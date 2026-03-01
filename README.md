@@ -58,6 +58,7 @@ e2e/                # End-to-end tests (Bun)
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
 
@@ -76,6 +77,16 @@ Start development (backend + frontend + docsite):
 ```bash
 mise run dev
 ```
+
+If authentication is enabled and `localhost:3000` returns `Unauthorized`, configure local auth tokens first:
+
+```bash
+export UGOITE_BOOTSTRAP_BEARER_TOKEN="dev-local-token"
+export UGOITE_AUTH_BEARER_TOKEN="dev-local-token"
+mise run dev
+```
+
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for full setup options.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.

@@ -15,6 +15,27 @@ permissions:
   contents: read
 
 jobs:
+  version-consistency:
+    name: Tool Version Consistency Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "docs/tests/*.py"
+
+      - name: Check tool version consistency (REQ-OPS-001)
+        run: >
+          uv run --with pytest --with pyyaml --with bashlex
+          pytest -W error docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins -v
+
   devcontainer-build-smoke:
     name: Devcontainer Build and Smoke
     runs-on: ubuntu-24.04
