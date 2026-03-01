@@ -3,7 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
-use pyo3::prelude::*;
+
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -21,11 +21,6 @@ pub struct StorageConfig {
     #[serde(rename = "type")]
     pub storage_type: String,
     pub root: String,
-}
-
-#[pyfunction]
-pub fn test_storage_connection() -> PyResult<bool> {
-    Ok(true)
 }
 
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {

@@ -11,3 +11,6 @@ spaces/
 # Local VS Code MCP config
 .vscode/mcp.json
 frontend/coverage/
+/target/
+/Cargo.lock
+backend/.coverage

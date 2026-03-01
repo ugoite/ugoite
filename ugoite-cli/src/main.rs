@@ -1,0 +1,87 @@
+mod commands;
+mod config;
+mod http;
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "ugoite", about = "Ugoite CLI - Knowledge base management")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Authentication helpers
+    Auth(commands::auth::AuthCmd),
+    /// CLI endpoint routing settings
+    Config(commands::config::ConfigCmd),
+    /// Space management commands
+    Space(commands::space::SpaceCmd),
+    /// Entry management commands
+    Entry(commands::entry::EntryCmd),
+    /// Form management commands
+    Form(commands::form::FormCmd),
+    /// Asset management commands
+    Asset(commands::asset::AssetCmd),
+    /// Search commands
+    Search(commands::search::SearchCmd),
+    /// SQL linting and completion commands
+    Sql(commands::sql::SqlCmd),
+    /// Indexer operations
+    Index(commands::index::IndexCmd),
+    /// Create a new space
+    CreateSpace { root_path: String, space_id: String },
+    /// Query the index
+    Query {
+        space_path: String,
+        #[arg(long)]
+        sql: String,
+        #[arg(long, default_value_t = 100)]
+        limit: u64,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long)]
+        form: Option<String>,
+        #[arg(long)]
+        tag: Option<String>,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(run(cli));
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run(cli: Cli) -> Result<()> {
+    match cli.command {
+        Commands::Auth(cmd) => commands::auth::run(cmd).await,
+        Commands::Config(cmd) => commands::config::run(cmd).await,
+        Commands::Space(cmd) => commands::space::run(cmd).await,
+        Commands::Entry(cmd) => commands::entry::run(cmd).await,
+        Commands::Form(cmd) => commands::form::run(cmd).await,
+        Commands::Asset(cmd) => commands::asset::run(cmd).await,
+        Commands::Search(cmd) => commands::search::run(cmd).await,
+        Commands::Sql(cmd) => commands::sql::run(cmd).await,
+        Commands::Index(cmd) => commands::index::run(cmd).await,
+        Commands::CreateSpace {
+            root_path,
+            space_id,
+        } => commands::space::create_space_cmd(&root_path, &space_id).await,
+        Commands::Query {
+            space_path,
+            sql,
+            limit: _,
+            offset: _,
+            form: _,
+            tag: _,
+        } => commands::index::query_cmd(&space_path, &sql).await,
+    }
+}

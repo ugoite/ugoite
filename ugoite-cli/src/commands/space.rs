@@ -1,0 +1,275 @@
+use crate::config::{base_url, load_config, operator_for_path, parse_space_path, print_json};
+use crate::http;
+use anyhow::{bail, Result};
+use clap::{Args, Subcommand};
+use ugoite_core::sample_data::SampleDataOptions;
+
+#[derive(Args)]
+pub struct SpaceCmd {
+    #[command(subcommand)]
+    pub sub: SpaceSubCmd,
+}
+
+#[derive(Subcommand)]
+pub enum SpaceSubCmd {
+    /// List spaces
+    List { root_path: String },
+    /// Get space metadata
+    Get { root_path: String, space_id: String },
+    /// Patch space metadata
+    Patch {
+        root_path: String,
+        space_id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        storage_config: Option<String>,
+        #[arg(long)]
+        settings: Option<String>,
+    },
+    /// Create sample data
+    SampleData {
+        root_path: String,
+        space_id: String,
+        #[arg(long)]
+        scenario: Option<String>,
+        #[arg(long, default_value_t = 50)]
+        entry_count: usize,
+        #[arg(long)]
+        seed: Option<u64>,
+    },
+    /// List sample scenarios
+    SampleScenarios,
+    /// Create a sample data job
+    SampleJob {
+        root_path: String,
+        space_id: String,
+        #[arg(long)]
+        scenario: Option<String>,
+        #[arg(long, default_value_t = 50)]
+        entry_count: usize,
+        #[arg(long)]
+        seed: Option<u64>,
+    },
+    /// Get sample data job status
+    SampleJobStatus { root_path: String, job_id: String },
+    /// Test storage connection
+    TestConnection { storage_config_json: String },
+    /// List service accounts (backend/api mode only)
+    ServiceAccountList { root_path: String, space_id: String },
+    /// Create a service account (backend/api mode only)
+    ServiceAccountCreate {
+        root_path: String,
+        space_id: String,
+        #[arg(long)]
+        display_name: String,
+        #[arg(long, value_delimiter = ',')]
+        scopes: Vec<String>,
+    },
+    /// List space members (backend/api mode only)
+    Members { space_path: String },
+    /// Audit events (backend/api mode only)
+    AuditEvents {
+        space_path: String,
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 50)]
+        limit: u64,
+    },
+}
+
+pub async fn create_space_cmd(root_path: &str, space_id: &str) -> Result<()> {
+    let config = load_config();
+    if let Some(base) = base_url(&config) {
+        let result = http::http_post(
+            &format!("{base}/spaces/{space_id}"),
+            &serde_json::json!({"id": space_id}),
+        )?;
+        print_json(&result);
+        return Ok(());
+    }
+    let op = operator_for_path(root_path)?;
+    ugoite_core::space::create_space(&op, space_id, root_path).await?;
+    print_json(&serde_json::json!({"created": true, "id": space_id}));
+    Ok(())
+}
+
+pub async fn run(cmd: SpaceCmd) -> Result<()> {
+    let config = load_config();
+    match cmd.sub {
+        SpaceSubCmd::List { root_path } => {
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!("{base}/spaces"))?;
+                print_json(&result);
+                return Ok(());
+            }
+            let op = operator_for_path(&root_path)?;
+            let spaces = ugoite_core::space::list_spaces(&op).await?;
+            print_json(&spaces);
+        }
+        SpaceSubCmd::Get {
+            root_path,
+            space_id,
+        } => {
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!("{base}/spaces/{space_id}"))?;
+                print_json(&result);
+                return Ok(());
+            }
+            let op = operator_for_path(&root_path)?;
+            let space = ugoite_core::space::get_space_raw(&op, &space_id).await?;
+            print_json(&space);
+        }
+        SpaceSubCmd::Patch {
+            root_path,
+            space_id,
+            name,
+            storage_config,
+            settings,
+        } => {
+            let mut patch = serde_json::Map::new();
+            if let Some(n) = name {
+                patch.insert("name".to_string(), serde_json::json!(n));
+            }
+            if let Some(s) = &storage_config {
+                let v: serde_json::Value = serde_json::from_str(s)?;
+                patch.insert("storage_config".to_string(), v);
+            }
+            if let Some(s) = &settings {
+                let v: serde_json::Value = serde_json::from_str(s)?;
+                patch.insert("settings".to_string(), v);
+            }
+            if let Some(base) = base_url(&config) {
+                let result = http::http_patch(
+                    &format!("{base}/spaces/{space_id}"),
+                    &serde_json::Value::Object(patch),
+                )?;
+                print_json(&result);
+                return Ok(());
+            }
+            let op = operator_for_path(&root_path)?;
+            let result =
+                ugoite_core::space::patch_space(&op, &space_id, &serde_json::Value::Object(patch))
+                    .await?;
+            print_json(&result);
+        }
+        SpaceSubCmd::SampleData {
+            root_path,
+            space_id,
+            scenario,
+            entry_count,
+            seed,
+        } => {
+            let op = operator_for_path(&root_path)?;
+            let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
+            let opts = SampleDataOptions {
+                space_id: space_id.clone(),
+                scenario: scenario.unwrap_or_default(),
+                entry_count,
+                seed,
+            };
+            ugoite_core::sample_data::create_sample_space(&op, &root_uri, &opts).await?;
+            print_json(&serde_json::json!({"created": true}));
+        }
+        SpaceSubCmd::SampleScenarios => {
+            let scenarios = ugoite_core::sample_data::list_sample_scenarios();
+            print_json(&scenarios);
+        }
+        SpaceSubCmd::SampleJob {
+            root_path,
+            space_id,
+            scenario,
+            entry_count,
+            seed,
+        } => {
+            let op = operator_for_path(&root_path)?;
+            let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
+            let opts = SampleDataOptions {
+                space_id: space_id.clone(),
+                scenario: scenario.unwrap_or_default(),
+                entry_count,
+                seed,
+            };
+            let job =
+                ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
+            print_json(&job);
+        }
+        SpaceSubCmd::SampleJobStatus { root_path, job_id } => {
+            let op = operator_for_path(&root_path)?;
+            let job = ugoite_core::sample_data::get_sample_space_job(&op, &job_id).await?;
+            let v = serde_json::to_value(job)?;
+            print_json(&v);
+        }
+        SpaceSubCmd::TestConnection {
+            storage_config_json,
+        } => {
+            let config_val: serde_json::Value = serde_json::from_str(&storage_config_json)?;
+            let uri = config_val.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = if uri.starts_with("file://") || uri.starts_with('/') {
+                "local"
+            } else if uri.starts_with("memory://") {
+                "memory"
+            } else if uri.starts_with("s3://") {
+                "s3"
+            } else {
+                "unknown"
+            };
+            print_json(&serde_json::json!({"status": "ok", "mode": mode}));
+        }
+        SpaceSubCmd::ServiceAccountList {
+            root_path: _,
+            space_id,
+        } => {
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/service-accounts"))?;
+                print_json(&result);
+                return Ok(());
+            }
+            bail!("service-account-list requires backend or api mode");
+        }
+        SpaceSubCmd::ServiceAccountCreate {
+            root_path: _,
+            space_id,
+            display_name,
+            scopes,
+        } => {
+            if let Some(base) = base_url(&config) {
+                let result = http::http_post(
+                    &format!("{base}/spaces/{space_id}/service-accounts"),
+                    &serde_json::json!({
+                        "display_name": display_name,
+                        "scopes": scopes,
+                    }),
+                )?;
+                print_json(&result);
+                return Ok(());
+            }
+            bail!("service-account-create requires backend or api mode");
+        }
+        SpaceSubCmd::Members { space_path } => {
+            let (_, space_id) = parse_space_path(&space_path);
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/members"))?;
+                print_json(&result);
+                return Ok(());
+            }
+            bail!("members requires backend or api mode");
+        }
+        SpaceSubCmd::AuditEvents {
+            space_path,
+            offset,
+            limit,
+        } => {
+            let (_, space_id) = parse_space_path(&space_path);
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!(
+                    "{base}/spaces/{space_id}/audit-events?offset={offset}&limit={limit}"
+                ))?;
+                print_json(&result);
+                return Ok(());
+            }
+            bail!("audit-events requires backend or api mode");
+        }
+    }
+    Ok(())
+}

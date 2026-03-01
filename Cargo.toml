@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "ugoite-core",
+    "ugoite-cli",
+]
+resolver = "2"

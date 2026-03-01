@@ -29,6 +29,7 @@ jobs:
         with:
           workspaces: |
             ugoite-core
+            ugoite-cli
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -82,3 +83,15 @@ jobs:
       - name: Enforce Rust coverage floor (core)
         working-directory: ./ugoite-core
         run: cargo llvm-cov --summary-only --fail-under-lines 45
+
+      - name: Run rustfmt check (cli)
+        working-directory: ./ugoite-cli
+        run: cargo fmt --check
+
+      - name: Run clippy (cli)
+        working-directory: ./ugoite-cli
+        run: cargo clippy --no-default-features -- -D warnings
+
+      - name: Run tests (cli)
+        working-directory: ./ugoite-cli
+        run: cargo test --no-default-features
