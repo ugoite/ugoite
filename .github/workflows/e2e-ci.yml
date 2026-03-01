@@ -71,6 +71,15 @@ jobs:
           build-contexts: |
             shared=./shared
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install docsite dependencies
+        working-directory: ./docsite
+        run: bun install --frozen-lockfile
+
       - name: Install e2e dependencies
         working-directory: ./e2e
         run: npm ci
