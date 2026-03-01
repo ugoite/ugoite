@@ -32,11 +32,6 @@ export function SearchBar(props: SearchBarProps) {
 		onCleanup(() => clearTimeout(timeoutId));
 	});
 
-	const handleSubmit = (e: Event) => {
-		e.preventDefault();
-		// Search is already triggered by createEffect, but we can keep this for explicit enter key
-	};
-
 	const handleClear = () => {
 		setQuery("");
 		inputRef?.focus();
@@ -67,7 +62,7 @@ export function SearchBar(props: SearchBarProps) {
 
 	return (
 		<div class="search-bar">
-			<search class="relative" onSubmit={handleSubmit}>
+			<form class="relative" role="search">
 				<div class="relative flex items-center">
 					{/* Search Icon */}
 					<svg
@@ -115,7 +110,7 @@ export function SearchBar(props: SearchBarProps) {
 						</button>
 					</Show>
 				</div>
-			</search>
+			</form>
 
 			{/* Status Messages */}
 			<div class="mt-2 text-sm">
