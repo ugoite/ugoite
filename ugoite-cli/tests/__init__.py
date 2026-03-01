@@ -1,1 +1,0 @@
-"""Tests for ugoite-cli."""
