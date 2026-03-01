@@ -31,4 +31,24 @@ describe("sql helpers", () => {
 		expect(schema.tables?.Meeting).toContain("Date");
 		expect(schema.tables?.entries).toContain("Date");
 	});
+
+	it("should flag empty query", () => {
+		const diagnostics = sqlLintDiagnostics("");
+		expect(diagnostics.some((d) => d.message.includes("required"))).toBe(true);
+	});
+
+	it("should flag missing FROM clause", () => {
+		const diagnostics = sqlLintDiagnostics("SELECT 1");
+		expect(diagnostics.some((d) => d.message.includes("FROM"))).toBe(true);
+	});
+
+	it("should warn about multiple statements", () => {
+		const diagnostics = sqlLintDiagnostics("SELECT * FROM entries; SELECT 1 FROM foo");
+		expect(diagnostics.some((d) => d.message.includes("single statement"))).toBe(true);
+	});
+
+	it("should flag invalid LIMIT value", () => {
+		const diagnostics = sqlLintDiagnostics("SELECT * FROM entries LIMIT abc");
+		expect(diagnostics.some((d) => d.message.includes("LIMIT"))).toBe(true);
+	});
 });

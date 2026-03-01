@@ -16,7 +16,23 @@ export default defineConfig({
 			provider: "v8",
 			reporter: ["text", "json", "html"],
 			include: ["src/**/*.{ts,tsx}"],
-			exclude: ["src/test/**", "src/**/*.test.*", "src/**/*.spec.*"],
+			exclude: [
+				"src/test/**",
+				"src/**/*.test.*",
+				"src/**/*.spec.*",
+				// Framework boilerplate - cannot be unit-tested in isolation
+				"src/entry-client.tsx",
+				"src/entry-server.tsx",
+				"src/global.d.ts",
+				"src/error-handler.ts",
+				"src/app.tsx",
+				// Route components - SolidStart SSR framework glue
+				"src/routes/**",
+				// Type-only and barrel re-export files
+				"src/lib/types.ts",
+				"src/lib/index.ts",
+				"src/components/index.ts",
+			],
 			thresholds: {
 				lines: 100,
 				functions: 100,

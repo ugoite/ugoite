@@ -114,4 +114,50 @@ describe("MarkdownEditor", () => {
 		const textarea = screen.getByPlaceholderText("Start typing...");
 		expect(textarea).toBeInTheDocument();
 	});
+
+	it("should render split mode with editor and preview side by side", () => {
+		render(() => <MarkdownEditor content="# Split Test" onChange={() => {}} mode="split" />);
+
+		const textareas = document.querySelectorAll("textarea");
+		expect(textareas).toHaveLength(1);
+		const preview = document.querySelector(".preview");
+		expect(preview).toBeInTheDocument();
+	});
+
+	it("should render forced preview mode without edit toggle", () => {
+		render(() => <MarkdownEditor content="# Preview" onChange={() => {}} mode="preview" />);
+
+		expect(document.querySelector(".preview")).toBeInTheDocument();
+		expect(document.querySelector("textarea")).not.toBeInTheDocument();
+	});
+
+	it("should not call onSave when not dirty on Ctrl+S", async () => {
+		const onSave = vi.fn();
+		render(() => (
+			<MarkdownEditor content="# Test" onChange={() => {}} isDirty={false} onSave={onSave} />
+		));
+
+		const textarea = screen.getByRole("textbox");
+		fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
+
+		expect(onSave).not.toHaveBeenCalled();
+	});
+
+	it("does not save on non-matching keydown", () => {
+		const onSave = vi.fn();
+		render(() => (
+			<MarkdownEditor content="# Test" onChange={() => {}} isDirty={true} onSave={onSave} />
+		));
+		const textarea = screen.getByRole("textbox");
+		fireEvent.keyDown(textarea, { key: "x", metaKey: true });
+		expect(onSave).not.toHaveBeenCalled();
+	});
+
+	it("renders split mode with null content", () => {
+		// @ts-expect-error Testing null content in split mode
+		render(() => <MarkdownEditor content={null} onChange={() => {}} mode="split" />);
+		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+		expect(textarea.value).toBe("");
+		expect(document.querySelector(".preview")).toBeInTheDocument();
+	});
 });

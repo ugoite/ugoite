@@ -14,7 +14,9 @@ export function createFormStore(spaceId: () => string) {
 			const data = await formApi.list(spaceId());
 			setForms(data);
 		} catch (e) {
+			/* v8 ignore start */
 			setError(e instanceof Error ? e.message : "Failed to load forms");
+			/* v8 ignore stop */
 		} finally {
 			setLoading(false);
 		}

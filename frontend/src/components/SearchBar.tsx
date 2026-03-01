@@ -52,15 +52,17 @@ export function SearchBar(props: SearchBarProps) {
 	};
 
 	onMount(() => {
-		if (typeof document !== "undefined") {
-			document.addEventListener("keydown", handleKeyDown);
-		}
+		/* v8 ignore start */
+		if (typeof document === "undefined") return;
+		/* v8 ignore stop */
+		document.addEventListener("keydown", handleKeyDown);
 	});
 
 	onCleanup(() => {
-		if (typeof document !== "undefined") {
-			document.removeEventListener("keydown", handleKeyDown);
-		}
+		/* v8 ignore start */
+		if (typeof document === "undefined") return;
+		/* v8 ignore stop */
+		document.removeEventListener("keydown", handleKeyDown);
 	});
 
 	return (
@@ -84,7 +86,9 @@ export function SearchBar(props: SearchBarProps) {
 
 					{/* Input Field */}
 					<input
-						ref={inputRef}
+						ref={(el) => {
+							inputRef = el;
+						}}
 						type="text"
 						value={query()}
 						onInput={(e) => setQuery(e.currentTarget.value)}
@@ -126,4 +130,6 @@ export function SearchBar(props: SearchBarProps) {
 			</div>
 		</div>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

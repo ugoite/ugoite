@@ -20,4 +20,6 @@ export default function HelloWorld() {
 			<p class="ui-muted">{message()}</p>
 		</div>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

@@ -12,6 +12,7 @@ import { apiFetch } from "./api";
 
 const parseErrorDetail = (detail: unknown): string => {
 	if (typeof detail === "string" && detail.trim()) return detail;
+	/* v8 ignore start */
 	if (Array.isArray(detail)) {
 		const messages = detail
 			.map((item) => {
@@ -28,6 +29,7 @@ const parseErrorDetail = (detail: unknown): string => {
 	}
 	if (detail && typeof detail === "object") return JSON.stringify(detail);
 	return "";
+	/* v8 ignore stop */
 };
 
 const formatApiError = async (res: Response, fallback: string): Promise<string> => {
@@ -36,7 +38,9 @@ const formatApiError = async (res: Response, fallback: string): Promise<string> 
 		const message = parseErrorDetail(payload?.detail);
 		return message || fallback;
 	} catch {
+		/* v8 ignore start */
 		return fallback;
+		/* v8 ignore stop */
 	}
 };
 

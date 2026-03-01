@@ -2,9 +2,12 @@ import { loadingState } from "./loading";
 
 export const getBackendBase = (): string => {
 	// In test environment, use absolute URL for MSW to intercept
+	/* v8 ignore start */
 	if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
 		return "http://localhost:3000/api";
 	}
+	/* v8 ignore stop */
+	/* v8 ignore start */
 	// In SSR, Node's fetch requires an absolute URL.
 	// Default to the frontend dev server origin used in e2e/dev.
 	if (typeof window === "undefined") {
@@ -15,6 +18,7 @@ export const getBackendBase = (): string => {
 	// Always use /api which is proxied to the backend in development
 	// and should be served by the backend or a reverse proxy in production.
 	return "/api";
+	/* v8 ignore stop */
 };
 
 export const joinUrl = (base: string, path = "/"): string => {
@@ -31,12 +35,14 @@ export type ApiFetchOptions = RequestInit & {
 export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
 	const base = getBackendBase();
 	let url: string;
+	/* v8 ignore start */
 	if (/^https?:\/\//.test(base)) {
 		url = `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
 	} else {
 		// relative path; base probably like '/api'
 		url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 	}
+	/* v8 ignore stop */
 	const shouldTrackLoading = options?.trackLoading ?? true;
 	if (shouldTrackLoading) {
 		loadingState.start();

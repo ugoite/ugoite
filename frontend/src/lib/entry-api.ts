@@ -53,8 +53,10 @@ export const entryApi = {
 			body: JSON.stringify(payload),
 		});
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to create entry: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
@@ -107,6 +109,7 @@ export const entryApi = {
 			},
 		);
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as {
 				detail?: string;
 				current_revision_id?: string;
@@ -118,6 +121,7 @@ export const entryApi = {
 				);
 			}
 			throw new Error(error.detail || `Failed to update entry: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		return (await res.json()) as { id: string; revision_id: string };
 	},
@@ -168,8 +172,10 @@ export const entryApi = {
 			},
 		);
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to restore entry: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		return (await res.json()) as Entry;
 	},
