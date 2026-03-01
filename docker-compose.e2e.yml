@@ -1,0 +1,24 @@
+# E2E test compose file using pre-built Docker images.
+# Used by e2e-ci.yml to run end-to-end tests against production images
+# built by docker-build-ci.yml (loaded into the local daemon via GHA cache).
+services:
+  backend:
+    image: ugoite-backend:e2e
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - UGOITE_ROOT=/data
+      - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_AUTH_BEARER_TOKENS_JSON=${UGOITE_AUTH_BEARER_TOKENS_JSON}
+      - UGOITE_BOOTSTRAP_BEARER_TOKEN=${UGOITE_BOOTSTRAP_BEARER_TOKEN}
+      - UGOITE_BOOTSTRAP_USER_ID=e2e-user
+
+  frontend:
+    image: ugoite-frontend:e2e
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - UGOITE_AUTH_BEARER_TOKEN=${E2E_AUTH_BEARER_TOKEN}
+    depends_on:
+      - backend
