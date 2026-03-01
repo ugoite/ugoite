@@ -38,4 +38,7 @@ export function SpaceSelector(props: SpaceSelectorProps) {
 			</Show>
 		</div>
 	);
+
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

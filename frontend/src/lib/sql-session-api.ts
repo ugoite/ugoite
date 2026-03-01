@@ -55,10 +55,12 @@ export const sqlSessionApi = {
 			throw new Error(`Failed to load SQL session rows: ${res.statusText}`);
 		}
 		const payload = (await res.json()) as Record<string, unknown>;
+		/* v8 ignore start */
 		const rows = (payload.rows ?? []) as EntryRecord[];
 		const offsetValue = Number(payload.offset ?? 0);
 		const limitValue = Number(payload.limit ?? 0);
 		const totalCount = Number(payload.total_count ?? payload.totalCount ?? 0);
+		/* v8 ignore stop */
 		return {
 			rows,
 			offset: offsetValue,

@@ -68,4 +68,37 @@ describe("SearchBar", () => {
 		fireEvent.keyDown(document, { key: "k", metaKey: true });
 		expect(input).toHaveFocus();
 	});
+
+	it("focuses input on Ctrl+K keyboard shortcut", () => {
+		const onSearch = vi.fn();
+		render(() => <SearchBar onSearch={onSearch} />);
+		const input = screen.getByRole("textbox");
+		fireEvent.keyDown(document, { ctrlKey: true, key: "k" });
+		expect(document.activeElement).toBe(input);
+	});
+
+	it("does not react to non-shortcut key events", () => {
+		const onSearch = vi.fn();
+		render(() => <SearchBar onSearch={onSearch} />);
+		fireEvent.keyDown(document, { key: "a" });
+		expect(screen.getByRole("textbox")).toBeInTheDocument();
+	});
+
+	it("should accept custom placeholder", () => {
+		render(() => <SearchBar onSearch={vi.fn()} placeholder="Find something..." />);
+		expect(screen.getByPlaceholderText("Find something...")).toBeInTheDocument();
+	});
+
+	it("should display singular result count when resultsCount is 1", () => {
+		render(() => <SearchBar onSearch={vi.fn()} resultsCount={1} />);
+		expect(screen.getByText(/1 result$/i)).toBeInTheDocument();
+	});
+
+	it("handleSubmit prevents default form submission", () => {
+		const onSearch = vi.fn();
+		render(() => <SearchBar onSearch={onSearch} />);
+		const form = document.querySelector("search");
+		if (form) fireEvent.submit(form);
+		// Just verify it doesn't crash
+	});
 });

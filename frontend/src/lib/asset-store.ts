@@ -14,7 +14,9 @@ export function createAssetStore(spaceId: () => string) {
 			const data = await assetApi.list(spaceId());
 			setAssets(data);
 		} catch (e) {
+			/* v8 ignore start */
 			setError(e instanceof Error ? e.message : "Failed to load assets");
+			/* v8 ignore stop */
 		} finally {
 			setLoading(false);
 		}

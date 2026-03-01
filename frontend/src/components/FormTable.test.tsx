@@ -61,6 +61,13 @@ describe("FormTable", () => {
 			const rows = document.querySelectorAll("tbody tr");
 			expect(rows[0]).toHaveTextContent("B Entry");
 		});
+
+		fireEvent.click(titleHeader); // desc -> null (clear sort)
+		await waitFor(() => {
+			// Both entries still visible (sort cleared)
+			const rows = document.querySelectorAll("tbody tr");
+			expect(rows.length).toBe(2);
+		});
 	});
 
 	it("REQ-FE-020: filters entries globally", async () => {
@@ -320,5 +327,158 @@ describe("FormTable", () => {
 		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
 
 		expect(writeTextSpy).not.toHaveBeenCalled();
+	});
+
+	it("sort menu: handleSortFieldChange via dropdown", async () => {
+		const entryForm = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const entries = [
+			{ id: "1", title: "B", properties: { col: "v1" }, updated_at: "2026-01-02" },
+			{ id: "2", title: "A", properties: { col: "v2" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+
+		const { getByLabelText, getByText } = render(() => (
+			<FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+		));
+
+		await waitFor(() => getByText("A"));
+
+		// Open sort menu
+		fireEvent.click(getByLabelText("Sort menu"));
+		// Change sort field via dropdown
+		const sortFieldSelect = getByLabelText("Sort field");
+		fireEvent.change(sortFieldSelect, { target: { value: "title" } });
+
+		await waitFor(() => {
+			const rows = document.querySelectorAll("tbody tr");
+			expect(rows[0]).toHaveTextContent("A");
+		});
+
+		// Change to empty (clears sort)
+		fireEvent.change(sortFieldSelect, { target: { value: "" } });
+	});
+
+	it("column filter: updateColumnFilter via input", async () => {
+		const entryForm = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const entries = [
+			{ id: "1", title: "Apple", properties: { col: "fruit" }, updated_at: "2026-01-01" },
+			{ id: "2", title: "Carrot", properties: { col: "veggie" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+
+		render(() => <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />);
+
+		await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
+
+		// Column filters are visible (showColumnFilters starts true)
+		// Find the title column filter (first filter input after headers)
+		const filterInputs = document.querySelectorAll("input.ui-table-filter");
+		expect(filterInputs.length).toBeGreaterThan(0);
+
+		// Filter by title column
+		fireEvent.input(filterInputs[0], { target: { value: "Apple" } });
+
+		await waitFor(() => {
+			const rows = document.querySelectorAll("tbody tr");
+			expect(rows.length).toBe(1);
+		});
+	});
+
+	it("copy includes updated_at column when selected", async () => {
+		const entryForm = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const entries = [
+			{
+				id: "1",
+				title: "Entry1",
+				properties: { col: "val1" },
+				updated_at: new Date("2026-01-01").toISOString(),
+			},
+		];
+		vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+		const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+		Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
+
+		const { getByText } = render(() => (
+			<FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+		));
+
+		await waitFor(() => getByText("Entry1"));
+
+		// Select title cell (col 0)
+		const cell1 = getByText("Entry1");
+		// Get a cell with a date (updated_at column, col 2)
+		const updatedCell = document.querySelectorAll("tbody td")[3]; // Actions(0), Title(1), col(2), updated(3)
+
+		fireEvent.mouseDown(cell1);
+		fireEvent.mouseEnter(updatedCell, { buttons: 1 });
+		fireEvent.mouseUp(document);
+
+		fireEvent.keyDown(document, { key: "c", ctrlKey: true });
+
+		await waitFor(() => {
+			expect(writeTextSpy).toHaveBeenCalled();
+		});
+	});
+
+	it("inline edit title cell via handleCellUpdate", async () => {
+		const entryForm = {
+			name: "Test",
+			fields: { col: { type: "string" } },
+		} as any;
+		const entries = [
+			{ id: "1", title: "OldTitle", properties: { col: "val" }, updated_at: "2026-01-01" },
+		];
+		vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
+		const getSpy = vi.spyOn(entryApi, "get").mockResolvedValue({
+			id: "1",
+			title: "OldTitle",
+			content: "# OldTitle\n\n## col\nval",
+			revision_id: "rev1",
+		} as any);
+		const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
+
+		const { getByText, getByTitle } = render(() => (
+			<FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+		));
+
+		await waitFor(() => getByText("OldTitle"));
+
+		// Enable edit mode
+		fireEvent.click(getByTitle("Enable Editing"));
+
+		// Click on the title cell td
+		const titleText = getByText("OldTitle");
+		const titleTd = titleText.closest("td") ?? titleText;
+		fireEvent.click(titleTd);
+
+		// Find the title input using display value
+		const titleInput = await waitFor(() => {
+			const input = document.querySelector("input.ui-table-cell-input") as HTMLInputElement;
+			if (!input) throw new Error("title input not found");
+			return input;
+		});
+
+		fireEvent.input(titleInput, { target: { value: "NewTitle" } });
+		fireEvent.blur(titleInput);
+
+		await waitFor(() => {
+			expect(updateSpy).toHaveBeenCalledWith(
+				"ws",
+				"1",
+				expect.objectContaining({ markdown: expect.stringContaining("NewTitle") }),
+			);
+		});
+
+		updateSpy.mockRestore();
+		getSpy.mockRestore();
 	});
 });

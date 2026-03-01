@@ -46,7 +46,7 @@ jobs:
 
       - name: Run Vitest
         working-directory: ./frontend
-        run: bun run test:run --reporter=junit --outputFile=vitest-junit.xml
+        run: bun run test:run --coverage --reporter=junit --outputFile=vitest-junit.xml
 
       - name: Fail on skipped frontend tests
         run: |
