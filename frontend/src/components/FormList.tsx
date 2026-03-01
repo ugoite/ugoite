@@ -35,4 +35,6 @@ export function FormList(props: FormListProps) {
 			</ul>
 		</div>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

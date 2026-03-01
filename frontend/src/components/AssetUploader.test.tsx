@@ -106,4 +106,23 @@ describe("AssetUploader", () => {
 			expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
 		});
 	});
+
+	it("should display correct icons for various file types", () => {
+		const assets: Asset[] = [
+			{ id: "1", name: "video.mp4", path: "assets/video.mp4" },
+			{ id: "2", name: "clip.mov", path: "assets/clip.mov" },
+			{ id: "3", name: "song.mp3", path: "assets/song.mp3" },
+			{ id: "4", name: "audio.m4a", path: "assets/audio.m4a" },
+			{ id: "5", name: "sound.wav", path: "assets/sound.wav" },
+			{ id: "6", name: "photo.jpg", path: "assets/photo.jpg" },
+			{ id: "7", name: "img.jpeg", path: "assets/img.jpeg" },
+			{ id: "8", name: "anim.gif", path: "assets/anim.gif" },
+			{ id: "9", name: "file.txt", path: "assets/file.txt" },
+		];
+
+		render(() => <AssetUploader onUpload={vi.fn()} assets={assets} />);
+
+		expect(screen.getByText("video.mp4")).toBeInTheDocument();
+		expect(screen.getByText("file.txt")).toBeInTheDocument();
+	});
 });

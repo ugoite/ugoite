@@ -3,8 +3,10 @@
 // REQ-FE-003: Persist space selection
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createRoot } from "solid-js";
+import { http, HttpResponse } from "msw";
 import { createSpaceStore } from "./space-store";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
+import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
 
 // Mock localStorage
@@ -146,6 +148,20 @@ describe("createSpaceStore", () => {
 			// Should remain on existing space
 			expect(store.selectedSpaceId()).toBe("existing");
 
+			dispose();
+		});
+	});
+
+	it("should throw and set error on loadSpaces failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces", () =>
+				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
+			),
+		);
+		await createRoot(async (dispose) => {
+			const store = createSpaceStore();
+			await expect(store.loadSpaces()).rejects.toThrow("Failed to list spaces");
+			expect(store.error()).toContain("Failed to list spaces");
 			dispose();
 		});
 	});

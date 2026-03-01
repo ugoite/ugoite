@@ -100,4 +100,28 @@ describe("SpaceSettings", () => {
 			});
 		});
 	});
+
+	it("should show error when save fails", async () => {
+		const onSave = vi.fn().mockRejectedValue(new Error("Save failed"));
+		render(() => <SpaceSettings space={mockSpace} onSave={onSave} />);
+
+		const saveButton = screen.getByRole("button", { name: /save/i });
+		fireEvent.click(saveButton);
+
+		await waitFor(() => {
+			expect(screen.getByText("Save failed")).toBeInTheDocument();
+		});
+	});
+
+	it("renders with space that has no storage_config", () => {
+		const space = { id: "test", name: "Test", created_at: "2025-01-01T00:00:00Z" };
+		render(() => <SpaceSettings space={space as any} onSave={vi.fn()} />);
+		const uriInput = screen.getByPlaceholderText(/file:\/\/\/local\/path/i);
+		expect(uriInput).toHaveValue("");
+	});
+
+	it("test connection button not shown when onTestConnection not provided", () => {
+		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
+		expect(screen.queryByText(/test connection/i)).not.toBeInTheDocument();
+	});
 });

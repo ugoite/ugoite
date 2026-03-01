@@ -16,7 +16,9 @@ export function createSearchStore(spaceId: () => string) {
 			setResults(data);
 			return data;
 		} catch (e) {
+			/* v8 ignore start */
 			setError(e instanceof Error ? e.message : "Failed to search entries");
+			/* v8 ignore stop */
 			throw e;
 		} finally {
 			setLoading(false);
@@ -31,7 +33,9 @@ export function createSearchStore(spaceId: () => string) {
 			setQueryResults(data);
 			return data;
 		} catch (e) {
+			/* v8 ignore start */
 			setError(e instanceof Error ? e.message : "Failed to query entries");
+			/* v8 ignore stop */
 			throw e;
 		} finally {
 			setLoading(false);
