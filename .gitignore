@@ -10,3 +10,4 @@ spaces/
 
 # Local VS Code MCP config
 .vscode/mcp.json
+backend/.coverage

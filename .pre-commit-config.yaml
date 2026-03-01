@@ -44,6 +44,13 @@ repos:
         pass_filenames: false
         files: ^backend/
 
+      - id: pytest-backend
+        name: pytest (backend, 100% coverage)
+        entry: bash -c "cd backend && uv run pytest --cov=src/app --cov-fail-under=100 -q"
+        language: system
+        pass_filenames: false
+        files: ^backend/
+
       - id: ty-cli
         name: "ty: ugoite-cli type check"
         entry: bash -c "cd ugoite-cli && uv run ty check ."
