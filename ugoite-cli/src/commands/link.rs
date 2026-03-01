@@ -32,7 +32,13 @@ pub enum LinkSubCmd {
     },
 }
 
-pub async fn cmd_link_create(_space_root: &str, _space_id: &str, _source_id: &str, _target_id: &str, _kind: Option<&str>) -> Result<()> {
+pub async fn cmd_link_create(
+    _space_root: &str,
+    _space_id: &str,
+    _source_id: &str,
+    _target_id: &str,
+    _kind: Option<&str>,
+) -> Result<()> {
     anyhow::bail!("Link commands removed. Use row_reference fields instead.")
 }
 
@@ -46,14 +52,31 @@ pub async fn cmd_link_delete(_space_root: &str, _space_id: &str, _link_id: &str)
 
 pub async fn run(cmd: LinkCmd) -> Result<()> {
     match cmd.cmd {
-        LinkSubCmd::Create { space_root, space_id, source_id, target_id, kind } => {
-            cmd_link_create(&space_root, &space_id, &source_id, &target_id, kind.as_deref()).await
+        LinkSubCmd::Create {
+            space_root,
+            space_id,
+            source_id,
+            target_id,
+            kind,
+        } => {
+            cmd_link_create(
+                &space_root,
+                &space_id,
+                &source_id,
+                &target_id,
+                kind.as_deref(),
+            )
+            .await
         }
-        LinkSubCmd::List { space_root, space_id, entry_id } => {
-            cmd_link_list(&space_root, &space_id, &entry_id).await
-        }
-        LinkSubCmd::Delete { space_root, space_id, link_id } => {
-            cmd_link_delete(&space_root, &space_id, &link_id).await
-        }
+        LinkSubCmd::List {
+            space_root,
+            space_id,
+            entry_id,
+        } => cmd_link_list(&space_root, &space_id, &entry_id).await,
+        LinkSubCmd::Delete {
+            space_root,
+            space_id,
+            link_id,
+        } => cmd_link_delete(&space_root, &space_id, &link_id).await,
     }
 }

@@ -75,9 +75,14 @@ fn test_integrity_provider_invalid_hmac_key() {
 
     Command::new(ugoite_bin())
         .args([
-            "entry", "create", &root, "hmac-space",
-            "--id", "hmac-entry",
-            "--content", "# HMAC Test Entry",
+            "entry",
+            "create",
+            &root,
+            "hmac-space",
+            "--id",
+            "hmac-entry",
+            "--content",
+            "# HMAC Test Entry",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

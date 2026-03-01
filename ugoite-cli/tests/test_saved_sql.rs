@@ -30,10 +30,14 @@ fn test_saved_sql_req_api_006_crud() {
     // Create a saved query
     let create_output = Command::new(ugoite_bin())
         .args([
-            "sql", "saved-create",
-            "--name", "my-query",
-            "--sql", "SELECT * FROM entries",
-            &space_path, "my-query",
+            "sql",
+            "saved-create",
+            "--name",
+            "my-query",
+            "--sql",
+            "SELECT * FROM entries",
+            &space_path,
+            "my-query",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -76,10 +80,14 @@ fn test_saved_sql_req_api_007_validation() {
     // Attempt to create a saved query with invalid SQL
     let create_output = Command::new(ugoite_bin())
         .args([
-            "sql", "saved-create",
-            "--name", "bad-query",
-            "--sql", "THIS IS NOT VALID SQL !!!",
-            &space_path, "bad-query",
+            "sql",
+            "saved-create",
+            "--name",
+            "bad-query",
+            "--sql",
+            "THIS IS NOT VALID SQL !!!",
+            &space_path,
+            "bad-query",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

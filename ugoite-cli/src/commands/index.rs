@@ -40,8 +40,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
         IndexSubCmd::Stats { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/stats"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/stats"))?;
                 print_json(&result);
                 return Ok(());
             }

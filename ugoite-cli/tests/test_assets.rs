@@ -35,11 +35,7 @@ fn test_asset_lifecycle() {
 
     // Upload asset
     let upload_output = Command::new(ugoite_bin())
-        .args([
-            "asset", "upload",
-            &space_path,
-            asset_file.to_str().unwrap(),
-        ])
+        .args(["asset", "upload", &space_path, asset_file.to_str().unwrap()])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

@@ -50,7 +50,14 @@ fn test_create_entry_basic() {
     let content = "---\nform: Entry\n---\n# Hello World\n\n## Body\n\nContent here.";
 
     let output = Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-001"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-001",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -74,7 +81,14 @@ fn test_update_entry_revision_mismatch() {
     let content = "---\nform: Entry\n---\n# Initial\n\n## Body\n\nContent.";
 
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-rev"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-rev",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -82,16 +96,23 @@ fn test_update_entry_revision_mismatch() {
     // Update with wrong revision should fail
     let output = Command::new(ugoite_bin())
         .args([
-            "entry", "update",
-            &space_path, "entry-rev",
-            "--markdown", "# Updated\n\n## Body\n\nNew content.",
-            "--parent-revision-id", "wrong-revision-id",
+            "entry",
+            "update",
+            &space_path,
+            "entry-rev",
+            "--markdown",
+            "# Updated\n\n## Body\n\nNew content.",
+            "--parent-revision-id",
+            "wrong-revision-id",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
 
-    assert!(!output.status.success(), "Expected failure on revision mismatch");
+    assert!(
+        !output.status.success(),
+        "Expected failure on revision mismatch"
+    );
 }
 
 /// REQ-ENTRY-003: Entry history is appended on each update.
@@ -103,7 +124,14 @@ fn test_entry_history_append() {
     let content = "---\nform: Entry\n---\n# Version 1\n\n## Body\n\nContent.";
 
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-hist"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-hist",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -134,7 +162,14 @@ fn test_entry_history_diff() {
     let content = "---\nform: Entry\n---\n# Version 1\n\n## Body\n\nContent.";
 
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-diff"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-diff",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -163,7 +198,14 @@ fn test_markdown_sections_persist() {
     let content = "---\nform: Entry\n---\n# Entry Title\n\n## Body\n\nThis is the body section.";
 
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-sections"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-sections",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -192,7 +234,14 @@ fn test_list_entries_returns_properties_and_links() {
     let content = "---\nform: Entry\n---\n# List Test\n\n## Body\n\nContent here.";
 
     Command::new(ugoite_bin())
-        .args(["entry", "create", "--content", content, &space_path, "entry-list-test"])
+        .args([
+            "entry",
+            "create",
+            "--content",
+            content,
+            &space_path,
+            "entry-list-test",
+        ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -212,5 +261,3 @@ fn test_list_entries_returns_properties_and_links() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
     assert!(v.as_array().map(|a| !a.is_empty()).unwrap_or(false));
 }
-
-
