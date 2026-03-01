@@ -1038,15 +1038,17 @@ def test_middleware_hmac_signature(
     """Test that HMAC signature header matches the response body."""
     response = test_client.get("/")
 
-    global_data = json.loads((temp_space_root / "hmac.json").read_text())
-    secret = base64.b64decode(global_data["hmac_key"])
+    hmac_data = json.loads(
+        (temp_space_root / "spaces" / "default" / "hmac.json").read_text(),
+    )
+    secret = base64.b64decode(hmac_data["hmac_key"])
     expected_signature = hmac.new(
         secret,
         response.content,
         hashlib.sha256,
     ).hexdigest()
 
-    assert response.headers["X-Ugoite-Key-Id"] == global_data["hmac_key_id"]
+    assert response.headers["X-Ugoite-Key-Id"] == hmac_data["hmac_key_id"]
     assert response.headers["X-Ugoite-Signature"] == expected_signature
 
 
