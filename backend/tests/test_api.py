@@ -1172,3 +1172,1268 @@ def test_update_form_with_migration(
     content = entry_data["content"]
     assert "## priority" in content
     assert "High" in content
+
+import asyncio
+import json as _json
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+from fastapi import HTTPException
+from starlette.responses import Response
+from app.api.endpoints.search import _is_sql_error
+from app.api.endpoints.space import (
+    _format_form_validation_errors,
+    _sanitize_space_meta,
+    _validate_entry_markdown_against_form,
+)
+from app.core.auth import require_authenticated_identity
+from app.core.middleware import (
+    _AuditRequestEvent,
+    _capture_response_body,
+    _emit_audit_event,
+    security_middleware,
+)
+from app.core.storage import _ensure_local_root, storage_config_from_root
+from app.mcp.server import _context_headers, list_entries
+
+def _amock(**kwargs: Any) -> AsyncMock:
+    """Return an AsyncMock configured with keyword arguments."""
+    return AsyncMock(**kwargs)
+
+
+def test_ensure_local_root_file_scheme(tmp_path: Path) -> None:
+    """REQ-STO-001: _ensure_local_root handles file:// URIs."""
+    target = tmp_path / "new_dir"
+    _ensure_local_root(f"file://{target}")
+    assert target.exists()
+
+
+def test_ensure_local_root_fs_scheme(tmp_path: Path) -> None:
+    """REQ-STO-001: _ensure_local_root handles fs:// URIs."""
+    target = tmp_path / "fs_dir"
+    _ensure_local_root(f"fs://{target}")
+    assert target.exists()
+
+
+def test_ensure_local_root_oserror_plain_path(tmp_path: Path) -> None:
+    """REQ-STO-001: _ensure_local_root propagates OSError for plain paths."""
+    with (
+        patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")),
+        pytest.raises(OSError, match="Permission denied"),
+    ):
+        _ensure_local_root("/nonexistent/deeply/nested/path")
+
+
+def test_ensure_local_root_oserror_file_scheme(tmp_path: Path) -> None:
+    """REQ-STO-001: _ensure_local_root propagates OSError for file:// paths."""
+    with (
+        patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")),
+        pytest.raises(OSError, match="Permission denied"),
+    ):
+        _ensure_local_root(f"file://{tmp_path}/blocked")
+
+
+def test_ensure_local_root_non_file_scheme() -> None:
+    """REQ-STO-001: _ensure_local_root returns early for non-file schemes."""
+    # Should not raise - s3:// scheme is not file-based, just returns
+    _ensure_local_root("s3://my-bucket/spaces")
+
+
+def test_ensure_local_root_file_scheme_empty_path() -> None:
+    """REQ-STO-001: _ensure_local_root raises ValueError for empty local path."""
+    # Mock Path so str() returns "" to trigger the empty path guard
+    mock_path_instance = MagicMock()
+    mock_path_instance.__str__ = MagicMock(return_value="")
+
+    with (
+        patch("app.core.storage.Path", return_value=mock_path_instance),
+        pytest.raises(ValueError, match="Local storage path is empty"),
+    ):
+        _ensure_local_root("file:///some/path")
+
+
+def test_capture_response_body_without_iterator() -> None:
+    """REQ-SEC-002: _capture_response_body reads body attribute when no iterator."""
+    response = Response(content=b"direct body content")
+    result = asyncio.run(_capture_response_body(response))
+    assert result == b"direct body content"
+
+
+def test_middleware_sse_response_not_captured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-001: SSE responses bypass body capture in security middleware."""
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    mock_request = MagicMock()
+    mock_request.client.host = "127.0.0.1"
+    mock_request.url.path = "/"
+    mock_request.headers = {}
+
+    async def _gen() -> AsyncGenerator[bytes]:
+        yield b"data: test\n\n"
+
+    sse_response = StreamingResponse(_gen(), media_type="text/event-stream")
+
+    async def _call_next(_req: object) -> Response:
+        return sse_response
+
+    result = asyncio.run(security_middleware(mock_request, _call_next))
+    assert result is sse_response
+
+
+def test_middleware_403_non_json_body_handled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: middleware handles non-JSON 403 response body gracefully."""
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    mock_request = MagicMock()
+    mock_request.client.host = "127.0.0.1"
+    mock_request.url.path = "/"
+    mock_request.method = "GET"
+    mock_request.headers = {}
+
+    forbidden_response = Response(content=b"not valid json", status_code=403)
+
+    async def _call_next(_req: object) -> Response:
+        return forbidden_response
+
+    async def _fake_sign(_body: bytes, _root: object) -> tuple[str, str]:
+        return "kid", "sig"
+
+    with patch("app.core.middleware.build_response_signature", _fake_sign):
+        result = asyncio.run(security_middleware(mock_request, _call_next))
+    # Should not raise; 403 with non-JSON body is handled
+    assert result.status_code == 403
+
+
+def test_middleware_emit_audit_runtime_error_swallowed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-008: RuntimeError in audit emission is logged and swallowed."""
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    mock_request = MagicMock()
+    mock_request.url.path = "/spaces/test-space/entries"
+    mock_request.headers = {}
+    mock_request.method = "GET"
+
+    event = _AuditRequestEvent(
+        action="data.mutation",
+        outcome="success",
+        actor_user_id="user1",
+    )
+
+    with patch(
+        "ugoite_core.append_audit_event",
+        _amock(side_effect=RuntimeError("storage failure")),
+    ):
+        # Should not raise; RuntimeError is caught and logged
+        asyncio.run(_emit_audit_event(mock_request, event))
+
+
+def test_context_headers_request_none_raises() -> None:
+    """REQ-API-001: _context_headers raises when request context is None."""
+    ctx = MagicMock()
+    ctx.request_context.request = None
+    with pytest.raises(RuntimeError, match="Missing authentication context"):
+        _context_headers(ctx)
+
+
+def test_context_headers_headers_none_raises() -> None:
+    """REQ-API-001: _context_headers raises when headers cannot be resolved."""
+    ctx = MagicMock()
+    # request has no headers attribute (enforced by the spec) and is not a dict
+    request = MagicMock(spec=["method", "url", "path"])
+    ctx.request_context.request = request
+    with pytest.raises(RuntimeError, match="Missing request headers"):
+        _context_headers(ctx)
+
+
+def test_context_headers_dict_request() -> None:
+    """REQ-API-001: _context_headers resolves headers from dict-style request."""
+    ctx = MagicMock()
+    ctx.request_context.request = {
+        "headers": {"authorization": "Bearer token"},
+        "method": "GET",
+        "path": "/spaces/s/entries",
+    }
+    headers, _, _, _ = _context_headers(ctx)
+    assert headers == {"authorization": "Bearer token"}
+
+
+def test_context_headers_with_url_object() -> None:
+    """REQ-API-001: _context_headers extracts path from request.url.path."""
+    ctx = MagicMock()
+    request = MagicMock()
+    request.headers = {"authorization": "Bearer token", "x-request-id": "req-123"}
+    request.url.path = "/spaces/test/entries"
+    request.method = "GET"
+    ctx.request_context.request = request
+    _, _, path, req_id = _context_headers(ctx)
+    assert path == "/spaces/test/entries"
+    assert req_id == "req-123"
+
+
+def test_list_entries_mcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-API-002: MCP list_entries resource returns JSON-encoded entries."""
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    ctx = MagicMock()
+    request = MagicMock()
+    request.headers = {"authorization": "Bearer test-token"}
+    request.url.path = "/spaces/mcp-space/entries"
+    request.method = "GET"
+    ctx.request_context.request = request
+
+    fake_identity = MagicMock()
+    fake_entries = [{"id": "e1", "content": "# Hello"}]
+
+    async def _run() -> str:
+        with (
+            patch(
+                "app.mcp.server.authenticate_headers_for_space",
+                _amock(return_value=fake_identity),
+            ),
+            patch(
+                "ugoite_core.require_space_action",
+                _amock(return_value=None),
+            ),
+            patch(
+                "ugoite_core.list_entries",
+                _amock(return_value=fake_entries),
+            ),
+            patch(
+                "ugoite_core.filter_readable_entries",
+                _amock(return_value=fake_entries),
+            ),
+        ):
+            return await list_entries("mcp-space", ctx)
+
+    result = asyncio.run(_run())
+    assert _json.loads(result) == fake_entries
+
+
+def test_list_assets_success(test_client: TestClient) -> None:
+    """REQ-API-001: list assets returns empty list for new space."""
+    test_client.post("/spaces", json={"name": "asset-list-ws"})
+    response = test_client.get("/spaces/asset-list-ws/assets")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_assets_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: list assets returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "asset-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "asset_read",
+            ),
+        ),
+    ):
+        response = test_client.get("/spaces/asset-authz-ws/assets")
+    assert response.status_code == 403
+
+
+def test_list_assets_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: list assets returns 500 on unexpected error."""
+    test_client.post("/spaces", json={"name": "asset-err-ws"})
+    with patch(
+        "ugoite_core.list_assets",
+        _amock(side_effect=RuntimeError("storage failure")),
+    ):
+        response = test_client.get("/spaces/asset-err-ws/assets")
+    assert response.status_code == 500
+
+
+def test_upload_asset_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: upload asset returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "asset-upload-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "asset_write",
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/asset-upload-authz-ws/assets",
+            files={"file": ("test.txt", b"hello", "text/plain")},
+        )
+    assert response.status_code == 403
+
+
+def test_upload_asset_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: upload asset returns 500 on unexpected exception."""
+    test_client.post("/spaces", json={"name": "asset-upload-exc-ws"})
+    with patch(
+        "ugoite_core.save_asset",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.post(
+            "/spaces/asset-upload-exc-ws/assets",
+            files={"file": ("test.txt", b"hello", "text/plain")},
+        )
+    assert response.status_code == 500
+
+
+def test_delete_asset_success(test_client: TestClient) -> None:
+    """REQ-API-001: delete asset returns 200 when asset is deleted successfully."""
+    test_client.post("/spaces", json={"name": "asset-del-ws"})
+    upload_response = test_client.post(
+        "/spaces/asset-del-ws/assets",
+        files={"file": ("test.txt", b"hello asset", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    asset_id = upload_response.json()["id"]
+
+    delete_response = test_client.delete(
+        f"/spaces/asset-del-ws/assets/{asset_id}",
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["status"] == "deleted"
+
+
+def test_delete_asset_runtime_error_generic(test_client: TestClient) -> None:
+    """REQ-API-001: delete asset returns 500 for non-ref/non-notfound RuntimeError."""
+    test_client.post("/spaces", json={"name": "asset-del-err-ws"})
+    with patch(
+        "ugoite_core.delete_asset",
+        _amock(side_effect=RuntimeError("unexpected storage error")),
+    ):
+        response = test_client.delete(
+            "/spaces/asset-del-err-ws/assets/some-asset",
+        )
+    assert response.status_code == 500
+
+
+def test_delete_asset_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: delete asset returns 500 for unexpected exception."""
+    test_client.post("/spaces", json={"name": "asset-del-exc-ws"})
+    with patch(
+        "ugoite_core.delete_asset",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.delete(
+            "/spaces/asset-del-exc-ws/assets/some-asset",
+        )
+    assert response.status_code == 500
+
+
+def test_delete_asset_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: delete asset returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "asset-del-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "asset_write",
+            ),
+        ),
+    ):
+        response = test_client.delete(
+            "/spaces/asset-del-authz-ws/assets/some-asset",
+        )
+    assert response.status_code == 403
+
+
+def test_create_entry_already_exists(test_client: TestClient) -> None:
+    """REQ-API-002: create entry returns 409 when entry already exists."""
+    test_client.post("/spaces", json={"name": "entry-dup-ws"})
+    with (
+        patch(
+            "ugoite_core.require_markdown_write",
+            _amock(return_value=None),
+        ),
+        patch(
+            "ugoite_core.create_entry",
+            _amock(side_effect=RuntimeError("entry already exists")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-dup-ws/entries",
+            json={"id": "e-dup-2", "content": "# Title\n"},
+        )
+    assert response.status_code == 409
+
+
+def test_create_entry_form_error(test_client: TestClient) -> None:
+    """REQ-API-002: create entry returns 422 when form name is unknown."""
+    test_client.post("/spaces", json={"name": "entry-form-ws"})
+    with (
+        patch(
+            "ugoite_core.require_markdown_write",
+            _amock(return_value=None),
+        ),
+        patch(
+            "ugoite_core.create_entry",
+            _amock(side_effect=RuntimeError("unknown form type")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-form-ws/entries",
+            json={"content": "# Title\n"},
+        )
+    assert response.status_code == 422
+
+
+def test_create_entry_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: create entry returns 500 on unexpected exception."""
+    test_client.post("/spaces", json={"name": "entry-exc-ws"})
+    with (
+        patch(
+            "ugoite_core.require_markdown_write",
+            _amock(return_value=None),
+        ),
+        patch(
+            "ugoite_core.create_entry",
+            _amock(side_effect=ValueError("unexpected error")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-exc-ws/entries",
+            json={"content": "# Title\n"},
+        )
+    assert response.status_code == 500
+
+
+def test_create_entry_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: create entry returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-create-rt-ws"})
+    with (
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.create_entry",
+            _amock(side_effect=RuntimeError("storage corruption")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-create-rt-ws/entries",
+            json={"content": "# Title\n"},
+        )
+    assert response.status_code == 500
+
+
+def test_list_entries_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: list entries returns 500 on unexpected exception."""
+    test_client.post("/spaces", json={"name": "entry-list-exc-ws"})
+    with patch(
+        "ugoite_core.list_entries",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.get("/spaces/entry-list-exc-ws/entries")
+    assert response.status_code == 500
+
+
+def test_get_entry_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: get entry returns 404 when entry does not exist."""
+    test_client.post("/spaces", json={"name": "entry-get-404-ws"})
+    response = test_client.get("/spaces/entry-get-404-ws/entries/missing-entry")
+    assert response.status_code == 404
+
+
+def test_get_entry_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: get entry returns 500 on unexpected exception."""
+    test_client.post("/spaces", json={"name": "entry-get-exc-ws"})
+    with patch(
+        "ugoite_core.get_entry",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.get("/spaces/entry-get-exc-ws/entries/e1")
+    assert response.status_code == 500
+
+
+def test_get_entry_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: get entry returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-get-rt-ws"})
+    with (
+        patch("ugoite_core.require_entry_read", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_entry",
+            _amock(side_effect=RuntimeError("storage corruption")),
+        ),
+    ):
+        response = test_client.get("/spaces/entry-get-rt-ws/entries/e1")
+    assert response.status_code == 500
+
+
+def test_update_entry_conflict_then_404(test_client: TestClient) -> None:
+    """REQ-API-002: update entry returns 409 on revision conflict."""
+    test_client.post("/spaces", json={"name": "entry-upd-conflict-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.update_entry",
+            _amock(side_effect=RuntimeError("revision conflict detected")),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-conflict-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "old-rev"},
+        )
+    assert response.status_code == 409
+
+
+def test_update_entry_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: update entry returns 404 when entry does not exist."""
+    test_client.post("/spaces", json={"name": "entry-upd-404-ws"})
+    with patch(
+        "ugoite_core.get_entry",
+        _amock(side_effect=RuntimeError("entry not found")),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-404-ws/entries/missing",
+            json={"markdown": "# Updated\n", "parent_revision_id": "rev"},
+        )
+    assert response.status_code == 404
+
+
+def test_update_entry_form_validation_error(test_client: TestClient) -> None:
+    """REQ-API-002: update entry returns 422 for form validation failure."""
+    test_client.post("/spaces", json={"name": "entry-upd-form-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.update_entry",
+            _amock(side_effect=RuntimeError("unknown form reference")),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-form-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "rev"},
+        )
+    assert response.status_code == 422
+
+
+def test_update_entry_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: update entry returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-upd-rt-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.update_entry",
+            _amock(side_effect=RuntimeError("generic storage error")),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-rt-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "rev"},
+        )
+    assert response.status_code == 500
+
+
+def test_update_entry_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: update entry returns 500 on unexpected non-runtime exception."""
+    test_client.post("/spaces", json={"name": "entry-upd-exc-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.update_entry",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-exc-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "rev"},
+        )
+    assert response.status_code == 500
+
+
+def test_update_entry_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: update entry returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "entry-upd-authz-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch(
+            "ugoite_core.require_entry_write",
+            _amock(
+                side_effect=ugoite_core.AuthorizationError(
+                    "forbidden",
+                    "no access",
+                    "entry_write",
+                ),
+            ),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-authz-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "rev"},
+        )
+    assert response.status_code == 403
+
+
+def test_update_entry_conflict_retry_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: update entry 409 when conflict retry also fails."""
+    test_client.post("/spaces", json={"name": "entry-upd-retry-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    # First get_entry returns fake_entry, second raises RuntimeError
+    with (
+        patch(
+            "ugoite_core.get_entry",
+            AsyncMock(
+                side_effect=[
+                    fake_entry,
+                    RuntimeError("storage error during retry"),
+                ],
+            ),
+        ),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.update_entry",
+            _amock(side_effect=RuntimeError("revision conflict detected")),
+        ),
+    ):
+        response = test_client.put(
+            "/spaces/entry-upd-retry-ws/entries/e1",
+            json={"markdown": "# Updated\n", "parent_revision_id": "old-rev"},
+        )
+    assert response.status_code == 409
+
+
+def test_delete_entry_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: delete entry returns 404 when entry does not exist."""
+    test_client.post("/spaces", json={"name": "entry-del-404-ws"})
+    response = test_client.delete("/spaces/entry-del-404-ws/entries/missing")
+    assert response.status_code == 404
+
+
+def test_delete_entry_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: delete entry returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-del-rt-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.delete_entry",
+            _amock(side_effect=RuntimeError("storage error")),
+        ),
+    ):
+        response = test_client.delete("/spaces/entry-del-rt-ws/entries/e1")
+    assert response.status_code == 500
+
+
+def test_delete_entry_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: delete entry returns 500 on non-runtime exception."""
+    test_client.post("/spaces", json={"name": "entry-del-exc-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.delete_entry",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.delete("/spaces/entry-del-exc-ws/entries/e1")
+    assert response.status_code == 500
+
+
+def test_delete_entry_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: delete entry returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "entry-del-authz-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch(
+            "ugoite_core.require_entry_write",
+            _amock(
+                side_effect=ugoite_core.AuthorizationError(
+                    "forbidden",
+                    "no access",
+                    "entry_write",
+                ),
+            ),
+        ),
+    ):
+        response = test_client.delete("/spaces/entry-del-authz-ws/entries/e1")
+    assert response.status_code == 403
+
+
+def test_get_entry_history_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: get entry history returns 404 when entry does not exist."""
+    test_client.post("/spaces", json={"name": "entry-hist-404-ws"})
+    response = test_client.get(
+        "/spaces/entry-hist-404-ws/entries/missing/history",
+    )
+    assert response.status_code == 404
+
+
+def test_get_entry_history_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: get entry history returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-hist-rt-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_read", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_entry_history",
+            _amock(side_effect=RuntimeError("storage error")),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-hist-rt-ws/entries/e1/history",
+        )
+    assert response.status_code == 500
+
+
+def test_get_entry_history_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: get entry history returns 500 on non-runtime exception."""
+    test_client.post("/spaces", json={"name": "entry-hist-exc-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_read", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_entry_history",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-hist-exc-ws/entries/e1/history",
+        )
+    assert response.status_code == 500
+
+
+def test_get_entry_history_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: get entry history returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "entry-hist-authz-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch(
+            "ugoite_core.require_entry_read",
+            _amock(
+                side_effect=ugoite_core.AuthorizationError(
+                    "forbidden",
+                    "no access",
+                    "entry_read",
+                ),
+            ),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-hist-authz-ws/entries/e1/history",
+        )
+    assert response.status_code == 403
+
+
+def test_get_entry_revision_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: get entry revision returns 404 when revision does not exist."""
+    test_client.post("/spaces", json={"name": "entry-rev-404-ws"})
+    test_client.post(
+        "/spaces/entry-rev-404-ws/entries",
+        json={"id": "e1", "content": "# Title\n"},
+    )
+    response = test_client.get(
+        "/spaces/entry-rev-404-ws/entries/e1/history/missing-rev",
+    )
+    assert response.status_code == 404
+
+
+def test_get_entry_revision_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: get entry revision returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-rev-rt-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_read", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_entry_revision",
+            _amock(side_effect=RuntimeError("storage error")),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-rev-rt-ws/entries/e1/history/some-rev",
+        )
+    assert response.status_code == 500
+
+
+def test_get_entry_revision_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: get entry revision returns 500 on non-runtime exception."""
+    test_client.post("/spaces", json={"name": "entry-rev-exc-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_read", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_entry_revision",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-rev-exc-ws/entries/e1/history/some-rev",
+        )
+    assert response.status_code == 500
+
+
+def test_get_entry_revision_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: get entry revision returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "entry-rev-authz-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch(
+            "ugoite_core.require_entry_read",
+            _amock(
+                side_effect=ugoite_core.AuthorizationError(
+                    "forbidden",
+                    "no access",
+                    "entry_read",
+                ),
+            ),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-rev-authz-ws/entries/e1/history/rev1",
+        )
+    assert response.status_code == 403
+
+
+def test_restore_entry_not_found(test_client: TestClient) -> None:
+    """REQ-API-002: restore entry returns 404 when entry does not exist."""
+    test_client.post("/spaces", json={"name": "entry-restore-404-ws"})
+    response = test_client.post(
+        "/spaces/entry-restore-404-ws/entries/missing/restore",
+        json={"revision_id": "rev1"},
+    )
+    assert response.status_code == 404
+
+
+def test_restore_entry_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-002: restore entry returns 500 for generic runtime error."""
+    test_client.post("/spaces", json={"name": "entry-restore-rt-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.restore_entry",
+            _amock(side_effect=RuntimeError("storage error")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-restore-rt-ws/entries/e1/restore",
+            json={"revision_id": "rev1"},
+        )
+    assert response.status_code == 500
+
+
+def test_restore_entry_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-002: restore entry returns 500 on non-runtime exception."""
+    test_client.post("/spaces", json={"name": "entry-restore-exc-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch("ugoite_core.require_entry_write", _amock(return_value=None)),
+        patch(
+            "ugoite_core.restore_entry",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-restore-exc-ws/entries/e1/restore",
+            json={"revision_id": "rev1"},
+        )
+    assert response.status_code == 500
+
+
+def test_restore_entry_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: restore entry returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "entry-restore-authz-ws"})
+    fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
+    with (
+        patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
+        patch(
+            "ugoite_core.require_entry_write",
+            _amock(
+                side_effect=ugoite_core.AuthorizationError(
+                    "forbidden",
+                    "no access",
+                    "entry_write",
+                ),
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/entry-restore-authz-ws/entries/e1/restore",
+            json={"revision_id": "rev1"},
+        )
+    assert response.status_code == 403
+
+
+def test_sanitize_space_meta_without_settings() -> None:
+    """REQ-API-001: _sanitize_space_meta returns early when settings is not a dict."""
+    result = _sanitize_space_meta({"id": "test", "name": "test", "settings": "bad"})
+    assert result["id"] == "test"
+    assert result["settings"] == "bad"
+
+
+def test_ensure_space_exists_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: _ensure_space_exists returns 500 for non-notfound RuntimeError."""
+    test_client.post("/spaces", json={"name": "space-ens-rt-ws"})
+    with patch(
+        "ugoite_core.get_space",
+        _amock(side_effect=RuntimeError("storage error")),
+    ):
+        response = test_client.get("/spaces/space-ens-rt-ws/entries")
+    assert response.status_code == 500
+
+
+def test_list_spaces_exception(test_client: TestClient) -> None:
+    """REQ-API-001: list spaces returns 500 on unexpected exception."""
+    with patch(
+        "ugoite_core.list_spaces",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.get("/spaces")
+    assert response.status_code == 500
+
+
+def test_list_spaces_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: list spaces returns 500 on RuntimeError."""
+    with patch(
+        "ugoite_core.list_spaces",
+        _amock(side_effect=RuntimeError("storage failure")),
+    ):
+        response = test_client.get("/spaces")
+    assert response.status_code == 500
+
+
+def test_list_spaces_skips_unauthorized_space(test_client: TestClient) -> None:
+    """REQ-API-001: list spaces skips spaces the user cannot access."""
+    test_client.post("/spaces", json={"name": "visible-ws"})
+    test_client.post("/spaces", json={"name": "hidden-ws"})
+    call_count = {"n": 0}
+
+    async def _require_side_effect(*args: object, **kwargs: object) -> None:
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            err_code = "forbidden"
+            raise ugoite_core.AuthorizationError(err_code, "no access", "space_list")
+
+    with patch(
+        "ugoite_core.require_space_action",
+        AsyncMock(side_effect=_require_side_effect),
+    ):
+        response = test_client.get("/spaces")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_create_space_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: create space returns 500 for generic RuntimeError."""
+    with patch(
+        "ugoite_core.create_space",
+        _amock(side_effect=RuntimeError("storage error")),
+    ):
+        response = test_client.post("/spaces", json={"name": "fail-ws"})
+    assert response.status_code == 500
+
+
+def test_create_space_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: create space returns 500 for non-runtime exception."""
+    with patch(
+        "ugoite_core.create_space",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.post("/spaces", json={"name": "fail-exc-ws"})
+    assert response.status_code == 500
+
+
+def test_get_space_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: get space returns 500 for generic RuntimeError."""
+    test_client.post("/spaces", json={"name": "space-get-rt-ws"})
+    with (
+        patch("ugoite_core.require_space_action", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_space",
+            _amock(side_effect=RuntimeError("storage error")),
+        ),
+    ):
+        response = test_client.get("/spaces/space-get-rt-ws")
+    assert response.status_code == 500
+
+
+def test_get_space_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: get space returns 500 for non-runtime exception."""
+    test_client.post("/spaces", json={"name": "space-get-exc-ws"})
+    with (
+        patch("ugoite_core.require_space_action", _amock(return_value=None)),
+        patch(
+            "ugoite_core.get_space",
+            _amock(side_effect=ValueError("unexpected")),
+        ),
+    ):
+        response = test_client.get("/spaces/space-get-exc-ws")
+    assert response.status_code == 500
+
+
+def test_patch_space_with_name(test_client: TestClient) -> None:
+    """REQ-API-001: patch space can update name field."""
+    test_client.post("/spaces", json={"name": "patchable-ws"})
+    response = test_client.patch(
+        "/spaces/patchable-ws",
+        json={"name": "updated-name"},
+    )
+    assert response.status_code == 200
+
+
+def test_patch_space_not_found_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: patch space returns 404 for not-found RuntimeError."""
+    test_client.post("/spaces", json={"name": "patch-404-ws"})
+    with patch(
+        "ugoite_core.patch_space",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.patch(
+            "/spaces/patch-404-ws",
+            json={"settings": {"key": "value"}},
+        )
+    assert response.status_code == 404
+
+
+def test_patch_space_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-API-001: patch space returns 500 for generic RuntimeError."""
+    test_client.post("/spaces", json={"name": "patch-rt-ws"})
+    with patch(
+        "ugoite_core.patch_space",
+        _amock(side_effect=RuntimeError("storage error")),
+    ):
+        response = test_client.patch(
+            "/spaces/patch-rt-ws",
+            json={"settings": {"key": "value"}},
+        )
+    assert response.status_code == 500
+
+
+def test_patch_space_generic_exception(test_client: TestClient) -> None:
+    """REQ-API-001: patch space returns 500 for non-runtime exception."""
+    test_client.post("/spaces", json={"name": "patch-exc-ws"})
+    with patch(
+        "ugoite_core.patch_space",
+        _amock(side_effect=ValueError("unexpected")),
+    ):
+        response = test_client.patch(
+            "/spaces/patch-exc-ws",
+            json={"settings": {"key": "value"}},
+        )
+    assert response.status_code == 500
+
+
+def test_test_connection_value_error(test_client: TestClient) -> None:
+    """REQ-STO-006: test-connection returns 400 when storage config is invalid."""
+    test_client.post("/spaces", json={"name": "conn-test-ws"})
+    with patch(
+        "ugoite_core.test_storage_connection",
+        _amock(side_effect=ValueError("invalid storage config")),
+    ):
+        response = test_client.post(
+            "/spaces/conn-test-ws/test-connection",
+            json={"storage_config": {"uri": "invalid://bad"}},
+        )
+    assert response.status_code == 400
+
+
+def test_test_connection_authorization_error(test_client: TestClient) -> None:
+    """REQ-STO-006: test-connection returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "conn-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_admin",
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/conn-authz-ws/test-connection",
+            json={"storage_config": {"uri": "s3://bucket"}},
+        )
+    assert response.status_code == 403
+
+
+def test_validate_entry_form_not_found_non_error_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-API-004: _validate_entry_markdown_against_form returns 500.
+
+    Applies to non-notfound form errors.
+    """
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    storage_config = storage_config_from_root(tmp_path)
+    # Use lowercase '## form' so extract_properties returns key 'form'
+    with (
+        patch(
+            "ugoite_core.get_form",
+            _amock(side_effect=RuntimeError("storage corruption")),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        asyncio.run(
+            _validate_entry_markdown_against_form(
+                storage_config,
+                "test-space",
+                "# Note\n\n## form\nNote\n",
+            ),
+        )
+    assert exc_info.value.status_code == 500
+
+
+def test_validate_entry_form_validation_warnings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-API-004: _validate_entry_markdown_against_form raises 422.
+
+    Raised when form validation has warnings.
+    """
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    storage_config = storage_config_from_root(tmp_path)
+    fake_form = {"name": "Note", "fields": {"Body": {"type": "markdown"}}}
+    fake_warnings = [{"message": "required field missing"}]
+    # Use lowercase '## form' so extract_properties returns key 'form'
+    with (
+        patch("ugoite_core.get_form", _amock(return_value=fake_form)),
+        patch(
+            "ugoite_core.validate_properties",
+            return_value=({}, fake_warnings),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        asyncio.run(
+            _validate_entry_markdown_against_form(
+                storage_config,
+                "test-space",
+                "# Note\n\n## form\nNote\n",
+            ),
+        )
+    assert exc_info.value.status_code == 422
+
+
+def test_is_sql_error_function() -> None:
+    """REQ-SRCH-003: _is_sql_error detects SQL error prefix."""
+    assert _is_sql_error("UGOITE_SQL_ERROR: invalid syntax") is True
+    assert _is_sql_error("  UGOITE_SQL_ERROR: x") is True
+    assert _is_sql_error("some other error") is False
+
+
+def test_query_endpoint_sql_filter_rejected(test_client: TestClient) -> None:
+    """REQ-SRCH-003: query endpoint rejects SQL filter keys."""
+    test_client.post("/spaces", json={"name": "query-sql-ws"})
+    response = test_client.post(
+        "/spaces/query-sql-ws/query",
+        json={"filter": {"sql": "SELECT 1"}},
+    )
+    assert response.status_code == 400
+
+
+def test_query_endpoint_sql_error_returns_400(test_client: TestClient) -> None:
+    """REQ-SRCH-003: query endpoint returns 400 for SQL-type errors."""
+    test_client.post("/spaces", json={"name": "query-sqlerr-ws"})
+    with patch(
+        "ugoite_core.query_index",
+        _amock(side_effect=RuntimeError("UGOITE_SQL_ERROR: bad syntax")),
+    ):
+        response = test_client.post(
+            "/spaces/query-sqlerr-ws/query",
+            json={"filter": {}},
+        )
+    assert response.status_code == 400
+
+
+def test_query_endpoint_generic_exception(test_client: TestClient) -> None:
+    """REQ-SRCH-001: query endpoint returns 500 on unexpected error."""
+    test_client.post("/spaces", json={"name": "query-exc-ws"})
+    with patch(
+        "ugoite_core.query_index",
+        _amock(side_effect=RuntimeError("storage failure")),
+    ):
+        response = test_client.post(
+            "/spaces/query-exc-ws/query",
+            json={"filter": {}},
+        )
+    assert response.status_code == 500
+
+
+def test_query_endpoint_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: query endpoint returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "query-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "entry_read",
+            ),
+        ),
+    ):
+        response = test_client.post(
+            "/spaces/query-authz-ws/query",
+            json={"filter": {}},
+        )
+    assert response.status_code == 403
+
+
+def test_search_endpoint_generic_exception(test_client: TestClient) -> None:
+    """REQ-SRCH-001: search endpoint returns 500 on unexpected error."""
+    test_client.post("/spaces", json={"name": "search-exc-ws"})
+    with patch(
+        "ugoite_core.search_entries",
+        _amock(side_effect=RuntimeError("index failure")),
+    ):
+        response = test_client.get("/spaces/search-exc-ws/search?q=test")
+    assert response.status_code == 500
+
+
+def test_search_endpoint_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-006: search endpoint returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "search-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "entry_read",
+            ),
+        ),
+    ):
+        response = test_client.get("/spaces/search-authz-ws/search?q=test")
+    assert response.status_code == 403

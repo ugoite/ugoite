@@ -77,3 +77,62 @@ def test_audit_logs_authorization_denial(
     payload = audit.json()
     assert payload["total"] >= 1
     assert any(item.get("outcome") == "deny" for item in payload["items"])
+
+from unittest.mock import patch, AsyncMock
+from typing import Any
+import ugoite_core
+
+def _amock(**kwargs: Any) -> AsyncMock:
+    """Return an AsyncMock configured with keyword arguments."""
+    return AsyncMock(**kwargs)
+
+
+def test_list_audit_events_integrity_error(test_client: TestClient) -> None:
+    """REQ-SEC-008: audit events endpoint returns 409 on integrity chain error."""
+    test_client.post("/spaces", json={"name": "audit-chain-ws"})
+    with patch(
+        "ugoite_core.list_audit_events",
+        _amock(side_effect=RuntimeError("integrity chain violation")),
+    ):
+        response = test_client.get("/spaces/audit-chain-ws/audit/events")
+    assert response.status_code == 409
+
+
+def test_list_audit_events_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-008: audit events endpoint returns 404 when space not found."""
+    test_client.post("/spaces", json={"name": "audit-notfound-ws"})
+    with patch(
+        "ugoite_core.list_audit_events",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.get("/spaces/audit-notfound-ws/audit/events")
+    assert response.status_code == 404
+
+
+def test_list_audit_events_generic_runtime_error(test_client: TestClient) -> None:
+    """REQ-SEC-008: audit events endpoint returns 500 on generic runtime error."""
+    test_client.post("/spaces", json={"name": "audit-rterr-ws"})
+    with patch(
+        "ugoite_core.list_audit_events",
+        _amock(side_effect=RuntimeError("unexpected storage error")),
+    ):
+        response = test_client.get("/spaces/audit-rterr-ws/audit/events")
+    # "unexpected storage error" does not contain "integrity", "chain", or "not found"
+    assert response.status_code == 500
+
+
+def test_list_audit_events_authorization_error(test_client: TestClient) -> None:
+    """REQ-SEC-008: list audit events returns 403 on authorization failure."""
+    test_client.post("/spaces", json={"name": "audit-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "space_admin",
+            ),
+        ),
+    ):
+        response = test_client.get("/spaces/audit-authz-ws/audit/events")
+    assert response.status_code == 403

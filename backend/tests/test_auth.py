@@ -152,3 +152,63 @@ def test_auth_rejects_revoked_api_key(
     )
     assert response.status_code == 401
     assert response.json()["code"] == "revoked_key"
+
+from unittest.mock import MagicMock
+from fastapi import HTTPException
+from app.core.auth import require_authenticated_identity
+from app.core.authorization import request_identity
+from app.core.ids import validate_uuid
+from app.core.security import is_local_host, resolve_client_host
+
+
+def test_validate_uuid_valid() -> None:
+    """REQ-SEC-009: validate_uuid accepts well-formed UUIDs."""
+    val = "550e8400-e29b-41d4-a716-446655440000"
+    assert validate_uuid(val, "some_id") == val
+
+
+def test_validate_uuid_invalid_raises() -> None:
+    """REQ-SEC-009: validate_uuid rejects malformed values."""
+    with pytest.raises(ValueError, match="Invalid some_id"):
+        validate_uuid("not-a-uuid", "some_id")
+
+
+def test_require_authenticated_identity_missing_raises() -> None:
+    """REQ-SEC-003: unauthenticated request raises 401."""
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state.identity = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        require_authenticated_identity(request)
+    assert exc_info.value.status_code == 401
+
+
+def test_request_identity_missing_raises() -> None:
+    """REQ-SEC-003: request_identity raises 401 when no identity is set."""
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state.identity = None  # no identity set (unauthenticated)
+
+    with pytest.raises(HTTPException) as exc_info:
+        request_identity(request)
+    assert exc_info.value.status_code == 401
+
+
+def test_resolve_client_host_trusted_proxy() -> None:
+    """REQ-SEC-001: resolve_client_host honors X-Forwarded-For with trust flag."""
+    headers = {"x-forwarded-for": "203.0.113.5, 198.51.100.1"}
+    result = resolve_client_host(headers, "10.0.0.1", trust_proxy_headers=True)
+    assert result == "203.0.113.5"
+
+
+def test_resolve_client_host_empty_forwarded() -> None:
+    """REQ-SEC-001: resolve_client_host falls back when forwarded header is empty."""
+    headers = {"x-forwarded-for": "   "}
+    result = resolve_client_host(headers, "10.0.0.1", trust_proxy_headers=True)
+    assert result == "10.0.0.1"
+
+
+def test_is_local_host_none_returns_true() -> None:
+    """REQ-SEC-001: is_local_host returns True when host is None."""
+    assert is_local_host(None) is True
