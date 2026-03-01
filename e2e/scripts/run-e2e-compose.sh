@@ -47,31 +47,6 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-# Create default space
-echo "Creating default space..."
-docker compose -f "$ROOT_DIR/docker-compose.e2e.yml" exec -T backend \
-    uv run python - <<'PY'
-import asyncio
-import os
-
-import ugoite_core
-
-from app.core.config import get_root_path
-from app.core.storage import storage_config_from_root
-
-
-async def main() -> None:
-    config = storage_config_from_root(get_root_path())
-    try:
-        await ugoite_core.create_space(config, "default")
-    except RuntimeError as exc:
-        if "already exists" not in str(exc).lower():
-            raise
-
-
-asyncio.run(main())
-PY
-
 # Wait for frontend to be ready
 echo "Waiting for frontend (port 3000)..."
 for i in $(seq 1 60); do
@@ -93,7 +68,11 @@ echo "Running E2E tests..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
-npm run test -- ${E2E_TEST_TIMEOUT_MS:+--timeout $E2E_TEST_TIMEOUT_MS}
+cmd=(npm run test --)
+if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
+    cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
+fi
+"${cmd[@]}"
 
 echo ""
 echo "=========================================="
