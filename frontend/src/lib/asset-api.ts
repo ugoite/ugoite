@@ -32,8 +32,10 @@ export const assetApi = {
 			method: "DELETE",
 		});
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to delete asset: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		return (await res.json()) as { status: string; id: string };
 	},

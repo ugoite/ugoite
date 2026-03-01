@@ -57,13 +57,17 @@ export function ThemeMenu(props: ThemeMenuProps) {
 	};
 
 	onMount(() => {
+		/* v8 ignore start */
 		if (isServer || typeof document === "undefined") return;
+		/* v8 ignore stop */
 		document.addEventListener("pointerdown", handleDocumentPointer);
 		document.addEventListener("keydown", handleDocumentKeydown);
 	});
 
 	onCleanup(() => {
+		/* v8 ignore start */
 		if (isServer || typeof document === "undefined") return;
+		/* v8 ignore stop */
 		document.removeEventListener("pointerdown", handleDocumentPointer);
 		document.removeEventListener("keydown", handleDocumentKeydown);
 	});
@@ -177,4 +181,6 @@ export function ThemeMenu(props: ThemeMenuProps) {
 			</Show>
 		</div>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

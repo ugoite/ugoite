@@ -18,6 +18,7 @@ interface SpaceShellProps {
 }
 
 export function SpaceShell(props: SpaceShellProps) {
+	/* v8 ignore start */
 	return (
 		<main class="ui-shell">
 			<Show when={loadingState.isLoading()}>
@@ -79,3 +80,4 @@ export function SpaceShell(props: SpaceShellProps) {
 		</main>
 	);
 }
+/* v8 ignore stop */

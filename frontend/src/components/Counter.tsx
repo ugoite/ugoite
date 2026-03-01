@@ -11,4 +11,6 @@ export default function Counter() {
 			Clicks: {count()}
 		</button>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

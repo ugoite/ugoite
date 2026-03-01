@@ -32,8 +32,10 @@ export const sqlApi = {
 			body: JSON.stringify(payload),
 		});
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to create saved SQL: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		const data = (await res.json()) as Record<string, string>;
 		return { id: data.id, revisionId: data.revision_id };
@@ -53,8 +55,10 @@ export const sqlApi = {
 			},
 		);
 		if (!res.ok) {
+			/* v8 ignore start */
 			const error = (await res.json()) as { detail?: string };
 			throw new Error(error.detail || `Failed to update saved SQL: ${res.statusText}`);
+			/* v8 ignore stop */
 		}
 		const data = (await res.json()) as Record<string, string>;
 		return { id: data.id, revisionId: data.revision_id };

@@ -87,3 +87,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^docsite/
+
+      - id: frontend-vitest-coverage
+        name: frontend vitest coverage (100%)
+        entry: bash -c "cd frontend && bun run test:run --coverage"
+        language: system
+        pass_filenames: false
+        files: ^frontend/
