@@ -211,7 +211,7 @@ def test_form_req_form_007_row_reference_requires_target(space_id: str) -> None:
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 import ugoite_core
 from app.api.endpoints.forms import _persist_form_acl_settings

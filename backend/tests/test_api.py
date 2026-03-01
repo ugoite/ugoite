@@ -1182,11 +1182,9 @@ from fastapi import HTTPException
 from starlette.responses import Response
 from app.api.endpoints.search import _is_sql_error
 from app.api.endpoints.space import (
-    _format_form_validation_errors,
     _sanitize_space_meta,
     _validate_entry_markdown_against_form,
 )
-from app.core.auth import require_authenticated_identity
 from app.core.middleware import (
     _AuditRequestEvent,
     _capture_response_body,
@@ -1641,7 +1639,7 @@ def test_list_entries_generic_exception(test_client: TestClient) -> None:
     assert response.status_code == 500
 
 
-def test_get_entry_not_found(test_client: TestClient) -> None:
+def test_get_entry_not_found_req_api_002(test_client: TestClient) -> None:
     """REQ-API-002: get entry returns 404 when entry does not exist."""
     test_client.post("/spaces", json={"name": "entry-get-404-ws"})
     response = test_client.get("/spaces/entry-get-404-ws/entries/missing-entry")
