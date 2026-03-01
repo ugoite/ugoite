@@ -27,10 +27,12 @@ mise run dev
 
 1. Open `http://localhost:3000`.
 2. Open browser devtools and confirm API calls include `Authorization: Bearer <token>`.
-3. Check backend health:
+3. Check backend health (the `/health` endpoint is intentionally unauthenticated and should return `200 OK`):
 
 ```bash
-curl -sS http://localhost:8000/health
+curl -i http://localhost:8000/health
 ```
+
+Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
 
 If the page still shows `Unauthorized`, follow [Troubleshooting Unauthorized Spaces](./troubleshooting-unauthorized-spaces.md).
