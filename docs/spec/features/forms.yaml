@@ -20,8 +20,8 @@ apis:
       function: list_forms
     ugoite_cli:
       command: ugoite form list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_form_list
+      file: ugoite-cli/src/commands/form.rs
+      function: run
 
   - id: form.types
     method: GET
@@ -38,8 +38,8 @@ apis:
       function: list_column_types
     ugoite_cli:
       command: ugoite form list-types
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_list_types
+      file: ugoite-cli/src/commands/form.rs
+      function: run
 
   - id: form.get
     method: GET
@@ -56,8 +56,8 @@ apis:
       function: get_form
     ugoite_cli:
       command: ugoite form get
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_form_get
+      file: ugoite-cli/src/commands/form.rs
+      function: run
 
   - id: form.upsert
     method: POST
@@ -74,5 +74,5 @@ apis:
       function: upsert_form
     ugoite_cli:
       command: ugoite form update
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_form_update
+      file: ugoite-cli/src/commands/form.rs
+      function: run

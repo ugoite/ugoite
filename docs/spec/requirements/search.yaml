@@ -65,7 +65,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_sql_rules.py
+    - file: ugoite-cli/tests/test_sql_rules.rs
       tests:
       - test_cli_sql_lint_reports_errors
       - test_cli_sql_complete_suggests_tables

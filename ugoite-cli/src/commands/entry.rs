@@ -24,7 +24,7 @@ pub enum EntrySubCmd {
     Create {
         space_path: String,
         entry_id: String,
-        #[arg(long, default_value = "# New Entry\n")]
+        #[arg(long, default_value = "# New Entry\n", allow_hyphen_values = true)]
         content: String,
         #[arg(long, default_value = "cli")]
         author: String,

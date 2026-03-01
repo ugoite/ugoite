@@ -24,7 +24,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_indexer_run_once
       - test_aggregate_stats
@@ -60,7 +60,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_validate_properties_missing_required
       - test_validate_properties_valid
@@ -91,7 +91,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_query_index
       - test_query_index_by_tag
@@ -124,7 +124,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_indexer_generates_inverted_index
     rust:
@@ -153,7 +153,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_indexer_computes_word_count
     rust:
@@ -182,7 +182,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_indexer_watch_loop_triggers_run
 - set_id: REQCAT-INDEX

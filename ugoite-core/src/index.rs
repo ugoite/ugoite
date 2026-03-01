@@ -115,6 +115,12 @@ pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
+    let forms = load_forms(op, ws_path).await?;
+    let entries = collect_entries(op, ws_path, &forms).await?;
+    Ok(aggregate_stats(&entries))
+}
+
 pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
     let _ = op;
     let _ = ws_path;

@@ -21,7 +21,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_assets.py
+    - file: ugoite-cli/tests/test_assets.rs
       tests:
       - test_asset_lifecycle
     rust:

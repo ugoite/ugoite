@@ -79,3 +79,43 @@ async fn test_space_req_sto_008_list_spaces_ignores_missing_meta() -> anyhow::Re
 
     Ok(())
 }
+
+#[tokio::test]
+/// REQ-STO-002
+async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Result<()> {
+    let result = space::test_storage_connection("memory://").await?;
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["mode"], "memory");
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-002
+async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Result<()> {
+    let result = space::test_storage_connection("/tmp/test").await?;
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["mode"], "local");
+
+    let result2 = space::test_storage_connection("./relative").await?;
+    assert_eq!(result2["mode"], "local");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-002
+async fn test_space_req_sto_002_test_storage_connection_s3() -> anyhow::Result<()> {
+    let result = space::test_storage_connection("s3://my-bucket/path").await?;
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["mode"], "s3");
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-002
+async fn test_space_req_sto_002_test_storage_connection_unknown() -> anyhow::Result<()> {
+    let result = space::test_storage_connection("ftp://somehost").await?;
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["mode"], "unknown");
+    Ok(())
+}
