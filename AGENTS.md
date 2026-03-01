@@ -13,9 +13,9 @@
 - Data Model: Markdown sections as structured fields
 
 **Documentation** (ALWAYS consult for details):
-- [`README.md`](../README.md) - Setup & quick start
-- [`docs/spec/`](../docs/spec/) - Complete specifications
-- [`.github/workflows/`](workflows/) - CI requirements
+- [`README.md`](README.md) - Setup & quick start
+- [`docs/spec/`](docs/spec/) - Complete specifications
+- [`.github/workflows/`](.github/workflows/) - CI requirements
 
 ---
 
@@ -26,12 +26,14 @@
 mise run setup            # Install all dependencies
 mise run dev              # Start frontend + backend
 mise run test             # Run all tests
+mise run e2e              # Run E2E tests
 
 # Quality checks (see .github/workflows/ for exact CI commands)
-uvx ruff format .         # Auto-format Python
-uvx ruff check --fix .    # Fix lint issues
+uvx ruff check --select ALL --ignore-noqa .  # Lint Python (CI-aligned)
+uvx ruff format --check .                    # Format check (CI-aligned)
 cd backend && uv run ty check .      # Type check backend
 cd ugoite-cli && uv run ty check .    # Type check CLI
+cd ugoite-core && uv run ty check .   # Type check core
 cd frontend && biome ci . # Check frontend
 
 ```
