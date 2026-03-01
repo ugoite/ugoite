@@ -79,8 +79,9 @@ def test_audit_logs_authorization_denial(
     assert any(item.get("outcome") == "deny" for item in payload["items"])
 
 
-from unittest.mock import patch, AsyncMock
 from typing import Any
+from unittest.mock import AsyncMock, patch
+
 import ugoite_core
 
 

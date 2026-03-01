@@ -213,8 +213,10 @@ import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
-from fastapi import HTTPException
+
 import ugoite_core
+from fastapi import HTTPException
+
 from app.api.endpoints.forms import _persist_form_acl_settings
 from app.api.endpoints.space import _format_form_validation_errors
 from app.core.storage import storage_config_from_root
