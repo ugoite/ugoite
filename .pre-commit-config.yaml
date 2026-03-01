@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: cargo fmt --manifest-path ugoite-core/Cargo.toml --
+        entry: cargo fmt --manifest-path Cargo.toml --
         language: system
         files: \.rs$
         pass_filenames: false
@@ -32,7 +32,7 @@ repos:
 
       - id: cargo-llvm-cov-core
         name: cargo llvm-cov (ugoite-core 100%)
-        entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 100"
+        entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 100 --jobs 1"
         language: system
         files: \.rs$
         pass_filenames: false
@@ -44,12 +44,12 @@ repos:
         pass_filenames: false
         files: ^backend/
 
-      - id: ty-cli
-        name: "ty: ugoite-cli type check"
-        entry: bash -c "cd ugoite-cli && uv run ty check ."
+      - id: cargo-clippy-cli
+        name: cargo clippy (ugoite-cli)
+        entry: bash -c "cd ugoite-cli && cargo clippy -- -D warnings"
         language: system
+        files: \.rs$
         pass_filenames: false
-        files: ^ugoite-cli/
 
       - id: ty-core
         name: "ty: ugoite-core type check"

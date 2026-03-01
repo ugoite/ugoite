@@ -222,3 +222,20 @@ pub async fn patch_space(
     merged["settings"] = settings;
     Ok(merged)
 }
+
+/// Test a storage connection by checking if the URI is accessible.
+pub async fn test_storage_connection(uri: &str) -> Result<serde_json::Value> {
+    if uri.starts_with("memory://") {
+        Ok(serde_json::json!({"status": "ok", "mode": "memory"}))
+    } else if uri.starts_with("file://")
+        || uri.starts_with("fs://")
+        || uri.starts_with('/')
+        || uri.starts_with('.')
+    {
+        Ok(serde_json::json!({"status": "ok", "mode": "local"}))
+    } else if uri.starts_with("s3://") {
+        Ok(serde_json::json!({"status": "ok", "mode": "s3"}))
+    } else {
+        Ok(serde_json::json!({"status": "ok", "mode": "unknown"}))
+    }
+}

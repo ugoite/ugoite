@@ -15,6 +15,8 @@ pub struct IndexCmd {
 pub enum IndexSubCmd {
     /// Reindex a space
     Run { space_path: String },
+    /// Show aggregated stats for a space
+    Stats { space_path: String },
 }
 
 pub async fn run(cmd: IndexCmd) -> Result<()> {
@@ -34,6 +36,19 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
             let ws = space_ws_path(&root, &space_id);
             ugoite_core::index::reindex_all(&op, &ws).await?;
             print_json(&serde_json::json!({"reindexed": true}));
+        }
+        IndexSubCmd::Stats { space_path } => {
+            let (root, space_id) = parse_space_path(&space_path);
+            if let Some(base) = base_url(&config) {
+                let result =
+                    http::http_get(&format!("{base}/spaces/{space_id}/stats"))?;
+                print_json(&result);
+                return Ok(());
+            }
+            let op = operator_for_path(&root)?;
+            let ws = space_ws_path(&root, &space_id);
+            let stats = ugoite_core::index::get_space_stats(&op, &ws).await?;
+            print_json(&stats);
         }
     }
     Ok(())

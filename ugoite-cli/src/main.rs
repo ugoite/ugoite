@@ -32,6 +32,8 @@ enum Commands {
     Sql(commands::sql::SqlCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),
+    /// Link management commands (deprecated: use row_reference fields)
+    Link(commands::link::LinkCmd),
     /// Create a new space
     CreateSpace { root_path: String, space_id: String },
     /// Query the index
@@ -71,6 +73,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Search(cmd) => commands::search::run(cmd).await,
         Commands::Sql(cmd) => commands::sql::run(cmd).await,
         Commands::Index(cmd) => commands::index::run(cmd).await,
+        Commands::Link(cmd) => commands::link::run(cmd).await,
         Commands::CreateSpace {
             root_path,
             space_id,

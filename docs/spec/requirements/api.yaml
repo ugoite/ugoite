@@ -227,7 +227,7 @@ requirements:
     - file: backend/tests/test_sql.py
       tests:
       - test_sql_req_api_006_crud
-    - file: ugoite-cli/tests/test_saved_sql.py
+    - file: ugoite-cli/tests/test_saved_sql.rs
       tests:
       - test_saved_sql_req_api_006_crud
     rust:
@@ -275,7 +275,7 @@ requirements:
     - file: backend/tests/test_sql.py
       tests:
       - test_sql_req_api_007_validation
-    - file: ugoite-cli/tests/test_saved_sql.py
+    - file: ugoite-cli/tests/test_saved_sql.rs
       tests:
       - test_saved_sql_req_api_007_validation
     rust:
@@ -369,7 +369,7 @@ requirements:
   status: planned
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_space.py
+    - file: ugoite-cli/tests/test_space.rs
       tests:
       - test_create_sample_space_req_api_009
     rust:

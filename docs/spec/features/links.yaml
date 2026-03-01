@@ -20,7 +20,7 @@ apis:
       function: create_link
     ugoite_cli:
       command: ugoite link create
-      file: ugoite-cli/src/ugoite/cli.py
+      file: ugoite-cli/src/commands/link.rs
       function: cmd_link_create
 
   - id: link.list
@@ -38,7 +38,7 @@ apis:
       function: list_links
     ugoite_cli:
       command: ugoite link list
-      file: ugoite-cli/src/ugoite/cli.py
+      file: ugoite-cli/src/commands/link.rs
       function: cmd_link_list
 
   - id: link.delete
@@ -56,5 +56,5 @@ apis:
       function: delete_link
     ugoite_cli:
       command: ugoite link delete
-      file: ugoite-cli/src/ugoite/cli.py
+      file: ugoite-cli/src/commands/link.rs
       function: cmd_link_delete
