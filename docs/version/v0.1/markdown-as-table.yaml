@@ -1,0 +1,57 @@
+id: markdown-as-table
+version: "0.1"
+status: completed
+title: "Markdown as Table"
+goal: >
+  Store entries as Iceberg-backed tables while preserving the current UI behavior.
+  Entries become row-based records defined by Forms, queryable via domain-specific SQL.
+phases:
+  - id: design
+    status: completed
+    tasks:
+      - description: "Align specs with Iceberg-backed Form-first model"
+        done: true
+      - description: "Document breaking-change/no-migration decision"
+        done: true
+      - description: "Define Ugoite SQL syntax and capabilities"
+        done: true
+      - description: "Define page-level UI specs under docs/spec/ui/pages/"
+        done: true
+  - id: implementation
+    status: completed
+    tasks:
+      - description: "Replace entry storage with Apache Iceberg in ugoite-core"
+        done: true
+      - description: "Implement Form-defined H2 only validation"
+        done: true
+      - description: "Implement optional extra attributes (allow_extra_attributes)"
+        done: true
+      - description: "Implement Ugoite SQL with filter/sort/select/aggregate/JOIN"
+        done: true
+      - description: "Add metadata columns, rich types, and link URIs"
+        done: true
+      - description: "Implement SQL Form (metadata Form) with CRUD"
+        done: true
+      - description: "Redesign SQL sessions as stateless metadata-only"
+        done: true
+      - description: "Implement new space UI with floating top tabs and settings"
+        done: true
+      - description: "Add mobile responsiveness and theme switching (materialize/classic/pop)"
+        done: true
+      - description: "Add sample data space generator with neutral scenarios"
+        done: true
+      - description: "Replace entry-link endpoint with row-reference column type"
+        done: true
+      - description: "Rebrand terminology to Space/Form/Entry/Asset across entire repo"
+        done: true
+  - id: testing
+    status: completed
+    tasks:
+      - description: "Iceberg round-trip tests in ugoite-core"
+        done: true
+      - description: "SQL parsing and execution tests"
+        done: true
+      - description: "Frontend tests validate page links and component type registry"
+        done: true
+      - description: "Full test suite passes (unit, integration, e2e)"
+        done: true

@@ -1,0 +1,41 @@
+id: mvp
+version: "0.1"
+status: completed
+title: "Minimum Viable Product (MVP)"
+goal: >
+  A working local-first knowledge management app with core features operational.
+  Establish foundational architecture proving the "Local-First, AI-Native Knowledge Space" concept.
+phases:
+  - id: design
+    status: completed
+    tasks:
+      - description: "Define monorepo structure (backend, frontend, ugoite-cli)"
+        done: true
+      - description: "Design fsspec storage abstraction and space directory layout"
+        done: true
+      - description: "Design MCP server endpoints and Wasm sandbox integration"
+        done: true
+  - id: implementation
+    status: completed
+    tasks:
+      - description: "Setup monorepo with mise tasks, Docker Compose, Dev Container, CI/CD"
+        done: true
+      - description: "fsspec abstraction: space creation, entry CRUD, revision history, HMAC signing"
+        done: true
+      - description: "FastAPI REST endpoints for spaces, entries, forms, assets, search"
+        done: true
+      - description: "SolidStart frontend with space selector, entry list, Markdown editor"
+        done: true
+      - description: "Wasm sandbox (wasmtime + QuickJS) with host.call() and fuel limits"
+        done: true
+      - description: "MCP server endpoints (resources, tools)"
+        done: true
+  - id: testing
+    status: completed
+    tasks:
+      - description: "Comprehensive requirements mapping in docs/spec/requirements/*.yaml"
+        done: true
+      - description: "E2E tests covering all critical paths"
+        done: true
+      - description: "Specification documents finalized"
+        done: true
