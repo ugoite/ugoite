@@ -8,6 +8,7 @@
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
+| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
 
 ## Python CI
 
@@ -44,6 +45,16 @@ jobs:
     - Wait for servers
     - cd e2e && npm run test
     timeout: 30 minutes
+```
+
+## Devcontainer CI
+
+```yaml
+jobs:
+  devcontainer-build-smoke:
+    - docker/login-action (ghcr.io, GITHUB_TOKEN)
+    - devcontainers/ci with cacheFrom/cacheTo (gha)
+    - Run smoke command: gh/mise/bash versions
 ```
 
 ## Pre-commit Hooks
