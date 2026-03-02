@@ -12,3 +12,6 @@ spaces/
 .vscode/mcp.json
 backend/.coverage
 frontend/coverage/
+/target/
+/Cargo.lock
+backend/.coverage

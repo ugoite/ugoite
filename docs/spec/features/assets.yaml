@@ -20,8 +20,8 @@ apis:
       function: save_asset
     ugoite_cli:
       command: ugoite asset upload
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_asset_upload
+      file: ugoite-cli/src/commands/asset.rs
+      function: run
 
   - id: asset.list
     method: GET
@@ -38,8 +38,8 @@ apis:
       function: list_assets
     ugoite_cli:
       command: ugoite asset list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_asset_list
+      file: ugoite-cli/src/commands/asset.rs
+      function: run
 
   - id: asset.delete
     method: DELETE
@@ -56,5 +56,5 @@ apis:
       function: delete_asset
     ugoite_cli:
       command: ugoite asset delete
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_asset_delete
+      file: ugoite-cli/src/commands/asset.rs
+      function: run

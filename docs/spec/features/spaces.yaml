@@ -20,8 +20,8 @@ apis:
       function: list_spaces
     ugoite_cli:
       command: ugoite space list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_list
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.create
     method: POST
@@ -38,8 +38,8 @@ apis:
       function: create_space
     ugoite_cli:
       command: ugoite create-space
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_create_space
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.get
     method: GET
@@ -56,8 +56,8 @@ apis:
       function: get_space
     ugoite_cli:
       command: ugoite space get
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_get
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.patch
     method: PATCH
@@ -74,8 +74,8 @@ apis:
       function: patch_space
     ugoite_cli:
       command: ugoite space patch
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_patch
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.test_connection
     method: POST
@@ -92,8 +92,8 @@ apis:
       function: test_storage_connection
     ugoite_cli:
       command: ugoite space test-connection
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_test_connection
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.members.list
     method: GET
@@ -110,8 +110,8 @@ apis:
       function: list_members
     ugoite_cli:
       command: ugoite space members
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_members
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.members.invite
     method: POST
@@ -128,8 +128,8 @@ apis:
       function: create_invitation
     ugoite_cli:
       command: ugoite space invite-member
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_invite_member
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.members.accept
     method: POST
@@ -146,8 +146,8 @@ apis:
       function: accept_invitation
     ugoite_cli:
       command: ugoite space accept-invite
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_accept_invite
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.members.role
     method: POST
@@ -164,8 +164,8 @@ apis:
       function: update_member_role
     ugoite_cli:
       command: ugoite space set-member-role
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_set_member_role
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.members.revoke
     method: DELETE
@@ -182,8 +182,8 @@ apis:
       function: revoke_member
     ugoite_cli:
       command: ugoite space revoke-member
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_revoke_member
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.audit.list
     method: GET
@@ -200,8 +200,8 @@ apis:
       function: list_audit_events
     ugoite_cli:
       command: ugoite space audit-events
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_audit_events
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.service_accounts.list
     method: GET
@@ -218,8 +218,8 @@ apis:
       function: list_service_accounts
     ugoite_cli:
       command: ugoite space service-account-list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_service_account_list
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.service_accounts.create
     method: POST
@@ -236,8 +236,8 @@ apis:
       function: create_service_account
     ugoite_cli:
       command: ugoite space service-account-create
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_service_account_create
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.service_accounts.keys.create
     method: POST
@@ -254,8 +254,8 @@ apis:
       function: create_service_account_key
     ugoite_cli:
       command: ugoite space service-account-key-create
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_service_account_key_create
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.service_accounts.keys.rotate
     method: POST
@@ -272,8 +272,8 @@ apis:
       function: rotate_service_account_key
     ugoite_cli:
       command: ugoite space service-account-key-rotate
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_service_account_key_rotate
+      file: ugoite-cli/src/commands/space.rs
+      function: run
 
   - id: space.service_accounts.keys.revoke
     method: DELETE
@@ -290,5 +290,5 @@ apis:
       function: revoke_service_account_key
     ugoite_cli:
       command: ugoite space service-account-key-revoke
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_space_service_account_key_revoke
+      file: ugoite-cli/src/commands/space.rs
+      function: run

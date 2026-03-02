@@ -1,0 +1,1210 @@
+use opendal::Operator;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::prelude::*;
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
+use pyo3::IntoPyObjectExt;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+
+use super::*;
+
+use integrity::RealIntegrityProvider;
+
+const API_KEY_HASH_ALGORITHM: &str = "pbkdf2_sha256_v1";
+const API_KEY_HASH_ITERATIONS: u32 = 240_000;
+
+fn hash_service_api_key_secret_impl(secret: &str, salt: &str) -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let mut derived = [0_u8; 32];
+    pbkdf2::pbkdf2_hmac::<Sha256>(
+        secret.as_bytes(),
+        salt.as_bytes(),
+        API_KEY_HASH_ITERATIONS,
+        &mut derived,
+    );
+    URL_SAFE_NO_PAD.encode(derived)
+}
+
+fn verify_digest(stored: &str, computed: &str) -> bool {
+    if stored.len() != computed.len() {
+        return false;
+    }
+    bool::from(stored.as_bytes().ct_eq(computed.as_bytes()))
+}
+
+fn hash_legacy_service_api_key_secret(secret: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+// --- Helpers ---
+
+fn get_operator(_py: Python<'_>, config: &Bound<'_, PyDict>) -> PyResult<Operator> {
+    let uri = config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri' in storage config"))?
+        .extract::<String>()?;
+
+    storage::operator_from_uri(&uri).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+pub(crate) fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
+    match value {
+        Value::Null => Ok(py.None()),
+        Value::Bool(b) => b.into_py_any(py),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.into_py_any(py)
+            } else if let Some(f) = n.as_f64() {
+                f.into_py_any(py)
+            } else {
+                n.to_string().into_py_any(py)
+            }
+        }
+        Value::String(s) => s.into_py_any(py),
+        Value::Array(arr) => {
+            let list = PyList::empty(py);
+            for item in arr {
+                list.append(json_to_py(py, item)?)?;
+            }
+            Ok(list.into())
+        }
+        Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (k, v) in map {
+                dict.set_item(k, json_to_py(py, v)?)?;
+            }
+            Ok(dict.into())
+        }
+    }
+}
+
+// --- Bindings ---
+
+#[pyfunction]
+fn hash_service_api_key_secret(secret: String, salt: String) -> PyResult<String> {
+    if salt.is_empty() {
+        return Err(PyValueError::new_err("secret salt must not be empty"));
+    }
+    Ok(hash_service_api_key_secret_impl(&secret, &salt))
+}
+
+#[pyfunction]
+#[pyo3(signature = (key_hash, secret, hash_algorithm=None, secret_salt=None))]
+fn verify_service_api_key_secret(
+    key_hash: String,
+    secret: String,
+    hash_algorithm: Option<String>,
+    secret_salt: Option<String>,
+) -> bool {
+    if hash_algorithm.as_deref() == Some(API_KEY_HASH_ALGORITHM) {
+        if let Some(salt) = secret_salt {
+            if !salt.is_empty() {
+                let expected = hash_service_api_key_secret_impl(&secret, &salt);
+                return verify_digest(&key_hash, &expected);
+            }
+        }
+    }
+
+    let legacy = hash_legacy_service_api_key_secret(&secret);
+    verify_digest(&key_hash, &legacy)
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (
+    authorization=None,
+    api_key=None,
+    bearer_tokens_json=None,
+    api_keys_json=None,
+    bearer_secrets=None,
+    active_kids=None,
+    revoked_key_ids=None,
+    bootstrap_token=None,
+    bootstrap_user_id=None,
+))]
+fn authenticate_headers_core(
+    py: Python<'_>,
+    authorization: Option<String>,
+    api_key: Option<String>,
+    bearer_tokens_json: Option<String>,
+    api_keys_json: Option<String>,
+    bearer_secrets: Option<String>,
+    active_kids: Option<String>,
+    revoked_key_ids: Option<String>,
+    bootstrap_token: Option<String>,
+    bootstrap_user_id: Option<String>,
+) -> PyResult<PyObject> {
+    let result = auth::authenticate_headers_core(
+        authorization.as_deref(),
+        api_key.as_deref(),
+        bearer_tokens_json.as_deref(),
+        api_keys_json.as_deref(),
+        bearer_secrets.as_deref(),
+        active_kids.as_deref(),
+        revoked_key_ids.as_deref(),
+        bootstrap_token.as_deref(),
+        bootstrap_user_id.as_deref(),
+    );
+    json_to_py(py, result)
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    bearer_tokens_json=None,
+    api_keys_json=None,
+    bearer_secrets=None,
+    active_kids=None,
+    revoked_key_ids=None,
+))]
+fn auth_capabilities_snapshot_core(
+    py: Python<'_>,
+    bearer_tokens_json: Option<String>,
+    api_keys_json: Option<String>,
+    bearer_secrets: Option<String>,
+    active_kids: Option<String>,
+    revoked_key_ids: Option<String>,
+) -> PyResult<PyObject> {
+    let result = auth::auth_capabilities_snapshot(
+        bearer_tokens_json.as_deref(),
+        api_keys_json.as_deref(),
+        bearer_secrets.as_deref(),
+        active_kids.as_deref(),
+        revoked_key_ids.as_deref(),
+    );
+    json_to_py(py, result)
+}
+
+// Space
+
+#[pyfunction]
+fn list_spaces<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let spaces = space::list_spaces(&op)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(spaces)
+    })
+}
+
+#[pyfunction]
+fn create_space<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    name: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        space::create_space(&op, &name, &uri)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, scenario=None, entry_count=None, seed=None))]
+fn create_sample_space<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    scenario: Option<String>,
+    entry_count: Option<usize>,
+    seed: Option<u64>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let options = sample_data::SampleDataOptions {
+            space_id,
+            scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
+            entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
+            seed,
+        };
+        let summary = sample_data::create_sample_space(&op, &uri, &options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(summary).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_sample_scenarios(py: Python<'_>) -> PyResult<PyObject> {
+    let scenarios = sample_data::list_sample_scenarios();
+    let val =
+        serde_json::to_value(scenarios).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    json_to_py(py, val)
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, scenario=None, entry_count=None, seed=None))]
+fn create_sample_space_job<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    scenario: Option<String>,
+    entry_count: Option<usize>,
+    seed: Option<u64>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let options = sample_data::SampleDataOptions {
+            space_id,
+            scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
+            entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
+            seed,
+        };
+        let job = sample_data::create_sample_space_job(&op, &uri, &options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(job).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_sample_space_job<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    job_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let job = sample_data::get_sample_space_job(&op, &job_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(job).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+#[pyo3(name = "test_storage_connection")]
+fn test_storage_connection_py<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let uri: String = storage_config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
+        .extract()?;
+    let payload = if uri.starts_with("memory://") {
+        serde_json::json!({"status": "ok", "mode": "memory"})
+    } else if uri.starts_with("file://")
+        || uri.starts_with("fs://")
+        || uri.starts_with('/')
+        || uri.starts_with('.')
+    {
+        serde_json::json!({"status": "ok", "mode": "local"})
+    } else if uri.starts_with("s3://") {
+        serde_json::json!({"status": "ok", "mode": "s3"})
+    } else {
+        return Err(PyValueError::new_err("Unsupported storage connector"));
+    };
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        Python::with_gil(|py| json_to_py(py, payload))
+    })
+}
+
+// Audit
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, payload_json, retention_limit=None))]
+fn append_audit_event_py<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    payload_json: String,
+    retention_limit: Option<usize>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let payload: Value = serde_json::from_str(&payload_json)
+        .map_err(|e| PyValueError::new_err(format!("Invalid audit payload JSON: {e}")))?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let appended = audit::append_audit_event(&op, &space_id, &payload, retention_limit)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, appended))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, filters_json=None))]
+fn list_audit_events_py<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    filters_json: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let filters_value = match filters_json {
+        Some(raw) => serde_json::from_str::<Value>(&raw)
+            .map_err(|e| PyValueError::new_err(format!("Invalid audit filters JSON: {e}")))?,
+        None => Value::Null,
+    };
+    let offset = filters_value
+        .get("offset")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(0);
+    let limit = filters_value
+        .get("limit")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(100);
+    let action = filters_value
+        .get("action")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let actor_user_id = filters_value
+        .get("actor_user_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let outcome = filters_value
+        .get("outcome")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let options = audit::AuditListOptions {
+        offset,
+        limit,
+        action,
+        actor_user_id,
+        outcome,
+    };
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let listed = audit::list_audit_events(&op, &space_id, options)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, listed))
+    })
+}
+
+// Entry
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, entry_id, content, author=None))]
+fn create_entry<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    content: String,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let meta = entry::create_entry(&op, &ws_path, &entry_id, &content, &author, &integrity)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+// Saved SQL
+
+#[pyfunction]
+fn list_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let entries = saved_sql::list_sql(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(entries).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    sql_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let entry = saved_sql::get_sql(&op, &ws_path, &sql_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, entry))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, sql_id, payload_json, author=None))]
+fn create_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    sql_id: String,
+    payload_json: String,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+    let payload: saved_sql::SqlPayload =
+        serde_json::from_str(&payload_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let entry = saved_sql::create_sql(&op, &ws_path, &sql_id, &payload, &author, &integrity)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, entry))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, sql_id, payload_json, parent_revision_id=None, author=None))]
+fn update_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    sql_id: String,
+    payload_json: String,
+    parent_revision_id: Option<String>,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+    let payload: saved_sql::SqlPayload =
+        serde_json::from_str(&payload_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let entry = saved_sql::update_sql(
+            &op,
+            &ws_path,
+            &sql_id,
+            &payload,
+            parent_revision_id.as_deref(),
+            &author,
+            &integrity,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, entry))
+    })
+}
+
+#[pyfunction]
+fn delete_sql<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    sql_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        saved_sql::delete_sql(&op, &ws_path, &sql_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+// Search
+
+#[pyfunction]
+fn search_entries<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    query: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let results = search::search_entries(&op, &ws_path, &query)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        // Return list of dicts
+        let val =
+            serde_json::to_value(results).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, entry_id, hard_delete=false))]
+fn delete_entry<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    hard_delete: bool,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        entry::delete_entry(&op, &ws_path, &entry_id, hard_delete)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn get_entry<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let meta = entry::get_entry(&op, &ws_path, &entry_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_entries<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let entries = entry::list_entries(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::Value::Array(entries);
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_space<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    name: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let meta = space::get_space_raw(&op, &name)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn patch_space<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    patch_json: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let patch_value: serde_json::Value =
+            serde_json::from_str(&patch_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let updated = space::patch_space(&op, &space_id, &patch_value)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(updated).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_column_types<'a>(py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let types = form::list_column_types()
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(types)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, form_def_json, strategies_json=None))]
+fn migrate_form<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    form_def_json: String,
+    strategies_json: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let form_def: serde_json::Value = serde_json::from_str(&form_def_json)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let strategies = match strategies_json {
+            Some(json) => Some(
+                serde_json::from_str::<serde_json::Value>(&json)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            ),
+            None => None,
+        };
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let count = form::migrate_form(&op, &ws_path, &form_def, strategies, &integrity)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(count)
+    })
+}
+
+#[pyfunction]
+fn reindex_all<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        index::reindex_all(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn update_entry_index<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        index::update_entry_index(&op, &ws_path, &entry_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn load_hmac_material<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py::<_, PyObject>(py, async move {
+        let (key_id, secret) = integrity::load_hmac_material(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| {
+            let secret_bytes = PyBytes::new(py, &secret);
+            let key_id_obj = key_id.into_py_any(py)?;
+            let secret_obj = secret_bytes.into_py_any(py)?;
+            let tuple = PyTuple::new(py, [key_id_obj, secret_obj])?;
+            tuple.into_py_any(py)
+        })
+    })
+}
+
+#[pyfunction]
+fn load_response_hmac_material<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py::<_, PyObject>(py, async move {
+        let (key_id, secret) = integrity::load_response_hmac_material(&op)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| {
+            let secret_bytes = PyBytes::new(py, &secret);
+            let key_id_obj = key_id.into_py_any(py)?;
+            let secret_obj = secret_bytes.into_py_any(py)?;
+            let tuple = PyTuple::new(py, [key_id_obj, secret_obj])?;
+            tuple.into_py_any(py)
+        })
+    })
+}
+
+#[pyfunction]
+fn list_forms<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let forms = form::list_forms(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(forms).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn upsert_form<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    form_def: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&form_def).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        form::upsert_form(&op, &ws_path, &parsed)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+// Asset
+
+#[pyfunction]
+fn save_asset<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    filename: String,
+    content: Vec<u8>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let info = asset::save_asset(&op, &ws_path, &filename, &content)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(info).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn list_assets<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let list = asset::list_assets(&op, &ws_path)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(list).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn delete_asset<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    asset_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        asset::delete_asset(&op, &ws_path, &asset_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(())
+    })
+}
+
+#[pyfunction]
+fn get_form<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    form_name: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let frm = form::get_form(&op, &ws_path, &form_name)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(frm).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_entry_history<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let history = entry::get_entry_history(&op, &ws_path, &entry_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, history))
+    })
+}
+
+#[pyfunction]
+fn get_entry_revision<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    revision_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let revision = entry::get_entry_revision(&op, &ws_path, &entry_id, &revision_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, revision))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, entry_id, revision_id, author=None))]
+fn restore_entry<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    revision_id: String,
+    author: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let result =
+            entry::restore_entry(&op, &ws_path, &entry_id, &revision_id, &author, &integrity)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, result))
+    })
+}
+
+#[pyfunction]
+#[pyo3(name = "extract_properties")]
+fn extract_properties_py(py: Python<'_>, markdown: String) -> PyResult<PyObject> {
+    let props = index::extract_properties(&markdown);
+    json_to_py(py, props)
+}
+
+#[pyfunction]
+#[pyo3(name = "validate_properties")]
+fn validate_properties_py(
+    py: Python<'_>,
+    properties_json: String,
+    form_json: String,
+) -> PyResult<PyObject> {
+    let properties: serde_json::Value =
+        serde_json::from_str(&properties_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let form_def: serde_json::Value =
+        serde_json::from_str(&form_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let (casted, warnings) = index::validate_properties(&properties, &form_def)
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let casted_obj = json_to_py(py, casted)?;
+    let warnings_obj = json_to_py(py, serde_json::Value::Array(warnings))?;
+    let tuple = PyTuple::new(py, [casted_obj, warnings_obj])?;
+    tuple.into_py_any(py)
+}
+
+#[pyfunction]
+fn build_response_signature<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    body: Vec<u8>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let (key_id, signature) = integrity::build_response_signature(&op, &body)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok((key_id, signature))
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (storage_config, space_id, entry_id, content, parent_revision_id=None, author=None, assets_json=None))]
+#[allow(clippy::too_many_arguments)]
+fn update_entry<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    content: String,
+    parent_revision_id: Option<String>,
+    author: Option<String>,
+    assets_json: Option<String>,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let author = author.unwrap_or_else(|| "unknown".to_string());
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let integrity = RealIntegrityProvider::from_space(&op, &space_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let assets = match assets_json {
+            Some(json_str) => serde_json::from_str::<Vec<serde_json::Value>>(&json_str)
+                .map(Some)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+            None => None,
+        };
+        let meta = entry::update_entry(
+            &op,
+            &ws_path,
+            &entry_id,
+            &content,
+            parent_revision_id.as_deref(),
+            &author,
+            assets,
+            &integrity,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(meta).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn query_index<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    query: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    let adjusted_query = match serde_json::from_str::<serde_json::Value>(&query) {
+        Ok(parsed) => parsed
+            .get("$sql")
+            .or_else(|| parsed.get("sql"))
+            .and_then(|val| val.as_str())
+            .and_then(|sql| serde_json::to_string(sql).ok())
+            .unwrap_or(query.clone()),
+        Err(_) => query.clone(),
+    };
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let res = index::query_index(&op, &ws_path, &adjusted_query)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::Value::Array(res);
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn create_sql_session<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    sql: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let session = sql_session::create_sql_session(&op, &ws_path, &sql)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, session))
+    })
+}
+
+#[pyfunction]
+fn get_sql_session_status<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let session = sql_session::get_sql_session_status(&op, &ws_path, &session_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, session))
+    })
+}
+
+#[pyfunction]
+fn get_sql_session_count<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let count = sql_session::get_sql_session_count(&op, &ws_path, &session_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = Value::Number(count.into());
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_sql_session_rows<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+    offset: usize,
+    limit: usize,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let rows = sql_session::get_sql_session_rows(&op, &ws_path, &session_id, offset, limit)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, rows))
+    })
+}
+
+#[pyfunction]
+fn get_sql_session_rows_all<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let rows = sql_session::get_sql_session_rows_all(&op, &ws_path, &session_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = Value::Array(rows);
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+// Stubs using generic signature removed; all bindings are implemented.
+
+/// A Python module implemented in Rust.
+#[pymodule]
+fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(hash_service_api_key_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_service_api_key_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(authenticate_headers_core, m)?)?;
+    m.add_function(wrap_pyfunction!(auth_capabilities_snapshot_core, m)?)?;
+
+    m.add_function(wrap_pyfunction!(list_spaces, m)?)?;
+    m.add_function(wrap_pyfunction!(create_space, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sample_space, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sample_scenarios, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sample_space_job, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sample_space_job, m)?)?;
+    m.add_function(wrap_pyfunction!(test_storage_connection_py, m)?)?;
+    m.add_function(wrap_pyfunction!(append_audit_event_py, m)?)?;
+    m.add_function(wrap_pyfunction!(list_audit_events_py, m)?)?;
+
+    m.add_function(wrap_pyfunction!(create_entry, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_entry, m)?)?;
+    m.add_function(wrap_pyfunction!(get_entry, m)?)?;
+    m.add_function(wrap_pyfunction!(get_entry_history, m)?)?;
+    m.add_function(wrap_pyfunction!(get_entry_revision, m)?)?;
+    m.add_function(wrap_pyfunction!(list_entries, m)?)?;
+    m.add_function(wrap_pyfunction!(restore_entry, m)?)?;
+    m.add_function(wrap_pyfunction!(update_entry, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(update_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_sql, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_properties_py, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_properties_py, m)?)?;
+
+    m.add_function(wrap_pyfunction!(list_forms, m)?)?;
+    m.add_function(wrap_pyfunction!(upsert_form, m)?)?;
+    m.add_function(wrap_pyfunction!(get_form, m)?)?;
+    m.add_function(wrap_pyfunction!(list_column_types, m)?)?;
+    m.add_function(wrap_pyfunction!(migrate_form, m)?)?;
+
+    m.add_function(wrap_pyfunction!(save_asset, m)?)?;
+    m.add_function(wrap_pyfunction!(list_assets, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_asset, m)?)?;
+
+    m.add_function(wrap_pyfunction!(get_space, m)?)?;
+    m.add_function(wrap_pyfunction!(patch_space, m)?)?;
+
+    m.add_function(wrap_pyfunction!(query_index, m)?)?;
+    m.add_function(wrap_pyfunction!(create_sql_session, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_status, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_count, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_rows_all, m)?)?;
+    m.add_function(wrap_pyfunction!(reindex_all, m)?)?;
+    m.add_function(wrap_pyfunction!(update_entry_index, m)?)?;
+
+    m.add_function(wrap_pyfunction!(search_entries, m)?)?;
+    m.add_function(wrap_pyfunction!(build_response_signature, m)?)?;
+    m.add_function(wrap_pyfunction!(load_hmac_material, m)?)?;
+    m.add_function(wrap_pyfunction!(load_response_hmac_material, m)?)?;
+
+    Ok(())
+}

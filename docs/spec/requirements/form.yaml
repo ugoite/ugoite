@@ -22,10 +22,10 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_forms.py
+    - file: ugoite-cli/tests/test_forms.rs
       tests:
       - test_list_column_types
-    - file: ugoite-cli/tests/test_cli_form.py
+    - file: ugoite-cli/tests/test_cli_form.rs
       tests:
       - test_cli_list_types
     - file: backend/tests/test_api.py
@@ -60,11 +60,11 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_forms.py
+    - file: ugoite-cli/tests/test_forms.rs
       tests:
       - test_migrate_form_add_column_with_default
       - test_migrate_form_remove_column
-    - file: ugoite-cli/tests/test_cli_form.py
+    - file: ugoite-cli/tests/test_cli_form.rs
       tests:
       - test_cli_form_update
     - file: backend/tests/test_api.py

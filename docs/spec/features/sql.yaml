@@ -20,8 +20,8 @@ apis:
       function: list_sql
     ugoite_cli:
       command: ugoite sql saved-list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_sql_saved_list
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.create
     method: POST
@@ -38,8 +38,8 @@ apis:
       function: create_sql
     ugoite_cli:
       command: ugoite sql saved-create
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_sql_saved_create
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.get
     method: GET
@@ -56,8 +56,8 @@ apis:
       function: get_sql
     ugoite_cli:
       command: ugoite sql saved-get
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_sql_saved_get
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.update
     method: PUT
@@ -74,8 +74,8 @@ apis:
       function: update_sql
     ugoite_cli:
       command: ugoite sql saved-update
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_sql_saved_update
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.delete
     method: DELETE
@@ -92,8 +92,8 @@ apis:
       function: delete_sql
     ugoite_cli:
       command: ugoite sql saved-delete
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_sql_saved_delete
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.session.create
     method: POST
@@ -110,8 +110,8 @@ apis:
       function: create_sql_session
     ugoite_cli:
       command: ugoite query --sql
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_query
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.session.status
     method: GET
@@ -128,8 +128,8 @@ apis:
       function: get_sql_session_status
     ugoite_cli:
       command: ugoite query --sql
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_query
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.session.count
     method: GET
@@ -146,8 +146,8 @@ apis:
       function: get_sql_session_count
     ugoite_cli:
       command: ugoite query --sql
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_query
+      file: ugoite-cli/src/commands/sql.rs
+      function: run
 
   - id: sql.session.rows
     method: GET
@@ -164,5 +164,5 @@ apis:
       function: get_sql_session_rows
     ugoite_cli:
       command: ugoite query --sql
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_query
+      file: ugoite-cli/src/commands/sql.rs
+      function: run

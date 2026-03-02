@@ -280,3 +280,41 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+/// REQ-IDX-001
+async fn test_index_req_idx_001_get_space_stats() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stats-space", "/tmp").await?;
+    let ws_path = "spaces/stats-space";
+
+    struct MockIntegrity;
+    impl _ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+        fn checksum(&self, data: &str) -> String {
+            format!("chk-{}", data.len())
+        }
+        fn signature(&self, _data: &str) -> String {
+            "mock-sig".to_string()
+        }
+    }
+
+    let class_def = serde_json::json!({
+        "name": "Note",
+        "fields": {"Body": {"type": "markdown"}}
+    });
+    form::upsert_form(&op, ws_path, &class_def).await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "note-1",
+        "---\nform: Note\n---\n# Note 1\n\n## Body\nHello",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+
+    let stats = index::get_space_stats(&op, ws_path).await?;
+    assert!(stats.is_object());
+
+    Ok(())
+}
