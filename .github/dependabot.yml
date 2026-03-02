@@ -10,6 +10,11 @@ updates:
     schedule:
       interval: "daily"
 
+  - package-ecosystem: "bun"
+    directory: "/docsite"
+    schedule:
+      interval: "daily"
+
   - package-ecosystem: "npm"
     directory: "/e2e"
     schedule:
