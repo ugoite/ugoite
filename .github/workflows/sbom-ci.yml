@@ -1,0 +1,142 @@
+name: SBOM CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  sbom-supply-chain:
+    name: SBOM + Signing + Security Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          load: true
+          tags: ugoite-backend:sbom
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          load: true
+          tags: ugoite-frontend:sbom
+
+      - name: Install Syft
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft version
+
+      - name: Install Grype
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype version
+
+      - name: Generate CycloneDX SBOMs (Syft)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/sbom
+          syft dir:ugoite-core -o cyclonedx-json=artifacts/sbom/ugoite-core-rust.cdx.json
+          syft dir:backend -o cyclonedx-json=artifacts/sbom/backend-python.cdx.json
+          syft dir:ugoite-cli -o cyclonedx-json=artifacts/sbom/ugoite-cli-python.cdx.json
+          syft dir:frontend -o cyclonedx-json=artifacts/sbom/frontend-bun.cdx.json
+          syft dir:docsite -o cyclonedx-json=artifacts/sbom/docsite-bun.cdx.json
+          syft dir:e2e -o cyclonedx-json=artifacts/sbom/e2e-node.cdx.json
+          syft docker:ugoite-backend:sbom -o cyclonedx-json=artifacts/sbom/backend-image-docker.cdx.json
+          syft docker:ugoite-frontend:sbom -o cyclonedx-json=artifacts/sbom/frontend-image-docker.cdx.json
+
+      - name: Build SBOM provenance manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          sbom_dir = Path("artifacts/sbom")
+          entries: list[dict[str, str]] = []
+          for file in sorted(sbom_dir.glob("*.cdx.json")):
+              digest = hashlib.sha256(file.read_bytes()).hexdigest()
+              entries.append(
+                  {
+                      "file": file.name,
+                      "sha256": digest,
+                  }
+              )
+
+          payload = {
+              "repository": os.environ.get("GITHUB_REPOSITORY"),
+              "workflow": os.environ.get("GITHUB_WORKFLOW"),
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+              "commit_sha": os.environ.get("GITHUB_SHA"),
+              "sboms": entries,
+          }
+          (sbom_dir / "provenance.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign and verify SBOM artifacts (keyless)
+        run: |
+          set -euo pipefail
+          identity_regex="https://github.com/${{ github.repository }}/.github/workflows/sbom-ci.yml@.*"
+          for file in artifacts/sbom/*.json; do
+            cosign sign-blob --yes \
+              --output-signature "${file}.sig" \
+              --output-certificate "${file}.pem" \
+              "$file"
+            cosign verify-blob \
+              --signature "${file}.sig" \
+              --certificate "${file}.pem" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "$identity_regex" \
+              "$file"
+          done
+
+      - name: Attest SBOM provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "artifacts/sbom/*.json"
+
+      - name: Security gate (Grype, fail on critical)
+        run: |
+          set -euo pipefail
+          for file in artifacts/sbom/*.cdx.json; do
+            grype "sbom:${file}" --fail-on critical
+          done
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-artifacts
+          path: artifacts/sbom
+          if-no-files-found: error

@@ -8,6 +8,7 @@
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
+| SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 
 ## Python CI
 
@@ -44,6 +45,18 @@ jobs:
     - Wait for servers
     - cd e2e && npm run test
     timeout: 30 minutes
+```
+
+## SBOM and Supply Chain CI
+
+```yaml
+jobs:
+  sbom-supply-chain:
+    - Build backend/frontend Docker images
+    - Generate CycloneDX SBOMs with Syft (rust/python/node/bun/docker)
+    - Sign and verify SBOM artifacts with Cosign keyless flow
+    - Emit artifact provenance attestation
+    - Run Grype vulnerability checks (fail on critical)
 ```
 
 ## Pre-commit Hooks
