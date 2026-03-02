@@ -13,6 +13,7 @@ import ugoite_core
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
+from app.core.security import _space_hmac_path
 from app.main import app
 
 
@@ -1035,7 +1036,7 @@ def test_middleware_hmac_signature(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test that HMAC signature header matches the response body."""
+    """REQ-INT-003: default-space signature header matches the response body."""
     response = test_client.get("/")
 
     hmac_data = json.loads(
@@ -1050,6 +1051,36 @@ def test_middleware_hmac_signature(
 
     assert response.headers["X-Ugoite-Key-Id"] == hmac_data["hmac_key_id"]
     assert response.headers["X-Ugoite-Signature"] == expected_signature
+
+
+def test_middleware_hmac_signature_for_space_route(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-INT-003: space routes must use the corresponding space-scoped HMAC."""
+    test_client.post("/spaces", json={"name": "hmac-space"})
+
+    response = test_client.get("/spaces/hmac-space/forms/types")
+    assert response.status_code == 200
+
+    hmac_data = json.loads(
+        (temp_space_root / "spaces" / "hmac-space" / "hmac.json").read_text()
+    )
+    secret = base64.b64decode(hmac_data["hmac_key"])
+    expected_signature = hmac.new(
+        secret,
+        response.content,
+        hashlib.sha256,
+    ).hexdigest()
+
+    assert response.headers["X-Ugoite-Key-Id"] == hmac_data["hmac_key_id"]
+    assert response.headers["X-Ugoite-Signature"] == expected_signature
+
+
+def test_hmac_path_rejects_invalid_space_id(temp_space_root: Path) -> None:
+    """REQ-INT-003: HMAC path resolution must reject unsafe space identifiers."""
+    with pytest.raises(ValueError):
+        _space_hmac_path(temp_space_root, "../escape")
 
 
 def test_middleware_signs_non_streaming_mcp_prefixed_paths(

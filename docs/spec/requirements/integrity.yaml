@@ -91,3 +91,5 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_middleware_hmac_signature
+      - test_middleware_hmac_signature_for_space_route
+      - test_hmac_path_rejects_invalid_space_id
