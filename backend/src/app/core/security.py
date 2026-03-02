@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-import anyio
+from starlette.concurrency import run_in_threadpool
 
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
     from collections.abc import Mapping
@@ -149,7 +149,7 @@ async def build_response_signature(
         Tuple of (key_id, signature_hex).
 
     """
-    key_id, secret = await anyio.to_thread.run_sync(
+    key_id, secret = await run_in_threadpool(
         _load_response_hmac_material,
         root_path,
         space_id,
