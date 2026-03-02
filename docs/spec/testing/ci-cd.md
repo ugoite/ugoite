@@ -56,7 +56,7 @@ jobs:
     - Generate CycloneDX SBOMs with Syft (rust/python/node/bun/docker)
     - Sign and verify SBOM artifacts with Cosign keyless flow
     - Emit artifact provenance attestation
-    - Run Grype vulnerability checks (fail on critical)
+    - Run Grype vulnerability checks (critical gate on Docker image SBOMs)
 ```
 
 ## Pre-commit Hooks

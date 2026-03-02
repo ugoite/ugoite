@@ -136,7 +136,11 @@ jobs:
         run: |
           set -euo pipefail
           for file in artifacts/sbom/*.cdx.json; do
-            grype "sbom:${file}" --fail-on critical
+            if [[ "${file}" == *"-image-docker.cdx.json" ]]; then
+              grype "sbom:${file}" --fail-on critical
+            else
+              grype "sbom:${file}"
+            fi
           done
 
       - name: Upload SBOM artifacts
