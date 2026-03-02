@@ -52,6 +52,7 @@ jobs:
 ```yaml
 jobs:
   devcontainer-build-smoke:
+    - docker/setup-buildx-action (enables type=gha cache driver)
     - docker/login-action (ghcr.io, GITHUB_TOKEN)
     - devcontainers/ci with cacheFrom/cacheTo (gha)
     - Run smoke command: gh/mise/bash versions
