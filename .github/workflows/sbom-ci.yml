@@ -33,6 +33,9 @@ jobs:
           file: ./backend/Dockerfile
           load: true
           tags: ugoite-backend:sbom
+          build-contexts: |
+            core=./ugoite-core
+            module=./ugoite-cli
 
       - name: Build frontend image
         uses: docker/build-push-action@v6
@@ -41,6 +44,8 @@ jobs:
           file: ./frontend/Dockerfile
           load: true
           tags: ugoite-frontend:sbom
+          build-contexts: |
+            shared=./shared
 
       - name: Install Syft
         run: |
