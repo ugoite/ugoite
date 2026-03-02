@@ -1064,7 +1064,7 @@ def test_middleware_hmac_signature_for_space_route(
     assert response.status_code == 200
 
     hmac_data = json.loads(
-        (temp_space_root / "spaces" / "hmac-space" / "hmac.json").read_text()
+        (temp_space_root / "spaces" / "hmac-space" / "hmac.json").read_text(),
     )
     secret = base64.b64decode(hmac_data["hmac_key"])
     expected_signature = hmac.new(
@@ -1079,7 +1079,7 @@ def test_middleware_hmac_signature_for_space_route(
 
 def test_hmac_path_rejects_invalid_space_id(temp_space_root: Path) -> None:
     """REQ-INT-003: HMAC path resolution must reject unsafe space identifiers."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid space_id"):
         _space_hmac_path(temp_space_root, "../escape")
 
 
