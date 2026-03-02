@@ -78,15 +78,19 @@ Start development (backend + frontend + docsite):
 mise run dev
 ```
 
-If authentication is enabled and `localhost:3000` returns `Unauthorized`, configure local auth tokens first:
+`mise run dev` now performs local dev login flow automatically via `scripts/dev-auth-env.sh`:
 
 ```bash
-export UGOITE_BOOTSTRAP_BEARER_TOKEN="dev-local-token"
-export UGOITE_AUTH_BEARER_TOKEN="dev-local-token"
 mise run dev
 ```
 
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for full setup options.
+If you need to rotate/refresh token manually, run:
+
+```bash
+UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
+```
+
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the 2FA + oathtool flow and local-dev secret setup.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
