@@ -136,7 +136,7 @@ def _load_response_hmac_material(
 async def build_response_signature(
     body: bytes,
     root_path: Path | str,
-    space_id: str,
+    space_id: str = "default",
 ) -> tuple[str, str]:
     """Compute the HMAC signature for the response body.
 

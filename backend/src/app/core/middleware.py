@@ -255,7 +255,10 @@ async def _apply_security_headers(
     space_id: str,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
-    key_id, signature = await build_response_signature(body, root_path, space_id)
+    if space_id == "default":
+        key_id, signature = await build_response_signature(body, root_path)
+    else:
+        key_id, signature = await build_response_signature(body, root_path, space_id)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Ugoite-Key-Id"] = key_id
     response.headers["X-Ugoite-Signature"] = signature
