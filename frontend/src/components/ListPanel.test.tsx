@@ -205,6 +205,54 @@ describe("ListPanel", () => {
 			));
 			expect(screen.getByText("No entries yet")).toBeInTheDocument();
 		});
+
+		it("should render search bar when onSearch is provided", () => {
+			const [filterForm, setFilterForm] = createSignal("");
+			const onSearch = vi.fn();
+			render(() => (
+				<ListPanel
+					mode="entries"
+					forms={mockForms}
+					filterForm={filterForm}
+					onFilterFormChange={setFilterForm}
+					onSearch={onSearch}
+					isSearching={true}
+					searchResultsCount={3}
+				/>
+			));
+			expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
+		});
+
+		it("renders entries with no title and non-string properties and null properties", () => {
+			const [filterForm, setFilterForm] = createSignal("");
+			const entry: EntryRecord = {
+				id: "complex-entry",
+				title: "",
+				updated_at: "2025-01-01T00:00:00Z",
+				properties: { count: 42, flag: true },
+				tags: [],
+				links: [],
+			};
+			const noPropsEntry: EntryRecord = {
+				id: "no-props",
+				title: "Has Props",
+				updated_at: "2025-01-01T00:00:00Z",
+				properties: null as unknown as Record<string, unknown>,
+				tags: [],
+				links: [],
+			};
+			render(() => (
+				<ListPanel
+					mode="entries"
+					forms={mockForms}
+					filterForm={filterForm}
+					onFilterFormChange={setFilterForm}
+					entries={[entry, noPropsEntry]}
+				/>
+			));
+			expect(screen.getByText("Untitled")).toBeInTheDocument();
+			expect(screen.getByText("42")).toBeInTheDocument();
+		});
 	});
 
 	describe("Forms mode", () => {

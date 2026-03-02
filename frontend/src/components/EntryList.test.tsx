@@ -163,6 +163,23 @@ describe("EntryList", () => {
 			const button = screen.getByRole("button");
 			expect(button).toHaveClass("ui-card-selected");
 		});
+
+		it("should display form badge and handle no title and non-string properties", () => {
+			const record: EntryRecord = {
+				id: "form-entry",
+				title: "",
+				form: "Meeting",
+				updated_at: "2025-01-01T00:00:00Z",
+				properties: { Count: 5, Active: true },
+				tags: [],
+				links: [],
+			};
+			const { entries, loading, error } = createControlledProps([record]);
+			render(() => <EntryList entries={entries} loading={loading} error={error} />);
+			expect(screen.getByText("Untitled")).toBeInTheDocument();
+			expect(screen.getByText("Meeting")).toBeInTheDocument();
+			expect(screen.getByText("5")).toBeInTheDocument();
+		});
 	});
 
 	describe("standalone mode", () => {

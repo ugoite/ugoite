@@ -18,23 +18,23 @@ repos:
     hooks:
       - id: rustfmt
         name: rustfmt
-        entry: cargo fmt --manifest-path Cargo.toml --
+        entry: bash -c "cd ugoite-core && uv run cargo fmt --all && cd ../ugoite-cli && cargo fmt --all"
         language: system
-        files: \.rs$
+        files: ^ugoite-(core|cli)/
         pass_filenames: false
 
       - id: cargo-clippy
         name: cargo clippy
         entry: bash -c "cd ugoite-core && uv run cargo clippy -- -D warnings"
         language: system
-        files: \.rs$
+        files: ^ugoite-core/
         pass_filenames: false
 
       - id: cargo-llvm-cov-core
         name: cargo llvm-cov (ugoite-core 100%)
         entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 100 --jobs 1"
         language: system
-        files: \.rs$
+        files: ^ugoite-core/
         pass_filenames: false
 
       - id: ty-backend
@@ -48,7 +48,21 @@ repos:
         name: cargo clippy (ugoite-cli)
         entry: bash -c "cd ugoite-cli && cargo clippy -- -D warnings"
         language: system
-        files: \.rs$
+        files: ^ugoite-cli/
+        pass_filenames: false
+
+      - id: pytest-backend
+        name: pytest (backend, 100% coverage)
+        entry: bash -c "cd backend && uv run pytest -q"
+        language: system
+        pass_filenames: false
+        files: ^backend/
+
+      - id: ty-cli
+        name: "ty: ugoite-cli type check"
+        entry: bash -c "cd ugoite-cli && uv run ty check ."
+        language: system
+        files: ^ugoite-cli/
         pass_filenames: false
 
       - id: ty-core
@@ -80,3 +94,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^docsite/
+
+      - id: frontend-vitest-coverage
+        name: frontend vitest coverage (100%)
+        entry: bash -c "cd frontend && bun run test:run --coverage"
+        language: system
+        pass_filenames: false
+        files: ^frontend/

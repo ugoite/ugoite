@@ -70,6 +70,58 @@ describe("CreateFormDialog", () => {
 		expect(screen.getByText("Reserved metadata column name")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Create Form" })).toBeDisabled();
 	});
+
+	it("REQ-FE-032: creates form with valid name and fields", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+			target: { value: "NewForm" },
+		});
+		fireEvent.click(screen.getByText("+ Add Column"));
+		const columnInput = screen.getByPlaceholderText("Column Name") as HTMLInputElement;
+		fireEvent.input(columnInput, { target: { value: "field1" } });
+
+		fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: "NewForm",
+				fields: expect.objectContaining({ field1: expect.any(Object) }),
+			}),
+		);
+	});
+
+	it("REQ-FE-032: removes a column from create form dialog", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByText("+ Add Column"));
+		expect(screen.getByPlaceholderText("Column Name")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Remove column" }));
+		expect(screen.queryByPlaceholderText("Column Name")).not.toBeInTheDocument();
+	});
 });
 
 describe("CreateEntryDialog", () => {
@@ -241,10 +293,67 @@ describe("CreateEntryDialog", () => {
 			(screen.getByRole("textbox", { name: "Markdown input" }) as HTMLTextAreaElement).value,
 		).toBe(customMarkdown);
 	});
+
+	it("REQ-FE-037: submits in webform mode successfully", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { Status: { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "My Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith("My Task", "Task", expect.any(Object), "webform");
+	});
+
+	it("REQ-FE-037: shows error when markdown is empty in markdown mode", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: {},
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "My Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+
+		// Set markdown to whitespace only (trims to empty, should show error)
+		const markdownArea = screen.getByRole("textbox", { name: "Markdown input" });
+		fireEvent.input(markdownArea, { target: { value: "   " } });
+
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(screen.getByText("Please provide markdown content.")).toBeInTheDocument();
+	});
 });
 
 describe("EditFormDialog", () => {
-	const columnTypes = ["string", "number", "boolean"];
+	const columnTypes = ["string", "number", "boolean", "row_reference"];
 	const mockForm: Form = {
 		name: "ExistingForm",
 		version: 1,
@@ -290,5 +399,148 @@ describe("EditFormDialog", () => {
 		// Type the second character
 		fireEvent.input(columnInput, { target: { value: "ge" } });
 		expect(document.activeElement).toBe(columnInput);
+	});
+
+	it("REQ-FE-039: shows target form input when row_reference type is selected", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const formWithRowRef: Form = {
+			name: "ProjectTask",
+			version: 1,
+			template: "# ProjectTask\n\n## project\n\n",
+			fields: {
+				project: { type: "row_reference", required: false, target_form: "Project" },
+			},
+		};
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={formWithRowRef}
+				columnTypes={columnTypes}
+				formNames={["ProjectTask", "Project"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		// The row_reference field should show Target Form input
+		expect(screen.getByPlaceholderText("e.g. Project")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-039: shows default value input for new fields", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		// Add a new column
+		fireEvent.click(screen.getByText("+ Add Column"));
+
+		// New field should have default value input
+		expect(screen.getByPlaceholderText("(Optional) e.g. Pending")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-032: submits the edited form successfully", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: "ExistingForm",
+				fields: expect.objectContaining({ field1: expect.any(Object) }),
+			}),
+		);
+	});
+
+	it("REQ-FE-032: removes a column from the edit dialog", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		// Remove the existing field
+		const removeButton = screen.getByRole("button", { name: "Remove column" });
+		fireEvent.click(removeButton);
+
+		// Submit with no fields
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: "ExistingForm",
+				fields: {},
+			}),
+		);
+	});
+
+	it("REQ-FE-032: submits new field with default value (processFields)", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		// Add a new column
+		fireEvent.click(screen.getByText("+ Add Column"));
+
+		// Set name for new column
+		const inputs = screen.getAllByPlaceholderText("Column Name") as HTMLInputElement[];
+		const newInput = inputs.find((i) => i.value === "");
+		if (!newInput) throw new Error("new input not found");
+		fireEvent.input(newInput, { target: { value: "newcol" } });
+
+		// Set default value
+		const defaultInput = screen.getByPlaceholderText("(Optional) e.g. Pending") as HTMLInputElement;
+		fireEvent.input(defaultInput, { target: { value: "SomeDefault" } });
+
+		// Submit
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: "ExistingForm",
+				strategies: expect.objectContaining({ newcol: "SomeDefault" }),
+			}),
+		);
 	});
 });

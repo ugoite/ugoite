@@ -35,6 +35,7 @@ _AUTH_EXEMPT_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/health",
 }
 
 

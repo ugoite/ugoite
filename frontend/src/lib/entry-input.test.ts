@@ -19,4 +19,20 @@ describe("buildEntryMarkdownByMode", () => {
 
 		expect(result).toBe(markdown);
 	});
+
+	it("REQ-FE-037: builds from fields when __markdown is empty in markdown mode", () => {
+		const formDef: Form = {
+			name: "Task",
+			version: 1,
+			template: "# Task\n\n## Status\n",
+			fields: { Status: { type: "text" } },
+		};
+		const result = buildEntryMarkdownByMode(
+			formDef as Form,
+			"My Task",
+			{ __markdown: "" },
+			"markdown",
+		);
+		expect(result).toContain("My Task");
+	});
 });

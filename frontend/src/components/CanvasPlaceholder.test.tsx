@@ -93,4 +93,37 @@ describe("CanvasPlaceholder", () => {
 		// +60 for banner offset
 		expect(card.style.top).toBe("360px");
 	});
+
+	it("should show 'Untitled' when entry has no title", () => {
+		const noTitleEntry: EntryRecord = {
+			id: "no-title",
+			title: "",
+			updated_at: "2025-01-01T00:00:00Z",
+			properties: {},
+			tags: [],
+			links: [],
+		};
+		render(() => <CanvasPlaceholder entries={[noTitleEntry]} />);
+		expect(screen.getByText("Untitled")).toBeInTheDocument();
+	});
+
+	it("should display entry with form badge and non-string properties and >3 properties", () => {
+		const complexEntry: EntryRecord = {
+			id: "complex",
+			title: "Complex Entry",
+			form: "Report",
+			updated_at: "2025-01-01T00:00:00Z",
+			properties: {
+				Status: "Active",
+				Count: 42,
+				Flag: true,
+				Extra: "value",
+			},
+			tags: [],
+			links: [],
+		};
+		render(() => <CanvasPlaceholder entries={[complexEntry]} />);
+		expect(screen.getByText("Report")).toBeInTheDocument();
+		expect(screen.getByText("+1 more")).toBeInTheDocument();
+	});
 });
