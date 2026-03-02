@@ -72,13 +72,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (backend + frontend + docsite):
-
-```bash
-mise run dev
-```
-
-`mise run dev` now performs local dev login flow automatically via `scripts/dev-auth-env.sh`:
+Start development (backend + frontend + docsite — auth is bootstrapped automatically):
 
 ```bash
 mise run dev

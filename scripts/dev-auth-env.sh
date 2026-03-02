@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AUTH_FILE="${UGOITE_DEV_AUTH_FILE:-${HOME:-.}/.ugoite/dev-auth.json}"
+if [ -z "${HOME:-}" ]; then
+  echo "HOME is not set; cannot determine auth file path." >&2
+  exit 1
+fi
+AUTH_FILE="${UGOITE_DEV_AUTH_FILE:-${HOME}/.ugoite/dev-auth.json}"
 AUTH_TTL_SECONDS="${UGOITE_DEV_AUTH_TTL_SECONDS:-43200}"
 DEV_2FA_SECRET="${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 DEV_USER_ID="${UGOITE_DEV_USER_ID:-dev-local-user}"
@@ -62,7 +66,7 @@ PY
 )"
   expires_at="$((now_epoch + AUTH_TTL_SECONDS))"
 
-  python - "$AUTH_FILE" "$token" "$expires_at" "$otp_code" <<'PY'
+  python - "$AUTH_FILE" "$token" "$expires_at" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -70,18 +74,15 @@ from pathlib import Path
 path = Path(sys.argv[1])
 token = sys.argv[2]
 expires_at = int(sys.argv[3])
-otp_code = sys.argv[4]
 path.parent.mkdir(parents=True, exist_ok=True)
 payload = {
     "bearer_token": token,
     "expires_at": expires_at,
-    "two_factor_method": "totp(oathtool)",
-    "last_generated_otp": otp_code,
 }
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 
-  echo "Generated new local dev token via 2FA flow; expires_at=${expires_at}" >&2
+  echo "Generated new local dev token; expires_at=${expires_at}" >&2
 fi
 
 python - "$token" "$DEV_USER_ID" <<'PY'
