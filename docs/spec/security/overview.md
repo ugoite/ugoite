@@ -70,7 +70,7 @@ targets an **Authenticated Access by Default** model.
 
 ### Security Gates
 
-- Grype scans generated SBOMs and fails CI on critical vulnerabilities.
+- Grype scans generated SBOMs, with critical-severity CI gating on Docker image SBOMs.
 - SBOM and signature artifacts are uploaded as CI artifacts for auditability.
 
 ### Dependency Automation
