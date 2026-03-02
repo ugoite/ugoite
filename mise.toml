@@ -22,6 +22,7 @@ uv = "latest"
 
 [tasks.setup]
 run = [
+	"npm install --no-fund --no-audit",
 	"mise run //backend:install",
 	"mise run //docsite:install",
 	"mise run //frontend:install",
