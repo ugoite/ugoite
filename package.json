@@ -1,0 +1,26 @@
+{
+  "name": "ugoite-release-tooling",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Repository-level commit and release automation tooling",
+  "license": "UNLICENSED",
+  "scripts": {
+    "prepare": "husky",
+    "commitlint:range": "commitlint --from \"${COMMITLINT_FROM:-HEAD~1}\" --to \"${COMMITLINT_TO:-HEAD}\" --verbose",
+    "commitlint:edit": "commitlint --edit",
+    "changeset:status": "changeset status --verbose",
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.6",
+    "@semantic-release/release-notes-generator": "^14.0.3",
+    "husky": "^9.1.7",
+    "semantic-release": "^24.2.9"
+  }
+}
