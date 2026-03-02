@@ -12,6 +12,11 @@ export type LinkItem = {
 	summary?: string;
 };
 
+export type PhilosophyItem = LinkItem & {
+	productDesignPrinciple?: string;
+	codingGuideline?: string;
+};
+
 export type RequirementGroup = {
 	setId: string;
 	sourceFile: string;
@@ -84,21 +89,29 @@ function sortByTitle<T extends { title: string }>(items: T[]): T[] {
 	return [...items].sort((a, b) => a.title.localeCompare(b.title));
 }
 
-export async function getPhilosophies(): Promise<LinkItem[]> {
+export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 	const filePath = path.join(specRoot, "philosophy/foundation.yaml");
 	const data = await readYaml<{
-		philosophies?: Array<{ id: string; title: string; statement?: string }>;
+		philosophies?: Array<{
+			id: string;
+			title: string;
+			statement?: string;
+			product_design_principle?: string;
+			coding_guideline?: string;
+		}>;
 	}>(filePath);
 	return sortByTitle(
 		(data.philosophies ?? []).map((item) => ({
 			id: item.id,
 			title: item.title,
-			summary: item.statement?.trim(),
+			summary: (item.product_design_principle ?? item.statement)?.trim(),
+			productDesignPrinciple: item.product_design_principle?.trim(),
+			codingGuideline: item.coding_guideline?.trim(),
 		})),
 	);
 }
 
-export async function getPhilosophyById(id: string): Promise<LinkItem | null> {
+export async function getPhilosophyById(id: string): Promise<PhilosophyItem | null> {
 	const items = await getPhilosophies();
 	return items.find((item) => item.id === id) ?? null;
 }

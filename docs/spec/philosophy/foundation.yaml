@@ -6,32 +6,48 @@ last_updated: 2026-02-15
 philosophies:
   - id: PHIL-001
     title: Freedom Through Modern Abstraction Layers
-    statement: |
-      Ugoite maximizes user freedom by adopting modern abstraction layers that
-      reduce lock-in and preserve optionality. Storage abstraction, a reusable
-      Rust core, open table formats, and portable protocols are treated as
-      first-class architectural assets.
+    product_design_principle: |
+      Product and architecture decisions must preserve user optionality by
+      default. Storage abstraction, reusable core components, open table
+      formats, and portable interfaces are first-class features because they
+      reduce lock-in and preserve long-term user freedom.
+    coding_guideline: |
+      Prefer abstractions and open interfaces over tightly coupled one-off
+      integrations. Reuse shared core modules, avoid storage/provider-specific
+      assumptions in API/UI layers, and keep code paths portable across
+      backends and runtimes.
 
   - id: PHIL-002
     title: Serverless-Oriented Minimal Node Topology
-    statement: |
-      Ugoite minimizes persistent nodes and infrastructure coupling. The target
-      operating model is a small number of composable runtime nodes where
-      clients can directly integrate with storage and AI services when safe,
-      while keeping transitional adapters only where they are currently needed.
+    product_design_principle: |
+      Product capabilities should favor fewer persistent nodes and minimal
+      infrastructure coupling. Clients should integrate directly with storage
+      and AI services where safe, while transitional adapters remain explicit
+      and temporary.
+    coding_guideline: |
+      Keep runtime topology small and explicit in implementation. Avoid adding
+      new always-on services unless required by a documented constraint, and
+      isolate transitional adapters so they can be removed without broad
+      refactoring.
 
   - id: PHIL-003
     title: Build Rules, Not Disposable Artifacts
-    statement: |
-      Ugoite prioritizes durable rules over one-off artifacts. Specifications,
-      code, and tests are coupled so behavior can be re-validated continuously,
-      and user workflows are designed to encode reusable intent rather than
-      repetitive manual steps.
+    product_design_principle: |
+      Product behavior should be encoded as durable, reusable rules rather than
+      manual one-off artifacts. Specifications, implementation, and validation
+      are coupled so behavior can be continuously re-verified.
+    coding_guideline: |
+      Tie behavior changes to specs and tests in the same change set. Prefer
+      reusable helpers, schemas, and automation over manual procedural steps,
+      and avoid introducing logic that cannot be continuously validated in CI.
 
   - id: PHIL-004
     title: Give AI Freedom Inside Trusted Constraints
-    statement: |
-      Ugoite treats AI as a force multiplier that should move quickly inside
-      explicit boundaries. Strict CI, typed interfaces, trusted tools, and
-      policy-linked specifications allow high AI autonomy while keeping risk
-      observable and governable.
+    product_design_principle: |
+      AI should accelerate user workflows, but only within explicit trust
+      boundaries. Product design must make risk observable and governable while
+      retaining high autonomy inside approved constraints.
+    coding_guideline: |
+      Enforce strict typed contracts, CI gates, policy-linked specifications,
+      and trusted toolchains for AI-assisted changes. Do not bypass validation
+      paths or introduce silent fallbacks that hide risk.
