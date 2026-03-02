@@ -1,38 +1,70 @@
 # Local Development Authentication and Login
 
-When auth is enabled, opening `http://localhost:3000` without a valid bearer token can return `Unauthorized`.
-Use one of the following local setups before running `mise run dev`.
+`mise run dev` now runs an automatic local login flow and token persistence step
+via `scripts/dev-auth-env.sh`. You do not need to export bearer env vars
+manually for the common dev path.
 
-## Option 1: Single bootstrap token
-
-Set one token that the backend accepts and the frontend sends.
+## 1) Install oathtool (required for local 2FA code generation)
 
 ```bash
-export UGOITE_BOOTSTRAP_BEARER_TOKEN="dev-local-token"
-export UGOITE_AUTH_BEARER_TOKEN="dev-local-token"
+sudo apt-get update && sudo apt-get install -y oathtool
+```
+
+## 2) Development 2FA secret (dev-only plain secret)
+
+For local development, the script uses this default Base32 secret:
+
+```text
+JBSWY3DPEHPK3PXP
+```
+
+This is intentionally documented in plain text for development convenience only.
+Do not reuse this secret in production.
+
+You can override it with:
+
+```bash
+export UGOITE_DEV_2FA_SECRET="YOUR_BASE32_SECRET"
+```
+
+## 3) Run development
+
+```bash
 mise run dev
 ```
 
-## Option 2: Explicit token list
+On first run (or after expiry), the script:
+- generates a TOTP code using `oathtool`
+- creates a local bearer token
+- stores it in `~/.ugoite/dev-auth.json`
+- exports backend/frontend auth env vars automatically
 
-Use JSON to define accepted tokens and keep the frontend token in sync.
+## 4) Token reuse and re-login
+
+- Cached token is reused while valid (default TTL: 12 hours).
+- Expired token triggers automatic re-login flow.
+- Force re-login manually:
 
 ```bash
-export UGOITE_AUTH_BEARER_TOKENS_JSON='["dev-local-token","another-token"]'
-export UGOITE_AUTH_BEARER_TOKEN="dev-local-token"
-mise run dev
+UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-## Verify login/auth locally
+Optional overrides:
+
+```bash
+export UGOITE_DEV_AUTH_FILE="$HOME/.ugoite/dev-auth.json"
+export UGOITE_DEV_AUTH_TTL_SECONDS=43200
+export UGOITE_DEV_USER_ID="dev-local-user"
+```
+
+## 5) Verify auth locally
 
 1. Open `http://localhost:3000`.
-2. Open browser devtools and confirm API calls include `Authorization: Bearer <token>`.
-3. Check backend health (the `/health` endpoint is intentionally unauthenticated and should return `200 OK`):
+2. Confirm API calls include `Authorization: Bearer <token>`.
+3. Check backend health (`/health` is intentionally unauthenticated):
 
 ```bash
 curl -i http://localhost:8000/health
 ```
 
 Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
-
-If the page still shows `Unauthorized`, follow [Troubleshooting Unauthorized Spaces](./troubleshooting-unauthorized-spaces.md).
