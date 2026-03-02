@@ -39,4 +39,10 @@ describe("i18n", () => {
 		expect(i18n.locale()).toBe("ja");
 		expect(i18n.t("themeMenu.language")).toBe("言語");
 	});
+
+	it("ignores invalid locale", () => {
+		setLocale("en");
+		setLocale("invalid" as never);
+		expect(locale()).toBe("en");
+	});
 });

@@ -7,6 +7,7 @@ import { formApi } from "./form-api";
 import { entryApi, RevisionConflictError } from "./entry-api";
 import { searchApi } from "./search-api";
 import { spaceApi } from "./space-api";
+import { joinUrl } from "./api";
 import { resetMockData, seedSpace, seedEntry } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
@@ -314,5 +315,397 @@ describe("formApi", () => {
 		const fetched = await formApi.get("form-ws", "Meeting");
 		expect(fetched.name).toBe("Meeting");
 		expect(fetched.fields.Date.type).toBe("date");
+	});
+});
+
+describe("joinUrl", () => {
+	it("joins base and path", () => {
+		expect(joinUrl("http://example.com", "/foo")).toBe("http://example.com/foo");
+	});
+
+	it("returns path when base is empty", () => {
+		expect(joinUrl("", "/bar")).toBe("/bar");
+	});
+
+	it("handles trailing slash on base", () => {
+		expect(joinUrl("http://example.com/", "/foo")).toBe("http://example.com/foo");
+	});
+
+	it("handles missing leading slash on path", () => {
+		expect(joinUrl("http://example.com", "foo")).toBe("http://example.com/foo");
+	});
+});
+
+describe("spaceApi members", () => {
+	it("lists members", async () => {
+		resetMockData();
+		await spaceApi.create("ws-members");
+		const members = await spaceApi.listMembers("ws-members");
+		expect(Array.isArray(members)).toBe(true);
+	});
+
+	it("invites a member", async () => {
+		resetMockData();
+		await spaceApi.create("ws-invite");
+		const result = await spaceApi.inviteMember("ws-invite", { user_id: "user1", role: "editor" });
+		expect(result.invitation.token).toBeDefined();
+	});
+
+	it("accepts invitation", async () => {
+		resetMockData();
+		await spaceApi.create("ws-accept");
+		const result = await spaceApi.acceptInvitation("ws-accept", { token: "tok", user_id: "u1" });
+		expect(result.member.user_id).toBe("u1");
+	});
+
+	it("updates member role", async () => {
+		resetMockData();
+		await spaceApi.create("ws-role");
+		const result = await spaceApi.updateMemberRole("ws-role", "user1", { role: "viewer" });
+		expect(result.member.role).toBe("viewer");
+	});
+
+	it("revokes member", async () => {
+		resetMockData();
+		await spaceApi.create("ws-revoke");
+		const result = await spaceApi.revokeMember("ws-revoke", "user1");
+		expect(result.member.state).toBe("revoked");
+	});
+});
+
+describe("error paths", () => {
+	it("spaceApi.list throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(spaceApi.list()).rejects.toThrow("Failed to list spaces");
+	});
+
+	it("spaceApi.get throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/nonexistent", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(spaceApi.get("nonexistent")).rejects.toThrow("Failed to get space");
+	});
+
+	it("spaceApi.get returns a space", async () => {
+		resetMockData();
+		await spaceApi.create("existing-space");
+		const space = await spaceApi.get("existing-space");
+		expect(space.id).toBe("existing-space");
+	});
+
+	it("spaceApi.patch throws on failure", async () => {
+		server.use(
+			http.patch("http://localhost:3000/api/spaces/nonexistent", () =>
+				HttpResponse.json({ detail: "Space not found" }, { status: 404 }),
+			),
+		);
+		await expect(spaceApi.patch("nonexistent", {})).rejects.toThrow("Space not found");
+	});
+
+	it("spaceApi.testConnection throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/nonexistent/test-connection", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(
+			spaceApi.testConnection("nonexistent", { storage_config: { uri: "x" } }),
+		).rejects.toThrow();
+	});
+
+	it("spaceApi.listMembers throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/nonexistent/members", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(spaceApi.listMembers("nonexistent")).rejects.toThrow();
+	});
+
+	it("spaceApi.inviteMember throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/nonexistent/members/invitations", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(
+			spaceApi.inviteMember("nonexistent", { user_id: "u1", role: "editor" }),
+		).rejects.toThrow();
+	});
+
+	it("spaceApi.acceptInvitation throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/nonexistent/members/accept", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(
+			spaceApi.acceptInvitation("nonexistent", { token: "tok", user_id: "u1" }),
+		).rejects.toThrow();
+	});
+
+	it("spaceApi.updateMemberRole throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/nonexistent/members/u1/role", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(
+			spaceApi.updateMemberRole("nonexistent", "u1", { role: "viewer" }),
+		).rejects.toThrow();
+	});
+
+	it("spaceApi.revokeMember throws on failure", async () => {
+		server.use(
+			http.delete("http://localhost:3000/api/spaces/nonexistent/members/u1", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(spaceApi.revokeMember("nonexistent", "u1")).rejects.toThrow();
+	});
+
+	it("entryApi.history returns revisions", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-history", name: "H", created_at: "2025-01-01T00:00:00Z" });
+		const created = await entryApi.create("ws-history", { content: "# Entry" });
+		const history = await entryApi.history("ws-history", created.id);
+		expect(history.revisions).toBeDefined();
+	});
+
+	it("entryApi.getRevision returns a revision", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-rev", name: "R", created_at: "2025-01-01T00:00:00Z" });
+		const created = await entryApi.create("ws-rev", { content: "# Entry" });
+		const entry = await entryApi.get("ws-rev", created.id);
+		const revision = await entryApi.getRevision("ws-rev", created.id, entry.revision_id);
+		expect(revision.revision_id).toBe(entry.revision_id);
+	});
+
+	it("entryApi.restore succeeds", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-restore", name: "RR", created_at: "2025-01-01T00:00:00Z" });
+		const created = await entryApi.create("ws-restore", { content: "# Entry" });
+		const entry = await entryApi.get("ws-restore", created.id);
+		const restored = await entryApi.restore("ws-restore", created.id, entry.revision_id);
+		expect(restored).toBeDefined();
+	});
+
+	it("entryApi.createFromMarkdown creates entry", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-md", name: "MD", created_at: "2025-01-01T00:00:00Z" });
+		const result = await entryApi.createFromMarkdown("ws-md", "# Markdown Entry");
+		expect(result.id).toBeDefined();
+	});
+
+	it("entryApi.createFromWebform creates entry", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-wf", name: "WF", created_at: "2025-01-01T00:00:00Z" });
+		const formDef = {
+			name: "Task",
+			template: "# Task\n\n## Status\n",
+			fields: { Status: { type: "text" } },
+		};
+		const result = await entryApi.createFromWebform("ws-wf", formDef as never, "My Task", {
+			Status: "Open",
+		});
+		expect(result.id).toBeDefined();
+	});
+
+	it("entryApi.createFromChat creates entry", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-chat", name: "Chat", created_at: "2025-01-01T00:00:00Z" });
+		const formDef = {
+			name: "Task",
+			template: "# Task\n\n## Status\n",
+			fields: { Status: { type: "text" } },
+		};
+		const result = await entryApi.createFromChat("ws-chat", formDef as never, "Chat Task", {
+			Status: "Pending",
+		});
+		expect(result.id).toBeDefined();
+	});
+
+	it("entryApi.get includes detail in error", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+				HttpResponse.json({ detail: "Custom error detail" }, { status: 404 }),
+			),
+		);
+		await expect(entryApi.get("ws-err", "bad-id")).rejects.toThrow("Custom error detail");
+	});
+
+	it("entryApi.get uses statusText fallback when no detail in error", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-err/entries/no-detail-entry", () =>
+				HttpResponse.json({ message: "Generic error" }, { status: 404 }),
+			),
+		);
+		await expect(entryApi.get("ws-err", "no-detail-entry")).rejects.toThrow("Failed to get entry");
+	});
+
+	it("entryApi.update throws generic error on non-409 failure", async () => {
+		server.use(
+			http.put("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
+			),
+		);
+		await expect(
+			entryApi.update("ws-err", "bad-id", { markdown: "# X", parent_revision_id: "r1" }),
+		).rejects.toThrow("Server error");
+	});
+
+	it("entryApi.delete throws on failure", async () => {
+		server.use(
+			http.delete("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(entryApi.delete("ws-err", "bad-id")).rejects.toThrow("Failed to delete entry");
+	});
+
+	it("entryApi.restore throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/ws-err/entries/bad-id/restore", () =>
+				HttpResponse.json({ detail: "Restore failed" }, { status: 500 }),
+			),
+		);
+		await expect(entryApi.restore("ws-err", "bad-id", "rev-1")).rejects.toThrow("Restore failed");
+	});
+
+	it("entryApi.history throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id/history", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(entryApi.history("ws-err", "bad-id")).rejects.toThrow(
+			"Failed to get entry history",
+		);
+	});
+
+	it("entryApi.getRevision throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id/history/rev-1", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(entryApi.getRevision("ws-err", "bad-id", "rev-1")).rejects.toThrow(
+			"Failed to get entry revision",
+		);
+	});
+
+	it("assetApi.list returns assets", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-asset", name: "A", created_at: "2025-01-01T00:00:00Z" });
+		const assets = await assetApi.list("ws-asset");
+		expect(Array.isArray(assets)).toBe(true);
+	});
+
+	it("assetApi.list throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-asset-err/assets", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(assetApi.list("ws-asset-err")).rejects.toThrow("Failed to list assets");
+	});
+
+	it("assetApi.upload throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/ws-asset-err/assets", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		const file = new File(["data"], "test.txt");
+		await expect(assetApi.upload("ws-asset-err", file)).rejects.toThrow("Failed to upload asset");
+	});
+
+	it("assetApi.delete throws with detail on failure", async () => {
+		server.use(
+			http.delete("http://localhost:3000/api/spaces/ws-asset-err/assets/bad-id", () =>
+				HttpResponse.json({ detail: "Asset is referenced" }, { status: 409 }),
+			),
+		);
+		await expect(assetApi.delete("ws-asset-err", "bad-id")).rejects.toThrow("Asset is referenced");
+	});
+
+	it("formApi.listTypes returns types", async () => {
+		resetMockData();
+		seedSpace({ id: "ws-types", name: "T", created_at: "2025-01-01T00:00:00Z" });
+		const types = await formApi.listTypes("ws-types");
+		expect(Array.isArray(types)).toBe(true);
+	});
+
+	it("formApi.listTypes throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-types-err/forms/types", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(formApi.listTypes("ws-types-err")).rejects.toThrow("Failed to list form types");
+	});
+
+	it("formApi.list throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-form-err/forms", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(formApi.list("ws-form-err")).rejects.toThrow("Failed to list forms");
+	});
+
+	it("formApi.get throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-form-err/forms/nonexistent", () =>
+				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
+			),
+		);
+		await expect(formApi.get("ws-form-err", "nonexistent")).rejects.toThrow("Failed to get form");
+	});
+
+	it("formApi.create throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/ws-form-err/forms", () =>
+				HttpResponse.json({ detail: "Invalid" }, { status: 422 }),
+			),
+		);
+		await expect(
+			formApi.create("ws-form-err", { name: "Bad", version: 1, template: "", fields: {} }),
+		).rejects.toThrow("Failed to create form");
+	});
+
+	it("searchApi.keyword throws on failure", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/ws-search-err/search", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(searchApi.keyword("ws-search-err", "test")).rejects.toThrow(
+			"Failed to search entries",
+		);
+	});
+
+	it("searchApi.query throws on failure", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces/ws-search-err/query", () =>
+				HttpResponse.json({ detail: "Error" }, { status: 500 }),
+			),
+		);
+		await expect(searchApi.query("ws-search-err", {})).rejects.toThrow("Failed to query space");
+	});
+
+	it("spaceApi.create uses fallback message when error response has no detail", async () => {
+		server.use(
+			http.post("http://localhost:3000/api/spaces", () =>
+				HttpResponse.json({ message: "No detail here" }, { status: 422 }),
+			),
+		);
+		await expect(spaceApi.create("test-no-detail")).rejects.toThrow("Failed to create space");
 	});
 });

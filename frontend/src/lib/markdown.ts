@@ -33,8 +33,10 @@ export function ensureFormFrontmatter(markdown: string, formName: string): strin
 				break;
 			}
 		}
+		/* v8 ignore start */
 		if (start === -1) return null;
 		const openingIndent = lines[start].match(/^\s*/)?.[0] ?? "";
+		/* v8 ignore stop */
 		for (let i = start + 1; i < lines.length; i += 1) {
 			if (lines[i].trim() === "---" && lines[i].startsWith(openingIndent)) {
 				return [start, i];

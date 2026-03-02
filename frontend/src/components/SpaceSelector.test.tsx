@@ -84,4 +84,18 @@ describe("SpaceSelector", () => {
 
 		expect(onSelect).toHaveBeenCalledWith("ws-2");
 	});
+
+	it("should show space id when name is not available", () => {
+		const spaces = [{ id: "space-1", created_at: "2025-01-01T00:00:00Z" }];
+		render(() => (
+			<SpaceSelector
+				spaces={spaces as Space[]}
+				selectedSpaceId={null}
+				loading={false}
+				error={null}
+				onSelect={vi.fn()}
+			/>
+		));
+		expect(screen.getByText("space-1")).toBeInTheDocument();
+	});
 });

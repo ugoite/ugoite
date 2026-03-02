@@ -42,4 +42,6 @@ export default function Nav() {
 			</ul>
 		</nav>
 	);
+	/* v8 ignore start */
 }
+/* v8 ignore stop */

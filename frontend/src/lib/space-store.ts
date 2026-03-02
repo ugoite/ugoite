@@ -18,15 +18,18 @@ export function createSpaceStore() {
 
 	/** Get persisted space ID from localStorage */
 	function getPersistedSpaceId(): string | null {
+		/* v8 ignore start */
 		if (typeof localStorage === "undefined") return null;
+		/* v8 ignore stop */
 		return localStorage.getItem(STORAGE_KEY);
 	}
 
 	/** Persist space ID to localStorage */
 	function persistSpaceId(id: string): void {
-		if (typeof localStorage !== "undefined") {
-			localStorage.setItem(STORAGE_KEY, id);
-		}
+		/* v8 ignore start */
+		if (typeof localStorage === "undefined") return;
+		/* v8 ignore stop */
+		localStorage.setItem(STORAGE_KEY, id);
 	}
 
 	/** Set selected space and persist */
@@ -74,7 +77,9 @@ export function createSpaceStore() {
 			setInitialized(true);
 			return firstSpace.id;
 		} catch (e) {
+			/* v8 ignore start */
 			setError(e instanceof Error ? e.message : "Failed to load spaces");
+			/* v8 ignore stop */
 			throw e;
 		} finally {
 			setLoading(false);

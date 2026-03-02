@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -88,11 +88,17 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
 
 pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     use opendal::services::Fs;
-    let root = if path.is_empty() {
-        "/"
-    } else {
-        path.trim_end_matches('/')
-    };
+    let trimmed = path.trim_end_matches('/');
+    let mut root = if trimmed.is_empty() { "/" } else { trimmed };
+    if let Some(local_root) = root.strip_prefix("file://") {
+        root = if local_root.is_empty() {
+            "/"
+        } else {
+            local_root
+        };
+    } else if root.contains("://") {
+        bail!("unsupported storage uri in core mode: {root}");
+    }
     let builder = Fs::default().root(root);
     Ok(opendal::Operator::new(builder)?.finish())
 }

@@ -34,21 +34,65 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-e2e-
 
-      - name: Setup mise (install tools and dependencies)
-        uses: jdx/mise-action@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          install: true
-          cache: true
-          experimental: true
+          node-version: lts/*
 
-      - name: Install project dependencies
-        run: mise run setup
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image (from docker-build-ci cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: ugoite-backend:e2e
+          cache-from: |
+            type=gha,scope=backend-image
+            type=gha,scope=docker-build-common
+          build-contexts: |
+            core=./ugoite-core
+            module=./ugoite-cli
+
+      - name: Build frontend image (from docker-build-ci cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: true
+          tags: ugoite-frontend:e2e
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          build-contexts: |
+            shared=./shared
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install docsite dependencies
+        working-directory: ./docsite
+        run: bun install --frozen-lockfile
+
+      - name: Install e2e dependencies
+        working-directory: ./e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ./e2e
+        run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
         env:
           PLAYWRIGHT_CI_REPORTER: junit
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/junit.xml
-        run: mise run e2e
+        run: bash e2e/scripts/run-e2e-compose.sh
 
       - name: Fail on skipped e2e tests
         run: |

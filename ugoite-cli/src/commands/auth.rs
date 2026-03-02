@@ -39,11 +39,11 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             bearer_token,
             api_key,
         } => {
-            if let Some(t) = bearer_token {
-                println!("export UGOITE_AUTH_BEARER_TOKEN={t}");
+            if bearer_token.is_some() {
+                println!("export UGOITE_AUTH_BEARER_TOKEN=<set-token-here>");
             }
-            if let Some(k) = api_key {
-                println!("export UGOITE_AUTH_API_KEY={k}");
+            if api_key.is_some() {
+                println!("export UGOITE_AUTH_API_KEY=<set-key-here>");
             }
         }
         AuthSubCmd::TokenClear => {

@@ -50,4 +50,26 @@ describe("markdown utils", () => {
 		const out = updateH2Section(md, "Section (Special) [Ref]", "NewValue");
 		expect(out).toContain("## Section (Special) [Ref]\nNewValue");
 	});
+
+	it("ensureFormFrontmatter handles unclosed frontmatter (no closing ---)", () => {
+		const md = "---\nkey: value\nNo closing dashes";
+		const out = ensureFormFrontmatter(md, "Task");
+		expect(out).toContain("form: Task");
+	});
+
+	it("ensureFormFrontmatter preserves non-form frontmatter lines when updating form field", () => {
+		const md = "---\ntitle: My Title\nform: Old\ndate: 2024-01-01\n---\n\n# Content";
+		const out = ensureFormFrontmatter(md, "Task");
+		expect(out).toContain("form: Task");
+		expect(out).toContain("title: My Title");
+		expect(out).toContain("date: 2024-01-01");
+		expect(out).not.toContain("form: Old");
+	});
+
+	it("ensureFormFrontmatter handles markdown with leading blank lines before frontmatter", () => {
+		const md = "\n\n---\nform: Old\n---\n\n# Title";
+		const out = ensureFormFrontmatter(md, "Task");
+		expect(out).toContain("form: Task");
+		expect(out).not.toContain("form: Old");
+	});
 });
