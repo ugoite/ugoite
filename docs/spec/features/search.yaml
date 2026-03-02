@@ -20,8 +20,8 @@ apis:
       function: query_index
     ugoite_cli:
       command: ugoite query
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_query
+      file: ugoite-cli/src/commands/search.rs
+      function: run
 
   - id: search.keyword
     method: GET
@@ -38,5 +38,5 @@ apis:
       function: search_entries
     ugoite_cli:
       command: ugoite search keyword
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_search_keyword
+      file: ugoite-cli/src/commands/search.rs
+      function: run

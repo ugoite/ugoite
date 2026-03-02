@@ -20,8 +20,8 @@ apis:
       function: create_entry
     ugoite_cli:
       command: ugoite entry create
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_create
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.list
     method: GET
@@ -38,8 +38,8 @@ apis:
       function: list_entries
     ugoite_cli:
       command: ugoite entry list
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_list
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.get
     method: GET
@@ -56,8 +56,8 @@ apis:
       function: get_entry
     ugoite_cli:
       command: ugoite entry get
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_get
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.update
     method: PUT
@@ -74,8 +74,8 @@ apis:
       function: update_entry
     ugoite_cli:
       command: ugoite entry update
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_update
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.delete
     method: DELETE
@@ -92,8 +92,8 @@ apis:
       function: delete_entry
     ugoite_cli:
       command: ugoite entry delete
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_delete
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.history
     method: GET
@@ -110,8 +110,8 @@ apis:
       function: get_entry_history
     ugoite_cli:
       command: ugoite entry history
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_history
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.revision
     method: GET
@@ -128,8 +128,8 @@ apis:
       function: get_entry_revision
     ugoite_cli:
       command: ugoite entry revision
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_revision
+      file: ugoite-cli/src/commands/entry.rs
+      function: run
 
   - id: entry.restore
     method: POST
@@ -146,5 +146,5 @@ apis:
       function: restore_entry
     ugoite_cli:
       command: ugoite entry restore
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_restore
+      file: ugoite-cli/src/commands/entry.rs
+      function: run

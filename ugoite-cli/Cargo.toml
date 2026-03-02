@@ -1,0 +1,21 @@
+[package]
+name = "ugoite-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ugoite"
+path = "src/main.rs"
+
+[dependencies]
+ugoite_core = { package = "ugoite-core", path = "../ugoite-core", default-features = false }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
+opendal = { version = "0.55", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
+
+[dev-dependencies]
+tempfile = "3"

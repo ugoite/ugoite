@@ -26,7 +26,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_create_entry_basic
     - file: backend/tests/test_api.py
@@ -74,7 +74,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_update_entry_revision_mismatch
     rust:
@@ -109,7 +109,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_entry_history_append
       - test_entry_history_diff
@@ -196,7 +196,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_entry_history_append
       - test_entry_history_diff
@@ -233,10 +233,10 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_markdown_sections_persist
-    - file: ugoite-cli/tests/test_indexer.py
+    - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_extract_properties_h2_sections
       - test_extract_properties_precedence
@@ -271,7 +271,7 @@ requirements:
   status: implemented
   tests:
     pytest:
-    - file: ugoite-cli/tests/test_entries.py
+    - file: ugoite-cli/tests/test_entries.rs
       tests:
       - test_list_entries_returns_properties_and_links
     - file: backend/tests/test_api.py

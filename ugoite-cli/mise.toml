@@ -1,7 +1,7 @@
 [tasks.install]
-run = "uv sync"
+run = "cargo build"
+description = "Build ugoite-cli"
 
 [tasks.test]
-run = "uv run --with pytest python -m pytest"
-description = "Run ugoite-cli pytest suite"
-depends = ["//ugoite-core:build"]
+run = "cargo test"
+description = "Run ugoite-cli Rust test suite"

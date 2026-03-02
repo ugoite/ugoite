@@ -323,6 +323,6 @@ requirements:
     - file: backend/tests/test_service_accounts.py
       tests:
       - test_service_account_scopes_and_revocation_flow
-    - file: ugoite-cli/tests/test_cli_endpoint_routing.py
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
       - test_space_service_account_create_routes_to_backend
