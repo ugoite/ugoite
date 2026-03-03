@@ -1,8 +1,6 @@
 @import "../../shared/themes/ui-theme-docsite.css";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ─── Base ─── */
 *,
