@@ -52,6 +52,32 @@ targets an **Authenticated Access by Default** model.
 - Path traversal prevention in file operations
 - SQL injection not applicable (no SQL database)
 
+## Software Supply Chain Security
+
+### SBOM Coverage
+
+- CI workflow `sbom-ci.yml` generates CycloneDX SBOMs via Syft for:
+  - Rust core (`ugoite-core`)
+  - Python projects (`backend`, `ugoite-cli`)
+  - Bun/Node projects (`frontend`, `docsite`, `e2e`)
+  - Built Docker images (`backend`, `frontend`)
+
+### Signing and Attestation
+
+- SBOM artifacts are signed with Cosign keyless signing (OIDC-backed).
+- SBOM signatures are verified in CI before artifact publication.
+- Build provenance attestations are generated for SBOM artifacts.
+
+### Security Gates
+
+- Grype scans generated SBOMs, with critical-severity CI gating on source SBOMs.
+- SBOM and signature artifacts are uploaded as CI artifacts for auditability.
+
+### Dependency Automation
+
+- Dependabot updates are enabled across GitHub Actions, Bun, npm, uv, cargo, and Docker manifests.
+- GitHub Dependency Graph and advisory alerts are expected to remain enabled for this repository.
+
 
 ## Authentication (Future)
 
@@ -133,4 +159,3 @@ Each event includes:
 - Retention is bounded by `UGOITE_AUDIT_RETENTION_MAX_EVENTS` (default: `5000`).
 - Oldest events are trimmed when the retention bound is exceeded.
 - Stored request metadata excludes sensitive headers and raw credentials.
-
