@@ -11,7 +11,7 @@
 		"format": "biome format --write ."
 	},
 	"dependencies": {
-		"@codemirror/autocomplete": "^6.18.0",
+		"@codemirror/autocomplete": "^6.20.1",
 		"@codemirror/lang-sql": "^6.9.0",
 		"@codemirror/lint": "^6.9.5",
 		"@codemirror/state": "^6.5.1",
