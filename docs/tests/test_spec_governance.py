@@ -223,7 +223,12 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
     philosophies = philosophy_loaded.get("philosophies")
     if not isinstance(philosophies, list) or not philosophies:
         _fail("philosophies list is required")
-    _to_id_map(philosophies, "philosophy")
+    philosophy_map = _to_id_map(philosophies, "philosophy")
+    for philosophy_id, philosophy in philosophy_map.items():
+        for key in ("title", "product_design_principle", "coding_guideline"):
+            value = str(philosophy.get(key) or "").strip()
+            if not value:
+                _fail(f"{philosophy_id} must define non-empty {key}")
 
     policy_map = _load_policies()
     requirement_map = _load_requirement_sets()

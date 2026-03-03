@@ -28,7 +28,11 @@ const tokenize = (text: string): string[] =>
     .split(/\s+/)
     .filter((token) => token.length > 3);
 
-const philosophyTokens = new Set(tokenize(`${item.title} ${item.summary ?? ""}`));
+const philosophyTokens = new Set(
+  tokenize(
+    `${item.title} ${item.productDesignPrinciple ?? item.summary ?? ""} ${item.codingGuideline ?? ""}`,
+  ),
+);
 const relatedPolicies = [...policies]
   .map((policy) => {
     const sourceTokens = tokenize(`${policy.title} ${policy.summary ?? ""}`);
@@ -45,7 +49,8 @@ const requirementIds = [...new Set(relatedPolicies.flatMap((policy) => policy.li
 const featureKinds = await getFeatureKindsLinkedToRequirements(requirementIds);
 
 const toc = [
-  { id: "statement", title: "Statement" },
+  { id: "product-design", title: "Product Design Principle" },
+  { id: "coding-guideline", title: "Coding Guideline" },
   { id: "policies", title: "Related Policies" },
   { id: "requirements", title: "Related Requirements" },
   { id: "features", title: "Related Features" },
@@ -54,7 +59,7 @@ const toc = [
 
 <BaseLayout
   title={`${item.id} | Philosophy | Ugoite`}
-  description={item.summary}
+  description={item.productDesignPrinciple ?? item.summary}
   toc={toc}
   related={[
     { href: "/design/philosophy", label: "Philosophy Index" },
@@ -67,9 +72,14 @@ const toc = [
     <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem;">Derived from docs/spec/philosophy/foundation.yaml</p>
   </section>
 
-  <section id="statement" class="doc-card">
-    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Statement</h2>
-    <p style="color: var(--doc-muted); line-height: 1.7;">{item.summary}</p>
+  <section id="product-design" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Product Design Principle</h2>
+    <p style="color: var(--doc-muted); line-height: 1.7;">{item.productDesignPrinciple ?? item.summary}</p>
+  </section>
+
+  <section id="coding-guideline" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Coding Guideline</h2>
+    <p style="color: var(--doc-muted); line-height: 1.7;">{item.codingGuideline}</p>
   </section>
 
   <section id="policies" class="doc-card">

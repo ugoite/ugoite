@@ -25,7 +25,12 @@ const toc = philosophies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
       <a href={withBasePath(`/design/philosophy/${p.id.toLowerCase()}`)} id={p.id.toLowerCase()} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <span class="doc-pill" style="margin-bottom: 0.75rem;">{p.id}</span>
         <h2 style="font-size: 1.125rem; font-weight: 700;">{p.title}</h2>
-        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">{p.summary}</p>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">
+          <strong>Product Design Principle:</strong> {p.productDesignPrinciple ?? p.summary}
+        </p>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">
+          <strong>Coding Guideline:</strong> {p.codingGuideline}
+        </p>
       </a>
     ))}
   </div>
