@@ -1,5 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, JSX, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
 
 const toMessage = (value: unknown): string => {
@@ -16,23 +16,33 @@ export default function SpacesIndexRoute() {
 	});
 	const [redirected, setRedirected] = createSignal(false);
 
-	const authHint = createMemo(() => {
+	const authHint = createMemo((): JSX.Element | null => {
 		const message = toMessage(spaces.error).toLowerCase();
 		if (
 			message.includes("401") ||
 			message.includes("authentication") ||
 			message.includes("unauthorized")
 		) {
-			return "Sign in by setting UGOITE_AUTH_BEARER_TOKEN or UGOITE_AUTH_API_KEY on the frontend server process.";
+			return (
+				<span>
+					Authentication required. Re-run <code>mise run dev</code> (or{" "}
+					<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code>) to refresh local login.
+				</span>
+			);
 		}
 		if (
 			message.includes("403") ||
 			message.includes("forbidden") ||
 			message.includes("not authorized")
 		) {
-			return "Your identity is authenticated, but this space is not shared with your user yet. Ask a space admin for an invitation.";
+			return (
+				<span>
+					Your identity is authenticated, but this space is not shared with your user yet. Ask a
+					space admin for an invitation.
+				</span>
+			);
 		}
-		return "";
+		return null;
 	});
 
 	createEffect(() => {
@@ -62,8 +72,9 @@ export default function SpacesIndexRoute() {
 			<section class="ui-card ui-stack-sm">
 				<h2 class="text-lg font-semibold">Authentication</h2>
 				<p class="text-sm ui-muted">
-					Localhost and remote mode both require authentication. Configure frontend/backend using
-					<code>UGOITE_AUTH_BEARER_TOKEN</code> or <code>UGOITE_AUTH_API_KEY</code>.
+					Localhost and remote mode both require authentication. Use the local login flow via
+					<code>mise run dev</code> (or force refresh with
+					<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code>).
 				</p>
 			</section>
 
