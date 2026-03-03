@@ -4,7 +4,7 @@ run = "bun install"
 [tasks.dev]
 # Ensure development has the frontend configured to use the same domain sub-path for
 # backend calls and that the dev-server proxy forwards the path to the local backend.
-run = "BACKEND_URL=http://localhost:8000 bun run dev"
+run = "eval \"$(bash ../scripts/dev-auth-env.sh)\" && BACKEND_URL=http://localhost:8000 bun run dev"
 
 [tasks.test]
 run = "bun run test:run"
