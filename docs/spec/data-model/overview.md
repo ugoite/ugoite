@@ -27,6 +27,7 @@ See [directory-structure.md](directory-structure.md) for the full space layout.
 ```
 spaces/
   {space_id}/
+    hmac.json                  # Space-local response-signing key material
     meta.json                  # Space metadata
     settings.json              # Space settings
     forms/                     # Iceberg-managed Form tables (layout not specified)
@@ -199,7 +200,7 @@ and can be regenerated. The Iceberg-managed layout is the only source of truth.
 ## Integrity
 
 All data is signed with HMAC:
-- Root response-signing key stored in `hmac.json`
+- Space-local response-signing key stored in `spaces/{space_id}/hmac.json`
 - Space integrity keys stored in each `spaces/{space_id}/meta.json`
 - Signature stored alongside entry and revision rows
 - Checksum (SHA-256) for tamper detection

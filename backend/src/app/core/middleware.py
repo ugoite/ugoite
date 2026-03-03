@@ -37,6 +37,7 @@ _AUTH_EXEMPT_PATHS = {
     "/redoc",
     "/health",
 }
+_DEFAULT_SIGNATURE_SPACE_ID = "default"
 
 
 def _is_auth_exempt(path: str) -> bool:
@@ -101,6 +102,9 @@ async def security_middleware(
 ) -> Response:
     """Enforce security policies."""
     root_path = get_root_path()
+    signature_space_id = (
+        _space_id_from_path(request.url.path) or _DEFAULT_SIGNATURE_SPACE_ID
+    )
     # 1. Localhost Binding Check (unless disabled via env var)
     allow_remote = os.environ.get("UGOITE_ALLOW_REMOTE", "false").lower() == "true"
     trust_proxy_headers = (
@@ -124,7 +128,12 @@ async def security_middleware(
             },
         )
         body = bytes(response.body or b"")
-        return await _apply_security_headers(response, body, root_path)
+        return await _apply_security_headers(
+            response,
+            body,
+            root_path,
+            signature_space_id,
+        )
 
     if not _is_auth_exempt(request.url.path):
         try:
@@ -168,7 +177,12 @@ async def security_middleware(
                 headers={"WWW-Authenticate": "Bearer"},
             )
             body = bytes(response.body or b"")
-            return await _apply_security_headers(response, body, root_path)
+            return await _apply_security_headers(
+                response,
+                body,
+                root_path,
+                signature_space_id,
+            )
 
     response = await call_next(request)
 
@@ -219,7 +233,7 @@ async def security_middleware(
             ),
         )
 
-    return await _apply_security_headers(response, body, root_path)
+    return await _apply_security_headers(response, body, root_path, signature_space_id)
 
 
 async def _capture_response_body(response: Response) -> bytes:
@@ -238,9 +252,13 @@ async def _apply_security_headers(
     response: Response,
     body: bytes,
     root_path: Path | str,
+    space_id: str,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
-    key_id, signature = await build_response_signature(body, root_path)
+    if space_id == "default":
+        key_id, signature = await build_response_signature(body, root_path)
+    else:
+        key_id, signature = await build_response_signature(body, root_path, space_id)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Ugoite-Key-Id"] = key_id
     response.headers["X-Ugoite-Signature"] = signature

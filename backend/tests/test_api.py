@@ -13,6 +13,7 @@ import ugoite_core
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
+from app.core.security import _load_response_hmac_material, _space_hmac_path
 from app.main import app
 
 
@@ -1035,19 +1036,140 @@ def test_middleware_hmac_signature(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test that HMAC signature header matches the response body."""
+    """REQ-INT-003: default-space signature header matches the response body."""
     response = test_client.get("/")
 
-    global_data = json.loads((temp_space_root / "hmac.json").read_text())
-    secret = base64.b64decode(global_data["hmac_key"])
+    hmac_data = json.loads(
+        (temp_space_root / "spaces" / "default" / "hmac.json").read_text(),
+    )
+    secret = base64.b64decode(hmac_data["hmac_key"])
     expected_signature = hmac.new(
         secret,
         response.content,
         hashlib.sha256,
     ).hexdigest()
 
-    assert response.headers["X-Ugoite-Key-Id"] == global_data["hmac_key_id"]
+    assert response.headers["X-Ugoite-Key-Id"] == hmac_data["hmac_key_id"]
     assert response.headers["X-Ugoite-Signature"] == expected_signature
+
+
+def test_middleware_hmac_signature_for_space_route(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-INT-003: space routes must use the corresponding space-scoped HMAC."""
+    test_client.post("/spaces", json={"name": "hmac-space"})
+
+    response = test_client.get("/spaces/hmac-space/forms/types")
+    assert response.status_code == 200
+
+    hmac_data = json.loads(
+        (temp_space_root / "spaces" / "hmac-space" / "hmac.json").read_text(),
+    )
+    secret = base64.b64decode(hmac_data["hmac_key"])
+    expected_signature = hmac.new(
+        secret,
+        response.content,
+        hashlib.sha256,
+    ).hexdigest()
+
+    assert response.headers["X-Ugoite-Key-Id"] == hmac_data["hmac_key_id"]
+    assert response.headers["X-Ugoite-Signature"] == expected_signature
+
+
+def test_hmac_path_rejects_invalid_space_id(temp_space_root: Path) -> None:
+    """REQ-INT-003: HMAC path resolution must reject unsafe space identifiers."""
+    with pytest.raises(ValueError, match="Invalid space_id"):
+        _space_hmac_path(temp_space_root, "../escape")
+
+
+def test_hmac_path_rejects_symlink_escape(temp_space_root: Path) -> None:
+    """REQ-INT-003: HMAC path resolution must reject symlink escapes."""
+    spaces_dir = temp_space_root / "spaces"
+    spaces_dir.mkdir(parents=True, exist_ok=True)
+    outside_dir = temp_space_root / "outside"
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    (spaces_dir / "linked").symlink_to(outside_dir, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="escapes root"):
+        _space_hmac_path(temp_space_root, "linked")
+
+
+def test_load_response_hmac_material_recovers_after_decode_retries(
+    temp_space_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-INT-003: loader retries transient JSON decode races before fallback read."""
+    path = _space_hmac_path(temp_space_root, "default")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "hmac_key_id": "retry-key",
+        "hmac_key": base64.b64encode(b"x" * 32).decode("ascii"),
+        "last_rotation": "2025-01-01T00:00:00+00:00",
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    original_read_text = Path.read_text
+    calls = 0
+
+    def _flaky_read_text(self: Path, *, encoding: str = "utf-8") -> str:
+        nonlocal calls
+        if self == path:
+            calls += 1
+            if calls <= 3:
+                return "{"
+        return original_read_text(self, encoding=encoding)
+
+    monkeypatch.setattr(Path, "read_text", _flaky_read_text)
+    monkeypatch.setattr("app.core.security.time.sleep", lambda _: None)
+
+    key_id, secret = _load_response_hmac_material(temp_space_root, "default")
+
+    assert calls == 4
+    assert key_id == "retry-key"
+    assert secret == b"x" * 32
+
+
+def test_load_response_hmac_material_rejects_missing_hmac_key(
+    temp_space_root: Path,
+) -> None:
+    """REQ-INT-003: loader must reject payloads without hmac_key."""
+    path = _space_hmac_path(temp_space_root, "default")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "hmac_key_id": "missing-key",
+                "last_rotation": "2025-01-01T00:00:00+00:00",
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Missing hmac_key"):
+        _load_response_hmac_material(temp_space_root, "default")
+
+
+def test_load_response_hmac_material_defaults_missing_key_id(
+    temp_space_root: Path,
+) -> None:
+    """REQ-INT-003: loader defaults key id when hmac_key_id is absent."""
+    path = _space_hmac_path(temp_space_root, "default")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "hmac_key": base64.b64encode(b"y" * 32).decode("ascii"),
+                "last_rotation": "2025-01-01T00:00:00+00:00",
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    key_id, secret = _load_response_hmac_material(temp_space_root, "default")
+
+    assert key_id == "default"
+    assert secret == b"y" * 32
 
 
 def test_middleware_signs_non_streaming_mcp_prefixed_paths(
