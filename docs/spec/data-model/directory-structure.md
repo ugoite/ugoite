@@ -3,9 +3,9 @@
 ## Space Layout
 
 ```
-hmac.json                             # Root: response-signing key material
 spaces/
   {space_id}/                         # Each space is self-contained
+    hmac.json                         # Space-local response-signing key material
     meta.json                         # Space metadata
     settings.json                     # Editor preferences, defaults
     forms/                            # Iceberg-managed root for Form tables
@@ -17,11 +17,11 @@ spaces/
         meta.json                     # Session metadata (status, snapshots)
 ```
 
-## Root Level
+## Space Level
 
 ### `hmac.json`
 
-Root response-signing key material:
+Space-local response-signing key material:
 
 ```json
 {
@@ -30,8 +30,6 @@ Root response-signing key material:
   "last_rotation": "2025-11-15T00:00:00Z"
 }
 ```
-
-## Space Level
 
 ### `meta.json`
 
