@@ -21,7 +21,7 @@ const authHintFromError = (value: unknown): string => {
 		message.includes("authentication") ||
 		message.includes("unauthorized")
 	) {
-		return "Authentication required. Configure UGOITE_AUTH_BEARER_TOKEN or UGOITE_AUTH_API_KEY for frontend server process.";
+		return "Authentication required. Re-run `mise run dev` (or `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`) to refresh local login.";
 	}
 	if (
 		message.includes("403") ||
@@ -129,8 +129,9 @@ export default function SpaceSettingsRoute() {
 
 				<div class="ui-card">
 					<p class="text-sm ui-muted">
-						Localhost and remote mode both require authenticated sessions. For frontend proxy usage,
-						configure <code>UGOITE_AUTH_BEARER_TOKEN</code> or <code>UGOITE_AUTH_API_KEY</code>.
+						Localhost and remote mode both require authenticated sessions. Use local login flow via
+						<code>mise run dev</code> and force refresh with
+						<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code> when needed.
 					</p>
 				</div>
 
