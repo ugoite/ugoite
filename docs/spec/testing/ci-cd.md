@@ -9,6 +9,8 @@
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
+| Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
+| Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Automated semantic-release |
 
 ## Python CI
 
@@ -71,13 +73,22 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
 - **Ty**: Type checks Python projects
 
+Conventional Commit enforcement (local):
+
+```bash
+npm install
+npm run prepare
+```
+
+This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+
 ## Release Process
 
-1. **Version Bump**: Update version in `pyproject.toml` files
-2. **Changelog**: Update CHANGELOG.md
-3. **Tag**: Create git tag `v{version}`
-4. **Build**: CI builds Docker images and wheels
-5. **Publish**: Push to registry (manual approval)
+1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
+2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
+3. **Changesets** track monorepo change intent (`.changeset/*.md`).
+4. **Release CI** runs automatically on pushes to `main`.
+5. **semantic-release** computes the release from commit history, tags, and publishes GitHub release notes.
 
 ## Environment Variables
 
@@ -112,6 +123,10 @@ cd frontend && biome ci . && bun test
 
 # E2E (requires servers running)
 mise run e2e
+
+# Conventional commits + release metadata
+npm run commitlint:range
+npm run changeset:status
 ```
 
 Or use pre-commit:
