@@ -2,6 +2,7 @@
 
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
+REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 """
 
 from __future__ import annotations
@@ -22,10 +23,19 @@ FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.y
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
+REQUIRED_RUST_PRE_COMMIT_HOOKS = {
+    "rustfmt",
+    "cargo-clippy",
+    "cargo-clippy-cli",
+    "cargo-llvm-cov-core",
+    "cargo-test-cli",
+}
+REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -213,12 +223,97 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     _raise_if_missing(missing_parts)
 
 
+def test_docs_req_ops_006_rust_precommit_parity() -> None:
+    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
+
+    hook_entries = _collect_pre_commit_hooks(pre_commit)
+    clippy_cli_entry = ""
+    cargo_clippy_cli = hook_entries.get("cargo-clippy-cli")
+    if isinstance(cargo_clippy_cli, dict):
+        clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
+
+    missing_parts: list[str] = []
+    if missing_hooks:
+        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+    if "--no-default-features" not in clippy_cli_entry:
+        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+
+    rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
+    missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
+    if missing_ci_steps:
+        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     if isinstance(workflow, dict):
         return workflow
     return {}
+
+
+def _load_pre_commit_config() -> dict[str, object]:
+    pre_commit_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
+    pre_commit = yaml.safe_load(pre_commit_text)
+    if isinstance(pre_commit, dict):
+        return pre_commit
+    message = ".pre-commit-config.yaml must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _collect_pre_commit_hooks(
+    config: dict[str, object],
+) -> dict[str, dict[str, object]]:
+    repos = config.get("repos", [])
+    if not isinstance(repos, list):
+        return {}
+    hooks_by_id: dict[str, dict[str, object]] = {}
+    for repo in repos:
+        if not isinstance(repo, dict):
+            continue
+        hooks = repo.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            hook_id = hook.get("id")
+            if isinstance(hook_id, str) and hook_id:
+                hooks_by_id[hook_id] = hook
+    return hooks_by_id
+
+
+def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+    return set(_collect_pre_commit_hooks(config))
+
+
+def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(workflow, dict):
+        return set()
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return set()
+    names: set[str] = set()
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name")
+            if isinstance(name, str) and name:
+                names.add(name)
+    return names
 
 
 def _extract_workflow_pin_values(
