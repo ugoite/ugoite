@@ -146,3 +146,36 @@ requirements:
       - test_docs_req_ops_004_v02_contains_target_milestones
       - test_docs_req_ops_004_milestone_yaml_files_exist
       - test_docs_req_ops_004_issue_templates_support_phase
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-006
+  title: Rust Pre-commit and CI Test Parity
+  description: 'Rust pre-commit hooks MUST enforce format, lint, and test gates
+
+    across both ugoite-core and ugoite-cli, including ugoite-cli test execution
+
+    parity with Rust CI.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_006_rust_precommit_parity

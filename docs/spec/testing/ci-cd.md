@@ -83,6 +83,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
+- **Rust fmt/lint/test parity**: `ugoite-core` and `ugoite-cli` run format/lint gates, and `ugoite-cli` tests run before commit
 - **Ty**: Type checks Python projects
 
 Conventional Commit enforcement (local):
