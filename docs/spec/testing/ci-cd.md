@@ -5,7 +5,7 @@
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff), type check, pytest |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push, PR | Lint (yamllint + actionlint) |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push, PR | Lint (yamllint + actionlint) and root artifact hygiene |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -34,6 +34,7 @@ jobs:
 ```yaml
 jobs:
   ci:
+    - root placeholder artifact guard
     - yamllint (repo YAML/config checks)
     - actionlint (GitHub Actions workflow lint)
 ```
@@ -95,6 +96,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
+- **Root artifact hygiene**: Blocks root-level files with placeholder-only content
 - **Ty**: Type checks Python projects
 
 Conventional Commit enforcement (local):
