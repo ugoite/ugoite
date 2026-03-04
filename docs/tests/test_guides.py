@@ -2,6 +2,7 @@
 
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
+REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 """
 
 from __future__ import annotations
@@ -20,12 +21,18 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
 DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
 FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
+YAML_WORKFLOW_CI_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
+)
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
+REQUIRED_PRE_COMMIT_HOOKS = {"yamllint", "actionlint"}
+REQUIRED_YAML_WORKFLOW_CI_STEPS = {"Run yamllint", "Run actionlint"}
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -213,12 +220,83 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     _raise_if_missing(missing_parts)
 
 
+def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
+    """REQ-OPS-005: YAML and workflow lint gates must exist in pre-commit and CI."""
+    pre_commit_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
+    pre_commit = yaml.safe_load(pre_commit_text) or {}
+    if not isinstance(pre_commit, dict):
+        message = ".pre-commit-config.yaml must be a YAML mapping"
+        raise TypeError(message)
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(REQUIRED_PRE_COMMIT_HOOKS.difference(configured_hooks))
+
+    ci_steps = _collect_workflow_step_names(YAML_WORKFLOW_CI_WORKFLOW_PATH)
+    missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
+    python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
+    leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+
+    if missing_hooks or missing_steps or leaked_steps:
+        details: list[str] = []
+        if missing_hooks:
+            details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+        if missing_steps:
+            details.append(
+                "yaml-workflow-ci missing steps: " + ", ".join(missing_steps),
+            )
+        if leaked_steps:
+            details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        raise AssertionError("; ".join(details))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     if isinstance(workflow, dict):
         return workflow
     return {}
+
+
+def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+    repos = config.get("repos", [])
+    if not isinstance(repos, list):
+        return set()
+    hook_ids: set[str] = set()
+    for repo in repos:
+        if not isinstance(repo, dict):
+            continue
+        hooks = repo.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            hook_id = hook.get("id")
+            if isinstance(hook_id, str) and hook_id:
+                hook_ids.add(hook_id)
+    return hook_ids
+
+
+def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(workflow, dict):
+        return set()
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return set()
+    names: set[str] = set()
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name")
+            if isinstance(name, str) and name:
+                names.add(name)
+    return names
 
 
 def _extract_workflow_pin_values(
