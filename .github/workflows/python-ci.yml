@@ -28,15 +28,6 @@ jobs:
             backend/pyproject.toml
             ugoite-core/pyproject.toml
 
-      - name: Run yamllint
-        run: >
-          uvx --from yamllint yamllint --strict
-          -d "{extends: relaxed, rules: {line-length: disable}}"
-          .
-
-      - name: Run actionlint
-        uses: reviewdog/action-actionlint@v1
-
       - name: Run ruff check
         # Ignore in-source `# noqa` comments to ensure they cannot silence
         # linting failures in CI. This mirrors the pre-commit behavior.

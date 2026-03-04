@@ -4,7 +4,8 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff + YAML + workflow), type check, pytest |
+| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff), type check, pytest |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push, PR | Lint (yamllint + actionlint) |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -18,8 +19,6 @@
 ```yaml
 jobs:
   lint:
-    - yamllint (repo YAML/config checks)
-    - actionlint (GitHub Actions workflow lint)
     - ruff format --check .
     - ruff check .
   type-check:
@@ -28,6 +27,15 @@ jobs:
   test:
     - cd backend && uv run pytest
     - cd ugoite-cli && uv run pytest
+```
+
+## YAML/Workflow CI
+
+```yaml
+jobs:
+  ci:
+    - yamllint (repo YAML/config checks)
+    - actionlint (GitHub Actions workflow lint)
 ```
 
 ## Frontend CI
