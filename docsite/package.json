@@ -2,6 +2,7 @@
 	"name": "ugoite-docsite",
 	"private": true,
 	"version": "0.1.0",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "astro dev --host 127.0.0.1 --strictPort --port 4321",
