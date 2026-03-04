@@ -2,6 +2,7 @@
 
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
+REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 """
 
 from __future__ import annotations
@@ -22,10 +23,23 @@ FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.y
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
+REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
+    "docsite-biome-ci",
+    "docsite-format-check",
+    "docsite-typecheck",
+    "docsite-validation-test",
+}
+REQUIRED_DOCSITE_CI_STEPS = {
+    "Lint",
+    "Format check",
+    "Typecheck",
+    "Validation test (build)",
+}
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -213,12 +227,84 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     _raise_if_missing(missing_parts)
 
 
+def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
+    """REQ-OPS-007: Docsite lint/format/test parity must be wired in CI/pre-commit."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(
+        REQUIRED_DOCSITE_PRE_COMMIT_HOOKS.difference(configured_hooks),
+    )
+
+    ci_step_names = _collect_workflow_step_names(DOCSITE_CI_WORKFLOW_PATH)
+    missing_steps = sorted(REQUIRED_DOCSITE_CI_STEPS.difference(ci_step_names))
+
+    if missing_hooks or missing_steps:
+        details: list[str] = []
+        if missing_hooks:
+            details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+        if missing_steps:
+            details.append("docsite-ci missing steps: " + ", ".join(missing_steps))
+        raise AssertionError("; ".join(details))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     if isinstance(workflow, dict):
         return workflow
     return {}
+
+
+def _load_pre_commit_config() -> dict[str, object]:
+    config_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
+    config = yaml.safe_load(config_text)
+    if isinstance(config, dict):
+        return config
+    message = ".pre-commit-config.yaml must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+    repos = config.get("repos", [])
+    if not isinstance(repos, list):
+        return set()
+    hook_ids: set[str] = set()
+    for repo in repos:
+        if not isinstance(repo, dict):
+            continue
+        hooks = repo.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            hook_id = hook.get("id")
+            if isinstance(hook_id, str) and hook_id:
+                hook_ids.add(hook_id)
+    return hook_ids
+
+
+def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(workflow, dict):
+        return set()
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return set()
+    step_names: set[str] = set()
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name")
+            if isinstance(name, str) and name:
+                step_names.add(name)
+    return step_names
 
 
 def _extract_workflow_pin_values(
