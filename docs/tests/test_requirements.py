@@ -138,8 +138,7 @@ def _load_requirements() -> tuple[Requirement, ...]:
 
 
 def _load_user_management_milestone() -> dict[str, Any]:
-    data = _load_yaml(USER_MANAGEMENT_MILESTONE)
-    return data
+    return _load_yaml(USER_MANAGEMENT_MILESTONE)
 
 
 def _load_user_management_requirement_ids() -> tuple[str, ...]:
@@ -174,7 +173,7 @@ def _is_user_management_coverage_task_done() -> bool:
     phases = milestone.get("phases")
     if not isinstance(phases, list):
         message = "docs/version/v0.1/user-management.yaml must define phases"
-        raise AssertionError(message)
+        raise TypeError(message)
 
     for phase in phases:
         if not isinstance(phase, dict) or phase.get("id") != "testing":
@@ -184,7 +183,7 @@ def _is_user_management_coverage_task_done() -> bool:
             message = (
                 "docs/version/v0.1/user-management.yaml testing phase must define tasks"
             )
-            raise AssertionError(message)
+            raise TypeError(message)
         for task in tasks:
             if not isinstance(task, dict):
                 continue
@@ -316,7 +315,9 @@ def test_no_orphan_tests() -> None:
 
 def test_user_management_requirements_have_tests() -> None:
     """REQ-API-005: User-management requirements must map to declared tests."""
-    requirements = {requirement.req_id: requirement for requirement in _load_requirements()}
+    requirements = {
+        requirement.req_id: requirement for requirement in _load_requirements()
+    }
     req_ids = _load_user_management_requirement_ids()
     missing = sorted(req_id for req_id in req_ids if req_id not in requirements)
     if missing:
@@ -329,7 +330,7 @@ def test_user_management_requirements_have_tests() -> None:
 
 
 def test_user_management_requirement_coverage_task_completed() -> None:
-    """REQ-API-005: User-management coverage task must be marked complete after validation."""
+    """REQ-API-005: User-management coverage task must be marked complete."""
     if not _is_user_management_coverage_task_done():
         message = (
             "docs/version/v0.1/user-management.yaml must set done: true for "
