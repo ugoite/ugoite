@@ -17,6 +17,12 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REQUIREMENTS_DIR = REPO_ROOT / "docs" / "spec" / "requirements"
+USER_MANAGEMENT_MILESTONE = (
+    REPO_ROOT / "docs" / "version" / "v0.1" / "user-management.yaml"
+)
+USER_MANAGEMENT_COVERAGE_TASK = (
+    "Requirement coverage check confirms all new REQ-* are linked to tests"
+)
 
 REQ_ID_PATTERN = re.compile(r"REQ-[A-Z]+-\d{3}")
 
@@ -131,6 +137,76 @@ def _load_requirements() -> tuple[Requirement, ...]:
     return tuple(requirements)
 
 
+def _load_user_management_milestone() -> dict[str, Any]:
+    data = _load_yaml(USER_MANAGEMENT_MILESTONE)
+    return data
+
+
+def _load_user_management_requirement_ids() -> tuple[str, ...]:
+    milestone = _load_user_management_milestone()
+    req_ids = milestone.get("requirement_ids")
+    if not isinstance(req_ids, list) or not req_ids:
+        message = (
+            "docs/version/v0.1/user-management.yaml must define non-empty "
+            "requirement_ids"
+        )
+        raise AssertionError(message)
+
+    normalized: tuple[str, ...] = tuple(str(req_id).strip() for req_id in req_ids)
+    if any(not req_id for req_id in normalized):
+        message = (
+            "docs/version/v0.1/user-management.yaml requirement_ids must contain "
+            "non-empty REQ-* IDs"
+        )
+        raise AssertionError(message)
+    invalid = [req_id for req_id in normalized if not REQ_ID_PATTERN.fullmatch(req_id)]
+    if invalid:
+        message = (
+            "docs/version/v0.1/user-management.yaml requirement_ids contains "
+            f"invalid REQ-* IDs: {', '.join(sorted(invalid))}"
+        )
+        raise AssertionError(message)
+    return normalized
+
+
+def _is_user_management_coverage_task_done() -> bool:
+    milestone = _load_user_management_milestone()
+    phases = milestone.get("phases")
+    if not isinstance(phases, list):
+        message = "docs/version/v0.1/user-management.yaml must define phases"
+        raise AssertionError(message)
+
+    for phase in phases:
+        if not isinstance(phase, dict) or phase.get("id") != "testing":
+            continue
+        tasks = phase.get("tasks")
+        if not isinstance(tasks, list):
+            message = (
+                "docs/version/v0.1/user-management.yaml testing phase must define tasks"
+            )
+            raise AssertionError(message)
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            if task.get("description") == USER_MANAGEMENT_COVERAGE_TASK:
+                done = task.get("done")
+                if not isinstance(done, bool):
+                    message = (
+                        "docs/version/v0.1/user-management.yaml user-management "
+                        "coverage task must define boolean done flag"
+                    )
+                    raise AssertionError(message)
+                return done
+        message = (
+            "docs/version/v0.1/user-management.yaml missing user-management "
+            "requirement coverage task"
+        )
+        raise AssertionError(message)
+
+    message = "docs/version/v0.1/user-management.yaml missing testing phase"
+    raise AssertionError(message)
+
+
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -235,4 +311,28 @@ def test_no_orphan_tests() -> None:
             missing.append(str(test_file.relative_to(REPO_ROOT)))
     if missing:
         message = "Test files missing requirement references: " + ", ".join(missing)
+        raise AssertionError(message)
+
+
+def test_user_management_requirements_have_tests() -> None:
+    """REQ-API-005: User-management requirements must map to declared tests."""
+    requirements = {requirement.req_id: requirement for requirement in _load_requirements()}
+    req_ids = _load_user_management_requirement_ids()
+    missing = sorted(req_id for req_id in req_ids if req_id not in requirements)
+    if missing:
+        message = (
+            "User-management requirement_ids are missing from docs/spec/requirements: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+    _assert_tests_declared_exist(requirements[req_id] for req_id in req_ids)
+
+
+def test_user_management_requirement_coverage_task_completed() -> None:
+    """REQ-API-005: User-management coverage task must be marked complete after validation."""
+    if not _is_user_management_coverage_task_done():
+        message = (
+            "docs/version/v0.1/user-management.yaml must set done: true for "
+            "the user-management requirement coverage task after validation"
+        )
         raise AssertionError(message)
