@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Check root placeholder artifacts
+        run: bash scripts/check-placeholder-artifacts.sh
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
