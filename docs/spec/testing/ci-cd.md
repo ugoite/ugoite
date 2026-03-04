@@ -4,7 +4,7 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
+| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff + YAML + workflow), type check, pytest |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -18,6 +18,8 @@
 ```yaml
 jobs:
   lint:
+    - yamllint (repo YAML/config checks)
+    - actionlint (GitHub Actions workflow lint)
     - ruff format --check .
     - ruff check .
   type-check:
@@ -83,6 +85,8 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
+- **Yamllint**: Validates YAML syntax/style on committed YAML files
+- **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
 - **Ty**: Type checks Python projects
 
 Conventional Commit enforcement (local):
