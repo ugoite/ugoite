@@ -1,4 +1,4 @@
-import tailwind from "@astrojs/tailwind";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 
 const repoName = process.env.GITHUB_REPOSITORY?.split("/")[1] ?? "";
@@ -13,10 +13,10 @@ const base = withLeadingSlash.endsWith("/")
 	: `${withLeadingSlash}/`;
 
 export default defineConfig({
-	integrations: [tailwind()],
 	site: process.env.DOCSITE_ORIGIN ?? "http://localhost:4321",
 	base,
 	vite: {
+		plugins: [tailwindcss()],
 		server: {
 			fs: {
 				allow: ["../docs", "../shared", "."],

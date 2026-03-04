@@ -8,6 +8,7 @@
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
+| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Automated semantic-release |
@@ -47,6 +48,17 @@ jobs:
     - Wait for servers
     - cd e2e && npm run test
     timeout: 30 minutes
+```
+
+## Devcontainer CI
+
+```yaml
+jobs:
+  devcontainer-build-smoke:
+    - docker/setup-buildx-action (enables type=gha cache driver)
+    - docker/login-action (ghcr.io, GITHUB_TOKEN)
+    - devcontainers/ci build + smoke command
+    - Run smoke command: gh/mise/bash versions
 ```
 
 ## SBOM and Supply Chain CI
