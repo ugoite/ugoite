@@ -240,7 +240,9 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
         if missing_steps:
-            details.append("yaml-workflow-ci missing steps: " + ", ".join(missing_steps))
+            details.append(
+                "yaml-workflow-ci missing steps: " + ", ".join(missing_steps),
+            )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
         raise AssertionError("; ".join(details))
