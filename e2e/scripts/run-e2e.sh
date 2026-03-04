@@ -9,7 +9,7 @@
 
 set -e
 
-# Unset VIRTUAL_ENV to ensure we're using the environment managed by mise/uv 
+# Unset VIRTUAL_ENV to ensure we're using the environment managed by mise/uv
 # and not inheriting an active virtualenv from the current shell session.
 unset VIRTUAL_ENV
 export BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true
@@ -19,11 +19,12 @@ TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [ -z "${E2E_AUTH_BEARER_TOKEN:-}" ]; then
-    E2E_AUTH_BEARER_TOKEN="$(python - <<'PY'
+  E2E_AUTH_BEARER_TOKEN="$(
+    python - <<'PY'
 import secrets
 print(f"e2e-{secrets.token_urlsafe(24)}")
 PY
-)"
+  )"
 fi
 
 # Kill any existing processes on required ports
@@ -37,10 +38,10 @@ echo "Creating default space..."
 cd "$ROOT_DIR/backend"
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
 if [ -z "$E2E_STORAGE_ROOT" ]; then
-    E2E_STORAGE_ROOT="/tmp/ugoite-e2e"
-    CLEANUP_E2E_STORAGE=true
+  E2E_STORAGE_ROOT="/tmp/ugoite-e2e"
+  CLEANUP_E2E_STORAGE=true
 else
-    CLEANUP_E2E_STORAGE=false
+  CLEANUP_E2E_STORAGE=false
 fi
 
 mkdir -p "$E2E_STORAGE_ROOT"
@@ -78,54 +79,54 @@ echo "Starting frontend server..."
 cd "$ROOT_DIR/frontend"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
 if [ "$FRONTEND_MODE" = "prod" ]; then
-    echo "Building frontend for production..."
-    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run build
-    echo "Starting production frontend server..."
-    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" NODE_ENV=production bun run start &
+  echo "Building frontend for production..."
+  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run build
+  echo "Starting production frontend server..."
+  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" NODE_ENV=production bun run start &
 else
-    BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run dev &
+  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run dev &
 fi
 FRONTEND_PID=$!
 
 # Cleanup function
 cleanup() {
-    echo ""
-    echo "Stopping servers..."
-    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
-    wait $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
-    echo "Servers stopped."
-    if [ "$CLEANUP_E2E_STORAGE" = true ]; then
-        rm -rf "$E2E_STORAGE_ROOT"
-    fi
+  echo ""
+  echo "Stopping servers..."
+  kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
+  wait $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
+  echo "Servers stopped."
+  if [ "$CLEANUP_E2E_STORAGE" = true ]; then
+    rm -rf "$E2E_STORAGE_ROOT"
+  fi
 }
 trap cleanup EXIT INT TERM
 
 # Wait for backend to be ready
 echo "Waiting for backend (port 8000)..."
 for i in {1..30}; do
-    if curl -s http://localhost:8000/spaces > /dev/null 2>&1; then
-        echo "✓ Backend is ready!"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "✗ ERROR: Backend failed to start within 30 seconds"
-        exit 1
-    fi
-    sleep 1
+  if curl -s http://localhost:8000/spaces >/dev/null 2>&1; then
+    echo "✓ Backend is ready!"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "✗ ERROR: Backend failed to start within 30 seconds"
+    exit 1
+  fi
+  sleep 1
 done
 
 # Wait for frontend to be ready
 echo "Waiting for frontend (port 3000)..."
 for i in {1..60}; do
-    if curl -s http://localhost:3000 > /dev/null 2>&1; then
-        echo "✓ Frontend is ready!"
-        break
-    fi
-    if [ $i -eq 60 ]; then
-        echo "✗ ERROR: Frontend failed to start within 60 seconds"
-        exit 1
-    fi
-    sleep 1
+  if curl -s http://localhost:3000 >/dev/null 2>&1; then
+    echo "✓ Frontend is ready!"
+    break
+  fi
+  if [ "$i" -eq 60 ]; then
+    echo "✗ ERROR: Frontend failed to start within 60 seconds"
+    exit 1
+  fi
+  sleep 1
 done
 
 # Run tests using Playwright
@@ -139,27 +140,27 @@ export E2E_AUTH_BEARER_TOKEN
 
 TEST_TIMEOUT_ARGS=()
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
-    TEST_TIMEOUT_ARGS=(--timeout "${E2E_TEST_TIMEOUT_MS}")
+  TEST_TIMEOUT_ARGS=(--timeout "${E2E_TEST_TIMEOUT_MS}")
 fi
 
 case "$TEST_TYPE" in
-    smoke)
-        npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
-        ;;
-    entries)
-        npm run test:entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
-        ;;
-    screenshot)
-        npm run test:screenshot -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
-        ;;
-    full)
-        npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
-        ;;
-    *)
-        echo "Unknown test type: $TEST_TYPE"
-        echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|screenshot|full]"
-        exit 1
-        ;;
+  smoke)
+    npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    ;;
+  entries)
+    npm run test:entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    ;;
+  screenshot)
+    npm run test:screenshot -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    ;;
+  full)
+    npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    ;;
+  *)
+    echo "Unknown test type: $TEST_TYPE"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|screenshot|full]"
+    exit 1
+    ;;
 esac
 
 echo ""
