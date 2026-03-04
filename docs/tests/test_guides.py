@@ -31,8 +31,12 @@ README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
-REQUIRED_PRE_COMMIT_HOOKS = {"yamllint", "actionlint"}
-REQUIRED_YAML_WORKFLOW_CI_STEPS = {"Run yamllint", "Run actionlint"}
+REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
+REQUIRED_YAML_WORKFLOW_CI_STEPS = {
+    "Check root placeholder artifacts",
+    "Run yamllint",
+    "Run actionlint",
+}
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",

@@ -29,6 +29,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: root-artifact-hygiene
+        name: root artifact hygiene
+        entry: bash scripts/check-placeholder-artifacts.sh
+        language: system
+        always_run: true
+        pass_filenames: false
+
       - id: shell-quality
         name: shell quality gates
         entry: bash scripts/check-shell-quality.sh --fix
