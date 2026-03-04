@@ -88,9 +88,23 @@ repos:
         pass_filenames: false
         files: ^docsite/
 
+      - id: docsite-format-check
+        name: docsite format check
+        entry: bash -c "cd docsite && bun run format:check"
+        language: system
+        pass_filenames: false
+        files: ^docsite/
+
       - id: docsite-typecheck
         name: docsite typecheck
         entry: bash -c "cd docsite && bun run typecheck"
+        language: system
+        pass_filenames: false
+        files: ^docsite/
+
+      - id: docsite-validation-test
+        name: docsite validation test
+        entry: bash -c "cd docsite && bun run test:validation"
         language: system
         pass_filenames: false
         files: ^docsite/
