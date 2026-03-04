@@ -1,0 +1,33 @@
+name: Shell CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  shell-quality:
+    name: shfmt / shellcheck / syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install shell tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt shellcheck
+
+      - name: Run shell quality checks
+        run: bash scripts/check-shell-quality.sh

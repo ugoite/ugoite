@@ -16,6 +16,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: shell-quality
+        name: shell quality gates
+        entry: bash scripts/check-shell-quality.sh --fix
+        language: system
+        pass_filenames: false
+        files: ^(scripts|e2e/scripts)/.*\.sh$
+
       - id: rustfmt
         name: rustfmt
         entry: bash -c "cd ugoite-core && uv run cargo fmt --all && cd ../ugoite-cli && cargo fmt --all"
