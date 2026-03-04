@@ -59,11 +59,12 @@ if [ -z "$token" ] || [ "$expires_at" -le "$now_epoch" ] || [ "${UGOITE_DEV_AUTH
     exit 1
   fi
 
-  token="$(python - <<'PY'
+  token="$(
+    python - <<'PY'
 import secrets
 print(f"dev-{secrets.token_urlsafe(24)}")
 PY
-)"
+  )"
   expires_at="$((now_epoch + AUTH_TTL_SECONDS))"
 
   python - "$AUTH_FILE" "$token" "$expires_at" <<'PY'

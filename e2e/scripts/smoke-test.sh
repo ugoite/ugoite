@@ -17,96 +17,98 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 
 log_pass() {
-    echo -e "${GREEN}✓${NC} $1"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
+  echo -e "${GREEN}✓${NC} $1"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 }
 
 log_fail() {
-    echo -e "${RED}✗${NC} $1"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+  echo -e "${RED}✗${NC} $1"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 }
 
 log_info() {
-    echo -e "${YELLOW}ℹ${NC} $1"
+  echo -e "${YELLOW}ℹ${NC} $1"
 }
 
 # Test: API health check
 test_api_health() {
-    local response
-    response=$(curl -s -w "\n%{http_code}" "$API_URL/spaces" 2>/dev/null)
-    local http_code=$(echo "$response" | tail -n1)
-    local body=$(echo "$response" | head -n-1)
-    
-    if [ "$http_code" = "200" ]; then
-        if echo "$body" | grep -q '"healthy"'; then
-            log_pass "API health check returns healthy status"
-        else
-            log_fail "API health check: unexpected response body"
-        fi
+  local response
+  response=$(curl -s -w "\n%{http_code}" "$API_URL/spaces" 2>/dev/null)
+  local http_code
+  local body
+  http_code=$(echo "$response" | tail -n1)
+  body=$(echo "$response" | head -n-1)
+
+  if [ "$http_code" = "200" ]; then
+    if echo "$body" | grep -q '"healthy"'; then
+      log_pass "API health check returns healthy status"
     else
-        log_fail "API health check: HTTP $http_code"
+      log_fail "API health check: unexpected response body"
     fi
+  else
+    log_fail "API health check: HTTP $http_code"
+  fi
 }
 
 # Test: Frontend loads
 test_frontend_loads() {
-    local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/" 2>/dev/null)
-    
-    if [ "$http_code" = "200" ]; then
-        log_pass "Frontend homepage loads (HTTP 200)"
-    else
-        log_fail "Frontend homepage: HTTP $http_code"
-    fi
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/" 2>/dev/null)
+
+  if [ "$http_code" = "200" ]; then
+    log_pass "Frontend homepage loads (HTTP 200)"
+  else
+    log_fail "Frontend homepage: HTTP $http_code"
+  fi
 }
 
 # Test: Frontend returns HTML with expected content
 test_frontend_content() {
-    local response
-    response=$(curl -s "$BASE_URL/" 2>/dev/null)
-    
-    if echo "$response" | grep -qi "ugoite\|<!DOCTYPE html>"; then
-        log_pass "Frontend returns valid HTML content"
-    else
-        log_fail "Frontend content check failed"
-    fi
+  local response
+  response=$(curl -s "$BASE_URL/" 2>/dev/null)
+
+  if echo "$response" | grep -qi "ugoite\|<!DOCTYPE html>"; then
+    log_pass "Frontend returns valid HTML content"
+  else
+    log_fail "Frontend content check failed"
+  fi
 }
 
 # Test: Entries page loads
 test_entries_page() {
-    local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/spaces" 2>/dev/null)
-    
-    if [ "$http_code" = "200" ]; then
-        log_pass "Entries page loads (HTTP 200)"
-    else
-        log_fail "Entries page: HTTP $http_code"
-    fi
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/spaces" 2>/dev/null)
+
+  if [ "$http_code" = "200" ]; then
+    log_pass "Entries page loads (HTTP 200)"
+  else
+    log_fail "Entries page: HTTP $http_code"
+  fi
 }
 
 # Test: API spaces endpoint
 test_api_spaces() {
-    local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/spaces" 2>/dev/null)
-    
-    if [ "$http_code" = "200" ]; then
-        log_pass "API /spaces endpoint works"
-    else
-        log_fail "API /spaces: HTTP $http_code"
-    fi
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/spaces" 2>/dev/null)
+
+  if [ "$http_code" = "200" ]; then
+    log_pass "API /spaces endpoint works"
+  else
+    log_fail "API /spaces: HTTP $http_code"
+  fi
 }
 
 # Test: Static assets (check if CSS/JS loads)
 test_static_assets() {
-    local response
-    response=$(curl -s "$BASE_URL/" 2>/dev/null)
-    
-    # Check if page references script or style
-    if echo "$response" | grep -qE '<script|<link.*stylesheet'; then
-        log_pass "Frontend includes script/style references"
-    else
-        log_fail "Frontend missing script/style references"
-    fi
+  local response
+  response=$(curl -s "$BASE_URL/" 2>/dev/null)
+
+  # Check if page references script or style
+  if echo "$response" | grep -qE '<script|<link.*stylesheet'; then
+    log_pass "Frontend includes script/style references"
+  else
+    log_fail "Frontend missing script/style references"
+  fi
 }
 
 echo "=========================================="
@@ -131,6 +133,6 @@ echo "Results: $TESTS_PASSED passed, $TESTS_FAILED failed"
 echo "=========================================="
 
 if [ $TESTS_FAILED -gt 0 ]; then
-    exit 1
+  exit 1
 fi
 exit 0
