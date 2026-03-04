@@ -1,5 +1,6 @@
 {
 	"name": "ugoite-frontend",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "vinxi dev",

@@ -175,6 +175,12 @@ See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
 
 ---
 
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+---
+
 ## Contributing
 
 Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.

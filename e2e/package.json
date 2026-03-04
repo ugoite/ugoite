@@ -2,6 +2,7 @@
 	"name": "ugoite-e2e",
 	"type": "module",
 	"private": true,
+	"license": "MIT",
 	"scripts": {
 		"test": "playwright test --grep-invert @screenshot",
 		"test:smoke": "playwright test smoke.test.ts",
