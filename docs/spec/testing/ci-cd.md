@@ -12,7 +12,8 @@
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
-| Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Automated semantic-release |
+| Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
+| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
 
 ## Python CI
 
@@ -112,9 +113,10 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **Changesets** track monorepo change intent (`.changeset/*.md`).
-4. **Release CI** runs automatically on pushes to `main`.
-5. **semantic-release** computes the release from commit history, tags, and publishes GitHub release notes.
+3. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning.
+4. **Human review** must confirm the planned release scope before publishing.
+5. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
+6. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
 
 ## Environment Variables
 
@@ -152,7 +154,6 @@ mise run e2e
 
 # Conventional commits + release metadata
 npm run commitlint:range
-npm run changeset:status
 ```
 
 Or use pre-commit:
