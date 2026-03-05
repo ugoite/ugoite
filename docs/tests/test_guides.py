@@ -26,7 +26,11 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 )
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+PR_TEMPLATE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
+)
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
+PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
@@ -249,6 +253,46 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_005_pr_template_validation_rules_declared() -> None:
+    """REQ-OPS-005: PR workflow must enforce template sections and close/closes links."""
+    workflow_text = PR_TEMPLATE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    template_text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    required_template_fragments = {
+        "## Summary",
+        "## Related Issue (required)",
+        "## Testing",
+    }
+    missing_template_fragments = sorted(
+        fragment for fragment in required_template_fragments if fragment not in template_text
+    )
+
+    required_workflow_fragments = {
+        "## Summary",
+        "## Related Issue (required)",
+        "## Testing",
+        "close:",
+        "closes",
+    }
+    missing_workflow_fragments = sorted(
+        fragment for fragment in required_workflow_fragments if fragment not in workflow_text
+    )
+
+    if missing_template_fragments or missing_workflow_fragments:
+        details: list[str] = []
+        if missing_template_fragments:
+            details.append(
+                "pull_request_template missing fragments: "
+                + ", ".join(missing_template_fragments),
+            )
+        if missing_workflow_fragments:
+            details.append(
+                "pr-require-close-issue workflow missing fragments: "
+                + ", ".join(missing_workflow_fragments),
+            )
         raise AssertionError("; ".join(details))
 
 
