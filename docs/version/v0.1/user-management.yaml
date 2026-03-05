@@ -5,6 +5,14 @@ title: "User Management"
 goal: >
   Introduce secure multi-user operation with authentication, authorization, and
   collaboration while preserving the local-first default model.
+requirement_ids:
+  - REQ-SEC-003
+  - REQ-SEC-004
+  - REQ-SEC-005
+  - REQ-SEC-006
+  - REQ-SEC-007
+  - REQ-SEC-008
+  - REQ-SEC-009
 phases:
   - id: design
     status: completed
@@ -54,4 +62,4 @@ phases:
       - description: "Scope enforcement and key revocation propagation tests"
         done: true
       - description: "Requirement coverage check confirms all new REQ-* are linked to tests"
-        done: false
+        done: true

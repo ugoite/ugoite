@@ -89,6 +89,12 @@ function sortByTitle<T extends { title: string }>(items: T[]): T[] {
 	return [...items].sort((a, b) => a.title.localeCompare(b.title));
 }
 
+function sortById<T extends { id: string }>(items: T[]): T[] {
+	return [...items].sort((a, b) =>
+		a.id.localeCompare(b.id, undefined, { numeric: true }),
+	);
+}
+
 export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 	const filePath = path.join(specRoot, "philosophy/foundation.yaml");
 	const data = await readYaml<{
@@ -100,7 +106,7 @@ export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 			coding_guideline?: string;
 		}>;
 	}>(filePath);
-	return sortByTitle(
+	return sortById(
 		(data.philosophies ?? []).map((item) => ({
 			id: item.id,
 			title: item.title,

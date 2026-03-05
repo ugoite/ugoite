@@ -2,6 +2,7 @@
 	"name": "ugoite-docsite",
 	"private": true,
 	"version": "0.1.0",
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "astro dev --host 127.0.0.1 --strictPort --port 4321",
@@ -18,7 +19,7 @@
 		"@astrojs/check": "^0.9.6",
 		"@tailwindcss/vite": "^4.2.1",
 		"astro": "^5.18.0",
-		"marked": "^17.0.3",
+		"marked": "^17.0.4",
 		"prismjs": "1.30.0",
 		"yaml": "^2.8.1",
 		"tailwindcss": "^4.2.1"

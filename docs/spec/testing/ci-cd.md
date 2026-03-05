@@ -96,6 +96,9 @@ uvx pre-commit run --all-files
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
+- **Yamllint**: Validates YAML syntax/style on committed YAML files
+- **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
+- **Root artifact hygiene**: Blocks root-level files with placeholder-only content
 - **Ty**: Type checks Python projects
 
 Conventional Commit enforcement (local):
