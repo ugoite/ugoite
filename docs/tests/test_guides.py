@@ -2,6 +2,7 @@
 
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
+REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 """
 
@@ -21,6 +22,9 @@ WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
 DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
 FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
+YAML_WORKFLOW_CI_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
+)
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
@@ -28,6 +32,12 @@ README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
+REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
+REQUIRED_YAML_WORKFLOW_CI_STEPS = {
+    "Check root placeholder artifacts",
+    "Run yamllint",
+    "Run actionlint",
+}
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
     "cargo-clippy",
@@ -221,6 +231,30 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
         missing_parts,
     )
     _raise_if_missing(missing_parts)
+
+
+def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
+    """REQ-OPS-005: YAML and workflow lint gates must exist in pre-commit and CI."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(REQUIRED_PRE_COMMIT_HOOKS.difference(configured_hooks))
+
+    ci_steps = _collect_workflow_step_names(YAML_WORKFLOW_CI_WORKFLOW_PATH)
+    missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
+    python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
+    leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+
+    if missing_hooks or missing_steps or leaked_steps:
+        details: list[str] = []
+        if missing_hooks:
+            details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+        if missing_steps:
+            details.append(
+                "yaml-workflow-ci missing steps: " + ", ".join(missing_steps),
+            )
+        if leaked_steps:
+            details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
