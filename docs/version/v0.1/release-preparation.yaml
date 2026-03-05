@@ -1,0 +1,23 @@
+id: release-preparation
+version: "0.1"
+status: planned
+title: "Release Preparation"
+goal: >
+  Finalize release readiness for v0.1 with deployable images, operator-ready
+  documentation, and clear release communication.
+phases:
+  - id: container-image-deployment
+    status: planned
+    tasks:
+      - description: "Validate backend/frontend images in staging and production workflows"
+        done: false
+  - id: quickstart-documentation-finalization
+    status: planned
+    tasks:
+      - description: "Finalize quick-start and tutorial docs for first-time operators"
+        done: false
+  - id: release-notes-drafting
+    status: planned
+    tasks:
+      - description: "Prepare changelog, known issues, and next-step guidance"
+        done: false
