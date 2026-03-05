@@ -3,6 +3,7 @@
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
+REQ-OPS-006: PR template validation rules must be enforced in CI.
 """
 
 from __future__ import annotations
@@ -256,8 +257,8 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_005_pr_template_validation_rules_declared() -> None:
-    """REQ-OPS-005: PR workflow must enforce template sections and close/closes links."""
+def test_docs_req_ops_006_pr_template_validation_rules_declared() -> None:
+    """REQ-OPS-006: PR workflow must enforce sections and close/closes links."""
     workflow_text = PR_TEMPLATE_WORKFLOW_PATH.read_text(encoding="utf-8")
     template_text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -267,7 +268,9 @@ def test_docs_req_ops_005_pr_template_validation_rules_declared() -> None:
         "## Testing",
     }
     missing_template_fragments = sorted(
-        fragment for fragment in required_template_fragments if fragment not in template_text
+        fragment
+        for fragment in required_template_fragments
+        if fragment not in template_text
     )
 
     required_workflow_fragments = {
@@ -278,7 +281,9 @@ def test_docs_req_ops_005_pr_template_validation_rules_declared() -> None:
         "closes",
     }
     missing_workflow_fragments = sorted(
-        fragment for fragment in required_workflow_fragments if fragment not in workflow_text
+        fragment
+        for fragment in required_workflow_fragments
+        if fragment not in workflow_text
     )
 
     if missing_template_fragments or missing_workflow_fragments:
