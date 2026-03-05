@@ -1,0 +1,83 @@
+name: Release Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer version (stable or prerelease)"
+        required: true
+        type: string
+      channel:
+        description: "Release channel"
+        required: true
+        type: choice
+        options:
+          - stable
+          - alpha
+          - beta
+      target:
+        description: "Git ref (branch, tag, or SHA) to release"
+        required: true
+        default: main
+        type: string
+      approval:
+        description: "Type APPROVED after human review"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Human-verified release publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate manual approval and version
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          APPROVAL: ${{ inputs.approval }}
+        run: |
+          set -euo pipefail
+          if [ "$APPROVAL" != "APPROVED" ]; then
+            echo "approval must be exactly APPROVED after human review." >&2
+            exit 1
+          fi
+
+          case "$CHANNEL" in
+            stable)
+              pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
+              ;;
+            alpha)
+              pattern='^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
+              ;;
+            beta)
+              pattern='^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'
+              ;;
+            *)
+              echo "unsupported channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          if ! printf '%s' "$VERSION" | grep -Eq "$pattern"; then
+            echo "version '$VERSION' does not match channel '$CHANNEL' pattern." >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          args=(--target "$TARGET" --title "$tag" --generate-notes)
+          if [ "$CHANNEL" != "stable" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$tag" "${args[@]}"
