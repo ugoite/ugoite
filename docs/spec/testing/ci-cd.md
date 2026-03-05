@@ -4,9 +4,9 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff), type check, pytest |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push, PR | Lint (yamllint + actionlint) and root artifact hygiene |
+| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
+| Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
@@ -29,16 +29,6 @@ jobs:
     - cd ugoite-cli && uv run pytest
 ```
 
-## YAML/Workflow CI
-
-```yaml
-jobs:
-  ci:
-    - root placeholder artifact guard
-    - yamllint (repo YAML/config checks)
-    - actionlint (GitHub Actions workflow lint)
-```
-
 ## Frontend CI
 
 ```yaml
@@ -47,6 +37,17 @@ jobs:
     - cd frontend && biome ci .
   test:
     - cd frontend && bun test
+```
+
+## Docsite CI
+
+```yaml
+jobs:
+  ci:
+    - cd docsite && bun run lint
+    - cd docsite && bun run format:check
+    - cd docsite && bun run typecheck
+    - cd docsite && bun run test:validation
 ```
 
 ## E2E CI
@@ -94,6 +95,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
+- **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
 - **Root artifact hygiene**: Blocks root-level files with placeholder-only content
