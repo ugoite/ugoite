@@ -50,16 +50,12 @@ milestones:
         status: in_progress
   - id: release-preparation
     status: planned
+    source:
+      - docs/version/v0.1/release-preparation.yaml
     phases:
       - id: container-image-deployment
         status: planned
-        deliverables:
-          - Validate backend/frontend images in staging and production workflows.
       - id: quickstart-documentation-finalization
         status: planned
-        deliverables:
-          - Finalize quick-start and tutorial docs for first-time operators.
       - id: release-notes-drafting
         status: planned
-        deliverables:
-          - Prepare changelog, known issues, and next-step guidance.

@@ -14,8 +14,35 @@ repos:
         # Use ruff's format hook to apply auto-formatting on commit
         # (this replaces the legacy `ruff` alias)
 
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args: ["--strict", "-d", "{extends: relaxed, rules: {line-length: disable}}"]
+        files: \.(yaml|yml)$
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.(yml|yaml)$
+
   - repo: local
     hooks:
+      - id: root-artifact-hygiene
+        name: root artifact hygiene
+        entry: bash scripts/check-placeholder-artifacts.sh
+        language: system
+        always_run: true
+        pass_filenames: false
+
+      - id: shell-quality
+        name: shell quality gates
+        entry: bash scripts/check-shell-quality.sh --fix
+        language: system
+        pass_filenames: false
+        files: ^(scripts|e2e/scripts)/.*\.sh$
+
       - id: rustfmt
         name: rustfmt
         entry: bash -c "cd ugoite-core && uv run cargo fmt --all && cd ../ugoite-cli && cargo fmt --all"
