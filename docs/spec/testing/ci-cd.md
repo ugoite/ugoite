@@ -97,7 +97,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-core` and `ugoite-cli` run format/lint gates, and `ugoite-cli` tests run before commit
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
@@ -144,22 +144,27 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 Before pushing, run the same checks as CI:
 
 ```bash
+# Rust
+cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && uv run cargo clippy -- -D warnings && cargo test --no-run && uv run maturin develop && uv run pytest -W error
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+
 # Python
-uvx ruff format --check .
-uvx ruff check .
-cd backend && uv run ty check . && uv run pytest
-cd ugoite-cli && uv run ty check . && uv run pytest
+cd ../backend && uv run ty check . && uv run pytest
+
+# Docs
+cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
 
 # Frontend
 cd frontend && biome ci . && bun test
 
 # E2E (requires servers running)
-mise run e2e
+cd .. && mise run e2e
 
 # Conventional commits + release metadata
 npm run commitlint:range
 ```
-
+ 
 Or use pre-commit:
 ```bash
 uvx pre-commit run --all-files

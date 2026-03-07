@@ -1,14 +1,9 @@
 use anyhow::Result;
 use opendal::Operator;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use crate::entry;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SearchResult {
-    pub id: String,
-}
+pub use ugoite_minimum::search::SearchResult;
 
 /// Hybrid keyword search using index and content fallback.
 pub async fn search_entries(
