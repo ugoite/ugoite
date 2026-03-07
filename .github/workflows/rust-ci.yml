@@ -28,8 +28,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
+            ugoite-minimum
             ugoite-core
             ugoite-cli
+
+      - name: Run rustfmt check (minimum)
+        working-directory: ./ugoite-minimum
+        run: cargo fmt --check
+
+      - name: Run clippy (minimum)
+        working-directory: ./ugoite-minimum
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests (minimum)
+        working-directory: ./ugoite-minimum
+        run: cargo test
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
