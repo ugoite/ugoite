@@ -618,8 +618,8 @@ def test_get_sql_session_stream_success(test_client: TestClient) -> None:
     """REQ-API-008: get SQL session stream returns NDJSON rows."""
     test_client.post("/spaces", json={"name": "sess-stream-ws"})
 
-    page1 = {"rows": [{"id": "r1"}]}
-    page2 = {"rows": []}
+    page1: dict[str, object] = {"rows": [{"id": "r1"}]}
+    page2: dict[str, object] = {"rows": []}
 
     call_count = {"n": 0}
 
