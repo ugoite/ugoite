@@ -210,3 +210,38 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_007_docsite_quality_parity_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-009
+  title: Release Automation Bootstrap and PR Permissions
+  description: 'Release automation MUST keep its bootstrap version metadata aligned at
+
+    `0.0.1`, prefer a dedicated `RELEASE_PLEASE_TOKEN` auth path when available,
+
+    and document the GitHub Actions permission prerequisite required for the
+
+    `GITHUB_TOKEN` fallback to create or update release pull requests.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared
