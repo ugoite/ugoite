@@ -4,10 +4,12 @@ REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
+REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import textwrap
 from pathlib import Path
@@ -25,18 +27,31 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
+RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
+ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 COLUMN_COUNT_THRESHOLD = 2
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Check root placeholder artifacts",
     "Run yamllint",
     "Run actionlint",
+}
+REQUIRED_RELEASE_CI_PERMISSIONS = {
+    "contents": "write",
+    "issues": "write",
+    "pull-requests": "write",
+}
+REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS = {
+    "secrets.RELEASE_PLEASE_TOKEN",
+    "secrets.GITHUB_TOKEN",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -278,6 +293,77 @@ def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
         if missing_steps:
             details.append("docsite-ci missing steps: " + ", ".join(missing_steps))
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> None:
+    """REQ-OPS-009: Release CI bootstrap metadata and PR permission docs must stay aligned."""
+    workflow = yaml.safe_load(RELEASE_CI_WORKFLOW_PATH.read_text(encoding="utf-8")) or {}
+    if not isinstance(workflow, dict):
+        message = "release-ci.yml must be a YAML mapping"
+        raise TypeError(message)
+
+    workflow_text = RELEASE_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    permissions = workflow.get("permissions")
+    if not isinstance(permissions, dict):
+        raise AssertionError("release-ci.yml must define top-level permissions")
+
+    missing_permissions = [
+        f"{name}={expected}"
+        for name, expected in REQUIRED_RELEASE_CI_PERMISSIONS.items()
+        if str(permissions.get(name)) != expected
+    ]
+
+    release_ci_steps = _collect_workflow_step_names(RELEASE_CI_WORKFLOW_PATH)
+    missing_steps = sorted(
+        {"Print release auth path", "Run release-please"}.difference(release_ci_steps),
+    )
+    missing_token_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS
+        if fragment not in workflow_text
+    )
+
+    manifest = json.loads(RELEASE_MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        message = ".release-please-manifest.json must be a JSON mapping"
+        raise TypeError(message)
+
+    package_data = json.loads(ROOT_PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
+    if not isinstance(package_data, dict):
+        message = "package.json must be a JSON mapping"
+        raise TypeError(message)
+
+    manifest_version = str(manifest.get(".", ""))
+    package_version = str(package_data.get("version", ""))
+
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    required_doc_fragments = {
+        "Allow GitHub Actions to create and approve pull requests",
+        "RELEASE_PLEASE_TOKEN",
+        "0.0.1",
+    }
+    missing_doc_fragments = sorted(
+        fragment for fragment in required_doc_fragments if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_permissions:
+        details.append("release-ci permissions mismatch: " + ", ".join(missing_permissions))
+    if missing_steps:
+        details.append("release-ci missing steps: " + ", ".join(missing_steps))
+    if missing_token_fragments:
+        details.append(
+            "release-ci missing token fragments: " + ", ".join(missing_token_fragments),
+        )
+    if manifest_version != "0.0.1":
+        details.append(f"release manifest must start at 0.0.1 (got {manifest_version!r})")
+    if package_version != "0.0.1":
+        details.append(f"package.json version must start at 0.0.1 (got {package_version!r})")
+    if missing_doc_fragments:
+        details.append("ci-cd guide missing fragments: " + ", ".join(missing_doc_fragments))
+    if details:
         raise AssertionError("; ".join(details))
 
 
