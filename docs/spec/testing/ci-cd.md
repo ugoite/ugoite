@@ -9,7 +9,7 @@
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
-| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
+| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push/PR for devcontainer & setup inputs, merge queue | Build/smoke devcontainer with authenticated pulls and path-filtered setup contracts |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
@@ -68,12 +68,35 @@ jobs:
 
 ```yaml
 jobs:
+  version-consistency:
+    - pytest docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins
+    - pytest docs/tests/test_guides.py::test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs
   devcontainer-build-smoke:
+    on:
+      pull_request / push:
+        paths:
+          - .github/workflows/devcontainer-ci.yml
+          - .devcontainer/**
+          - .pre-commit-config.yaml
+          - mise.toml
+          - **/mise.toml
+          - package.json / package-lock.json / Cargo.toml / Cargo.lock
+          - **/package.json / **/package-lock.json / **/bun.lock
+          - **/pyproject.toml / **/uv.lock / **/Cargo.toml / **/Cargo.lock
+      merge_group:
+        branches: [main]
     - docker/setup-buildx-action (enables type=gha cache driver)
     - docker/login-action (ghcr.io, GITHUB_TOKEN)
     - devcontainers/ci build + smoke command
     - Run smoke command: gh/mise/bash versions
 ```
+
+Push and pull-request filtering intentionally track devcontainer inputs and
+dependency/setup manifests instead of every source-file change. `mise.toml`
+coverage is dynamic via globbed trigger patterns plus a guide test that scans
+the repository for current `mise.toml` files. GitHub Actions does not currently
+support `paths` filters for `merge_group`, so merge queue coverage remains
+branch-scoped.
 
 ## SBOM and Supply Chain CI
 
