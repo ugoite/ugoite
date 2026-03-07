@@ -274,3 +274,41 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_008_pr_template_validation_rules_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-010
+  title: Rust Target Cache Discipline
+  description: 'Local Rust build and test tasks MUST share a bounded target root,
+
+    clean package-specific crate artifacts before rebuild/test, and expose
+
+    an explicit cleanup task. Rust CI MUST use the same shared target root
+
+    so repeated ugoite-core and ugoite-cli development does not balloon
+
+    target caches into tens of gigabytes.
+
+    '
+  related_spec:
+  - ../README.md
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_010_rust_target_cache_discipline_declared

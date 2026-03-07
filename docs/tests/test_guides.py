@@ -6,6 +6,7 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
+REQ-OPS-010: Rust target cache discipline must be declared.
 """
 
 from __future__ import annotations
@@ -36,7 +37,10 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
+UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 COLUMN_COUNT_THRESHOLD = 2
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
@@ -44,6 +48,7 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
     "cargo-clippy",
@@ -366,6 +371,67 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_010_rust_target_cache_discipline_declared() -> None:
+    """REQ-OPS-010: Rust target caches must stay bounded and cleanable."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    cli_mise = tomllib.loads(UGOITE_CLI_MISE_PATH.read_text(encoding="utf-8"))
+
+    details = [
+        detail
+        for detail in [
+            _require_shared_target_dir(core_mise, "ugoite-core/mise.toml"),
+            _require_shared_target_dir(cli_mise, "ugoite-cli/mise.toml"),
+            _require_task_contains(
+                core_mise,
+                "build",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "install",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli install task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli test task must clean package-local Rust artifacts",
+            ),
+            _require_exact_task_run(
+                root_mise,
+                "cleanup:rust-targets",
+                ["bash scripts/cleanup-rust-targets.sh"],
+                "root mise must expose cleanup:rust-targets",
+            ),
+            _require_file_contains(
+                RUST_TARGET_CLEANUP_PATH,
+                ["target/rust", ".cache/ugoite/ugoite-core/target"],
+                (
+                    "cleanup-rust-targets.sh must remove shared and legacy "
+                    "Rust target caches"
+                ),
+            ),
+            _require_file_contains(
+                RUST_CI_WORKFLOW_PATH,
+                ["CARGO_TARGET_DIR: target/rust"],
+                "rust-ci.yml must set CARGO_TARGET_DIR: target/rust",
+            ),
+            _require_file_contains(
+                README_PATH,
+                ["mise run cleanup:rust-targets"],
+                "README must document cleanup:rust-targets",
+            ),
+        ]
+        if detail is not None
+    ]
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
@@ -407,6 +473,72 @@ def _collect_pre_commit_hooks(
 
 def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
     return set(_collect_pre_commit_hooks(config))
+
+
+def _get_env_value(config: dict[str, object], key: str) -> str | None:
+    env = config.get("env", {})
+    if not isinstance(env, dict):
+        return None
+    value = env.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _get_task_run_commands(config: dict[str, object], task_name: str) -> list[str]:
+    tasks = config.get("tasks", {})
+    if not isinstance(tasks, dict):
+        return []
+    task = tasks.get(task_name)
+    if not isinstance(task, dict):
+        return []
+    run = task.get("run")
+    if isinstance(run, str):
+        return [run]
+    if isinstance(run, list) and all(isinstance(item, str) for item in run):
+        return list(run)
+    return []
+
+
+def _require_shared_target_dir(
+    config: dict[str, object],
+    label: str,
+) -> str | None:
+    if _get_env_value(config, "CARGO_TARGET_DIR") == REQUIRED_SHARED_RUST_TARGET_DIR:
+        return None
+    return f"{label} must share CARGO_TARGET_DIR=../target/rust"
+
+
+def _require_task_contains(
+    config: dict[str, object],
+    task_name: str,
+    expected: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(expected in command for command in commands):
+        return None
+    return message
+
+
+def _require_exact_task_run(
+    config: dict[str, object],
+    task_name: str,
+    expected: list[str],
+    message: str,
+) -> str | None:
+    if _get_task_run_commands(config, task_name) == expected:
+        return None
+    return message
+
+
+def _require_file_contains(
+    path: Path,
+    expected_snippets: list[str],
+    message: str,
+) -> str | None:
+    file_text = path.read_text(encoding="utf-8")
+    if all(snippet in file_text for snippet in expected_snippets):
+        return None
+    return message
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
