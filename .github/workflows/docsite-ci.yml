@@ -51,6 +51,6 @@ jobs:
         working-directory: ./docsite
         run: bun run typecheck
 
-      - name: Build
+      - name: Validation test (build)
         working-directory: ./docsite
-        run: bun run build
+        run: bun run test:validation
