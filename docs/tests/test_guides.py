@@ -3,6 +3,7 @@
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
+REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 """
 
@@ -38,6 +39,14 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_RUST_PRE_COMMIT_HOOKS = {
+    "rustfmt",
+    "cargo-clippy",
+    "cargo-clippy-cli",
+    "cargo-llvm-cov-core",
+    "cargo-test-cli",
+}
+REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
     "docsite-format-check",
@@ -261,6 +270,33 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_006_rust_precommit_parity() -> None:
+    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
+
+    hook_entries = _collect_pre_commit_hooks(pre_commit)
+    clippy_cli_entry = ""
+    cargo_clippy_cli = hook_entries.get("cargo-clippy-cli")
+    if isinstance(cargo_clippy_cli, dict):
+        clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
+
+    missing_parts: list[str] = []
+    if missing_hooks:
+        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+    if "--no-default-features" not in clippy_cli_entry:
+        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+
+    rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
+    missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
+    if missing_ci_steps:
+        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
     """REQ-OPS-007: Docsite lint/format/test parity must be wired in CI/pre-commit."""
     pre_commit = _load_pre_commit_config()
@@ -290,19 +326,21 @@ def _load_workflow() -> dict[str, object]:
 
 
 def _load_pre_commit_config() -> dict[str, object]:
-    config_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
-    config = yaml.safe_load(config_text)
-    if isinstance(config, dict):
-        return config
+    pre_commit_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
+    pre_commit = yaml.safe_load(pre_commit_text)
+    if isinstance(pre_commit, dict):
+        return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
     raise TypeError(message)
 
 
-def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+def _collect_pre_commit_hooks(
+    config: dict[str, object],
+) -> dict[str, dict[str, object]]:
     repos = config.get("repos", [])
     if not isinstance(repos, list):
-        return set()
-    hook_ids: set[str] = set()
+        return {}
+    hooks_by_id: dict[str, dict[str, object]] = {}
     for repo in repos:
         if not isinstance(repo, dict):
             continue
@@ -314,8 +352,12 @@ def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
                 continue
             hook_id = hook.get("id")
             if isinstance(hook_id, str) and hook_id:
-                hook_ids.add(hook_id)
-    return hook_ids
+                hooks_by_id[hook_id] = hook
+    return hooks_by_id
+
+
+def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+    return set(_collect_pre_commit_hooks(config))
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
