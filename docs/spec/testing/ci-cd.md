@@ -4,15 +4,16 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint (ruff), type check, pytest |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push, PR | Lint (yamllint + actionlint) and root artifact hygiene |
+| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
+| Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push, PR | Build/smoke devcontainer with authenticated pulls and cache |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
-| Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Automated semantic-release |
+| Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
+| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
 
 ## Python CI
 
@@ -29,16 +30,6 @@ jobs:
     - cd ugoite-cli && uv run pytest
 ```
 
-## YAML/Workflow CI
-
-```yaml
-jobs:
-  ci:
-    - root placeholder artifact guard
-    - yamllint (repo YAML/config checks)
-    - actionlint (GitHub Actions workflow lint)
-```
-
 ## Frontend CI
 
 ```yaml
@@ -47,6 +38,17 @@ jobs:
     - cd frontend && biome ci .
   test:
     - cd frontend && bun test
+```
+
+## Docsite CI
+
+```yaml
+jobs:
+  ci:
+    - cd docsite && bun run lint
+    - cd docsite && bun run format:check
+    - cd docsite && bun run typecheck
+    - cd docsite && bun run test:validation
 ```
 
 ## E2E CI
@@ -95,6 +97,7 @@ uvx pre-commit run --all-files
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
 - **Rust fmt/lint/test parity**: `ugoite-core` and `ugoite-cli` run format/lint gates, and `ugoite-cli` tests run before commit
+- **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
 - **Root artifact hygiene**: Blocks root-level files with placeholder-only content
@@ -113,9 +116,10 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **Changesets** track monorepo change intent (`.changeset/*.md`).
-4. **Release CI** runs automatically on pushes to `main`.
-5. **semantic-release** computes the release from commit history, tags, and publishes GitHub release notes.
+3. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning.
+4. **Human review** must confirm the planned release scope before publishing.
+5. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
+6. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
 
 ## Environment Variables
 
@@ -153,7 +157,6 @@ mise run e2e
 
 # Conventional commits + release metadata
 npm run commitlint:range
-npm run changeset:status
 ```
 
 Or use pre-commit:

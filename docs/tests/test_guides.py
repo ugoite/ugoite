@@ -4,6 +4,7 @@ REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
+REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 """
 
 from __future__ import annotations
@@ -46,6 +47,18 @@ REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "cargo-test-cli",
 }
 REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
+    "docsite-biome-ci",
+    "docsite-format-check",
+    "docsite-typecheck",
+    "docsite-validation-test",
+}
+REQUIRED_DOCSITE_CI_STEPS = {
+    "Lint",
+    "Format check",
+    "Typecheck",
+    "Validation test (build)",
+}
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -284,6 +297,26 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
         raise AssertionError("; ".join(missing_parts))
 
 
+def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
+    """REQ-OPS-007: Docsite lint/format/test parity must be wired in CI/pre-commit."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(
+        REQUIRED_DOCSITE_PRE_COMMIT_HOOKS.difference(configured_hooks),
+    )
+
+    ci_step_names = _collect_workflow_step_names(DOCSITE_CI_WORKFLOW_PATH)
+    missing_steps = sorted(REQUIRED_DOCSITE_CI_STEPS.difference(ci_step_names))
+
+    if missing_hooks or missing_steps:
+        details: list[str] = []
+        if missing_hooks:
+            details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+        if missing_steps:
+            details.append("docsite-ci missing steps: " + ", ".join(missing_steps))
+        raise AssertionError("; ".join(details))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
@@ -334,7 +367,7 @@ def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         return set()
-    names: set[str] = set()
+    step_names: set[str] = set()
     for job in jobs.values():
         if not isinstance(job, dict):
             continue
@@ -346,8 +379,8 @@ def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
                 continue
             name = step.get("name")
             if isinstance(name, str) and name:
-                names.add(name)
-    return names
+                step_names.add(name)
+    return step_names
 
 
 def _extract_workflow_pin_values(

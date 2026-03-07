@@ -8,23 +8,24 @@
 		"dev": "astro dev --host 127.0.0.1 --strictPort --port 4321",
 		"build": "astro build",
 		"preview": "astro preview --host",
-		"lint": "biome ci astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
+		"lint": "biome check --formatter-enabled=false --linter-enabled=true --assist-enabled=false astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
 		"format": "biome format --write .",
-		"format:check": "biome ci astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
+		"format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
 		"typecheck": "astro check",
-		"validate": "bun run lint && bun run typecheck"
+		"test:validation": "bun run build",
+		"validate": "bun run lint && bun run format:check && bun run typecheck && bun run test:validation"
 	},
 	"dependencies": {
 		"@astrojs/check": "^0.9.6",
 		"@tailwindcss/vite": "^4.2.1",
 		"astro": "^5.18.0",
-		"marked": "^17.0.3",
+		"marked": "^17.0.4",
 		"prismjs": "1.30.0",
 		"yaml": "^2.8.1",
 		"tailwindcss": "^4.2.1"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.5",
+		"@biomejs/biome": "^2.4.6",
 		"@types/node": "^25.3.3",
 		"typescript": "^5.9.3"
 	}
