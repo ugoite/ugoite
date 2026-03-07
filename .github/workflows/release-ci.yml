@@ -11,30 +11,21 @@ permissions:
   pull-requests: write
 
 jobs:
-  release:
-    name: Semantic Release
+  release-pr:
+    name: Release Please PR
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Run release-please
+        id: release_please
+        uses: googleapis/release-please-action@v4
         with:
-          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+          skip-github-release: true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "lts/*"
-          cache: npm
-
-      - name: Install release tooling
-        run: npm ci
-
-      - name: Check changeset metadata
+      - name: Print release planning outputs
         run: |
-          npm run changeset:status || echo "No unreleased changesets found."
-
-      - name: Publish release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+          echo "release_created=${{ steps.release_please.outputs.release_created }}"
+          echo "prs_created=${{ steps.release_please.outputs.prs_created }}"
