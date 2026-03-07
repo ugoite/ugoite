@@ -6,13 +6,14 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
+REQ-OPS-011: Devcontainer trigger paths must cover setup inputs.
 """
 
 from __future__ import annotations
 
 import re
 import textwrap
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import bashlex
 import tomllib
@@ -29,6 +30,9 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 )
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+DEVCONTAINER_CI_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
+)
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -63,6 +67,24 @@ REQUIRED_DOCSITE_CI_STEPS = {
     "Format check",
     "Typecheck",
     "Validation test (build)",
+}
+REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
+    ".github/workflows/devcontainer-ci.yml",
+    ".devcontainer/**",
+    ".pre-commit-config.yaml",
+    "mise.toml",
+    "**/mise.toml",
+    "package.json",
+    "**/package.json",
+    "package-lock.json",
+    "**/package-lock.json",
+    "Cargo.toml",
+    "**/Cargo.toml",
+    "Cargo.lock",
+    "**/Cargo.lock",
+    "**/bun.lock",
+    "**/pyproject.toml",
+    "**/uv.lock",
 }
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -366,6 +388,49 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs() -> None:
+    """REQ-OPS-011: Devcontainer triggers must cover setup inputs and mise.toml."""
+    workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
+    pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
+    push_paths = _collect_trigger_paths(workflow, "push")
+    discovered_mise_paths = _discover_repo_paths("mise.toml")
+
+    details: list[str] = []
+    if not pull_request_paths:
+        details.append("devcontainer-ci pull_request trigger must define paths")
+    if not push_paths:
+        details.append("devcontainer-ci push trigger must define paths")
+    if pull_request_paths != push_paths:
+        details.append("devcontainer-ci push and pull_request paths must match")
+
+    missing_patterns = sorted(
+        REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS.difference(pull_request_paths),
+    )
+    if missing_patterns:
+        details.append(
+            "devcontainer-ci trigger paths missing patterns: "
+            + ", ".join(missing_patterns),
+        )
+
+    uncovered_mise_paths = sorted(
+        path
+        for path in discovered_mise_paths
+        if not _matches_any_workflow_pattern(path, pull_request_paths)
+    )
+    if uncovered_mise_paths:
+        details.append(
+            "devcontainer-ci trigger paths must cover all mise.toml files: "
+            + ", ".join(uncovered_mise_paths),
+        )
+
+    step_names = _collect_workflow_step_names(DEVCONTAINER_CI_WORKFLOW_PATH)
+    if "Check devcontainer trigger coverage (REQ-OPS-011)" not in step_names:
+        details.append("devcontainer-ci must validate REQ-OPS-011 in CI")
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
@@ -380,6 +445,16 @@ def _load_pre_commit_config() -> dict[str, object]:
     if isinstance(pre_commit, dict):
         return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _load_yaml_base_mapping(path: Path) -> dict[str, object]:
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if isinstance(document, dict):
+        if "on" not in document and True in document:
+            document["on"] = document.pop(True)
+        return document
+    message = f"{path.relative_to(REPO_ROOT)} must be a YAML mapping"
     raise TypeError(message)
 
 
@@ -407,6 +482,35 @@ def _collect_pre_commit_hooks(
 
 def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
     return set(_collect_pre_commit_hooks(config))
+
+
+def _collect_trigger_paths(workflow: dict[str, object], trigger: str) -> set[str]:
+    on_block = workflow.get("on", {})
+    if not isinstance(on_block, dict):
+        return set()
+    trigger_block = on_block.get(trigger, {})
+    if not isinstance(trigger_block, dict):
+        return set()
+    paths = trigger_block.get("paths", [])
+    if isinstance(paths, list) and all(isinstance(item, str) for item in paths):
+        return {item for item in paths if item}
+    return set()
+
+
+def _discover_repo_paths(file_name: str) -> list[str]:
+    ignored_parts = {".git", "node_modules", ".venv", "target"}
+    discovered: list[str] = []
+    for path in REPO_ROOT.rglob(file_name):
+        relative_path = path.relative_to(REPO_ROOT)
+        if any(part in ignored_parts for part in relative_path.parts):
+            continue
+        discovered.append(relative_path.as_posix())
+    return sorted(discovered)
+
+
+def _matches_any_workflow_pattern(path_text: str, patterns: set[str]) -> bool:
+    path = PurePosixPath(path_text)
+    return any(path_text == pattern or path.match(pattern) for pattern in patterns)
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
