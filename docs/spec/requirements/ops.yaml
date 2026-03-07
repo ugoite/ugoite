@@ -210,3 +210,39 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_007_docsite_quality_parity_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-008
+  title: Frontend Local Dev Proxy Readiness
+  description: 'The frontend dev task MUST wait for the local backend health endpoint
+
+    before starting the UI dev server so
+
+    authenticated `/api` requests such as `/spaces` do not surface transient
+
+    local-startup 502 errors.
+
+    '
+  related_spec:
+  - ../guide/local-dev-auth-login.md
+  - architecture/frontend-backend-interface.md#error-handling-standards
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_008_frontend_dev_proxy_readiness_declared

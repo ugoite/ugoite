@@ -4,6 +4,7 @@ REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
+REQ-OPS-008: Frontend local-dev proxy readiness must be declared.
 """
 
 from __future__ import annotations
@@ -30,7 +31,10 @@ SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
+WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 COLUMN_COUNT_THRESHOLD = 2
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
@@ -49,6 +53,11 @@ REQUIRED_DOCSITE_CI_STEPS = {
     "Format check",
     "Typecheck",
     "Validation test (build)",
+}
+REQUIRED_FRONTEND_DEV_FRAGMENTS = {
+    "../scripts/wait-for-http.sh http://localhost:8000/health 30",
+    "BACKEND_URL=http://localhost:8000",
+    "bun run dev",
 }
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -278,6 +287,42 @@ def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
         if missing_steps:
             details.append("docsite-ci missing steps: " + ", ".join(missing_steps))
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_008_frontend_dev_proxy_readiness_declared() -> None:
+    """REQ-OPS-008: Frontend local dev must wait for backend readiness before proxying."""
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    tasks = frontend_mise.get("tasks", {})
+    if not isinstance(tasks, dict):
+        message = "frontend/mise.toml must define [tasks]"
+        raise TypeError(message)
+
+    dev_task = tasks.get("dev")
+    if not isinstance(dev_task, dict):
+        message = "frontend/mise.toml must define [tasks.dev]"
+        raise TypeError(message)
+
+    run_command = dev_task.get("run")
+    if not isinstance(run_command, str):
+        message = "frontend [tasks.dev].run must be a string command"
+        raise TypeError(message)
+
+    missing_fragments = sorted(
+        fragment for fragment in REQUIRED_FRONTEND_DEV_FRAGMENTS if fragment not in run_command
+    )
+
+    wait_script = WAIT_FOR_HTTP_PATH.read_text(encoding="utf-8")
+    guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    if missing_fragments:
+        details.append("frontend dev command missing fragments: " + ", ".join(missing_fragments))
+    if "curl -fsS" not in wait_script or "Timed out waiting" not in wait_script:
+        details.append("wait-for-http.sh must poll with curl and report timeout failures")
+    if "/api/*" not in guide_text or "waits for `http://localhost:8000/health`" not in guide_text:
+        details.append("local-dev-auth-login.md must document frontend proxy readiness")
+    if details:
         raise AssertionError("; ".join(details))
 
 
