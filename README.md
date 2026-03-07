@@ -78,6 +78,13 @@ Start development (backend + frontend + docsite — auth is bootstrapped automat
 mise run dev
 ```
 
+If Rust build artifacts grow unexpectedly during local development, clear the
+shared Rust target cache and the legacy ugoite-core cache path:
+
+```bash
+mise run cleanup:rust-targets
+```
+
 If you need to rotate/refresh token manually, run:
 
 ```bash
