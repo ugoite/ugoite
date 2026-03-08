@@ -24,3 +24,6 @@ jobs:
         uses: int128/wait-for-workflows-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          exclude-workflow-names: |
+            Release CI
+            Release Publish
