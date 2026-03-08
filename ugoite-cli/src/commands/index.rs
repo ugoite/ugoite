@@ -28,7 +28,8 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/index"),
                     &serde_json::json!({}),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -40,7 +41,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
         IndexSubCmd::Stats { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/stats"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/stats")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -57,7 +58,7 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
     let config = load_config();
     let (root, space_id) = parse_space_path(space_path);
     if let Some(base) = base_url(&config) {
-        let result = http::http_get(&format!("{base}/spaces/{space_id}/query?sql={sql}"))?;
+        let result = http::http_get(&format!("{base}/spaces/{space_id}/query?sql={sql}")).await?;
         print_json(&result);
         return Ok(());
     }
