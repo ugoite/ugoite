@@ -273,19 +273,29 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-009
-  title: Conflict Message Display
-  description: 'Frontend MUST notify the user on 409 Conflict errors.
+  title: Conflict Refresh Guidance
+  description: 'Frontend MUST notify the user on 409 Conflict errors, keep the
+
+    current draft visible in the editor, and require an explicit refresh before
+
+    loading the latest server revision. A merge UI is not part of the current
+
+    milestone contract.
 
     '
   related_spec:
   - architecture/frontend-backend-interface.md#error-handling-standards
+  - architecture/decisions.md#adr-005
   priority: high
   status: implemented
   tests:
     vitest:
     - file: frontend/src/components/MarkdownEditor.test.tsx
       tests:
-      - should show conflict message when there is a conflict
+      - 'REQ-FE-009: should show conflict message when there is a conflict'
+    - file: frontend/src/components/EntryDetailPane.test.tsx
+      tests:
+      - 'REQ-FE-009: shows refresh guidance on revision conflict'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
