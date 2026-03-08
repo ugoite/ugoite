@@ -28,6 +28,7 @@ run = [
 	"mise run //frontend:install",
 	"mise run //ugoite-cli:install",
 	"mise run //ugoite-core:install",
+	"mise run //ugoite-minimum:install",
 	"mise run //e2e:install",
 ]
 
@@ -47,8 +48,8 @@ description = "Run docsite dev server only"
 depends = ["//docsite:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "test:docs"]
-description = "Run tests for all packages (ugoite-core, backend, frontend, ugoite-cli)"
+depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
+description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend, frontend, ugoite-cli)"
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"

@@ -1,16 +1,8 @@
 use anyhow::{anyhow, Result};
 use opendal::Operator;
-use serde::{Deserialize, Serialize};
 
 use crate::entry::{find_entry_form, read_entry_row, write_entry_row};
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Link {
-    pub id: String,
-    pub source: String,
-    pub target: String,
-    pub kind: String,
-}
+pub use ugoite_minimum::link::Link;
 
 /// Create a bi-directional link between two entries and persist metadata.
 pub async fn create_link(

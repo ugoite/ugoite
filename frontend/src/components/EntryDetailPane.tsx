@@ -325,7 +325,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 		/* v8 ignore start */
 		if (error instanceof RevisionConflictError) {
 			setConflictMessage(
-				"This entry was modified elsewhere. Please refresh to see the latest version.",
+				"This entry was modified elsewhere. Your draft is still in the editor; refresh to load the latest version.",
 			);
 			return;
 		}

@@ -1,54 +1,25 @@
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
-use futures::TryStreamExt;
-use opendal::{EntryMode, Operator};
-
+use opendal::Operator;
 use rand::TryRng;
-use serde::{Deserialize, Serialize};
-use url::Url;
+#[cfg(unix)]
+use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SpaceMeta {
-    pub id: String,
-    pub name: String,
-    pub created_at: f64, // Python uses time.time() which is float seconds, not ISO string
-    pub storage: StorageConfig,
-}
+use crate::storage::{OpendalStorage, StorageBackend};
+pub use ugoite_minimum::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct StorageConfig {
-    #[serde(rename = "type")]
-    pub storage_type: String,
-    pub root: String,
+async fn space_exists_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+    name: &str,
+) -> Result<bool> {
+    let ws_path = format!("spaces/{name}/meta.json");
+    storage.exists(&ws_path).await
 }
 
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {
-    let ws_path = format!("spaces/{}/meta.json", name);
-    Ok(op.exists(&ws_path).await?)
-}
-
-fn storage_type_and_root(root_uri: &str) -> (String, String, String) {
-    if let Ok(url) = Url::parse(root_uri) {
-        let scheme = url.scheme().to_string();
-        let root = if scheme == "fs" || scheme == "file" {
-            url.path().to_string()
-        } else {
-            url.path().trim_start_matches('/').to_string()
-        };
-        let storage_type = if scheme == "fs" || scheme == "file" {
-            "local".to_string()
-        } else {
-            scheme.clone()
-        };
-        return (storage_type, root, scheme);
-    }
-
-    (
-        "local".to_string(),
-        root_uri.to_string(),
-        "file".to_string(),
-    )
+    let storage = OpendalStorage::from_operator(op);
+    space_exists_with_storage(&storage, name).await
 }
 
 fn generate_hmac_material() -> (String, String, String) {
@@ -64,22 +35,74 @@ fn generate_hmac_material() -> (String, String, String) {
     (key_id, hmac_key, now_iso)
 }
 
-pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
-    if space_exists(op, name).await? {
-        return Err(anyhow!("Space already exists: {}", name));
+#[cfg(unix)]
+fn local_space_fs_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
+    let scheme = op.info().scheme();
+    if scheme != "fs" && scheme != "file" {
+        return None;
+    }
+    Some(
+        Path::new(op.info().root().as_str())
+            .join("spaces")
+            .join(space_id),
+    )
+}
+
+#[cfg(unix)]
+fn set_owner_only_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    if !path.exists() {
+        return Ok(());
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
+    let Some(space_dir) = local_space_fs_path(op, space_id) else {
+        return Ok(());
+    };
+
+    let Some(spaces_root) = space_dir.parent() else {
+        return Ok(());
+    };
+
+    set_owner_only_mode(spaces_root, 0o700)?;
+    set_owner_only_mode(&space_dir, 0o700)?;
+    for dir in ["forms", "assets", "materialized_views", "sql_sessions"] {
+        set_owner_only_mode(&space_dir.join(dir), 0o700)?;
+    }
+    for file in ["meta.json", "settings.json"] {
+        set_owner_only_mode(&space_dir.join(file), 0o600)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_local_space_permissions(_op: &Operator, _space_id: &str) -> Result<()> {
+    Ok(())
+}
+
+async fn create_space_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+    name: &str,
+    root_path: &str,
+) -> Result<()> {
+    if space_exists_with_storage(storage, name).await? {
+        return Err(anyhow!("Space already exists: {name}"));
     }
 
-    let ws_path = format!("spaces/{}", name);
+    let ws_path = format!("spaces/{name}");
 
-    // Ensure the space root directory exists
-    op.create_dir(&format!("{}/", ws_path)).await?;
+    storage.create_dir(&format!("{ws_path}/")).await?;
 
-    // 1. Create directory structure
-    for dir in &["forms", "assets", "materialized_views", "sql_sessions"] {
-        op.create_dir(&format!("{}/{}/", ws_path, dir)).await?;
+    for dir in ["forms", "assets", "materialized_views", "sql_sessions"] {
+        storage.create_dir(&format!("{ws_path}/{dir}/")).await?;
     }
 
-    // 2. Create meta.json
     let (storage_type, storage_root, _scheme) = storage_type_and_root(root_path);
     let created_at = Utc::now().timestamp_millis() as f64 / 1000.0;
     let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
@@ -96,37 +119,44 @@ pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<
         "hmac_key": hmac_key,
         "last_rotation": last_rotation,
     });
-    let meta_json = serde_json::to_vec_pretty(&meta)?;
-    op.write(&format!("{}/meta.json", ws_path), meta_json)
+    storage
+        .write_json(&format!("{ws_path}/meta.json"), &meta)
         .await?;
 
-    // 3. Create settings.json
     let settings = serde_json::json!({
         "default_form": "Entry"
     });
-    op.write(
-        &format!("{}/settings.json", ws_path),
-        serde_json::to_vec_pretty(&settings)?,
-    )
-    .await?;
+    storage
+        .write_json(&format!("{ws_path}/settings.json"), &settings)
+        .await?;
 
     Ok(())
 }
 
-pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
+pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
+    let storage = OpendalStorage::from_operator(op);
+    create_space_with_storage(&storage, name, root_path).await?;
+
+    // Local filesystem spaces are private by default: directories are owner-only,
+    // and the metadata files created here are readable/writeable by the owner only.
+    apply_local_space_permissions(op, name)?;
+
+    Ok(())
+}
+
+async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Result<Vec<String>> {
     let spaces_root = "spaces/";
-    if !op.exists(spaces_root).await? {
+    if !storage.exists(spaces_root).await? {
         return Ok(vec![]);
     }
 
     let mut spaces = Vec::new();
-    let mut lister = op.lister(spaces_root).await?;
-    while let Some(entry) = lister.try_next().await? {
-        if entry.metadata().mode() != EntryMode::DIR {
+    for entry in storage.list_dir(spaces_root).await? {
+        if !entry.is_dir {
             continue;
         }
         let space_id = entry
-            .name()
+            .name
             .trim_end_matches('/')
             .split('/')
             .next_back()
@@ -134,8 +164,8 @@ pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
         if space_id.is_empty() {
             continue;
         }
-        let meta_path = format!("spaces/{}/meta.json", space_id);
-        if op.exists(&meta_path).await? {
+        let meta_path = format!("spaces/{space_id}/meta.json");
+        if storage.exists(&meta_path).await? {
             spaces.push(space_id.to_string());
         }
     }
@@ -145,36 +175,39 @@ pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
     Ok(spaces)
 }
 
+pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
+    let storage = OpendalStorage::from_operator(op);
+    list_spaces_with_storage(&storage).await
+}
+
+async fn get_space_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+    name: &str,
+) -> Result<SpaceMeta> {
+    if !space_exists_with_storage(storage, name).await? {
+        return Err(anyhow!("Space not found: {name}"));
+    }
+    storage.read_json(&format!("spaces/{name}/meta.json")).await
+}
+
 pub async fn get_space(op: &Operator, name: &str) -> Result<SpaceMeta> {
-    if !space_exists(op, name).await? {
-        return Err(anyhow!("Space not found: {}", name));
+    let storage = OpendalStorage::from_operator(op);
+    get_space_with_storage(&storage, name).await
+}
+
+async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+    name: &str,
+) -> Result<serde_json::Value> {
+    if !space_exists_with_storage(storage, name).await? {
+        return Err(anyhow!("Space not found: {name}"));
     }
-    let meta_path = format!("spaces/{}/meta.json", name);
-    let bytes = op.read(&meta_path).await?;
-    let meta: SpaceMeta = serde_json::from_slice(&bytes.to_vec())?;
-    Ok(meta)
-}
+    let meta_path = format!("spaces/{name}/meta.json");
+    let settings_path = format!("spaces/{name}/settings.json");
+    let mut meta: serde_json::Value = storage.read_json(&meta_path).await?;
 
-async fn read_json(op: &Operator, path: &str) -> Result<serde_json::Value> {
-    let bytes = op.read(path).await?;
-    Ok(serde_json::from_slice(&bytes.to_vec())?)
-}
-
-async fn write_json(op: &Operator, path: &str, value: &serde_json::Value) -> Result<()> {
-    op.write(path, serde_json::to_vec_pretty(value)?).await?;
-    Ok(())
-}
-
-pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
-    if !space_exists(op, name).await? {
-        return Err(anyhow!("Space not found: {}", name));
-    }
-    let meta_path = format!("spaces/{}/meta.json", name);
-    let settings_path = format!("spaces/{}/settings.json", name);
-    let mut meta = read_json(op, &meta_path).await?;
-
-    let settings = if op.exists(&settings_path).await? {
-        read_json(op, &settings_path).await?
+    let settings = if storage.exists(&settings_path).await? {
+        storage.read_json(&settings_path).await?
     } else {
         serde_json::json!({})
     };
@@ -182,21 +215,26 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
     Ok(meta)
 }
 
-pub async fn patch_space(
-    op: &Operator,
+pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
+    let storage = OpendalStorage::from_operator(op);
+    get_space_raw_with_storage(&storage, name).await
+}
+
+async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
     space_id: &str,
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
-    let meta_path = format!("spaces/{}/meta.json", space_id);
-    let settings_path = format!("spaces/{}/settings.json", space_id);
+    let meta_path = format!("spaces/{space_id}/meta.json");
+    let settings_path = format!("spaces/{space_id}/settings.json");
 
-    if !op.exists(&meta_path).await? {
-        return Err(anyhow!("Space {} not found", space_id));
+    if !storage.exists(&meta_path).await? {
+        return Err(anyhow!("Space {space_id} not found"));
     }
 
-    let mut meta = read_json(op, &meta_path).await?;
-    let mut settings = if op.exists(&settings_path).await? {
-        read_json(op, &settings_path).await?
+    let mut meta: serde_json::Value = storage.read_json(&meta_path).await?;
+    let mut settings = if storage.exists(&settings_path).await? {
+        storage.read_json(&settings_path).await?
     } else {
         serde_json::json!({})
     };
@@ -207,20 +245,29 @@ pub async fn patch_space(
     if let Some(storage_config) = patch.get("storage_config") {
         meta["storage_config"] = storage_config.clone();
     }
-    if let Some(new_settings) = patch.get("settings").and_then(|v| v.as_object()) {
+    if let Some(new_settings) = patch.get("settings").and_then(|value| value.as_object()) {
         if let Some(settings_obj) = settings.as_object_mut() {
-            for (k, v) in new_settings {
-                settings_obj.insert(k.clone(), v.clone());
+            for (key, value) in new_settings {
+                settings_obj.insert(key.clone(), value.clone());
             }
         }
     }
 
-    write_json(op, &meta_path, &meta).await?;
-    write_json(op, &settings_path, &settings).await?;
+    storage.write_json(&meta_path, &meta).await?;
+    storage.write_json(&settings_path, &settings).await?;
 
     let mut merged = meta;
     merged["settings"] = settings;
     Ok(merged)
+}
+
+pub async fn patch_space(
+    op: &Operator,
+    space_id: &str,
+    patch: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let storage = OpendalStorage::from_operator(op);
+    patch_space_with_storage(&storage, space_id, patch).await
 }
 
 /// Test a storage connection by checking if the URI is accessible.

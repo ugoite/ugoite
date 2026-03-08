@@ -6,6 +6,7 @@ import { assetApi } from "~/lib/asset-api";
 import { SpaceShell } from "~/components/SpaceShell";
 import { createEntryStore } from "~/lib/entry-store";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/form-api";
 import { spaceApi } from "~/lib/space-api";
 import type { FormCreatePayload } from "~/lib/types";
@@ -49,6 +50,7 @@ export default function SpaceDashboardRoute() {
 	);
 
 	const safeForms = createMemo(() => forms() || []);
+	const entryForms = createMemo(() => filterCreatableEntryForms(safeForms()));
 
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
@@ -70,7 +72,7 @@ export default function SpaceDashboardRoute() {
 			alert("Please select a form to create an entry.");
 			return;
 		}
-		const formDef = safeForms().find((entryForm) => entryForm.name === formName);
+		const formDef = entryForms().find((entryForm) => entryForm.name === formName);
 		if (!formDef) {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
@@ -127,8 +129,8 @@ export default function SpaceDashboardRoute() {
 								fallback={<p class="text-sm ui-muted">Loading forms...</p>}
 							>
 								<p class="text-sm ui-muted">
-									{safeForms().length > 0
-										? `${safeForms().length} forms available`
+									{entryForms().length > 0
+										? `${entryForms().length} forms available`
 										: "Create a form first to start writing entries."}
 								</p>
 							</Show>
@@ -137,6 +139,7 @@ export default function SpaceDashboardRoute() {
 							<button
 								type="button"
 								class="ui-button ui-button-primary text-sm"
+								disabled={entryForms().length === 0}
 								onClick={() => setShowCreateEntryDialog(true)}
 							>
 								New entry
@@ -189,7 +192,7 @@ export default function SpaceDashboardRoute() {
 
 			<CreateEntryDialog
 				open={showCreateEntryDialog()}
-				forms={safeForms()}
+				forms={entryForms()}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
 			/>

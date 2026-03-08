@@ -108,14 +108,16 @@ Use revision-based optimistic concurrency:
 - Every entry has a `revision_id`
 - Updates include `parent_revision_id`
 - Server rejects if parent doesn't match current
-- Client handles 409 Conflict with merge UI
+- Current frontend editor flow handles 409 Conflict with explicit refresh guidance
+  while keeping the local draft visible
+- Rich in-editor merge UI is deferred to a future milestone
 
 **Consequences**:
 - (+) Responsive UI with optimistic updates
-- (+) No data loss (conflicts are surfaced)
+- (+) No silent data loss (conflicts are surfaced and the local draft remains visible)
 - (+) Simple implementation
-- (-) Users must resolve conflicts manually
-- (-) Last-write-wins would be simpler (but risky)
+- (-) Users must refresh and reconcile conflicts manually
+- (-) There is no built-in merge UI yet
 
 ---
 
@@ -168,3 +170,28 @@ Use YAML for machine-readable specifications:
 - (+) Easier to generate reports
 - (-) More structured format to maintain
 - (-) YAML can be verbose
+
+---
+
+## ADR-008: Split the Portable Minimum from the OpenDAL Adapter Layer
+
+**Status**: Accepted (Milestone 3)
+
+**Context**:
+- `ugoite-core` mixed portable domain logic with heavier OpenDAL, Iceberg,
+  Arrow, Parquet, and Python binding integrations.
+- Future browser/WebAssembly targets need a smaller runtime-facing core that
+  does not depend directly on those integrations.
+
+**Decision**:
+Introduce `ugoite-minimum` as the portable Rust crate that owns shared domain
+models, integrity primitives, and the storage abstraction. Refocus
+`ugoite-core` to depend on `ugoite-minimum` and provide the OpenDAL-backed
+adapter plus the current server-oriented integrations.
+
+**Consequences**:
+- (+) Clearer boundary between portable logic and runtime adapters
+- (+) Smaller foundation for future WebAssembly/browser targets
+- (+) Existing backend/CLI behavior can stay stable while migration proceeds
+- (-) More crate and CI wiring to maintain
+- (-) Migration is incremental until more modules move behind the abstraction

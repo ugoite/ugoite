@@ -39,7 +39,7 @@ targets an **Authenticated Access by Default** model.
 ## Data Protection
 
 ### File Permissions
-- Data directory uses `chmod 600`
+- Local space directories use `chmod 700`, and bootstrap metadata files use `chmod 600`
 - Prevents access by other users on shared systems
 
 ### HMAC Signing

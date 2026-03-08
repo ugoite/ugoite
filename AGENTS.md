@@ -9,7 +9,7 @@
 **Key Architecture**:
 - Storage: `fsspec`-based (not traditional DB)
 - AI Interface: MCP with resource-first integration
-- Stack: SolidStart (Bun) + FastAPI (Python 3.12+) + uv
+- Stack: SolidStart (Bun) + FastAPI (Python 3.12+) + Rust (ugoite-core/ugoite-cli) + uv
 - Data Model: Markdown sections as structured fields
 
 **Documentation** (ALWAYS consult for details):
@@ -31,10 +31,10 @@ mise run e2e              # Run E2E tests
 # Quality checks (see .github/workflows/ for exact CI commands)
 uvx ruff check --select ALL --ignore-noqa .  # Lint Python (CI-aligned)
 uvx ruff format --check .                    # Format check (CI-aligned)
-cd backend && uv run ty check .      # Type check backend
-cd ugoite-cli && uv run ty check .    # Type check CLI
-cd ugoite-core && uv run ty check .   # Type check core
-cd frontend && biome ci . # Check frontend
+cd backend && uv run ty check .              # Type check backend
+cd ugoite-core && uv run ty check .          # Type check core Python bindings
+cd ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+cd frontend && biome ci .                    # Check frontend
 
 ```
 
