@@ -17,11 +17,12 @@ RUN apt-get update \
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copy pyproject.toml and uv.lock for dependency installation
+# Copy dependency metadata and workspace crates needed for backend installation
 COPY ./pyproject.toml .
 COPY ./uv.lock .
 COPY ./README.md .
 COPY --from=core ./ ../ugoite-core/
+COPY --from=minimum ./ ../ugoite-minimum/
 COPY --from=module ./ ../ugoite-cli/
 
 # Copy the rest of the backend code

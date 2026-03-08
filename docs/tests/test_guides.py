@@ -20,8 +20,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
+DOCKER_BUILD_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
 DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
+E2E_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "e2e-ci.yml"
 FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
@@ -29,6 +30,7 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 )
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -38,6 +40,17 @@ README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 COLUMN_COUNT_THRESHOLD = 2
+DOCKER_IMAGE_WORKFLOW_PATHS = (
+    DOCKER_BUILD_WORKFLOW_PATH,
+    E2E_CI_WORKFLOW_PATH,
+    SBOM_CI_WORKFLOW_PATH,
+)
+REQUIRED_BACKEND_BUILD_CONTEXTS = {
+    "core=./ugoite-core",
+    "minimum=./ugoite-minimum",
+    "module=./ugoite-cli",
+}
+REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Check root placeholder artifacts",
@@ -225,29 +238,36 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     """REQ-OPS-002: Docker build CI workflow must include backend and frontend."""
-    if not WORKFLOW_PATH.exists():
-        message = f"Missing workflow file: {WORKFLOW_PATH.relative_to(REPO_ROOT)}"
+    missing_workflows = [
+        str(workflow_path.relative_to(REPO_ROOT))
+        for workflow_path in DOCKER_IMAGE_WORKFLOW_PATHS
+        if not workflow_path.exists()
+    ]
+    if missing_workflows:
+        message = "Missing workflow files: " + ", ".join(missing_workflows)
         raise AssertionError(message)
-    workflow = _load_workflow()
-    build_steps = _collect_build_steps(workflow)
-    backend_step = _find_build_step(build_steps, "./backend")
-    frontend_step = _find_build_step(build_steps, "./frontend")
 
     missing_parts: list[str] = []
-    _require_step("backend", backend_step, missing_parts)
-    _require_step("frontend", frontend_step, missing_parts)
-    _require_build_contexts(
-        "backend",
-        backend_step,
-        {"core=./ugoite-core", "module=./ugoite-cli"},
-        missing_parts,
-    )
-    _require_build_contexts(
-        "frontend",
-        frontend_step,
-        {"shared=./shared"},
-        missing_parts,
-    )
+    for workflow_path in DOCKER_IMAGE_WORKFLOW_PATHS:
+        workflow = _load_workflow(workflow_path)
+        build_steps = _collect_build_steps(workflow)
+        backend_step = _find_build_step(build_steps, "./backend")
+        frontend_step = _find_build_step(build_steps, "./frontend")
+        workflow_name = workflow_path.name
+        _require_step(f"{workflow_name} backend", backend_step, missing_parts)
+        _require_step(f"{workflow_name} frontend", frontend_step, missing_parts)
+        _require_build_contexts(
+            f"{workflow_name} backend",
+            backend_step,
+            REQUIRED_BACKEND_BUILD_CONTEXTS,
+            missing_parts,
+        )
+        _require_build_contexts(
+            f"{workflow_name} frontend",
+            frontend_step,
+            REQUIRED_FRONTEND_BUILD_CONTEXTS,
+            missing_parts,
+        )
     _raise_if_missing(missing_parts)
 
 
@@ -366,8 +386,8 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def _load_workflow() -> dict[str, object]:
-    workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+def _load_workflow(workflow_path: Path) -> dict[str, object]:
+    workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     if isinstance(workflow, dict):
         return workflow
@@ -543,7 +563,7 @@ def _require_build_contexts(
 def _raise_if_missing(missing_parts: list[str]) -> None:
     if missing_parts:
         message = (
-            "Docker build CI workflow is missing required build steps/contexts: "
+            "Docker image workflows are missing required build steps/contexts: "
             + "; ".join(missing_parts)
         )
         raise AssertionError(message)

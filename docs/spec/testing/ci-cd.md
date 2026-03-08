@@ -16,6 +16,10 @@
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
 
+Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
+`ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
+resolve inside the container build.
+
 ## Python CI
 
 ```yaml
@@ -146,7 +150,7 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-cd ../ugoite-core && uv run ty check . && cargo fmt --check && uv run cargo clippy -- -D warnings && cargo test --no-run && uv run maturin develop && uv run pytest -W error
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && uv run cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
 
 # Python
