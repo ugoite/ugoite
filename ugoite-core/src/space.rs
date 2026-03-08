@@ -3,6 +3,8 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use opendal::Operator;
 use rand::TryRng;
+#[cfg(unix)]
+use std::path::{Path, PathBuf};
 
 use crate::storage::{OpendalStorage, StorageBackend};
 pub use ugoite_minimum::space::{storage_type_and_root, SpaceMeta, StorageConfig};
@@ -31,6 +33,57 @@ fn generate_hmac_material() -> (String, String, String) {
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
 
     (key_id, hmac_key, now_iso)
+}
+
+#[cfg(unix)]
+fn local_space_fs_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
+    let scheme = op.info().scheme();
+    if scheme != "fs" && scheme != "file" {
+        return None;
+    }
+    Some(
+        Path::new(op.info().root().as_str())
+            .join("spaces")
+            .join(space_id),
+    )
+}
+
+#[cfg(unix)]
+fn set_owner_only_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    if !path.exists() {
+        return Ok(());
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
+    let Some(space_dir) = local_space_fs_path(op, space_id) else {
+        return Ok(());
+    };
+
+    let Some(spaces_root) = space_dir.parent() else {
+        return Ok(());
+    };
+
+    set_owner_only_mode(spaces_root, 0o700)?;
+    set_owner_only_mode(&space_dir, 0o700)?;
+    for dir in ["forms", "assets", "materialized_views", "sql_sessions"] {
+        set_owner_only_mode(&space_dir.join(dir), 0o700)?;
+    }
+    for file in ["meta.json", "settings.json"] {
+        set_owner_only_mode(&space_dir.join(file), 0o600)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_local_space_permissions(_op: &Operator, _space_id: &str) -> Result<()> {
+    Ok(())
 }
 
 async fn create_space_with_storage<S: StorageBackend + ?Sized>(
@@ -82,7 +135,13 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
     let storage = OpendalStorage::from_operator(op);
-    create_space_with_storage(&storage, name, root_path).await
+    create_space_with_storage(&storage, name, root_path).await?;
+
+    // Local filesystem spaces are private by default: directories are owner-only,
+    // and the metadata files created here are readable/writeable by the owner only.
+    apply_local_space_permissions(op, name)?;
+
+    Ok(())
 }
 
 async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Result<Vec<String>> {
