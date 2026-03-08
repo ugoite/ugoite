@@ -43,7 +43,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build backend image (from docker-build-ci cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -58,7 +58,7 @@ jobs:
             module=./ugoite-cli
 
       - name: Build frontend image (from docker-build-ci cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
