@@ -24,6 +24,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _entry_markdown(entry_like: dict[str, Any]) -> str | None:
+    markdown = entry_like.get("markdown")
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown
+    content = entry_like.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    return None
+
+
 @router.post(
     "/spaces/{space_id}/entries",
     status_code=status.HTTP_201_CREATED,
@@ -417,6 +427,20 @@ async def restore_entry_endpoint(
             identity,
             current_entry,
         )
+        target_revision = await ugoite_core.get_entry_revision(
+            storage_config,
+            space_id,
+            entry_id,
+            payload.revision_id,
+        )
+        target_markdown = _entry_markdown(target_revision)
+        if target_markdown is not None:
+            await ugoite_core.require_markdown_write(
+                storage_config,
+                space_id,
+                identity,
+                target_markdown,
+            )
         entry_data = await ugoite_core.restore_entry(
             storage_config,
             space_id,
