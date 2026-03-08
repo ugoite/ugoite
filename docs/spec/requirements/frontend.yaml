@@ -1242,3 +1242,39 @@ requirements:
       - throws on get failure
       - throws on count failure
       - throws on rows failure
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-053
+  title: Entry Workflow Guidance Localization
+  description: 'Entry creation and editing guidance MUST respect the active frontend
+
+    locale and present consistent localized copy for input-mode hints, editor warnings,
+
+    and related helper actions. The default English UI MUST not display Japanese-only
+
+    guidance strings.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  - requirements/frontend.yaml#REQ-FE-044
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-053: renders English entry guidance across input modes'
+    - file: frontend/src/components/EntryDetailPane.test.tsx
+      tests:
+      - 'REQ-FE-053: renders English editor guidance and type warnings'
