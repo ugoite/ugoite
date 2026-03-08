@@ -68,7 +68,7 @@ repos:
         name: cargo llvm-cov (ugoite-core 45%)
         entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 45 --jobs 1"
         language: system
-        files: ^ugoite-core/
+        files: ^ugoite-core/(src/.*\.rs|tests/.*\.rs|Cargo\.toml)$
         pass_filenames: false
 
       - id: ty-backend
