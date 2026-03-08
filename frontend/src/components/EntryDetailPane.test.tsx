@@ -6,6 +6,7 @@ import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/entry-api";
 import { assetApi } from "~/lib/asset-api";
 import { setLocale } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 
 vi.mock("~/lib/entry-api", () => {
 	class RevisionConflictError extends Error {}
@@ -245,7 +246,6 @@ describe("EntryDetailPane", () => {
 		expect(guidanceText).toHaveTextContent(/フォーム:\s*Task\s*\/\s*例:\s*##\s*Summary/);
 		expect(guidanceText).not.toHaveTextContent(/Example:/);
 	});
-
 	it("REQ-FE-038: renders form validation warnings", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "entry-1",
