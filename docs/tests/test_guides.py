@@ -9,6 +9,7 @@ REQ-OPS-008: PR template validation rules must be enforced in CI.
 REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
+REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
+ALL_TESTS_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "all-tests-ci.yml"
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -120,6 +122,13 @@ REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
 REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "/api/*",
     "waits for `http://localhost:8000/health`",
+}
+REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
+REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
+    "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
+    "exclude release/publish automation",
+    "Release CI",
+    "Release Publish",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -569,6 +578,78 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_013_all_tests_status_excludes_release_automation() -> None:
+    """REQ-OPS-013: All Tests Status must exclude release automation workflows."""
+    details = _collect_all_tests_status_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_all_tests_status_details() -> list[str]:
+    workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "all-tests-ci.yml must define jobs"
+        raise TypeError(message)
+
+    all_tests_job = jobs.get("all-tests-check")
+    if not isinstance(all_tests_job, dict):
+        message = "all-tests-ci.yml must define jobs.all-tests-check"
+        raise TypeError(message)
+
+    steps = all_tests_job.get("steps", [])
+    if not isinstance(steps, list):
+        message = "all-tests-ci.yml jobs.all-tests-check.steps must be a list"
+        raise TypeError(message)
+
+    wait_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("uses") == "int128/wait-for-workflows-action@v1"
+        ),
+        None,
+    )
+    if wait_step is None:
+        return ["all-tests-ci missing wait-for-workflows-action step"]
+
+    with_block = wait_step.get("with", {})
+    if not isinstance(with_block, dict):
+        message = "all-tests-ci wait-for-workflows step must define a with mapping"
+        raise TypeError(message)
+
+    excluded_workflows = with_block.get("exclude-workflow-names", "")
+    if not isinstance(excluded_workflows, str):
+        message = "all-tests-ci exclude-workflow-names must be a multiline string"
+        raise TypeError(message)
+
+    missing_exclusions = sorted(
+        workflow_name
+        for workflow_name in REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS
+        if workflow_name not in excluded_workflows
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_ALL_TESTS_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_exclusions:
+        details.append(
+            "all-tests-ci exclude-workflow-names missing: "
+            + ", ".join(missing_exclusions),
+        )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing All Tests Status fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+    return details
 
 
 def _collect_release_ci_requirement_details() -> list[str]:
