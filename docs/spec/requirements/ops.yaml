@@ -55,7 +55,9 @@ requirements:
   title: Docker Build CI Validation
   description: 'CI MUST validate Docker image builds for backend and frontend to ensure
 
-    containerized environments remain buildable.
+    containerized environments remain buildable, including the Rust workspace
+
+    contexts required by backend image builds.
 
     '
   related_spec:
