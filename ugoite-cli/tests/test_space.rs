@@ -13,6 +13,13 @@ fn ugoite_bin() -> String {
     path.to_string_lossy().to_string()
 }
 
+#[cfg(unix)]
+fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
 /// REQ-STO-001, REQ-STO-002: Create space scaffolding at local path.
 #[test]
 fn test_create_space_scaffolding() {
@@ -35,6 +42,38 @@ fn test_create_space_scaffolding() {
     // Verify the space directory was created
     let space_dir = dir.path().join("spaces").join("my-space");
     assert!(space_dir.exists(), "Space directory should be created");
+}
+
+#[cfg(unix)]
+/// REQ-STO-003: Create space applies owner-only local permissions.
+#[test]
+fn test_create_space_req_sto_003_permissions() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+
+    let output = Command::new(ugoite_bin())
+        .args(["create-space", &root, "private-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let spaces_root = dir.path().join("spaces");
+    let space_dir = spaces_root.join("private-space");
+    assert_eq!(mode(&spaces_root), 0o700);
+    assert_eq!(mode(&space_dir), 0o700);
+    for dir_name in ["forms", "assets", "materialized_views", "sql_sessions"] {
+        assert_eq!(mode(&space_dir.join(dir_name)), 0o700);
+    }
+    for file_name in ["meta.json", "settings.json"] {
+        assert_eq!(mode(&space_dir.join(file_name)), 0o600);
+    }
 }
 
 /// REQ-STO-001: S3 backend is not yet implemented (returns unimplemented error).
