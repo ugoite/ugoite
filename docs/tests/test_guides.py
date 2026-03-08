@@ -428,6 +428,7 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
             )
         raise AssertionError("; ".join(details))
 
+
 def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> None:
     """REQ-OPS-009: Release CI bootstrap metadata and permissions stay aligned."""
     details = _collect_release_ci_requirement_details()
