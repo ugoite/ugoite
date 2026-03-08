@@ -41,6 +41,15 @@ const resolveInputType = (def: Form["fields"][string]) => {
 	return "text";
 };
 
+const createFieldInputId = (prefix: string, name: string, index: number) => {
+	const normalized = name
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+	return `${prefix}-${index}-${normalized || "field"}`;
+};
+
 /* v8 ignore start */
 const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
 	return def.type === "object_list" ? "[]" : "Enter value";
@@ -129,7 +138,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [selectedForm, setSelectedForm] = createSignal("");
 	const [inputMode, setInputMode] = createSignal<EntryInputMode>("webform");
 	const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
-	const [requiredValues, setRequiredValues] = createSignal<Record<string, string>>({});
+	const [fieldValues, setFieldValues] = createSignal<Record<string, string>>({});
 	const [markdownInput, setMarkdownInput] = createSignal("");
 	const [lastGeneratedMarkdown, setLastGeneratedMarkdown] = createSignal("");
 	const [initializedFormName, setInitializedFormName] = createSignal("");
@@ -148,6 +157,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!form) return [] as Array<[string, Form["fields"][string]]>;
 		/* v8 ignore start */
 		return Object.entries(form.fields || {}).filter(([, def]) => def.required);
+		/* v8 ignore stop */
+	});
+
+	const webFormFields = createMemo(() => {
+		const form = selectedFormDef();
+		if (!form) return [] as Array<[string, Form["fields"][string]]>;
+		/* v8 ignore start */
+		return Object.entries(form.fields || {});
 		/* v8 ignore stop */
 	});
 
@@ -260,7 +277,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!props.open) return;
 		const form = selectedFormDef();
 		if (!form) {
-			setRequiredValues({});
+			setFieldValues({});
 			setMarkdownInput("");
 			setLastGeneratedMarkdown("");
 			setInitializedFormName("");
@@ -276,7 +293,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			defaults[name] = buildDefaultValue(name, def);
 		}
 		/* v8 ignore stop */
-		setRequiredValues(defaults);
+		setFieldValues(defaults);
 		const generated = buildEntryMarkdownFromFields(form, title().trim() || form.name, defaults);
 		setMarkdownInput(generated);
 		setLastGeneratedMarkdown(generated);
@@ -291,7 +308,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		const generated = buildEntryMarkdownFromFields(
 			form,
 			title().trim() || form.name,
-			requiredValues(),
+			fieldValues(),
 		);
 		const current = markdownInput();
 		const previousGenerated = lastGeneratedMarkdown();
@@ -327,12 +344,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		}
 		const missing = requiredFields()
 			.map(([name]) => name)
-			.filter((name) => !(requiredValues()[name] || "").trim());
+			.filter((name) => !(fieldValues()[name] || "").trim());
 		if (missing.length > 0) {
 			setErrorMessage(`Please fill required fields: ${missing.join(", ")}.`);
 			return;
 		}
-		props.onSubmit(entryTitle, formName, requiredValues(), inputMode());
+		props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
 		setTitle("");
 		setSelectedForm("");
 		setMarkdownInput("");
@@ -478,31 +495,35 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</div>
 						</Show>
 
-						<Show when={inputMode() === "webform" && requiredFields().length > 0}>
+						<Show when={inputMode() === "webform" && webFormFields().length > 0}>
 							<div class="ui-card">
-								<p class="text-sm font-semibold">Required fields</p>
+								<p class="text-sm font-semibold">Form fields</p>
 								<div class="ui-stack-sm mt-3">
-									<For each={requiredFields()}>
-										{([name, def]) => {
+									<For each={webFormFields()}>
+										{([name, def], index) => {
 											const useTextarea = isTextareaField(name, def);
 											const inputType = resolveInputType(def);
-											const value = requiredValues()[name] ?? "";
+											const value = fieldValues()[name] ?? "";
+											const fieldId = createFieldInputId("webform", name, index());
 											const handleValue = (nextValue: string) =>
-												setRequiredValues((prev) => ({
+												setFieldValues((prev) => ({
 													...prev,
 													[name]: nextValue,
 												}));
 											return (
 												<div class="ui-field">
-													<label class="ui-label" for={`required-${name}`}>
+													<label class="ui-label" for={fieldId}>
 														{name}
-														<span class="ui-muted ml-2 text-xs">({def.type})</span>
+														<span class="ui-muted ml-2 text-xs">
+															({def.type}
+															{def.required ? ", required" : ""})
+														</span>
 													</label>
 													<Show
 														when={!useTextarea}
 														fallback={
 															<textarea
-																id={`required-${name}`}
+																id={fieldId}
 																class="ui-input ui-textarea"
 																placeholder={resolveTextareaPlaceholder(def)}
 																value={value}
@@ -511,7 +532,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														}
 													>
 														<input
-															id={`required-${name}`}
+															id={fieldId}
 															type={inputType}
 															class="ui-input"
 															value={value}
@@ -536,12 +557,16 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<Show when={requiredFields()[chatStep()]}>
 									{(current) => {
 										const [name, def] = current();
-										const value = requiredValues()[name] ?? "";
+										const fieldIndex = requiredFields().findIndex(
+											([candidateName]) => candidateName === name,
+										);
+										const value = fieldValues()[name] ?? "";
 										const useTextarea = isTextareaField(name, def);
 										const inputType = resolveInputType(def);
+										const fieldId = createFieldInputId("chat", name, Math.max(fieldIndex, 0));
 										return (
 											<div class="ui-field mt-3">
-												<label class="ui-label" for={`chat-${name}`}>
+												<label class="ui-label" for={fieldId}>
 													{name}
 													<span class="ui-muted ml-2 text-xs">({def.type})</span>
 												</label>
@@ -549,11 +574,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													when={!useTextarea}
 													fallback={
 														<textarea
-															id={`chat-${name}`}
+															id={fieldId}
 															class="ui-input ui-textarea"
 															value={value}
 															onInput={(e) =>
-																setRequiredValues((prev) => ({
+																setFieldValues((prev) => ({
 																	...prev,
 																	[name]: e.currentTarget.value,
 																}))
@@ -562,12 +587,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													}
 												>
 													<input
-														id={`chat-${name}`}
+														id={fieldId}
 														type={inputType}
 														class="ui-input"
 														value={value}
 														onInput={(e) =>
-															setRequiredValues((prev) => ({
+															setFieldValues((prev) => ({
 																...prev,
 																[name]: e.currentTarget.value,
 															}))

@@ -228,6 +228,91 @@ describe("CreateEntryDialog", () => {
 		expect((countInput as HTMLInputElement).value).toBe("0");
 	});
 
+	it("REQ-FE-037: renders optional fields in webform mode", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { Summary: { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task with Summary" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const summaryInput = screen.getByLabelText(/Summary/);
+		expect(summaryInput).toBeInTheDocument();
+		fireEvent.input(summaryInput, { target: { value: "Optional summary" } });
+
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Task with Summary",
+			"Task",
+			expect.objectContaining({ Summary: "Optional summary" }),
+			"webform",
+		);
+	});
+
+	it("REQ-FE-037: sanitizes webform field ids for labels", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { "Due Date / ETA": { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task with schedule" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const scheduleInput = screen.getByLabelText(/Due Date \/ ETA/);
+		expect(scheduleInput).toHaveAttribute("id", "webform-0-due-date-eta");
+	});
+
+	it("REQ-FE-037: falls back to a stable id when a field name slug is empty", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { "!!!": { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task fallback id" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const fallbackInput = screen.getByRole("textbox", { name: /!!!/ });
+		expect(fallbackInput).toHaveAttribute("id", "webform-0-field");
+	});
+
 	it("REQ-FE-037: supports markdown mode submission", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -369,6 +454,7 @@ describe("CreateEntryDialog", () => {
 			target: { value: "My Task" },
 		});
 		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		expect(screen.getByLabelText(/Status/)).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
 		expect(onSubmit).toHaveBeenCalledWith("My Task", "Task", expect.any(Object), "webform");
