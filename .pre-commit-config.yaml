@@ -92,13 +92,6 @@ repos:
         pass_filenames: false
         files: ^backend/
 
-      - id: ty-cli
-        name: "ty: ugoite-cli type check"
-        entry: bash -c "cd ugoite-cli && uv run ty check ."
-        language: system
-        files: ^ugoite-cli/
-        pass_filenames: false
-
       - id: ty-core
         name: "ty: ugoite-core type check"
         entry: bash -c "cd ugoite-core && uv run ty check ."

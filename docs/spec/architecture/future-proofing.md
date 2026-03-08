@@ -20,8 +20,9 @@ Non-goals:
 
 To enable cross-platform operation and varied deployment targets:
 - Core operations are contained in `ugoite-core` (Rust).
-- Multiple language bindings are provided:
-  - Python bindings for backend and `ugoite-cli`
+- Multiple language interfaces are provided:
+  - Python bindings for backend integration
+  - Native Rust binary for `ugoite-cli`
   - WebAssembly bindings for browser contexts (future target)
 
 ## Data Portability
@@ -30,4 +31,3 @@ The data model is designed to remain:
 - human-readable (JSON + Markdown)
 - easy to back up
 - storage-provider agnostic
-

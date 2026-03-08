@@ -10,19 +10,19 @@ From the repository root:
 mise run //ugoite-cli:install
 ```
 
-Alternatively, you can install directly in the CLI folder:
+Alternatively, you can build directly in the CLI folder:
 
 ```bash
 cd ugoite-cli
-uv sync
+cargo build
 ```
 
 ## Run the CLI
 
-The CLI is exposed as the `ugoite` command via `uv run`.
+From the repository root, run the Rust CLI with Cargo:
 
 ```bash
-uv run ugoite --help
+cargo run -q -p ugoite-cli -- --help
 ```
 
 ## Basic workflow
@@ -31,13 +31,13 @@ Create a local data directory and list spaces:
 
 ```bash
 mkdir -p ./spaces
-uv run ugoite space list ./spaces
+cargo run -q -p ugoite-cli -- space list ./spaces
 ```
 
 Create a new space:
 
 ```bash
-uv run ugoite create-space ./spaces demo
+cargo run -q -p ugoite-cli -- create-space ./spaces demo
 ```
 
 ## Notes
@@ -61,13 +61,13 @@ is performed on the remote server (not the local path).
 
 ```bash
 # Show current setting
-uv run ugoite config show
+cargo run -q -p ugoite-cli -- config show
 
 # Route commands to backend directly
-uv run ugoite config set --mode backend --backend-url http://localhost:8000
+cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 
 # Route commands to API endpoint
-uv run ugoite config set --mode api --api-url http://localhost:3000/api
+cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3000/api
 ```
 
 
@@ -80,11 +80,11 @@ In `backend` / `api` modes, CLI and frontend share the same credential env conve
 
 ```bash
 # Print export commands for current shell
-uv run ugoite auth login --bearer-token TOKEN_VALUE
+cargo run -q -p ugoite-cli -- auth login --bearer-token TOKEN_VALUE
 
 # Inspect active auth setup
-uv run ugoite auth profile
+cargo run -q -p ugoite-cli -- auth profile
 
 # Print unset commands
-uv run ugoite auth token-clear
+cargo run -q -p ugoite-cli -- auth token-clear
 ```

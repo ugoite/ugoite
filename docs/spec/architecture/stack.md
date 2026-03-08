@@ -16,13 +16,14 @@ Ugoite uses a modern stack optimized for local-first operation and AI integratio
 | [pyo3](https://pyo3.rs/) | Latest | Python bindings |
 | [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/) | Latest | WebAssembly bindings (future) |
 
-### ugoite-cli (Python)
+### ugoite-cli (Rust)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Python | 3.12+ | Runtime |
-| Typer | Latest | CLI framework |
-| pyo3 bindings | - | Rust core integration |
+| Rust | 1.75+ | CLI runtime |
+| [clap](https://docs.rs/clap/) | Latest | Command parsing and help output |
+| [reqwest](https://docs.rs/reqwest/) | Latest | Backend/API routing |
+| `ugoite-core` crate | Workspace path dependency | Shared core integration |
 
 ### Backend (Python/FastAPI)
 
@@ -46,10 +47,13 @@ Ugoite uses a modern stack optimized for local-first operation and AI integratio
 
 | Tool | Purpose |
 |------|---------|
+| cargo | Rust build, run, and test orchestration |
 | mise | Task runner and version management |
 | uv | Python package management |
 | ruff | Python linting and formatting |
 | ty | Python type checking |
+| rustfmt | Rust formatting |
+| clippy | Rust linting |
 | biome | TypeScript/JavaScript linting |
 | pytest | Python testing |
 | vitest | Frontend unit testing |
@@ -73,7 +77,7 @@ The ugoite-core crate compiles to multiple targets:
 
 | Target | Use Case |
 |--------|----------|
-| Native (x86_64, arm64) | backend & ugoite-cli via pyo3 |
+| Native (x86_64, arm64) | ugoite-cli native binary; backend via Python bindings |
 | WebAssembly | Browser-based frontend |
 | Tauri integration | Desktop application |
 
