@@ -117,6 +117,30 @@ the repository for current `mise.toml` files. GitHub Actions does not currently
 support `paths` filters for `merge_group`, so merge queue coverage remains
 branch-scoped.
 
+## Rust CI
+
+```yaml
+jobs:
+  ci:
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
+    - cd ugoite-core && uv run ty check .
+    - cd ugoite-core && cargo fmt --check
+    - cd ugoite-core && cargo clippy -- -D warnings
+    - cd ugoite-core && cargo test --no-run
+    - cd ugoite-core && uv run maturin develop
+    - cd ugoite-core && uv run pytest -W error
+    - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
+    - cd ugoite-cli && cargo fmt --check
+    - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
+    - cd ugoite-cli && cargo test --no-default-features
+```
+
+Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`,
+clean package-specific crate artifacts before rebuild/test, and expose
+`mise run cleanup:rust-targets` to remove both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow unexpectedly.
+
 ## SBOM and Supply Chain CI
 
 ```yaml

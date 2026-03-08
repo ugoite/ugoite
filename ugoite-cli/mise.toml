@@ -1,7 +1,10 @@
+[env]
+CARGO_TARGET_DIR = "../target/rust"
+
 [tasks.install]
-run = "cargo build"
+run = "cargo clean -p ugoite-cli && cargo build"
 description = "Build ugoite-cli"
 
 [tasks.test]
-run = "cargo test"
+run = "cargo clean -p ugoite-cli && cargo test"
 description = "Run ugoite-cli Rust test suite"
