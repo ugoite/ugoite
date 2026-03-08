@@ -1113,6 +1113,10 @@ requirements:
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
+    - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+      tests:
+      - 'REQ-FE-037: form grid defaults to the first creatable form'
+      - 'REQ-FE-037: form grid shows empty state when only reserved metadata forms exist'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
