@@ -2,5 +2,6 @@
 members = [
     "ugoite-core",
     "ugoite-cli",
+    "ugoite-minimum",
 ]
 resolver = "2"
