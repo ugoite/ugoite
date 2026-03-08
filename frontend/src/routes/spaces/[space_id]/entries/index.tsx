@@ -12,6 +12,7 @@ import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { EntryRecord } from "~/lib/types";
 
@@ -21,6 +22,7 @@ export default function SpaceEntriesIndexPane() {
 	const ctx = useEntriesRouteContext();
 	const spaceId = () => ctx.spaceId();
 	const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
+	const creatableForms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
 
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
@@ -108,7 +110,7 @@ export default function SpaceEntriesIndexPane() {
 			alert("Please select a form to create an entry.");
 			return;
 		}
-		const formDef = ctx.forms().find((s) => s.name === formName);
+		const formDef = creatableForms().find((s) => s.name === formName);
 		if (!formDef) {
 			alert("Selected form was not found. Please refresh and try again.");
 			return;
@@ -229,8 +231,8 @@ export default function SpaceEntriesIndexPane() {
 
 			<CreateEntryDialog
 				open={showCreateEntryDialog()}
-				forms={ctx.forms()}
-				defaultForm={ctx.forms()[0]?.name}
+				forms={creatableForms()}
+				defaultForm={creatableForms()[0]?.name}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
 			/>

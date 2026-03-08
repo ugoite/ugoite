@@ -350,6 +350,36 @@ describe("CreateEntryDialog", () => {
 		expect(onSubmit).not.toHaveBeenCalled();
 		expect(screen.getByText("Please provide markdown content.")).toBeInTheDocument();
 	});
+
+	it("REQ-FE-037: excludes reserved metadata forms from entry creation", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Assets",
+				version: 1,
+				fields: {
+					link: { type: "string", required: true },
+				},
+				template: "",
+			},
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		const select = screen.getByRole("combobox");
+		expect(screen.queryByRole("option", { name: "Assets" })).not.toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+		expect((select as HTMLSelectElement).value).toBe("Meeting");
+	});
 });
 
 describe("EditFormDialog", () => {
