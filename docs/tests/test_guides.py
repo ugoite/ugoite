@@ -7,6 +7,7 @@ REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
 REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
+REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 """
 
@@ -46,7 +47,10 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
+WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
@@ -101,6 +105,21 @@ REQUIRED_DOCSITE_CI_STEPS = {
     "Format check",
     "Typecheck",
     "Validation test (build)",
+}
+REQUIRED_FRONTEND_DEV_FRAGMENTS = {
+    "../scripts/wait-for-http.sh http://localhost:8000/health 30",
+    "BACKEND_URL=http://localhost:8000",
+    "bun run dev",
+}
+REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
+    "curl -fsS",
+    "--connect-timeout",
+    "--max-time",
+    "Timed out waiting",
+}
+REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
+    "/api/*",
+    "waits for `http://localhost:8000/health`",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -436,6 +455,79 @@ def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> Non
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_010_frontend_dev_proxy_readiness_declared() -> None:
+    """REQ-OPS-010: Frontend local dev waits for backend readiness before proxying."""
+    details = _collect_frontend_dev_proxy_readiness_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
+    if not FRONTEND_MISE_PATH.exists():
+        message = f"frontend/mise.toml is missing; expected at {FRONTEND_MISE_PATH}"
+        raise AssertionError(message)
+
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    tasks = frontend_mise.get("tasks", {})
+    if not isinstance(tasks, dict):
+        message = "frontend/mise.toml must define [tasks]"
+        raise TypeError(message)
+
+    dev_task = tasks.get("dev")
+    if not isinstance(dev_task, dict):
+        message = "frontend/mise.toml must define [tasks.dev]"
+        raise TypeError(message)
+
+    run_command = dev_task.get("run")
+    if not isinstance(run_command, str):
+        message = "frontend [tasks.dev].run must be a string command"
+        raise TypeError(message)
+
+    wait_script = _read_required_text(
+        WAIT_FOR_HTTP_PATH,
+        "wait-for-http.sh is missing at {path}; required by REQ-OPS-010 for "
+        "frontend dev proxy readiness.",
+    )
+    guide_text = _read_required_text(
+        LOCAL_DEV_AUTH_GUIDE_PATH,
+        "local dev auth guide is missing at {path}; required by REQ-OPS-010 for "
+        "documenting frontend proxy readiness.",
+    )
+
+    missing_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_FRONTEND_DEV_FRAGMENTS
+        if fragment not in run_command
+    )
+    missing_wait_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_WAIT_FOR_HTTP_FRAGMENTS
+        if fragment not in wait_script
+    )
+    missing_guide_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_fragments:
+        details.append(
+            "frontend dev command missing fragments: " + ", ".join(missing_fragments),
+        )
+    if missing_wait_fragments:
+        details.append(
+            "wait-for-http.sh missing readiness fragments: "
+            + ", ".join(missing_wait_fragments),
+        )
+    if missing_guide_fragments:
+        details.append(
+            "local-dev-auth-login.md missing readiness fragments: "
+            + ", ".join(missing_guide_fragments),
+        )
+    return details
+
+
 def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
     """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
@@ -563,6 +655,13 @@ def _load_pre_commit_config() -> dict[str, object]:
         return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
     raise TypeError(message)
+
+
+def _read_required_text(path: Path, missing_message: str) -> str:
+    if not path.exists():
+        message = missing_message.format(path=path)
+        raise AssertionError(message)
+    return path.read_text(encoding="utf-8")
 
 
 def _load_yaml_base_mapping(path: Path) -> dict[str, object]:
