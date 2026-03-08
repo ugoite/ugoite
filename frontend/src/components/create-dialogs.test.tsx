@@ -284,7 +284,9 @@ describe("CreateEntryDialog", () => {
 			},
 		];
 
-		render(() => <CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />);
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
 
 		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
 			target: { value: "Localized Task" },
@@ -294,11 +296,15 @@ describe("CreateEntryDialog", () => {
 		expect(
 			screen.getByText("After creation, edit attributes under Markdown `## field name` headings."),
 		).toBeInTheDocument();
-		expect(screen.getByText('Use "- item" or one value per line for list fields.')).toBeInTheDocument();
+		expect(
+			screen.getByText('Use "- item" or one value per line for list fields.'),
+		).toBeInTheDocument();
 		expect(
 			screen.getByText("Use true/false, yes/no, on/off, or 1/0 for boolean fields."),
 		).toBeInTheDocument();
-		expect(screen.getByText("Enter the target form's entry_id for row_reference fields.")).toBeInTheDocument();
+		expect(
+			screen.getByText("Enter the target form's entry_id for row_reference fields."),
+		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
 		expect(

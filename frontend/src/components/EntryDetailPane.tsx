@@ -522,7 +522,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 									<div class="mx-4 mt-4 ui-alert ui-alert-warning text-sm space-y-2">
 										<div class="flex items-center justify-between gap-2">
 											<p class="font-semibold">
-												{t("entryDetail.guidance.prefix")} <code>## field name</code>{" "}
+												{t("entryDetail.guidance.prefix")}{" "}
+												<code>## {t("entryDetail.guidance.fieldNameExample")}</code>{" "}
 												{t("entryDetail.guidance.suffix")}
 											</p>
 											<Show when={editorGuidance().missingRequired.length > 0}>
@@ -536,8 +537,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 											</Show>
 										</div>
 										<p class="text-xs ui-muted">
-											Form: {entryForm().name} / {t("entryDetail.guidance.example")}{" "}
-											<code>## status</code>
+											{t("entryDetail.guidance.formLabel")}: {entryForm().name} /{" "}
+											{t("entryDetail.guidance.example")}{" "}
+											<code>## {t("entryDetail.guidance.fieldNameExample")}</code>
 										</p>
 										<Show when={editorGuidance().missingRequired.length > 0}>
 											<p class="text-xs ui-text-danger">

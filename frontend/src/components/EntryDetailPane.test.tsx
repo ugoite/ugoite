@@ -107,9 +107,18 @@ describe("EntryDetailPane", () => {
 		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 		await waitFor(() => expect(screen.getAllByText("Task Entry")).toHaveLength(2));
 		expect(
-			screen.getByText((_, element) =>
-				element?.tagName === "P" &&
-				(element.textContent?.includes("Enter attributes under ## field name headings.") ?? false),
+			screen.getByText(
+				(_, element) =>
+					element?.tagName === "P" &&
+					(element.textContent?.includes("Enter attributes under ## field name headings.") ??
+						false),
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				(_, element) =>
+					element?.tagName === "P" &&
+					(element.textContent?.includes("Form: Task / Example: ## field name") ?? false),
 			),
 		).toBeInTheDocument();
 		expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();
@@ -117,6 +126,55 @@ describe("EntryDetailPane", () => {
 			screen.getByText("Done: Use true/false, yes/no, on/off, or 1/0 for boolean fields."),
 		).toBeInTheDocument();
 	});
+
+	it("REQ-FE-053: renders Japanese editor guidance without mixed-language examples", async () => {
+		setLocale("ja");
+		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "entry-ja",
+			title: "タスク",
+			form: "Task",
+			content: "---\nform: Task\n---\n\n# タスク\n\n## Summary\nhello",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		});
+
+		render(() => (
+			<EntryDetailPane
+				spaceId={() => "default"}
+				entryId={() => "entry-ja"}
+				forms={() => [
+					{
+						name: "Task",
+						version: 1,
+						template: "# Task\n\n## Summary\n",
+						fields: {
+							Summary: { type: "string", required: true },
+						},
+					},
+				]}
+				onDeleted={vi.fn()}
+			/>
+		));
+
+		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
+		await waitFor(() => expect(screen.getAllByText("タスク")).toHaveLength(2));
+		expect(
+			screen.getByText(
+				(_, element) =>
+					element?.tagName === "P" &&
+					(element.textContent?.includes("属性は ## フィールド名 見出しで入力します。") ?? false),
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				(_, element) =>
+					element?.tagName === "P" &&
+					(element.textContent?.includes("フォーム: Task / 例: ## フィールド名") ?? false),
+			),
+		).toBeInTheDocument();
+	});
+
 	it("REQ-FE-038: renders form validation warnings", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "entry-1",
