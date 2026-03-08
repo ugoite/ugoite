@@ -1,0 +1,7 @@
+[tasks.install]
+run = "cargo build"
+description = "Build ugoite-minimum"
+
+[tasks.test]
+run = "cargo test"
+description = "Run ugoite-minimum Rust test suite"

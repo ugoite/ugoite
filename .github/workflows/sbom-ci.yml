@@ -38,6 +38,7 @@ jobs:
           tags: ugoite-backend:sbom
           build-contexts: |
             core=./ugoite-core
+            minimum=./ugoite-minimum
             module=./ugoite-cli
 
       - name: Build frontend image
