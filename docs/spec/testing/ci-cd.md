@@ -5,6 +5,7 @@
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
+| Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
@@ -24,15 +25,29 @@ resolve inside the container build.
 
 ```yaml
 jobs:
-  lint:
-    - ruff format --check .
-    - ruff check .
-  type-check:
+  ci:
+    - uvx ruff check --select ALL --ignore-noqa .
+    - uvx ruff format --check .
     - cd backend && uv run ty check .
-    - cd ugoite-cli && uv run ty check .
-  test:
-    - cd backend && uv run pytest
-    - cd ugoite-cli && uv run pytest
+    - cd backend && uv run pytest -W error
+    - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+```
+
+## Rust CI
+
+```yaml
+jobs:
+  ci:
+    - cd ugoite-core && uv run ty check .
+    - cd ugoite-core && cargo fmt --check
+    - cd ugoite-core && cargo clippy -- -D warnings
+    - cd ugoite-core && cargo test --no-run
+    - cd ugoite-core && uv run maturin develop
+    - cd ugoite-core && uv run pytest -W error
+    - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
+    - cd ugoite-cli && cargo fmt --check
+    - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
+    - cd ugoite-cli && cargo test --no-default-features
 ```
 
 ## Frontend CI
@@ -129,7 +144,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
 - **Root artifact hygiene**: Blocks root-level files with placeholder-only content
-- **Ty**: Type checks Python projects
+- **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
 
 Conventional Commit enforcement (local):
 
@@ -176,17 +191,20 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-cd ../ugoite-core && uv run ty check . && cargo fmt --check && uv run cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
 
 # Python
-cd ../backend && uv run ty check . && uv run pytest
+cd .. && uvx ruff format --check .
+uvx ruff check --select ALL --ignore-noqa .
+cd backend && uv run ty check . && uv run pytest -W error
 
 # Docs
-cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v
+cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation
 
 # Frontend
-cd frontend && biome ci . && bun test
+cd ../frontend && biome ci . && bun run test:run --coverage
 
 # E2E (requires servers running)
 cd .. && mise run e2e
@@ -194,7 +212,7 @@ cd .. && mise run e2e
 # Conventional commits + release metadata
 npm run commitlint:range
 ```
- 
+
 Or use pre-commit:
 ```bash
 uvx pre-commit run --all-files

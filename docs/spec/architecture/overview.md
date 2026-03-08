@@ -20,8 +20,8 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
                │                                 │
                ▼                                 ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
-│     Backend (FastAPI)       │   │      ugoite-cli (Python)     │
-│  - REST API & MCP Server    │   │  - Typer-based CLI          │
+│     Backend (FastAPI)       │   │       ugoite-cli (Rust)      │
+│  - REST API & MCP Server    │   │  - Clap-based CLI           │
 │  - Auth & Orchestration     │   │  - Direct data access       │
 └──────────────┬──────────────┘   └──────────────┬──────────────┘
                │                                 │
@@ -77,14 +77,14 @@ The adapter crate depends on `ugoite-minimum` and keeps the heavier integrations
 | `integrity.rs` | HMAC signing, checksum verification |
 | `search.rs` | Full-text and structured queries |
 
-### ugoite-cli (Python)
+### ugoite-cli (Rust)
 
 Command-line interface for power users:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `cli.py` | Typer-based CLI |
-| `compat.py` | Backwards compatibility helpers |
+| `src/main.rs` | Clap command tree and runtime bootstrap |
+| `src/commands/*.rs` | Command implementations and backend/api routing |
 
 ### Backend (Python/FastAPI)
 
