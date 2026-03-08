@@ -43,11 +43,11 @@ const commandOutputs = await fs
       </div>
       <div>
         <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Check the CLI is available</p>
-        <TerminalCommand command="cd ugoite-cli && uv run ugoite --help" />
+        <TerminalCommand command="cargo run -q -p ugoite-cli -- --help" />
       </div>
       <div>
         <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. List spaces</p>
-        <TerminalCommand command="cd ugoite-cli && uv run ugoite space list" />
+        <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
       </div>
     </div>
   </section>

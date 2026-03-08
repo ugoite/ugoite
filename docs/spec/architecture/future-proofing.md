@@ -21,9 +21,10 @@ Non-goals:
 To enable cross-platform operation and varied deployment targets:
 - Portable domain logic and storage traits live in `ugoite-minimum` (Rust).
 - `ugoite-core` depends on `ugoite-minimum` and provides the OpenDAL-backed
-  adapter used by the current backend and CLI stack.
-- Multiple language bindings are provided:
-  - Python bindings from `ugoite-core` for backend and `ugoite-cli`
+  adapter used by the current backend and native CLI stack.
+- Multiple language interfaces are provided:
+  - Python bindings from `ugoite-core` for backend integration
+  - Native Rust binary for `ugoite-cli`
   - WebAssembly bindings can target the portable `ugoite-minimum` layer in
     future browser contexts
 
