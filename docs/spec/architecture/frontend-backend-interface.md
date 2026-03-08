@@ -43,9 +43,17 @@ and responsibility boundaries.
 
 ## Storage Boundary (Backend ↔ ugoite-core)
 
-- All filesystem I/O lives in `ugoite-core` (currently via `fsspec`, transitioning to OpenDAL).
+- All runtime filesystem I/O lives behind the shared Rust storage abstraction.
+  The current backend/CLI runtime uses `ugoite-core`'s OpenDAL-backed adapter
+  layer over `ugoite-minimum`.
+- The earlier Python/`fsspec` implementation is historical context only and is
+  not part of the current runtime boundary.
 - Backend is a routing/translation layer and must not perform direct filesystem operations.
-- Backend tests must cover `fs://` and `memory://` style backends via `ugoite-core`.
+- The fsspec-to-OpenDAL runtime transition is complete. Remaining Milestone 3
+  work is about continuing to extract portable logic into `ugoite-minimum`, not
+  about maintaining two active runtime storage stacks.
+- Backend tests must cover local/file and `memory://` style backends via the
+  shared core bindings.
 
 ## Error Handling Standards
 

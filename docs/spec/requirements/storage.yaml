@@ -16,8 +16,16 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-001
-  title: Storage Abstraction Using fsspec/OpenDAL
-  description: 'System MUST use fsspec (current) or OpenDAL (future Rust core) for all I/O operations.
+  title: Storage Abstraction Using the Shared OpenDAL Runtime Layer
+  description: 'System MUST route runtime I/O through the shared Rust storage abstraction.
+
+    The current runtime adapter is OpenDAL-backed (`ugoite-core` over
+
+    `ugoite-minimum`).
+
+    Earlier Python `fsspec` usage is legacy context only and MUST NOT be treated
+
+    as the canonical runtime architecture.
 
     No direct filesystem calls allowed outside the storage abstraction layer.
 
@@ -37,6 +45,9 @@ requirements:
       tests:
       - test_endpoint_config_roundtrip_uses_home_directory
       - test_resolve_base_url_by_mode
+    - file: docs/tests/test_storage_docs.py
+      tests:
+      - test_docs_req_sto_001_storage_runtime_declares_opendal_current
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
       - test_cli_config_set_and_show
@@ -260,12 +271,16 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-007
-  title: Backend IO Separation & Multi-fsspec Coverage
-  description: 'All filesystem interactions MUST remain inside ugoite-cli via fsspec/OpenDAL.
+  title: Backend IO Separation & Multi-backend Coverage
+  description: 'All runtime filesystem interactions MUST remain inside the shared
+
+    Rust storage layer, currently exercised through the OpenDAL-backed
+
+    `ugoite-core` adapter and its CLI/backend integrations.
 
     Backend MUST operate correctly across multiple storage implementations
 
-    (at least file and memory) using the shared library.
+    (at least local/file and memory) using the shared library.
 
     '
   related_spec:
@@ -275,6 +290,9 @@ requirements:
   status: implemented
   tests:
     pytest:
+    - file: docs/tests/test_storage_docs.py
+      tests:
+      - test_docs_req_sto_007_backend_storage_boundary_docs_match_runtime
     - file: backend/tests/test_api_memory.py
       tests:
       - test_create_space_memory
