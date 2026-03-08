@@ -168,6 +168,15 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
 	return { missingRequired, unknownSections, typeIssues };
 }
 
+function selectGuidanceExampleFieldName(form: Form | null) {
+	if (!form) return null;
+	return (
+		Object.keys(form.fields || {})
+			.map((fieldName) => fieldName.trim())
+			.find(Boolean) ?? null
+	);
+}
+
 async function fetchWithTimeout<T>(
 	promise: Promise<T>,
 	ms = 10000,
@@ -239,6 +248,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 	});
 
 	const editorGuidance = createMemo(() => buildEditorGuidance(currentForm(), editorContent()));
+	const guidanceExampleFieldName = createMemo(() => selectGuidanceExampleFieldName(currentForm()));
 
 	let assetsAbortController: AbortController | null = null;
 	createEffect(() => {
@@ -537,9 +547,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 											</Show>
 										</div>
 										<p class="text-xs ui-muted">
-											{t("entryDetail.guidance.formLabel")}: {entryForm().name} /{" "}
-											{t("entryDetail.guidance.example")}{" "}
-											<code>## {t("entryDetail.guidance.fieldNameExample")}</code>
+											{t("entryDetail.guidance.formLabel")}: {entryForm().name}
+											<Show when={guidanceExampleFieldName()}>
+												{(fieldName) => (
+													<>
+														{" "}
+														/ {t("entryDetail.guidance.example")} <code>## {fieldName()}</code>
+													</>
+												)}
+											</Show>
 										</p>
 										<Show when={editorGuidance().missingRequired.length > 0}>
 											<p class="text-xs ui-text-danger">
