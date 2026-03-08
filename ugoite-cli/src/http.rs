@@ -1,76 +1,61 @@
 use anyhow::{bail, Result};
 
-pub fn http_get(url: &str) -> Result<serde_json::Value> {
-    let client = reqwest::blocking::Client::new();
+pub async fn http_get(url: &str) -> Result<serde_json::Value> {
+    let client = reqwest::Client::new();
     let req = add_auth_headers(client.get(url));
-    let resp = req.send()?;
+    let resp = req.send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "HTTP {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json()?)
+    Ok(resp.json().await?)
 }
 
-pub fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    let client = reqwest::blocking::Client::new();
+pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    let client = reqwest::Client::new();
     let req = add_auth_headers(client.post(url).json(body));
-    let resp = req.send()?;
+    let resp = req.send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "HTTP {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().unwrap_or(serde_json::Value::Null))
+    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-pub fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    let client = reqwest::blocking::Client::new();
+pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    let client = reqwest::Client::new();
     let req = add_auth_headers(client.put(url).json(body));
-    let resp = req.send()?;
+    let resp = req.send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "HTTP {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().unwrap_or(serde_json::Value::Null))
+    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-pub fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    let client = reqwest::blocking::Client::new();
+pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    let client = reqwest::Client::new();
     let req = add_auth_headers(client.patch(url).json(body));
-    let resp = req.send()?;
+    let resp = req.send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "HTTP {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().unwrap_or(serde_json::Value::Null))
+    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-pub fn http_delete(url: &str) -> Result<serde_json::Value> {
-    let client = reqwest::blocking::Client::new();
+pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
+    let client = reqwest::Client::new();
     let req = add_auth_headers(client.delete(url));
-    let resp = req.send()?;
+    let resp = req.send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "HTTP {}: {}",
-            resp.status(),
-            resp.text().unwrap_or_default()
-        );
+        let status = resp.status();
+        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().unwrap_or(serde_json::Value::Null))
+    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
 }
 
-fn add_auth_headers(req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
+fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     let mut r = req;
     if let Ok(token) = std::env::var("UGOITE_AUTH_BEARER_TOKEN") {
         r = r.header("Authorization", format!("Bearer {token}"));
