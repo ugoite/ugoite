@@ -72,8 +72,8 @@ jobs:
   devcontainer-build-smoke:
     - docker/setup-buildx-action (enables type=gha cache driver)
     - docker/login-action (ghcr.io, GITHUB_TOKEN)
-     - devcontainers/ci build + smoke command
-     - Run smoke command: gh/mise/bash versions
+    - devcontainers/ci build + smoke command
+    - Run smoke command: gh/mise/bash versions
 ```
 
 ## Rust CI
@@ -82,7 +82,7 @@ jobs:
 jobs:
   ci:
     env:
-      CARGO_TARGET_DIR: target/rust
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
     - cd ugoite-core && cargo clippy -- -D warnings

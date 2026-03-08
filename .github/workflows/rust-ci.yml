@@ -16,7 +16,7 @@ jobs:
   ci:
     runs-on: ubuntu-24.04
     env:
-      CARGO_TARGET_DIR: target/rust
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
     steps:
       - uses: actions/checkout@v6
 
