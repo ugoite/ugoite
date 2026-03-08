@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
-import { entryApi } from "~/lib/entry-api";
+import { entryApi, RevisionConflictError } from "~/lib/entry-api";
 import { assetApi } from "~/lib/asset-api";
 
 vi.mock("~/lib/entry-api", () => {
@@ -274,6 +274,39 @@ describe("EntryDetailPane", () => {
 
 		await waitFor(() => {
 			expect(screen.getByText("Server unavailable")).toBeInTheDocument();
+		});
+	});
+
+	it("REQ-FE-009: shows refresh guidance on revision conflict", async () => {
+		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "entry-1",
+			title: "Test Entry",
+			form: null,
+			content: "# Test Entry",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		});
+		(entryApi.update as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new RevisionConflictError("Revision conflict", "server-rev"),
+		);
+
+		render(() => (
+			<EntryDetailPane spaceId={() => "default"} entryId={() => "entry-1"} onDeleted={vi.fn()} />
+		));
+
+		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
+
+		const textarea = await screen.findByPlaceholderText("Start writing in Markdown...");
+		fireEvent.input(textarea, { target: { value: "Updated content" } });
+		fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+		await waitFor(() => {
+			expect(
+				screen.getByText(
+					"This entry was modified elsewhere. Your draft is still in the editor; refresh to load the latest version.",
+				),
+			).toBeInTheDocument();
 		});
 	});
 
