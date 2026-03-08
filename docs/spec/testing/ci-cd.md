@@ -159,13 +159,12 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning.
-4. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json` and `package.json`, and both must start at `0.0.1`.
-5. **Release CI authentication** must prefer `RELEASE_PLEASE_TOKEN` when that secret is configured, and only fall back to `GITHUB_TOKEN` when no dedicated release token is available.
-6. **Repository or organization Actions workflow permissions** must keep "Allow GitHub Actions to create and approve pull requests" enabled whenever the fallback `GITHUB_TOKEN` path is used, or release-please cannot open/update the release PR even when the workflow requests `pull-requests: write`.
-7. **Human review** must confirm the planned release scope before publishing.
-8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
-9. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
+3. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
+4. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
+5. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
+6. **Human review** must confirm the planned release scope before publishing.
+7. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
+8. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
 
 ## Environment Variables
 
