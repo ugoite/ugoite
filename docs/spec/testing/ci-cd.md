@@ -14,6 +14,7 @@
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
+| All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate code-quality workflow health while excluding release/publish automation |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
 
@@ -183,13 +184,14 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning.
-4. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json` and `package.json`, and both must start at `0.0.1`.
-5. **Release CI authentication** must prefer `RELEASE_PLEASE_TOKEN` when that secret is configured, and only fall back to `GITHUB_TOKEN` when no dedicated release token is available.
-6. **Repository or organization Actions workflow permissions** must keep "Allow GitHub Actions to create and approve pull requests" enabled whenever the fallback `GITHUB_TOKEN` path is used, or release-please cannot open/update the release PR even when the workflow requests `pull-requests: write`.
-7. **Human review** must confirm the planned release scope before publishing.
-8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
-9. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
+3. **All Tests Status** must stay focused on code-quality workflows and exclude release/publish automation (`Release CI`, `Release Publish`) so auxiliary release failures do not turn branch health red.
+4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning.
+5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json` and `package.json`, and both must start at `0.0.1`.
+6. **Release CI authentication** must prefer `RELEASE_PLEASE_TOKEN` when that secret is configured, and only fall back to `GITHUB_TOKEN` when no dedicated release token is available.
+7. **Repository or organization Actions workflow permissions** must keep "Allow GitHub Actions to create and approve pull requests" enabled whenever the fallback `GITHUB_TOKEN` path is used, or release-please cannot open/update the release PR even when the workflow requests `pull-requests: write`.
+8. **Human review** must confirm the planned release scope before publishing.
+9. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
+10. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
 
 ## Environment Variables
 
