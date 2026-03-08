@@ -3,8 +3,10 @@
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
+REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
-REQ-OPS-008: Frontend local-dev proxy readiness must be declared.
+REQ-OPS-008: PR template validation rules must be enforced in CI.
+REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 """
 
 from __future__ import annotations
@@ -28,7 +30,11 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 )
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+PR_TEMPLATE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
+)
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
+PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
@@ -42,6 +48,14 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_RUST_PRE_COMMIT_HOOKS = {
+    "rustfmt",
+    "cargo-clippy",
+    "cargo-clippy-cli",
+    "cargo-llvm-cov-core",
+    "cargo-test-cli",
+}
+REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
     "docsite-format-check",
@@ -58,6 +72,16 @@ REQUIRED_FRONTEND_DEV_FRAGMENTS = {
     "../scripts/wait-for-http.sh http://localhost:8000/health 30",
     "BACKEND_URL=http://localhost:8000",
     "bun run dev",
+}
+REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
+    "curl -fsS",
+    "--connect-timeout",
+    "--max-time",
+    "Timed out waiting",
+}
+REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
+    "/api/*",
+    "waits for `http://localhost:8000/health`",
 }
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -270,6 +294,33 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_006_rust_precommit_parity() -> None:
+    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
+
+    hook_entries = _collect_pre_commit_hooks(pre_commit)
+    clippy_cli_entry = ""
+    cargo_clippy_cli = hook_entries.get("cargo-clippy-cli")
+    if isinstance(cargo_clippy_cli, dict):
+        clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
+
+    missing_parts: list[str] = []
+    if missing_hooks:
+        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+    if "--no-default-features" not in clippy_cli_entry:
+        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+
+    rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
+    missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
+    if missing_ci_steps:
+        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
     """REQ-OPS-007: Docsite lint/format/test parity must be wired in CI/pre-commit."""
     pre_commit = _load_pre_commit_config()
@@ -290,8 +341,62 @@ def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_008_frontend_dev_proxy_readiness_declared() -> None:
-    """REQ-OPS-008: Frontend local dev must wait for backend readiness before proxying."""
+def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
+    """REQ-OPS-008: PR workflow must enforce sections and close/closes links."""
+    workflow_text = PR_TEMPLATE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    template_text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    required_template_fragments = {
+        "## Summary",
+        "## Related Issue (required)",
+        "## Testing",
+    }
+    missing_template_fragments = sorted(
+        fragment
+        for fragment in required_template_fragments
+        if fragment not in template_text
+    )
+
+    required_workflow_fragments = {
+        "## Summary",
+        "## Related Issue (required)",
+        "## Testing",
+        "close:",
+        "closes",
+    }
+    missing_workflow_fragments = sorted(
+        fragment
+        for fragment in required_workflow_fragments
+        if fragment not in workflow_text
+    )
+
+    if missing_template_fragments or missing_workflow_fragments:
+        details: list[str] = []
+        if missing_template_fragments:
+            details.append(
+                "pull_request_template missing fragments: "
+                + ", ".join(missing_template_fragments),
+            )
+        if missing_workflow_fragments:
+            details.append(
+                "pr-require-close-issue workflow missing fragments: "
+                + ", ".join(missing_workflow_fragments),
+            )
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_010_frontend_dev_proxy_readiness_declared() -> None:
+    """REQ-OPS-010: Frontend local dev waits for backend readiness before proxying."""
+    details = _collect_frontend_dev_proxy_readiness_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
+    if not FRONTEND_MISE_PATH.exists():
+        message = f"frontend/mise.toml is missing; expected at {FRONTEND_MISE_PATH}"
+        raise AssertionError(message)
+
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
     tasks = frontend_mise.get("tasks", {})
     if not isinstance(tasks, dict):
@@ -308,22 +413,49 @@ def test_docs_req_ops_008_frontend_dev_proxy_readiness_declared() -> None:
         message = "frontend [tasks.dev].run must be a string command"
         raise TypeError(message)
 
-    missing_fragments = sorted(
-        fragment for fragment in REQUIRED_FRONTEND_DEV_FRAGMENTS if fragment not in run_command
+    wait_script = _read_required_text(
+        WAIT_FOR_HTTP_PATH,
+        "wait-for-http.sh is missing at {path}; required by REQ-OPS-010 for "
+        "frontend dev proxy readiness.",
+    )
+    guide_text = _read_required_text(
+        LOCAL_DEV_AUTH_GUIDE_PATH,
+        "local dev auth guide is missing at {path}; required by REQ-OPS-010 for "
+        "documenting frontend proxy readiness.",
     )
 
-    wait_script = WAIT_FOR_HTTP_PATH.read_text(encoding="utf-8")
-    guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+    missing_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_FRONTEND_DEV_FRAGMENTS
+        if fragment not in run_command
+    )
+    missing_wait_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_WAIT_FOR_HTTP_FRAGMENTS
+        if fragment not in wait_script
+    )
+    missing_guide_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS
+        if fragment not in guide_text
+    )
 
     details: list[str] = []
     if missing_fragments:
-        details.append("frontend dev command missing fragments: " + ", ".join(missing_fragments))
-    if "curl -fsS" not in wait_script or "Timed out waiting" not in wait_script:
-        details.append("wait-for-http.sh must poll with curl and report timeout failures")
-    if "/api/*" not in guide_text or "waits for `http://localhost:8000/health`" not in guide_text:
-        details.append("local-dev-auth-login.md must document frontend proxy readiness")
-    if details:
-        raise AssertionError("; ".join(details))
+        details.append(
+            "frontend dev command missing fragments: " + ", ".join(missing_fragments),
+        )
+    if missing_wait_fragments:
+        details.append(
+            "wait-for-http.sh missing readiness fragments: "
+            + ", ".join(missing_wait_fragments),
+        )
+    if missing_guide_fragments:
+        details.append(
+            "local-dev-auth-login.md missing readiness fragments: "
+            + ", ".join(missing_guide_fragments),
+        )
+    return details
 
 
 def _load_workflow() -> dict[str, object]:
@@ -335,19 +467,28 @@ def _load_workflow() -> dict[str, object]:
 
 
 def _load_pre_commit_config() -> dict[str, object]:
-    config_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
-    config = yaml.safe_load(config_text)
-    if isinstance(config, dict):
-        return config
+    pre_commit_text = PRE_COMMIT_CONFIG_PATH.read_text(encoding="utf-8")
+    pre_commit = yaml.safe_load(pre_commit_text)
+    if isinstance(pre_commit, dict):
+        return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
     raise TypeError(message)
 
 
-def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+def _read_required_text(path: Path, missing_message: str) -> str:
+    if not path.exists():
+        message = missing_message.format(path=path)
+        raise AssertionError(message)
+    return path.read_text(encoding="utf-8")
+
+
+def _collect_pre_commit_hooks(
+    config: dict[str, object],
+) -> dict[str, dict[str, object]]:
     repos = config.get("repos", [])
     if not isinstance(repos, list):
-        return set()
-    hook_ids: set[str] = set()
+        return {}
+    hooks_by_id: dict[str, dict[str, object]] = {}
     for repo in repos:
         if not isinstance(repo, dict):
             continue
@@ -359,8 +500,12 @@ def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
                 continue
             hook_id = hook.get("id")
             if isinstance(hook_id, str) and hook_id:
-                hook_ids.add(hook_id)
-    return hook_ids
+                hooks_by_id[hook_id] = hook
+    return hooks_by_id
+
+
+def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
+    return set(_collect_pre_commit_hooks(config))
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
