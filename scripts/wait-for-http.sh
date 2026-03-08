@@ -15,9 +15,11 @@ if ! [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || [ "$timeout_seconds" -le 0 ]; then
 fi
 
 deadline=$((SECONDS + timeout_seconds))
+connect_timeout=1
+curl_max_time=1
 
 while true; do
-  if curl -fsS "$url" >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout "$connect_timeout" --max-time "$curl_max_time" "$url" >/dev/null 2>&1; then
     exit 0
   fi
 
