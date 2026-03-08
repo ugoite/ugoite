@@ -166,6 +166,13 @@ Content-Type: application/json
 }
 ```
 
+Create uses the submitted Markdown as the authorization target. If frontmatter
+or extracted properties resolve a `form`, the adapter MUST enforce that Form's
+write ACL before mutating storage; otherwise it falls back to the space-level
+`entry_write` permission.
+
+**Error**: `403 Forbidden` when space or form write authorization fails.
+
 #### Get Entry
 ```http
 GET /spaces/{space_id}/entries/{entry_id}
@@ -200,7 +207,12 @@ Content-Type: application/json
 }
 ```
 
+Update MUST authorize both the current stored entry and the submitted Markdown
+target before writing. This prevents a caller from using an update to move an
+entry into a Form whose write ACL they do not satisfy.
+
 **Error**: `409 Conflict` if `parent_revision_id` doesn't match current
+**Error**: `403 Forbidden` when space or form write authorization fails.
 
 #### Delete Entry
 ```http
@@ -243,6 +255,13 @@ Content-Type: application/json
 ```
 
 **Response**: `200 OK`
+
+Restore MUST authorize both the current stored entry and the target revision
+content before writing the restored revision. Future import or bulk-migration
+adapters that submit Markdown MUST follow this same contract unless a more
+specific spec section overrides it.
+
+**Error**: `403 Forbidden` when space or form write authorization fails.
 
 ---
 

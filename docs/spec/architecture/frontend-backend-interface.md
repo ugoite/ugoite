@@ -35,6 +35,12 @@ and responsibility boundaries.
   submission.
 - Backend/CLI parses frontmatter/H2 sections, updates indices, and returns
   extracted properties (via entry list / query / get endpoints).
+- For create/update/restore flows, backend MAY pre-check authorization by
+  calling `ugoite-core` helpers such as `require_markdown_write()` and
+  `require_entry_write()` before invoking the mutation itself.
+- ACL evaluation still lives in `ugoite-core`; the backend remains a thin
+  adapter that translates HTTP requests into core authorization + mutation
+  calls and returns `403 Forbidden` on authorization failure.
 
 ### Space Switching
 
