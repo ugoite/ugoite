@@ -18,15 +18,42 @@ jobs:
     runs-on: ubuntu-24.04
     if: ${{ !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
-      - name: Validate PR body contains close issue link
+      - name: Validate PR body matches required template
         uses: actions/github-script@v8
         with:
           script: |
             const body = context.payload.pull_request.body || "";
-            const pattern = /(?:^|\n)\s*close:\s*#\d+\s*(?:\n|$)/i;
+            const errors = [];
 
-            if (!pattern.test(body)) {
-              core.setFailed(
-                "PR body must include an issue link line in this exact format: close: #123"
-              );
+            const requiredSections = [
+              "## Summary",
+              "## Related Issue (required)",
+              "## Testing",
+            ];
+
+            for (const section of requiredSections) {
+              if (!body.toLowerCase().includes(section.toLowerCase())) {
+                errors.push(`Missing required section: ${section}`);
+              }
+            }
+
+            const summaryMatch = body.match(/##\s*Summary\s*\n+([\s\S]*?)(?:\n##\s|$)/i);
+            const summaryText = summaryMatch?.[1]?.trim() ?? "";
+            if (!summaryText || summaryText === "-" || /^-\s*$/.test(summaryText)) {
+              errors.push("Summary section must be filled in and cannot remain the '-' placeholder.");
+            }
+
+            const issueLinkPattern = /(?:^|\n)\s*(?:close:\s*#\d+|closes\s+#\d+)\s*(?:\n|$)/i;
+            if (!issueLinkPattern.test(body)) {
+              errors.push("Related Issue must include either `close: #123` or `closes #123`.");
+            }
+
+            const testingMatch = body.match(/##\s*Testing\s*\n+([\s\S]*?)(?:\n##\s|$)/i);
+            const testingText = testingMatch?.[1]?.trim() ?? "";
+            if (!/- \[(?: |x|X)\]/.test(testingText)) {
+              errors.push("Testing section must include at least one checklist item.");
+            }
+
+            if (errors.length > 0) {
+              core.setFailed(errors.join("\n"));
             }

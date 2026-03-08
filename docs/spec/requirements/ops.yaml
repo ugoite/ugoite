@@ -194,6 +194,39 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-006
+  title: Rust Pre-commit and CI Test Parity
+  description: 'Rust pre-commit hooks MUST enforce format, lint, and test gates
+
+    across both ugoite-core and ugoite-cli, including ugoite-cli test execution
+
+    parity with Rust CI.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_006_rust_precommit_parity
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-007
   title: Docsite Format/Lint/Test Parity
   description: 'Docsite quality gates MUST define explicit format, lint, and test-equivalent
@@ -210,6 +243,37 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_007_docsite_quality_parity_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-008
+  title: PR Template Validation Gates
+  description: 'Pull request body validation MUST enforce required template sections
+
+    and accepted issue-closing link formats in CI so merge policy remains consistent.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_008_pr_template_validation_rules_declared
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

@@ -73,7 +73,14 @@ repos:
 
       - id: cargo-clippy-cli
         name: cargo clippy (ugoite-cli)
-        entry: bash -c "cd ugoite-cli && cargo clippy -- -D warnings"
+        entry: bash -c "cd ugoite-cli && cargo clippy --no-default-features -- -D warnings"
+        language: system
+        files: ^ugoite-cli/
+        pass_filenames: false
+
+      - id: cargo-test-cli
+        name: cargo test (ugoite-cli)
+        entry: bash -c "cd ugoite-cli && cargo test --no-default-features"
         language: system
         files: ^ugoite-cli/
         pass_filenames: false

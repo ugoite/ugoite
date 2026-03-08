@@ -4,7 +4,7 @@
 
 ## Related Issue (required)
 
-close: #
+close: # (or: closes #)
 
 ## Testing
 
