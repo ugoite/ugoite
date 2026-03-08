@@ -6,11 +6,13 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
+REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import textwrap
@@ -29,6 +31,7 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
+RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 DEVCONTAINER_CI_WORKFLOW_PATH = (
@@ -42,6 +45,9 @@ PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
+ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 COLUMN_COUNT_THRESHOLD = 2
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
@@ -57,6 +63,20 @@ REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "cargo-test-cli",
 }
 REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_RELEASE_CI_PERMISSIONS = {
+    "contents": "write",
+    "issues": "write",
+    "pull-requests": "write",
+}
+REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS = {
+    "secrets.RELEASE_PLEASE_TOKEN",
+    "secrets.GITHUB_TOKEN",
+}
+REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
+    "Allow GitHub Actions to create and approve pull requests",
+    "RELEASE_PLEASE_TOKEN",
+    "0.0.1",
+}
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
     "docsite-format-check",
@@ -389,6 +409,13 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> None:
+    """REQ-OPS-009: Release CI bootstrap metadata and permissions stay aligned."""
+    details = _collect_release_ci_requirement_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
     """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
@@ -432,6 +459,75 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
         raise AssertionError("; ".join(details))
 
 
+def _collect_release_ci_requirement_details() -> list[str]:
+    workflow_text = RELEASE_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text) or {}
+    if not isinstance(workflow, dict):
+        message = "release-ci.yml must be a YAML mapping"
+        raise TypeError(message)
+
+    permissions = workflow.get("permissions")
+    if not isinstance(permissions, dict):
+        message = "release-ci.yml must define top-level permissions"
+        raise TypeError(message)
+
+    missing_permissions = [
+        f"{name}={expected}"
+        for name, expected in REQUIRED_RELEASE_CI_PERMISSIONS.items()
+        if str(permissions.get(name)) != expected
+    ]
+
+    release_ci_steps = _collect_workflow_step_names(RELEASE_CI_WORKFLOW_PATH)
+    missing_steps = sorted(
+        {"Print release auth path", "Run release-please"}.difference(release_ci_steps),
+    )
+    missing_token_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS
+        if fragment not in workflow_text
+    )
+
+    manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
+    package_data = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    manifest_version = str(manifest.get(".", ""))
+    package_version = str(package_data.get("version", ""))
+
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_CI_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_permissions),
+            "release-ci permissions mismatch: " + ", ".join(missing_permissions),
+        ),
+        (
+            bool(missing_steps),
+            "release-ci missing steps: " + ", ".join(missing_steps),
+        ),
+        (
+            bool(missing_token_fragments),
+            "release-ci missing token fragments: " + ", ".join(missing_token_fragments),
+        ),
+        (
+            manifest_version != "0.0.1",
+            f"release manifest must start at 0.0.1 (got {manifest_version!r})",
+        ),
+        (
+            package_version != "0.0.1",
+            f"package.json version must start at 0.0.1 (got {package_version!r})",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing fragments: " + ", ".join(missing_doc_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
@@ -456,6 +552,14 @@ def _load_yaml_base_mapping(path: Path) -> dict[str, object]:
             document["on"] = document.pop(True)
         return document
     message = f"{path.relative_to(REPO_ROOT)} must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _load_json_mapping(path: Path) -> dict[str, object]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        return data
+    message = f"{path.name} must be a JSON mapping"
     raise TypeError(message)
 
 
