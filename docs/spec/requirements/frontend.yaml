@@ -53,6 +53,10 @@ requirements:
   title: No Client-side Default Space Creation
   description: 'Frontend MUST NOT auto-create spaces when none exist.
 
+    When `/spaces` has no spaces yet, the UI MUST offer an explicit user-triggered
+
+    create-space action instead of silently creating a default space.
+
     '
   related_spec:
   - architecture/overview.md
@@ -63,6 +67,10 @@ requirements:
     - file: frontend/src/lib/space-store.test.ts
       tests:
       - should keep selection empty when no spaces exist
+    - file: frontend/src/routes/spaces/index.test.tsx
+      tests:
+      - 'REQ-FE-002: shows a create-space action when no spaces exist'
+      - 'REQ-FE-002: creates a space only after explicit user submission'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
