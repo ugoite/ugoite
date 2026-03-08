@@ -68,7 +68,8 @@ describe("EntryDetailPane", () => {
 			(_, element) =>
 				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
 		);
-		expect(guidanceText).toHaveTextContent(/Form:\s*Meeting\s*\/\s*Example:\s*##\s*Date/);
+		expect(guidanceText).toHaveTextContent(/Form:\s*Meeting/);
+		expect(guidanceText).toHaveTextContent(/Example:\s*##\s*Date/);
 		expect(screen.queryByText("## status")).not.toBeInTheDocument();
 		expect(await screen.findByText(/Missing required sections: Date/)).toBeInTheDocument();
 
