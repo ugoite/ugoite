@@ -9,6 +9,7 @@ services:
       context: ./backend
       additional_contexts:
         core: ./ugoite-core
+        minimum: ./ugoite-minimum
         module: ./ugoite-cli
     ports:
       - "127.0.0.1:8000:8000"
