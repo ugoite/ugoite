@@ -82,8 +82,8 @@ pub async fn create_space_cmd(root_path: &str, space_id: &str) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
         let result = http::http_post(
-            &format!("{base}/spaces/{space_id}"),
-            &serde_json::json!({"id": space_id}),
+            &format!("{base}/spaces"),
+            &serde_json::json!({"name": space_id}),
         )
         .await?;
         print_json(&result);

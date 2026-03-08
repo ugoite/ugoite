@@ -1,9 +1,10 @@
 //! Integration tests for CLI endpoint routing configuration.
-//! REQ-STO-001, REQ-STO-004, REQ-SEC-003
+//! REQ-API-001, REQ-STO-001, REQ-STO-004, REQ-SEC-003
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -48,6 +49,78 @@ fn spawn_json_server(body: &'static str) -> (String, thread::JoinHandle<()>) {
         }
     });
     (format!("http://{}", addr), handle)
+}
+
+fn spawn_recording_server(
+    status_line: &'static str,
+    body: &'static str,
+) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut request = Vec::new();
+                    let mut content_length = 0_usize;
+                    let mut header_end: Option<usize> = None;
+
+                    loop {
+                        let mut buffer = [0_u8; 1024];
+                        let read = stream.read(&mut buffer).unwrap();
+                        if read == 0 {
+                            break;
+                        }
+                        request.extend_from_slice(&buffer[..read]);
+                        if header_end.is_none() {
+                            if let Some(pos) =
+                                request.windows(4).position(|window| window == b"\r\n\r\n")
+                            {
+                                let end = pos + 4;
+                                header_end = Some(end);
+                                let headers = String::from_utf8_lossy(&request[..end]);
+                                for line in headers.lines() {
+                                    if let Some(value) = line.strip_prefix("Content-Length:") {
+                                        content_length = value.trim().parse().unwrap_or(0);
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(end) = header_end {
+                            if request.len() >= end + content_length {
+                                break;
+                            }
+                        }
+                    }
+
+                    tx.send(String::from_utf8_lossy(&request).into_owned())
+                        .unwrap();
+                    let response = format!(
+                        "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).unwrap();
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "timed out waiting for CLI backend request"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("failed to accept test request: {error}"),
+            }
+        }
+    });
+    (format!("http://{}", addr), rx, handle)
 }
 
 /// REQ-STO-001: Config set/show round-trips correctly.
@@ -121,6 +194,99 @@ fn test_space_list_uses_remote_endpoint_when_backend_mode() {
         !stderr.contains("Cannot drop a runtime"),
         "CLI should return a normal connection error instead of panicking: {stderr}"
     );
+}
+
+/// REQ-API-001: create-space routes to POST /spaces in backend mode.
+#[test]
+fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let root = dir.path().to_string_lossy().to_string();
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 201 Created",
+        r#"{"id":"my-space","name":"my-space"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["create-space", &root, "my-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("POST /spaces HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        !request.contains("POST /spaces/my-space HTTP/1.1"),
+        "{request}"
+    );
+    assert!(request.contains(r#"{"name":"my-space"}"#), "{request}");
+}
+
+/// REQ-API-001: create-space routes to POST /spaces in api mode.
+#[test]
+fn test_create_space_req_api_001_routes_to_api_post_spaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let root = dir.path().to_string_lossy().to_string();
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 201 Created",
+        r#"{"id":"api-space","name":"api-space"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "api", "--api-url", &base_url])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["create-space", &root, "api-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("POST /spaces HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        !request.contains("POST /spaces/api-space HTTP/1.1"),
+        "{request}"
+    );
+    assert!(request.contains(r#"{"name":"api-space"}"#), "{request}");
 }
 
 /// REQ-STO-004: Backend mode returns remote space JSON without Tokio runtime panic.
