@@ -26,7 +26,9 @@ Ugoite follows **Test-Driven Development (TDD)**:
 
 | Module | Framework | Location |
 |--------|-----------|----------|
-| ugoite-cli | pytest | `ugoite-cli/tests/` |
+| ugoite-minimum | cargo test | `ugoite-minimum/tests/` |
+| ugoite-core | cargo test + pytest | `ugoite-core/tests/` |
+| ugoite-cli | cargo test | `ugoite-cli/tests/` |
 | backend | pytest | `backend/tests/` |
 | frontend | vitest | `frontend/src/**/*.test.ts(x)` |
 
@@ -50,9 +52,11 @@ mise run test
 
 ### Individual Packages
 ```bash
+mise run //ugoite-minimum:test # Portable Rust core tests
+mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
-mise run //ugoite-cli:test  # CLI pytest
+mise run //ugoite-cli:test # CLI Rust tests
 ```
 
 ### E2E Tests
@@ -121,11 +125,20 @@ Details:
 ### Test Files
 
 ```
+ugoite-minimum/tests/
+├── test_storage.rs      # Storage abstraction tests
+├── test_integrity.rs    # Portable integrity tests
+└── ...
+
+ugoite-core/tests/
+├── test_space.rs        # Space adapter tests
+├── test_entry.rs        # Entry tests
+└── ...
+
 ugoite-cli/tests/
-├── conftest.py          # Shared fixtures
-├── test_space.py        # Space tests
-├── test_entries.py      # Entry tests
-├── test_indexer.py      # Indexer tests
+├── test_space.rs        # Space tests
+├── test_entries.rs      # Entry tests
+├── test_indexer.rs      # Indexer tests
 └── ...
 
 backend/tests/
@@ -166,7 +179,8 @@ def test_all_requirements_have_tests() -> None:
     ...
 ```
 
-Rust tests in `ugoite-core/tests/` use a requirement-aware naming convention:
+Rust tests in `ugoite-minimum/tests/` and `ugoite-core/tests/` use a
+requirement-aware naming convention:
 
 ```rust
 async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {

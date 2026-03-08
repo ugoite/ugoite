@@ -44,6 +44,9 @@ requirements:
       tests:
       - test_indexer_run_once
     rust:
+    - file: ugoite-minimum/tests/test_storage.rs
+      tests:
+      - test_storage_req_sto_001_json_helpers_use_storage_abstraction
     - file: ugoite-core/tests/test_space.rs
       tests:
       - test_space_req_sto_002_create_space_scaffolding
@@ -163,6 +166,9 @@ requirements:
       - test_integrity_provider_for_space_success
       - test_integrity_provider_missing_hmac_key
     rust:
+    - file: ugoite-minimum/tests/test_storage.rs
+      tests:
+      - test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris
     - file: ugoite-core/tests/test_space.rs
       tests:
       - test_space_req_sto_002_create_space_scaffolding

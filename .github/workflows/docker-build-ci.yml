@@ -43,6 +43,7 @@ jobs:
             type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             core=./ugoite-core
+            minimum=./ugoite-minimum
             module=./ugoite-cli
 
       - name: Build frontend image

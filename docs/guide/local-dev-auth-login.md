@@ -33,6 +33,10 @@ export UGOITE_DEV_2FA_SECRET="YOUR_BASE32_SECRET"
 mise run dev
 ```
 
+The frontend dev server waits for `http://localhost:8000/health` before it starts,
+so authenticated `/api/*` requests such as the spaces list do not hit the frontend
+proxy before the backend is ready during local startup.
+
 On first run (or after expiry), the script:
 - generates a TOTP code using `oathtool`
 - creates a local bearer token

@@ -6,12 +6,21 @@ Ugoite uses a modern stack optimized for local-first operation and AI integratio
 
 ## Core Technologies
 
+### ugoite-minimum (Rust Crate)
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Rust | 1.75+ | Portable domain/runtime-agnostic core |
+| [serde](https://serde.rs/) | Latest | Data model serialization |
+| [async-trait](https://docs.rs/async-trait) | Latest | Storage abstraction traits |
+| [sha2](https://docs.rs/sha2) | Latest | Integrity primitives |
+
 ### ugoite-core (Rust Crate)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Rust | 1.75+ | Core language |
-| [OpenDAL](https://opendal.apache.org/) | Latest | Storage abstraction (local, S3, GCS, memory) |
+| [OpenDAL](https://opendal.apache.org/) | Latest | Storage adapter implementation (local, S3, GCS, memory) |
 | [serde](https://serde.rs/) | Latest | JSON serialization |
 | [pyo3](https://pyo3.rs/) | Latest | Python bindings |
 | [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/) | Latest | WebAssembly bindings (future) |
@@ -69,12 +78,13 @@ OpenDAL provides unified access to multiple storage systems:
 
 ## Build Targets
 
-The ugoite-core crate compiles to multiple targets:
+The Rust core layer targets multiple runtimes:
 
-| Target | Use Case |
-|--------|----------|
-| Native (x86_64, arm64) | backend & ugoite-cli via pyo3 |
-| WebAssembly | Browser-based frontend |
+| Layer / Target | Use Case |
+|----------------|----------|
+| `ugoite-minimum` (native) | Portable domain logic for adapters and future runtimes |
+| `ugoite-core` (native + Python bindings) | backend & ugoite-cli via pyo3 |
+| `ugoite-minimum` (future WebAssembly) | Browser-based frontend and other sandboxed clients |
 | Tauri integration | Desktop application |
 
 ## CI/CD Pipeline
