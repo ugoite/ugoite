@@ -9,6 +9,7 @@ import {
 	onCleanup,
 } from "solid-js";
 import { buildEntryMarkdownFromFields, type EntryInputMode } from "~/lib/entry-input";
+import { t } from "~/lib/i18n";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
 import {
@@ -156,19 +157,19 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		/* v8 ignore start */
 		const types = new Set(Object.values(form.fields || {}).map((field) => field.type));
 		/* v8 ignore stop */
-		const hints = ["属性は作成後に Markdown の `## フィールド名` 見出しで編集できます。"];
+		const hints = [t("entryGuidance.editAfterCreate")];
 		/* v8 ignore start */
 		if (inputMode() === "chat") {
-			hints.push("Chat は必須フィールドを1つずつ質問して入力します。");
+			hints.push(t("entryGuidance.chatMode"));
 		}
 		/* v8 ignore stop */
 		if (inputMode() === "markdown") {
-			hints.push("Markdown はそのまま保存されます（frontmatter/form の整合性は backend で検証）。");
+			hints.push(t("entryGuidance.markdownMode"));
 		}
 		/* v8 ignore start */
-		if (types.has("list")) hints.push("list は `- item` または 1行1値で入力。");
-		if (types.has("boolean")) hints.push("boolean は true/false, yes/no, on/off, 1/0 を使用。");
-		if (types.has("row_reference")) hints.push("row_reference は対象 Form の entry_id を入力。");
+		if (types.has("list")) hints.push(t("entryGuidance.listValue"));
+		if (types.has("boolean")) hints.push(t("entryGuidance.booleanValue"));
+		if (types.has("row_reference")) hints.push(t("entryGuidance.rowReference"));
 		/* v8 ignore stop */
 		return hints;
 	});

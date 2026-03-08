@@ -20,7 +20,21 @@
     "themeMenu.primary.emerald": "Emerald",
     "themeMenu.primary.amber": "Amber",
     "themeMenu.locale.en": "English",
-    "themeMenu.locale.ja": "日本語"
+    "themeMenu.locale.ja": "日本語",
+    "entryGuidance.editAfterCreate": "After creation, edit attributes under Markdown `## field name` headings.",
+    "entryGuidance.chatMode": "Chat asks for required fields one at a time.",
+    "entryGuidance.markdownMode": "Markdown content is saved as-is (the backend validates frontmatter/form consistency).",
+    "entryGuidance.listValue": "Use \"- item\" or one value per line for list fields.",
+    "entryGuidance.booleanValue": "Use true/false, yes/no, on/off, or 1/0 for boolean fields.",
+    "entryGuidance.rowReference": "Enter the target form's entry_id for row_reference fields.",
+    "entryDetail.guidance.prefix": "Enter attributes under",
+    "entryDetail.guidance.fieldNameExample": "field name",
+    "entryDetail.guidance.suffix": "headings.",
+    "entryDetail.guidance.formLabel": "Form",
+    "entryDetail.guidance.insertMissingH2": "Insert missing H2 headings",
+    "entryDetail.guidance.example": "Example:",
+    "entryDetail.guidance.missingRequired": "Missing required sections",
+    "entryDetail.guidance.unknownSections": "Unknown sections"
   },
   "ja": {
     "nav.home": "ホーム",
@@ -43,6 +57,20 @@
     "themeMenu.primary.emerald": "エメラルド",
     "themeMenu.primary.amber": "アンバー",
     "themeMenu.locale.en": "English",
-    "themeMenu.locale.ja": "日本語"
+    "themeMenu.locale.ja": "日本語",
+    "entryGuidance.editAfterCreate": "作成後は Markdown の `## フィールド名` 見出しで属性を編集できます。",
+    "entryGuidance.chatMode": "Chat は必須フィールドを1つずつ質問して入力します。",
+    "entryGuidance.markdownMode": "Markdown はそのまま保存されます（frontmatter/form の整合性は backend で検証）。",
+    "entryGuidance.listValue": "list は `- item` または 1行1値で入力します。",
+    "entryGuidance.booleanValue": "boolean は true/false, yes/no, on/off, 1/0 を使用します。",
+    "entryGuidance.rowReference": "row_reference には対象 Form の entry_id を入力します。",
+    "entryDetail.guidance.prefix": "属性は",
+    "entryDetail.guidance.fieldNameExample": "フィールド名",
+    "entryDetail.guidance.suffix": "見出しで入力します。",
+    "entryDetail.guidance.formLabel": "フォーム",
+    "entryDetail.guidance.insertMissingH2": "不足H2を追加",
+    "entryDetail.guidance.example": "例:",
+    "entryDetail.guidance.missingRequired": "必須セクション不足",
+    "entryDetail.guidance.unknownSections": "未定義セクション"
   }
 }
