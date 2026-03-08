@@ -35,7 +35,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
         AssetSubCmd::List { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/assets"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/assets")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -73,7 +73,8 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
                 let result =
-                    http::http_delete(&format!("{base}/spaces/{space_id}/assets/{asset_id}"))?;
+                    http::http_delete(&format!("{base}/spaces/{space_id}/assets/{asset_id}"))
+                        .await?;
                 print_json(&result);
                 return Ok(());
             }
