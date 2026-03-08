@@ -103,8 +103,12 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-003
-  title: File Permissions (chmod 600)
-  description: 'Apply chmod 600 to data directories to ensure privacy on local filesystem.
+  title: Owner-Only Local Space Permissions
+  description: 'On Unix-like local filesystem backends, Ugoite MUST set owner-only
+
+    permissions for created space scaffolding: directories use chmod 700 and
+
+    metadata files created during space bootstrap use chmod 600.
 
     '
   related_spec:
@@ -115,7 +119,11 @@ requirements:
     pytest:
     - file: ugoite-cli/tests/test_space.rs
       tests:
-      - test_create_space_scaffolding
+      - test_create_space_req_sto_003_permissions
+    rust:
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_003_local_space_permissions
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
