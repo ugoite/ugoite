@@ -18,98 +18,100 @@ test.describe("UI theme flows", () => {
 	for (const theme of themes) {
 		test(themeTestTitles[theme], async ({ page, request }) => {
 			test.setTimeout(120_000);
-			const entryTitle = `E2E Theme Entry ${theme} ${Date.now()}`;
-			const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
-				data: {
-					content: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
-				},
-			});
-			expect(entryRes.status()).toBe(201);
-			const entry = (await entryRes.json()) as { id: string };
-
-			const variableQueryId = `e2e-theme-var-${theme}-${Date.now()}`;
+			const runId = Date.now();
+			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
+			const variableQueryId = `e2e-theme-var-${theme}-${runId}`;
 			const variableQueryName = `E2E Variables ${theme}`;
-			const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
-				data: {
-					id: variableQueryId,
-					name: variableQueryName,
-					sql: "SELECT * FROM entries WHERE title = {{title}} LIMIT 10",
-					variables: [
-						{ type: "string", name: "title", description: "Title" },
-					],
-				},
-			});
-			expect([200, 201]).toContain(variableQueryRes.status());
+			let entryId: string | null = null;
 
-			await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
+			await cleanupThemeQueries(request, theme, spaceId);
 
-			const settingsButton = page.getByRole("button", { name: "Theme settings" });
-			await settingsButton.click();
-			await page.getByRole("radio", { name: new RegExp(`^${theme}$`, "i") }).click();
-			await page.getByRole("radio", { name: "light" }).click();
-			await page.keyboard.press("Escape");
+			try {
+				const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
+					data: {
+						content: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
+					},
+				});
+				expect(entryRes.status()).toBe(201);
+				const entry = (await entryRes.json()) as { id: string };
+				entryId = entry.id;
 
-			await expect(page.locator("html")).toHaveAttribute("data-ui-theme", theme);
-			await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
+				const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
+					data: {
+						id: variableQueryId,
+						name: variableQueryName,
+						sql: "SELECT * FROM entries WHERE title = {{title}} LIMIT 10",
+						variables: [
+							{ type: "string", name: "title", description: "Title" },
+						],
+					},
+				});
+				expect([200, 201]).toContain(variableQueryRes.status());
 
-			await page.getByRole("link", { name: "search" }).click();
-			await page.getByRole("button", { name: "Filter" }).click();
-			await page.getByRole("heading", { name: "Filters" }).waitFor();
-			await page.getByRole("button", { name: "Close" }).click();
+				await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
 
-			await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
-			await waitForQueryForm(page);
+				const settingsButton = page.getByRole("button", { name: "Theme settings" });
+				await settingsButton.click();
+				await page.getByRole("radio", { name: new RegExp(`^${theme}$`, "i") }).click();
+				await page.getByRole("radio", { name: "light" }).click();
+				await page.keyboard.press("Escape");
 
-			const queryName = `E2E Theme Query ${theme} ${Date.now()}`;
-			await page.getByLabel("Query name").fill(queryName);
-			await page.getByRole("button", { name: "Save" }).click();
-			await waitForQueryButton(page, request, variableQueryName, spaceId);
-			await gotoWithRetry(page, `/spaces/${spaceId}/search`);
-			await page.getByPlaceholder("Search queries").fill(variableQueryName);
-			await page
-				.getByRole("button", { name: variableQueryName })
-				.waitFor({ state: "visible" });
-			await page.getByRole("button", { name: variableQueryName }).click();
-			await page.getByRole("heading", { name: "Query variables" }).waitFor();
+				await expect(page.locator("html")).toHaveAttribute("data-ui-theme", theme);
+				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
 
-			await page.getByLabel("title").fill(entryTitle);
-			await page.getByRole("button", { name: "Run" }).click();
-			await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
-			await page.getByRole("button", { name: "Clear query" }).click();
-			await page.getByRole("heading", { name: "Entries" }).waitFor();
+				await page.getByRole("link", { name: "search" }).click();
+				await page.getByRole("button", { name: "Filter" }).click();
+				await page.getByRole("heading", { name: "Filters" }).waitFor();
+				await page.getByRole("button", { name: "Close" }).click();
 
-			await page.getByRole("link", { name: "grid" }).click();
-			await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
-			await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
-			await page.getByRole("button", { name: "Sort menu" }).click();
-			await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
-			await page.getByRole("radio", { name: "Descending" }).click();
-			await page.keyboard.press("Escape");
-			await page.getByRole("button", { name: "Filter" }).click();
+				await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
+				await waitForQueryForm(page);
 
-			await page.getByRole("link", { name: "object" }).click();
-			await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
-			await page.getByRole("button", { name: entryTitle }).waitFor();
-			await page.getByRole("button", { name: entryTitle }).click();
-			await page.getByRole("heading", { name: entryTitle, level: 2 }).waitFor();
+				const queryName = `E2E Theme Query ${theme} ${runId}`;
+				await page.getByLabel("Query name").fill(queryName);
+				await page.getByRole("button", { name: "Save" }).click();
+				await waitForQueryButton(page, request, variableQueryName, spaceId);
+				await gotoWithRetry(page, `/spaces/${spaceId}/search`);
+				await page.getByPlaceholder("Search queries").fill(variableQueryName);
+				await page
+					.getByRole("button", { name: variableQueryName })
+					.waitFor({ state: "visible" });
+				await page.getByRole("button", { name: variableQueryName }).click();
+				await page.getByRole("heading", { name: "Query variables" }).waitFor();
 
-			await settingsButton.click();
-			await page.getByRole("radio", { name: "dark" }).click();
-			await page.getByRole("link", { name: "Space settings" }).click();
-			await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
+				await page.getByLabel("title").fill(entryTitle);
+				await page.getByRole("button", { name: "Run" }).click();
+				await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
+				await page.getByRole("button", { name: "Clear query" }).click();
+				await page.getByRole("heading", { name: "Entries" }).waitFor();
 
-			await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
+				await page.getByRole("link", { name: "grid" }).click();
+				await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
+				await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
+				await page.getByRole("button", { name: "Sort menu" }).click();
+				await page.getByRole("combobox", { name: "Sort field" }).selectOption("updated_at");
+				await page.getByRole("radio", { name: "Descending" }).click();
+				await page.keyboard.press("Escape");
+				await page.getByRole("button", { name: "Filter" }).click();
 
-			await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`));
-			await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				await page.getByRole("link", { name: "object" }).click();
+				await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
+				await page.getByRole("button", { name: entryTitle }).waitFor();
+				await page.getByRole("button", { name: entryTitle }).click();
+				await page.getByRole("heading", { name: entryTitle, level: 2 }).waitFor();
 
-			const listRes = await request.get(getBackendUrl(`/spaces/${spaceId}/sql`));
-			if (listRes.ok()) {
-				const list = (await listRes.json()) as Array<{ id: string; name: string }>;
-				const created = list.filter((item) => item.name.startsWith("E2E Theme Query"));
-				for (const item of created) {
-					await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${item.id}`));
+				await settingsButton.click();
+				await page.getByRole("radio", { name: "dark" }).click();
+				await page.getByRole("link", { name: "Space settings" }).click();
+				await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
+
+				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
+			} finally {
+				if (entryId) {
+					await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 				}
+				await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				await cleanupThemeQueries(request, theme, spaceId);
 			}
 		});
 	}
@@ -150,6 +152,24 @@ async function waitForQueryButton(
 	}
 
 	throw new Error(`Timed out waiting for query '${name}' to be listed in /spaces/${space}/sql`);
+}
+
+async function cleanupThemeQueries(
+	request: APIRequestContext,
+	theme: (typeof themes)[number],
+	space: string,
+): Promise<void> {
+	const listRes = await request.get(getBackendUrl(`/spaces/${space}/sql`));
+	if (!listRes.ok()) {
+		return;
+	}
+
+	const list = (await listRes.json()) as Array<{ id: string; name: string }>;
+	const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
+	const created = list.filter((item) => prefixes.some((prefix) => item.name.startsWith(prefix)));
+	for (const item of created) {
+		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
+	}
 }
 
 async function gotoWithRetry(page: Page, path: string): Promise<void> {
