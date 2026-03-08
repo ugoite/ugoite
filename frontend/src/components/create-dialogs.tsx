@@ -11,7 +11,11 @@ import {
 import { buildEntryMarkdownFromFields, type EntryInputMode } from "~/lib/entry-input";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
-import { RESERVED_METADATA_CLASSES, isReservedMetadataForm } from "~/lib/metadata-forms";
+import {
+	RESERVED_METADATA_CLASSES,
+	filterCreatableEntryForms,
+	isReservedMetadataForm,
+} from "~/lib/metadata-forms";
 
 const numericFieldTypes = new Set(["integer", "long", "number", "double", "float"]);
 
@@ -132,8 +136,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 
+	const selectableForms = createMemo(() => filterCreatableEntryForms(props.forms));
+
 	const selectedFormDef = createMemo(() =>
-		props.forms.find((entryForm) => entryForm.name === selectedForm()),
+		selectableForms().find((entryForm) => entryForm.name === selectedForm()),
 	);
 
 	const requiredFields = createMemo(() => {
@@ -235,12 +241,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setLastGeneratedMarkdown("");
 		setInitializedFormName("");
 		setChatStep(0);
+		const availableForms = selectableForms();
 		/* v8 ignore start */
 		const defaultForm = props.defaultForm?.trim();
-		if (defaultForm && props.forms.some((entryForm) => entryForm.name === defaultForm)) {
+		if (defaultForm && availableForms.some((entryForm) => entryForm.name === defaultForm)) {
 			setSelectedForm(defaultForm);
-		} else if (props.forms.length === 1) {
-			setSelectedForm(props.forms[0].name);
+		} else if (availableForms.length === 1) {
+			setSelectedForm(availableForms[0].name);
 		} else {
 			setSelectedForm("");
 		}
@@ -370,7 +377,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 						</div>
 
 						<Show
-							when={props.forms.length > 0}
+							when={selectableForms().length > 0}
 							fallback={
 								<div class="ui-card ui-card-dashed text-sm ui-muted">
 									Create a form first to start writing entries.
@@ -393,7 +400,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 									<option value="" disabled>
 										Select a form
 									</option>
-									<For each={props.forms}>{(s) => <option value={s.name}>{s.name}</option>}</For>
+									<For each={selectableForms()}>
+										{(entryForm) => <option value={entryForm.name}>{entryForm.name}</option>}
+									</For>
 								</select>
 								<Show when={selectedFormDef()}>
 									{(entryForm) => (
@@ -605,7 +614,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</button>
 							<button
 								type="submit"
-								disabled={!title().trim() || !selectedForm().trim() || props.forms.length === 0}
+								disabled={
+									!title().trim() || !selectedForm().trim() || selectableForms().length === 0
+								}
 								class="ui-button ui-button-primary text-sm"
 							>
 								Create
