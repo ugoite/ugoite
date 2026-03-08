@@ -21,6 +21,9 @@ and responsibility boundaries.
 - Backend compares `parent_revision_id` with current head.
 - On match: backend persists, appends history, returns new `revision_id`.
 - On mismatch: backend returns **409 Conflict** with the current revision info.
+- Current entry-editor recovery flow keeps the local draft visible, shows refresh
+  guidance, and leaves merge/reconciliation to the user. A dedicated merge UI is
+  not part of the current milestone contract.
 
 ### Entry Creation & Indexing
 
@@ -50,6 +53,6 @@ and responsibility boundaries.
 |---|---|---|
 | 400 | Treat as validation bug; log details | "Invalid input" |
 | 404 | Remove stale selection; redirect to list | "Not found" |
-| 409 | Trigger conflict flow | "Changed on server" |
+| 409 | Keep the current draft visible and prompt an explicit refresh | "Changed on server. Refresh to load the latest version." |
 | 422 | Highlight invalid fields | Field-level error |
 | 5xx | Retry/backoff or show offline mode | "Server error" |
