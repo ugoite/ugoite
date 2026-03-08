@@ -70,7 +70,7 @@ jobs:
 jobs:
   version-consistency:
     - pytest docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins
-    - pytest docs/tests/test_guides.py::test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs
+    - pytest docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs
   devcontainer-build-smoke:
     on:
       pull_request / push:

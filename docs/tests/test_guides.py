@@ -6,11 +6,12 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
-REQ-OPS-011: Devcontainer trigger paths must cover setup inputs.
+REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import textwrap
 from pathlib import Path, PurePosixPath
@@ -388,8 +389,8 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs() -> None:
-    """REQ-OPS-011: Devcontainer triggers must cover setup inputs and mise.toml."""
+def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
+    """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
     pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
     push_paths = _collect_trigger_paths(workflow, "push")
@@ -424,8 +425,8 @@ def test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs() -> None:
         )
 
     step_names = _collect_workflow_step_names(DEVCONTAINER_CI_WORKFLOW_PATH)
-    if "Check devcontainer trigger coverage (REQ-OPS-011)" not in step_names:
-        details.append("devcontainer-ci must validate REQ-OPS-011 in CI")
+    if "Check devcontainer trigger coverage (REQ-OPS-012)" not in step_names:
+        details.append("devcontainer-ci must validate REQ-OPS-012 in CI")
 
     if details:
         raise AssertionError("; ".join(details))
@@ -500,17 +501,28 @@ def _collect_trigger_paths(workflow: dict[str, object], trigger: str) -> set[str
 def _discover_repo_paths(file_name: str) -> list[str]:
     ignored_parts = {".git", "node_modules", ".venv", "target"}
     discovered: list[str] = []
-    for path in REPO_ROOT.rglob(file_name):
-        relative_path = path.relative_to(REPO_ROOT)
-        if any(part in ignored_parts for part in relative_path.parts):
+    for current_root, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = sorted(name for name in dirnames if name not in ignored_parts)
+        if file_name not in filenames:
             continue
-        discovered.append(relative_path.as_posix())
+        discovered.append(
+            Path(current_root, file_name).relative_to(REPO_ROOT).as_posix(),
+        )
     return sorted(discovered)
 
 
 def _matches_any_workflow_pattern(path_text: str, patterns: set[str]) -> bool:
     path = PurePosixPath(path_text)
-    return any(path_text == pattern or path.match(pattern) for pattern in patterns)
+    for pattern in patterns:
+        if not pattern:
+            continue
+        if "/" not in pattern:
+            if path_text == pattern:
+                return True
+            continue
+        if path.match(pattern):
+            return True
+    return False
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:

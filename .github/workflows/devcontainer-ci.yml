@@ -71,11 +71,11 @@ jobs:
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins -v
 
-      - name: Check devcontainer trigger coverage (REQ-OPS-011)
+      - name: Check devcontainer trigger coverage (REQ-OPS-012)
         run: >
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error
-          docs/tests/test_guides.py::test_docs_req_ops_011_devcontainer_trigger_paths_cover_inputs -v
+          docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs -v
 
   devcontainer-build-smoke:
     name: Devcontainer Build and Smoke
