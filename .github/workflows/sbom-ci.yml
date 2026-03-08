@@ -69,7 +69,7 @@ jobs:
           mkdir -p artifacts/sbom
           syft dir:ugoite-core -o cyclonedx-json=artifacts/sbom/ugoite-core-rust.cdx.json
           syft dir:backend -o cyclonedx-json=artifacts/sbom/backend-python.cdx.json
-          syft dir:ugoite-cli -o cyclonedx-json=artifacts/sbom/ugoite-cli-python.cdx.json
+          syft dir:ugoite-cli -o cyclonedx-json=artifacts/sbom/ugoite-cli-rust.cdx.json
           syft dir:frontend -o cyclonedx-json=artifacts/sbom/frontend-bun.cdx.json
           syft dir:docsite -o cyclonedx-json=artifacts/sbom/docsite-bun.cdx.json
           syft dir:e2e -o cyclonedx-json=artifacts/sbom/e2e-node.cdx.json
