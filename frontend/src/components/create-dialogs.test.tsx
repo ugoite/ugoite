@@ -283,6 +283,31 @@ describe("CreateEntryDialog", () => {
 		expect(scheduleInput).toHaveAttribute("id", "webform-0-due-date-eta");
 	});
 
+	it("REQ-FE-037: falls back to a stable id when a field name slug is empty", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { "!!!": { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task fallback id" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const fallbackInput = screen.getByRole("textbox", { name: /!!!/ });
+		expect(fallbackInput).toHaveAttribute("id", "webform-0-field");
+	});
+
 	it("REQ-FE-037: supports markdown mode submission", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
