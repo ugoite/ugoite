@@ -6,7 +6,7 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
-REQ-OPS-010: Rust target cache discipline must be declared.
+REQ-OPS-011: Rust target cache discipline must be declared.
 """
 
 from __future__ import annotations
@@ -371,8 +371,8 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_010_rust_target_cache_discipline_declared() -> None:
-    """REQ-OPS-010: Rust target caches must stay bounded and cleanable."""
+def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
+    """REQ-OPS-011: Rust target caches must stay bounded and cleanable."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
     cli_mise = tomllib.loads(UGOITE_CLI_MISE_PATH.read_text(encoding="utf-8"))
@@ -416,8 +416,8 @@ def test_docs_req_ops_010_rust_target_cache_discipline_declared() -> None:
             ),
             _require_file_contains(
                 RUST_CI_WORKFLOW_PATH,
-                ["CARGO_TARGET_DIR: target/rust"],
-                "rust-ci.yml must set CARGO_TARGET_DIR: target/rust",
+                ["CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust"],
+                "rust-ci.yml must set CARGO_TARGET_DIR to the shared workspace root",
             ),
             _require_file_contains(
                 README_PATH,
