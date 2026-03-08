@@ -4,9 +4,43 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - ".github/workflows/devcontainer-ci.yml"
+      - ".devcontainer/**"
+      - ".pre-commit-config.yaml"
+      - "mise.toml"
+      - "**/mise.toml"
+      - "package.json"
+      - "**/package.json"
+      - "package-lock.json"
+      - "**/package-lock.json"
+      - "Cargo.toml"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "**/Cargo.lock"
+      - "**/bun.lock"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/devcontainer-ci.yml"
+      - ".devcontainer/**"
+      - ".pre-commit-config.yaml"
+      - "mise.toml"
+      - "**/mise.toml"
+      - "package.json"
+      - "**/package.json"
+      - "package-lock.json"
+      - "**/package-lock.json"
+      - "Cargo.toml"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "**/Cargo.lock"
+      - "**/bun.lock"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
   merge_group:
     branches:
       - main
@@ -36,6 +70,12 @@ jobs:
         run: >
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins -v
+
+      - name: Check devcontainer trigger coverage (REQ-OPS-012)
+        run: >
+          uv run --with pytest --with pyyaml --with bashlex
+          pytest -W error
+          docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs -v
 
   devcontainer-build-smoke:
     name: Devcontainer Build and Smoke
