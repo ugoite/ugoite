@@ -1105,6 +1105,7 @@ requirements:
       - 'REQ-FE-037: requires form selection before creating an entry'
       - 'REQ-FE-037: blocks submission when required fields are empty'
       - 'REQ-FE-037: pre-fills defaults for required fields'
+      - 'REQ-FE-037: renders optional fields in webform mode'
       - 'REQ-FE-037: excludes reserved metadata forms from entry creation'
     - file: frontend/src/components/ListPanel.test.tsx
       tests:
