@@ -55,6 +55,7 @@ jobs:
             type=gha,scope=docker-build-common
           build-contexts: |
             core=./ugoite-core
+            minimum=./ugoite-minimum
             module=./ugoite-cli
 
       - name: Build frontend image (from docker-build-ci cache)

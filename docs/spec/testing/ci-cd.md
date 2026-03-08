@@ -17,6 +17,10 @@
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
 
+Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
+`ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
+resolve inside the container build.
+
 ## Python CI
 
 ```yaml
@@ -135,7 +139,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-core` and `ugoite-cli` run format/lint gates, and `ugoite-cli` tests run before commit
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
@@ -185,22 +189,25 @@ This enables Husky `commit-msg` hook and runs `commitlint` before commit is acce
 Before pushing, run the same checks as CI:
 
 ```bash
+# Rust
+cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+
 # Python
-uvx ruff format --check .
+cd .. && uvx ruff format --check .
 uvx ruff check --select ALL --ignore-noqa .
 cd backend && uv run ty check . && uv run pytest -W error
-uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 
-# Rust
-cd ugoite-core && uv run ty check .
-cd ugoite-core && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run
-cd ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+# Docs
+cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation
 
 # Frontend
-cd frontend && biome ci . && bun run test:run --coverage
+cd ../frontend && biome ci . && bun run test:run --coverage
 
 # E2E (requires servers running)
-mise run e2e
+cd .. && mise run e2e
 
 # Conventional commits + release metadata
 npm run commitlint:range

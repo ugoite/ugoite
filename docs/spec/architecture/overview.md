@@ -29,15 +29,18 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   ugoite-core (Rust Crate)                       │
-│   - All data operations                                         │
-│   - Storage abstraction (OpenDAL)                               │
-│   - Compiles to: native, Python binding, WebAssembly            │
+│               ugoite-core (Rust adapter crate)                  │
+│   - OpenDAL-backed storage adapter                              │
+│   - Iceberg/Parquet integrations + Python bindings             │
+├─────────────────────────────────────────────────────────────────┤
+│               ugoite-minimum (Rust portable crate)              │
+│   - Portable domain logic + storage abstraction traits          │
+│   - Foundation for native and future WebAssembly targets        │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Storage Layer (OpenDAL)                       │
+│              Storage Layer (OpenDAL-backed adapters)            │
 │   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐        │
 │   │  Local  │   │   S3    │   │  GCS    │   │ Memory  │        │
 │   │  Disk   │   │ / MinIO │   │         │   │ (test)  │        │
@@ -47,12 +50,24 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
 
 ## 2. Module Responsibilities
 
-### ugoite-core (Rust)
+### ugoite-minimum (Rust)
 
-The core library handles ALL data operations:
+The portable core library owns runtime-neutral abstractions and shared models:
 
 | Component | Responsibility |
 |-----------|----------------|
+| `storage.rs` | Runtime-neutral storage traits and JSON helpers |
+| `space.rs` | Portable space metadata and URI normalization |
+| `integrity.rs` | Integrity traits and cryptographic primitives |
+| `link.rs`, `search.rs`, `metadata.rs` | Shared domain models and metadata rules |
+
+### ugoite-core (Rust)
+
+The adapter crate depends on `ugoite-minimum` and keeps the heavier integrations:
+
+| Component | Responsibility |
+|-----------|----------------|
+| `storage/` | OpenDAL adapter implementation for `ugoite-minimum::storage` |
 | `space.rs` | Space CRUD, directory scaffolding |
 | `entry.rs` | Entry CRUD via Iceberg tables, revision history, conflict detection |
 | `form.rs` | Iceberg form schema management |
@@ -135,5 +150,5 @@ Frontend                 Backend              ugoite-core           Storage
 | **Local-First** | All data in user-controlled storage; no required cloud services |
 | **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
 | **AI-Native** | MCP protocol + MCP integration for AI agents |
-| **Layered** | Clear separation: Core → {CLI, Backend} → Frontend |
+| **Layered** | Clear separation: ugoite-minimum → ugoite-core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |
