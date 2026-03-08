@@ -1278,3 +1278,4 @@ requirements:
     - file: frontend/src/components/EntryDetailPane.test.tsx
       tests:
       - 'REQ-FE-053: renders English editor guidance and type warnings'
+      - 'REQ-FE-053: renders Japanese editor guidance without mixed-language examples'
