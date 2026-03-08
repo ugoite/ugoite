@@ -76,7 +76,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         EntrySubCmd::List { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/entries"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/entries")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -92,7 +92,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
                 let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/entries/{entry_id}"))?;
+                    http::http_get(&format!("{base}/spaces/{space_id}/entries/{entry_id}")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -112,7 +112,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
                     &serde_json::json!({"content": content, "author": author}),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -147,7 +148,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 let result = http::http_put(
                     &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
                     &body,
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -185,7 +187,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 } else {
                     format!("{base}/spaces/{space_id}/entries/{entry_id}")
                 };
-                let result = http::http_delete(&url)?;
+                let result = http::http_delete(&url).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -202,7 +204,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!(
                     "{base}/spaces/{space_id}/entries/{entry_id}/history"
-                ))?;
+                ))
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -220,7 +223,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!(
                     "{base}/spaces/{space_id}/entries/{entry_id}/revisions/{revision_id}"
-                ))?;
+                ))
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -241,7 +245,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/entries/{entry_id}/restore/{revision_id}"),
                     &serde_json::json!({"author": author}),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

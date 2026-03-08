@@ -54,8 +54,8 @@ apis:
       function: create_entry
     ugoite_cli:
       command: ugoite entry create
-      file: ugoite-cli/src/ugoite/cli.py
-      function: cmd_entry_create
+      file: ugoite-cli/src/commands/entry.rs
+      function: run (EntrySubCmd::Create)
 ```
 
 ## Verification Tests

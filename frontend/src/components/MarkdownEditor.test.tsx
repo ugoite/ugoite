@@ -65,7 +65,7 @@ describe("MarkdownEditor", () => {
 		expect(onSave).toHaveBeenCalled();
 	});
 
-	it("should show conflict message when there is a conflict", () => {
+	it("REQ-FE-009: should show conflict message when there is a conflict", () => {
 		render(() => (
 			<MarkdownEditor
 				content="# Test"

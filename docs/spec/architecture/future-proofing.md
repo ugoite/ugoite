@@ -19,10 +19,14 @@ Non-goals:
 ## Multi-Platform Core
 
 To enable cross-platform operation and varied deployment targets:
-- Core operations are contained in `ugoite-core` (Rust).
-- Multiple language bindings are provided:
-  - Python bindings for backend and `ugoite-cli`
-  - WebAssembly bindings for browser contexts (future target)
+- Portable domain logic and storage traits live in `ugoite-minimum` (Rust).
+- `ugoite-core` depends on `ugoite-minimum` and provides the OpenDAL-backed
+  adapter used by the current backend and native CLI stack.
+- Multiple language interfaces are provided:
+  - Python bindings from `ugoite-core` for backend integration
+  - Native Rust binary for `ugoite-cli`
+  - WebAssembly bindings can target the portable `ugoite-minimum` layer in
+    future browser contexts
 
 ## Data Portability
 
@@ -30,4 +34,3 @@ The data model is designed to remain:
 - human-readable (JSON + Markdown)
 - easy to back up
 - storage-provider agnostic
-

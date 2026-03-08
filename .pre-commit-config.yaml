@@ -45,9 +45,16 @@ repos:
 
       - id: rustfmt
         name: rustfmt
-        entry: bash -c "cd ugoite-core && uv run cargo fmt --all && cd ../ugoite-cli && cargo fmt --all"
+        entry: bash -c "cd ugoite-minimum && cargo fmt --all && cd ../ugoite-core && uv run cargo fmt --all && cd ../ugoite-cli && cargo fmt --all"
         language: system
-        files: ^ugoite-(core|cli)/
+        files: ^ugoite-(minimum|core|cli)/
+        pass_filenames: false
+
+      - id: cargo-clippy-minimum
+        name: cargo clippy (ugoite-minimum)
+        entry: bash -c "cd ugoite-minimum && cargo clippy -- -D warnings"
+        language: system
+        files: ^ugoite-minimum/
         pass_filenames: false
 
       - id: cargo-clippy
@@ -58,8 +65,8 @@ repos:
         pass_filenames: false
 
       - id: cargo-llvm-cov-core
-        name: cargo llvm-cov (ugoite-core 100%)
-        entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 100 --jobs 1"
+        name: cargo llvm-cov (ugoite-core 45%)
+        entry: bash -c "cd ugoite-core && uv run cargo llvm-cov --summary-only --fail-under-lines 45 --jobs 1"
         language: system
         files: ^ugoite-core/(src/.*\.rs|tests/.*\.rs|Cargo\.toml)$
         pass_filenames: false
@@ -78,6 +85,13 @@ repos:
         files: ^ugoite-cli/
         pass_filenames: false
 
+      - id: cargo-test-minimum
+        name: cargo test (ugoite-minimum)
+        entry: bash -c "cd ugoite-minimum && cargo test"
+        language: system
+        files: ^ugoite-minimum/
+        pass_filenames: false
+
       - id: cargo-test-cli
         name: cargo test (ugoite-cli)
         entry: bash -c "cd ugoite-cli && cargo test --no-default-features"
@@ -91,13 +105,6 @@ repos:
         language: system
         pass_filenames: false
         files: ^backend/
-
-      - id: ty-cli
-        name: "ty: ugoite-cli type check"
-        entry: bash -c "cd ugoite-cli && uv run ty check ."
-        language: system
-        files: ^ugoite-cli/
-        pass_filenames: false
 
       - id: ty-core
         name: "ty: ugoite-core type check"

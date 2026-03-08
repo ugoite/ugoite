@@ -7,6 +7,7 @@ REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
 REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
+REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 """
@@ -25,8 +26,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
+DOCKER_BUILD_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docker-build-ci.yml"
 DOCSITE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "docsite-ci.yml"
+E2E_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "e2e-ci.yml"
 FRONTEND_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "frontend-ci.yml"
 PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
@@ -35,6 +37,7 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
@@ -47,12 +50,26 @@ README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
+FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
+LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
+WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 COLUMN_COUNT_THRESHOLD = 2
+DOCKER_IMAGE_WORKFLOW_PATHS = (
+    DOCKER_BUILD_WORKFLOW_PATH,
+    E2E_CI_WORKFLOW_PATH,
+    SBOM_CI_WORKFLOW_PATH,
+)
+REQUIRED_BACKEND_BUILD_CONTEXTS = {
+    "core=./ugoite-core",
+    "minimum=./ugoite-minimum",
+    "module=./ugoite-cli",
+}
+REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Check root placeholder artifacts",
@@ -93,6 +110,21 @@ REQUIRED_DOCSITE_CI_STEPS = {
     "Format check",
     "Typecheck",
     "Validation test (build)",
+}
+REQUIRED_FRONTEND_DEV_FRAGMENTS = {
+    "../scripts/wait-for-http.sh http://localhost:8000/health 30",
+    "BACKEND_URL=http://localhost:8000",
+    "bun run dev",
+}
+REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
+    "curl -fsS",
+    "--connect-timeout",
+    "--max-time",
+    "Timed out waiting",
+}
+REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
+    "/api/*",
+    "waits for `http://localhost:8000/health`",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -273,29 +305,36 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
     """REQ-OPS-002: Docker build CI workflow must include backend and frontend."""
-    if not WORKFLOW_PATH.exists():
-        message = f"Missing workflow file: {WORKFLOW_PATH.relative_to(REPO_ROOT)}"
+    missing_workflows = [
+        str(workflow_path.relative_to(REPO_ROOT))
+        for workflow_path in DOCKER_IMAGE_WORKFLOW_PATHS
+        if not workflow_path.exists()
+    ]
+    if missing_workflows:
+        message = "Missing workflow files: " + ", ".join(missing_workflows)
         raise AssertionError(message)
-    workflow = _load_workflow()
-    build_steps = _collect_build_steps(workflow)
-    backend_step = _find_build_step(build_steps, "./backend")
-    frontend_step = _find_build_step(build_steps, "./frontend")
 
     missing_parts: list[str] = []
-    _require_step("backend", backend_step, missing_parts)
-    _require_step("frontend", frontend_step, missing_parts)
-    _require_build_contexts(
-        "backend",
-        backend_step,
-        {"core=./ugoite-core", "module=./ugoite-cli"},
-        missing_parts,
-    )
-    _require_build_contexts(
-        "frontend",
-        frontend_step,
-        {"shared=./shared"},
-        missing_parts,
-    )
+    for workflow_path in DOCKER_IMAGE_WORKFLOW_PATHS:
+        workflow = _load_workflow(workflow_path)
+        build_steps = _collect_build_steps(workflow)
+        backend_step = _find_build_step(build_steps, "./backend")
+        frontend_step = _find_build_step(build_steps, "./frontend")
+        workflow_name = workflow_path.name
+        _require_step(f"{workflow_name} backend", backend_step, missing_parts)
+        _require_step(f"{workflow_name} frontend", frontend_step, missing_parts)
+        _require_build_contexts(
+            f"{workflow_name} backend",
+            backend_step,
+            REQUIRED_BACKEND_BUILD_CONTEXTS,
+            missing_parts,
+        )
+        _require_build_contexts(
+            f"{workflow_name} frontend",
+            frontend_step,
+            REQUIRED_FRONTEND_BUILD_CONTEXTS,
+            missing_parts,
+        )
     _raise_if_missing(missing_parts)
 
 
@@ -477,9 +516,81 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
         ]
         if detail is not None
     ]
-
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_010_frontend_dev_proxy_readiness_declared() -> None:
+    """REQ-OPS-010: Frontend local dev waits for backend readiness before proxying."""
+    details = _collect_frontend_dev_proxy_readiness_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
+    if not FRONTEND_MISE_PATH.exists():
+        message = f"frontend/mise.toml is missing; expected at {FRONTEND_MISE_PATH}"
+        raise AssertionError(message)
+
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    tasks = frontend_mise.get("tasks", {})
+    if not isinstance(tasks, dict):
+        message = "frontend/mise.toml must define [tasks]"
+        raise TypeError(message)
+
+    dev_task = tasks.get("dev")
+    if not isinstance(dev_task, dict):
+        message = "frontend/mise.toml must define [tasks.dev]"
+        raise TypeError(message)
+
+    run_command = dev_task.get("run")
+    if not isinstance(run_command, str):
+        message = "frontend [tasks.dev].run must be a string command"
+        raise TypeError(message)
+
+    wait_script = _read_required_text(
+        WAIT_FOR_HTTP_PATH,
+        "wait-for-http.sh is missing at {path}; required by REQ-OPS-010 for "
+        "frontend dev proxy readiness.",
+    )
+    guide_text = _read_required_text(
+        LOCAL_DEV_AUTH_GUIDE_PATH,
+        "local dev auth guide is missing at {path}; required by REQ-OPS-010 for "
+        "documenting frontend proxy readiness.",
+    )
+
+    missing_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_FRONTEND_DEV_FRAGMENTS
+        if fragment not in run_command
+    )
+    missing_wait_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_WAIT_FOR_HTTP_FRAGMENTS
+        if fragment not in wait_script
+    )
+    missing_guide_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_fragments:
+        details.append(
+            "frontend dev command missing fragments: " + ", ".join(missing_fragments),
+        )
+    if missing_wait_fragments:
+        details.append(
+            "wait-for-http.sh missing readiness fragments: "
+            + ", ".join(missing_wait_fragments),
+        )
+    if missing_guide_fragments:
+        details.append(
+            "local-dev-auth-login.md missing readiness fragments: "
+            + ", ".join(missing_guide_fragments),
+        )
+    return details
 
 
 def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
@@ -594,8 +705,8 @@ def _collect_release_ci_requirement_details() -> list[str]:
     return [message for condition, message in detail_candidates if condition]
 
 
-def _load_workflow() -> dict[str, object]:
-    workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+def _load_workflow(workflow_path: Path) -> dict[str, object]:
+    workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     if isinstance(workflow, dict):
         return workflow
@@ -609,6 +720,13 @@ def _load_pre_commit_config() -> dict[str, object]:
         return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
     raise TypeError(message)
+
+
+def _read_required_text(path: Path, missing_message: str) -> str:
+    if not path.exists():
+        message = missing_message.format(path=path)
+        raise AssertionError(message)
+    return path.read_text(encoding="utf-8")
 
 
 def _load_yaml_base_mapping(path: Path) -> dict[str, object]:
@@ -895,7 +1013,7 @@ def _require_build_contexts(
 def _raise_if_missing(missing_parts: list[str]) -> None:
     if missing_parts:
         message = (
-            "Docker build CI workflow is missing required build steps/contexts: "
+            "Docker image workflows are missing required build steps/contexts: "
             + "; ".join(missing_parts)
         )
         raise AssertionError(message)

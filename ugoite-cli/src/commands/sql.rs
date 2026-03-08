@@ -64,7 +64,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedList { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/sql"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/sql")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -76,7 +76,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedGet { space_path, sql_id } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}"))?;
+                let result =
+                    http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -101,7 +102,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/sql"),
                     &serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author}),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -136,7 +138,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 let result = http::http_put(
                     &format!("{base}/spaces/{space_id}/sql/{sql_id}"),
                     &serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author}),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -163,7 +166,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedDelete { space_path, sql_id } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}"))?;
+                let result =
+                    http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
                 print_json(&result);
                 return Ok(());
             }

@@ -53,6 +53,10 @@ requirements:
   title: No Client-side Default Space Creation
   description: 'Frontend MUST NOT auto-create spaces when none exist.
 
+    When `/spaces` has no spaces yet, the UI MUST offer an explicit user-triggered
+
+    create-space action instead of silently creating a default space.
+
     '
   related_spec:
   - architecture/overview.md
@@ -63,6 +67,10 @@ requirements:
     - file: frontend/src/lib/space-store.test.ts
       tests:
       - should keep selection empty when no spaces exist
+    - file: frontend/src/routes/spaces/index.test.tsx
+      tests:
+      - 'REQ-FE-002: shows a create-space action when no spaces exist'
+      - 'REQ-FE-002: creates a space only after explicit user submission'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -273,19 +281,29 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-009
-  title: Conflict Message Display
-  description: 'Frontend MUST notify the user on 409 Conflict errors.
+  title: Conflict Refresh Guidance
+  description: 'Frontend MUST notify the user on 409 Conflict errors, keep the
+
+    current draft visible in the editor, and require an explicit refresh before
+
+    loading the latest server revision. A merge UI is not part of the current
+
+    milestone contract.
 
     '
   related_spec:
   - architecture/frontend-backend-interface.md#error-handling-standards
+  - architecture/decisions.md#adr-005
   priority: high
   status: implemented
   tests:
     vitest:
     - file: frontend/src/components/MarkdownEditor.test.tsx
       tests:
-      - should show conflict message when there is a conflict
+      - 'REQ-FE-009: should show conflict message when there is a conflict'
+    - file: frontend/src/components/EntryDetailPane.test.tsx
+      tests:
+      - 'REQ-FE-009: shows refresh guidance on revision conflict'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1065,11 +1083,18 @@ requirements:
 
     MUST show the selected Form fields and generate the entry from the
 
-    Form template with the correct frontmatter.
+    Form template with the correct frontmatter. Reserved metadata forms MUST NOT
+
+    be presented as ordinary user-selectable forms in entry creation flows.
+
+    Dashboard-style onboarding MUST count only user-creatable forms when guiding
+
+    the user to create a first entry.
 
     '
   related_spec:
   - data-model/overview.md#forms
+  - data-model/directory-structure.md#space-level
   - stories/core.yaml#STORY-002
   priority: high
   status: implemented
@@ -1080,9 +1105,14 @@ requirements:
       - 'REQ-FE-037: requires form selection before creating an entry'
       - 'REQ-FE-037: blocks submission when required fields are empty'
       - 'REQ-FE-037: pre-fills defaults for required fields'
+      - 'REQ-FE-037: excludes reserved metadata forms from entry creation'
     - file: frontend/src/components/ListPanel.test.tsx
       tests:
       - 'REQ-FE-037: disables new entry when no forms exist'
+    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+      tests:
+      - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
+      - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.

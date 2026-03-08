@@ -1,7 +1,13 @@
 mod common;
 use _ugoite_core::space;
 use common::setup_operator;
+#[cfg(unix)]
+use opendal::services::Fs;
+#[cfg(unix)]
+use opendal::Operator;
 use serde_json::Value;
+#[cfg(unix)]
+use tempfile::tempdir;
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004
@@ -33,6 +39,37 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert_eq!(meta["name"], ws_id);
     assert!(meta.get("created_at").is_some());
     assert!(meta.get("storage").is_some());
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+/// REQ-STO-003
+async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let builder = Fs::default().root(dir.path().to_string_lossy().as_ref());
+    let op = Operator::new(builder)?.finish();
+
+    space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
+
+    let spaces_root = dir.path().join("spaces");
+    let space_dir = spaces_root.join("private-space");
+
+    let mode = |path: &std::path::Path| -> anyhow::Result<u32> {
+        Ok(std::fs::metadata(path)?.permissions().mode() & 0o777)
+    };
+
+    assert_eq!(mode(&spaces_root)?, 0o700);
+    assert_eq!(mode(&space_dir)?, 0o700);
+    for dir_name in ["forms", "assets", "materialized_views", "sql_sessions"] {
+        assert_eq!(mode(&space_dir.join(dir_name))?, 0o700);
+    }
+    for file_name in ["meta.json", "settings.json"] {
+        assert_eq!(mode(&space_dir.join(file_name))?, 0o600);
+    }
 
     Ok(())
 }

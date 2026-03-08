@@ -84,7 +84,8 @@ pub async fn create_space_cmd(root_path: &str, space_id: &str) -> Result<()> {
         let result = http::http_post(
             &format!("{base}/spaces/{space_id}"),
             &serde_json::json!({"id": space_id}),
-        )?;
+        )
+        .await?;
         print_json(&result);
         return Ok(());
     }
@@ -99,7 +100,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
     match cmd.sub {
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces"))?;
+                let result = http::http_get(&format!("{base}/spaces")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -112,7 +113,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             space_id,
         } => {
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -143,7 +144,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 let result = http::http_patch(
                     &format!("{base}/spaces/{space_id}"),
                     &serde_json::Value::Object(patch),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -221,7 +223,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             space_id,
         } => {
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/service-accounts"))?;
+                let result =
+                    http::http_get(&format!("{base}/spaces/{space_id}/service-accounts")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -240,7 +243,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                         "display_name": display_name,
                         "scopes": scopes,
                     }),
-                )?;
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -249,7 +253,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         SpaceSubCmd::Members { space_path } => {
             let (_, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/members"))?;
+                let result = http::http_get(&format!("{base}/spaces/{space_id}/members")).await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -264,7 +268,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!(
                     "{base}/spaces/{space_id}/audit-events?offset={offset}&limit={limit}"
-                ))?;
+                ))
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

@@ -49,6 +49,7 @@ class Requirement:
 
 TEST_SCAN_RULES: tuple[tuple[Path, tuple[str, ...]], ...] = (
     (REPO_ROOT / "backend" / "tests", ("test_*.py",)),
+    (REPO_ROOT / "ugoite-minimum" / "tests", ("test_*.rs",)),
     (REPO_ROOT / "ugoite-cli" / "tests", ("test_*.rs",)),
     (REPO_ROOT / "ugoite-core" / "tests", ("test_*.rs",)),
     (REPO_ROOT / "frontend" / "src", ("*.test.ts", "*.test.tsx")),
