@@ -258,6 +258,31 @@ describe("CreateEntryDialog", () => {
 		);
 	});
 
+	it("REQ-FE-037: sanitizes webform field ids for labels", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { "Due Date / ETA": { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task with schedule" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const scheduleInput = screen.getByLabelText(/Due Date \/ ETA/);
+		expect(scheduleInput).toHaveAttribute("id", "webform-0-due-date-eta");
+	});
+
 	it("REQ-FE-037: supports markdown mode submission", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
