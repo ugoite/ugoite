@@ -108,14 +108,16 @@ Use revision-based optimistic concurrency:
 - Every entry has a `revision_id`
 - Updates include `parent_revision_id`
 - Server rejects if parent doesn't match current
-- Client handles 409 Conflict with merge UI
+- Current frontend editor flow handles 409 Conflict with explicit refresh guidance
+  while keeping the local draft visible
+- Rich in-editor merge UI is deferred to a future milestone
 
 **Consequences**:
 - (+) Responsive UI with optimistic updates
-- (+) No data loss (conflicts are surfaced)
+- (+) No silent data loss (conflicts are surfaced and the local draft remains visible)
 - (+) Simple implementation
-- (-) Users must resolve conflicts manually
-- (-) Last-write-wins would be simpler (but risky)
+- (-) Users must refresh and reconcile conflicts manually
+- (-) There is no built-in merge UI yet
 
 ---
 
