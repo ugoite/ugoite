@@ -40,6 +40,15 @@ const resolveInputType = (def: Form["fields"][string]) => {
 	return "text";
 };
 
+const createFieldInputId = (prefix: string, name: string, index: number) => {
+	const normalized = name
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+	return `${prefix}-${index}-${normalized || "field"}`;
+};
+
 /* v8 ignore start */
 const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
 	return def.type === "object_list" ? "[]" : "Enter value";
@@ -490,10 +499,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<p class="text-sm font-semibold">Form fields</p>
 								<div class="ui-stack-sm mt-3">
 									<For each={webFormFields()}>
-										{([name, def]) => {
+										{([name, def], index) => {
 											const useTextarea = isTextareaField(name, def);
 											const inputType = resolveInputType(def);
 											const value = fieldValues()[name] ?? "";
+											const fieldId = createFieldInputId("webform", name, index());
 											const handleValue = (nextValue: string) =>
 												setFieldValues((prev) => ({
 													...prev,
@@ -501,7 +511,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 												}));
 											return (
 												<div class="ui-field">
-													<label class="ui-label" for={`webform-${name}`}>
+													<label class="ui-label" for={fieldId}>
 														{name}
 														<span class="ui-muted ml-2 text-xs">
 															({def.type}
@@ -512,7 +522,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														when={!useTextarea}
 														fallback={
 															<textarea
-																id={`webform-${name}`}
+																id={fieldId}
 																class="ui-input ui-textarea"
 																placeholder={resolveTextareaPlaceholder(def)}
 																value={value}
@@ -521,7 +531,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														}
 													>
 														<input
-															id={`webform-${name}`}
+															id={fieldId}
 															type={inputType}
 															class="ui-input"
 															value={value}
@@ -546,12 +556,16 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<Show when={requiredFields()[chatStep()]}>
 									{(current) => {
 										const [name, def] = current();
+										const fieldIndex = requiredFields().findIndex(
+											([candidateName]) => candidateName === name,
+										);
 										const value = fieldValues()[name] ?? "";
 										const useTextarea = isTextareaField(name, def);
 										const inputType = resolveInputType(def);
+										const fieldId = createFieldInputId("chat", name, Math.max(fieldIndex, 0));
 										return (
 											<div class="ui-field mt-3">
-												<label class="ui-label" for={`chat-${name}`}>
+												<label class="ui-label" for={fieldId}>
 													{name}
 													<span class="ui-muted ml-2 text-xs">({def.type})</span>
 												</label>
@@ -559,7 +573,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													when={!useTextarea}
 													fallback={
 														<textarea
-															id={`chat-${name}`}
+															id={fieldId}
 															class="ui-input ui-textarea"
 															value={value}
 															onInput={(e) =>
@@ -572,7 +586,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													}
 												>
 													<input
-														id={`chat-${name}`}
+														id={fieldId}
 														type={inputType}
 														class="ui-input"
 														value={value}
