@@ -6,14 +6,18 @@ REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
 REQ-OPS-006: Rust pre-commit checks must match CI test coverage expectations.
 REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
+REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 REQ-OPS-011: Rust target cache discipline must be declared.
+REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import textwrap
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import bashlex
 import tomllib
@@ -28,8 +32,12 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
+RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
+DEVCONTAINER_CI_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
+)
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -41,6 +49,9 @@ UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
+RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
+ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 COLUMN_COUNT_THRESHOLD = 2
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
@@ -57,6 +68,20 @@ REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "cargo-test-cli",
 }
 REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_RELEASE_CI_PERMISSIONS = {
+    "contents": "write",
+    "issues": "write",
+    "pull-requests": "write",
+}
+REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS = {
+    "secrets.RELEASE_PLEASE_TOKEN",
+    "secrets.GITHUB_TOKEN",
+}
+REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
+    "Allow GitHub Actions to create and approve pull requests",
+    "RELEASE_PLEASE_TOKEN",
+    "0.0.1",
+}
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
     "docsite-format-check",
@@ -68,6 +93,24 @@ REQUIRED_DOCSITE_CI_STEPS = {
     "Format check",
     "Typecheck",
     "Validation test (build)",
+}
+REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
+    ".github/workflows/devcontainer-ci.yml",
+    ".devcontainer/**",
+    ".pre-commit-config.yaml",
+    "mise.toml",
+    "**/mise.toml",
+    "package.json",
+    "**/package.json",
+    "package-lock.json",
+    "**/package-lock.json",
+    "Cargo.toml",
+    "**/Cargo.toml",
+    "Cargo.lock",
+    "**/Cargo.lock",
+    "**/bun.lock",
+    "**/pyproject.toml",
+    "**/uv.lock",
 }
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -371,6 +414,13 @@ def test_docs_req_ops_008_pr_template_validation_rules_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> None:
+    """REQ-OPS-009: Release CI bootstrap metadata and permissions stay aligned."""
+    details = _collect_release_ci_requirement_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
     """REQ-OPS-011: Rust target caches must stay bounded and cleanable."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
@@ -432,6 +482,118 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
+    """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
+    workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
+    pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
+    push_paths = _collect_trigger_paths(workflow, "push")
+    discovered_mise_paths = _discover_repo_paths("mise.toml")
+
+    details: list[str] = []
+    if not pull_request_paths:
+        details.append("devcontainer-ci pull_request trigger must define paths")
+    if not push_paths:
+        details.append("devcontainer-ci push trigger must define paths")
+    if pull_request_paths != push_paths:
+        details.append("devcontainer-ci push and pull_request paths must match")
+
+    missing_patterns = sorted(
+        REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS.difference(pull_request_paths),
+    )
+    if missing_patterns:
+        details.append(
+            "devcontainer-ci trigger paths missing patterns: "
+            + ", ".join(missing_patterns),
+        )
+
+    uncovered_mise_paths = sorted(
+        path
+        for path in discovered_mise_paths
+        if not _matches_any_workflow_pattern(path, pull_request_paths)
+    )
+    if uncovered_mise_paths:
+        details.append(
+            "devcontainer-ci trigger paths must cover all mise.toml files: "
+            + ", ".join(uncovered_mise_paths),
+        )
+
+    step_names = _collect_workflow_step_names(DEVCONTAINER_CI_WORKFLOW_PATH)
+    if "Check devcontainer trigger coverage (REQ-OPS-012)" not in step_names:
+        details.append("devcontainer-ci must validate REQ-OPS-012 in CI")
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_release_ci_requirement_details() -> list[str]:
+    workflow_text = RELEASE_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text) or {}
+    if not isinstance(workflow, dict):
+        message = "release-ci.yml must be a YAML mapping"
+        raise TypeError(message)
+
+    permissions = workflow.get("permissions")
+    if not isinstance(permissions, dict):
+        message = "release-ci.yml must define top-level permissions"
+        raise TypeError(message)
+
+    missing_permissions = [
+        f"{name}={expected}"
+        for name, expected in REQUIRED_RELEASE_CI_PERMISSIONS.items()
+        if str(permissions.get(name)) != expected
+    ]
+
+    release_ci_steps = _collect_workflow_step_names(RELEASE_CI_WORKFLOW_PATH)
+    missing_steps = sorted(
+        {"Print release auth path", "Run release-please"}.difference(release_ci_steps),
+    )
+    missing_token_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS
+        if fragment not in workflow_text
+    )
+
+    manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
+    package_data = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    manifest_version = str(manifest.get(".", ""))
+    package_version = str(package_data.get("version", ""))
+
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_CI_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_permissions),
+            "release-ci permissions mismatch: " + ", ".join(missing_permissions),
+        ),
+        (
+            bool(missing_steps),
+            "release-ci missing steps: " + ", ".join(missing_steps),
+        ),
+        (
+            bool(missing_token_fragments),
+            "release-ci missing token fragments: " + ", ".join(missing_token_fragments),
+        ),
+        (
+            manifest_version != "0.0.1",
+            f"release manifest must start at 0.0.1 (got {manifest_version!r})",
+        ),
+        (
+            package_version != "0.0.1",
+            f"package.json version must start at 0.0.1 (got {package_version!r})",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing fragments: " + ", ".join(missing_doc_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
 def _load_workflow() -> dict[str, object]:
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
@@ -446,6 +608,24 @@ def _load_pre_commit_config() -> dict[str, object]:
     if isinstance(pre_commit, dict):
         return pre_commit
     message = ".pre-commit-config.yaml must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _load_yaml_base_mapping(path: Path) -> dict[str, object]:
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if isinstance(document, dict):
+        if "on" not in document and True in document:
+            document["on"] = document.pop(True)
+        return document
+    message = f"{path.relative_to(REPO_ROOT)} must be a YAML mapping"
+    raise TypeError(message)
+
+
+def _load_json_mapping(path: Path) -> dict[str, object]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        return data
+    message = f"{path.name} must be a JSON mapping"
     raise TypeError(message)
 
 
@@ -539,6 +719,46 @@ def _require_file_contains(
     if all(snippet in file_text for snippet in expected_snippets):
         return None
     return message
+
+
+def _collect_trigger_paths(workflow: dict[str, object], trigger: str) -> set[str]:
+    on_block = workflow.get("on", {})
+    if not isinstance(on_block, dict):
+        return set()
+    trigger_block = on_block.get(trigger, {})
+    if not isinstance(trigger_block, dict):
+        return set()
+    paths = trigger_block.get("paths", [])
+    if isinstance(paths, list) and all(isinstance(item, str) for item in paths):
+        return {item for item in paths if item}
+    return set()
+
+
+def _discover_repo_paths(file_name: str) -> list[str]:
+    ignored_parts = {".git", "node_modules", ".venv", "target"}
+    discovered: list[str] = []
+    for current_root, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = sorted(name for name in dirnames if name not in ignored_parts)
+        if file_name not in filenames:
+            continue
+        discovered.append(
+            Path(current_root, file_name).relative_to(REPO_ROOT).as_posix(),
+        )
+    return sorted(discovered)
+
+
+def _matches_any_workflow_pattern(path_text: str, patterns: set[str]) -> bool:
+    path = PurePosixPath(path_text)
+    for pattern in patterns:
+        if not pattern:
+            continue
+        if "/" not in pattern:
+            if path_text == pattern:
+                return True
+            continue
+        if path.match(pattern):
+            return True
+    return False
 
 
 def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
