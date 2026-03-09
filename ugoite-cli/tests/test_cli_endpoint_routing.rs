@@ -73,7 +73,22 @@ fn spawn_recording_server(
 
                     loop {
                         let mut buffer = [0_u8; 1024];
-                        let read = stream.read(&mut buffer).unwrap();
+                        let read = match stream.read(&mut buffer) {
+                            Ok(read) => read,
+                            Err(error)
+                                if error.kind() == std::io::ErrorKind::WouldBlock
+                                    || error.kind() == std::io::ErrorKind::TimedOut
+                                    || error.kind() == std::io::ErrorKind::Interrupted =>
+                            {
+                                assert!(
+                                    Instant::now() < deadline,
+                                    "timed out waiting for CLI backend request body"
+                                );
+                                thread::sleep(Duration::from_millis(10));
+                                continue;
+                            }
+                            Err(error) => panic!("failed to read test request body: {error}"),
+                        };
                         if read == 0 {
                             break;
                         }
@@ -86,8 +101,12 @@ fn spawn_recording_server(
                                 header_end = Some(end);
                                 let headers = String::from_utf8_lossy(&request[..end]);
                                 for line in headers.lines() {
-                                    if let Some(value) = line.strip_prefix("Content-Length:") {
-                                        content_length = value.trim().parse().unwrap_or(0);
+                                    let mut parts = line.splitn(2, ':');
+                                    if let (Some(name), Some(value)) = (parts.next(), parts.next())
+                                    {
+                                        if name.eq_ignore_ascii_case("Content-Length") {
+                                            content_length = value.trim().parse().unwrap_or(0);
+                                        }
                                     }
                                 }
                             }
