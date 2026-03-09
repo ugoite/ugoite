@@ -178,6 +178,52 @@ async fn test_entry_req_entry_005_entry_history_append() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-ENTRY-005
+async fn test_entry_req_entry_005_revision_content_renders_requested_revision_sections(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-space", "/tmp").await?;
+    let ws_path = "spaces/test-space";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+    let entry_id = "entry-revision-content";
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        entry_id,
+        "---\nform: Entry\n---\n# Version 1\n\n## Body\nAlpha",
+        "author1",
+        &integrity,
+    )
+    .await?;
+
+    let content_v1 = entry::get_entry_content(&op, ws_path, entry_id).await?;
+    let rev_v1 = content_v1.revision_id;
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        entry_id,
+        "---\nform: Entry\n---\n# Version 2\n\n## Body\nBeta",
+        Some(&rev_v1),
+        "author1",
+        None,
+        &integrity,
+    )
+    .await?;
+
+    let revision_content =
+        entry::get_entry_revision_content(&op, ws_path, entry_id, &rev_v1).await?;
+    assert_eq!(revision_content.revision_id, rev_v1);
+    assert!(revision_content.markdown.contains("---\nform: Entry\n---"));
+    assert!(revision_content.markdown.contains("## Body\nAlpha"));
+    assert!(!revision_content.markdown.contains("## Body\nBeta"));
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-ENTRY-004
 async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
     let op = setup_operator()?;

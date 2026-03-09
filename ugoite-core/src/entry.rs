@@ -2046,6 +2046,53 @@ pub async fn get_entry_content(
     })
 }
 
+pub async fn get_entry_revision_content(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+) -> Result<EntryContent> {
+    let form_name = find_entry_form(op, ws_path, entry_id)
+        .await?
+        .ok_or_else(|| anyhow!("Entry content not found: {}", entry_id))?;
+    let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
+    if row.deleted {
+        return Err(anyhow!("Entry content not found: {}", entry_id));
+    }
+
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
+    let batches = scan_table_batches(&revisions_table).await?;
+    let revisions = revision_rows_from_batches(&batches, &form_def)?;
+    let revision = revisions
+        .into_iter()
+        .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
+        .ok_or_else(|| anyhow!("Revision {} not found for entry {}", revision_id, entry_id))?;
+
+    let field_order = form_field_names(&form_def);
+    let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
+    let markdown = render_markdown(
+        &row.title,
+        &form_name,
+        &row.tags,
+        &merged_fields,
+        &field_order,
+    );
+    Ok(EntryContent {
+        revision_id: revision.revision_id,
+        parent_revision_id: revision.parent_revision_id,
+        author: revision.author,
+        markdown,
+        frontmatter: serde_json::json!({
+            "form": form_name,
+            "tags": row.tags,
+        }),
+        sections: sections_from_fields(&merged_fields),
+        assets: Vec::new(),
+        computed: Value::Object(Map::new()),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn update_entry<I: IntegrityProvider>(
     op: &Operator,

@@ -406,6 +406,7 @@ async def restore_entry_endpoint(
     identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     _validate_path_id(entry_id, "entry_id")
+    _validate_path_id(payload.revision_id, "revision_id")
     storage_config = _storage_config()
     await _ensure_space_exists(storage_config, space_id)
 
@@ -416,6 +417,13 @@ async def restore_entry_endpoint(
             space_id,
             identity,
             current_entry,
+        )
+        await ugoite_core.require_entry_revision_write(
+            storage_config,
+            space_id,
+            identity,
+            entry_id,
+            payload.revision_id,
         )
         entry_data = await ugoite_core.restore_entry(
             storage_config,

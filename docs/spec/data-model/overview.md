@@ -98,6 +98,13 @@ When omitted, Form access inherits the default space policy. Access control
 evaluation MUST run in `ugoite-core`; backend and other adapters are
 orchestration only.
 
+For Markdown-driven writes, the frontmatter-derived `form` ID is the canonical
+selector for Form ACL enforcement. Create/import-style writes evaluate the
+submitted Markdown against that target Form, while update/restore flows also
+authorize the existing entry being mutated. If the Markdown or revision content
+does not resolve a Form, absence of a form falls back to the space-level
+`entry_write` policy.
+
 Materialized views derived from one or more Forms inherit the effective access
 policy from those source Forms. If multiple source Forms are referenced, the
 effective policy MUST be the intersection (deny-by-default on ambiguity).

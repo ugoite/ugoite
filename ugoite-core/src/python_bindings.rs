@@ -918,6 +918,26 @@ fn get_entry_revision<'a>(
 }
 
 #[pyfunction]
+fn get_entry_revision_content<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    entry_id: String,
+    revision_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let content = entry::get_entry_revision_content(&op, &ws_path, &entry_id, &revision_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(content).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
 #[pyo3(signature = (storage_config, space_id, entry_id, revision_id, author=None))]
 fn restore_entry<'a>(
     py: Python<'a>,
@@ -1168,6 +1188,7 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_entry, m)?)?;
     m.add_function(wrap_pyfunction!(get_entry_history, m)?)?;
     m.add_function(wrap_pyfunction!(get_entry_revision, m)?)?;
+    m.add_function(wrap_pyfunction!(get_entry_revision_content, m)?)?;
     m.add_function(wrap_pyfunction!(list_entries, m)?)?;
     m.add_function(wrap_pyfunction!(restore_entry, m)?)?;
     m.add_function(wrap_pyfunction!(update_entry, m)?)?;
