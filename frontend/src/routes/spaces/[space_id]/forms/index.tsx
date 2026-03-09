@@ -13,6 +13,7 @@ import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/form-api";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { FormCreatePayload } from "~/lib/types";
 
@@ -51,6 +52,7 @@ export default function SpaceFormsIndexPane() {
 	);
 
 	const selectedFormValue = createMemo(() => selectedFormName().trim());
+	const selectableForms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
 
 	const handleFormSelection = (value: string) => {
 		if (!value) return;
@@ -75,8 +77,9 @@ export default function SpaceFormsIndexPane() {
 			setPage(1);
 			return;
 		}
-		if (selectedFormValue().trim()) return;
-		const first = ctx.forms()[0];
+		const selected = selectedFormValue().trim();
+		if (selectableForms().some((form) => form.name === selected)) return;
+		const first = selectableForms()[0];
 		if (first?.name) {
 			setSearchParams({ form: first.name }, { replace: true });
 		}
@@ -94,7 +97,7 @@ export default function SpaceFormsIndexPane() {
 	});
 
 	const selectedForm = createMemo(() =>
-		ctx.forms().find((entry) => entry.name === selectedFormValue()),
+		selectableForms().find((entry) => entry.name === selectedFormValue()),
 	);
 
 	const sessionEntries = createMemo(() => sessionRows()?.rows || []);
@@ -141,7 +144,7 @@ export default function SpaceFormsIndexPane() {
 								<option value="" disabled>
 									Select form
 								</option>
-								{ctx.forms().map((entry) => (
+								{selectableForms().map((entry) => (
 									<option value={entry.name}>{entry.name}</option>
 								))}
 							</select>
