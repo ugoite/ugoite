@@ -457,3 +457,39 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_013_all_tests_status_excludes_release_automation
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-014
+  title: CLI Language Classification Consistency
+  description: 'Top-level architecture and security documentation, plus supply-chain
+
+    automation metadata, MUST classify `ugoite-cli` consistently as a Rust
+
+    CLI instead of a Python project.
+
+    '
+  related_spec:
+  - index.md
+  - architecture/stack.md
+  - security/overview.md
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_cli_language_docs.py
+      tests:
+      - test_docs_req_ops_014_cli_language_is_consistent

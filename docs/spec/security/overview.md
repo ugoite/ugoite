@@ -57,8 +57,8 @@ targets an **Authenticated Access by Default** model.
 ### SBOM Coverage
 
 - CI workflow `sbom-ci.yml` generates CycloneDX SBOMs via Syft for:
-  - Rust core (`ugoite-core`)
-  - Python projects (`backend`, `ugoite-cli`)
+  - Rust projects (`ugoite-core`, `ugoite-cli`)
+  - Python projects (`backend`)
   - Bun/Node projects (`frontend`, `docsite`, `e2e`)
   - Built Docker images (`backend`, `frontend`)
 
