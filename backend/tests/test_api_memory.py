@@ -1,6 +1,6 @@
 """Tests for API using memory filesystem.
 
-REQ-STO-007: Backend IO separation & multi-fsspec coverage.
+REQ-STO-007: Backend IO separation & multi-backend coverage.
 """
 
 import io
@@ -133,7 +133,7 @@ rocket launch scheduled""",
 
 
 def test_assets_memory(memory_client: TestClient) -> None:
-    """Ensure assets work over memory-backed fsspec."""
+    """Ensure assets work over the memory-backed OpenDAL adapter."""
     ws_id = "mem-graph"
     memory_client.post("/spaces", json={"name": ws_id})
     memory_client.post(

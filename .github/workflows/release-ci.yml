@@ -17,18 +17,24 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Print release auth path
-        run: echo "release_auth_path=${{ secrets.RELEASE_PLEASE_TOKEN != '' && 'RELEASE_PLEASE_TOKEN' || 'GITHUB_TOKEN' }}"
+        run: echo "release_auth_path=${{ secrets.RELEASE_PLEASE_TOKEN != '' && 'RELEASE_PLEASE_TOKEN' || 'SKIP_NO_RELEASE_PLEASE_TOKEN' }}"
 
       - name: Run release-please
+        if: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
         id: release_please
         uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN != '' && secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
           skip-github-release: true
 
       - name: Print release planning outputs
+        if: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
         run: |
           echo "release_created=${{ steps.release_please.outputs.release_created }}"
           echo "prs_created=${{ steps.release_please.outputs.prs_created }}"
+
+      - name: Skip release-please without dedicated token
+        if: ${{ secrets.RELEASE_PLEASE_TOKEN == '' }}
+        run: echo "Skipping release-please because RELEASE_PLEASE_TOKEN is not configured."

@@ -13,6 +13,7 @@ import { AssetUploader } from "~/components/AssetUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { assetApi } from "~/lib/asset-api";
 import { entryApi, RevisionConflictError } from "~/lib/entry-api";
+import { t } from "~/lib/i18n";
 import { updateH2Section } from "~/lib/markdown";
 import type { Asset, Form } from "~/lib/types";
 
@@ -151,7 +152,7 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
 		if (!value) continue;
 		/* v8 ignore start */
 		if (fieldDef.type === "boolean" && !BOOLEAN_VALUE_REGEX.test(value)) {
-			typeIssues.push(`${fieldName}: boolean は true/false, yes/no, on/off, 1/0 を使用`);
+			typeIssues.push(`${fieldName}: ${t("entryGuidance.booleanValue")}`);
 		}
 		if (
 			fieldDef.type === "list" &&
@@ -159,7 +160,7 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
 			!value.startsWith("-") &&
 			value.includes(",")
 		) {
-			typeIssues.push(`${fieldName}: list は "- item" または1行1値を使用`);
+			typeIssues.push(`${fieldName}: ${t("entryGuidance.listValue")}`);
 		}
 		/* v8 ignore stop */
 	}
@@ -521,7 +522,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 									<div class="mx-4 mt-4 ui-alert ui-alert-warning text-sm space-y-2">
 										<div class="flex items-center justify-between gap-2">
 											<p class="font-semibold">
-												属性は <code>## フィールド名</code> 見出しで入力
+												{t("entryDetail.guidance.prefix")}{" "}
+												<code>## {t("entryDetail.guidance.fieldNameExample")}</code>{" "}
+												{t("entryDetail.guidance.suffix")}
 											</p>
 											<Show when={editorGuidance().missingRequired.length > 0}>
 												<button
@@ -529,21 +532,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 													onClick={handleInsertMissingHeadings}
 													class="ui-button ui-button-secondary ui-button-sm text-xs"
 												>
-													不足H2を追加
+													{t("entryDetail.guidance.insertMissingH2")}
 												</button>
 											</Show>
 										</div>
 										<p class="text-xs ui-muted">
-											Form: {entryForm().name} / 例: <code>## status</code>
+											{t("entryDetail.guidance.formLabel")}: {entryForm().name} /{" "}
+											{t("entryDetail.guidance.example")}{" "}
+											<code>## {t("entryDetail.guidance.fieldNameExample")}</code>
 										</p>
 										<Show when={editorGuidance().missingRequired.length > 0}>
 											<p class="text-xs ui-text-danger">
-												必須セクション不足: {editorGuidance().missingRequired.join(", ")}
+												{t("entryDetail.guidance.missingRequired")}:{" "}
+												{editorGuidance().missingRequired.join(", ")}
 											</p>
 										</Show>
 										<Show when={editorGuidance().unknownSections.length > 0}>
 											<p class="text-xs ui-text-danger">
-												未定義セクション: {editorGuidance().unknownSections.join(", ")}
+												{t("entryDetail.guidance.unknownSections")}:{" "}
+												{editorGuidance().unknownSections.join(", ")}
 											</p>
 										</Show>
 										<Show when={editorGuidance().typeIssues.length > 0}>

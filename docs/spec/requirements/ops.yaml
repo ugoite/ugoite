@@ -295,11 +295,13 @@ requirements:
   title: Release Automation Bootstrap and PR Permissions
   description: 'Release automation MUST keep its bootstrap version metadata aligned at
 
-    `0.0.1`, prefer a dedicated `RELEASE_PLEASE_TOKEN` auth path when available,
+    `0.0.1`, bound pre-release-please history with `bootstrap-sha`, use a
 
-    and document the GitHub Actions permission prerequisite required for the
+    dedicated `RELEASE_PLEASE_TOKEN` auth path for release PR creation, and
 
-    `GITHUB_TOKEN` fallback to create or update release pull requests.
+    no-op cleanly when that secret is unavailable instead of failing on
+
+    repository-level `GITHUB_TOKEN` PR permission limits.
 
     '
   related_spec:
@@ -362,6 +364,44 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-011
+  title: Rust Target Cache Discipline
+  description: 'Local Rust build and test tasks MUST share a bounded target root,
+
+    clean package-specific crate artifacts before rebuild/test, and expose
+
+    an explicit cleanup task. Rust CI MUST use the same shared target root
+
+    so repeated ugoite-core and ugoite-cli development does not balloon
+
+    target caches into tens of gigabytes.
+
+    '
+  related_spec:
+  - ../README.md
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_011_rust_target_cache_discipline_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-012
   title: Devcontainer Trigger Discipline
   description: 'Devcontainer CI MUST use path filters for push and pull_request so
@@ -382,6 +422,41 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-013
+  title: All Tests Status Workflow Curation
+  description: 'All Tests Status MUST aggregate code-quality workflow health and
+
+    exclude release/publish automation workflows (at minimum `Release CI` and
+
+    `Release Publish`) so auxiliary release failures do not mark branch health
+
+    red.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_013_all_tests_status_excludes_release_automation
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
