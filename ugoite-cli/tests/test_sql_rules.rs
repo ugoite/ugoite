@@ -21,7 +21,7 @@ fn test_cli_sql_lint_reports_errors() {
     let config_path = dir.path().join("cli-config.json");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "lint-space"])
+        .args(["create-space", "--root", &root, "lint-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -56,7 +56,7 @@ fn test_cli_sql_complete_suggests_tables() {
     let config_path = dir.path().join("cli-config.json");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "complete-space"])
+        .args(["create-space", "--root", &root, "complete-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");

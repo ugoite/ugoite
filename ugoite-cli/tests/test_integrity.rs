@@ -21,7 +21,7 @@ fn test_integrity_provider_for_space_success() {
     let config_path = dir.path().join("cli-config.json");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "int-space"])
+        .args(["create-space", "--root", &root, "int-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -42,14 +42,14 @@ fn test_integrity_provider_missing_hmac_key() {
 
     // Create space without HMAC key configuration
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "no-hmac-space"])
+        .args(["create-space", "--root", &root, "no-hmac-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
 
     // Attempting to access a space requiring HMAC without key should fail
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
+        .args(["space", "list", "--root", &root])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -68,7 +68,7 @@ fn test_integrity_provider_invalid_hmac_key() {
 
     // Create space
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "hmac-space"])
+        .args(["create-space", "--root", &root, "hmac-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");

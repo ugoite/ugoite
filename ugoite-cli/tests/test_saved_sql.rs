@@ -22,7 +22,7 @@ fn test_saved_sql_req_api_006_crud() {
     let space_path = format!("{root}/spaces/sql-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "sql-space"])
+        .args(["create-space", "--root", &root, "sql-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -72,7 +72,7 @@ fn test_saved_sql_req_api_007_validation() {
     let space_path = format!("{root}/spaces/sql-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "sql-space"])
+        .args(["create-space", "--root", &root, "sql-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");

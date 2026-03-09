@@ -19,7 +19,7 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::pa
     let space_path = format!("{root}/spaces/idx-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "idx-space"])
+        .args(["create-space", "--root", &root, "idx-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -118,7 +118,7 @@ fn test_extract_properties_h2_sections() {
     let space_path = format!("{root}/spaces/prop-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "prop-space"])
+        .args(["create-space", "--root", &root, "prop-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -172,7 +172,7 @@ fn test_extract_properties_precedence() {
     let space_path = format!("{root}/spaces/prec-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "prec-space"])
+        .args(["create-space", "--root", &root, "prec-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -270,7 +270,7 @@ fn test_validate_properties_missing_required() {
     let space_path = format!("{root}/spaces/val-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "val-space"])
+        .args(["create-space", "--root", &root, "val-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
@@ -321,7 +321,7 @@ fn test_validate_properties_valid() {
     let space_path = format!("{root}/spaces/valid-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "valid-space"])
+        .args(["create-space", "--root", &root, "valid-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");
