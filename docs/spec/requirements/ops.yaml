@@ -295,11 +295,13 @@ requirements:
   title: Release Automation Bootstrap and PR Permissions
   description: 'Release automation MUST keep its bootstrap version metadata aligned at
 
-    `0.0.1`, prefer a dedicated `RELEASE_PLEASE_TOKEN` auth path when available,
+    `0.0.1`, bound pre-release-please history with `bootstrap-sha`, use a
 
-    and document the GitHub Actions permission prerequisite required for the
+    dedicated `RELEASE_PLEASE_TOKEN` auth path for release PR creation, and
 
-    `GITHUB_TOKEN` fallback to create or update release pull requests.
+    no-op cleanly when that secret is unavailable instead of failing on
+
+    repository-level `GITHUB_TOKEN` PR permission limits.
 
     '
   related_spec:
