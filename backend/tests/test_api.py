@@ -2158,12 +2158,10 @@ def test_restore_entry_generic_runtime_error(test_client: TestClient) -> None:
     """REQ-API-002: restore entry returns 500 for generic runtime error."""
     test_client.post("/spaces", json={"name": "entry-restore-rt-ws"})
     fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
-    target_revision = {"id": "e1", "content": "# Restored\n", "revision_id": "rev0"}
     with (
         patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
-        patch("ugoite_core.get_entry_revision", _amock(return_value=target_revision)),
         patch("ugoite_core.require_entry_write", _amock(return_value=None)),
-        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch("ugoite_core.require_entry_revision_write", _amock(return_value=None)),
         patch(
             "ugoite_core.restore_entry",
             _amock(side_effect=RuntimeError("storage error")),
@@ -2180,12 +2178,10 @@ def test_restore_entry_generic_exception(test_client: TestClient) -> None:
     """REQ-API-002: restore entry returns 500 on non-runtime exception."""
     test_client.post("/spaces", json={"name": "entry-restore-exc-ws"})
     fake_entry = {"id": "e1", "content": "# Title\n", "revision_id": "rev1"}
-    target_revision = {"id": "e1", "content": "# Restored\n", "revision_id": "rev0"}
     with (
         patch("ugoite_core.get_entry", _amock(return_value=fake_entry)),
-        patch("ugoite_core.get_entry_revision", _amock(return_value=target_revision)),
         patch("ugoite_core.require_entry_write", _amock(return_value=None)),
-        patch("ugoite_core.require_markdown_write", _amock(return_value=None)),
+        patch("ugoite_core.require_entry_revision_write", _amock(return_value=None)),
         patch(
             "ugoite_core.restore_entry",
             _amock(side_effect=ValueError("unexpected")),
@@ -2228,21 +2224,18 @@ def test_restore_entry_checks_target_revision_write_access(
     """REQ-SEC-006: restore authorizes the target revision before mutating."""
     test_client.post("/spaces", json={"name": "entry-restore-target-ws"})
     current_entry = {"id": "e1", "content": "---\nform: Old\n---\n# Current\n"}
-    target_revision = {
-        "id": "e1",
-        "markdown": "---\nform: Restricted\n---\n# Restored\n",
-        "revision_id": "rev0",
-    }
     require_entry_write = _amock(return_value=None)
-    require_markdown_write = _amock(return_value=None)
+    require_entry_revision_write = _amock(return_value=None)
     restore_entry = _amock(
         return_value={"id": "e1", "revision_id": "rev2", "restored_from": "rev0"},
     )
     with (
         patch("ugoite_core.get_entry", _amock(return_value=current_entry)),
-        patch("ugoite_core.get_entry_revision", _amock(return_value=target_revision)),
         patch("ugoite_core.require_entry_write", require_entry_write),
-        patch("ugoite_core.require_markdown_write", require_markdown_write),
+        patch(
+            "ugoite_core.require_entry_revision_write",
+            require_entry_revision_write,
+        ),
         patch("ugoite_core.restore_entry", restore_entry),
     ):
         response = test_client.post(
@@ -2251,11 +2244,12 @@ def test_restore_entry_checks_target_revision_write_access(
         )
     assert response.status_code == 200
     require_entry_write.assert_awaited_once()
-    require_markdown_write.assert_awaited_once_with(
+    require_entry_revision_write.assert_awaited_once_with(
         ANY,
         "entry-restore-target-ws",
         ANY,
-        "---\nform: Restricted\n---\n# Restored\n",
+        "e1",
+        "rev0",
     )
 
 
@@ -2265,17 +2259,11 @@ def test_restore_entry_target_revision_authorization_error(
     """REQ-SEC-006: restore returns 403 when the target revision form is forbidden."""
     test_client.post("/spaces", json={"name": "entry-restore-target-authz-ws"})
     current_entry = {"id": "e1", "content": "---\nform: Old\n---\n# Current\n"}
-    target_revision = {
-        "id": "e1",
-        "content": "---\nform: Restricted\n---\n# Restored\n",
-        "revision_id": "rev0",
-    }
     with (
         patch("ugoite_core.get_entry", _amock(return_value=current_entry)),
-        patch("ugoite_core.get_entry_revision", _amock(return_value=target_revision)),
         patch("ugoite_core.require_entry_write", _amock(return_value=None)),
         patch(
-            "ugoite_core.require_markdown_write",
+            "ugoite_core.require_entry_revision_write",
             _amock(
                 side_effect=ugoite_core.AuthorizationError(
                     "forbidden",
@@ -2290,6 +2278,15 @@ def test_restore_entry_target_revision_authorization_error(
             json={"revision_id": "rev0"},
         )
     assert response.status_code == 403
+
+
+def test_restore_entry_rejects_invalid_revision_id(test_client: TestClient) -> None:
+    """REQ-API-002: restore entry validates revision identifiers before core calls."""
+    response = test_client.post(
+        "/spaces/entry-restore-invalid-rev-ws/entries/e1/restore",
+        json={"revision_id": "bad revision"},
+    )
+    assert response.status_code == 400
 
 
 def test_sanitize_space_meta_without_settings() -> None:
