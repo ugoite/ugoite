@@ -436,7 +436,9 @@ describe("CreateEntryDialog", () => {
 			),
 		).toBeInTheDocument();
 		expect(
-			screen.queryByText("After creation, edit attributes under Markdown `## field name` headings."),
+			screen.queryByText(
+				"After creation, edit attributes under Markdown `## field name` headings.",
+			),
 		).not.toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
