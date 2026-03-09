@@ -59,7 +59,7 @@ export const sqlSessionApi = {
 		/* v8 ignore start */
 		const rows = ((payload.rows ?? []) as EntryRecord[]).map((row) => ({
 			...row,
-			updated_at: normalizeTimestamp(row.updated_at),
+			["updated_at"]: normalizeTimestamp(row.updated_at),
 		}));
 		const offsetValue = Number(payload.offset ?? 0);
 		const limitValue = Number(payload.limit ?? 0);
