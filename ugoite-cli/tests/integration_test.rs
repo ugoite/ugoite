@@ -77,7 +77,7 @@ fn test_space_create_and_list() {
     let config_path = dir.path().join("cli-config.json");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "test-space"])
+        .args(["create-space", "--root", &root, "test-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -88,7 +88,7 @@ fn test_space_create_and_list() {
     );
 
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
+        .args(["space", "list", "--root", &root])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

@@ -22,7 +22,7 @@ fn test_asset_lifecycle() {
 
     // Create space first
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "asset-space"])
+        .args(["create-space", "--root", &root, "asset-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

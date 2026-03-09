@@ -20,7 +20,7 @@ fn setup_space_with_form(dir: &tempfile::TempDir, space_id: &str) -> (String, st
     let space_path = format!("{root}/spaces/{space_id}");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, space_id])
+        .args(["create-space", "--root", &root, space_id])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create space");

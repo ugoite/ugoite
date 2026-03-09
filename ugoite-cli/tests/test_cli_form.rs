@@ -41,7 +41,7 @@ fn test_cli_form_update() {
     let space_path = format!("{root}/spaces/form-space");
 
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "form-space"])
+        .args(["create-space", "--root", &root, "form-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

@@ -14,14 +14,28 @@ pub struct EntryCmd {
 #[derive(Subcommand)]
 pub enum EntrySubCmd {
     /// List entries in a space
-    List { space_path: String },
+    List {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// Get an entry
     Get {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
     },
     /// Create an entry
     Create {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
         #[arg(long, default_value = "# New Entry\n", allow_hyphen_values = true)]
@@ -31,6 +45,10 @@ pub enum EntrySubCmd {
     },
     /// Update an entry
     Update {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
         #[arg(long)]
@@ -44,6 +62,10 @@ pub enum EntrySubCmd {
     },
     /// Delete an entry
     Delete {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
         #[arg(long)]
@@ -51,17 +73,29 @@ pub enum EntrySubCmd {
     },
     /// Get entry history
     History {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
     },
     /// Get a specific revision
     Revision {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
         revision_id: String,
     },
     /// Restore an entry to a revision
     Restore {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         entry_id: String,
         revision_id: String,
