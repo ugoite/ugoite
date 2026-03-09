@@ -27,7 +27,7 @@ Ugoite is a knowledge management system built on three core principles:
 | Frontend | Bun + SolidStart + TailwindCSS |
 | Backend | Python 3.12+ (FastAPI) |
 | Core | Rust (ugoite-core via pyo3 bindings) |
-| Storage | fsspec/OpenDAL + Apache Iceberg |
+| Storage | OpenDAL + Apache Iceberg |
 | AI Interface | MCP (resource-first integration) |
 
 ---
