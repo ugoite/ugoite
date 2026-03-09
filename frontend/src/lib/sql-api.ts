@@ -9,8 +9,8 @@ type SqlMutationResponse = {
 
 const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => ({
 	...entry,
-	created_at: normalizeTimestamp(entry.created_at),
-	updated_at: normalizeTimestamp(entry.updated_at),
+	["created_at"]: normalizeTimestamp(entry.created_at),
+	["updated_at"]: normalizeTimestamp(entry.updated_at),
 });
 
 export const sqlApi = {
