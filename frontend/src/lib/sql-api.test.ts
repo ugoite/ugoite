@@ -19,6 +19,28 @@ describe("sqlApi", () => {
 		expect(entries).toEqual([]);
 	});
 
+	it("REQ-FE-054: sqlApi normalizes unix-second timestamps for saved queries", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/sql-ws/sql", () =>
+				HttpResponse.json([
+					{
+						id: "query-1",
+						name: "Recent Query",
+						sql: "SELECT 1",
+						variables: [],
+						created_at: 1772960822.056,
+						updated_at: 1772960822.056,
+						revision_id: "rev-1",
+					},
+				]),
+			),
+		);
+
+		const [entry] = await sqlApi.list("sql-ws");
+		expect(entry.created_at).toBe(new Date(1772960822.056 * 1000).toISOString());
+		expect(entry.updated_at).toBe(new Date(1772960822.056 * 1000).toISOString());
+	});
+
 	it("creates a SQL entry and returns id/revisionId", async () => {
 		const result = await sqlApi.create("sql-ws", { name: "My Query", sql: "SELECT 1" });
 		expect(result.id).toBeDefined();

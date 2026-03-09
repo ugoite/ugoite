@@ -45,6 +45,32 @@ describe("sqlSessionApi", () => {
 		expect(result.totalCount).toBe(3);
 	});
 
+	it("REQ-FE-054: sqlSessionApi normalizes unix-second timestamps for session rows", async () => {
+		server.use(
+			http.get("http://localhost:3000/api/spaces/sess-ws/sql-sessions/sess-1/rows", () =>
+				HttpResponse.json({
+					rows: [
+						{
+							id: "entry-1",
+							title: "Query Entry",
+							form: "Meeting",
+							updated_at: 1772960822.056,
+							properties: {},
+							tags: [],
+							links: [],
+						},
+					],
+					offset: 0,
+					limit: 25,
+					total_count: 1,
+				}),
+			),
+		);
+
+		const result = await sqlSessionApi.rows("sess-ws", "sess-1", 0, 25);
+		expect(result.rows[0].updated_at).toBe(new Date(1772960822.056 * 1000).toISOString());
+	});
+
 	it("throws on create failure", async () => {
 		server.use(
 			http.post("http://localhost:3000/api/spaces/sess-ws/sql-sessions", () =>

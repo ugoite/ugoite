@@ -11,6 +11,7 @@ import {
 import { FormTable } from "~/components/FormTable";
 import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
+import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/form-api";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
@@ -218,7 +219,7 @@ export default function SpaceFormsIndexPane() {
 														</td>
 														<td class="ui-table-cell ui-table-cell-muted">{entry.form || "-"}</td>
 														<td class="ui-table-cell ui-table-cell-muted">
-															{new Date(entry.updated_at).toLocaleDateString()}
+															{formatDateLabel(entry.updated_at)}
 														</td>
 														<For each={sessionFields()}>
 															{(field) => (

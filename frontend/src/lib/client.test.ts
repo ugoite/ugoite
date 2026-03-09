@@ -137,6 +137,26 @@ describe("entryApi", () => {
 			expect(entries).toHaveLength(1);
 			expect(entries[0].title).toBe("Test Entry");
 		});
+
+		it("REQ-FE-054: entryApi normalizes unix-second timestamps for entry lists", async () => {
+			server.use(
+				http.get("http://localhost:3000/api/spaces/test-ws/entries", () =>
+					HttpResponse.json([
+						{
+							id: "entry-1",
+							title: "Test Entry",
+							updated_at: 1772960822.056,
+							properties: {},
+							tags: [],
+							links: [],
+						},
+					]),
+				),
+			);
+
+			const entries = await entryApi.list("test-ws");
+			expect(entries[0].updated_at).toBe(new Date(1772960822.056 * 1000).toISOString());
+		});
 	});
 
 	describe("create", () => {
