@@ -74,7 +74,7 @@ fn test_parse_space_id_from_path_and_id() {
 
     // Create a space - this tests that space_id can be derived from path components
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "path-id-space"])
+        .args(["create-space", "--root", &root, "path-id-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -87,7 +87,7 @@ fn test_parse_space_id_from_path_and_id() {
 
     // List spaces - verify the space shows up with the expected ID
     let list_output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
+        .args(["space", "list", "--root", &root])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

@@ -35,9 +35,18 @@ enum Commands {
     /// Link management commands (deprecated: use row_reference fields)
     Link(commands::link::LinkCmd),
     /// Create a new space
-    CreateSpace { root_path: String, space_id: String },
+    CreateSpace {
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+        #[arg(value_name = "SPACE_ID")]
+        space_id: String,
+    },
     /// Query the index
     Query {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         #[arg(long)]
         sql: String,
@@ -77,7 +86,7 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::CreateSpace {
             root_path,
             space_id,
-        } => commands::space::create_space_cmd(&root_path, &space_id).await,
+        } => commands::space::create_space_cmd(root_path.as_deref(), &space_id).await,
         Commands::Query {
             space_path,
             sql,

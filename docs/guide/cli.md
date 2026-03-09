@@ -31,19 +31,20 @@ Create a local data directory and list spaces:
 
 ```bash
 mkdir -p ./spaces
-cargo run -q -p ugoite-cli -- space list ./spaces
+cargo run -q -p ugoite-cli -- space list --root ./spaces
 ```
 
 Create a new space:
 
 ```bash
-cargo run -q -p ugoite-cli -- create-space ./spaces demo
+cargo run -q -p ugoite-cli -- create-space --root ./spaces demo
 ```
 
 ## Notes
 
-- The CLI expects a root path argument for most commands. Use the same `./spaces`
-  directory as the Docker Compose setup for consistency.
+- In `core` mode, commands that touch local storage require an explicit
+  `--root <LOCAL_ROOT>` flag. Use the same `./spaces` directory as the Docker
+  Compose setup for consistency.
 - If you use another directory, ensure it is writable and backed by local
   storage.
 
@@ -55,9 +56,9 @@ CLI can run in three modes, and stores the selection in `~/.ugoite/cli-endpoints
 - `backend`: call backend REST endpoints directly (e.g. `http://localhost:8000`)
 - `api`: call the frontend-proxied API base (e.g. `http://localhost:3000/api`)
 
-When mode is `backend` or `api`, path arguments such as `root_path`/`space_path`
-are used only to derive a space ID (`.../spaces/<space_id>`), and filesystem I/O
-is performed on the remote server (not the local path).
+When mode is `backend` or `api`, remote commands accept a `SPACE_ID` (or the
+shared `SPACE_ID_OR_PATH` argument for commands that also work in `core` mode)
+and perform filesystem I/O on the remote server instead of the local machine.
 
 ```bash
 # Show current setting

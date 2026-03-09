@@ -13,12 +13,22 @@ pub struct SpaceCmd {
 #[derive(Subcommand)]
 pub enum SpaceSubCmd {
     /// List spaces
-    List { root_path: String },
+    List {
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+    },
     /// Get space metadata
-    Get { root_path: String, space_id: String },
+    Get {
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+        #[arg(value_name = "SPACE_ID")]
+        space_id: String,
+    },
     /// Patch space metadata
     Patch {
-        root_path: String,
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+        #[arg(value_name = "SPACE_ID")]
         space_id: String,
         #[arg(long)]
         name: Option<String>,
@@ -29,7 +39,9 @@ pub enum SpaceSubCmd {
     },
     /// Create sample data
     SampleData {
+        #[arg(value_name = "LOCAL_ROOT")]
         root_path: String,
+        #[arg(value_name = "SPACE_ID")]
         space_id: String,
         #[arg(long)]
         scenario: Option<String>,
@@ -42,7 +54,9 @@ pub enum SpaceSubCmd {
     SampleScenarios,
     /// Create a sample data job
     SampleJob {
+        #[arg(value_name = "LOCAL_ROOT")]
         root_path: String,
+        #[arg(value_name = "SPACE_ID")]
         space_id: String,
         #[arg(long)]
         scenario: Option<String>,
@@ -52,14 +66,21 @@ pub enum SpaceSubCmd {
         seed: Option<u64>,
     },
     /// Get sample data job status
-    SampleJobStatus { root_path: String, job_id: String },
+    SampleJobStatus {
+        #[arg(value_name = "LOCAL_ROOT")]
+        root_path: String,
+        job_id: String,
+    },
     /// Test storage connection
     TestConnection { storage_config_json: String },
     /// List service accounts (backend/api mode only)
-    ServiceAccountList { root_path: String, space_id: String },
+    ServiceAccountList {
+        #[arg(value_name = "SPACE_ID")]
+        space_id: String,
+    },
     /// Create a service account (backend/api mode only)
     ServiceAccountCreate {
-        root_path: String,
+        #[arg(value_name = "SPACE_ID")]
         space_id: String,
         #[arg(long)]
         display_name: String,
@@ -67,9 +88,19 @@ pub enum SpaceSubCmd {
         scopes: Vec<String>,
     },
     /// List space members (backend/api mode only)
-    Members { space_path: String },
+    Members {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// Audit events (backend/api mode only)
     AuditEvents {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         #[arg(long, default_value_t = 0)]
         offset: u64,
@@ -78,7 +109,12 @@ pub enum SpaceSubCmd {
     },
 }
 
-pub async fn create_space_cmd(root_path: &str, space_id: &str) -> Result<()> {
+fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Result<&'a str> {
+    root_path
+        .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
+}
+
+pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
         let result = http::http_post(
@@ -89,6 +125,7 @@ pub async fn create_space_cmd(root_path: &str, space_id: &str) -> Result<()> {
         print_json(&result);
         return Ok(());
     }
+    let root_path = require_local_root(root_path, "create-space")?;
     let op = operator_for_path(root_path)?;
     ugoite_core::space::create_space(&op, space_id, root_path).await?;
     print_json(&serde_json::json!({"created": true, "id": space_id}));
@@ -104,7 +141,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root_path)?;
+            let root_path = require_local_root(root_path.as_deref(), "space list")?;
+            let op = operator_for_path(root_path)?;
             let spaces = ugoite_core::space::list_spaces(&op).await?;
             print_json(&spaces);
         }
@@ -117,7 +155,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root_path)?;
+            let root_path = require_local_root(root_path.as_deref(), "space get")?;
+            let op = operator_for_path(root_path)?;
             let space = ugoite_core::space::get_space_raw(&op, &space_id).await?;
             print_json(&space);
         }
@@ -149,7 +188,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root_path)?;
+            let root_path = require_local_root(root_path.as_deref(), "space patch")?;
+            let op = operator_for_path(root_path)?;
             let result =
                 ugoite_core::space::patch_space(&op, &space_id, &serde_json::Value::Object(patch))
                     .await?;
@@ -218,10 +258,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             };
             print_json(&serde_json::json!({"status": "ok", "mode": mode}));
         }
-        SpaceSubCmd::ServiceAccountList {
-            root_path: _,
-            space_id,
-        } => {
+        SpaceSubCmd::ServiceAccountList { space_id } => {
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/service-accounts")).await?;
@@ -231,7 +268,6 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             bail!("service-account-list requires backend or api mode");
         }
         SpaceSubCmd::ServiceAccountCreate {
-            root_path: _,
             space_id,
             display_name,
             scopes,
