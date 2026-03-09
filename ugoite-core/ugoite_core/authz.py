@@ -473,6 +473,31 @@ async def require_markdown_write(
     return await require_form_write(storage_config, space_id, identity, form_name)
 
 
+async def require_entry_revision_write(
+    storage_config: dict[str, str],
+    space_id: str,
+    identity: RequestIdentity,
+    entry_id: str,
+    revision_id: str,
+) -> AccessContext:
+    """Require write access for a stored revision based on rendered markdown."""
+    revision_obj = await _core_any.get_entry_revision_content(
+        storage_config,
+        space_id,
+        entry_id,
+        revision_id,
+    )
+    revision = cast("dict[str, Any]", revision_obj)
+    markdown = revision.get("markdown")
+    if not isinstance(markdown, str) or not markdown.strip():
+        message = (
+            "Entry revision content must include non-empty markdown for "
+            "authorization checks"
+        )
+        raise RuntimeError(message)
+    return await require_markdown_write(storage_config, space_id, identity, markdown)
+
+
 async def require_entry_read(
     storage_config: dict[str, str],
     space_id: str,
@@ -534,6 +559,7 @@ __all__ = [
     "filter_readable_entries",
     "form_name_from_entry",
     "require_entry_read",
+    "require_entry_revision_write",
     "require_entry_write",
     "require_form_read",
     "require_form_write",

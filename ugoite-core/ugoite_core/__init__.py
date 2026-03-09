@@ -28,6 +28,7 @@ from .authz import (
     filter_readable_entries,
     form_name_from_entry,
     require_entry_read,
+    require_entry_revision_write,
     require_entry_write,
     require_form_read,
     require_form_write,
@@ -92,6 +93,7 @@ extract_properties = _core_any.extract_properties
 get_entry = _core_any.get_entry
 get_entry_history = _core_any.get_entry_history
 get_entry_revision = _core_any.get_entry_revision
+get_entry_revision_content = _core_any.get_entry_revision_content
 get_form = _core_any.get_form
 get_sample_space_job = _core_any.get_sample_space_job
 get_space = _core_any.get_space
@@ -175,6 +177,7 @@ __all__ = [
     "get_entry",
     "get_entry_history",
     "get_entry_revision",
+    "get_entry_revision_content",
     "get_form",
     "get_sample_space_job",
     "get_space",
@@ -203,6 +206,7 @@ __all__ = [
     "query_index",
     "reindex_all",
     "require_entry_read",
+    "require_entry_revision_write",
     "require_entry_write",
     "require_form_read",
     "require_form_write",
