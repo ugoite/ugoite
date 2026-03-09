@@ -36,6 +36,7 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
+RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
@@ -93,12 +94,14 @@ REQUIRED_RELEASE_CI_PERMISSIONS = {
     "pull-requests": "write",
 }
 REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS = {
-    "secrets.RELEASE_PLEASE_TOKEN",
-    "secrets.GITHUB_TOKEN",
+    "secrets.RELEASE_PLEASE_TOKEN != ''",
+    "secrets.RELEASE_PLEASE_TOKEN == ''",
+    "SKIP_NO_RELEASE_PLEASE_TOKEN",
 }
 REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
-    "Allow GitHub Actions to create and approve pull requests",
     "RELEASE_PLEASE_TOKEN",
+    "no-op cleanly",
+    "bootstrap-sha",
     "0.0.1",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
@@ -737,7 +740,11 @@ def _collect_release_ci_requirement_details() -> list[str]:
 
     release_ci_steps = _collect_workflow_step_names(RELEASE_CI_WORKFLOW_PATH)
     missing_steps = sorted(
-        {"Print release auth path", "Run release-please"}.difference(release_ci_steps),
+        {
+            "Print release auth path",
+            "Run release-please",
+            "Skip release-please without dedicated token",
+        }.difference(release_ci_steps),
     )
     missing_token_fragments = sorted(
         fragment
@@ -745,8 +752,10 @@ def _collect_release_ci_requirement_details() -> list[str]:
         if fragment not in workflow_text
     )
 
+    release_config = _load_json_mapping(RELEASE_CONFIG_PATH)
     manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
     package_data = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    bootstrap_sha = str(release_config.get("bootstrap-sha", "")).strip()
     manifest_version = str(manifest.get(".", ""))
     package_version = str(package_data.get("version", ""))
 
@@ -769,6 +778,10 @@ def _collect_release_ci_requirement_details() -> list[str]:
         (
             bool(missing_token_fragments),
             "release-ci missing token fragments: " + ", ".join(missing_token_fragments),
+        ),
+        (
+            not bootstrap_sha,
+            "release-please-config.json must define non-empty bootstrap-sha",
         ),
         (
             manifest_version != "0.0.1",
