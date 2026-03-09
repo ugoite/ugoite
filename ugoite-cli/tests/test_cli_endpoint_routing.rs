@@ -180,7 +180,6 @@ fn test_cli_config_set_and_show() {
 fn test_space_list_uses_remote_endpoint_when_backend_mode() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let root = dir.path().to_string_lossy().to_string();
 
     // Set to backend mode with an unreachable URL
     Command::new(ugoite_bin())
@@ -198,7 +197,7 @@ fn test_space_list_uses_remote_endpoint_when_backend_mode() {
 
     // Space list should attempt to contact backend (and fail since it's unreachable)
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
+        .args(["space", "list"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -220,7 +219,6 @@ fn test_space_list_uses_remote_endpoint_when_backend_mode() {
 fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let root = dir.path().to_string_lossy().to_string();
     let (base_url, request_rx, server_handle) = spawn_recording_server(
         "HTTP/1.1 201 Created",
         r#"{"id":"my-space","name":"my-space"}"#,
@@ -241,7 +239,7 @@ fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
     assert!(set_output.status.success());
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "my-space"])
+        .args(["create-space", "my-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -270,7 +268,6 @@ fn test_create_space_req_api_001_routes_to_backend_post_spaces() {
 fn test_create_space_req_api_001_routes_to_api_post_spaces() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let root = dir.path().to_string_lossy().to_string();
     let (base_url, request_rx, server_handle) = spawn_recording_server(
         "HTTP/1.1 201 Created",
         r#"{"id":"api-space","name":"api-space"}"#,
@@ -284,7 +281,7 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
     assert!(set_output.status.success());
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "api-space"])
+        .args(["create-space", "api-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -313,7 +310,6 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
 fn test_space_list_req_sto_004_returns_remote_json_without_panicking() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let root = dir.path().to_string_lossy().to_string();
     let (base_url, server_handle) =
         spawn_json_server(r#"[{"id":"remote-space","name":"Remote Space"}]"#);
 
@@ -332,7 +328,7 @@ fn test_space_list_req_sto_004_returns_remote_json_without_panicking() {
     assert!(set_output.status.success());
 
     let output = Command::new(ugoite_bin())
-        .args(["space", "list", &root])
+        .args(["space", "list"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -354,12 +350,96 @@ fn test_space_list_req_sto_004_returns_remote_json_without_panicking() {
     assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
 }
 
+/// REQ-STO-010: Core-mode commands require an explicit local root, while backend mode does not.
+#[test]
+fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let core_output = Command::new(ugoite_bin())
+        .args(["create-space", "local-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(
+        !core_output.status.success(),
+        "create-space should fail in core mode without --root"
+    );
+    let stderr = String::from_utf8_lossy(&core_output.stderr);
+    assert!(
+        stderr.contains("create-space requires --root <LOCAL_ROOT> in core mode"),
+        "{stderr}"
+    );
+}
+
+/// REQ-STO-010: Space list accepts backend mode without a local root argument.
+#[test]
+fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, server_handle) =
+        spawn_json_server(r#"[{"id":"remote-space","name":"Remote Space"}]"#);
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "list"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("JSON");
+    assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
+}
+
+/// REQ-STO-010: Entry and form help describe the shared space identifier argument.
+#[test]
+fn test_entry_and_form_list_req_sto_010_use_space_id_or_path_help() {
+    let entry_help = Command::new(ugoite_bin())
+        .args(["entry", "list", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(entry_help.status.success());
+    let entry_stdout = String::from_utf8_lossy(&entry_help.stdout);
+    assert!(entry_stdout.contains("SPACE_ID_OR_PATH"), "{entry_stdout}");
+    assert!(!entry_stdout.contains("SPACE_PATH"), "{entry_stdout}");
+
+    let form_help = Command::new(ugoite_bin())
+        .args(["form", "list", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(form_help.status.success());
+    let form_stdout = String::from_utf8_lossy(&form_help.stdout);
+    assert!(form_stdout.contains("SPACE_ID_OR_PATH"), "{form_stdout}");
+    assert!(!form_stdout.contains("SPACE_PATH"), "{form_stdout}");
+}
+
 /// REQ-SEC-003: Service account create routes to backend when in backend mode.
 #[test]
 fn test_space_service_account_create_routes_to_backend() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
-    let root = dir.path().to_string_lossy().to_string();
 
     // Set to backend mode with an unreachable URL
     Command::new(ugoite_bin())
@@ -380,9 +460,11 @@ fn test_space_service_account_create_routes_to_backend() {
         .args([
             "space",
             "service-account-create",
-            &root,
             "my-space",
+            "--display-name",
             "sa-name",
+            "--scopes",
+            "spaces:read",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

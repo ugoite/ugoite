@@ -28,7 +28,7 @@ fn test_create_space_scaffolding() {
     let config_path = dir.path().join("cli-config.json");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "my-space"])
+        .args(["create-space", "--root", &root, "my-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -53,7 +53,7 @@ fn test_create_space_req_sto_003_permissions() {
     let config_path = dir.path().join("cli-config.json");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "private-space"])
+        .args(["create-space", "--root", &root, "private-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -84,7 +84,7 @@ fn test_create_space_s3_unimplemented() {
 
     // Attempting to use s3:// path should fail gracefully
     let output = Command::new(ugoite_bin())
-        .args(["create-space", "s3://my-bucket", "my-space"])
+        .args(["create-space", "--root", "s3://my-bucket", "my-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -107,14 +107,14 @@ fn test_create_space_idempotency() {
 
     // Create space first time
     Command::new(ugoite_bin())
-        .args(["create-space", &root, "idempotent-space"])
+        .args(["create-space", "--root", &root, "idempotent-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
 
     // Second creation should fail with "already exists" error
     let output2 = Command::new(ugoite_bin())
-        .args(["create-space", &root, "idempotent-space"])
+        .args(["create-space", "--root", &root, "idempotent-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -138,7 +138,7 @@ fn test_create_sample_space_req_api_009() {
     let config_path = dir.path().join("cli-config.json");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", &root, "sample-space"])
+        .args(["create-space", "--root", &root, "sample-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

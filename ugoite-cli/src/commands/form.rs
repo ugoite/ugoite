@@ -15,14 +15,28 @@ pub struct FormCmd {
 #[derive(Subcommand)]
 pub enum FormSubCmd {
     /// List forms
-    List { space_path: String },
+    List {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// Get a form
     Get {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         form_name: String,
     },
     /// Upsert a form from a JSON file
     Update {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         form_file: String,
         #[arg(long)]
