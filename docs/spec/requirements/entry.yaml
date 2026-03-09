@@ -209,6 +209,7 @@ requirements:
     - file: ugoite-core/tests/test_entry.rs
       tests:
       - test_entry_req_entry_005_entry_history_append
+      - test_entry_req_entry_005_revision_content_renders_requested_revision_sections
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
