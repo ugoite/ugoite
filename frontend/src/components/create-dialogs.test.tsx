@@ -379,7 +379,9 @@ describe("CreateEntryDialog", () => {
 		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
 
 		expect(
-			screen.getByText("After creation, edit attributes under Markdown `## field name` headings."),
+			screen.getByText(
+				"Fill attributes in the form below. Required fields must be completed before creation.",
+			),
 		).toBeInTheDocument();
 		expect(
 			screen.getByText('Use "- item" or one value per line for list fields.'),
@@ -393,6 +395,9 @@ describe("CreateEntryDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
 		expect(
+			screen.getByText("After creation, edit attributes under Markdown `## field name` headings."),
+		).toBeInTheDocument();
+		expect(
 			screen.getByText(
 				"Markdown content is saved as-is (the backend validates frontmatter/form consistency).",
 			),
@@ -400,6 +405,44 @@ describe("CreateEntryDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
 		expect(screen.getByText("Chat asks for required fields one at a time.")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-053: keeps web-form guidance free of Markdown-only instructions", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Localized Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		expect(
+			screen.getByText(
+				"Fill attributes in the form below. Required fields must be completed before creation.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("After creation, edit attributes under Markdown `## field name` headings."),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+		expect(
+			screen.getByText("After creation, edit attributes under Markdown `## field name` headings."),
+		).toBeInTheDocument();
 	});
 
 	it("REQ-FE-037: keeps user-edited markdown when title changes", async () => {
