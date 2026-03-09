@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
+import { formatDateLabel } from "~/lib/date-format";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
@@ -194,9 +195,7 @@ export default function SpaceEntriesIndexPane() {
 											<span class="ui-pill">{entry.form}</span>
 										</Show>
 									</div>
-									<p class="mt-2 text-xs ui-muted">
-										Updated {new Date(entry.updated_at).toLocaleDateString()}
-									</p>
+									<p class="mt-2 text-xs ui-muted">Updated {formatDateLabel(entry.updated_at)}</p>
 								</button>
 							)}
 						</For>
