@@ -79,11 +79,15 @@ Use MCP resources (and future explicit tools) without sandboxed execution. The
 - Offline access is important for productivity
 
 **Decision**: 
-Use fsspec/OpenDAL for storage abstraction:
+Use the shared Rust storage abstraction as the canonical runtime I/O boundary.
+In the current architecture this is implemented by `ugoite-minimum` plus the
+OpenDAL-backed adapter layer in `ugoite-core`.
 - Default: local filesystem
 - Optional: S3, GCS, Azure Blob
 - No required cloud services
 - Data format: JSON + Markdown (human-readable)
+- Historical note: early Python prototypes used `fsspec`, but `fsspec` is no
+  longer part of the active runtime storage architecture
 
 **Consequences**:
 - (+) User owns their data completely
@@ -193,5 +197,8 @@ adapter plus the current server-oriented integrations.
 - (+) Clearer boundary between portable logic and runtime adapters
 - (+) Smaller foundation for future WebAssembly/browser targets
 - (+) Existing backend/CLI behavior can stay stable while migration proceeds
+- (+) Makes the storage transition status explicit: the runtime path is already
+  OpenDAL-backed, while the remaining migration work is about moving more logic
+  behind `ugoite-minimum`
 - (-) More crate and CI wiring to maintain
 - (-) Migration is incremental until more modules move behind the abstraction

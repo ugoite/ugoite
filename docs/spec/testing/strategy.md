@@ -196,7 +196,8 @@ form `req_xxx_001`. The `feature` segment should reflect the domain under test
 ## Mocking Strategy
 
 ### Backend
-- Memory filesystem via fsspec `memory://` protocol
+- Shared storage abstraction via the `memory://` backend (through
+  `ugoite-core`'s OpenDAL-backed adapter layer)
 - No external service mocks needed
 
 ### Frontend
