@@ -77,3 +77,7 @@ run = "bash scripts/local-smoke-check.sh"
 [tasks."cleanup:ports"]
 description = "Kill stale local dev servers on standard ports"
 run = "bash scripts/cleanup-dev-ports.sh"
+
+[tasks."cleanup:rust-targets"]
+description = "Remove shared and legacy Rust target caches"
+run = "bash scripts/cleanup-rust-targets.sh"

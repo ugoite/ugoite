@@ -27,7 +27,7 @@ Ugoite is a knowledge management system built on three core principles:
 | Frontend | Bun + SolidStart + TailwindCSS |
 | Backend | Python 3.12+ (FastAPI) |
 | Core | Rust (ugoite-core via pyo3 bindings) |
-| Storage | fsspec/OpenDAL + Apache Iceberg |
+| Storage | OpenDAL + Apache Iceberg |
 | AI Interface | MCP (resource-first integration) |
 
 ---
@@ -76,6 +76,13 @@ Start development (backend + frontend + docsite — auth is bootstrapped automat
 
 ```bash
 mise run dev
+```
+
+If Rust build artifacts grow unexpectedly during local development, clear the
+shared Rust target cache and the legacy ugoite-core cache path:
+
+```bash
+mise run cleanup:rust-targets
 ```
 
 If you need to rotate/refresh token manually, run:
