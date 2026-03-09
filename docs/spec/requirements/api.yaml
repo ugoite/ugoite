@@ -40,6 +40,10 @@ requirements:
       - test_list_spaces
       - test_get_space
       - test_get_space_not_found
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
+      tests:
+      - test_create_space_req_api_001_routes_to_backend_post_spaces
+      - test_create_space_req_api_001_routes_to_api_post_spaces
     vitest:
     - file: frontend/src/lib/client.test.ts
       tests:
