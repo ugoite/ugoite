@@ -20,20 +20,45 @@ def _read_text(path: Path) -> str:
 
 
 def test_docs_req_ops_014_cli_language_is_consistent() -> None:
-    """REQ-OPS-014: ugoite-cli must stay classified as Rust across docs and SBOM metadata."""
+    """REQ-OPS-014: ugoite-cli stays classified as Rust in docs and SBOM metadata."""
     cargo_text = _read_text(CLI_CARGO_PATH)
     index_text = _read_text(INDEX_PATH)
     stack_text = _read_text(STACK_PATH)
     security_text = _read_text(SECURITY_PATH)
     sbom_workflow = _read_text(SBOM_WORKFLOW_PATH)
 
-    assert 'name = "ugoite-cli"' in cargo_text
-    assert (
-        "| `ugoite-cli` | Command-line interface for direct user interaction | Rust |"
-        in index_text
-    )
-    assert "### ugoite-cli (Rust)" in stack_text
-    assert "- Rust projects (`ugoite-core`, `ugoite-cli`)" in security_text
-    assert "- Python projects (`backend`)" in security_text
-    assert "ugoite-cli-rust.cdx.json" in sbom_workflow
-    assert "ugoite-cli-python.cdx.json" not in sbom_workflow
+    details = [
+        f"{name} missing expected fragment: {fragment!r}"
+        for name, text, fragment in (
+            ("ugoite-cli/Cargo.toml", cargo_text, 'name = "ugoite-cli"'),
+            (
+                "docs/spec/index.md",
+                index_text,
+                "| `ugoite-cli` | Command-line interface for direct user "
+                "interaction | Rust |",
+            ),
+            ("docs/spec/architecture/stack.md", stack_text, "### ugoite-cli (Rust)"),
+            (
+                "docs/spec/security/overview.md",
+                security_text,
+                "- Rust projects (`ugoite-core`, `ugoite-cli`)",
+            ),
+            (
+                "docs/spec/security/overview.md",
+                security_text,
+                "- Python projects (`backend`)",
+            ),
+            (
+                ".github/workflows/sbom-ci.yml",
+                sbom_workflow,
+                "ugoite-cli-rust.cdx.json",
+            ),
+        )
+        if fragment not in text
+    ]
+    if "ugoite-cli-python.cdx.json" in sbom_workflow:
+        details.append(
+            ".github/workflows/sbom-ci.yml must not classify ugoite-cli as Python",
+        )
+    if details:
+        raise AssertionError("; ".join(details))
