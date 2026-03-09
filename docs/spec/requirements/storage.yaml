@@ -280,7 +280,9 @@ requirements:
 
     Backend MUST operate correctly across multiple storage implementations
 
-    (at least local/file and memory) using the shared library.
+    (at least OpenDAL `fs://` and `memory://` backends) using the shared
+
+    library.
 
     '
   related_spec:

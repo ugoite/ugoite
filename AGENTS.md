@@ -7,7 +7,7 @@
 **Core Principles**: Low Cost, Easy, Freedom
 
 **Key Architecture**:
-- Storage: `fsspec`-based (not traditional DB)
+- Storage: shared Rust/OpenDAL abstraction (not traditional DB)
 - AI Interface: MCP with resource-first integration
 - Stack: SolidStart (Bun) + FastAPI (Python 3.12+) + Rust (ugoite-core/ugoite-cli) + uv
 - Data Model: Markdown sections as structured fields

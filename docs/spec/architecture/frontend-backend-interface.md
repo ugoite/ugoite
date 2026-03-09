@@ -52,8 +52,8 @@ and responsibility boundaries.
 - The fsspec-to-OpenDAL runtime transition is complete. Remaining Milestone 3
   work is about continuing to extract portable logic into `ugoite-minimum`, not
   about maintaining two active runtime storage stacks.
-- Backend tests must cover local/file and `memory://` style backends via the
-  shared core bindings.
+- Backend tests must cover OpenDAL `fs://` (local filesystem) and `memory://`
+  backends via the shared core bindings.
 
 ## Error Handling Standards
 
