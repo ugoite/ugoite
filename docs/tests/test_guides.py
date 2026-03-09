@@ -8,7 +8,9 @@ REQ-OPS-007: Docsite quality parity must be enforced in pre-commit and CI.
 REQ-OPS-008: PR template validation rules must be enforced in CI.
 REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
+REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
+REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
+ALL_TESTS_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "all-tests-ci.yml"
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -48,10 +51,13 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
+UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
+RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
@@ -73,6 +79,7 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
     "cargo-clippy",
@@ -123,6 +130,13 @@ REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
 REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "/api/*",
     "waits for `http://localhost:8000/health`",
+}
+REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
+REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
+    "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
+    "exclude release/publish automation",
+    "Release CI",
+    "Release Publish",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -458,6 +472,66 @@ def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> Non
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
+    """REQ-OPS-011: Rust target caches must stay bounded and cleanable."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    cli_mise = tomllib.loads(UGOITE_CLI_MISE_PATH.read_text(encoding="utf-8"))
+
+    details = [
+        detail
+        for detail in [
+            _require_shared_target_dir(core_mise, "ugoite-core/mise.toml"),
+            _require_shared_target_dir(cli_mise, "ugoite-cli/mise.toml"),
+            _require_task_contains(
+                core_mise,
+                "build",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "install",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli install task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli test task must clean package-local Rust artifacts",
+            ),
+            _require_exact_task_run(
+                root_mise,
+                "cleanup:rust-targets",
+                ["bash scripts/cleanup-rust-targets.sh"],
+                "root mise must expose cleanup:rust-targets",
+            ),
+            _require_file_contains(
+                RUST_TARGET_CLEANUP_PATH,
+                ["target/rust", ".cache/ugoite/ugoite-core/target"],
+                (
+                    "cleanup-rust-targets.sh must remove shared and legacy "
+                    "Rust target caches"
+                ),
+            ),
+            _require_file_contains(
+                RUST_CI_WORKFLOW_PATH,
+                ["CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust"],
+                "rust-ci.yml must set CARGO_TARGET_DIR to the shared workspace root",
+            ),
+            _require_file_contains(
+                README_PATH,
+                ["mise run cleanup:rust-targets"],
+                "README must document cleanup:rust-targets",
+            ),
+        ]
+        if detail is not None
+    ]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_010_frontend_dev_proxy_readiness_declared() -> None:
     """REQ-OPS-010: Frontend local dev waits for backend readiness before proxying."""
     details = _collect_frontend_dev_proxy_readiness_details()
@@ -572,6 +646,78 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_013_all_tests_status_excludes_release_automation() -> None:
+    """REQ-OPS-013: All Tests Status must exclude release automation workflows."""
+    details = _collect_all_tests_status_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def _collect_all_tests_status_details() -> list[str]:
+    workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "all-tests-ci.yml must define jobs"
+        raise TypeError(message)
+
+    all_tests_job = jobs.get("all-tests-check")
+    if not isinstance(all_tests_job, dict):
+        message = "all-tests-ci.yml must define jobs.all-tests-check"
+        raise TypeError(message)
+
+    steps = all_tests_job.get("steps", [])
+    if not isinstance(steps, list):
+        message = "all-tests-ci.yml jobs.all-tests-check.steps must be a list"
+        raise TypeError(message)
+
+    wait_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("uses") == "int128/wait-for-workflows-action@v1"
+        ),
+        None,
+    )
+    if wait_step is None:
+        return ["all-tests-ci missing wait-for-workflows-action step"]
+
+    with_block = wait_step.get("with", {})
+    if not isinstance(with_block, dict):
+        message = "all-tests-ci wait-for-workflows step must define a with mapping"
+        raise TypeError(message)
+
+    excluded_workflows = with_block.get("exclude-workflow-names", "")
+    if not isinstance(excluded_workflows, str):
+        message = "all-tests-ci exclude-workflow-names must be a multiline string"
+        raise TypeError(message)
+
+    missing_exclusions = sorted(
+        workflow_name
+        for workflow_name in REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS
+        if workflow_name not in excluded_workflows
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_ALL_TESTS_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_exclusions:
+        details.append(
+            "all-tests-ci exclude-workflow-names missing: "
+            + ", ".join(missing_exclusions),
+        )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing All Tests Status fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+    return details
 
 
 def _collect_release_ci_requirement_details() -> list[str]:
@@ -719,6 +865,72 @@ def _collect_pre_commit_hooks(
 
 def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
     return set(_collect_pre_commit_hooks(config))
+
+
+def _get_env_value(config: dict[str, object], key: str) -> str | None:
+    env = config.get("env", {})
+    if not isinstance(env, dict):
+        return None
+    value = env.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _get_task_run_commands(config: dict[str, object], task_name: str) -> list[str]:
+    tasks = config.get("tasks", {})
+    if not isinstance(tasks, dict):
+        return []
+    task = tasks.get(task_name)
+    if not isinstance(task, dict):
+        return []
+    run = task.get("run")
+    if isinstance(run, str):
+        return [run]
+    if isinstance(run, list) and all(isinstance(item, str) for item in run):
+        return list(run)
+    return []
+
+
+def _require_shared_target_dir(
+    config: dict[str, object],
+    label: str,
+) -> str | None:
+    if _get_env_value(config, "CARGO_TARGET_DIR") == REQUIRED_SHARED_RUST_TARGET_DIR:
+        return None
+    return f"{label} must share CARGO_TARGET_DIR=../target/rust"
+
+
+def _require_task_contains(
+    config: dict[str, object],
+    task_name: str,
+    expected: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(expected in command for command in commands):
+        return None
+    return message
+
+
+def _require_exact_task_run(
+    config: dict[str, object],
+    task_name: str,
+    expected: list[str],
+    message: str,
+) -> str | None:
+    if _get_task_run_commands(config, task_name) == expected:
+        return None
+    return message
+
+
+def _require_file_contains(
+    path: Path,
+    expected_snippets: list[str],
+    message: str,
+) -> str | None:
+    file_text = path.read_text(encoding="utf-8")
+    if all(snippet in file_text for snippet in expected_snippets):
+        return None
+    return message
 
 
 def _collect_trigger_paths(workflow: dict[str, object], trigger: str) -> set[str]:
