@@ -792,7 +792,7 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
                 "seed:scenarios",
                 [
                     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- "
-                    "space sample-scenarios"
+                    "space sample-scenarios",
                 ],
                 "root mise must expose seed:scenarios",
             ),
