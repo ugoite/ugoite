@@ -70,6 +70,15 @@ run = "bash e2e/scripts/run-e2e.sh smoke"
 [tasks."e2e:entries"]
 description = "Run entries E2E tests"
 run = "bash e2e/scripts/run-e2e.sh entries"
+
+[tasks.seed]
+description = "Seed a local development space with sample data"
+run = "bash scripts/dev-seed.sh"
+
+[tasks."seed:scenarios"]
+description = "List available sample-data scenarios"
+run = "cargo run -q -p ugoite-cli -- space sample-scenarios"
+
 [tasks."smoke:local"]
 description = "Run quick local backend/frontend smoke checks"
 run = "bash scripts/local-smoke-check.sh"
