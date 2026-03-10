@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { normalizeTimestamp } from "./date-format";
 import type { EntryRecord, SqlSession, SqlSessionRows } from "./types";
 
 export const sqlSessionApi = {
@@ -56,7 +57,11 @@ export const sqlSessionApi = {
 		}
 		const payload = (await res.json()) as Record<string, unknown>;
 		/* v8 ignore start */
-		const rows = (payload.rows ?? []) as EntryRecord[];
+		const rows = ((payload.rows ?? []) as EntryRecord[]).map((row) => {
+			const normalizedRow = { ...row };
+			normalizedRow.updated_at = normalizeTimestamp(row.updated_at);
+			return normalizedRow;
+		});
 		const offsetValue = Number(payload.offset ?? 0);
 		const limitValue = Number(payload.limit ?? 0);
 		const totalCount = Number(payload.total_count ?? payload.totalCount ?? 0);

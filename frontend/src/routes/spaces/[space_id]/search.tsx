@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
+import { formatDateLabel } from "~/lib/date-format";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import { sqlApi } from "~/lib/sql-api";
 import type { SqlEntry } from "~/lib/types";
@@ -120,7 +121,7 @@ export default function SpaceSearchRoute() {
 												: "Ready"}
 									</span>
 								</div>
-								<p class="mt-2 text-xs ui-muted">Updated {entry.updated_at}</p>
+								<p class="mt-2 text-xs ui-muted">Updated {formatDateLabel(entry.updated_at)}</p>
 							</button>
 						)}
 					</For>
