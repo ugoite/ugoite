@@ -7,11 +7,12 @@ type SqlMutationResponse = {
 	revisionId: string;
 };
 
-const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => ({
-	...entry,
-	["created_at"]: normalizeTimestamp(entry.created_at),
-	["updated_at"]: normalizeTimestamp(entry.updated_at),
-});
+const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => {
+	const normalizedEntry = { ...entry };
+	normalizedEntry.created_at = normalizeTimestamp(entry.created_at);
+	normalizedEntry.updated_at = normalizeTimestamp(entry.updated_at);
+	return normalizedEntry;
+};
 
 export const sqlApi = {
 	async list(spaceId: string): Promise<SqlEntry[]> {
