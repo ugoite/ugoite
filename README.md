@@ -78,6 +78,24 @@ Start development (backend + frontend + docsite — `automatic` auth mode is the
 mise run dev
 ```
 
+Seed a local demo space with sample data:
+
+```bash
+mise run seed
+```
+
+Override the default space, scenario, entry count, or RNG seed when you need a
+different local dataset:
+
+```bash
+UGOITE_SEED_SPACE_ID=ux-demo UGOITE_SEED_SCENARIO=supply-chain \
+UGOITE_SEED_ENTRY_COUNT=25 UGOITE_SEED_VALUE=42 mise run seed
+mise run seed:scenarios
+```
+
+The seed task wraps the existing Rust CLI sample-data command and refuses to
+overwrite an existing local space, so repeated runs stay predictable.
+
 If Rust build artifacts grow unexpectedly during local development, clear the
 shared Rust target cache and the legacy ugoite-core cache path:
 
@@ -91,6 +109,7 @@ If you need to rotate/refresh the automatic token manually, run:
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
+<<<<<<< HEAD
 To opt into explicit manual modes instead of the default automatic bootstrap:
 
 ```bash
@@ -98,7 +117,7 @@ UGOITE_DEV_AUTH_MODE=manual-totp UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${U
 UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
 ```
 
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the automatic flow, manual TOTP + `oathtool` steps, and the mock OAuth-style local mode.
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the automatic flow, manual TOTP + `oathtool` steps, and the mock OAuth-style local mode. See [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind `mise run seed`.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.

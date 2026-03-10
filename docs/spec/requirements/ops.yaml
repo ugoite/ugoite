@@ -541,3 +541,40 @@ requirements:
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-016
+  title: Local Dev Sample-Data Seeding Workflow
+  description: 'The repository MUST expose a root developer workflow for loading
+
+    local sample data without requiring contributors to memorize the lower-level
+
+    CLI invocation. The workflow MUST document safe defaults, override controls,
+
+    and the underlying scenario-listing command so seeded dev spaces stay
+
+    discoverable and predictable.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_016_dev_seed_workflow_is_declared
