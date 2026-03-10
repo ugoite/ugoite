@@ -13,7 +13,8 @@ import ugoite_core
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
-from app.core.security import _load_response_hmac_material, _space_hmac_path
+from app.core.security import build_response_signature
+from app.core.storage import storage_config_from_root
 from app.main import app
 
 
@@ -1077,99 +1078,40 @@ def test_middleware_hmac_signature_for_space_route(
     assert response.headers["X-Ugoite-Signature"] == expected_signature
 
 
-def test_hmac_path_rejects_invalid_space_id(temp_space_root: Path) -> None:
-    """REQ-INT-003: HMAC path resolution must reject unsafe space identifiers."""
-    with pytest.raises(ValueError, match="Invalid space_id"):
-        _space_hmac_path(temp_space_root, "../escape")
-
-
-def test_hmac_path_rejects_symlink_escape(temp_space_root: Path) -> None:
-    """REQ-INT-003: HMAC path resolution must reject symlink escapes."""
-    spaces_dir = temp_space_root / "spaces"
-    spaces_dir.mkdir(parents=True, exist_ok=True)
-    outside_dir = temp_space_root / "outside"
-    outside_dir.mkdir(parents=True, exist_ok=True)
-    (spaces_dir / "linked").symlink_to(outside_dir, target_is_directory=True)
-
-    with pytest.raises(ValueError, match="escapes root"):
-        _space_hmac_path(temp_space_root, "linked")
-
-
-def test_load_response_hmac_material_recovers_after_decode_retries(
+def test_build_response_signature_uses_ugoite_core_storage_abstraction(
     temp_space_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-INT-003: loader retries transient JSON decode races before fallback read."""
-    path = _space_hmac_path(temp_space_root, "default")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "hmac_key_id": "retry-key",
-        "hmac_key": base64.b64encode(b"x" * 32).decode("ascii"),
-        "last_rotation": "2025-01-01T00:00:00+00:00",
-    }
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    """REQ-STO-001: backend response signing delegates HMAC storage I/O.
 
-    original_read_text = Path.read_text
-    calls = 0
+    The backend stays thin by routing the operation through ugoite-core.
+    """
+    captured: dict[str, object] = {}
 
-    def _flaky_read_text(self: Path, *, encoding: str = "utf-8") -> str:
-        nonlocal calls
-        if self == path:
-            calls += 1
-            if calls <= 3:
-                return "{"
-        return original_read_text(self, encoding=encoding)
+    async def _fake_build_response_signature(
+        storage_config: dict[str, str],
+        body: bytes,
+        space_id: str,
+    ) -> tuple[str, str]:
+        captured["storage_config"] = storage_config
+        captured["body"] = body
+        captured["space_id"] = space_id
+        return ("delegated-key", "delegated-signature")
 
-    monkeypatch.setattr(Path, "read_text", _flaky_read_text)
-    monkeypatch.setattr("app.core.security.time.sleep", lambda _: None)
-
-    key_id, secret = _load_response_hmac_material(temp_space_root, "default")
-
-    assert calls == 4
-    assert key_id == "retry-key"
-    assert secret == b"x" * 32
-
-
-def test_load_response_hmac_material_rejects_missing_hmac_key(
-    temp_space_root: Path,
-) -> None:
-    """REQ-INT-003: loader must reject payloads without hmac_key."""
-    path = _space_hmac_path(temp_space_root, "default")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "hmac_key_id": "missing-key",
-                "last_rotation": "2025-01-01T00:00:00+00:00",
-            },
-        ),
-        encoding="utf-8",
+    monkeypatch.setattr(
+        ugoite_core,
+        "build_response_signature",
+        _fake_build_response_signature,
     )
 
-    with pytest.raises(ValueError, match="Missing hmac_key"):
-        _load_response_hmac_material(temp_space_root, "default")
-
-
-def test_load_response_hmac_material_defaults_missing_key_id(
-    temp_space_root: Path,
-) -> None:
-    """REQ-INT-003: loader defaults key id when hmac_key_id is absent."""
-    path = _space_hmac_path(temp_space_root, "default")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "hmac_key": base64.b64encode(b"y" * 32).decode("ascii"),
-                "last_rotation": "2025-01-01T00:00:00+00:00",
-            },
-        ),
-        encoding="utf-8",
+    key_id, signature = asyncio.run(
+        build_response_signature(b"payload", temp_space_root, "demo-space"),
     )
 
-    key_id, secret = _load_response_hmac_material(temp_space_root, "default")
-
-    assert key_id == "default"
-    assert secret == b"y" * 32
+    assert (key_id, signature) == ("delegated-key", "delegated-signature")
+    assert captured["storage_config"] == storage_config_from_root(temp_space_root)
+    assert captured["body"] == b"payload"
+    assert captured["space_id"] == "demo-space"
 
 
 def test_middleware_signs_non_streaming_mcp_prefixed_paths(
@@ -1316,7 +1258,7 @@ from app.core.middleware import (
     _emit_audit_event,
     security_middleware,
 )
-from app.core.storage import _ensure_local_root, storage_config_from_root
+from app.core.storage import _ensure_local_root
 from app.mcp.server import _context_headers, list_entries
 
 

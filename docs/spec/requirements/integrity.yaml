@@ -95,8 +95,9 @@ requirements:
       tests:
       - test_middleware_hmac_signature
       - test_middleware_hmac_signature_for_space_route
-      - test_hmac_path_rejects_invalid_space_id
-      - test_hmac_path_rejects_symlink_escape
-      - test_load_response_hmac_material_recovers_after_decode_retries
-      - test_load_response_hmac_material_rejects_missing_hmac_key
-      - test_load_response_hmac_material_defaults_missing_key_id
+    - file: ugoite-core/tests/test_integrity.rs
+      tests:
+      - test_response_hmac_material_is_space_scoped
+      - test_response_hmac_material_rejects_invalid_space_id
+      - test_response_hmac_material_defaults_missing_key_id
+      - test_response_hmac_material_rejects_missing_hmac_key
