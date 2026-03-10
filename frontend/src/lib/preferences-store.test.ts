@@ -80,4 +80,67 @@ describe("preferencesStore", () => {
 		expect(localStorage.getItem("ugoite-color-mode")).toBe("dark");
 		expect(localStorage.getItem("ugoite-primary-color")).toBe("blue");
 	});
+
+	it("REQ-FE-059: migrates missing primary color from local fallback", async () => {
+		localStorage.setItem("ugoite-ui-theme", "classic");
+		localStorage.setItem("ugoite-color-mode", "dark");
+		localStorage.setItem("ugoite-primary-color", "amber");
+		seedPreferences({
+			ui_theme: "classic",
+			color_mode: "dark",
+			primary_color: null,
+		});
+
+		const { initializePortablePreferences } = await import("./preferences-store");
+		await initializePortablePreferences();
+
+		const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
+		expectedPatch.primary_color = "amber";
+		expect(getPreferencePatches()).toContainEqual(expectedPatch);
+	});
+
+	it("REQ-FE-003: reuses an in-flight portable preferences initialization", async () => {
+		let requestCount = 0;
+		const { server } = await import("~/test/mocks/server");
+		const { http, HttpResponse, delay } = await import("msw");
+		server.use(
+			http.get("http://localhost:3000/api/preferences/me", async () => {
+				requestCount += 1;
+				await delay(50);
+				return HttpResponse.json({ selected_space_id: "space-remote" });
+			}),
+		);
+
+		const { initializePortablePreferences, portablePreferences } = await import(
+			"./preferences-store"
+		);
+		await Promise.all([initializePortablePreferences(), initializePortablePreferences()]);
+
+		expect(requestCount).toBe(1);
+		expect(portablePreferences().selected_space_id).toBe("space-remote");
+	});
+
+	it("REQ-FE-003: returns cached portable preferences after initialization", async () => {
+		seedPreferences({ selected_space_id: "space-remote" });
+
+		const { initializePortablePreferences, portablePreferences } = await import(
+			"./preferences-store"
+		);
+		await initializePortablePreferences();
+		const preferences = await initializePortablePreferences();
+
+		expect(preferences).toEqual(portablePreferences());
+		expect(preferences.selected_space_id).toBe("space-remote");
+	});
+
+	it("REQ-FE-003: skips empty portable preference patches", async () => {
+		const { initializePortablePreferences, patchPortablePreferences, portablePreferences } =
+			await import("./preferences-store");
+		await initializePortablePreferences();
+
+		const preferences = await patchPortablePreferences({});
+
+		expect(preferences).toEqual(portablePreferences());
+		expect(getPreferencePatches()).toEqual([]);
+	});
 });

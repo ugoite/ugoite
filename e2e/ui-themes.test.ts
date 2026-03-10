@@ -50,7 +50,9 @@ test.describe("UI theme flows", () => {
 
 				await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
 
-				const settingsButton = page.getByRole("button", { name: "Theme settings" });
+				const settingsButton = page
+					.locator("button[aria-label='Theme settings']:visible")
+					.first();
 				await settingsButton.click();
 				await page.getByRole("radio", { name: new RegExp(`^${theme}$`, "i") }).click();
 				await page.getByRole("radio", { name: "light" }).click();

@@ -5,17 +5,23 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 import ugoite_core
-from fastapi.testclient import TestClient
+
+if TYPE_CHECKING:
+    import pytest
+    from fastapi.testclient import TestClient
 
 
 def test_preferences_me_roundtrip(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-API-001: /preferences/me stores portable preferences under hashed user paths."""
+    """REQ-API-001: /preferences/me stores portable preferences.
+
+    User paths are hashed rather than embedding raw user IDs.
+    """
     response = test_client.get("/preferences/me")
     assert response.status_code == 200
     assert response.json() == {
