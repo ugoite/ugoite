@@ -16,7 +16,7 @@
 		"validate": "bun run lint && bun run format:check && bun run typecheck && bun run test:validation"
 	},
 	"dependencies": {
-		"@astrojs/check": "^0.9.6",
+		"@astrojs/check": "^0.9.7",
 		"@tailwindcss/vite": "^4.2.1",
 		"astro": "^5.18.0",
 		"marked": "^17.0.4",
