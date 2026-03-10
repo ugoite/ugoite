@@ -1286,3 +1286,55 @@ requirements:
       tests:
       - 'REQ-FE-053: renders English editor guidance and type warnings'
       - 'REQ-FE-053: renders Japanese editor guidance without mixed-language examples'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-054
+  title: Timestamp Normalization in Query and Entry Lists
+  description: 'Frontend data clients and list views MUST normalize Unix-second timestamps
+
+    from backend responses before rendering saved queries or entry collections. Query
+
+    and entry list surfaces MUST show human-readable updated dates instead of raw epoch
+
+    values or 1970 fallback dates.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  - requirements/api.yaml
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - 'REQ-FE-054: entryApi normalizes unix-second timestamps for entry lists'
+    - file: frontend/src/lib/sql-api.test.ts
+      tests:
+      - 'REQ-FE-054: sqlApi normalizes unix-second timestamps for saved queries'
+    - file: frontend/src/lib/sql-session-api.test.ts
+      tests:
+      - 'REQ-FE-054: sqlSessionApi normalizes unix-second timestamps for session rows'
+    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
+      tests:
+      - 'REQ-FE-054: renders human-readable updated dates in query search results'
+    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+      tests:
+      - 'REQ-FE-054: renders human-readable updated dates for query result cards'
+    - file: frontend/src/lib/date-format.test.ts
+      tests:
+      - 'REQ-FE-054: normalizeTimestamp converts unix-second timestamps from numbers and numeric strings'
+      - 'REQ-FE-054: normalizeTimestamp handles millisecond timestamps and trimmed string inputs'
+      - 'REQ-FE-054: normalizeTimestamp falls back to string output for missing or invalid numeric inputs'
+      - 'REQ-FE-054: formatDateLabel renders valid timestamps as locale dates'
+      - 'REQ-FE-054: formatDateLabel falls back to trimmed text or em dash'

@@ -1,9 +1,17 @@
 import { apiFetch } from "./api";
+import { normalizeTimestamp } from "./date-format";
 import type { SqlCreatePayload, SqlEntry, SqlUpdatePayload } from "./types";
 
 type SqlMutationResponse = {
 	id: string;
 	revisionId: string;
+};
+
+const normalizeSqlEntry = (entry: SqlEntry): SqlEntry => {
+	const normalizedEntry = { ...entry };
+	normalizedEntry.created_at = normalizeTimestamp(entry.created_at);
+	normalizedEntry.updated_at = normalizeTimestamp(entry.updated_at);
+	return normalizedEntry;
 };
 
 export const sqlApi = {
@@ -12,7 +20,7 @@ export const sqlApi = {
 		if (!res.ok) {
 			throw new Error(`Failed to list saved SQL: ${res.statusText}`);
 		}
-		return (await res.json()) as SqlEntry[];
+		return ((await res.json()) as SqlEntry[]).map(normalizeSqlEntry);
 	},
 
 	async get(spaceId: string, sqlId: string): Promise<SqlEntry> {
@@ -22,7 +30,7 @@ export const sqlApi = {
 		if (!res.ok) {
 			throw new Error(`Failed to get saved SQL: ${res.statusText}`);
 		}
-		return (await res.json()) as SqlEntry;
+		return normalizeSqlEntry((await res.json()) as SqlEntry);
 	},
 
 	async create(spaceId: string, payload: SqlCreatePayload): Promise<SqlMutationResponse> {

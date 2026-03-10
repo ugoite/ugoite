@@ -62,7 +62,7 @@ export function SearchBar(props: SearchBarProps) {
 
 	return (
 		<div class="search-bar">
-			<form class="relative" role="search">
+			<search class="relative">
 				<div class="relative flex items-center">
 					{/* Search Icon */}
 					<svg
@@ -110,7 +110,7 @@ export function SearchBar(props: SearchBarProps) {
 						</button>
 					</Show>
 				</div>
-			</form>
+			</search>
 
 			{/* Status Messages */}
 			<div class="mt-2 text-sm">

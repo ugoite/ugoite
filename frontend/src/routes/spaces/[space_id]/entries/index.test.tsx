@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { http, HttpResponse } from "msw";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import SpaceEntriesIndexPane from "./index";
 import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
@@ -9,6 +10,7 @@ import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { createMemo, createSignal } from "solid-js";
 import type { Form } from "~/lib/types";
+import { server } from "~/test/mocks/server";
 
 const navigateMock = vi.fn();
 const searchParamsMock: Record<string, string> = {};
@@ -114,5 +116,68 @@ describe("/spaces/:space_id/entries", () => {
 
 		const gridTab = await screen.findByRole("link", { name: "grid" });
 		expect(gridTab).toHaveAttribute("href", "/spaces/default/forms");
+	});
+
+	it("REQ-FE-054: renders human-readable updated dates for query result cards", async () => {
+		searchParamsMock.session = "session-1";
+		server.use(
+			http.get("http://localhost:3000/api/spaces/default/sql-sessions/session-1", () =>
+				HttpResponse.json({
+					id: "session-1",
+					space_id: "default",
+					sql_id: "query-1",
+					sql: "SELECT 1",
+					status: "ready",
+					created_at: "2026-03-01T00:00:00Z",
+					expires_at: "2026-03-01T01:00:00Z",
+				}),
+			),
+			http.get("http://localhost:3000/api/spaces/default/sql-sessions/session-1/rows", () =>
+				HttpResponse.json({
+					rows: [
+						{
+							id: "query-entry",
+							title: "Query Entry",
+							form: "Meeting",
+							updated_at: 1772960822.056,
+							properties: {},
+							tags: [],
+							links: [],
+						},
+					],
+					offset: 0,
+					limit: 24,
+					total_count: 1,
+				}),
+			),
+		);
+
+		render(() => {
+			const entryStore = createEntryStore(() => "default");
+			const spaceStore = createSpaceStore();
+			const [forms] = createSignal<Form[]>([]);
+			const [loadingForms] = createSignal(false);
+			const [columnTypes] = createSignal<string[]>([]);
+			return (
+				<EntriesRouteContext.Provider
+					value={{
+						spaceStore,
+						spaceId: () => "default",
+						entryStore,
+						forms: createMemo(() => forms()),
+						loadingForms,
+						columnTypes,
+						refetchForms: () => undefined,
+					}}
+				>
+					<SpaceEntriesIndexPane />
+				</EntriesRouteContext.Provider>
+			);
+		});
+
+		const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
+		expect(await screen.findByText("Query Entry")).toBeInTheDocument();
+		expect(await screen.findByText(`Updated ${expectedDate}`)).toBeInTheDocument();
+		expect(screen.queryByText("Updated 1772960822.056")).not.toBeInTheDocument();
 	});
 });

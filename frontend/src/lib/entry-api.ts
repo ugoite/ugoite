@@ -7,7 +7,19 @@ import type {
 	Form,
 } from "./types";
 import { apiFetch } from "./api";
+import { normalizeTimestamp } from "./date-format";
 import { buildEntryMarkdownByMode } from "./entry-input";
+
+const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
+	...entry,
+	updated_at: normalizeTimestamp(entry.updated_at),
+});
+
+const normalizeEntry = (entry: Entry): Entry => ({
+	...entry,
+	created_at: normalizeTimestamp(entry.created_at),
+	updated_at: normalizeTimestamp(entry.updated_at),
+});
 
 /**
  * Entry API client
@@ -19,7 +31,7 @@ export const entryApi = {
 		if (!res.ok) {
 			throw new Error(`Failed to list entries: ${res.statusText}`);
 		}
-		return (await res.json()) as EntryRecord[];
+		return ((await res.json()) as EntryRecord[]).map(normalizeEntryRecord);
 	},
 
 	/** Get a single entry */
@@ -39,7 +51,7 @@ export const entryApi = {
 			}
 			throw new Error(`Failed to get entry: ${detail}`);
 		}
-		return (await res.json()) as Entry;
+		return normalizeEntry((await res.json()) as Entry);
 	},
 
 	/** Create a new entry */
@@ -158,7 +170,7 @@ export const entryApi = {
 		if (!res.ok) {
 			throw new Error(`Failed to get entry revision: ${res.statusText}`);
 		}
-		return (await res.json()) as Entry;
+		return normalizeEntry((await res.json()) as Entry);
 	},
 
 	/** Restore entry to a previous revision */
@@ -177,7 +189,7 @@ export const entryApi = {
 			throw new Error(error.detail || `Failed to restore entry: ${res.statusText}`);
 			/* v8 ignore stop */
 		}
-		return (await res.json()) as Entry;
+		return normalizeEntry((await res.json()) as Entry);
 	},
 };
 
