@@ -418,7 +418,9 @@ describe("CreateEntryDialog", () => {
 			}),
 			"markdown",
 		);
-		expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe("");
+		expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe(
+			"",
+		);
 		expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
 		expect(screen.queryByRole("textbox", { name: "Markdown input" })).not.toBeInTheDocument();
 	});
@@ -946,7 +948,9 @@ describe("CreateEntryDialog", () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
 
-		render(() => <CreateEntryDialog open={true} forms={[]} onClose={onClose} onSubmit={onSubmit} />);
+		render(() => (
+			<CreateEntryDialog open={true} forms={[]} onClose={onClose} onSubmit={onSubmit} />
+		));
 
 		const dialog = screen.getByRole("dialog");
 		fireEvent.keyDown(dialog, { key: "Escape" });
