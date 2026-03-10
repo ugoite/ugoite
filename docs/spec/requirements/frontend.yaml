@@ -1282,6 +1282,7 @@ requirements:
     - file: frontend/src/components/create-dialogs.test.tsx
       tests:
       - 'REQ-FE-053: renders English entry guidance across input modes'
+      - 'REQ-FE-053: keeps web-form guidance free of Markdown-only instructions'
     - file: frontend/src/components/EntryDetailPane.test.tsx
       tests:
       - 'REQ-FE-053: renders English editor guidance and type warnings'
