@@ -124,13 +124,13 @@ async function waitForQueryForm(page: Page): Promise<void> {
 	for (let attempt = 0; attempt < 2; attempt += 1) {
 		try {
 			await queryName.waitFor({ state: "visible", timeout: 30_000 });
-			await page.waitForLoadState("networkidle");
+			await page.getByRole("button", { name: "Save" }).waitFor({ state: "visible" });
 			return;
 		} catch (error) {
 			if (attempt === 1) {
 				throw error;
 			}
-			await page.reload({ waitUntil: "networkidle" });
+			await page.reload({ waitUntil: "domcontentloaded" });
 		}
 	}
 }
@@ -146,7 +146,6 @@ async function waitForQueryButton(
 		if (response.ok()) {
 			const list = (await response.json()) as Array<{ id: string; name: string }>;
 			if (list.some((item) => item.name === name)) {
-				await page.waitForLoadState("networkidle");
 				return;
 			}
 		}
@@ -177,7 +176,7 @@ async function cleanupThemeQueries(
 async function gotoWithRetry(page: Page, path: string): Promise<void> {
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		try {
-			await page.goto(path, { waitUntil: "networkidle" });
+			await page.goto(path, { waitUntil: "domcontentloaded" });
 			return;
 		} catch (error) {
 			if (attempt === 2) {
