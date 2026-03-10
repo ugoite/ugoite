@@ -1082,8 +1082,10 @@ def test_build_response_signature_uses_ugoite_core_storage_abstraction(
     temp_space_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-STO-001: backend response signing delegates HMAC storage I/O to ugoite-core."""
+    """REQ-STO-001: backend response signing delegates HMAC storage I/O.
 
+    The backend stays thin by routing the operation through ugoite-core.
+    """
     captured: dict[str, object] = {}
 
     async def _fake_build_response_signature(
