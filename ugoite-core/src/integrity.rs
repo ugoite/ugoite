@@ -59,6 +59,28 @@ fn generate_hmac_payload() -> Value {
     })
 }
 
+fn validate_response_hmac_space_id(space_name: &str) -> Result<String> {
+    let normalized = space_name.trim();
+    if normalized.is_empty() {
+        return Err(anyhow!("space_id must not be empty"));
+    }
+    if !normalized
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        return Err(anyhow!("invalid space_id"));
+    }
+    Ok(normalized.to_string())
+}
+
+fn response_hmac_dir(space_name: &str) -> String {
+    format!("spaces/{space_name}/")
+}
+
+fn response_hmac_path(space_name: &str) -> String {
+    format!("spaces/{space_name}/hmac.json")
+}
+
 async fn ensure_space_hmac_with_storage<S: StorageBackend + ?Sized>(
     storage: &S,
     space_name: &str,
@@ -115,17 +137,23 @@ pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(Stri
 
 async fn load_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
     storage: &S,
+    space_name: &str,
 ) -> Result<(String, Vec<u8>)> {
-    let path = "hmac.json";
-    if !storage.exists(path).await? {
+    let safe_space_name = validate_response_hmac_space_id(space_name)?;
+    storage.create_dir("spaces/").await?;
+    storage
+        .create_dir(&response_hmac_dir(&safe_space_name))
+        .await?;
+    let path = response_hmac_path(&safe_space_name);
+    if !storage.exists(&path).await? {
         let payload = generate_hmac_payload();
-        storage.write_json(path, &payload).await?;
+        storage.write_json(&path, &payload).await?;
     }
-    let payload: Value = storage.read_json(path).await?;
+    let payload: Value = storage.read_json(&path).await?;
     let key_b64 = payload
         .get("hmac_key")
         .and_then(|value| value.as_str())
-        .ok_or_else(|| anyhow!("hmac_key missing in hmac.json"))?;
+        .ok_or_else(|| anyhow!("hmac_key missing in {path}"))?;
     let key_id = payload
         .get("hmac_key_id")
         .and_then(|value| value.as_str())
@@ -135,14 +163,21 @@ async fn load_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
     Ok((key_id, secret))
 }
 
-pub async fn load_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
+pub async fn load_response_hmac_material(
+    op: &Operator,
+    space_name: &str,
+) -> Result<(String, Vec<u8>)> {
     let storage = OpendalStorage::from_operator(op);
-    load_response_hmac_material_with_storage(&storage).await
+    load_response_hmac_material_with_storage(&storage, space_name).await
 }
 
-pub async fn build_response_signature(op: &Operator, body: &[u8]) -> Result<(String, String)> {
+pub async fn build_response_signature(
+    op: &Operator,
+    space_name: &str,
+    body: &[u8],
+) -> Result<(String, String)> {
     let storage = OpendalStorage::from_operator(op);
-    let (key_id, secret) = load_response_hmac_material_with_storage(&storage).await?;
+    let (key_id, secret) = load_response_hmac_material_with_storage(&storage, space_name).await?;
     let provider = RealIntegrityProvider::new(secret);
     Ok((key_id, provider.signature_bytes(body)))
 }
