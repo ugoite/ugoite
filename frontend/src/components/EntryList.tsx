@@ -34,10 +34,7 @@ export function EntryList(props: EntryListProps) {
 		? null
 		: createEntryStore(() => (props as EntryListStandaloneProps).spaceId);
 
-	const standaloneStore = () => {
-		if (internalStore) return internalStore;
-		throw new Error("Standalone entry store is unavailable in controlled mode");
-	};
+	const standaloneStore = () => internalStore!;
 
 	// Unified accessors – controlled=false guarantees internalStore is not null
 	const entries = createMemo(() => {
