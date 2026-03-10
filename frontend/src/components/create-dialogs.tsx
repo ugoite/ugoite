@@ -174,7 +174,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		/* v8 ignore start */
 		const types = new Set(Object.values(form.fields || {}).map((field) => field.type));
 		/* v8 ignore stop */
-		const hints = [t("entryGuidance.editAfterCreate")];
+		const hints =
+			inputMode() === "webform"
+				? [t("entryGuidance.webFormMode")]
+				: [t("entryGuidance.editAfterCreate")];
 		/* v8 ignore start */
 		if (inputMode() === "chat") {
 			hints.push(t("entryGuidance.chatMode"));
