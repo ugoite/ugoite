@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Final
 
 import ugoite_core
@@ -10,6 +9,7 @@ import ugoite_core
 from app.core.storage import storage_config_from_root
 
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
+    import os
     from collections.abc import Mapping
 
 LOCAL_CLIENT_SENTINELS: Final[set[str]] = {
