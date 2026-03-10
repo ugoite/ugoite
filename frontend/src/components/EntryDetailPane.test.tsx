@@ -67,7 +67,8 @@ describe("EntryDetailPane", () => {
 		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 		const guidanceText = await screen.findByText(
 			(_, element) =>
-				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
+				element?.tagName === "P" &&
+				Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
 		);
 		expect(guidanceText).toHaveTextContent(/Form:\s*Meeting/);
 		expect(guidanceText).toHaveTextContent(/Example:\s*##\s*Date/);
@@ -195,7 +196,8 @@ describe("EntryDetailPane", () => {
 		expect(guidanceText).toBeInTheDocument();
 		const formGuidanceText = screen.getByText(
 			(_, element) =>
-				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
+				element?.tagName === "P" &&
+				Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
 		);
 		expect(formGuidanceText).toHaveTextContent(/Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/);
 		expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();

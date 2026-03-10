@@ -34,20 +34,22 @@ export function EntryList(props: EntryListProps) {
 		? null
 		: createEntryStore(() => (props as EntryListStandaloneProps).spaceId);
 
-	const standaloneStore = () => internalStore!;
+	const requireStandaloneStore = () => {
+		if (internalStore) return internalStore;
+		throw new Error("EntryList standalone store is unavailable in controlled mode.");
+	};
 
-	// Unified accessors – controlled=false guarantees internalStore is not null
 	const entries = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).entries();
-		return standaloneStore().entries();
+		return requireStandaloneStore().entries();
 	});
 	const loading = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).loading();
-		return standaloneStore().loading();
+		return requireStandaloneStore().loading();
 	});
 	const error = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).error();
-		return standaloneStore().error();
+		return requireStandaloneStore().error();
 	});
 
 	onMount(() => {
