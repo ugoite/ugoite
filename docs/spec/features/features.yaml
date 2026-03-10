@@ -30,6 +30,8 @@ conventions:
 files:
   - kind: spaces
     file: spaces.yaml
+  - kind: preferences
+    file: preferences.yaml
   - kind: entries
     file: entries.yaml
   - kind: forms

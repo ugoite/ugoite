@@ -97,6 +97,7 @@ get_entry_revision_content = _core_any.get_entry_revision_content
 get_form = _core_any.get_form
 get_sample_space_job = _core_any.get_sample_space_job
 get_space = _core_any.get_space
+get_user_preferences = _core_any.get_user_preferences
 get_sql = _core_any.get_sql
 get_sql_session_count = _core_any.get_sql_session_count
 get_sql_session_rows = _core_any.get_sql_session_rows
@@ -113,6 +114,7 @@ load_hmac_material = _core_any.load_hmac_material
 load_response_hmac_material = _core_any.load_response_hmac_material
 migrate_form = _core_any.migrate_form
 patch_space = _core_any.patch_space
+patch_user_preferences = _core_any.patch_user_preferences
 query_index = _core_any.query_index
 reindex_all = _core_any.reindex_all
 restore_entry = _core_any.restore_entry
@@ -181,6 +183,7 @@ __all__ = [
     "get_form",
     "get_sample_space_job",
     "get_space",
+    "get_user_preferences",
     "get_sql",
     "get_sql_session_count",
     "get_sql_session_rows",
@@ -203,6 +206,7 @@ __all__ = [
     "load_sql_rules",
     "migrate_form",
     "patch_space",
+    "patch_user_preferences",
     "query_index",
     "reindex_all",
     "require_entry_read",

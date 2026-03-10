@@ -6,6 +6,7 @@ This directory contains the feature definitions for Ugoite.
 
 - [features.yaml](features.yaml) - Registry manifest and conventions
 - [spaces.yaml](spaces.yaml) - Space APIs
+- [preferences.yaml](preferences.yaml) - Portable user preference APIs
 - [entries.yaml](entries.yaml) - Entry APIs
 - [forms.yaml](forms.yaml) - Form APIs
 - [assets.yaml](assets.yaml) - Asset APIs

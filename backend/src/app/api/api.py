@@ -7,6 +7,7 @@ from app.api.endpoints import (
     audit,
     entry,
     members,
+    preferences,
     search,
     service_accounts,
     space,
@@ -18,6 +19,7 @@ from app.core.auth import require_authenticated_identity
 
 router = APIRouter(dependencies=[Depends(require_authenticated_identity)])
 router.include_router(space.router)
+router.include_router(preferences.router)
 router.include_router(members.router)
 router.include_router(service_accounts.router)
 router.include_router(entry.router)

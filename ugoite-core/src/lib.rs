@@ -12,6 +12,7 @@ pub mod integrity;
 pub mod link;
 pub mod materialized_view;
 pub mod metadata;
+pub mod preferences;
 pub mod sample_data;
 pub mod saved_sql;
 pub mod search;

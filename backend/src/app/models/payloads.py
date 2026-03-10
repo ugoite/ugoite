@@ -95,6 +95,26 @@ class SpacePatch(BaseModel):
     settings: dict[str, Any] | None = None
 
 
+class UserPreferences(BaseModel):
+    """Portable user preference payload."""
+
+    selected_space_id: str | None = None
+    locale: Literal["en", "ja"] | None = None
+    ui_theme: Literal["materialize", "classic", "pop"] | None = None
+    color_mode: Literal["light", "dark"] | None = None
+    primary_color: Literal["violet", "blue", "emerald", "amber"] | None = None
+
+
+class UserPreferencesPatch(BaseModel):
+    """Portable user preference patch payload."""
+
+    selected_space_id: str | None = None
+    locale: Literal["en", "ja"] | None = None
+    ui_theme: Literal["materialize", "classic", "pop"] | None = None
+    color_mode: Literal["light", "dark"] | None = None
+    primary_color: Literal["violet", "blue", "emerald", "amber"] | None = None
+
+
 class SpaceConnectionRequest(BaseModel):
     """Space connection validation payload."""
 

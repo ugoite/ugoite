@@ -658,6 +658,43 @@ fn patch_space<'a>(
 }
 
 #[pyfunction]
+fn get_user_preferences<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    user_id: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let preferences = preferences::get_user_preferences(&op, &user_id)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = serde_json::to_value(preferences)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn patch_user_preferences<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    user_id: String,
+    patch_json: String,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let patch_value: serde_json::Value =
+            serde_json::from_str(&patch_json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let updated = preferences::patch_user_preferences(&op, &user_id, &patch_value)
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(updated).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
 fn list_column_types<'a>(py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
         let types = form::list_column_types()
@@ -1212,6 +1249,8 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(get_space, m)?)?;
     m.add_function(wrap_pyfunction!(patch_space, m)?)?;
+    m.add_function(wrap_pyfunction!(get_user_preferences, m)?)?;
+    m.add_function(wrap_pyfunction!(patch_user_preferences, m)?)?;
 
     m.add_function(wrap_pyfunction!(query_index, m)?)?;
     m.add_function(wrap_pyfunction!(create_sql_session, m)?)?;

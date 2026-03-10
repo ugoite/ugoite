@@ -85,7 +85,15 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-003
   title: Persist Space Selection
-  description: 'Save selected space to localStorage and maintain across sessions.
+  description: 'Save selected space in portable user preferences and restore it across
+
+    sessions.
+
+    Frontend clients MUST prefer portable selected-space preferences loaded from
+
+    `/preferences/me` and MAY use localStorage only as an offline or pre-initialization
+
+    fallback and migration layer.
 
     '
   related_spec:
@@ -98,6 +106,10 @@ requirements:
       tests:
       - should restore persisted space selection
       - should select space and persist choice
+      - 'REQ-FE-003: should prefer portable selected space preference'
+    - file: frontend/src/lib/preferences-store.test.ts
+      tests:
+      - 'REQ-FE-003: initializes selected space from local fallback and migrates portable storage'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -383,7 +395,11 @@ requirements:
 
     Users MUST be able to switch language from the theme/settings menu and
 
-    the selected locale MUST persist in localStorage.
+    the selected locale MUST persist in portable user preferences loaded from
+
+    `/preferences/me`, with localStorage retained only as a fallback and migration
+
+    layer.
 
     '
   related_spec:
@@ -397,10 +413,14 @@ requirements:
       tests:
       - switches locale and translates labels
       - applies locale attributes on initialize
+    - file: frontend/src/lib/preferences-store.test.ts
+      tests:
+      - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
     - file: frontend/src/components/ThemeMenu.test.tsx
       tests:
       - shows language options in settings menu
       - switches locale when language changes
+      - 'REQ-FE-044: persists locale via portable preferences with local fallback'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1474,3 +1494,42 @@ requirements:
       tests:
       - 'REQ-FE-058: dashboard avoids a persistent top-level loading banner during routine navigation'
       - 'REQ-FE-058: dashboard replaces the fallback title when space metadata loads'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-059
+  title: Portable Theme Preferences
+  description: 'Frontend theme, color mode, and primary color selections MUST persist
+
+    in portable user preferences loaded from `/preferences/me`.
+
+    Theme interactions MUST continue to maintain localStorage only as a fallback
+
+    and migration layer so the UI remains stable before portable preferences finish
+
+    loading or when the backend is temporarily unavailable.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/lib/preferences-store.test.ts
+      tests:
+      - 'REQ-FE-059: initializes theme preferences from portable storage and updates local fallback'
+    - file: frontend/src/components/ThemeMenu.test.tsx
+      tests:
+      - switches UI theme
+      - switches color mode
+      - switches primary color

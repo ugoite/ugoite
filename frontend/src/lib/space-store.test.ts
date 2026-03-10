@@ -3,9 +3,15 @@
 // REQ-FE-003: Persist space selection
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createRoot } from "solid-js";
+import { waitFor } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import { createSpaceStore } from "./space-store";
-import { resetMockData, seedSpace } from "~/test/mocks/handlers";
+import {
+	getPreferencePatches,
+	resetMockData,
+	seedPreferences,
+	seedSpace,
+} from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
 
@@ -17,6 +23,9 @@ const localStorageMock = (() => {
 		setItem: vi.fn((key: string, value: string) => {
 			store[key] = value;
 		}),
+		removeItem: vi.fn((key: string) => {
+			delete store[key];
+		}),
 		clear: () => {
 			store = {};
 		},
@@ -25,13 +34,21 @@ const localStorageMock = (() => {
 
 Object.defineProperty(globalThis, "localStorage", {
 	value: localStorageMock,
+	configurable: true,
+});
+
+Object.defineProperty(window, "localStorage", {
+	value: localStorageMock,
+	configurable: true,
 });
 
 describe("createSpaceStore", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		resetMockData();
 		localStorageMock.clear();
 		vi.clearAllMocks();
+		const { resetPortablePreferencesState } = await import("./preferences-store");
+		resetPortablePreferencesState();
 	});
 
 	it("should keep selection empty when no spaces exist", async () => {
@@ -87,8 +104,40 @@ describe("createSpaceStore", () => {
 		seedSpace(ws1);
 		seedSpace(ws2);
 
-		// Simulate persisted selection
-		localStorageMock.getItem.mockReturnValue("space-2");
+		localStorageMock.setItem("ugoite-selected-space", "space-2");
+
+		await createRoot(async (dispose) => {
+			const store = createSpaceStore();
+
+			const selectedId = await store.loadSpaces();
+
+			expect(selectedId).toBe("space-2");
+			expect(store.selectedSpaceId()).toBe("space-2");
+
+			dispose();
+		});
+	});
+
+	it("REQ-FE-003: should prefer portable selected space preference", async () => {
+		const ws1: Space = {
+			id: "space-1",
+			name: "Space One",
+			created_at: "2025-01-01T00:00:00Z",
+		};
+		const ws2: Space = {
+			id: "space-2",
+			name: "Space Two",
+			created_at: "2025-01-01T00:00:00Z",
+		};
+		seedSpace(ws1);
+		seedSpace(ws2);
+		const portableSelection = {} as import("./types").UserPreferencesPatchPayload;
+		portableSelection.selected_space_id = "space-2";
+		seedPreferences(portableSelection);
+		localStorageMock.setItem("ugoite-selected-space", "space-1");
+
+		const { initializePortablePreferences } = await import("./preferences-store");
+		await initializePortablePreferences();
 
 		await createRoot(async (dispose) => {
 			const store = createSpaceStore();
@@ -124,6 +173,11 @@ describe("createSpaceStore", () => {
 
 			expect(store.selectedSpaceId()).toBe("space-2");
 			expect(localStorageMock.setItem).toHaveBeenCalledWith("ugoite-selected-space", "space-2");
+			await waitFor(() => {
+				const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
+				expectedPatch.selected_space_id = "space-2";
+				expect(getPreferencePatches()).toContainEqual(expectedPatch);
+			});
 
 			dispose();
 		});
