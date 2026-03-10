@@ -40,6 +40,34 @@ Create a new space:
 cargo run -q -p ugoite-cli -- create-space --root ./spaces demo
 ```
 
+## Seed local sample data
+
+Use the root developer task when you want a quick local dataset without
+remembering the lower-level CLI arguments:
+
+```bash
+mise run seed
+```
+
+The seed task creates `./spaces/dev-seed` by default, uses the
+`renewable-ops` scenario, and loads 50 generated entries. To choose a
+different target space, scenario, entry count, or deterministic RNG seed, set
+the matching environment variables before running the task:
+
+```bash
+UGOITE_SEED_SPACE_ID=ux-demo UGOITE_SEED_SCENARIO=supply-chain \
+UGOITE_SEED_ENTRY_COUNT=25 UGOITE_SEED_VALUE=42 mise run seed
+mise run seed:scenarios
+```
+
+If you prefer the underlying direct command, the task is just a thin wrapper
+over the Rust CLI and keeps Cargo builds inside the shared `target/rust` cache:
+
+```bash
+bash scripts/dev-seed.sh --space-id cli-demo --scenario lab-qa --entry-count 10 --seed 7
+CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios
+```
+
 ## Notes
 
 - In `core` mode, commands that touch local storage require an explicit
