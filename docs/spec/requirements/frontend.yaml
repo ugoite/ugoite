@@ -110,6 +110,9 @@ requirements:
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-003: initializes selected space from local fallback and migrates portable storage'
+      - 'REQ-FE-003: reuses an in-flight portable preferences initialization'
+      - 'REQ-FE-003: returns cached portable preferences after initialization'
+      - 'REQ-FE-003: skips empty portable preference patches'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -416,6 +419,9 @@ requirements:
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
+    - file: frontend/src/lib/preferences-api.test.ts
+      tests:
+      - 'REQ-FE-044: surfaces string detail on portable preference load failure'
     - file: frontend/src/components/ThemeMenu.test.tsx
       tests:
       - shows language options in settings menu
@@ -1528,6 +1534,11 @@ requirements:
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-059: initializes theme preferences from portable storage and updates local fallback'
+      - 'REQ-FE-059: migrates missing primary color from local fallback'
+    - file: frontend/src/lib/preferences-api.test.ts
+      tests:
+      - 'REQ-FE-059: stringifies structured detail on portable preference update failure'
+      - 'REQ-FE-059: falls back to status text when portable preference errors are not JSON'
     - file: frontend/src/components/ThemeMenu.test.tsx
       tests:
       - switches UI theme
