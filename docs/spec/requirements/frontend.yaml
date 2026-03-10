@@ -1261,6 +1261,41 @@ requirements:
   - SPEC-UI-OVERVIEW
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
+  id: REQ-FE-052
+  title: Form-Aware Entry Editor Guidance
+  description: 'The entry detail editor guidance MUST use a heading example from the
+
+    active form when fields are available, and MUST omit the example entirely when
+
+    the form has no suitable fields. It MUST never hard-code a heading that is absent
+
+    from the selected form.
+
+    '
+  related_spec:
+  - stories/core.yaml#STORY-002
+  - data-model/overview.md#content-column-types--markdown-parsing
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/components/EntryDetailPane.test.tsx
+      tests:
+      - 'REQ-FE-052: shows form-aware markdown H2 guidance and inserts missing required sections'
+      - 'REQ-FE-052: omits example heading when form has no fields'
+      - 'REQ-FE-052: omits example heading when form data lacks a fields map'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
   id: REQ-FE-053
   title: Entry Workflow Guidance Localization
   description: 'Entry creation and editing guidance MUST respect the active frontend
