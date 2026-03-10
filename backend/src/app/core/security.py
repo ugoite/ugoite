@@ -9,7 +9,6 @@ import ugoite_core
 from app.core.storage import storage_config_from_root
 
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
-    import os
     from collections.abc import Mapping
     from pathlib import Path
 
