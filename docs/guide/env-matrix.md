@@ -16,7 +16,11 @@ This matrix summarizes primary runtime variables by mode.
 | UGOITE_DEV_AUTH_FILE | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_TTL_SECONDS | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_FORCE_LOGIN | optional | n/a | n/a | n/a |
+| UGOITE_DEV_AUTH_MODE | optional | n/a | n/a | n/a |
 | UGOITE_DEV_2FA_SECRET | optional | n/a | n/a | n/a |
+| UGOITE_DEV_TOTP_CODE | optional | n/a | n/a | n/a |
+| UGOITE_DEV_MANUAL_TOKEN | optional | n/a | n/a | n/a |
+| UGOITE_DEV_MOCK_OAUTH_TOKEN | optional | n/a | n/a | n/a |
 | E2E_AUTH_BEARER_TOKEN | n/a | required | n/a | required for e2e jobs |
 | E2E_STORAGE_ROOT | n/a | required | n/a | optional |
 | E2E_BACKEND_PORT | n/a | optional | n/a | optional |

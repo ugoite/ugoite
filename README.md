@@ -72,7 +72,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (backend + frontend + docsite — auth is bootstrapped automatically):
+Start development (backend + frontend + docsite — `automatic` auth mode is the default):
 
 ```bash
 mise run dev
@@ -85,13 +85,20 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
-If you need to rotate/refresh token manually, run:
+If you need to rotate/refresh the automatic token manually, run:
 
 ```bash
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the 2FA + oathtool flow and local-dev secret setup.
+To opt into explicit manual modes instead of the default automatic bootstrap:
+
+```bash
+UGOITE_DEV_AUTH_MODE=manual-totp UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}")" mise run dev
+UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
+```
+
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the automatic flow, manual TOTP + `oathtool` steps, and the mock OAuth-style local mode.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
