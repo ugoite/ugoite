@@ -1451,6 +1451,47 @@ requirements:
   - SPEC-UI-OVERVIEW
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
+  id: REQ-FE-057
+  title: Full Create-Entry Chat Flow
+  description: 'If the create-entry dialog offers `chat` input mode, the frontend MUST
+
+    walk through the form fields in a predictable question flow, including optional
+
+    fields, while keeping required-answer completion rules explicit. Chat mode
+
+    MUST allow users to review or skip optional questions and still submit the
+
+    collected answers as chat-mode entry input.
+>>>>>>> 1a2156e6 (fix: support full create-entry chat flow)
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-057: chat mode walks through optional fields instead of only required ones'
+      - 'REQ-FE-057: chat mode submits answered required and optional fields'
+      - 'REQ-FE-057: chat step pills react to answers and current step'
+      - 'REQ-FE-057: chat step pills let users jump back to answered questions'
+      - 'REQ-FE-057: chat mode blocks advancing past an empty required field'
+      - 'REQ-FE-057: chat mode blocks skipping a required field'
+      - 'REQ-FE-057: skipping an optional chat field clears its draft answer'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
   id: REQ-FE-058
   title: Calm Dashboard Loading Treatment
   description: 'The space dashboard MUST avoid a persistent top-of-page loading banner

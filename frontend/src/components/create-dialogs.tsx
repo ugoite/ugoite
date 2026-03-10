@@ -176,6 +176,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		/* v8 ignore stop */
 	});
 
+	const chatFields = createMemo(() => webFormFields());
+
+	const currentChatField = createMemo(() => {
+		const fields = chatFields();
+		if (fields.length === 0) return null;
+		return fields[Math.min(chatStep(), fields.length - 1)] ?? null;
+	});
+
 	const inputGuidance = createMemo(() => {
 		const form = selectedFormDef();
 		if (!form) return [] as string[];
@@ -328,6 +336,53 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		}
 		setLastGeneratedMarkdown(generated);
 	});
+
+	const setFieldValue = (name: string, nextValue: string) =>
+		setFieldValues((prev) => ({
+			...prev,
+			[name]: nextValue,
+		}));
+
+	const clearFieldValue = (name: string) =>
+		setFieldValues((prev) => {
+			const next = { ...prev };
+			delete next[name];
+			return next;
+		});
+
+	const moveChatStep = (delta: number) =>
+		setChatStep((prev) => {
+			const lastIndex = Math.max(chatFields().length - 1, 0);
+			return Math.min(Math.max(prev + delta, 0), lastIndex);
+		});
+
+	const goToChatStep = (nextStep: number) =>
+		setChatStep(Math.min(Math.max(nextStep, 0), Math.max(chatFields().length - 1, 0)));
+
+	const handleAdvanceChatStep = () => {
+		const current = currentChatField();
+		if (!current) return;
+		const [name, def] = current;
+		if (def.required && !(fieldValues()[name] || "").trim()) {
+			setErrorMessage(`Please answer required field: ${name}.`);
+			return;
+		}
+		setErrorMessage(null);
+		moveChatStep(1);
+	};
+
+	const handleSkipChatField = () => {
+		const current = currentChatField();
+		if (!current) return;
+		const [name, def] = current;
+		if (def.required) {
+			setErrorMessage(`Required field cannot be skipped: ${name}.`);
+			return;
+		}
+		clearFieldValue(name);
+		setErrorMessage(null);
+		moveChatStep(1);
+	};
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
@@ -516,11 +571,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 											const inputType = resolveInputType(def);
 											const value = fieldValues()[name] ?? "";
 											const fieldId = createFieldInputId("webform", name, index());
-											const handleValue = (nextValue: string) =>
-												setFieldValues((prev) => ({
-													...prev,
-													[name]: nextValue,
-												}));
+											const handleValue = (nextValue: string) => setFieldValue(name, nextValue);
 											return (
 												<div class="ui-field">
 													<label class="ui-label" for={fieldId}>
@@ -558,17 +609,37 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</div>
 						</Show>
 
-						<Show when={inputMode() === "chat" && requiredFields().length > 0}>
+						<Show when={inputMode() === "chat" && chatFields().length > 0}>
 							<div class="ui-card">
 								<p class="text-sm font-semibold">Chat input</p>
 								<p class="text-xs ui-muted mt-1">
-									Question {Math.min(chatStep() + 1, requiredFields().length)} /{" "}
-									{requiredFields().length}
+									Question {Math.min(chatStep() + 1, chatFields().length)} / {chatFields().length}
 								</p>
-								<Show when={requiredFields()[chatStep()]}>
+								<div class="mt-3 flex flex-wrap gap-2">
+									<For each={chatFields()}>
+										{([name, def], index) => {
+											const answered = !!(fieldValues()[name] || "").trim();
+											const current = index() === chatStep();
+											const status = answered ? "answered" : def.required ? "required" : "optional";
+											return (
+												<button
+													type="button"
+													class={`ui-button text-xs ${current ? "ui-button-primary" : "ui-button-secondary"}`}
+													onClick={() => {
+														goToChatStep(index());
+														setErrorMessage(null);
+													}}
+												>
+													{name} ({status})
+												</button>
+											);
+										}}
+									</For>
+								</div>
+								<Show when={currentChatField()} keyed>
 									{(current) => {
-										const [name, def] = current();
-										const fieldIndex = requiredFields().findIndex(
+										const [name, def] = current;
+										const fieldIndex = chatFields().findIndex(
 											([candidateName]) => candidateName === name,
 										);
 										const value = fieldValues()[name] ?? "";
@@ -579,7 +650,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 											<div class="ui-field mt-3">
 												<label class="ui-label" for={fieldId}>
 													{name}
-													<span class="ui-muted ml-2 text-xs">({def.type})</span>
+													<span class="ui-muted ml-2 text-xs">
+														({def.type}
+														{def.required ? ", required" : ", optional"})
+													</span>
 												</label>
 												<Show
 													when={!useTextarea}
@@ -588,12 +662,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 															id={fieldId}
 															class="ui-input ui-textarea"
 															value={value}
-															onInput={(e) =>
-																setFieldValues((prev) => ({
-																	...prev,
-																	[name]: e.currentTarget.value,
-																}))
-															}
+															onInput={(e) => setFieldValue(name, e.currentTarget.value)}
 														/>
 													}
 												>
@@ -602,12 +671,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														type={inputType}
 														class="ui-input"
 														value={value}
-														onInput={(e) =>
-															setFieldValues((prev) => ({
-																...prev,
-																[name]: e.currentTarget.value,
-															}))
-														}
+														onInput={(e) => setFieldValue(name, e.currentTarget.value)}
 													/>
 												</Show>
 												<div class="mt-3 flex items-center justify-between">
@@ -615,20 +679,30 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														type="button"
 														class="ui-button ui-button-secondary text-xs"
 														disabled={chatStep() <= 0}
-														onClick={() => setChatStep((prev) => Math.max(0, prev - 1))}
+														onClick={() => moveChatStep(-1)}
 													>
 														Previous question
 													</button>
-													<button
-														type="button"
-														class="ui-button ui-button-secondary text-xs"
-														disabled={chatStep() >= requiredFields().length - 1}
-														onClick={() =>
-															setChatStep((prev) => Math.min(requiredFields().length - 1, prev + 1))
-														}
-													>
-														Next question
-													</button>
+													<div class="flex items-center gap-2">
+														<Show when={!def.required}>
+															<button
+																type="button"
+																class="ui-button ui-button-secondary text-xs"
+																onClick={handleSkipChatField}
+															>
+																Skip optional field
+															</button>
+														</Show>
+														<Show when={chatStep() < chatFields().length - 1}>
+															<button
+																type="button"
+																class="ui-button ui-button-secondary text-xs"
+																onClick={handleAdvanceChatStep}
+															>
+																Next question
+															</button>
+														</Show>
+													</div>
 												</div>
 											</div>
 										);
