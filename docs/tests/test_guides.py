@@ -11,6 +11,7 @@ REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 REQ-OPS-013: All Tests Status must exclude release automation from branch health.
+REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
 """
 
 from __future__ import annotations
@@ -54,6 +55,8 @@ MISE_PATH = REPO_ROOT / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
+CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
+DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
@@ -172,6 +175,28 @@ REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
     "exclude release/publish automation",
     "Release CI",
     "Release Publish",
+}
+REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
+    "CARGO_TARGET_DIR",
+    "UGOITE_SEED_SPACE_ID",
+    "UGOITE_SEED_SCENARIO",
+    "UGOITE_SEED_ENTRY_COUNT",
+    "ugoite-cli",
+    "sample-data",
+    "Refusing to overwrite existing local sample space",
+}
+REQUIRED_DEV_SEED_README_FRAGMENTS = {
+    "mise run seed",
+    "UGOITE_SEED_SPACE_ID=ux-demo",
+    "mise run seed:scenarios",
+}
+REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
+    (
+        "bash scripts/dev-seed.sh --space-id cli-demo --scenario lab-qa "
+        "--entry-count 10 --seed 7"
+    ),
+    "UGOITE_SEED_SCENARIO=supply-chain",
+    "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -746,6 +771,52 @@ def test_docs_req_ops_015_dev_auth_script_declares_manual_modes() -> None:
 def test_docs_req_ops_013_all_tests_status_excludes_release_automation() -> None:
     """REQ-OPS-013: All Tests Status must exclude release automation workflows."""
     details = _collect_all_tests_status_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
+    """REQ-OPS-016: Root dev tasks must expose local sample-data seeding."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    details = [
+        detail
+        for detail in [
+            _require_exact_task_run(
+                root_mise,
+                "seed",
+                ["bash scripts/dev-seed.sh"],
+                "root mise must expose seed",
+            ),
+            _require_exact_task_run(
+                root_mise,
+                "seed:scenarios",
+                [
+                    "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- "
+                    "space sample-scenarios",
+                ],
+                "root mise must expose seed:scenarios",
+            ),
+            _require_file_contains(
+                DEV_SEED_SCRIPT_PATH,
+                sorted(REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS),
+                "scripts/dev-seed.sh must wrap CLI sample-data seeding safely",
+            ),
+            _require_file_contains(
+                README_PATH,
+                sorted(REQUIRED_DEV_SEED_README_FRAGMENTS),
+                "README must document the local seed workflow",
+            ),
+            _require_file_contains(
+                CLI_GUIDE_PATH,
+                sorted(REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS),
+                (
+                    "docs/guide/cli.md must document seed task overrides "
+                    "and direct CLI usage"
+                ),
+            ),
+        ]
+        if detail is not None
+    ]
     if details:
         raise AssertionError("; ".join(details))
 
