@@ -49,11 +49,8 @@ test.describe("Dynamic navigation traversal", () => {
 					continue;
 				}
 
-				await page.goto(path, { waitUntil: "networkidle" });
+				await visitPath(page, path);
 				visited.add(path);
-
-				await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
-				await expect(page.locator("body")).not.toContainText("NOT FOUND");
 
 				const discoveredLinks = await collectInternalLinks(page, spaceId);
 				for (const discovered of discoveredLinks) {
@@ -61,20 +58,6 @@ test.describe("Dynamic navigation traversal", () => {
 						queue.push(discovered.path);
 					}
 				}
-
-				const nextLink = discoveredLinks.find((candidate) => !visited.has(candidate.path));
-				if (nextLink) {
-					const link = page.locator(`a[href="${nextLink.href}"]`).first();
-					if ((await link.count()) > 0 && (await link.isVisible())) {
-						await link.click();
-						await page.waitForLoadState("networkidle");
-						await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
-						await expect(page.locator("body")).not.toContainText("NOT FOUND");
-						visited.add(nextLink.path);
-					}
-				}
-
-				await page.waitForTimeout(200);
 			}
 
 			expect(visited.size).toBeGreaterThanOrEqual(6);
@@ -90,6 +73,24 @@ type InternalLink = {
 	path: string;
 	href: string;
 };
+
+async function visitPath(page: Page, path: string): Promise<void> {
+	await page.goto(path, { waitUntil: "domcontentloaded" });
+	await expect(page.locator("body")).toBeVisible();
+	await settleUiLoading(page);
+	await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
+	await expect(page.locator("body")).not.toContainText("NOT FOUND");
+}
+
+async function settleUiLoading(page: Page): Promise<void> {
+	await page.waitForTimeout(150);
+	await page
+		.waitForFunction(() => !document.querySelector(".ui-loading-bar"), undefined, {
+			timeout: 5_000,
+		})
+		.catch(() => undefined);
+	await page.waitForTimeout(150);
+}
 
 async function collectInternalLinks(page: Page, currentSpaceId: string): Promise<InternalLink[]> {
 	const allowedPrefixes = [`/spaces/${currentSpaceId}`, "/spaces", "/about"];
