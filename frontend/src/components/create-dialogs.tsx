@@ -56,7 +56,14 @@ const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
 };
 /* v8 ignore stop */
 
-const columnTypeSelectClass = "ui-input ui-input-sm w-auto min-w-[10rem] flex-shrink-0";
+const columnTypeSelectClass =
+	"ui-input ui-input-sm min-w-0 w-full sm:w-auto sm:min-w-[10rem] sm:flex-shrink-0";
+const columnEditorRowClass = "flex flex-col gap-2 sm:flex-row sm:items-center";
+const columnEditorControlsClass =
+	"grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:w-auto sm:flex-shrink-0";
+const columnNameInputClass = "ui-input ui-input-sm w-full sm:min-w-[14rem] sm:flex-1";
+const columnAuxRowClass = "ml-1 flex flex-col gap-2 sm:flex-row sm:items-center";
+const columnAuxInputClass = "ui-input ui-input-sm w-full sm:min-w-[14rem] sm:flex-1";
 
 type FieldIssueSource = { name: string; type: string; targetForm?: string };
 
@@ -833,36 +840,38 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 							<Index each={fields()}>
 								{(field, i) => (
 									<div class="flex flex-col gap-1">
-										<div class="flex gap-2 items-center">
+										<div class={columnEditorRowClass}>
 											<input
 												type="text"
 												placeholder="Column Name"
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
-												class="ui-input ui-input-sm flex-1"
+												class={columnNameInputClass}
 												classList={{ "ui-input-error": fieldIssues().has(i) }}
 												aria-invalid={fieldIssues().has(i) || undefined}
 											/>
-											<select
-												value={field().type}
-												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class={columnTypeSelectClass}
-											>
-												<For each={props.columnTypes}>
-													{(type) => <option value={type}>{type}</option>}
-												</For>
-											</select>
-											<button
-												type="button"
-												onClick={() => removeField(i)}
-												class="ui-button ui-button-secondary ui-button-sm"
-												aria-label="Remove column"
-											>
-												×
-											</button>
+											<div class={columnEditorControlsClass}>
+												<select
+													value={field().type}
+													onChange={(e) => updateField(i, "type", e.currentTarget.value)}
+													class={columnTypeSelectClass}
+												>
+													<For each={props.columnTypes}>
+														{(type) => <option value={type}>{type}</option>}
+													</For>
+												</select>
+												<button
+													type="button"
+													onClick={() => removeField(i)}
+													class="ui-button ui-button-secondary ui-button-sm"
+													aria-label="Remove column"
+												>
+													×
+												</button>
+											</div>
 										</div>
 										<Show when={field().type === "row_reference"}>
-											<div class="ml-1 flex items-center gap-2">
+											<div class={columnAuxRowClass}>
 												<span class="text-xs ui-muted">Target Form:</span>
 												<input
 													type="text"
@@ -870,7 +879,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 													placeholder="e.g. Project"
 													value={field().targetForm || ""}
 													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
-													class="ui-input ui-input-sm flex-1"
+													class={columnAuxInputClass}
 												/>
 												<datalist id={`row-ref-targets-${i}`}>
 													<For each={targetFormOptions()}>
@@ -1135,38 +1144,40 @@ export function EditFormDialog(props: EditFormDialogProps) {
 							<Index each={fields()}>
 								{(field, i) => (
 									<div class="flex flex-col gap-1 border-b pb-2 mb-2 last:border-0">
-										<div class="flex gap-2 items-center">
+										<div class={columnEditorRowClass}>
 											<input
 												type="text"
 												placeholder="Column Name"
 												disabled={!field().isNew && !!props.entryForm.fields[field().name]}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
-												class="ui-input ui-input-sm flex-1"
+												class={columnNameInputClass}
 												classList={{ "ui-input-error": fieldIssues().has(i) && field().isNew }}
 												aria-invalid={fieldIssues().has(i) || undefined}
 												title={!field().isNew ? "Delete and add a new column to rename" : ""}
 											/>
-											<select
-												value={field().type}
-												onChange={(e) => updateField(i, "type", e.currentTarget.value)}
-												class={columnTypeSelectClass}
-											>
-												<For each={props.columnTypes}>
-													{(type) => <option value={type}>{type}</option>}
-												</For>
-											</select>
-											<button
-												type="button"
-												onClick={() => removeField(i)}
-												class="ui-button ui-button-secondary ui-button-sm"
-												aria-label="Remove column"
-											>
-												×
-											</button>
+											<div class={columnEditorControlsClass}>
+												<select
+													value={field().type}
+													onChange={(e) => updateField(i, "type", e.currentTarget.value)}
+													class={columnTypeSelectClass}
+												>
+													<For each={props.columnTypes}>
+														{(type) => <option value={type}>{type}</option>}
+													</For>
+												</select>
+												<button
+													type="button"
+													onClick={() => removeField(i)}
+													class="ui-button ui-button-secondary ui-button-sm"
+													aria-label="Remove column"
+												>
+													×
+												</button>
+											</div>
 										</div>
 										<Show when={field().type === "row_reference"}>
-											<div class="ml-1 flex items-center gap-2">
+											<div class={columnAuxRowClass}>
 												<span class="text-xs ui-muted">Target Form:</span>
 												<input
 													type="text"
@@ -1174,7 +1185,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 													placeholder="e.g. Project"
 													value={field().targetForm || ""}
 													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
-													class="ui-input ui-input-sm flex-1"
+													class={columnAuxInputClass}
 												/>
 												<datalist id={`row-ref-targets-edit-${i}`}>
 													<For each={targetFormOptions()}>
@@ -1187,14 +1198,14 @@ export function EditFormDialog(props: EditFormDialogProps) {
 											<span class="text-xs ui-text-danger">{fieldIssues().get(i)}</span>
 										</Show>
 										<Show when={!props.entryForm.fields[field().name] || field().isNew}>
-											<div class="ml-1 flex items-center gap-2">
+											<div class={columnAuxRowClass}>
 												<span class="text-xs ui-muted">Default Value:</span>
 												<input
 													type="text"
 													placeholder="(Optional) e.g. Pending"
 													value={field().defaultValue || ""}
 													onInput={(e) => updateField(i, "defaultValue", e.currentTarget.value)}
-													class="ui-input ui-input-sm flex-1"
+													class={columnAuxInputClass}
 												/>
 											</div>
 										</Show>
