@@ -105,4 +105,27 @@ describe("/spaces/:space_id/dashboard", () => {
 		});
 		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
 	});
+
+	it("REQ-FE-058: dashboard avoids a persistent top-level loading banner during routine navigation", () => {
+		(spaceApi.get as ReturnType<typeof vi.fn>).mockImplementation(
+			() => new Promise(() => undefined) as Promise<never>,
+		);
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		expect(screen.getByRole("heading", { name: "default" })).toBeInTheDocument();
+		expect(screen.queryByText("Loading space...")).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-058: dashboard replaces the fallback title when space metadata loads", async () => {
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Default Space" })).toBeInTheDocument();
+		});
+		expect(screen.queryByRole("heading", { name: "default" })).not.toBeInTheDocument();
+	});
 });

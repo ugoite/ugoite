@@ -51,6 +51,7 @@ export default function SpaceDashboardRoute() {
 
 	const safeForms = createMemo(() => forms() || []);
 	const entryForms = createMemo(() => filterCreatableEntryForms(safeForms()));
+	const displaySpaceName = createMemo(() => space()?.name || spaceId());
 
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
@@ -109,14 +110,9 @@ export default function SpaceDashboardRoute() {
 		<SpaceShell spaceId={spaceId()} activeTopTab="dashboard">
 			<div class="mx-auto max-w-5xl ui-stack">
 				<div>
-					<Show when={space.loading}>
-						<p class="text-sm ui-muted">Loading space...</p>
-					</Show>
+					<h1 class="ui-page-title text-3xl sm:text-4xl">{displaySpaceName()}</h1>
 					<Show when={space.error}>
 						<p class="text-sm ui-text-danger">Failed to load space.</p>
-					</Show>
-					<Show when={space()}>
-						{(ws) => <h1 class="ui-page-title text-3xl sm:text-4xl">{ws().name}</h1>}
 					</Show>
 				</div>
 
