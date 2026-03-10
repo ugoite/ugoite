@@ -33,6 +33,7 @@ export function EntryList(props: EntryListProps) {
 	const internalStore = controlled
 		? null
 		: createEntryStore(() => (props as EntryListStandaloneProps).spaceId);
+
 	const standaloneStore = internalStore as NonNullable<typeof internalStore>;
 	const entries = createMemo(() => {
 		if (controlled) return (props as EntryListControlledProps).entries();

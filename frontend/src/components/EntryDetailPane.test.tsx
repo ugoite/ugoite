@@ -6,6 +6,7 @@ import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/entry-api";
 import { assetApi } from "~/lib/asset-api";
 import { setLocale } from "~/lib/i18n";
+import type { Form } from "~/lib/types";
 
 vi.mock("~/lib/entry-api", () => {
 	class RevisionConflictError extends Error {}
@@ -33,7 +34,7 @@ describe("EntryDetailPane", () => {
 		(assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 	});
 
-	it("REQ-FE-038: shows markdown H2 guidance and inserts missing required sections", async () => {
+	it("REQ-FE-052: shows form-aware markdown H2 guidance and inserts missing required sections", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "entry-1",
 			title: "Test Entry",
@@ -64,7 +65,14 @@ describe("EntryDetailPane", () => {
 		));
 
 		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-		expect(await screen.findByText(/Enter attributes under/i)).toBeInTheDocument();
+		const guidanceText = await screen.findByText(
+			(_, element) =>
+				element?.tagName === "P" &&
+				Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
+		);
+		expect(guidanceText).toHaveTextContent(/Form:\s*Meeting/);
+		expect(guidanceText).toHaveTextContent(/Example:\s*##\s*Date/);
+		expect(screen.queryByText("## status")).not.toBeInTheDocument();
 		expect(await screen.findByText(/Missing required sections: Date/)).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Insert missing H2 headings" }));
@@ -73,9 +81,82 @@ describe("EntryDetailPane", () => {
 		expect((textarea as HTMLTextAreaElement).value).toContain("## Date");
 	});
 
-	it("REQ-FE-053: renders English editor guidance and type warnings", async () => {
+	it("REQ-FE-052: omits example heading when form has no fields", async () => {
+		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "entry-2",
+			title: "Scratch Note",
+			form: "Empty",
+			content: "---\nform: Empty\n---\n\n# Scratch Note",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		});
+
+		render(() => (
+			<EntryDetailPane
+				spaceId={() => "default"}
+				entryId={() => "entry-2"}
+				forms={() => [
+					{
+						name: "Empty",
+						version: 1,
+						template: "# Empty\n",
+						fields: {},
+					},
+				]}
+				onDeleted={vi.fn()}
+			/>
+		));
+
+		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
+		await waitFor(() => expect(screen.getAllByText("Scratch Note")).toHaveLength(2));
+		const guidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Empty/)),
+		);
+		expect(guidanceText).not.toHaveTextContent(/Example:/);
+		expect(screen.queryByText("## status")).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-052: omits example heading when form data lacks a fields map", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "entry-3",
+			title: "Broken Note",
+			form: "Broken",
+			content: "---\nform: Broken\n---\n\n# Broken Note",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		});
+
+		render(() => (
+			<EntryDetailPane
+				spaceId={() => "default"}
+				entryId={() => "entry-3"}
+				forms={() => [
+					{
+						name: "Broken",
+						version: 1,
+						template: "# Broken\n",
+					} as unknown as Form,
+				]}
+				onDeleted={vi.fn()}
+			/>
+		));
+
+		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
+		await waitFor(() => expect(screen.getAllByText("Broken Note")).toHaveLength(2));
+		const guidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Broken/)),
+		);
+		expect(guidanceText).not.toHaveTextContent(/Example:/);
+		expect(screen.queryByText("## status")).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-053: renders English editor guidance and type warnings", async () => {
+		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "entry-4",
 			title: "Task Entry",
 			form: "Task",
 			content:
@@ -88,7 +169,7 @@ describe("EntryDetailPane", () => {
 		render(() => (
 			<EntryDetailPane
 				spaceId={() => "default"}
-				entryId={() => "entry-3"}
+				entryId={() => "entry-4"}
 				forms={() => [
 					{
 						name: "Task",
@@ -106,21 +187,19 @@ describe("EntryDetailPane", () => {
 
 		await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 		await waitFor(() => expect(screen.getAllByText("Task Entry")).toHaveLength(2));
-		expect(
-			screen.getByText(
-				(_, element) =>
-					element?.tagName === "P" &&
-					(element.textContent?.includes("Enter attributes under ## field name headings.") ??
-						false),
-			),
-		).toBeInTheDocument();
-		expect(
-			screen.getByText(
-				(_, element) =>
-					element?.tagName === "P" &&
-					(element.textContent?.includes("Form: Task / Example: ## field name") ?? false),
-			),
-		).toBeInTheDocument();
+		expect(await screen.findByText(/Enter attributes under/i)).toBeInTheDocument();
+		const guidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" &&
+				(element.textContent?.includes("Enter attributes under ## field name headings.") ?? false),
+		);
+		expect(guidanceText).toBeInTheDocument();
+		const formGuidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" &&
+				Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
+		);
+		expect(formGuidanceText).toHaveTextContent(/Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/);
 		expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();
 		expect(
 			screen.getByText("Done: Use true/false, yes/no, on/off, or 1/0 for boolean fields."),
@@ -166,15 +245,13 @@ describe("EntryDetailPane", () => {
 					(element.textContent?.includes("属性は ## フィールド名 見出しで入力します。") ?? false),
 			),
 		).toBeInTheDocument();
-		expect(
-			screen.getByText(
-				(_, element) =>
-					element?.tagName === "P" &&
-					(element.textContent?.includes("フォーム: Task / 例: ## フィールド名") ?? false),
-			),
-		).toBeInTheDocument();
+		const guidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" && Boolean(element.textContent?.includes("フォーム: Task")),
+		);
+		expect(guidanceText).toHaveTextContent(/フォーム:\s*Task\s*\/\s*例:\s*##\s*Summary/);
+		expect(guidanceText).not.toHaveTextContent(/Example:/);
 	});
-
 	it("REQ-FE-038: renders form validation warnings", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "entry-1",
