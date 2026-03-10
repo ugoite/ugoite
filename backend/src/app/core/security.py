@@ -11,6 +11,7 @@ from app.core.storage import storage_config_from_root
 if TYPE_CHECKING:  # pragma: no cover - type hinting helper
     import os
     from collections.abc import Mapping
+    from pathlib import Path
 
 LOCAL_CLIENT_SENTINELS: Final[set[str]] = {
     "127.0.0.1",
@@ -62,7 +63,7 @@ def is_local_host(host: str | None) -> bool:
 
 async def build_response_signature(
     body: bytes,
-    root_path: str | os.PathLike[str],
+    root_path: Path | str,
     space_id: str = "default",
 ) -> tuple[str, str]:
     """Compute the HMAC signature for the response body via ugoite-core storage APIs."""
