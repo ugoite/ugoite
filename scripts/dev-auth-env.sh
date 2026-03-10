@@ -18,6 +18,19 @@ announce_mode() {
   echo "Local dev auth mode: ${mode} (${detail})" >&2
 }
 
+require_working_oathtool() {
+  local generated_otp
+  if ! command -v oathtool >/dev/null 2>&1; then
+    echo "oathtool is required for automatic local dev 2FA flow. Install it first." >&2
+    exit 1
+  fi
+
+  if ! generated_otp="$(oathtool --totp -b "$DEV_2FA_SECRET" | tr -d '\n')" || [ -z "$generated_otp" ]; then
+    echo "failed to generate 2FA code via oathtool" >&2
+    exit 1
+  fi
+}
+
 emit_exports() {
   local auth_token="$1"
   local bootstrap_token="$2"
@@ -110,16 +123,7 @@ PY
   fi
 
   if [ -z "$token" ] || [ "$expires_at" -le "$now_epoch" ] || [ "${UGOITE_DEV_AUTH_FORCE_LOGIN:-false}" = "true" ]; then
-    if ! command -v oathtool >/dev/null 2>&1; then
-      echo "oathtool is required for automatic local dev 2FA flow. Install it first." >&2
-      exit 1
-    fi
-
-    otp_code="$(oathtool --totp -b "$DEV_2FA_SECRET" | tr -d '\n')"
-    if [ -z "$otp_code" ]; then
-      echo "failed to generate 2FA code via oathtool" >&2
-      exit 1
-    fi
+    require_working_oathtool
 
     token="$(
       python - <<'PY'
@@ -144,6 +148,7 @@ payload = {
     "expires_at": expires_at,
 }
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+path.chmod(0o600)
 PY
   fi
 

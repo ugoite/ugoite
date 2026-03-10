@@ -518,7 +518,13 @@ requirements:
 
     make the selected mode observable, document the dev TOTP secret/oathtool flow,
 
-    and allow developers to opt out of automatic token generation when they need
+    store cached auth files with owner-only permissions, and clarify that
+
+    `manual-totp` currently derives a local deterministic bearer token instead of
+
+    validating against a separate auth service. Tooling MUST also allow developers
+
+    to opt out of automatic token generation when they need
 
     to debug authentication intentionally.
 

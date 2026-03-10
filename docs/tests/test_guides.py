@@ -139,6 +139,8 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_MANUAL_TOKEN",
     "UGOITE_DEV_MOCK_OAUTH_TOKEN",
     "oathtool",
+    "derive a deterministic bearer token",
+    "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE=manual-totp",
@@ -156,6 +158,8 @@ REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     "UGOITE_DEV_TOTP_CODE",
     "UGOITE_DEV_MANUAL_TOKEN",
     "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "path.chmod(0o600)",
+    "require_working_oathtool",
     'announce_mode "automatic"',
     'announce_mode "manual-totp"',
     'announce_mode "mock-oauth"',
