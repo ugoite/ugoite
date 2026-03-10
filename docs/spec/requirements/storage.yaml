@@ -54,6 +54,9 @@ requirements:
     - file: ugoite-cli/tests/test_indexer.rs
       tests:
       - test_indexer_run_once
+    - file: backend/tests/test_api.py
+      tests:
+      - test_build_response_signature_uses_ugoite_core_storage_abstraction
     rust:
     - file: ugoite-minimum/tests/test_storage.rs
       tests:
