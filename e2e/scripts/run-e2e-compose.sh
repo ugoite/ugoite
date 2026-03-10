@@ -6,6 +6,8 @@
 # Environment variables:
 #   E2E_AUTH_BEARER_TOKEN: token used by Playwright tests (auto-generated if unset)
 #   PLAYWRIGHT_CI_REPORTER / PLAYWRIGHT_JUNIT_OUTPUT_FILE: passed through to tests
+#   E2E_BACKEND_START_TIMEOUT_SECONDS / E2E_FRONTEND_START_TIMEOUT_SECONDS:
+#     optional startup wait budgets for compose services (defaults: 120 seconds)
 
 set -e
 
@@ -37,6 +39,9 @@ PY
 export UGOITE_AUTH_BEARER_TOKENS_JSON
 export UGOITE_BOOTSTRAP_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN"
 
+backend_start_timeout="${E2E_BACKEND_START_TIMEOUT_SECONDS:-120}"
+frontend_start_timeout="${E2E_FRONTEND_START_TIMEOUT_SECONDS:-120}"
+
 cleanup() {
   echo ""
   echo "Stopping services..."
@@ -50,13 +55,13 @@ docker compose -f "$ROOT_DIR/docker-compose.e2e.yml" up -d
 
 # Wait for backend to be ready
 echo "Waiting for backend (port 8000)..."
-for i in $(seq 1 60); do
+for i in $(seq 1 "$backend_start_timeout"); do
   if curl -sf "http://localhost:8000/spaces" -H "Authorization: Bearer $E2E_AUTH_BEARER_TOKEN" >/dev/null 2>&1; then
     echo "✓ Backend is ready!"
     break
   fi
-  if [ "$i" -eq 60 ]; then
-    echo "✗ ERROR: Backend failed to start within 60 seconds"
+  if [ "$i" -eq "$backend_start_timeout" ]; then
+    echo "✗ ERROR: Backend failed to start within ${backend_start_timeout} seconds"
     docker compose -f "$ROOT_DIR/docker-compose.e2e.yml" logs backend
     exit 1
   fi
@@ -65,13 +70,13 @@ done
 
 # Wait for frontend to be ready
 echo "Waiting for frontend (port 3000)..."
-for i in $(seq 1 60); do
+for i in $(seq 1 "$frontend_start_timeout"); do
   if curl -sf "http://localhost:3000" >/dev/null 2>&1; then
     echo "✓ Frontend is ready!"
     break
   fi
-  if [ "$i" -eq 60 ]; then
-    echo "✗ ERROR: Frontend failed to start within 60 seconds"
+  if [ "$i" -eq "$frontend_start_timeout" ]; then
+    echo "✗ ERROR: Frontend failed to start within ${frontend_start_timeout} seconds"
     docker compose -f "$ROOT_DIR/docker-compose.e2e.yml" logs frontend
     exit 1
   fi
