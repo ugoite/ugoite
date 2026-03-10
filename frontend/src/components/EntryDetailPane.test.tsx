@@ -193,7 +193,11 @@ describe("EntryDetailPane", () => {
 				(element.textContent?.includes("Enter attributes under ## field name headings.") ?? false),
 		);
 		expect(guidanceText).toBeInTheDocument();
-		expect(guidanceText).toHaveTextContent(/Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/);
+		const formGuidanceText = screen.getByText(
+			(_, element) =>
+				element?.tagName === "P" && Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
+		);
+		expect(formGuidanceText).toHaveTextContent(/Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/);
 		expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();
 		expect(
 			screen.getByText("Done: Use true/false, yes/no, on/off, or 1/0 for boolean fields."),
