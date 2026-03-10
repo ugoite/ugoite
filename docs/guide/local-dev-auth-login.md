@@ -10,7 +10,7 @@ the helper silently bootstrap everything for you.
 | Mode | How to enable | What it does |
 |---|---|---|
 | `automatic` (default) | `mise run dev` | Uses `oathtool`, refreshes a cached local token, and exports matching backend/frontend bearer env vars automatically. |
-| `manual-totp` | `UGOITE_DEV_AUTH_MODE=manual-totp ... mise run dev` | Skips automatic token generation and expects an explicit local 2FA/TOTP-oriented login step from the developer. |
+| `manual-totp` | `UGOITE_DEV_AUTH_MODE=manual-totp ... mise run dev` | Skips automatic token generation and expects an explicit developer-provided TOTP step that is used locally to derive a deterministic bearer token for dev-only flows. |
 | `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth ... mise run dev` | Uses a deterministic mock OAuth-style bearer token so you can intentionally exercise authenticated UI/API flows without the automatic TOTP bootstrap path. |
 
 Each backend/frontend dev process logs the active mode at startup, for example:
@@ -56,7 +56,7 @@ In `automatic` mode, the helper:
 
 - generates a TOTP code using `oathtool`
 - creates or refreshes a local bearer token
-- stores it in `~/.ugoite/dev-auth.json`
+- stores it in `~/.ugoite/dev-auth.json` with local-user-only (`0600`) permissions
 - exports matching `UGOITE_BOOTSTRAP_BEARER_TOKEN` and `UGOITE_AUTH_BEARER_TOKEN`
 
 Force a fresh automatic login:
@@ -76,8 +76,8 @@ export UGOITE_DEV_USER_ID="dev-local-user"
 ## 5) Manual TOTP mode
 
 Use `manual-totp` when you want to keep the dev secret and `oathtool` flow
-visible and under your control instead of having the helper perform the login
-step for you.
+visible and under your control instead of letting the helper refresh the cached
+automatic token for you.
 
 Preferred flow:
 
@@ -112,6 +112,10 @@ Notes:
 - `UGOITE_DEV_TOTP_CODE` is the explicit manual step that keeps the CLI
   `oathtool` invocation visible when you want to debug or demonstrate the local
   2FA workflow.
+- The current `manual-totp` implementation does not validate that code against a
+  separate auth service or re-check it against `UGOITE_DEV_2FA_SECRET`. It uses
+  the provided value locally to derive a deterministic bearer token for the dev
+  backend/frontend pair.
 
 ## 6) Mock OAuth mode
 
