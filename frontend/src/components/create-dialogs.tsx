@@ -61,9 +61,10 @@ const columnTypeSelectClass =
 const columnEditorRowClass = "flex flex-col gap-2 sm:flex-row sm:items-center";
 const columnEditorControlsClass =
 	"grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:w-auto sm:flex-shrink-0";
-const columnNameInputClass = "ui-input ui-input-sm w-full sm:min-w-[14rem] sm:flex-1";
+const columnSharedInputClass = "ui-input ui-input-sm w-full sm:min-w-[14rem] sm:flex-1";
+const columnNameInputClass = columnSharedInputClass;
 const columnAuxRowClass = "ml-1 flex flex-col gap-2 sm:flex-row sm:items-center";
-const columnAuxInputClass = "ui-input ui-input-sm w-full sm:min-w-[14rem] sm:flex-1";
+const columnAuxInputClass = columnSharedInputClass;
 
 type FieldIssueSource = { name: string; type: string; targetForm?: string };
 
