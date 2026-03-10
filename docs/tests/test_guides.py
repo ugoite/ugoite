@@ -131,6 +131,37 @@ REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "/api/*",
     "waits for `http://localhost:8000/health`",
 }
+REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
+    "UGOITE_DEV_AUTH_MODE",
+    "manual-totp",
+    "mock-oauth",
+    "UGOITE_DEV_TOTP_CODE",
+    "UGOITE_DEV_MANUAL_TOKEN",
+    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "oathtool",
+}
+REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
+    "UGOITE_DEV_AUTH_MODE=manual-totp",
+    "UGOITE_DEV_AUTH_MODE=mock-oauth",
+    "Local Dev Auth/Login",
+}
+REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
+    "| UGOITE_DEV_AUTH_MODE |",
+    "| UGOITE_DEV_TOTP_CODE |",
+    "| UGOITE_DEV_MANUAL_TOKEN |",
+    "| UGOITE_DEV_MOCK_OAUTH_TOKEN |",
+}
+REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"',
+    "UGOITE_DEV_TOTP_CODE",
+    "UGOITE_DEV_MANUAL_TOKEN",
+    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    'announce_mode "automatic"',
+    'announce_mode "manual-totp"',
+    'announce_mode "mock-oauth"',
+    "manual-totp mode requires one of:",
+    "Unsupported UGOITE_DEV_AUTH_MODE",
+}
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
 REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
     "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
@@ -646,6 +677,66 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
+    """REQ-OPS-015: Local dev auth docs must cover explicit manual modes."""
+    guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+
+    missing_guide = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_guide:
+        details.append(
+            "local-dev-auth-login.md missing manual auth fragments: "
+            + ", ".join(missing_guide),
+        )
+
+    missing_readme = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
+        if fragment not in readme_text
+    )
+    if missing_readme:
+        details.append(
+            "README missing manual auth fragments: " + ", ".join(missing_readme),
+        )
+
+    missing_env_matrix = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS
+        if fragment not in env_matrix_text
+    )
+    if missing_env_matrix:
+        details.append(
+            "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_015_dev_auth_script_declares_manual_modes() -> None:
+    """REQ-OPS-015: dev-auth-env.sh must declare the supported auth modes."""
+    script_text = (REPO_ROOT / "scripts" / "dev-auth-env.sh").read_text(
+        encoding="utf-8",
+    )
+    missing = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS
+        if fragment not in script_text
+    )
+    if missing:
+        message = "dev-auth-env.sh missing manual auth mode fragments: " + ", ".join(
+            missing,
+        )
+        raise AssertionError(message)
 
 
 def test_docs_req_ops_013_all_tests_status_excludes_release_automation() -> None:
