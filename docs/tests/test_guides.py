@@ -177,6 +177,7 @@ REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
     "Release Publish",
 }
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
+    "CARGO_TARGET_DIR",
     "UGOITE_SEED_SPACE_ID",
     "UGOITE_SEED_SCENARIO",
     "UGOITE_SEED_ENTRY_COUNT",
@@ -195,7 +196,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
         "--entry-count 10 --seed 7"
     ),
     "UGOITE_SEED_SCENARIO=supply-chain",
-    "cargo run -q -p ugoite-cli -- space sample-scenarios",
+    "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -789,7 +790,10 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
             _require_exact_task_run(
                 root_mise,
                 "seed:scenarios",
-                ["cargo run -q -p ugoite-cli -- space sample-scenarios"],
+                [
+                    "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- "
+                    "space sample-scenarios"
+                ],
                 "root mise must expose seed:scenarios",
             ),
             _require_file_contains(

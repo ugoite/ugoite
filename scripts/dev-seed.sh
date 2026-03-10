@@ -27,38 +27,39 @@ SPACE_ID="${UGOITE_SEED_SPACE_ID:-dev-seed}"
 SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"
 SEED_VALUE="${UGOITE_SEED_VALUE:-}"
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
 
 while (($# > 0)); do
 	case "$1" in
-		--root)
-			ROOT_PATH="${2:?missing value for --root}"
-			shift 2
-			;;
-		--space-id)
-			SPACE_ID="${2:?missing value for --space-id}"
-			shift 2
-			;;
-		--scenario)
-			SCENARIO="${2:?missing value for --scenario}"
-			shift 2
-			;;
-		--entry-count)
-			ENTRY_COUNT="${2:?missing value for --entry-count}"
-			shift 2
-			;;
-		--seed)
-			SEED_VALUE="${2:?missing value for --seed}"
-			shift 2
-			;;
-		-h|--help)
-			usage
-			exit 0
-			;;
-		*)
-			echo "Unknown argument: $1" >&2
-			usage >&2
-			exit 1
-			;;
+	--root)
+		ROOT_PATH="${2:?missing value for --root}"
+		shift 2
+		;;
+	--space-id)
+		SPACE_ID="${2:?missing value for --space-id}"
+		shift 2
+		;;
+	--scenario)
+		SCENARIO="${2:?missing value for --scenario}"
+		shift 2
+		;;
+	--entry-count)
+		ENTRY_COUNT="${2:?missing value for --entry-count}"
+		shift 2
+		;;
+	--seed)
+		SEED_VALUE="${2:?missing value for --seed}"
+		shift 2
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		echo "Unknown argument: $1" >&2
+		usage >&2
+		exit 1
+		;;
 	esac
 done
 
@@ -83,11 +84,14 @@ echo "  root: $ROOT_PATH" >&2
 echo "  space: $SPACE_ID" >&2
 echo "  scenario: $SCENARIO" >&2
 echo "  entry_count: $ENTRY_COUNT" >&2
+echo "  cargo_target_dir: $CARGO_TARGET_DIR" >&2
 if [[ -n "$SEED_VALUE" ]]; then
 	echo "  seed: $SEED_VALUE" >&2
 fi
 
 command=(
+	env
+	"CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
 	cargo
 	run
 	-q
