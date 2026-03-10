@@ -76,6 +76,33 @@ describe("CreateFormDialog", () => {
 		expect(screen.getByRole("button", { name: "Create Form" })).toBeDisabled();
 	});
 
+	it("REQ-FE-055: keeps create-form column inputs readable on narrow layouts", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByText("+ Add Column"));
+
+		const columnInput = screen.getByPlaceholderText("Column Name");
+		expect(columnInput).toHaveClass("w-full");
+		expect(columnInput).toHaveClass("sm:min-w-[14rem]");
+		expect(columnInput).toHaveClass("sm:flex-1");
+		expect(columnInput.parentElement).toHaveClass("flex-col");
+		expect(columnInput.parentElement).toHaveClass("sm:flex-row");
+		const controls = columnInput.nextElementSibling;
+		expect(controls).toHaveClass("grid");
+		expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+	});
+
 	it("REQ-FE-032: creates form with valid name and fields", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -642,6 +669,37 @@ describe("EditFormDialog", () => {
 
 		// The row_reference field should show Target Form input
 		expect(screen.getByPlaceholderText("e.g. Project")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-055: keeps edit-form column inputs readable on narrow layouts", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByText("+ Add Column"));
+
+		const inputs = screen.getAllByPlaceholderText("Column Name") as HTMLInputElement[];
+		const newInput = inputs.find((input) => input.value === "");
+		if (!newInput) throw new Error("Could not find new edit-dialog column input");
+
+		expect(newInput).toHaveClass("w-full");
+		expect(newInput).toHaveClass("sm:min-w-[14rem]");
+		expect(newInput).toHaveClass("sm:flex-1");
+		expect(newInput.parentElement).toHaveClass("flex-col");
+		expect(newInput.parentElement).toHaveClass("sm:flex-row");
+		const controls = newInput.nextElementSibling;
+		expect(controls).toHaveClass("grid");
+		expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
 	});
 
 	it("REQ-FE-039: shows default value input for new fields", async () => {
