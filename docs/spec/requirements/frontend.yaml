@@ -1108,7 +1108,12 @@ requirements:
       - 'REQ-FE-037: renders optional fields in webform mode'
       - 'REQ-FE-037: sanitizes webform field ids for labels'
       - 'REQ-FE-037: falls back to a stable id when a field name slug is empty'
+      - 'REQ-FE-037: supports markdown mode submission'
+      - 'REQ-FE-037: clears the markdown flow after successful submission'
+      - 'REQ-FE-037: shows error when markdown is empty in markdown mode'
+      - 'REQ-FE-037: keeps the form open and shows required-field errors on submit'
       - 'REQ-FE-037: excludes reserved metadata forms from entry creation'
+      - 'REQ-FE-037: closes the create-entry dialog from the backdrop and Escape key'
     - file: frontend/src/components/ListPanel.test.tsx
       tests:
       - 'REQ-FE-037: disables new entry when no forms exist'
@@ -1462,7 +1467,6 @@ requirements:
     MUST allow users to review or skip optional questions and still submit the
 
     collected answers as chat-mode entry input.
->>>>>>> 1a2156e6 (fix: support full create-entry chat flow)
 
     '
   related_spec:
@@ -1473,12 +1477,12 @@ requirements:
     vitest:
     - file: frontend/src/components/create-dialogs.test.tsx
       tests:
-      - 'REQ-FE-057: chat mode walks through optional fields instead of only required ones'
-      - 'REQ-FE-057: chat mode submits answered required and optional fields'
       - 'REQ-FE-057: chat step pills react to answers and current step'
       - 'REQ-FE-057: chat step pills let users jump back to answered questions'
       - 'REQ-FE-057: chat mode blocks advancing past an empty required field'
       - 'REQ-FE-057: chat mode blocks skipping a required field'
+      - 'REQ-FE-057: chat mode walks through optional fields instead of only required ones'
+      - 'REQ-FE-057: chat mode submits answered required and optional fields'
       - 'REQ-FE-057: skipping an optional chat field clears its draft answer'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml

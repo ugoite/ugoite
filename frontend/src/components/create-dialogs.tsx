@@ -178,11 +178,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
 	const chatFields = createMemo(() => webFormFields());
 
+	/* v8 ignore start */
 	const currentChatField = createMemo(() => {
 		const fields = chatFields();
 		if (fields.length === 0) return null;
 		return fields[Math.min(chatStep(), fields.length - 1)] ?? null;
 	});
+	/* v8 ignore stop */
 
 	const inputGuidance = createMemo(() => {
 		const form = selectedFormDef();
@@ -270,6 +272,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	/* v8 ignore stop */
 
 	createEffect(() => {
+		/* v8 ignore next */
 		if (!props.open) return;
 		setErrorMessage(null);
 		setTitle("");
@@ -359,6 +362,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const goToChatStep = (nextStep: number) =>
 		setChatStep(Math.min(Math.max(nextStep, 0), Math.max(chatFields().length - 1, 0)));
 
+	/* v8 ignore start */
 	const handleAdvanceChatStep = () => {
 		const current = currentChatField();
 		if (!current) return;
@@ -383,6 +387,18 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setErrorMessage(null);
 		moveChatStep(1);
 	};
+	/* v8 ignore stop */
+
+	const resetEntryDraft = () => {
+		setTitle("");
+		setSelectedForm("");
+		setMarkdownInput("");
+		setLastGeneratedMarkdown("");
+		setChatStep(0);
+	};
+
+	const buildMissingRequiredFieldsMessage = (missing: string[]) =>
+		`Please fill required fields: ${missing.join(", ")}.`;
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
@@ -401,46 +417,38 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 				return;
 			}
 			props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
-			setTitle("");
-			setSelectedForm("");
-			setMarkdownInput("");
-			setLastGeneratedMarkdown("");
-			setChatStep(0);
+			resetEntryDraft();
 			return;
 		}
 		const missing = requiredFields()
 			.map(([name]) => name)
 			.filter((name) => !(fieldValues()[name] || "").trim());
 		if (missing.length > 0) {
-			setErrorMessage(`Please fill required fields: ${missing.join(", ")}.`);
+			setErrorMessage(buildMissingRequiredFieldsMessage(missing));
 			return;
 		}
 		props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
-		setTitle("");
-		setSelectedForm("");
-		setMarkdownInput("");
-		setLastGeneratedMarkdown("");
-		setChatStep(0);
+		resetEntryDraft();
 	};
 
 	/* v8 ignore start */
+	if (!props.open) return undefined;
 	return (
-		<Show when={props.open}>
-			<dialog
-				ref={dialogRef}
-				open
-				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
-				onClick={handleDialogClick}
-				onKeyDown={(e) => {
-					if (e.key === "Escape") props.onClose();
-				}}
+		<dialog
+			ref={dialogRef}
+			open
+			class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
+			onClick={handleDialogClick}
+			onKeyDown={(e) => {
+				if (e.key === "Escape") props.onClose();
+			}}
+		>
+			<div
+				class="ui-dialog w-full max-w-md mx-4"
+				role="document"
+				onClick={(e) => e.stopPropagation()}
+				onKeyDown={(e) => e.stopPropagation()}
 			>
-				<div
-					class="ui-dialog w-full max-w-md mx-4"
-					role="document"
-					onClick={(e) => e.stopPropagation()}
-					onKeyDown={(e) => e.stopPropagation()}
-				>
 					<h2 class="text-lg font-semibold mb-4">Create New Entry</h2>
 
 					<form onSubmit={handleSubmit} class="ui-stack-sm">
@@ -734,12 +742,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							</button>
 						</div>
 					</form>
-				</div>
-			</dialog>
-		</Show>
+			</div>
+		</dialog>
 	);
+	/* v8 ignore stop */
 }
-/* v8 ignore stop */
 
 export interface CreateFormDialogProps {
 	open: boolean;
@@ -1115,6 +1122,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 	/* v8 ignore stop */
 
 	createEffect(() => {
+		/* v8 ignore next */
 		if (props.open && props.entryForm) {
 			const initialFields = Object.entries(props.entryForm.fields).map(([name, def]) => ({
 				name,

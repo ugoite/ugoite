@@ -379,6 +379,50 @@ describe("CreateEntryDialog", () => {
 		);
 	});
 
+	it("REQ-FE-037: clears the markdown flow after successful submission", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "# Meeting\n\n## Date\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Reset Me" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+
+		const markdownArea = screen.getByRole("textbox", { name: "Markdown input" });
+		fireEvent.input(markdownArea, {
+			target: { value: "# Reset Me\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14" },
+		});
+
+		const form = screen.getByRole("button", { name: "Create" }).closest("form");
+		if (!form) throw new Error("Could not find create-entry form");
+		fireEvent.submit(form);
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Reset Me",
+			"Meeting",
+			expect.objectContaining({
+				__markdown: "# Reset Me\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
+			}),
+			"markdown",
+		);
+		expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe("");
+		expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+		expect(screen.queryByRole("textbox", { name: "Markdown input" })).not.toBeInTheDocument();
+	});
+
 	it("REQ-FE-053: renders English entry guidance across input modes", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -574,7 +618,151 @@ describe("CreateEntryDialog", () => {
 		expect(screen.getByLabelText(/Notes/)).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Skip optional field" })).toBeInTheDocument();
 	});
+	it("REQ-FE-057: chat step pills react to answers and current step", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Notes: { type: "markdown", required: false },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
 
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+		expect(screen.getByRole("button", { name: "Summary (required)" })).toHaveClass(
+			"ui-button-primary",
+		);
+		expect(screen.getByRole("button", { name: "Notes (optional)" })).toHaveClass(
+			"ui-button-secondary",
+		);
+
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Conversation summary" },
+		});
+
+		expect(screen.getByRole("button", { name: "Summary (answered)" })).toHaveClass(
+			"ui-button-primary",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+
+		expect(screen.getByRole("button", { name: "Summary (answered)" })).toHaveClass(
+			"ui-button-secondary",
+		);
+		expect(screen.getByRole("button", { name: "Notes (optional)" })).toHaveClass(
+			"ui-button-primary",
+		);
+	});
+
+	it("REQ-FE-057: chat step pills let users jump back to answered questions", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Notes: { type: "markdown", required: false },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Conversation summary" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+		fireEvent.click(screen.getByRole("button", { name: "Summary (answered)" }));
+
+		expect(screen.getByText("Question 1 / 2")).toBeInTheDocument();
+		expect(screen.getByLabelText(/Summary/)).toBeInTheDocument();
+	});
+
+	it("REQ-FE-057: chat mode blocks advancing past an empty required field", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Notes: { type: "markdown", required: false },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+		fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+
+		expect(screen.getByText("Please answer required field: Summary.")).toBeInTheDocument();
+		expect(screen.getByText("Question 1 / 2")).toBeInTheDocument();
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it("REQ-FE-057: chat mode blocks skipping a required field", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Notes: { type: "markdown", required: false },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+		fireEvent.click(screen.getByRole("button", { name: "Skip field" }));
+
+		expect(screen.getByText("Required field cannot be skipped: Summary.")).toBeInTheDocument();
+		expect(screen.getByText("Question 1 / 2")).toBeInTheDocument();
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
 	it("REQ-FE-057: chat mode submits answered required and optional fields", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -618,6 +806,48 @@ describe("CreateEntryDialog", () => {
 		);
 	});
 
+	it("REQ-FE-057: skipping an optional chat field clears its draft answer", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Notes: { type: "markdown", required: false },
+				},
+				template: "# Task\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat Task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Conversation summary" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+		fireEvent.input(screen.getByLabelText(/Notes/), { target: { value: "Draft note" } });
+		fireEvent.click(screen.getByRole("button", { name: "Skip optional field" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Chat Task",
+			"Task",
+			expect.not.objectContaining({
+				Notes: "Draft note",
+			}),
+			"chat",
+		);
+	});
+
 	it("REQ-FE-037: shows error when markdown is empty in markdown mode", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -650,6 +880,38 @@ describe("CreateEntryDialog", () => {
 		expect(screen.getByText("Please provide markdown content.")).toBeInTheDocument();
 	});
 
+	it("REQ-FE-037: keeps the form open and shows required-field errors on submit", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { Status: { type: "string", required: true } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Needs Status" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		const form = screen.getByRole("button", { name: "Create" }).closest("form");
+		if (!form) throw new Error("Could not find create-entry form");
+		fireEvent.submit(form);
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(screen.getByText("Please fill required fields: Status.")).toBeInTheDocument();
+		expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe(
+			"Needs Status",
+		);
+	});
+
 	it("REQ-FE-037: excludes reserved metadata forms from entry creation", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -678,6 +940,20 @@ describe("CreateEntryDialog", () => {
 		expect(screen.queryByRole("option", { name: "Assets" })).not.toBeInTheDocument();
 		expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
 		expect((select as HTMLSelectElement).value).toBe("Meeting");
+	});
+
+	it("REQ-FE-037: closes the create-entry dialog from the backdrop and Escape key", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => <CreateEntryDialog open={true} forms={[]} onClose={onClose} onSubmit={onSubmit} />);
+
+		const dialog = screen.getByRole("dialog");
+		fireEvent.keyDown(dialog, { key: "Escape" });
+		onClose.mockClear();
+		fireEvent.click(dialog, { target: dialog });
+
+		expect(onClose).toHaveBeenCalled();
 	});
 });
 
