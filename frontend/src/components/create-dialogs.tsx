@@ -626,19 +626,18 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<div class="mt-3 flex flex-wrap gap-2">
 									<For each={chatFields()}>
 										{([name, def], index) => {
-											const answered = !!(fieldValues()[name] || "").trim();
-											const current = index() === chatStep();
-											const status = answered ? "answered" : def.required ? "required" : "optional";
+											const answered = () => !!(fieldValues()[name] || "").trim();
+											const current = () => index() === chatStep();
 											return (
 												<button
 													type="button"
-													class={`ui-button text-xs ${current ? "ui-button-primary" : "ui-button-secondary"}`}
+													class={`ui-button text-xs ${current() ? "ui-button-primary" : "ui-button-secondary"}`}
 													onClick={() => {
 														goToChatStep(index());
 														setErrorMessage(null);
 													}}
 												>
-													{name} ({status})
+													{name} ({answered() ? "answered" : def.required ? "required" : "optional"})
 												</button>
 											);
 										}}
@@ -692,15 +691,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														Previous question
 													</button>
 													<div class="flex items-center gap-2">
-														<Show when={!def.required}>
-															<button
-																type="button"
-																class="ui-button ui-button-secondary text-xs"
-																onClick={handleSkipChatField}
-															>
-																Skip optional field
-															</button>
-														</Show>
+														<button
+															type="button"
+															class="ui-button ui-button-secondary text-xs"
+															onClick={handleSkipChatField}
+														>
+															{def.required ? "Skip field" : "Skip optional field"}
+														</button>
 														<Show when={chatStep() < chatFields().length - 1}>
 															<button
 																type="button"
