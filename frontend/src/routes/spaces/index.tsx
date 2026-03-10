@@ -1,13 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
-import {
-	createEffect,
-	createMemo,
-	createResource,
-	createSignal,
-	For,
-	Show,
-	type JSX,
-} from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
 
 const toMessage = (value: unknown): string => {
@@ -19,8 +11,15 @@ const toMessage = (value: unknown): string => {
 
 export default function SpacesIndexRoute() {
 	const navigate = useNavigate();
+	const [spacesError, setSpacesError] = createSignal("");
 	const [spaces, { refetch: refetchSpaces }] = createResource(async () => {
-		return await spaceApi.list();
+		setSpacesError("");
+		try {
+			return await spaceApi.list();
+		} catch (error) {
+			setSpacesError(toMessage(error) || "Failed to load spaces.");
+			return [];
+		}
 	});
 	const [redirected, setRedirected] = createSignal(false);
 	const [showCreateForm, setShowCreateForm] = createSignal(false);
@@ -28,37 +27,27 @@ export default function SpacesIndexRoute() {
 	const [createError, setCreateError] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
 
-	const authHint = createMemo((): JSX.Element | null => {
-		const message = toMessage(spaces.error).toLowerCase();
+	const authHint = createMemo((): string => {
+		const message = spacesError().toLowerCase();
 		if (
 			message.includes("401") ||
 			message.includes("authentication") ||
 			message.includes("unauthorized")
 		) {
-			return (
-				<span>
-					Authentication required. Re-run <code>mise run dev</code> (or{" "}
-					<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code>) to refresh local login.
-				</span>
-			);
+			return "Authentication required. Re-run `mise run dev` if you need to refresh local login.";
 		}
 		if (
 			message.includes("403") ||
 			message.includes("forbidden") ||
 			message.includes("not authorized")
 		) {
-			return (
-				<span>
-					Your identity is authenticated, but this space is not shared with your user yet. Ask a
-					space admin for an invitation.
-				</span>
-			);
+			return "You are signed in but do not have permission to view these spaces.";
 		}
-		return null;
+		return "";
 	});
 
 	const hasNoSpaces = createMemo(
-		() => !spaces.loading && !spaces.error && (spaces()?.length ?? 0) === 0,
+		() => !spaces.loading && !spacesError() && (spaces()?.length ?? 0) === 0,
 	);
 
 	const openCreateForm = () => {
@@ -94,10 +83,10 @@ export default function SpacesIndexRoute() {
 	};
 
 	createEffect(() => {
-		if (!spaces.error || redirected()) {
+		if (!spacesError() || redirected()) {
 			return;
 		}
-		const message = toMessage(spaces.error).toLowerCase();
+		const message = spacesError().toLowerCase();
 		if (
 			message.includes("401") ||
 			message.includes("authentication") ||
@@ -113,7 +102,7 @@ export default function SpacesIndexRoute() {
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<h1 class="ui-page-title">Spaces</h1>
 				<div class="flex flex-wrap items-center gap-2">
-					<Show when={!spaces.error && !showCreateForm() && !hasNoSpaces()}>
+					<Show when={!spacesError() && !showCreateForm() && !hasNoSpaces()}>
 						<button
 							type="button"
 							class="ui-button ui-button-primary text-sm"
@@ -127,15 +116,6 @@ export default function SpacesIndexRoute() {
 					</A>
 				</div>
 			</div>
-
-			<section class="ui-card ui-stack-sm">
-				<h2 class="text-lg font-semibold">Authentication</h2>
-				<p class="text-sm ui-muted">
-					Localhost and remote mode both require authentication. Use the local login flow via
-					<code>mise run dev</code> (or force refresh with
-					<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code>).
-				</p>
-			</section>
 
 			<section class="ui-card">
 				<h2 class="text-lg font-semibold mb-3">Available Spaces</h2>
@@ -185,7 +165,7 @@ export default function SpacesIndexRoute() {
 				<Show when={spaces.loading}>
 					<p class="text-sm ui-muted">Loading spaces...</p>
 				</Show>
-				<Show when={spaces.error}>
+				<Show when={spacesError()}>
 					<p class="ui-alert ui-alert-error text-sm">Failed to load spaces.</p>
 					<Show when={authHint()}>
 						<p class="text-sm ui-muted mt-2">{authHint()}</p>
