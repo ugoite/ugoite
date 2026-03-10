@@ -753,13 +753,15 @@ fn load_hmac_material<'a>(
 }
 
 #[pyfunction]
+#[pyo3(signature = (storage_config, space_id="default".to_string()))]
 fn load_response_hmac_material<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
+    space_id: String,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     pyo3_async_runtimes::tokio::future_into_py::<_, PyObject>(py, async move {
-        let (key_id, secret) = integrity::load_response_hmac_material(&op)
+        let (key_id, secret) = integrity::load_response_hmac_material(&op, &space_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Python::with_gil(|py| {
@@ -989,14 +991,16 @@ fn validate_properties_py(
 }
 
 #[pyfunction]
+#[pyo3(signature = (storage_config, body, space_id="default".to_string()))]
 fn build_response_signature<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
     body: Vec<u8>,
+    space_id: String,
 ) -> PyResult<Bound<'a, PyAny>> {
     let op = get_operator(py, &storage_config)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        let (key_id, signature) = integrity::build_response_signature(&op, &body)
+        let (key_id, signature) = integrity::build_response_signature(&op, &space_id, &body)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok((key_id, signature))
