@@ -493,3 +493,51 @@ requirements:
     - file: docs/tests/test_cli_language_docs.py
       tests:
       - test_docs_req_ops_014_cli_language_is_consistent
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-015
+  title: Local Dev Auth Mode Selection
+  description: 'Local development tooling MUST keep automatic auth bootstrap as the
+
+    default `mise run dev` path while also supporting explicit manual mode selection
+
+    for TOTP-driven login and mock OAuth-style login. The script and docs MUST
+
+    make the selected mode observable, document the dev TOTP secret/oathtool flow,
+
+    store cached auth files with owner-only permissions, and clarify that
+
+    `manual-totp` currently derives a local deterministic bearer token instead of
+
+    validating against a separate auth service. Tooling MUST also allow developers
+
+    to opt out of automatic token generation when they need
+
+    to debug authentication intentionally.
+
+    '
+  related_spec:
+  - ../guide/local-dev-auth-login.md
+  - ../guide/env-matrix.md
+  - ../README.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
+      - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
