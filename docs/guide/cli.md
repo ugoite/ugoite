@@ -61,11 +61,11 @@ mise run seed:scenarios
 ```
 
 If you prefer the underlying direct command, the task is just a thin wrapper
-over the Rust CLI:
+over the Rust CLI and keeps Cargo builds inside the shared `target/rust` cache:
 
 ```bash
 bash scripts/dev-seed.sh --space-id cli-demo --scenario lab-qa --entry-count 10 --seed 7
-cargo run -q -p ugoite-cli -- space sample-scenarios
+CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios
 ```
 
 ## Notes

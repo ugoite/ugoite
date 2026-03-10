@@ -93,8 +93,9 @@ UGOITE_SEED_ENTRY_COUNT=25 UGOITE_SEED_VALUE=42 mise run seed
 mise run seed:scenarios
 ```
 
-The seed task wraps the existing Rust CLI sample-data command and refuses to
-overwrite an existing local space, so repeated runs stay predictable.
+The seed task wraps the existing Rust CLI sample-data command, keeps builds in
+the shared `target/rust` cache, and refuses to overwrite an existing local
+space, so repeated runs stay predictable.
 
 If Rust build artifacts grow unexpectedly during local development, clear the
 shared Rust target cache and the legacy ugoite-core cache path:
