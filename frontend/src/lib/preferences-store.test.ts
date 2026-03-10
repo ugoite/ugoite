@@ -99,6 +99,26 @@ describe("preferencesStore", () => {
 		expect(getPreferencePatches()).toContainEqual(expectedPatch);
 	});
 
+	it("REQ-FE-059: migrates missing locale and theme fields from local fallback", async () => {
+		localStorage.setItem("ugoite-locale", "ja");
+		localStorage.setItem("ugoite-ui-theme", "classic");
+		localStorage.setItem("ugoite-color-mode", "dark");
+		seedPreferences({
+			locale: null,
+			ui_theme: null,
+			color_mode: null,
+		});
+
+		const { initializePortablePreferences } = await import("./preferences-store");
+		await initializePortablePreferences();
+
+		const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
+		expectedPatch.locale = "ja";
+		expectedPatch.ui_theme = "classic";
+		expectedPatch.color_mode = "dark";
+		expect(getPreferencePatches()).toContainEqual(expectedPatch);
+	});
+
 	it("REQ-FE-003: reuses an in-flight portable preferences initialization", async () => {
 		let requestCount = 0;
 		const { server } = await import("~/test/mocks/server");
