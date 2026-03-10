@@ -1189,6 +1189,40 @@ requirements:
   - SPEC-UI-OVERVIEW
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
+  id: REQ-FE-055
+  title: Responsive Form Column Editor Layout
+  description: 'Form creation and editing dialogs MUST keep the column name input comfortably
+
+    editable on narrower layouts by prioritizing the name field over secondary controls
+
+    such as type selection and remove actions. Column editor rows MUST avoid collapsing
+
+    the name input into an unreadably small field inside the dialog.
+
+    '
+  related_spec:
+  - stories/core.yaml#STORY-002
+  - requirements/form.yaml#REQ-FORM-005
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-055: keeps create-form column inputs readable on narrow layouts'
+      - 'REQ-FE-055: keeps edit-form column inputs readable on narrow layouts'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
   id: REQ-FE-050
   title: SQL Query Management API Client
   description: 'The frontend SQL query API client MUST support CRUD operations for saved
