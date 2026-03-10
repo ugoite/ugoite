@@ -63,4 +63,39 @@ describe("/spaces", () => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
 		});
 	});
+
+	it("REQ-FE-056: does not show persistent auth guidance during normal space listing", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "default", name: "default" },
+		]);
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("Available Spaces")).toBeInTheDocument();
+			expect(screen.getByText("Open Space")).toBeInTheDocument();
+		});
+
+		expect(screen.queryByRole("heading", { name: "Authentication" })).not.toBeInTheDocument();
+		expect(
+			screen.queryByText(/localhost and remote mode both require authentication/i),
+		).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-056: shows concise auth errors only when space loading fails", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("403 Forbidden"));
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("Failed to load spaces.")).toBeInTheDocument();
+		});
+
+		expect(
+			screen.getByText("You are signed in but do not have permission to view these spaces."),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText(/localhost and remote mode both require authentication/i),
+		).not.toBeInTheDocument();
+	});
 });

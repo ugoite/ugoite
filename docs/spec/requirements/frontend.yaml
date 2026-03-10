@@ -1339,3 +1339,34 @@ requirements:
       - 'REQ-FE-054: normalizeTimestamp falls back to string output for missing or invalid numeric inputs'
       - 'REQ-FE-054: formatDateLabel renders valid timestamps as locale dates'
       - 'REQ-FE-054: formatDateLabel falls back to trimmed text or em dash'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-056
+  title: Contextual Spaces Auth Guidance
+  description: 'The `/spaces` route MUST avoid persistent authentication guidance during
+
+    normal rendering. Auth guidance MUST only appear when space loading actually
+
+    fails, and the error copy MUST stay concise and contextual to the failure.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md#error-handling-standards
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/routes/spaces/index.test.tsx
+      tests:
+      - 'REQ-FE-056: does not show persistent auth guidance during normal space listing'
+      - 'REQ-FE-056: shows concise auth errors only when space loading fails'
