@@ -21,7 +21,7 @@ const authHintFromError = (value: unknown): string => {
 		message.includes("authentication") ||
 		message.includes("unauthorized")
 	) {
-		return "Authentication required. Re-run `mise run dev` (or `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`) to refresh local login.";
+		return "Authentication required. Open /login and sign in again for this local development session.";
 	}
 	if (
 		message.includes("403") ||
@@ -129,9 +129,9 @@ export default function SpaceSettingsRoute() {
 
 				<div class="ui-card">
 					<p class="text-sm ui-muted">
-						Localhost and remote mode both require authenticated sessions. Use local login flow via
-						<code>mise run dev</code> and force refresh with
-						<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code> when needed.
+						Localhost and remote mode both require authenticated sessions. Start the dev stack
+						with <code>mise run dev</code>, then complete browser login at <code>/login</code>
+						or through the CLI auth command.
 					</p>
 				</div>
 

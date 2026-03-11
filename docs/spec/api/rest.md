@@ -11,6 +11,10 @@ The REST API is the primary interface for the frontend and external integrations
 Current implementation: API is localhost-only by default and enforces
 authenticated identity on protected endpoints.
 
+Local development also exposes explicit login endpoints that issue bearer tokens
+*after* the browser or CLI completes a login step. `mise run dev` no longer
+starts the stack in an already-authenticated state.
+
 Planned (Milestone 4 / Phase 0 baseline): user authentication will be required
 for all API usage, including localhost mode. `UGOITE_ALLOW_REMOTE=true` only
 controls network exposure and must never disable authentication once auth
@@ -34,6 +38,38 @@ Planned endpoint surface (exact payloads may evolve during implementation):
 - `POST /spaces/{space_id}/service-accounts/{service_account_id}/keys`
 - `POST /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}/rotate`
 - `DELETE /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}`
+
+### Local Development Login Endpoints
+
+These endpoints are intentionally limited to the local development workflow and
+are unauthenticated so the browser and CLI can complete an explicit sign-in
+step after startup.
+
+- `GET /auth/dev/config`
+- `POST /auth/dev/login`
+- `POST /auth/dev/mock-oauth`
+
+Example manual TOTP login:
+
+```http
+POST /auth/dev/login
+Content-Type: application/json
+
+{
+  "username": "dev-local-user",
+  "totp_code": "123456"
+}
+```
+
+**Response**: `200 OK`
+
+```json
+{
+  "bearer_token": "v1.<payload>.<signature>",
+  "user_id": "dev-local-user",
+  "expires_at": 1900000000
+}
+```
 
 Authorization policy baseline:
 

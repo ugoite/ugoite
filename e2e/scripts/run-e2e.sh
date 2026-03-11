@@ -18,22 +18,15 @@ export BROWSERSLIST_IGNORE_OLD_DATA=true
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-if [ -z "${E2E_AUTH_BEARER_TOKEN:-}" ]; then
-  E2E_AUTH_BEARER_TOKEN="$(
-    python - <<'PY'
-import secrets
-print(f"e2e-{secrets.token_urlsafe(24)}")
-PY
-  )"
-fi
+DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
+DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret}"
+STATIC_E2E_TOKENS_JSON='{"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
 
-# Kill any existing processes on required ports
 echo "Checking for existing processes on ports 8000 and 3000..."
 fuser -k 8000/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
 sleep 1
 
-# Create default space for tests
 echo "Creating default space..."
 cd "$ROOT_DIR/backend"
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
@@ -67,33 +60,43 @@ async def main() -> None:
 asyncio.run(main())
 PY
 
-# Start backend in background
 echo "Starting backend server..."
 cd "$ROOT_DIR/backend"
-UGOITE_AUTH_BEARER_TOKENS_JSON="{\"$E2E_AUTH_BEARER_TOKEN\":{\"user_id\":\"e2e-user\",\"principal_type\":\"user\"},\"alice-token\":{\"user_id\":\"alice-user\",\"principal_type\":\"user\"},\"bob-token\":{\"user_id\":\"bob-user\",\"principal_type\":\"user\"}}"
-UGOITE_ROOT="$E2E_STORAGE_ROOT" UGOITE_ALLOW_REMOTE=true UGOITE_BOOTSTRAP_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" UGOITE_BOOTSTRAP_USER_ID="e2e-user" UGOITE_AUTH_BEARER_TOKENS_JSON="$UGOITE_AUTH_BEARER_TOKENS_JSON" uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+UGOITE_ROOT="$E2E_STORAGE_ROOT" \
+UGOITE_ALLOW_REMOTE=true \
+UGOITE_DEV_AUTH_MODE=mock-oauth \
+UGOITE_DEV_USER_ID=e2e-user \
+UGOITE_DEV_SIGNING_KID="$DEV_SIGNING_KID" \
+UGOITE_DEV_SIGNING_SECRET="$DEV_SIGNING_SECRET" \
+UGOITE_AUTH_BEARER_SECRETS="$DEV_SIGNING_KID:$DEV_SIGNING_SECRET" \
+UGOITE_AUTH_BEARER_ACTIVE_KIDS="$DEV_SIGNING_KID" \
+UGOITE_AUTH_BEARER_TOKENS_JSON="$STATIC_E2E_TOKENS_JSON" \
+uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
-# Start frontend in background
 echo "Starting frontend server..."
 cd "$ROOT_DIR/frontend"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
 if [ "$FRONTEND_MODE" = "prod" ]; then
   echo "Building frontend for production..."
-  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run build
+  BACKEND_URL=http://localhost:8000 bun run build
   echo "Starting production frontend server..."
-  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" NODE_ENV=production bun run start &
+  BACKEND_URL=http://localhost:8000 NODE_ENV=production bun run start &
 else
-  BACKEND_URL=http://localhost:8000 UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" bun run dev &
+  BACKEND_URL=http://localhost:8000 bun run dev &
 fi
 FRONTEND_PID=$!
 
-# Cleanup function
 cleanup() {
   echo ""
   echo "Stopping servers..."
-  kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
-  wait $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
+  if [ -n "${BACKEND_PID:-}" ]; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
+  if [ -n "${FRONTEND_PID:-}" ]; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
+  wait "${BACKEND_PID:-}" "${FRONTEND_PID:-}" 2>/dev/null || true
   echo "Servers stopped."
   if [ "$CLEANUP_E2E_STORAGE" = true ]; then
     rm -rf "$E2E_STORAGE_ROOT"
@@ -101,10 +104,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Wait for backend to be ready
 echo "Waiting for backend (port 8000)..."
 for i in {1..30}; do
-  if curl -s http://localhost:8000/spaces >/dev/null 2>&1; then
+  if curl -s http://localhost:8000/health >/dev/null 2>&1; then
     echo "✓ Backend is ready!"
     break
   fi
@@ -115,7 +117,11 @@ for i in {1..30}; do
   sleep 1
 done
 
-# Wait for frontend to be ready
+E2E_AUTH_BEARER_TOKEN="$(
+  curl -fsS -X POST http://localhost:8000/auth/dev/mock-oauth | python -c 'import json, sys; print(json.load(sys.stdin)["bearer_token"])'
+)"
+export E2E_AUTH_BEARER_TOKEN
+
 echo "Waiting for frontend (port 3000)..."
 for i in {1..60}; do
   if curl -s http://localhost:3000 >/dev/null 2>&1; then
@@ -129,14 +135,12 @@ for i in {1..60}; do
   sleep 1
 done
 
-# Run tests using Playwright
 echo ""
 echo "=========================================="
 echo "Running E2E tests (type: $TEST_TYPE)..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
-export E2E_AUTH_BEARER_TOKEN
 
 TEST_TIMEOUT_ARGS=()
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
