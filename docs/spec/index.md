@@ -1,8 +1,8 @@
 # Ugoite Specification Index
 
-**Version**: 2.0.0 (Full Configuration)  
-**Updated**: February 2026  
-**Status**: Milestone 3 - In Progress
+**Version**: 2.1.0 (Release Streams Documentation)  
+**Updated**: March 2026  
+**Status**: Milestone 4 - In Progress
 
 ## Vision
 
@@ -120,6 +120,6 @@ A **Space** is a self-contained data directory with:
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-03 | 2.1.0 | Added policy traceability docs and version/release-notes navigation |
+| 2026-03 | 2.1.0 | Added versions overview, release-stream pages, and release-notes navigation |
 | 2026-01 | 2.0.0 | Restructured for Full Configuration milestone; unified terminology to "Form" |
 | 2025-12 | 1.0.0 | Initial MVP specification |
