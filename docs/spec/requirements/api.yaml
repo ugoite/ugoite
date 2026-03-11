@@ -424,3 +424,52 @@ requirements:
       tests:
       - test_sample_data_req_api_010_list_scenarios
       - test_sample_data_req_api_010_job_lifecycle
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-011
+  title: Portable user preferences API
+  description: 'The API MUST expose authenticated `GET /preferences/me` and `PATCH /preferences/me`
+
+    operations for portable user preferences, including selected space, locale,
+
+    UI theme, color mode, and primary color.
+
+    The API MUST validate `selected_space_id` inputs and return explicit 500
+
+    errors when ugoite-core preference loading or updates fail.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  - features/preferences.yaml
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_preferences.py
+      tests:
+      - test_preferences_me_roundtrip
+      - test_preferences_me_rejects_invalid_selected_space_id
+      - test_preferences_me_accepts_null_selected_space_id
+      - test_preferences_me_get_returns_explicit_error_on_core_failure
+      - test_preferences_me_patch_returns_explicit_error_on_core_failure

@@ -1,27 +1,13 @@
 import { createEffect, createRoot, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
+import { readLocalPreferences, writeLocalPreferences } from "./preferences-local";
 
 export type UiTheme = "materialize" | "classic" | "pop";
 export type ColorMode = "light" | "dark";
 export type PrimaryColor = "violet" | "blue" | "emerald" | "amber";
 
-const THEME_STORAGE_KEY = "ugoite-ui-theme";
-const MODE_STORAGE_KEY = "ugoite-color-mode";
-const PRIMARY_COLOR_STORAGE_KEY = "ugoite-primary-color";
-
-const safeStorage = () => {
-	/* v8 ignore start */
-	if (isServer || typeof window === "undefined") return null;
-	/* v8 ignore stop */
-	return window.localStorage;
-};
-
 const readStoredTheme = (): UiTheme | null => {
-	const storage = safeStorage();
-	/* v8 ignore start */
-	if (!storage) return null;
-	/* v8 ignore stop */
-	const value = storage.getItem(THEME_STORAGE_KEY);
+	const value = readLocalPreferences().ui_theme;
 	/* v8 ignore start */
 	if (value === "materialize" || value === "classic" || value === "pop") {
 		return value;
@@ -31,11 +17,7 @@ const readStoredTheme = (): UiTheme | null => {
 };
 
 const readStoredMode = (): ColorMode | null => {
-	const storage = safeStorage();
-	/* v8 ignore start */
-	if (!storage) return null;
-	/* v8 ignore stop */
-	const value = storage.getItem(MODE_STORAGE_KEY);
+	const value = readLocalPreferences().color_mode;
 	/* v8 ignore start */
 	if (value === "light" || value === "dark") {
 		return value;
@@ -45,11 +27,7 @@ const readStoredMode = (): ColorMode | null => {
 };
 
 const readStoredPrimaryColor = (): PrimaryColor | null => {
-	const storage = safeStorage();
-	/* v8 ignore start */
-	if (!storage) return null;
-	/* v8 ignore stop */
-	const value = storage.getItem(PRIMARY_COLOR_STORAGE_KEY);
+	const value = readLocalPreferences().primary_color;
 	/* v8 ignore start */
 	if (value === "violet" || value === "blue" || value === "emerald" || value === "amber") {
 		return value;
@@ -88,16 +66,17 @@ const themeStore = createRoot(() => {
 	);
 
 	createEffect(() => {
-		const storage = safeStorage();
 		const nextTheme = theme();
 		const nextMode = mode();
 		const nextPrimaryColor = primaryColor();
 
 		applyThemeAttributes(nextTheme, nextMode, nextPrimaryColor);
 
-		storage?.setItem(THEME_STORAGE_KEY, nextTheme);
-		storage?.setItem(MODE_STORAGE_KEY, nextMode);
-		storage?.setItem(PRIMARY_COLOR_STORAGE_KEY, nextPrimaryColor);
+		const patch = {} as import("./types").UserPreferencesPatchPayload;
+		patch.ui_theme = nextTheme;
+		patch.color_mode = nextMode;
+		patch.primary_color = nextPrimaryColor;
+		writeLocalPreferences(patch);
 	});
 
 	return {

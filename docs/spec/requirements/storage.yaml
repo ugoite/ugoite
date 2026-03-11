@@ -406,3 +406,45 @@ requirements:
       - test_create_space_req_sto_010_requires_root_only_in_core_mode
       - test_space_list_req_sto_010_accepts_backend_mode_without_local_root
       - test_entry_and_form_list_req_sto_010_use_space_id_or_path_help
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-011
+  title: Hashed portable user preference storage
+  description: 'Portable user preferences MUST persist under `users/<sha256(user_id)>/preferences.json`
+
+    rather than exposing raw user identifiers in storage paths.
+
+    Missing preference files MUST resolve to a full null-valued preference object,
+
+    and patch updates MUST merge into the stored preference document without
+
+    recreating raw user-id directories.
+
+    '
+  related_spec:
+  - architecture/overview.md
+  - features/preferences.yaml
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-core/tests/test_async_bindings.py
+      tests:
+      - test_user_preferences_bindings
+    rust:
+    - file: ugoite-core/tests/test_preferences.rs
+      tests:
+      - test_preferences_req_sto_011_default_values
+      - test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path

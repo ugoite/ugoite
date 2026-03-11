@@ -1,15 +1,14 @@
 import { A } from "@solidjs/router";
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { locale, setLocale, t } from "~/lib/i18n";
+import { locale, t } from "~/lib/i18n";
 import {
-	colorMode,
-	primaryColor,
-	setColorMode,
-	setPrimaryColor,
-	setUiTheme,
-	uiTheme,
-} from "~/lib/ui-theme";
+	setColorModePreference,
+	setLocalePreference,
+	setPrimaryColorPreference,
+	setUiThemePreference,
+} from "~/lib/preferences-store";
+import { colorMode, primaryColor, uiTheme } from "~/lib/ui-theme";
 import { PRIMARY_COLORS } from "~/themes/color-registry";
 import { UI_THEMES } from "~/themes/registry";
 import type { Locale, TranslationKey } from "~/lib/i18n";
@@ -109,7 +108,9 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											name="ui-theme"
 											value={theme.value}
 											checked={uiTheme() === theme.value}
-											onChange={() => setUiTheme(theme.value)}
+											onChange={() => {
+												void setUiThemePreference(theme.value);
+											}}
 										/>
 										<span>{theme.label}</span>
 									</label>
@@ -128,7 +129,9 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											name="color-mode"
 											value={mode.value}
 											checked={colorMode() === mode.value}
-											onChange={() => setColorMode(mode.value)}
+											onChange={() => {
+												void setColorModePreference(mode.value);
+											}}
 										/>
 										<span>{t(mode.label)}</span>
 									</label>
@@ -147,7 +150,9 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											name="primary-color"
 											value={color.value}
 											checked={primaryColor() === color.value}
-											onChange={() => setPrimaryColor(color.value)}
+											onChange={() => {
+												void setPrimaryColorPreference(color.value);
+											}}
 										/>
 										<span>{t(color.label)}</span>
 									</label>
@@ -166,7 +171,9 @@ export function ThemeMenu(props: ThemeMenuProps) {
 											name="locale"
 											value={currentLocale.value}
 											checked={locale() === currentLocale.value}
-											onChange={() => setLocale(currentLocale.value)}
+											onChange={() => {
+												void setLocalePreference(currentLocale.value);
+											}}
 										/>
 										<span>{t(currentLocale.label)}</span>
 									</label>
