@@ -267,8 +267,7 @@ def _space_layout() -> dict[str, object]:
 
 def _entry_mappings(entries: object, context: str) -> list[dict[str, object]]:
     return [
-        _require_mapping(entry, context)
-        for entry in _require_list(entries, context)
+        _require_mapping(entry, context) for entry in _require_list(entries, context)
     ]
 
 
