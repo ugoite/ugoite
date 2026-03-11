@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Never
 
-import ugoite_core
+import pytest
 import yaml
 
 if TYPE_CHECKING:
@@ -97,12 +97,16 @@ def _read_json(path: Path) -> JSONValue:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _ugoite_core() -> object:
+    return pytest.importorskip("ugoite_core")
+
+
 async def _create_space(config: dict[str, str], space_id: str) -> None:
-    await ugoite_core.create_space(config, space_id)
+    await _ugoite_core().create_space(config, space_id)
 
 
 async def _load_response_hmac_material(config: dict[str, str], space_id: str) -> None:
-    await ugoite_core.load_response_hmac_material(config, space_id)
+    await _ugoite_core().load_response_hmac_material(config, space_id)
 
 
 async def _create_sql_session(
@@ -110,7 +114,7 @@ async def _create_sql_session(
     space_id: str,
     sql: str,
 ) -> dict[str, object]:
-    session = await ugoite_core.create_sql_session(config, space_id, sql)
+    session = await _ugoite_core().create_sql_session(config, space_id, sql)
     return _require_mapping(session, "create_sql_session return value")
 
 
