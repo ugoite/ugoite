@@ -31,6 +31,9 @@ const toc = philosophies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">
           <strong>Coding Guideline:</strong> {p.codingGuideline}
         </p>
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.75rem; line-height: 1.6;">
+          Linked policies: {p.linkedPolicies.join(", ")}
+        </p>
       </a>
     ))}
   </div>
