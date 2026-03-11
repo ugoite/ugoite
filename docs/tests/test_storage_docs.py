@@ -10,12 +10,18 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Never
 
 import ugoite_core
 import yaml
 
-from pathlib import Path
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+JSONScalar = None | bool | int | float | str
+JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
+SchemaMap = dict[str, dict[str, object]]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_BACKEND_INTERFACE_PATH = (
@@ -34,114 +40,441 @@ DIRECTORY_LAYOUT_PATH = (
 FILE_SCHEMAS_PATH = REPO_ROOT / "docs" / "spec" / "data-model" / "file-schemas.yaml"
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, dict):
-        raise AssertionError(f"{path.relative_to(REPO_ROOT)} must be a YAML mapping")
-    return loaded
+def _fail(message: str) -> Never:
+    raise AssertionError(message)
 
 
 def _normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
-def _directory_layout() -> dict[str, Any]:
-    return _load_yaml(DIRECTORY_LAYOUT_PATH)
+def _require_mapping(value: object, context: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        _fail(f"{context} must be a mapping")
+    return value
 
 
-def _file_schemas() -> dict[str, Any]:
-    schemas = _load_yaml(FILE_SCHEMAS_PATH).get("schemas")
-    if not isinstance(schemas, dict):
-        raise AssertionError("file-schemas.yaml must define a schemas mapping")
-    return schemas
+def _require_list(value: object, context: str) -> list[object]:
+    if not isinstance(value, list):
+        _fail(f"{context} must be a list")
+    return value
+
+
+def _require_string(value: object, context: str) -> str:
+    if not isinstance(value, str):
+        _fail(f"{context} must be a string")
+    return value
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, object]:
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        relative_path = path.relative_to(REPO_ROOT)
+        _fail(f"{relative_path} must be a YAML mapping")
+    return loaded
+
+
+def _directory_layout() -> dict[str, object]:
+    return _load_yaml_mapping(DIRECTORY_LAYOUT_PATH)
+
+
+def _file_schemas() -> SchemaMap:
+    raw_schemas = _load_yaml_mapping(FILE_SCHEMAS_PATH).get("schemas")
+    schemas = _require_mapping(raw_schemas, "file-schemas.yaml schemas")
+    normalized: SchemaMap = {}
+    for name, schema in schemas.items():
+        if not isinstance(name, str):
+            _fail("file-schemas.yaml schema names must be strings")
+        normalized[name] = _require_mapping(schema, f"file-schemas.yaml schema {name}")
+    return normalized
 
 
 def _render_path(template: str, **values: str) -> Path:
     return Path(template.format(**values))
 
 
-def _read_json(path: Path) -> Any:
+def _read_json(path: Path) -> JSONValue:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _is_type(value: Any, expected: str) -> bool:
-    if expected == "object":
-        return isinstance(value, dict)
-    if expected == "array":
-        return isinstance(value, list)
-    if expected == "string":
-        return isinstance(value, str)
-    if expected == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if expected == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if expected == "boolean":
-        return isinstance(value, bool)
-    if expected == "null":
-        return value is None
-    raise AssertionError(f"Unsupported schema type: {expected}")
+async def _create_space(config: dict[str, str], space_id: str) -> None:
+    await ugoite_core.create_space(config, space_id)
 
 
-def _validate_format(value: Any, expected_format: str, context: str) -> None:
-    if value is None:
-        return
-    if expected_format != "date-time":
+async def _load_response_hmac_material(config: dict[str, str], space_id: str) -> None:
+    await ugoite_core.load_response_hmac_material(config, space_id)
+
+
+async def _create_sql_session(
+    config: dict[str, str],
+    space_id: str,
+    sql: str,
+) -> dict[str, object]:
+    session = await ugoite_core.create_sql_session(config, space_id, sql)
+    return _require_mapping(session, "create_sql_session return value")
+
+
+def _is_json_integer(value: JSONValue) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_json_number(value: JSONValue) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _schema_predicates() -> dict[str, Callable[[JSONValue], bool]]:
+    return {
+        "array": lambda value: isinstance(value, list),
+        "boolean": lambda value: isinstance(value, bool),
+        "integer": _is_json_integer,
+        "null": lambda value: value is None,
+        "number": _is_json_number,
+        "object": lambda value: isinstance(value, dict),
+        "string": lambda value: isinstance(value, str),
+    }
+
+
+def _matches_schema_type(value: JSONValue, expected: str) -> bool:
+    predicate = _schema_predicates().get(expected)
+    if predicate is None:
+        _fail(f"Unsupported schema type: {expected}")
+    return predicate(value)
+
+
+def _validate_format(value: JSONValue, expected_format: str, context: str) -> None:
+    if value is None or expected_format != "date-time":
         return
     if not isinstance(value, str):
-        raise AssertionError(f"{context} must be a date-time string")
+        _fail(f"{context} must be a date-time string")
     try:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:  # pragma: no cover - exercised on failure
-        raise AssertionError(f"{context} must be valid RFC3339: {value}") from exc
+        message = f"{context} must be valid RFC3339: {value}"
+        raise AssertionError(message) from exc
 
 
-def _validate_schema(value: Any, schema: dict[str, Any], context: str) -> None:
+def _validate_declared_type(
+    value: JSONValue,
+    schema: dict[str, object],
+    context: str,
+) -> object:
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
-        if not any(_is_type(value, str(option)) for option in schema_type):
-            raise AssertionError(f"{context} must match one of {schema_type!r}")
-    elif isinstance(schema_type, str):
-        if not _is_type(value, schema_type):
-            raise AssertionError(f"{context} must be {schema_type}")
+        option_names = [str(option) for option in schema_type]
+        if not any(_matches_schema_type(value, option) for option in option_names):
+            _fail(f"{context} must match one of {option_names!r}")
+        return schema_type
+    if isinstance(schema_type, str) and not _matches_schema_type(value, schema_type):
+        _fail(f"{context} must be {schema_type}")
+    return schema_type
 
+
+def _validate_enum(value: JSONValue, schema: dict[str, object], context: str) -> None:
     enum_values = schema.get("enum")
     if isinstance(enum_values, list) and value not in enum_values:
-        raise AssertionError(f"{context} must be one of {enum_values!r}")
+        _fail(f"{context} must be one of {enum_values!r}")
 
+
+def _validate_required_keys(
+    value: dict[str, JSONValue],
+    schema: dict[str, object],
+    context: str,
+) -> None:
+    required_values = schema.get("required", [])
+    required_keys = _require_list(required_values, f"{context} required keys")
+    missing = [str(key) for key in required_keys if key not in value]
+    if missing:
+        _fail(f"{context} missing required keys: {missing!r}")
+
+
+def _validate_properties(
+    value: dict[str, JSONValue],
+    schema: dict[str, object],
+    context: str,
+) -> None:
+    properties_value = schema.get("properties", {})
+    properties = _require_mapping(properties_value, f"{context} properties")
+    for key, property_schema in properties.items():
+        if key not in value:
+            continue
+        property_name = _require_string(key, f"{context} property name")
+        _validate_schema(
+            value[property_name],
+            _require_mapping(property_schema, f"{context}.{property_name} schema"),
+            f"{context}.{property_name}",
+        )
+
+
+def _validate_additional_properties(
+    value: dict[str, JSONValue],
+    schema: dict[str, object],
+    context: str,
+) -> None:
+    additional = schema.get("additionalProperties")
+    if not isinstance(additional, dict):
+        return
+    properties_value = schema.get("properties", {})
+    properties = _require_mapping(properties_value, f"{context} properties")
+    handled = {str(key) for key in properties}
+    for key, item in value.items():
+        if key in handled:
+            continue
+        _validate_schema(item, additional, f"{context}.{key}")
+
+
+def _validate_object_schema(
+    value: JSONValue,
+    schema: dict[str, object],
+    context: str,
+) -> None:
+    object_value = _require_mapping(value, context)
+    _validate_required_keys(object_value, schema, context)
+    _validate_properties(object_value, schema, context)
+    _validate_additional_properties(object_value, schema, context)
+
+
+def _validate_array_schema(
+    value: JSONValue,
+    schema: dict[str, object],
+    context: str,
+) -> None:
+    array_value = _require_list(value, context)
+    item_schema = schema.get("items")
+    if not isinstance(item_schema, dict):
+        return
+    for index, item in enumerate(array_value):
+        _validate_schema(item, item_schema, f"{context}[{index}]")
+
+
+def _validate_schema(value: JSONValue, schema: dict[str, object], context: str) -> None:
+    schema_type = _validate_declared_type(value, schema, context)
+    _validate_enum(value, schema, context)
     expected_format = schema.get("format")
     if isinstance(expected_format, str):
         _validate_format(value, expected_format, context)
-
     if schema_type == "object":
-        if not isinstance(value, dict):
-            raise AssertionError(f"{context} must be an object")
-        required = schema.get("required", [])
-        if isinstance(required, list):
-            missing = [str(key) for key in required if key not in value]
-            if missing:
-                raise AssertionError(f"{context} missing required keys: {missing!r}")
-        properties = schema.get("properties", {})
-        if isinstance(properties, dict):
-            for key, prop_schema in properties.items():
-                if key not in value or not isinstance(prop_schema, dict):
-                    continue
-                _validate_schema(value[key], prop_schema, f"{context}.{key}")
-        additional = schema.get("additionalProperties")
-        if isinstance(additional, dict):
-            handled = set(properties) if isinstance(properties, dict) else set()
-            for key, item in value.items():
-                if key in handled:
-                    continue
-                _validate_schema(item, additional, f"{context}.{key}")
-        return
-
+        _validate_object_schema(value, schema, context)
     if schema_type == "array":
-        if not isinstance(value, list):
-            raise AssertionError(f"{context} must be an array")
-        item_schema = schema.get("items")
-        if isinstance(item_schema, dict):
-            for index, item in enumerate(value):
-                _validate_schema(item, item_schema, f"{context}[{index}]")
+        _validate_array_schema(value, schema, context)
+
+
+def _space_layout() -> dict[str, object]:
+    return _require_mapping(
+        _directory_layout().get("space_layout"),
+        "directory-layout.yaml space_layout",
+    )
+
+
+def _entry_mappings(entries: object, context: str) -> list[dict[str, object]]:
+    return [
+        _require_mapping(entry, context)
+        for entry in _require_list(entries, context)
+    ]
+
+
+def _bootstrap_entries() -> list[dict[str, object]]:
+    bootstrap = _require_mapping(
+        _space_layout().get("bootstrap"),
+        "directory-layout.yaml bootstrap",
+    )
+    return _entry_mappings(
+        bootstrap.get("entries"),
+        "directory-layout bootstrap entries",
+    )
+
+
+def _trigger_entries(trigger_name: str) -> list[dict[str, object]]:
+    triggers = _require_mapping(
+        _space_layout().get("triggers"),
+        "directory-layout.yaml triggers",
+    )
+    trigger = _require_mapping(
+        triggers.get(trigger_name),
+        f"directory-layout.yaml trigger {trigger_name}",
+    )
+    return _entry_mappings(trigger.get("entries"), f"{trigger_name} entries")
+
+
+def _schema_definition(schemas: SchemaMap, schema_name: str) -> dict[str, object]:
+    schema_entry = schemas.get(schema_name)
+    if schema_entry is None:
+        _fail(f"Unknown schema: {schema_name}")
+    return _require_mapping(schema_entry.get("schema"), f"Schema {schema_name}")
+
+
+def _entry_path(entry: dict[str, object], context: str, **values: str) -> Path:
+    template = _require_string(entry.get("path"), f"{context} path")
+    return _render_path(template, **values)
+
+
+def _entry_kind(entry: dict[str, object], context: str) -> str:
+    return _require_string(entry.get("kind"), f"{context} kind")
+
+
+def _validate_documented_file(
+    entry: dict[str, object],
+    path: Path,
+    schemas: SchemaMap,
+    context: str,
+) -> None:
+    if not path.is_file():
+        _fail(f"Missing documented file: {path}")
+    schema_name = entry.get("schema")
+    if isinstance(schema_name, str):
+        schema = _schema_definition(schemas, schema_name)
+        _validate_schema(_read_json(path), schema, context)
+
+
+def _validate_bootstrap_entry(
+    entry: dict[str, object],
+    tmp_path: Path,
+    space_dir: Path,
+    space_id: str,
+    schemas: SchemaMap,
+) -> str | None:
+    relative_path = _entry_path(
+        entry,
+        "directory-layout bootstrap entry",
+        space_id=space_id,
+    )
+    absolute_path = tmp_path / relative_path
+    kind = _entry_kind(entry, "directory-layout bootstrap entry")
+    if kind == "directory":
+        if not absolute_path.is_dir():
+            _fail(f"Missing documented directory: {relative_path}")
+    elif kind == "file":
+        _validate_documented_file(
+            entry,
+            absolute_path,
+            schemas,
+            relative_path.as_posix(),
+        )
+    else:
+        _fail(f"Unsupported layout kind: {kind}")
+
+    if absolute_path.parent == space_dir:
+        return absolute_path.name
+    return None
+
+
+def _validate_bootstrap_layout(
+    tmp_path: Path,
+    space_id: str,
+    schemas: SchemaMap,
+) -> None:
+    space_dir = tmp_path / "spaces" / space_id
+    actual_top_level = {path.name for path in space_dir.iterdir()}
+    expected_top_level = {
+        name
+        for name in (
+            _validate_bootstrap_entry(entry, tmp_path, space_dir, space_id, schemas)
+            for entry in _bootstrap_entries()
+        )
+        if name is not None
+    }
+    if actual_top_level != expected_top_level:
+        actual_names = sorted(actual_top_level)
+        expected_names = sorted(expected_top_level)
+        _fail(
+            "Bootstrap scaffold drift: "
+            "documented top-level entries "
+            f"{expected_names!r} != actual {actual_names!r}",
+        )
+
+
+def _validate_response_signing_trigger(
+    tmp_path: Path,
+    space_id: str,
+    schemas: SchemaMap,
+) -> None:
+    entries = _trigger_entries("response_signing")
+    for entry in entries:
+        before = tmp_path / _entry_path(
+            entry,
+            "response_signing entry",
+            space_id=space_id,
+        )
+        if before.exists():
+            _fail(f"Lazy response-signing path exists too early: {before}")
+
+    config = {"uri": f"fs://{tmp_path}"}
+    asyncio.run(_load_response_hmac_material(config, space_id))
+
+    for entry in entries:
+        after = tmp_path / _entry_path(
+            entry,
+            "response_signing entry",
+            space_id=space_id,
+        )
+        _validate_documented_file(
+            entry,
+            after,
+            schemas,
+            after.relative_to(tmp_path).as_posix(),
+        )
+
+
+def _load_sql_session_ids(
+    tmp_path: Path,
+    space_id: str,
+) -> tuple[str, str]:
+    config = {"uri": f"fs://{tmp_path}"}
+    session_mapping = asyncio.run(
+        _create_sql_session(config, space_id, "SELECT 1 AS value"),
+    )
+    session_id = _require_string(session_mapping.get("id"), "create_sql_session id")
+    sql_id = _require_string(session_mapping.get("sql_id"), "create_sql_session sql_id")
+    return session_id, sql_id
+
+
+def _assert_sql_roots_start_empty(tmp_path: Path, space_id: str) -> None:
+    materialized_root = tmp_path / "spaces" / space_id / "materialized_views"
+    sessions_root = tmp_path / "spaces" / space_id / "sql_sessions"
+    if any(materialized_root.iterdir()) or any(sessions_root.iterdir()):
+        _fail("Lazy SQL paths should not exist before create_sql_session")
+
+
+def _validate_sql_trigger_entry(
+    entry: dict[str, object],
+    tmp_path: Path,
+    path_values: dict[str, str],
+    schemas: SchemaMap,
+) -> None:
+    relative_path = _entry_path(
+        entry,
+        "sql_session_creation entry",
+        **path_values,
+    )
+    absolute_path = tmp_path / relative_path
+    kind = _entry_kind(entry, "sql_session_creation entry")
+    if kind == "directory":
+        if not absolute_path.is_dir():
+            _fail(f"Missing documented SQL directory: {relative_path}")
+        return
+    if kind != "file":
+        _fail(f"Unsupported layout kind: {kind}")
+    _validate_documented_file(entry, absolute_path, schemas, relative_path.as_posix())
+
+
+def _validate_sql_session_trigger(
+    tmp_path: Path,
+    space_id: str,
+    schemas: SchemaMap,
+) -> None:
+    _assert_sql_roots_start_empty(tmp_path, space_id)
+    session_id, sql_id = _load_sql_session_ids(tmp_path, space_id)
+    path_values = {
+        "space_id": space_id,
+        "session_id": session_id,
+        "sql_id": sql_id,
+    }
+    for entry in _trigger_entries("sql_session_creation"):
+        _validate_sql_trigger_entry(
+            entry,
+            tmp_path,
+            path_values,
+            schemas,
+        )
 
 
 def test_docs_req_sto_001_storage_runtime_declares_opendal_current() -> None:
@@ -187,167 +520,29 @@ def test_docs_req_sto_001_storage_runtime_declares_opendal_current() -> None:
             "adapter is OpenDAL-backed",
         )
     if details:
-        raise AssertionError("; ".join(details))
+        _fail("; ".join(details))
 
 
 def test_docs_req_sto_011_storage_layout_bootstrap_matches_runtime(
     tmp_path: Path,
 ) -> None:
     """REQ-STO-011: Bootstrap scaffold docs match create_space output."""
-    async def _run() -> None:
-        layout = _directory_layout()["space_layout"]["bootstrap"]
-        entries = layout["entries"]
-        if not isinstance(entries, list):
-            raise AssertionError("directory-layout bootstrap entries must be a list")
-
-        config = {"uri": f"fs://{tmp_path}"}
-        space_id = "doc-sync-space"
-        await ugoite_core.create_space(config, space_id)
-
-        space_dir = tmp_path / "spaces" / space_id
-        actual_top_level = {path.name for path in space_dir.iterdir()}
-        expected_top_level: set[str] = set()
-        schemas = _file_schemas()
-
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise AssertionError("directory-layout bootstrap entries must be mappings")
-            path_template = entry.get("path")
-            kind = entry.get("kind")
-            if not isinstance(path_template, str) or not isinstance(kind, str):
-                raise AssertionError("directory-layout entries require path and kind")
-            relative_path = _render_path(path_template, space_id=space_id)
-            absolute_path = tmp_path / relative_path
-            if kind == "directory":
-                if not absolute_path.is_dir():
-                    raise AssertionError(f"Missing documented directory: {relative_path}")
-            elif kind == "file":
-                if not absolute_path.is_file():
-                    raise AssertionError(f"Missing documented file: {relative_path}")
-                schema_name = entry.get("schema")
-                if isinstance(schema_name, str):
-                    schema_entry = schemas.get(schema_name)
-                    if not isinstance(schema_entry, dict):
-                        raise AssertionError(f"Unknown schema: {schema_name}")
-                    schema = schema_entry.get("schema")
-                    if not isinstance(schema, dict):
-                        raise AssertionError(f"Schema {schema_name} must define schema")
-                    _validate_schema(
-                        _read_json(absolute_path),
-                        schema,
-                        relative_path.as_posix(),
-                    )
-            else:
-                raise AssertionError(f"Unsupported layout kind: {kind}")
-
-            if absolute_path.parent == space_dir:
-                expected_top_level.add(absolute_path.name)
-
-        if actual_top_level != expected_top_level:
-            raise AssertionError(
-                "Bootstrap scaffold drift: documented top-level entries "
-                f"{sorted(expected_top_level)!r} != actual {sorted(actual_top_level)!r}",
-            )
-
-    asyncio.run(_run())
+    config = {"uri": f"fs://{tmp_path}"}
+    space_id = "doc-sync-space"
+    asyncio.run(_create_space(config, space_id))
+    _validate_bootstrap_layout(tmp_path, space_id, _file_schemas())
 
 
 def test_docs_req_sto_011_storage_layout_lazy_paths_match_runtime_triggers(
     tmp_path: Path,
 ) -> None:
     """REQ-STO-011: Lazy storage paths appear only after their documented triggers."""
-    async def _run() -> None:
-        layout = _directory_layout()["space_layout"]["triggers"]
-        if not isinstance(layout, dict):
-            raise AssertionError("directory-layout triggers must be a mapping")
-
-        config = {"uri": f"fs://{tmp_path}"}
-        space_id = "doc-sync-space"
-        await ugoite_core.create_space(config, space_id)
-
-        schemas = _file_schemas()
-
-        response_entries = layout.get("response_signing", {}).get("entries")
-        if not isinstance(response_entries, list):
-            raise AssertionError("response_signing entries must be a list")
-        for entry in response_entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-                raise AssertionError("response_signing entries require concrete path")
-            before = tmp_path / _render_path(entry["path"], space_id=space_id)
-            if before.exists():
-                raise AssertionError(
-                    f"Lazy response-signing path exists too early: {before}",
-                )
-
-        await ugoite_core.load_response_hmac_material(config, space_id)
-
-        for entry in response_entries:
-            schema_name = entry.get("schema")
-            after = tmp_path / _render_path(str(entry["path"]), space_id=space_id)
-            if not after.is_file():
-                raise AssertionError(f"Missing response-signing path after trigger: {after}")
-            if isinstance(schema_name, str):
-                schema_entry = schemas.get(schema_name)
-                if not isinstance(schema_entry, dict):
-                    raise AssertionError(f"Unknown schema: {schema_name}")
-                schema = schema_entry.get("schema")
-                if not isinstance(schema, dict):
-                    raise AssertionError(f"Schema {schema_name} must define schema")
-                _validate_schema(
-                    _read_json(after),
-                    schema,
-                    after.relative_to(tmp_path).as_posix(),
-                )
-
-        sql_entries = layout.get("sql_session_creation", {}).get("entries")
-        if not isinstance(sql_entries, list):
-            raise AssertionError("sql_session_creation entries must be a list")
-        materialized_root = tmp_path / "spaces" / space_id / "materialized_views"
-        sessions_root = tmp_path / "spaces" / space_id / "sql_sessions"
-        if any(materialized_root.iterdir()) or any(sessions_root.iterdir()):
-            raise AssertionError(
-                "Lazy SQL paths should not exist before create_sql_session",
-            )
-
-        session = await ugoite_core.create_sql_session(
-            config,
-            space_id,
-            "SELECT 1 AS value",
-        )
-        if not isinstance(session, dict):
-            raise AssertionError("create_sql_session must return a mapping")
-        session_id = str(session.get("id") or "")
-        sql_id = str(session.get("sql_id") or "")
-        if not session_id or not sql_id:
-            raise AssertionError("create_sql_session must return id and sql_id")
-
-        for entry in sql_entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-                raise AssertionError("sql_session_creation entries require concrete path")
-            relative = _render_path(
-                str(entry["path"]),
-                space_id=space_id,
-                session_id=session_id,
-                sql_id=sql_id,
-            )
-            absolute = tmp_path / relative
-            kind = entry.get("kind")
-            if kind == "directory" and not absolute.is_dir():
-                raise AssertionError(f"Missing documented SQL directory: {relative}")
-            if kind == "file":
-                if not absolute.is_file():
-                    raise AssertionError(f"Missing documented SQL file: {relative}")
-                schema_name = entry.get("schema")
-                if isinstance(schema_name, str):
-                    schema_entry = schemas.get(schema_name)
-                    if not isinstance(schema_entry, dict):
-                        raise AssertionError(f"Unknown schema: {schema_name}")
-                    schema = schema_entry.get("schema")
-                    if not isinstance(schema, dict):
-                        raise AssertionError(f"Schema {schema_name} must define schema")
-                    _validate_schema(_read_json(absolute), schema, relative.as_posix())
-
-    asyncio.run(_run())
+    config = {"uri": f"fs://{tmp_path}"}
+    space_id = "doc-sync-space"
+    asyncio.run(_create_space(config, space_id))
+    schemas = _file_schemas()
+    _validate_response_signing_trigger(tmp_path, space_id, schemas)
+    _validate_sql_session_trigger(tmp_path, space_id, schemas)
 
 
 def test_docs_req_sto_007_backend_storage_boundary_docs_match_runtime() -> None:
@@ -390,4 +585,4 @@ def test_docs_req_sto_007_backend_storage_boundary_docs_match_runtime() -> None:
             "shared Rust storage layer",
         )
     if details:
-        raise AssertionError("; ".join(details))
+        _fail("; ".join(details))
