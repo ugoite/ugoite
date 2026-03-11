@@ -5,7 +5,7 @@
 # - backend: includes path, file definition location, and function name
 # - frontend: includes path, file definition location, and function name
 # - ugoite_core: includes file and function name
-# - ugoite_cli: includes command, file, and function name
+# - ugoite_cli: optional; when present it includes command, file, and function name
 
 version: "0.2"
 updated: "2026-01"
@@ -23,13 +23,15 @@ conventions:
     - frontend.function
     - ugoite_core.file
     - ugoite_core.function
-    - ugoite_cli.command
-    - ugoite_cli.file
-    - ugoite_cli.function
+    - ugoite_cli.command (optional)
+    - ugoite_cli.file (optional)
+    - ugoite_cli.function (optional)
 
 files:
   - kind: spaces
     file: spaces.yaml
+  - kind: preferences
+    file: preferences.yaml
   - kind: entries
     file: entries.yaml
   - kind: forms

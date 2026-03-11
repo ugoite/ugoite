@@ -102,6 +102,7 @@ get_sql_session_count = _core_any.get_sql_session_count
 get_sql_session_rows = _core_any.get_sql_session_rows
 get_sql_session_rows_all = _core_any.get_sql_session_rows_all
 get_sql_session_status = _core_any.get_sql_session_status
+get_user_preferences = _core_any.get_user_preferences
 list_assets = _core_any.list_assets
 list_column_types = _core_any.list_column_types
 list_entries = _core_any.list_entries
@@ -113,6 +114,7 @@ load_hmac_material = _core_any.load_hmac_material
 load_response_hmac_material = _core_any.load_response_hmac_material
 migrate_form = _core_any.migrate_form
 patch_space = _core_any.patch_space
+patch_user_preferences = _core_any.patch_user_preferences
 query_index = _core_any.query_index
 reindex_all = _core_any.reindex_all
 restore_entry = _core_any.restore_entry
@@ -186,6 +188,7 @@ __all__ = [
     "get_sql_session_rows",
     "get_sql_session_rows_all",
     "get_sql_session_status",
+    "get_user_preferences",
     "is_active_member",
     "lint_sql",
     "list_assets",
@@ -203,6 +206,7 @@ __all__ = [
     "load_sql_rules",
     "migrate_form",
     "patch_space",
+    "patch_user_preferences",
     "query_index",
     "reindex_all",
     "require_entry_read",

@@ -1,9 +1,12 @@
 // REQ-FE-044: Frontend multilingual dictionary and locale switching
-import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+// REQ-FE-059: Portable theme preferences with local fallback
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { describe, expect, it, beforeEach } from "vitest";
 import { ThemeMenu } from "./ThemeMenu";
 import { locale, setLocale } from "~/lib/i18n";
+import { resetPortablePreferencesState } from "~/lib/preferences-store";
 import { initializeUiTheme, setColorMode, setPrimaryColor, setUiTheme } from "~/lib/ui-theme";
+import { getPreferencePatches, resetMockData } from "~/test/mocks/handlers";
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
@@ -15,7 +18,13 @@ vi.mock("@solidjs/router", () => ({
 
 describe("ThemeMenu", () => {
 	beforeEach(() => {
+		resetMockData();
+		localStorage.clear();
 		setLocale("en");
+		setUiTheme("materialize");
+		setColorMode("light");
+		setPrimaryColor("violet");
+		resetPortablePreferencesState();
 	});
 	it("shows language options in settings menu", async () => {
 		render(() => <ThemeMenu spaceId="default" />);
@@ -38,6 +47,22 @@ describe("ThemeMenu", () => {
 
 		expect(locale()).toBe("ja");
 		expect(document.documentElement.lang).toBe("ja");
+		await waitFor(() => {
+			expect(getPreferencePatches()).toContainEqual({ locale: "ja" });
+		});
+	});
+
+	it("REQ-FE-044: persists locale via portable preferences with local fallback", async () => {
+		render(() => <ThemeMenu spaceId="default" />);
+
+		const openButton = screen.getByRole("button", { name: /theme settings/i });
+		await fireEvent.click(openButton);
+		await fireEvent.click(screen.getByRole("radio", { name: "日本語" }));
+
+		await waitFor(() => {
+			expect(getPreferencePatches()).toContainEqual({ locale: "ja" });
+		});
+		expect(localStorage.getItem("ugoite-locale")).toBe("ja");
 	});
 
 	it("switches UI theme", async () => {
@@ -47,6 +72,11 @@ describe("ThemeMenu", () => {
 		const classicRadio = screen.getByRole("radio", { name: "Classic" });
 		await fireEvent.click(classicRadio);
 		expect(document.documentElement.dataset.uiTheme).toBe("classic");
+		await waitFor(() => {
+			const expectedPatch = {} as import("~/lib/types").UserPreferencesPatchPayload;
+			expectedPatch.ui_theme = "classic";
+			expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		});
 	});
 
 	it("switches color mode", async () => {
@@ -56,6 +86,11 @@ describe("ThemeMenu", () => {
 		const darkRadio = screen.getByRole("radio", { name: /dark/i });
 		await fireEvent.click(darkRadio);
 		expect(document.documentElement.dataset.colorMode).toBe("dark");
+		await waitFor(() => {
+			const expectedPatch = {} as import("~/lib/types").UserPreferencesPatchPayload;
+			expectedPatch.color_mode = "dark";
+			expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		});
 	});
 
 	it("switches primary color", async () => {
@@ -65,6 +100,11 @@ describe("ThemeMenu", () => {
 		const blueRadio = screen.getByRole("radio", { name: /blue/i });
 		await fireEvent.click(blueRadio);
 		expect(document.documentElement.dataset.primaryColor).toBe("blue");
+		await waitFor(() => {
+			const expectedPatch = {} as import("~/lib/types").UserPreferencesPatchPayload;
+			expectedPatch.primary_color = "blue";
+			expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		});
 	});
 
 	it("closes on Escape key", async () => {

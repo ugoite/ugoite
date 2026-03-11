@@ -1,5 +1,6 @@
 """Integration tests for Python bindings."""
 
+import hashlib
 import json
 import pathlib
 
@@ -88,3 +89,42 @@ Body text""",
     )
     assert entry["id"] == "entry-1"
     assert entry["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_user_preferences_bindings(tmp_path: pathlib.Path) -> None:
+    """REQ-STO-011: Verify user preference bindings.
+
+    Portable user preferences must use hashed storage paths.
+    """
+    root = tmp_path / "storage"
+    root.mkdir()
+    config = {"uri": f"fs://{root}"}
+    user_id = "portable/user@example.com"
+
+    preferences = await ugoite_core.get_user_preferences(config, user_id)
+    assert preferences == {
+        "selected_space_id": None,
+        "locale": None,
+        "ui_theme": None,
+        "color_mode": None,
+        "primary_color": None,
+    }
+
+    updated = await ugoite_core.patch_user_preferences(
+        config,
+        user_id,
+        json.dumps(
+            {
+                "selected_space_id": "space-1",
+                "locale": "ja",
+                "ui_theme": "classic",
+            },
+        ),
+    )
+    assert updated["selected_space_id"] == "space-1"
+    assert updated["locale"] == "ja"
+    assert updated["ui_theme"] == "classic"
+
+    hashed_user = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    assert (root / "users" / hashed_user / "preferences.json").exists()
