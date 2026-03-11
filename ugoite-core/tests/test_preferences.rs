@@ -6,8 +6,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 #[tokio::test]
-/// REQ-STO-002
-async fn test_preferences_req_sto_002_default_values() -> anyhow::Result<()> {
+/// REQ-STO-011
+async fn test_preferences_req_sto_011_default_values() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
     let preferences = preferences::get_user_preferences(&op, "user@example.com").await?;
@@ -22,8 +22,8 @@ async fn test_preferences_req_sto_002_default_values() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// REQ-STO-004
-async fn test_preferences_req_sto_004_patch_roundtrip_uses_hashed_user_path() -> anyhow::Result<()>
+/// REQ-STO-011
+async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() -> anyhow::Result<()>
 {
     let op = setup_operator()?;
     let user_id = "unsafe/user@example.com";

@@ -134,7 +134,7 @@ def test_feature_paths_exist() -> None:
 
     for api in entries:
         api_id = api.get("id", "<unknown>")
-        for section_key in ("backend", "frontend", "ugoite_core", "ugoite_cli"):
+        for section_key in ("backend", "frontend", "ugoite_core"):
             section = api.get(section_key)
             if not isinstance(section, dict):
                 message = f"Missing {section_key} section for {api_id}"
@@ -149,15 +149,34 @@ def test_feature_paths_exist() -> None:
                 message = "Feature registry must not use n/a for file paths"
                 raise AssertionError(message)
 
-            if section_key == "ugoite_cli" and not section.get("command"):
-                message = f"Missing ugoite_cli command for {api_id}"
-                raise AssertionError(message)
-
             file_path = REPO_ROOT / file_value
             if not file_path.exists():
                 message = f"Missing file {file_value}"
                 raise AssertionError(message)
             _assert_function_exists(file_path, str(function_value))
+
+        cli = api.get("ugoite_cli")
+        if cli is None:
+            continue
+        if not isinstance(cli, dict):
+            message = f"Invalid ugoite_cli section for {api_id}"
+            raise TypeError(message)
+        if not cli.get("command"):
+            message = f"Missing ugoite_cli command for {api_id}"
+            raise AssertionError(message)
+        file_value = cli.get("file")
+        function_value = cli.get("function")
+        if not file_value or not function_value:
+            message = f"Missing ugoite_cli file/function for {api_id}"
+            raise AssertionError(message)
+        if str(file_value).strip().lower() in {"n/a", "na"}:
+            message = "Feature registry must not use n/a for file paths"
+            raise AssertionError(message)
+        file_path = REPO_ROOT / str(file_value)
+        if not file_path.exists():
+            message = f"Missing file {file_value}"
+            raise AssertionError(message)
+        _assert_function_exists(file_path, str(function_value))
 
 
 def test_no_undeclared_feature_modules() -> None:

@@ -48,9 +48,8 @@ describe("preferencesApi", () => {
 
 	it("REQ-FE-059: falls back to status text when portable preference detail is empty", async () => {
 		server.use(
-			http.patch(
-				"http://localhost:3000/api/preferences/me",
-				() => HttpResponse.json({ detail: "" }, { status: 500, statusText: "Server Error" }),
+			http.patch("http://localhost:3000/api/preferences/me", () =>
+				HttpResponse.json({ detail: "" }, { status: 500, statusText: "Server Error" }),
 			),
 		);
 

@@ -18,10 +18,6 @@ apis:
     ugoite_core:
       file: ugoite-core/src/preferences.rs
       function: get_user_preferences
-    ugoite_cli:
-      command: ugoite config show
-      file: ugoite-cli/src/commands/config.rs
-      function: run
 
   - id: preferences.me.patch
     method: PATCH
@@ -36,7 +32,3 @@ apis:
     ugoite_core:
       file: ugoite-core/src/preferences.rs
       function: patch_user_preferences
-    ugoite_cli:
-      command: ugoite config set
-      file: ugoite-cli/src/commands/config.rs
-      function: run

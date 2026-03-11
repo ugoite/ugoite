@@ -34,7 +34,7 @@ Each operation entry includes:
 **Frontend path semantics**: The frontend path is the UI route path (no `/api` prefix).
 It should mirror the backend path to keep functionality aligned and discoverable.
 - **ugoite-core**: Internal logic implementation (Rust).
-- **ugoite-cli**: Command-line interface usage and implementation.
+- **ugoite-cli**: Optional command-line interface usage and implementation when the API is exposed through the CLI.
 
 Example:
 
@@ -58,6 +58,9 @@ apis:
       file: ugoite-cli/src/commands/entry.rs
       function: run (EntrySubCmd::Create)
 ```
+
+If an API operation has no CLI surface yet, omit the `ugoite_cli` block instead of
+pointing to an unrelated command.
 
 ## Verification Tests
 
