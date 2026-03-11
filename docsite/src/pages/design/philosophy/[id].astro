@@ -2,9 +2,9 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../../lib/base-path";
 import {
-	getFeatureKindsLinkedToRequirements,
-	getPhilosophies,
-	getPoliciesDetailed,
+  getFeatureKindsLinkedToRequirements,
+  getPhilosophies,
+  getPoliciesDetailed,
 } from "../../../lib/spec-data";
 
 export async function getStaticPaths() {
@@ -23,17 +23,17 @@ if (!item) {
 
 const policyOrder = new Map(item.linkedPolicies.map((policyId, index) => [policyId, index]));
 const relatedPolicies = policies
-	.filter((policy) => item.linkedPolicies.includes(policy.id))
-	.sort(
-		(a, b) =>
-			(policyOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-			(policyOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-	);
+  .filter((policy) => item.linkedPolicies.includes(policy.id))
+  .sort(
+    (a, b) =>
+      (policyOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (policyOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
 const relatedPolicyCards = await Promise.all(
-	relatedPolicies.map(async (policy) => ({
-		policy,
-		featureKinds: await getFeatureKindsLinkedToRequirements(policy.linkedRequirements),
-	})),
+  relatedPolicies.map(async (policy) => ({
+    policy,
+    featureKinds: await getFeatureKindsLinkedToRequirements(policy.linkedRequirements),
+  })),
 );
 
 const requirementIds = [...new Set(relatedPolicies.flatMap((policy) => policy.linkedRequirements))].sort((a, b) =>

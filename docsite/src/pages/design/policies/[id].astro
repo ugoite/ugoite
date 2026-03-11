@@ -2,10 +2,10 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../../lib/base-path";
 import {
-	getFeatureKindsLinkedToRequirements,
-	getPhilosophies,
-	getPoliciesDetailed,
-	getSpecifications,
+  getFeatureKindsLinkedToRequirements,
+  getPhilosophies,
+  getPoliciesDetailed,
+  getSpecifications,
 } from "../../../lib/spec-data";
 
 export async function getStaticPaths() {
@@ -25,18 +25,18 @@ if (!policy) {
 
 const linkedFeatures = await getFeatureKindsLinkedToRequirements(policy.linkedRequirements);
 const linkedPhilosophies = philosophies.filter((item) =>
-	policy.linkedPhilosophies.includes(item.id),
+  policy.linkedPhilosophies.includes(item.id),
 );
 
 const specPathById = new Map(specs.map((item) => [item.id, item.sourceFile]));
 
 const toc = [
-	{ id: "summary", title: "Summary" },
-	{ id: "rationale", title: "Policy Rationale" },
-	{ id: "philosophies", title: "Linked Philosophies" },
-	{ id: "requirements", title: "Related Requirements" },
-	{ id: "features", title: "Governed Feature Areas" },
-	{ id: "specs", title: "Linked Specs" },
+  { id: "summary", title: "Summary" },
+  { id: "rationale", title: "Policy Rationale" },
+  { id: "philosophies", title: "Linked Philosophies" },
+  { id: "requirements", title: "Related Requirements" },
+  { id: "features", title: "Governed Feature Areas" },
+  { id: "specs", title: "Linked Specs" },
 ];
 ---
 

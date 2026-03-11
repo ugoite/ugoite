@@ -215,7 +215,12 @@ def _load_philosophies() -> dict[str, dict[str, Any]]:
     philosophies = philosophy_loaded.get("philosophies")
     if not isinstance(philosophies, list) or not philosophies:
         _fail("philosophies list is required")
-    return _to_id_map(philosophies, "philosophy")
+    typed_philosophies: list[dict[str, Any]] = []
+    for philosophy in philosophies:
+        if not isinstance(philosophy, dict):
+            _fail("philosophies entries must be mappings")
+        typed_philosophies.append(philosophy)
+    return _to_id_map(typed_philosophies, "philosophy")
 
 
 def _assert_philosophy_fields(philosophy_map: dict[str, dict[str, Any]]) -> None:
@@ -310,13 +315,7 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
 
 def test_req_ops_003_bidirectional_links_hold() -> None:
     """REQ-OPS-003: Policy/requirement/specification links must be bidirectional."""
-    philosophy_loaded = _load_yaml(PHILOSOPHY_PATH)
-    if not isinstance(philosophy_loaded, dict):
-        _fail("philosophy/foundation.yaml must be a mapping")
-    philosophies = philosophy_loaded.get("philosophies")
-    if not isinstance(philosophies, list) or not philosophies:
-        _fail("philosophies list is required")
-    philosophy_map = _to_id_map(philosophies, "philosophy")
+    philosophy_map = _load_philosophies()
     policy_map = _load_policies()
     requirement_map = _load_requirement_sets()
     specification_map = _load_specifications()
