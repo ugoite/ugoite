@@ -105,6 +105,35 @@ def _assert_function_exists(file_path: Path, function_name: str) -> None:
         raise AssertionError(message)
 
 
+def _assert_feature_section(
+    api_id: str,
+    section_key: str,
+    section: dict[str, Any],
+) -> None:
+    file_value = section.get("file")
+    function_value = section.get("function")
+    if not file_value or not function_value:
+        message = f"Missing {section_key} file/function for {api_id}"
+        raise AssertionError(message)
+
+    if str(file_value).strip().lower() in {"n/a", "na"}:
+        message = "Feature registry must not use n/a for file paths"
+        raise AssertionError(message)
+
+    file_path = REPO_ROOT / str(file_value)
+    if not file_path.exists():
+        message = f"Missing file {file_value}"
+        raise AssertionError(message)
+    _assert_function_exists(file_path, str(function_value))
+
+
+def _assert_cli_section(api_id: str, cli: dict[str, Any]) -> None:
+    if not cli.get("command"):
+        message = f"Missing ugoite_cli command for {api_id}"
+        raise AssertionError(message)
+    _assert_feature_section(api_id, "ugoite_cli", cli)
+
+
 def _contains_route_handlers(file_path: Path) -> bool:
     contents = _read_text(file_path)
     return "@router." in contents
@@ -139,21 +168,7 @@ def test_feature_paths_exist() -> None:
             if not isinstance(section, dict):
                 message = f"Missing {section_key} section for {api_id}"
                 raise TypeError(message)
-            file_value = section.get("file")
-            function_value = section.get("function")
-            if not file_value or not function_value:
-                message = f"Missing {section_key} file/function for {api_id}"
-                raise AssertionError(message)
-
-            if str(file_value).strip().lower() in {"n/a", "na"}:
-                message = "Feature registry must not use n/a for file paths"
-                raise AssertionError(message)
-
-            file_path = REPO_ROOT / file_value
-            if not file_path.exists():
-                message = f"Missing file {file_value}"
-                raise AssertionError(message)
-            _assert_function_exists(file_path, str(function_value))
+            _assert_feature_section(api_id, section_key, section)
 
         cli = api.get("ugoite_cli")
         if cli is None:
@@ -161,22 +176,7 @@ def test_feature_paths_exist() -> None:
         if not isinstance(cli, dict):
             message = f"Invalid ugoite_cli section for {api_id}"
             raise TypeError(message)
-        if not cli.get("command"):
-            message = f"Missing ugoite_cli command for {api_id}"
-            raise AssertionError(message)
-        file_value = cli.get("file")
-        function_value = cli.get("function")
-        if not file_value or not function_value:
-            message = f"Missing ugoite_cli file/function for {api_id}"
-            raise AssertionError(message)
-        if str(file_value).strip().lower() in {"n/a", "na"}:
-            message = "Feature registry must not use n/a for file paths"
-            raise AssertionError(message)
-        file_path = REPO_ROOT / str(file_value)
-        if not file_path.exists():
-            message = f"Missing file {file_value}"
-            raise AssertionError(message)
-        _assert_function_exists(file_path, str(function_value))
+        _assert_cli_section(api_id, cli)
 
 
 def test_no_undeclared_feature_modules() -> None:
