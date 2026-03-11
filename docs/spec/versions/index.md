@@ -24,21 +24,21 @@ changes, or prepares meaningful product behavior for users and operators.
 
 | Version | Status | What it means |
 |---------|--------|---------------|
-| `v0.1` | in progress | Foundational release stream covering MVP, full configuration, Iceberg-backed data model changes, user management, and release preparation |
+| `v0.1` | `in_progress` | Foundational release stream covering MVP, full configuration, Iceberg-backed data model changes, user management, and release preparation |
 | `v0.2` | planned | Next stream focused on user-controlled experiences and deeper AI-native workflows |
 
 ## What Each Version Adds
 
 | Capability Area | `v0.1` | `v0.2` |
 |-----------------|--------|--------|
-| Local-first core app, storage abstraction, REST/MCP baseline | Added | Continues |
-| Form-first terminology and shared `ugoite-core` architecture | Added | Continues |
-| Iceberg-backed entries and Ugoite SQL workflows | Added | Continues |
-| New space UI, responsive layout, theme switching, sample data | Added | Continues |
-| Multi-user auth, membership management, audit and service accounts | In progress | Continues |
-| Release packaging, operator onboarding, release notes | Planned | Continues |
-| User-controlled views driven by queries | Not in scope | Planned |
-| AI workflow automation, vector search, voice transcription, computational entries | Not in scope | Planned |
+| Local-first core app, storage abstraction, REST/MCP baseline | `added` | `continues` |
+| Form-first terminology and shared `ugoite-core` architecture | `added` | `continues` |
+| Iceberg-backed entries and Ugoite SQL workflows | `added` | `continues` |
+| New space UI, responsive layout, theme switching, sample data | `added` | `continues` |
+| Multi-user auth, membership management, audit and service accounts | `in_progress` | `continues` |
+| Release packaging, operator onboarding, release notes | `planned` | `continues` |
+| User-controlled views driven by queries | `not_in_scope` | `planned` |
+| AI workflow automation, vector search, voice transcription, computational entries | `not_in_scope` | `planned` |
 
 ## Reading Version Upgrades
 
