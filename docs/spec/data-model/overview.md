@@ -23,11 +23,12 @@ Ugoite's data model is built on these principles:
 ## Directory Structure
 
 See [directory-structure.md](directory-structure.md) for the full space layout.
+The machine-readable companion file is
+[`directory-layout.yaml`](directory-layout.yaml).
 
 ```
 spaces/
   {space_id}/
-    hmac.json                  # Space-local response-signing key material
     meta.json                  # Space metadata
     settings.json              # Space settings
     forms/                     # Iceberg-managed Form tables (layout not specified)
@@ -207,8 +208,8 @@ and can be regenerated. The Iceberg-managed layout is the only source of truth.
 ## Integrity
 
 All data is signed with HMAC:
-- Space-local response-signing key stored in `spaces/{space_id}/hmac.json`
-- Space integrity keys stored in each `spaces/{space_id}/meta.json`
+- Space integrity key stored in each `spaces/{space_id}/meta.json`
+- Space-local response-signing key stored in `spaces/{space_id}/hmac.json` and created lazily on first response-signing use
 - Signature stored alongside entry and revision rows
 - Checksum (SHA-256) for tamper detection
 
