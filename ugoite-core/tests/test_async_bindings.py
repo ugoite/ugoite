@@ -93,7 +93,7 @@ Body text""",
 
 @pytest.mark.asyncio
 async def test_user_preferences_bindings(tmp_path: pathlib.Path) -> None:
-    """Verify user preference bindings use portable hashed storage paths."""
+    """REQ-STO-011: Verify user preference bindings use portable hashed storage paths."""
     root = tmp_path / "storage"
     root.mkdir()
     config = {"uri": f"fs://{root}"}

@@ -25,6 +25,7 @@ test.describe("UI theme flows", () => {
 			let entryId: string | null = null;
 
 			await cleanupThemeQueries(request, theme, spaceId);
+			await resetThemePreferences(request);
 
 			try {
 				const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
@@ -171,6 +172,22 @@ async function cleanupThemeQueries(
 	for (const item of created) {
 		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
 	}
+}
+
+async function resetThemePreferences(request: APIRequestContext): Promise<void> {
+	const response = await request.patch(getBackendUrl("/preferences/me"), {
+		data: {
+			ui_theme: null,
+			color_mode: null,
+			primary_color: null,
+		},
+	});
+	if (response.ok()) {
+		return;
+	}
+	throw new Error(
+		`Failed to reset theme preferences: ${response.status()} ${await response.text()}`,
+	);
 }
 
 async function gotoWithRetry(page: Page, path: string): Promise<void> {

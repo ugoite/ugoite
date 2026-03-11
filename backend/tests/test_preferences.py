@@ -1,4 +1,4 @@
-"""REQ-API-001: Portable preferences endpoints validate and persist user settings."""
+"""REQ-API-011: Portable preferences endpoints validate and persist user settings."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def test_preferences_me_roundtrip(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-API-001: /preferences/me stores portable preferences.
+    """REQ-API-011: /preferences/me stores portable preferences.
 
     User paths are hashed rather than embedding raw user IDs.
     """
@@ -61,7 +61,7 @@ def test_preferences_me_roundtrip(
 def test_preferences_me_rejects_invalid_selected_space_id(
     test_client: TestClient,
 ) -> None:
-    """REQ-API-001: /preferences/me rejects invalid selected_space_id values."""
+    """REQ-API-011: /preferences/me rejects invalid selected_space_id values."""
     response = test_client.patch(
         "/preferences/me",
         json={"selected_space_id": "invalid space"},
@@ -73,7 +73,7 @@ def test_preferences_me_rejects_invalid_selected_space_id(
 def test_preferences_me_accepts_null_selected_space_id(
     test_client: TestClient,
 ) -> None:
-    """REQ-API-001: /preferences/me allows clearing selected_space_id with null."""
+    """REQ-API-011: /preferences/me allows clearing selected_space_id with null."""
     response = test_client.patch(
         "/preferences/me",
         json={"selected_space_id": None},
@@ -86,7 +86,7 @@ def test_preferences_me_get_returns_explicit_error_on_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-API-001: /preferences/me GET returns explicit errors on core failure."""
+    """REQ-API-011: /preferences/me GET returns explicit errors on core failure."""
 
     async def _raise(*_args: object, **_kwargs: object) -> dict[str, object]:
         msg = "boom"
@@ -103,7 +103,7 @@ def test_preferences_me_patch_returns_explicit_error_on_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-API-001: /preferences/me PATCH returns explicit errors on core failure."""
+    """REQ-API-011: /preferences/me PATCH returns explicit errors on core failure."""
 
     async def _raise(*_args: object, **_kwargs: object) -> dict[str, object]:
         msg = "boom"
