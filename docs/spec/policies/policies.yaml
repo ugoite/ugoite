@@ -6,6 +6,14 @@ policies:
 - id: POL-001
   title: Storage and Query Portability
   summary: Keep storage and query surfaces portable and vendor-neutral.
+  description: |
+    This policy keeps storage layouts, SQL capabilities, and indexing contracts
+    portable across backends and deployment environments. It protects user
+    freedom by favoring open abstractions that can be reused, audited, and
+    evolved without trapping data or query workflows inside a single provider.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
   linked_requirements:
   - REQCAT-STORAGE
   - REQCAT-API
@@ -18,6 +26,14 @@ policies:
 - id: POL-002
   title: Rust Core as Canonical Logic Layer
   summary: Concentrate durable business logic in ugoite-core and reuse it from adapters.
+  description: |
+    This policy treats ugoite-core as the durable source of product logic so
+    adapters do not drift into incompatible implementations. It supports
+    portable architecture and continuously verifiable behavior by reusing the
+    same core rules from backend, CLI, and future integrations.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
   linked_requirements:
   - REQCAT-API
   - REQCAT-ENTRY
@@ -30,6 +46,13 @@ policies:
 - id: POL-003
   title: Minimal Node Deployment
   summary: Optimize for low-node, serverless-oriented deployments.
+  description: |
+    This policy keeps runtime topology intentionally small so product
+    capabilities do not depend on unnecessary always-on services. It turns the
+    serverless-oriented philosophy into operational guidance by preferring
+    explicit, removable infrastructure over hidden long-lived dependencies.
+  linked_philosophies:
+  - PHIL-002
   linked_requirements:
   - REQCAT-OPS
   - REQCAT-STORAGE
@@ -41,6 +64,14 @@ policies:
 - id: POL-004
   title: Backend as Thin API Adapter
   summary: Keep backend responsibility focused on protocol and orchestration boundaries.
+  description: |
+    This policy limits the backend to interface translation, orchestration, and
+    security boundaries instead of duplicating durable business rules. It keeps
+    deployments lighter and preserves freedom to reuse the same core behavior
+    across multiple operator surfaces without API-layer lock-in.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-002
   linked_requirements:
   - REQCAT-API
   - REQCAT-INTEGRITY
@@ -52,6 +83,15 @@ policies:
 - id: POL-005
   title: CLI as First-Class Operator Surface
   summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
+  description: |
+    This policy keeps automation visible and scriptable by treating the CLI as
+    a first-class operational surface rather than a secondary afterthought. It
+    reinforces low-node operation, reusable workflows, and durable rule-based
+    automation that can be inspected directly by users and maintainers.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-002
+  - PHIL-003
   linked_requirements:
   - REQCAT-OPS
   - REQCAT-E2E
@@ -63,6 +103,14 @@ policies:
 - id: POL-006
   title: Frontend Contract Discipline
   summary: Keep frontend behavior aligned with API contracts and shared UI specifications.
+  description: |
+    This policy requires the frontend to follow shared contracts and documented
+    UI behavior instead of inventing parallel rules in the client. It supports
+    durable verification and trusted AI-assisted work by making contract drift
+    visible through typed interfaces, specs, and tests.
+  linked_philosophies:
+  - PHIL-003
+  - PHIL-004
   linked_requirements:
   - REQCAT-FRONTEND
   - REQCAT-E2E
@@ -74,6 +122,14 @@ policies:
 - id: POL-007
   title: Form and Entry Schema Governance
   summary: Enforce stable, typed entry/form behavior through documented schema contracts.
+  description: |
+    This policy stabilizes the product's structured content model through
+    explicit schema contracts for forms, entries, and assets. It makes the data
+    model portable and durable by ensuring that product behavior stays tied to
+    documented rules instead of ad hoc field handling.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
   linked_requirements:
   - REQCAT-FORM
   - REQCAT-ENTRY
@@ -85,6 +141,14 @@ policies:
 - id: POL-008
   title: Requirement-to-Test Traceability
   summary: Require machine-readable linkage from requirement to executable tests.
+  description: |
+    This policy turns specifications into enforceable quality rules by requiring
+    machine-readable links from requirements to tests. It strengthens trusted
+    autonomy by ensuring that contributors and AI agents change behavior only
+    through paths that remain continuously checkable in CI.
+  linked_philosophies:
+  - PHIL-003
+  - PHIL-004
   linked_requirements:
   - REQCAT-API
   - REQCAT-OPS
@@ -97,6 +161,14 @@ policies:
 - id: POL-009
   title: Quality Gates Before Integration
   summary: Apply strict linting, typing, and regression gates before merging and release.
+  description: |
+    This policy enforces pre-integration quality gates so regressions are caught
+    before they become shared product behavior. It operationalizes rule-based
+    development and trusted constraints by making type checks, lint rules, and
+    regression suites mandatory for change integration.
+  linked_philosophies:
+  - PHIL-003
+  - PHIL-004
   linked_requirements:
   - REQCAT-OPS
   - REQCAT-E2E
@@ -108,6 +180,13 @@ policies:
 - id: POL-010
   title: AI Under Trusted Tooling
   summary: Allow AI autonomy only inside trusted tools, validated interfaces, and audit paths.
+  description: |
+    This policy defines the boundary for AI-assisted work by requiring trusted
+    tools, validated interfaces, and auditable execution paths. It exists to
+    preserve high autonomy only where risk remains observable, reviewable, and
+    constrained by explicit contracts.
+  linked_philosophies:
+  - PHIL-004
   linked_requirements:
   - REQCAT-SECURITY
   - REQCAT-OPS
@@ -119,6 +198,14 @@ policies:
 - id: POL-011
   title: Security and Isolation by Default
   summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
+  description: |
+    This policy makes secure defaults and explicit trust boundaries part of the
+    baseline product architecture instead of optional hardening. It supports
+    minimal runtime topology and trusted AI operation by constraining what code
+    can do, where it can run, and how risk is surfaced.
+  linked_philosophies:
+  - PHIL-002
+  - PHIL-004
   linked_requirements:
   - REQCAT-SECURITY
   - REQCAT-API
@@ -130,6 +217,14 @@ policies:
 - id: POL-012
   title: Search and Linking as Core Knowledge Operations
   summary: Treat search, links, and graph-like traversal as first-class capabilities.
+  description: |
+    This policy elevates retrieval and cross-reference behavior into core
+    product capabilities rather than optional convenience features. It supports
+    user freedom and durable knowledge rules by making searchable, linkable
+    structure part of the canonical system design.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
   linked_requirements:
   - REQCAT-SEARCH
   - REQCAT-LINKS
@@ -141,6 +236,13 @@ policies:
 - id: POL-013
   title: Spec-Driven Product Iteration
   summary: Evolve product behavior through explicit specifications before implementation drift.
+  description: |
+    This policy requires product evolution to move through explicit specs and
+    shared documentation before implementation fragments into local decisions.
+    It keeps iteration aligned with reusable rules so behavior changes remain
+    reviewable, explainable, and continuously validated.
+  linked_philosophies:
+  - PHIL-003
   linked_requirements:
   - REQCAT-ENTRY
   - REQCAT-FRONTEND
@@ -154,6 +256,14 @@ policies:
 - id: POL-014
   title: Compatibility Through Explicit Evolution
   summary: Manage change using explicit deprecation and migration guidance across layers.
+  description: |
+    This policy manages change through visible migration, deprecation, and
+    compatibility guidance rather than silent breakage between layers. It
+    protects user portability and durable automation by making evolution
+    explicit for APIs, storage, frontend behavior, and operator workflows.
+  linked_philosophies:
+  - PHIL-001
+  - PHIL-003
   linked_requirements:
   - REQCAT-API
   - REQCAT-FRONTEND

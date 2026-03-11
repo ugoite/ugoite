@@ -2,9 +2,10 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../../lib/base-path";
 import {
-  getFeatureKindsLinkedToRequirements,
-  getPoliciesDetailed,
-  getSpecifications,
+	getFeatureKindsLinkedToRequirements,
+	getPhilosophies,
+	getPoliciesDetailed,
+	getSpecifications,
 } from "../../../lib/spec-data";
 
 export async function getStaticPaths() {
@@ -13,6 +14,7 @@ export async function getStaticPaths() {
 }
 
 const policies = await getPoliciesDetailed();
+const philosophies = await getPhilosophies();
 const specs = await getSpecifications();
 const id = String(Astro.params.id ?? "").toUpperCase();
 const policy = policies.find((item) => item.id === id);
@@ -22,14 +24,19 @@ if (!policy) {
 }
 
 const linkedFeatures = await getFeatureKindsLinkedToRequirements(policy.linkedRequirements);
+const linkedPhilosophies = philosophies.filter((item) =>
+	policy.linkedPhilosophies.includes(item.id),
+);
 
 const specPathById = new Map(specs.map((item) => [item.id, item.sourceFile]));
 
 const toc = [
-  { id: "summary", title: "Summary" },
-  { id: "requirements", title: "Related Requirements" },
-  { id: "features", title: "Related Features" },
-  { id: "specs", title: "Linked Specs" },
+	{ id: "summary", title: "Summary" },
+	{ id: "rationale", title: "Policy Rationale" },
+	{ id: "philosophies", title: "Linked Philosophies" },
+	{ id: "requirements", title: "Related Requirements" },
+	{ id: "features", title: "Governed Feature Areas" },
+	{ id: "specs", title: "Linked Specs" },
 ];
 ---
 
@@ -53,6 +60,26 @@ const toc = [
     <p style="color: var(--doc-muted); line-height: 1.7;">{policy.summary}</p>
   </section>
 
+  <section id="rationale" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Policy Rationale</h2>
+    <p style="color: var(--doc-muted); line-height: 1.7;">{policy.description ?? policy.summary}</p>
+  </section>
+
+  <section id="philosophies" class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Linked Philosophies</h2>
+    <div class="doc-grid">
+      {linkedPhilosophies.map((philosophy) => (
+        <a href={withBasePath(`/design/philosophy/${philosophy.id.toLowerCase()}`)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+          <span class="doc-pill" style="margin-bottom: 0.75rem;">{philosophy.id}</span>
+          <h3 style="font-size: 0.9375rem; font-weight: 700;">{philosophy.title}</h3>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">
+            {philosophy.productDesignPrinciple ?? philosophy.summary}
+          </p>
+        </a>
+      ))}
+    </div>
+  </section>
+
   <section id="requirements" class="doc-card">
     <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Requirements</h2>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
@@ -63,7 +90,10 @@ const toc = [
   </section>
 
   <section id="features" class="doc-card">
-    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Features</h2>
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Governed Feature Areas</h2>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-bottom: 0.75rem; line-height: 1.6;">
+      These feature areas are derived from the requirement categories governed by this policy.
+    </p>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
       {linkedFeatures.map((feature) => (
         <a href={withBasePath(`/app/api-storage/apis/${feature}`)} class="doc-pill doc-pill-outline">{feature}</a>

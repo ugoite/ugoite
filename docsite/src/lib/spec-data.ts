@@ -15,6 +15,7 @@ export type LinkItem = {
 export type PhilosophyItem = LinkItem & {
 	productDesignPrinciple?: string;
 	codingGuideline?: string;
+	linkedPolicies: string[];
 };
 
 export type RequirementGroup = {
@@ -104,6 +105,7 @@ export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 			statement?: string;
 			product_design_principle?: string;
 			coding_guideline?: string;
+			linked_policies?: string[];
 		}>;
 	}>(filePath);
 	return sortById(
@@ -113,6 +115,7 @@ export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 			summary: (item.product_design_principle ?? item.statement)?.trim(),
 			productDesignPrinciple: item.product_design_principle?.trim(),
 			codingGuideline: item.coding_guideline?.trim(),
+			linkedPolicies: item.linked_policies ?? [],
 		})),
 	);
 }
@@ -289,6 +292,8 @@ export type PolicyDetail = {
 	id: string;
 	title: string;
 	summary?: string;
+	description?: string;
+	linkedPhilosophies: string[];
 	linkedRequirements: string[];
 	linkedSpecifications: string[];
 };
@@ -307,6 +312,8 @@ export async function getPoliciesDetailed(): Promise<PolicyDetail[]> {
 			id: string;
 			title: string;
 			summary?: string;
+			description?: string;
+			linked_philosophies?: string[];
 			linked_requirements?: string[];
 			linked_specifications?: string[];
 		}>;
@@ -315,6 +322,8 @@ export async function getPoliciesDetailed(): Promise<PolicyDetail[]> {
 		id: p.id,
 		title: p.title,
 		summary: p.summary,
+		description: p.description,
+		linkedPhilosophies: p.linked_philosophies ?? [],
 		linkedRequirements: p.linked_requirements ?? [],
 		linkedSpecifications: p.linked_specifications ?? [],
 	}));
