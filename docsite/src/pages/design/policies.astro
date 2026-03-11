@@ -4,8 +4,8 @@ import { withBasePath } from "../../lib/base-path";
 import { getPhilosophies, getPoliciesDetailed } from "../../lib/spec-data";
 
 const [policies, philosophies] = await Promise.all([
-	getPoliciesDetailed(),
-	getPhilosophies(),
+  getPoliciesDetailed(),
+  getPhilosophies(),
 ]);
 const toc = policies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
 const philosophyById = new Map(philosophies.map((item) => [item.id, item]));
