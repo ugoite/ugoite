@@ -7,13 +7,12 @@ REQ-STO-011: Storage layout docs must match runtime-created paths and schemas.
 
 from __future__ import annotations
 
-import asyncio
 import json
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Never
 
-import pytest
 import yaml
 
 if TYPE_CHECKING:
@@ -97,25 +96,92 @@ def _read_json(path: Path) -> JSONValue:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _ugoite_core() -> object:
-    return pytest.importorskip("ugoite_core")
+def _run_ugoite_core(script: str, *args: str) -> str:
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--project",
+            str(REPO_ROOT / "ugoite-core"),
+            "python",
+            "-c",
+            script,
+            *args,
+        ],
+        check=False,
+        capture_output=True,
+        cwd=REPO_ROOT,
+        encoding="utf-8",
+    )
+    if result.returncode != 0:
+        _fail(
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "ugoite-core command failed",
+        )
+    return result.stdout.strip()
 
 
-async def _create_space(config: dict[str, str], space_id: str) -> None:
-    await _ugoite_core().create_space(config, space_id)
+def _create_space(config: dict[str, str], space_id: str) -> None:
+    script = """
+import asyncio
+import sys
+
+import ugoite_core
+
+uri = sys.argv[1]
+space_id = sys.argv[2]
+
+async def main() -> None:
+    await ugoite_core.create_space({"uri": uri}, space_id)
+
+asyncio.run(main())
+"""
+    _run_ugoite_core(script, config["uri"], space_id)
 
 
-async def _load_response_hmac_material(config: dict[str, str], space_id: str) -> None:
-    await _ugoite_core().load_response_hmac_material(config, space_id)
+def _load_response_hmac_material(config: dict[str, str], space_id: str) -> None:
+    script = """
+import asyncio
+import sys
+
+import ugoite_core
+
+uri = sys.argv[1]
+space_id = sys.argv[2]
+
+async def main() -> None:
+    await ugoite_core.load_response_hmac_material({"uri": uri}, space_id)
+
+asyncio.run(main())
+"""
+    _run_ugoite_core(script, config["uri"], space_id)
 
 
-async def _create_sql_session(
+def _create_sql_session(
     config: dict[str, str],
     space_id: str,
     sql: str,
 ) -> dict[str, object]:
-    session = await _ugoite_core().create_sql_session(config, space_id, sql)
-    return _require_mapping(session, "create_sql_session return value")
+    script = """
+import asyncio
+import json
+import sys
+
+import ugoite_core
+
+uri = sys.argv[1]
+space_id = sys.argv[2]
+sql = sys.argv[3]
+
+async def main() -> None:
+    session = await ugoite_core.create_sql_session({"uri": uri}, space_id, sql)
+    print(json.dumps(session))
+
+asyncio.run(main())
+"""
+    output = _run_ugoite_core(script, config["uri"], space_id, sql)
+    return _require_mapping(json.loads(output), "create_sql_session return value")
 
 
 def _is_json_integer(value: JSONValue) -> bool:
@@ -401,7 +467,7 @@ def _validate_response_signing_trigger(
             _fail(f"Lazy response-signing path exists too early: {before}")
 
     config = {"uri": f"fs://{tmp_path}"}
-    asyncio.run(_load_response_hmac_material(config, space_id))
+    _load_response_hmac_material(config, space_id)
 
     for entry in entries:
         after = tmp_path / _entry_path(
@@ -422,9 +488,7 @@ def _load_sql_session_ids(
     space_id: str,
 ) -> tuple[str, str]:
     config = {"uri": f"fs://{tmp_path}"}
-    session_mapping = asyncio.run(
-        _create_sql_session(config, space_id, "SELECT 1 AS value"),
-    )
+    session_mapping = _create_sql_session(config, space_id, "SELECT 1 AS value")
     session_id = _require_string(session_mapping.get("id"), "create_sql_session id")
     sql_id = _require_string(session_mapping.get("sql_id"), "create_sql_session sql_id")
     return session_id, sql_id
@@ -532,7 +596,7 @@ def test_docs_req_sto_011_storage_layout_bootstrap_matches_runtime(
     """REQ-STO-011: Bootstrap scaffold docs match create_space output."""
     config = {"uri": f"fs://{tmp_path}"}
     space_id = "doc-sync-space"
-    asyncio.run(_create_space(config, space_id))
+    _create_space(config, space_id)
     _validate_bootstrap_layout(tmp_path, space_id, _file_schemas())
 
 
@@ -542,7 +606,7 @@ def test_docs_req_sto_011_storage_layout_lazy_paths_match_runtime_triggers(
     """REQ-STO-011: Lazy storage paths appear only after their documented triggers."""
     config = {"uri": f"fs://{tmp_path}"}
     space_id = "doc-sync-space"
-    asyncio.run(_create_space(config, space_id))
+    _create_space(config, space_id)
     schemas = _file_schemas()
     _validate_response_signing_trigger(tmp_path, space_id, schemas)
     _validate_sql_session_trigger(tmp_path, space_id, schemas)
