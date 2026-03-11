@@ -1,10 +1,14 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
-import { getPolicies } from "../../lib/spec-data";
+import { getPhilosophies, getPoliciesDetailed } from "../../lib/spec-data";
 
-const policies = await getPolicies();
+const [policies, philosophies] = await Promise.all([
+	getPoliciesDetailed(),
+	getPhilosophies(),
+]);
 const toc = policies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
+const philosophyById = new Map(philosophies.map((item) => [item.id, item]));
 ---
 
 <BaseLayout title="Policies | Ugoite" description="Implementation policies derived from design philosophy." toc={toc}
@@ -20,12 +24,36 @@ const toc = policies.map((p) => ({ id: p.id.toLowerCase(), title: p.id }));
     </div>
   </section>
 
+  <section class="doc-card">
+    <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">How to read this layer</h2>
+    <p style="font-size: 0.875rem; color: var(--doc-muted); line-height: 1.7; margin-bottom: 1rem;">
+      Philosophy explains <strong>why</strong> Ugoite is built this way. Policies describe <strong>how</strong> those ideas become
+      engineering constraints. Requirements, specifications, and feature areas show <strong>what</strong> those constraints govern in the product.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+      <a href={withBasePath("/design/philosophy")} class="doc-pill doc-pill-outline">Philosophy</a>
+      <span class="doc-pill">Policies</span>
+      <a href={withBasePath("/design/requirements")} class="doc-pill doc-pill-outline">Requirements</a>
+      <a href={withBasePath("/design/features")} class="doc-pill doc-pill-outline">Features</a>
+    </div>
+  </section>
+
   <div class="doc-grid">
     {policies.map((p) => (
       <a href={withBasePath(`/design/policies/${p.id.toLowerCase()}`)} id={p.id.toLowerCase()} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
         <span class="doc-pill" style="margin-bottom: 0.75rem;">{p.id}</span>
         <h2 style="font-size: 1rem; font-weight: 700;">{p.title}</h2>
         <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">{p.summary}</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.75rem;">
+          {p.linkedPhilosophies.map((philosophyId) => (
+            <span class="doc-pill doc-pill-outline" title={philosophyById.get(philosophyId)?.title ?? philosophyId}>
+              {philosophyId}
+            </span>
+          ))}
+        </div>
+        <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.75rem; line-height: 1.7;">
+          {p.description ?? p.summary}
+        </p>
       </a>
     ))}
   </div>

@@ -229,8 +229,16 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
             value = str(philosophy.get(key) or "").strip()
             if not value:
                 _fail(f"{philosophy_id} must define non-empty {key}")
+        _assert_string_list(philosophy, "linked_policies", philosophy_id)
 
     policy_map = _load_policies()
+    for policy_id, policy in policy_map.items():
+        _assert_string_list(policy, "linked_philosophies", policy_id)
+        description = str(policy.get("description") or "").strip()
+        if not description:
+            _fail(f"{policy_id} must define non-empty description")
+        if len(description.split()) < 20:
+            _fail(f"{policy_id} description must explain the policy in detail")
     requirement_map = _load_requirement_sets()
     specification_map = _load_specifications()
 
@@ -240,6 +248,8 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
             _fail(f"{spec_id} must define source_file")
         _assert_exists(SPEC_ROOT / source_file)
 
+    _assert_known_refs(philosophy_map, "linked_policies", policy_map, "policy")
+    _assert_known_refs(policy_map, "linked_philosophies", philosophy_map, "philosophy")
     _assert_known_refs(
         policy_map,
         "linked_requirements",
@@ -270,10 +280,23 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
 
 def test_req_ops_003_bidirectional_links_hold() -> None:
     """REQ-OPS-003: Policy/requirement/specification links must be bidirectional."""
+    philosophy_loaded = _load_yaml(PHILOSOPHY_PATH)
+    if not isinstance(philosophy_loaded, dict):
+        _fail("philosophy/foundation.yaml must be a mapping")
+    philosophies = philosophy_loaded.get("philosophies")
+    if not isinstance(philosophies, list) or not philosophies:
+        _fail("philosophies list is required")
+    philosophy_map = _to_id_map(philosophies, "philosophy")
     policy_map = _load_policies()
     requirement_map = _load_requirement_sets()
     specification_map = _load_specifications()
 
+    _assert_bidirectional(
+        source_map=philosophy_map,
+        source_key="linked_policies",
+        target_map=policy_map,
+        target_key="linked_philosophies",
+    )
     _assert_bidirectional(
         source_map=policy_map,
         source_key="linked_requirements",
