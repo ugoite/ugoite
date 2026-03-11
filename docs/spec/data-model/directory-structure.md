@@ -31,7 +31,7 @@ The runtime adds these paths only when the corresponding feature is used:
 |---------|-------|
 | Response signing | `spaces/{space_id}/hmac.json` |
 | SQL session creation | `spaces/{space_id}/materialized_views/{sql_id}/meta.json`, `spaces/{space_id}/sql_sessions/{session_id}/meta.json` |
-| Asset upload | `spaces/{space_id}/assets/{asset_id}_{filename}` |
+| Asset upload | `spaces/{space_id}/assets/*` |
 
 ## Space Level
 
