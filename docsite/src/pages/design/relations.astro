@@ -86,8 +86,8 @@ const toc = [
             <a
               href={withBasePath(`/design/policies/${p.id.toLowerCase()}`)}
               class="doc-relation-node doc-relation-node--pol"
-              title={`${p.title} → ${p.linkedRequirements.join(", ")}`}
-              aria-label={`${p.title} linked requirements: ${p.linkedRequirements.join(", ")}`}
+              title={`${p.title} ← ${p.linkedPhilosophies.join(", ")} → ${p.linkedRequirements.join(", ")}`}
+              aria-label={`${p.title} linked philosophies: ${p.linkedPhilosophies.join(", ")}; linked requirements: ${p.linkedRequirements.join(", ")}`}
             >
               <span class="doc-relation-node-id">{p.id}</span>
               <span class="doc-relation-node-title">{p.title.length > 24 ? p.title.substring(0, 22) + "…" : p.title}</span>
@@ -164,6 +164,15 @@ const toc = [
             <a href={withBasePath(`/design/policies/${pol.id.toLowerCase()}`)} style="color: inherit;">{pol.title}</a>
           </h3>
           <p style="font-size: 0.75rem; color: var(--doc-muted); line-height: 1.6; margin-bottom: 0.75rem;">{pol.summary}</p>
+
+          <div style="margin-bottom: 0.5rem;">
+            <div style="font-size: 0.6875rem; font-weight: 600; color: var(--doc-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Philosophies</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+              {pol.linkedPhilosophies.map((philosophy) => (
+                <a href={withBasePath(`/design/philosophy/${philosophy.toLowerCase()}`)} class="doc-pill doc-pill-outline" style="font-size: 0.625rem; text-decoration: none;">{philosophy}</a>
+              ))}
+            </div>
+          </div>
 
           {pol.linkedRequirements.length > 0 && (
             <div style="margin-bottom: 0.5rem;">
