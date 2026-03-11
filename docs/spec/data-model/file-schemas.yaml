@@ -34,7 +34,7 @@ schemas:
               description: Storage backend kind (for example local or s3)
             root:
               type: string
-              description: Storage root relative to the configured operator
+              description: Backend-specific storage root (for example an absolute path for fs:// or a bucket/prefix for object stores) interpreted by the configured operator
         hmac_key_id:
           type: string
           description: Integrity-signing key identifier for entry and revision writes

@@ -184,6 +184,34 @@ asyncio.run(main())
     return _require_mapping(json.loads(output), "create_sql_session return value")
 
 
+def _save_asset(
+    config: dict[str, str],
+    space_id: str,
+    filename: str,
+    content: str,
+) -> dict[str, object]:
+    script = """
+import asyncio
+import json
+import sys
+
+import ugoite_core
+
+uri = sys.argv[1]
+space_id = sys.argv[2]
+filename = sys.argv[3]
+content = sys.argv[4]
+
+async def main() -> None:
+    asset = await ugoite_core.save_asset({"uri": uri}, space_id, filename, content.encode("utf-8"))
+    print(json.dumps(asset))
+
+asyncio.run(main())
+"""
+    output = _run_ugoite_core(script, config["uri"], space_id, filename, content)
+    return _require_mapping(json.loads(output), "save_asset return value")
+
+
 def _is_json_integer(value: JSONValue) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -544,6 +572,36 @@ def _validate_sql_session_trigger(
         )
 
 
+def _validate_asset_save_trigger(
+    tmp_path: Path,
+    space_id: str,
+) -> None:
+    entries = _trigger_entries("asset_save")
+    config = {"uri": f"fs://{tmp_path}"}
+    for entry in entries:
+        relative_glob = _require_string(
+            entry.get("path_glob"),
+            "asset_save entry path_glob",
+        )
+        before_matches = list(tmp_path.glob(relative_glob.format(space_id=space_id)))
+        if before_matches:
+            _fail(f"Lazy asset paths should not exist before save_asset: {before_matches!r}")
+
+    _save_asset(config, space_id, "runtime-check.txt", "runtime asset content")
+
+    for entry in entries:
+        relative_glob = _require_string(
+            entry.get("path_glob"),
+            "asset_save entry path_glob",
+        )
+        matches = list(tmp_path.glob(relative_glob.format(space_id=space_id)))
+        if len(matches) != 1:
+            _fail(f"Expected one asset path for {relative_glob}, found {matches!r}")
+        match = matches[0]
+        if not match.is_file():
+            _fail(f"Documented asset path must be a file: {match}")
+
+
 def test_docs_req_sto_001_storage_runtime_declares_opendal_current() -> None:
     """REQ-STO-001: Storage docs treat OpenDAL as the current runtime layer."""
     interface_text = _normalize_whitespace(
@@ -610,6 +668,7 @@ def test_docs_req_sto_011_storage_layout_lazy_paths_match_runtime_triggers(
     schemas = _file_schemas()
     _validate_response_signing_trigger(tmp_path, space_id, schemas)
     _validate_sql_session_trigger(tmp_path, space_id, schemas)
+    _validate_asset_save_trigger(tmp_path, space_id)
 
 
 def test_docs_req_sto_007_backend_storage_boundary_docs_match_runtime() -> None:
