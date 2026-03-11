@@ -6,11 +6,13 @@ if [ -z "${HOME:-}" ]; then
   exit 1
 fi
 
-AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"
 AUTH_FILE="${UGOITE_DEV_AUTH_FILE:-${HOME}/.ugoite/dev-auth.json}"
 AUTH_TTL_SECONDS="${UGOITE_DEV_AUTH_TTL_SECONDS:-43200}"
 DEV_2FA_SECRET="${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
-DEV_USER_ID="${UGOITE_DEV_USER_ID:-dev-local-user}"
+DEV_USER_ID="${UGOITE_DEV_USER_ID:-}"
+DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 
 announce_mode() {
   local mode="$1"
@@ -18,72 +20,12 @@ announce_mode() {
   echo "Local dev auth mode: ${mode} (${detail})" >&2
 }
 
-require_working_oathtool() {
-  local generated_otp
-  if ! command -v oathtool >/dev/null 2>&1; then
-    echo "oathtool is required for automatic local dev 2FA flow. Install it first." >&2
-    exit 1
-  fi
-
-  if ! generated_otp="$(oathtool --totp -b "$DEV_2FA_SECRET" | tr -d '\n')" || [ -z "$generated_otp" ]; then
-    echo "failed to generate 2FA code via oathtool" >&2
-    exit 1
-  fi
+python_ugoite() {
+  python "$@"
 }
 
-emit_exports() {
-  local auth_token="$1"
-  local bootstrap_token="$2"
-  python - "$auth_token" "$bootstrap_token" "$DEV_USER_ID" <<'PY'
-import shlex
-import sys
-
-auth_token = sys.argv[1]
-bootstrap_token = sys.argv[2]
-user_id = sys.argv[3]
-print(f"export UGOITE_BOOTSTRAP_BEARER_TOKEN={shlex.quote(bootstrap_token)}")
-print(f"export UGOITE_AUTH_BEARER_TOKEN={shlex.quote(auth_token)}")
-print(f"export UGOITE_BOOTSTRAP_USER_ID={shlex.quote(user_id)}")
-PY
-}
-
-derive_stable_token() {
-  local prefix="$1"
-  local seed="$2"
-  python - "$prefix" "$DEV_USER_ID" "$seed" <<'PY'
-import hashlib
-import sys
-
-prefix, user_id, seed = sys.argv[1:4]
-digest = hashlib.sha256(f"{prefix}:{user_id}:{seed}".encode("utf-8")).hexdigest()[:32]
-print(f"{prefix}-{digest}")
-PY
-}
-
-resolve_existing_manual_token() {
-  local auth_token="${UGOITE_AUTH_BEARER_TOKEN:-}"
-  local bootstrap_token="${UGOITE_BOOTSTRAP_BEARER_TOKEN:-}"
-
-  if [ -n "$auth_token" ] && [ -n "$bootstrap_token" ] && [ "$auth_token" != "$bootstrap_token" ]; then
-    echo "Manual local dev auth requires UGOITE_AUTH_BEARER_TOKEN and UGOITE_BOOTSTRAP_BEARER_TOKEN to match." >&2
-    exit 1
-  fi
-
-  if [ -n "$auth_token" ]; then
-    printf '%s\n' "$auth_token"
-    return 0
-  fi
-
-  if [ -n "$bootstrap_token" ]; then
-    printf '%s\n' "$bootstrap_token"
-    return 0
-  fi
-
-  return 1
-}
-
-automatic_auth_flow() {
-  local auth_dir lock_file now_epoch token expires_at token_state
+acquire_lock() {
+  local auth_dir lock_file
   auth_dir="$(dirname "$AUTH_FILE")"
   mkdir -p "$auth_dir"
   lock_file="${AUTH_FILE}.lock"
@@ -91,124 +33,202 @@ automatic_auth_flow() {
   if command -v flock >/dev/null 2>&1; then
     flock 9
   fi
+}
 
-  now_epoch="$(date +%s)"
-  token=""
-  expires_at="0"
-  token_state="cached"
-
-  if [ -f "$AUTH_FILE" ]; then
-    read -r token expires_at < <(
-      python - "$AUTH_FILE" <<'PY'
+read_cached_context() {
+  python_ugoite - "$AUTH_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(0)
+
 try:
     payload = json.loads(path.read_text(encoding="utf-8"))
 except Exception:
-    print("", "0")
     raise SystemExit(0)
 
-token = payload.get("bearer_token")
-expires = payload.get("expires_at", 0)
-if not isinstance(token, str):
-    token = ""
-if not isinstance(expires, int):
-    expires = 0
-print(token, expires)
+mode = payload.get("mode")
+user_id = payload.get("user_id")
+signing_secret = payload.get("signing_secret")
+signing_kid = payload.get("signing_kid")
+
+parts = [mode, user_id, signing_secret, signing_kid]
+if not all(isinstance(part, str) and part for part in parts):
+    raise SystemExit(0)
+
+print("\t".join(parts))
 PY
-    )
-  fi
+}
 
-  if [ -z "$token" ] || [ "$expires_at" -le "$now_epoch" ] || [ "${UGOITE_DEV_AUTH_FORCE_LOGIN:-false}" = "true" ]; then
-    require_working_oathtool
-
-    token="$(
-      python - <<'PY'
-import secrets
-print(f"dev-{secrets.token_urlsafe(24)}")
-PY
-    )"
-    expires_at="$((now_epoch + AUTH_TTL_SECONDS))"
-    token_state="generated"
-
-    python - "$AUTH_FILE" "$token" "$expires_at" <<'PY'
+write_auth_context() {
+  local mode="$1"
+  local user_id="$2"
+  local signing_secret="$3"
+  local signing_kid="$4"
+  python_ugoite - "$AUTH_FILE" "$mode" "$user_id" "$signing_secret" "$signing_kid" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
-token = sys.argv[2]
-expires_at = int(sys.argv[3])
-path.parent.mkdir(parents=True, exist_ok=True)
+mode, user_id, signing_secret, signing_kid = sys.argv[2:6]
 payload = {
-    "bearer_token": token,
-    "expires_at": expires_at,
+    "mode": mode,
+    "user_id": user_id,
+    "signing_secret": signing_secret,
+    "signing_kid": signing_kid,
 }
+path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 path.chmod(0o600)
 PY
-  fi
-
-  announce_mode "automatic" "token=${token_state} auth_file=${AUTH_FILE}"
-  emit_exports "$token" "$token"
 }
 
-manual_totp_flow() {
-  local token token_source
-  token=""
-  token_source=""
-
-  if [ -n "${UGOITE_DEV_MANUAL_TOKEN:-}" ]; then
-    token="${UGOITE_DEV_MANUAL_TOKEN}"
-    token_source="UGOITE_DEV_MANUAL_TOKEN"
-  elif token="$(resolve_existing_manual_token)"; then
-    token_source="pre-exported auth env"
-  elif [ -n "${UGOITE_DEV_TOTP_CODE:-}" ]; then
-    token="$(derive_stable_token "manual-totp" "${UGOITE_DEV_TOTP_CODE}")"
-    token_source="UGOITE_DEV_TOTP_CODE"
-  else
-    cat >&2 <<'EOF'
-manual-totp mode requires one of:
-  - UGOITE_DEV_MANUAL_TOKEN=<token>
-  - matching UGOITE_AUTH_BEARER_TOKEN / UGOITE_BOOTSTRAP_BEARER_TOKEN
-  - UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}")"
-EOF
-    exit 1
-  fi
-
-  announce_mode "manual-totp" "token_source=${token_source}"
-  emit_exports "$token" "$token"
+random_signing_secret() {
+  python_ugoite - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
 }
 
-mock_oauth_flow() {
-  local token token_source
-  if [ -n "${UGOITE_DEV_MOCK_OAUTH_TOKEN:-}" ]; then
-    token="${UGOITE_DEV_MOCK_OAUTH_TOKEN}"
-    token_source="UGOITE_DEV_MOCK_OAUTH_TOKEN"
-  else
-    token="$(derive_stable_token "mock-oauth" "mock-oauth")"
-    token_source="derived-from-user-id"
+validate_totp_prompt_value() {
+  local totp_code="$1"
+  python_ugoite - "$totp_code" "$DEV_2FA_SECRET" <<'PY'
+import base64
+import hashlib
+import hmac
+import sys
+import time
+
+code, secret = sys.argv[1:3]
+normalized_code = code.strip()
+if not normalized_code.isdigit() or len(normalized_code) != 6:
+    raise SystemExit(1)
+
+try:
+    decoded_secret = base64.b32decode(secret.strip().replace(" ", "").upper(), casefold=True)
+except (base64.binascii.Error, ValueError):
+    raise SystemExit(1)
+
+counter = int(time.time()) // 30
+for delta in (-1, 0, 1):
+    candidate_counter = counter + delta
+    digest = hmac.new(
+        decoded_secret,
+        candidate_counter.to_bytes(8, "big"),
+        hashlib.sha1,
+    ).digest()
+    offset = digest[-1] & 0x0F
+    binary = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
+    candidate = f"{binary % 1_000_000:06d}"
+    if hmac.compare_digest(candidate, normalized_code):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+prompt_non_empty() {
+  local prompt_text="$1"
+  local value=""
+  while [ -z "$value" ]; do
+    read -r -p "$prompt_text" value
+    value="${value## }"
+    value="${value%% }"
+  done
+  printf '%s\n' "$value"
+}
+
+emit_exports() {
+  local mode="$1"
+  local user_id="$2"
+  local signing_secret="$3"
+  local signing_kid="$4"
+  python_ugoite - "$mode" "$user_id" "$signing_secret" "$signing_kid" "$AUTH_TTL_SECONDS" "$DEV_2FA_SECRET" <<'PY'
+import shlex
+import sys
+
+mode, user_id, signing_secret, signing_kid, ttl_seconds, dev_2fa_secret = sys.argv[1:7]
+print("unset UGOITE_AUTH_BEARER_TOKEN")
+print("unset UGOITE_BOOTSTRAP_BEARER_TOKEN")
+print(f"export UGOITE_DEV_AUTH_MODE={shlex.quote(mode)}")
+print(f"export UGOITE_DEV_USER_ID={shlex.quote(user_id)}")
+print(f"export UGOITE_DEV_SIGNING_SECRET={shlex.quote(signing_secret)}")
+print(f"export UGOITE_DEV_SIGNING_KID={shlex.quote(signing_kid)}")
+print(f"export UGOITE_DEV_AUTH_TTL_SECONDS={shlex.quote(ttl_seconds)}")
+print(f"export UGOITE_DEV_2FA_SECRET={shlex.quote(dev_2fa_secret)}")
+print(
+    "export UGOITE_AUTH_BEARER_SECRETS="
+    + shlex.quote(f"{signing_kid}:{signing_secret}")
+)
+print(f"export UGOITE_AUTH_BEARER_ACTIVE_KIDS={shlex.quote(signing_kid)}")
+PY
+}
+
+reuse_or_create_context() {
+  local requested_mode="$1"
+  local entered_totp=""
+  local cached_mode=""
+  local cached_user_id=""
+  local cached_signing_secret=""
+  local cached_signing_kid=""
+  local cached_state=""
+
+  acquire_lock
+  cached_state="$(read_cached_context || true)"
+  if [ -n "$cached_state" ]; then
+    IFS=$'\t' read -r cached_mode cached_user_id cached_signing_secret cached_signing_kid <<<"$cached_state"
   fi
 
-  announce_mode "mock-oauth" "token_source=${token_source}"
-  emit_exports "$token" "$token"
+  if [ "${UGOITE_DEV_AUTH_FORCE_LOGIN:-false}" != "true" ] \
+    && [ "$requested_mode" = "$cached_mode" ] \
+    && { [ -z "$DEV_USER_ID" ] || [ "$DEV_USER_ID" = "$cached_user_id" ]; } \
+    && [ -n "$cached_signing_secret" ] \
+    && [ -n "$cached_signing_kid" ]; then
+    emit_exports "$requested_mode" "$cached_user_id" "$cached_signing_secret" "$cached_signing_kid"
+    echo "Using cached local dev auth context for ${cached_user_id}." >&2
+    return 0
+  fi
+
+  if [ -z "$DEV_USER_ID" ]; then
+    DEV_USER_ID="$(prompt_non_empty 'Local dev username: ')"
+  fi
+  if [ "$requested_mode" = "manual-totp" ]; then
+    entered_totp="${UGOITE_DEV_TOTP_CODE:-}"
+    if [ -z "$entered_totp" ]; then
+      entered_totp="$(prompt_non_empty 'Current 2FA code: ')"
+    fi
+    if ! validate_totp_prompt_value "$entered_totp"; then
+      echo "The provided 2FA code is invalid for UGOITE_DEV_2FA_SECRET." >&2
+      exit 1
+    fi
+  fi
+
+  local signing_secret signing_kid
+  signing_secret="${UGOITE_DEV_SIGNING_SECRET:-}"
+  if [ -z "$signing_secret" ]; then
+    signing_secret="$(random_signing_secret)"
+  fi
+  signing_kid="$DEV_SIGNING_KID"
+
+  write_auth_context "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
+  emit_exports "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
+  echo "Prepared local dev auth context for ${DEV_USER_ID}." >&2
 }
 
 case "$AUTH_MODE" in
-  automatic)
-    automatic_auth_flow
-    ;;
   manual-totp)
-    manual_totp_flow
+    announce_mode "manual-totp" "explicit username + 2FA login"
+    reuse_or_create_context "manual-totp"
     ;;
   mock-oauth)
-    mock_oauth_flow
+    announce_mode "mock-oauth" "explicit browser or CLI login"
+    reuse_or_create_context "mock-oauth"
     ;;
   *)
-    echo "Unsupported UGOITE_DEV_AUTH_MODE: ${AUTH_MODE}. Expected automatic, manual-totp, or mock-oauth." >&2
+    echo "Unsupported UGOITE_DEV_AUTH_MODE: ${AUTH_MODE}. Expected manual-totp or mock-oauth." >&2
     exit 1
     ;;
 esac

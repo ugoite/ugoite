@@ -1,6 +1,8 @@
-use crate::config::print_json;
+use crate::config::{base_url, load_config, print_json};
+use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use std::io::{self, Write};
 
 #[derive(Args)]
 pub struct AuthCmd {
@@ -12,12 +14,14 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show auth setup (env vars)
     Profile,
-    /// Print export shell commands for auth
+    /// Authenticate via local backend/API login flow and print export shell commands
     Login {
         #[arg(long)]
-        bearer_token: Option<String>,
+        username: Option<String>,
         #[arg(long)]
-        api_key: Option<String>,
+        totp_code: Option<String>,
+        #[arg(long, default_value_t = false)]
+        mock_oauth: bool,
     },
     /// Print unset commands for auth tokens
     TokenClear,
@@ -36,14 +40,31 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             }));
         }
         AuthSubCmd::Login {
-            bearer_token,
-            api_key,
+            username,
+            totp_code,
+            mock_oauth,
         } => {
-            if bearer_token.is_some() {
-                println!("export UGOITE_AUTH_BEARER_TOKEN=<set-token-here>");
-            }
-            if api_key.is_some() {
-                println!("export UGOITE_AUTH_API_KEY=<set-key-here>");
+            let config = load_config();
+            let base = base_url(&config)
+                .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
+
+            let result = if mock_oauth {
+                http::http_post(&format!("{base}/auth/dev/mock-oauth"), &serde_json::json!({})).await?
+            } else {
+                let resolved_username = prompt_value("Username", username)?;
+                let resolved_totp_code = prompt_value("2FA code", totp_code)?;
+                http::http_post(
+                    &format!("{base}/auth/dev/login"),
+                    &serde_json::json!({
+                        "username": resolved_username,
+                        "totp_code": resolved_totp_code,
+                    }),
+                )
+                .await?
+            };
+
+            if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
+                println!("export UGOITE_AUTH_BEARER_TOKEN={token}");
             }
         }
         AuthSubCmd::TokenClear => {
@@ -64,4 +85,16 @@ fn mask_token(t: &str) -> String {
     } else {
         "****".to_string()
     }
+}
+
+fn prompt_value(label: &str, provided: Option<String>) -> Result<String> {
+    if let Some(value) = provided {
+        return Ok(value);
+    }
+
+    print!("{label}: ");
+    io::stdout().flush()?;
+    let mut buffer = String::new();
+    io::stdin().read_line(&mut buffer)?;
+    Ok(buffer.trim().to_string())
 }

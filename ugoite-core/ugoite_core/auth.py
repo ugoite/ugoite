@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import hmac
 import hashlib
 import json
 import logging
 import os
 import secrets
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal, NoReturn, cast
@@ -18,6 +21,9 @@ DEFAULT_UNAUTHORIZED_STATUS_CODE = 401
 AUTH_HEADER_PARTS = 2
 
 logger = logging.getLogger(__name__)
+TOTP_STEP_SECONDS = 30
+TOTP_DIGITS = 6
+DEFAULT_SIGNED_BEARER_VERSION = "v1"
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -175,26 +181,138 @@ def _token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
-def _has_valid_bearer_tokens_config() -> bool:
+def _has_configured_bearer_credentials() -> bool:
     raw = os.environ.get("UGOITE_AUTH_BEARER_TOKENS_JSON")
-    if raw is None or not raw.strip():
+    if raw is not None and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(
+                "UGOITE_AUTH_BEARER_TOKENS_JSON is not valid JSON; "
+                "falling back to bootstrap token configuration.",
+            )
+        else:
+            if isinstance(parsed, dict):
+                return True
+
+    bearer_secrets = os.environ.get("UGOITE_AUTH_BEARER_SECRETS")
+    if isinstance(bearer_secrets, str) and bearer_secrets.strip():
+        return True
+    return False
+
+
+def _base64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+
+def _totp_counter(timestamp: int, *, step_seconds: int) -> int:
+    return timestamp // step_seconds
+
+
+def _hotp_value(secret: bytes, counter: int, *, digits: int) -> str:
+    digest = hmac.new(
+        secret,
+        counter.to_bytes(8, "big"),
+        hashlib.sha1,
+    ).digest()
+    offset = digest[-1] & 0x0F
+    binary = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
+    return f"{binary % (10**digits):0{digits}d}"
+
+
+def validate_totp_code(
+    code: str,
+    secret: str,
+    *,
+    now: int | None = None,
+    step_seconds: int = TOTP_STEP_SECONDS,
+    digits: int = TOTP_DIGITS,
+    window: int = 1,
+) -> bool:
+    """Validate a TOTP code using the shared Base32 secret."""
+    normalized_code = code.strip()
+    if not normalized_code.isdigit() or len(normalized_code) != digits:
         return False
+
+    normalized_secret = secret.strip().replace(" ", "")
+    if not normalized_secret:
+        return False
+
     try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning(
-            "UGOITE_AUTH_BEARER_TOKENS_JSON is not valid JSON; "
-            "falling back to bootstrap token configuration.",
+        decoded_secret = base64.b32decode(
+            normalized_secret.upper(),
+            casefold=True,
         )
+    except (base64.binascii.Error, ValueError):
         return False
-    return isinstance(parsed, dict)
+
+    timestamp = int(time.time() if now is None else now)
+    counter = _totp_counter(timestamp, step_seconds=step_seconds)
+    for delta in range(-window, window + 1):
+        candidate = _hotp_value(
+            decoded_secret,
+            counter + delta,
+            digits=digits,
+        )
+        if hmac.compare_digest(candidate, normalized_code):
+            return True
+    return False
+
+
+def mint_signed_bearer_token(
+    *,
+    user_id: str,
+    key_id: str,
+    secret: str,
+    expires_at: int,
+    principal_type: Literal["user", "service"] = "user",
+    display_name: str | None = None,
+    scopes: list[str] | None = None,
+    scope_enforced: bool = False,
+) -> str:
+    """Create a signed bearer token matching rust-core validation rules."""
+    if not user_id.strip():
+        message = "user_id must be non-empty"
+        raise ValueError(message)
+    if not key_id.strip():
+        message = "key_id must be non-empty"
+        raise ValueError(message)
+    if not secret.strip():
+        message = "secret must be non-empty"
+        raise ValueError(message)
+
+    payload: dict[str, object] = {
+        "kid": key_id,
+        "sub": user_id,
+        "exp": int(expires_at),
+        "principal_type": principal_type,
+        "scope_enforced": scope_enforced,
+    }
+    if display_name:
+        payload["display_name"] = display_name
+    if scopes:
+        payload["scopes"] = scopes
+
+    payload_segment = _base64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+    )
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        payload_segment.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return (
+        f"{DEFAULT_SIGNED_BEARER_VERSION}."
+        f"{payload_segment}."
+        f"{_base64url_encode(signature)}"
+    )
 
 
 @lru_cache(maxsize=1)
 def get_auth_manager() -> AuthManager:
     """Create and cache authentication manager from environment settings."""
     bootstrap_token: str | None = None
-    if not _has_valid_bearer_tokens_config():
+    if not _has_configured_bearer_credentials():
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
         if bootstrap_token is None:
             bootstrap_token = secrets.token_urlsafe(32)

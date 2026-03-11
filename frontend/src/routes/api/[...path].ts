@@ -2,6 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 
 const backendUrl = process.env.BACKEND_URL;
 const defaultProxyTimeoutMs = 15_000;
+const authCookieName = "ugoite_auth_bearer_token";
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -89,9 +90,31 @@ const resolveProxyTimeoutMs = (): number => {
 	return parsed;
 };
 
-const applyProxyCredentials = (headers: Headers): void => {
+const readAuthCookie = (cookieHeader: string | null): string | null => {
+	if (!cookieHeader) {
+		return null;
+	}
+	for (const segment of cookieHeader.split(";")) {
+		const [rawName, ...rest] = segment.split("=");
+		if (rawName?.trim() !== authCookieName) {
+			continue;
+		}
+		const rawValue = rest.join("=").trim();
+		if (!rawValue) {
+			return null;
+		}
+		try {
+			return decodeURIComponent(rawValue);
+		} catch {
+			return rawValue;
+		}
+	}
+	return null;
+};
+
+const applyProxyCredentials = (headers: Headers, cookieHeader: string | null): void => {
 	if (!headers.has("authorization")) {
-		const proxyBearerToken = process.env.UGOITE_AUTH_BEARER_TOKEN;
+		const proxyBearerToken = readAuthCookie(cookieHeader);
 		if (proxyBearerToken) {
 			headers.set("authorization", `Bearer ${proxyBearerToken}`);
 		}
@@ -132,7 +155,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	const targetUrl = buildTargetUrl(request.url, backendUrl);
 	const headers = filterRequestHeaders(request.headers);
 	const requestId = ensureRequestId(headers);
-	applyProxyCredentials(headers);
+	applyProxyCredentials(headers, request.headers.get("cookie"));
 
 	const timeoutMs = resolveProxyTimeoutMs();
 	const controller = new AbortController();
