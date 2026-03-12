@@ -1,8 +1,8 @@
 version: "0.1"
-updated: "2026-02-02"
+updated: "2026-03-12"
 page:
   id: space-search
-  title: Query Search
+  title: Entry Search
   route: /spaces/{space_id}/search
   implementation: implemented
 components:
@@ -36,28 +36,54 @@ components:
             label: Space settings
             target_page: space-settings
   body:
-    - id: query-create-button
-      type: icon-button
-      icon: plus
-      label: create-query
-      target_page: space-query-create
-    - id: query-search-bar
-      type: search-bar
-      placeholder: "Search queries"
-    - id: query-filter-button
-      type: filter-button
-      icon: filter
-      opens: query-filter-dialog
-    - id: query-filter-dialog
-      type: dialog
-      trigger: query-filter-button
+    - id: search-mode-toggle
+      type: segmented-control
+      default_option: keyword-search-panel
+      options:
+        - id: keyword-search-panel
+          label: quick-search
+        - id: advanced-search-panel
+          label: advanced-search
+    - id: keyword-search-panel
+      type: search-panel
+      placeholder: Search entries by title, fields, tags, or content
+      action:
+        id: search-entries-button
+        label: search-entries
+      result_surface:
+        id: keyword-result-list
+        type: entry-card-grid
+        selection_target: space-entry-detail
+    - id: advanced-search-panel
+      type: structured-search-form
       fields:
         - form
         - tags
-        - updated_range
-    - id: query-list
+        - updated_from
+        - updated_to
+        - field_conditions[]
+      field_conditions:
+        item_fields:
+          - field
+          - operator
+          - value
+        supported_operators:
+          - equals
+          - contains
+      action:
+        id: run-advanced-search-button
+        label: run-advanced-search
+        execution:
+          mode: sql-session
+          target_page: space-entries-object
+          history: save-and-reuse
+    - id: power-user-query-button
+      type: button
+      label: open-sql-editor
+      target_page: space-query-create
+    - id: search-history-list
       type: list
-      item_type: query
+      item_type: saved-search
       selection:
         target_page_with_variables: space-query-variables
         target_page_without_variables: space-entries-object
