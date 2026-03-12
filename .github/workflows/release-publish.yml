@@ -29,8 +29,8 @@ permissions:
   contents: write
 
 jobs:
-  publish:
-    name: Human-verified release publish
+  validate:
+    name: Human-verified release gate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -67,7 +67,13 @@ jobs:
             exit 1
           fi
 
-      - name: Publish GitHub release
+  create-draft-release:
+    name: Create draft release
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Create or reuse draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
@@ -76,8 +82,42 @@ jobs:
         run: |
           set -euo pipefail
           tag="v$VERSION"
-          args=(--target "$TARGET" --title "$tag" --generate-notes)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Reusing existing release $tag"
+            exit 0
+          fi
+
+          args=(--target "$TARGET" --title "$tag" --generate-notes --draft)
           if [ "$CHANNEL" != "stable" ]; then
             args+=(--prerelease)
           fi
           gh release create "$tag" "${args[@]}"
+
+  publish-cli-binaries:
+    name: Publish CLI binaries
+    needs:
+      - validate
+      - create-draft-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/cli-release-binaries.yml
+    with:
+      version: ${{ inputs.version }}
+      target: ${{ inputs.target }}
+
+  publish-release:
+    name: Publish GitHub release
+    needs:
+      - validate
+      - create-draft-release
+      - publish-cli-binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Finalize GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release edit "v$VERSION" --draft=false

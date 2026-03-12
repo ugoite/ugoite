@@ -58,9 +58,30 @@ e2e/                # End-to-end tests (Bun)
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
+
+---
+
+## CLI Quick Start
+
+Install the latest stable `ugoite` binary with a one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | sh
+ugoite --help
+```
+
+Pin an exact release when you do not want the newest stable build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 sh
+ugoite --help
+```
+
+For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ---
 
@@ -110,7 +131,6 @@ If you need to rotate/refresh the automatic token manually, run:
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-<<<<<<< HEAD
 To opt into explicit manual modes instead of the default automatic bootstrap:
 
 ```bash
