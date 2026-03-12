@@ -1,5 +1,5 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 REPO="${UGOITE_GITHUB_REPO:-ugoite/ugoite}"
 VERSION_INPUT="${UGOITE_VERSION:-latest}"
@@ -56,14 +56,14 @@ detect_target() {
     Linux)
       case "$arch_name" in
         x86_64) printf '%s' 'x86_64-unknown-linux-gnu' ;;
-        arm64|aarch64) printf '%s' 'aarch64-unknown-linux-gnu' ;;
+        arm64 | aarch64) printf '%s' 'aarch64-unknown-linux-gnu' ;;
         *) fail "Unsupported Linux architecture: $arch_name" ;;
       esac
       ;;
     Darwin)
       case "$arch_name" in
         x86_64) printf '%s' 'x86_64-apple-darwin' ;;
-        arm64|aarch64) printf '%s' 'aarch64-apple-darwin' ;;
+        arm64 | aarch64) printf '%s' 'aarch64-apple-darwin' ;;
         *) fail "Unsupported macOS architecture: $arch_name" ;;
       esac
       ;;
