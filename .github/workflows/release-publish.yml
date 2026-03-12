@@ -27,10 +27,11 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
-  publish:
-    name: Human-verified release publish
+  validate:
+    name: Human-verified release gate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -67,6 +68,27 @@ jobs:
             exit 1
           fi
 
+  publish-images:
+    name: Publish release images
+    needs: validate
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: true
+      target: ${{ inputs.target }}
+      version: ${{ inputs.version }}
+      channel: ${{ inputs.channel }}
+
+  publish-release:
+    name: Publish GitHub release
+    needs:
+      - validate
+      - publish-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
