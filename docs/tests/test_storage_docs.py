@@ -2,7 +2,7 @@
 
 REQ-STO-001: Storage docs must declare OpenDAL as the current runtime layer.
 REQ-STO-007: Backend/core storage boundary docs must match the shared runtime.
-REQ-STO-011: Storage layout docs must match runtime-created paths and schemas.
+REQ-STO-012: Storage layout docs must match runtime-created paths and schemas.
 """
 
 from __future__ import annotations
@@ -203,7 +203,12 @@ filename = sys.argv[3]
 content = sys.argv[4]
 
 async def main() -> None:
-    asset = await ugoite_core.save_asset({"uri": uri}, space_id, filename, content.encode("utf-8"))
+    asset = await ugoite_core.save_asset(
+        {"uri": uri},
+        space_id,
+        filename,
+        content.encode("utf-8"),
+    )
     print(json.dumps(asset))
 
 asyncio.run(main())
@@ -585,7 +590,10 @@ def _validate_asset_save_trigger(
         )
         before_matches = list(tmp_path.glob(relative_glob.format(space_id=space_id)))
         if before_matches:
-            _fail(f"Lazy asset paths should not exist before save_asset: {before_matches!r}")
+            _fail(
+                "Lazy asset paths should not exist before save_asset: "
+                f"{before_matches!r}",
+            )
 
     _save_asset(config, space_id, "runtime-check.txt", "runtime asset content")
 
@@ -648,20 +656,20 @@ def test_docs_req_sto_001_storage_runtime_declares_opendal_current() -> None:
         _fail("; ".join(details))
 
 
-def test_docs_req_sto_011_storage_layout_bootstrap_matches_runtime(
+def test_docs_req_sto_012_storage_layout_bootstrap_matches_runtime(
     tmp_path: Path,
 ) -> None:
-    """REQ-STO-011: Bootstrap scaffold docs match create_space output."""
+    """REQ-STO-012: Bootstrap scaffold docs match create_space output."""
     config = {"uri": f"fs://{tmp_path}"}
     space_id = "doc-sync-space"
     _create_space(config, space_id)
     _validate_bootstrap_layout(tmp_path, space_id, _file_schemas())
 
 
-def test_docs_req_sto_011_storage_layout_lazy_paths_match_runtime_triggers(
+def test_docs_req_sto_012_storage_layout_lazy_paths_match_runtime_triggers(
     tmp_path: Path,
 ) -> None:
-    """REQ-STO-011: Lazy storage paths appear only after their documented triggers."""
+    """REQ-STO-012: Lazy storage paths appear only after their documented triggers."""
     config = {"uri": f"fs://{tmp_path}"}
     space_id = "doc-sync-space"
     _create_space(config, space_id)

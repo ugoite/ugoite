@@ -16,6 +16,14 @@ philosophies:
       integrations. Reuse shared core modules, avoid storage/provider-specific
       assumptions in API/UI layers, and keep code paths portable across
       backends and runtimes.
+    linked_policies:
+      - POL-001
+      - POL-002
+      - POL-004
+      - POL-005
+      - POL-007
+      - POL-012
+      - POL-014
 
   - id: PHIL-002
     title: Serverless-Oriented Minimal Node Topology
@@ -29,6 +37,11 @@ philosophies:
       new always-on services unless required by a documented constraint, and
       isolate transitional adapters so they can be removed without broad
       refactoring.
+    linked_policies:
+      - POL-003
+      - POL-004
+      - POL-005
+      - POL-011
 
   - id: PHIL-003
     title: Build Rules, Not Disposable Artifacts
@@ -40,6 +53,17 @@ philosophies:
       Tie behavior changes to specs and tests in the same change set. Prefer
       reusable helpers, schemas, and automation over manual procedural steps,
       and avoid introducing logic that cannot be continuously validated in CI.
+    linked_policies:
+      - POL-001
+      - POL-002
+      - POL-005
+      - POL-006
+      - POL-007
+      - POL-008
+      - POL-009
+      - POL-012
+      - POL-013
+      - POL-014
 
   - id: PHIL-004
     title: Give AI Freedom Inside Trusted Constraints
@@ -51,3 +75,9 @@ philosophies:
       Enforce strict typed contracts, CI gates, policy-linked specifications,
       and trusted toolchains for AI-assisted changes. Do not bypass validation
       paths or introduce silent fallbacks that hide risk.
+    linked_policies:
+      - POL-006
+      - POL-008
+      - POL-009
+      - POL-010
+      - POL-011

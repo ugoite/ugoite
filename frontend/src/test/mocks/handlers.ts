@@ -8,6 +8,8 @@ import type {
 	Form,
 	FormCreatePayload,
 	Space,
+	UserPreferences,
+	UserPreferencesPatchPayload,
 } from "~/lib/types";
 
 // In-memory mock data store
@@ -18,6 +20,14 @@ let mockAssets: Map<string, Map<string, Asset>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
 let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> = new Map();
 let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> = new Map();
+let mockPreferences: UserPreferences = {
+	selected_space_id: null,
+	locale: null,
+	ui_theme: null,
+	color_mode: null,
+	primary_color: null,
+};
+let preferencePatches: UserPreferencesPatchPayload[] = [];
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
@@ -31,6 +41,14 @@ export const resetMockData = () => {
 	mockForms = new Map();
 	mockSqlEntries = new Map();
 	mockSqlSessions = new Map();
+	mockPreferences = {
+		selected_space_id: null,
+		locale: null,
+		ui_theme: null,
+		color_mode: null,
+		primary_color: null,
+	};
+	preferencePatches = [];
 	revisionCounter = 0;
 };
 
@@ -67,7 +85,30 @@ export const seedSqlSession = (
 	mockSqlSessions.get(spaceId)?.set(session.id, session);
 };
 
+export const seedPreferences = (preferences: Partial<UserPreferences>) => {
+	mockPreferences = {
+		...mockPreferences,
+		...preferences,
+	};
+};
+
+export const getPreferencePatches = () => preferencePatches.slice();
+
 export const handlers = [
+	http.get("http://localhost:3000/api/preferences/me", () => {
+		return HttpResponse.json(mockPreferences);
+	}),
+
+	http.patch("http://localhost:3000/api/preferences/me", async ({ request }) => {
+		const body = (await request.json()) as UserPreferencesPatchPayload;
+		preferencePatches.push(body);
+		mockPreferences = {
+			...mockPreferences,
+			...body,
+		};
+		return HttpResponse.json(mockPreferences);
+	}),
+
 	// List spaces
 	http.get("http://localhost:3000/api/spaces", () => {
 		const spaces = Array.from(mockSpaces.values());

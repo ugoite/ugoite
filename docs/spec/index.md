@@ -56,6 +56,12 @@ Ugoite is a knowledge management system built on three core principles:
 - [Requirements with embedded governance metadata](requirements/api.yaml) - Requirement sets are embedded per requirement item
 - [Specifications Catalog](specifications.yaml) - Flat machine-readable specification catalog
 
+### Versions & Release Notes
+- [Versions Overview](versions/index.md) - How versions, milestones, phases, and tasks fit together
+- [v0.1 Release Stream](versions/v0.1.md) - Current foundational release stream and milestone summary
+- [v0.2 Roadmap](versions/v0.2.md) - Planned capabilities beyond the v0.1 stream
+- [Changelog](versions/changelog.md) - Added/changed/planned view across versions
+
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model
 - [Testing Strategy](testing/strategy.md) - TDD approach and test organization
@@ -103,8 +109,9 @@ A **Space** is a self-contained data directory with:
 
 ## Development Resources
 
-- [Tasks](../tasks/tasks.md) - Current milestone work items
-- [Roadmap](../tasks/roadmap.md) - Future milestones
+- [Machine-readable v0.1 tracker](../version/v0.1.yaml) - Current milestone/phase/task state for the v0.1 stream
+- [Machine-readable v0.2 tracker](../version/v0.2.yaml) - Planned milestone/phase/task state for the v0.2 stream
+- [Versions & Release Notes](versions/index.md) - Human-readable summary of what each version adds or changes
 - [Contributing](../../AGENTS.md) - Development guidelines
 
 ---
@@ -113,5 +120,6 @@ A **Space** is a self-contained data directory with:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-03 | 2.1.0 | Added policy traceability docs and version/release-notes navigation |
 | 2026-01 | 2.0.0 | Restructured for Full Configuration milestone; unified terminology to "Form" |
 | 2025-12 | 1.0.0 | Initial MVP specification |

@@ -421,6 +421,48 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-011
+  title: Hashed portable user preference storage
+  description: 'Portable user preferences MUST persist under `users/<sha256(user_id)>/preferences.json`
+
+    rather than exposing raw user identifiers in storage paths.
+
+    Missing preference files MUST resolve to a full null-valued preference object,
+
+    and patch updates MUST merge into the stored preference document without
+
+    recreating raw user-id directories.
+
+    '
+  related_spec:
+  - architecture/overview.md
+  - features/preferences.yaml
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-core/tests/test_async_bindings.py
+      tests:
+      - test_user_preferences_bindings
+    rust:
+    - file: ugoite-core/tests/test_preferences.rs
+      tests:
+      - test_preferences_req_sto_011_default_values
+      - test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-012
   title: Documentation-driven storage layout synchronization
   description: 'The documented storage layout MUST be machine-readable and tested
 
@@ -443,5 +485,5 @@ requirements:
     pytest:
     - file: docs/tests/test_storage_docs.py
       tests:
-      - test_docs_req_sto_011_storage_layout_bootstrap_matches_runtime
-      - test_docs_req_sto_011_storage_layout_lazy_paths_match_runtime_triggers
+      - test_docs_req_sto_012_storage_layout_bootstrap_matches_runtime
+      - test_docs_req_sto_012_storage_layout_lazy_paths_match_runtime_triggers
