@@ -63,7 +63,7 @@ test.describe("UI theme flows", () => {
 				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
 
 				await page.getByRole("link", { name: "search" }).click();
-				await page.getByRole("button", { name: "Advanced search" }).click();
+				await page.getByRole("button", { name: "Advanced search", exact: true }).click();
 				await page.getByRole("button", { name: "Run advanced search" }).waitFor();
 				await page.getByRole("button", { name: "Quick search" }).click();
 
