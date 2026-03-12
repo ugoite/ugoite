@@ -33,6 +33,8 @@ jobs:
             rust_target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      contents: write
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
     steps:
