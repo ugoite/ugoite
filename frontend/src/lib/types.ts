@@ -19,6 +19,16 @@ export interface SpacePatchPayload {
 	settings?: Record<string, unknown>;
 }
 
+export interface UserPreferences {
+	selected_space_id: string | null;
+	locale: "en" | "ja" | null;
+	ui_theme: "materialize" | "classic" | "pop" | null;
+	color_mode: "light" | "dark" | null;
+	primary_color: "violet" | "blue" | "emerald" | "amber" | null;
+}
+
+export type UserPreferencesPatchPayload = Partial<UserPreferences>;
+
 /** Test connection payload */
 export interface TestConnectionPayload {
 	storage_config: Record<string, unknown>;

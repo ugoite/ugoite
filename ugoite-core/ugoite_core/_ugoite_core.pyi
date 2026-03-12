@@ -116,6 +116,14 @@ def get_sql_session_rows_all(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[list[dict[str, object]]]: ...
+def get_user_preferences(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
+def patch_user_preferences(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
 def search_notes(
     *args: object,
     **kwargs: object,

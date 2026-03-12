@@ -1,9 +1,10 @@
 import { createSignal } from "solid-js";
+import { readLocalPreferences, writeLocalPreferences } from "./preferences-local";
+import { portablePreferences, setSelectedSpacePreference } from "./preferences-store";
 import type { Space } from "./types";
 import { spaceApi } from "./space-api";
 
 const DEFAULT_SPACE_ID = "default";
-const STORAGE_KEY = "ugoite-selected-space";
 
 /**
  * Creates a reactive space store.
@@ -16,26 +17,23 @@ export function createSpaceStore() {
 	const [error, setError] = createSignal<string | null>(null);
 	const [initialized, setInitialized] = createSignal(false);
 
-	/** Get persisted space ID from localStorage */
+	/** Get preferred space ID from portable preferences with local fallback */
 	function getPersistedSpaceId(): string | null {
-		/* v8 ignore start */
-		if (typeof localStorage === "undefined") return null;
-		/* v8 ignore stop */
-		return localStorage.getItem(STORAGE_KEY);
+		return portablePreferences().selected_space_id ?? readLocalPreferences().selected_space_id;
 	}
 
-	/** Persist space ID to localStorage */
-	function persistSpaceId(id: string): void {
-		/* v8 ignore start */
-		if (typeof localStorage === "undefined") return;
-		/* v8 ignore stop */
-		localStorage.setItem(STORAGE_KEY, id);
+	/** Persist space ID to portable preferences and local fallback storage */
+	function persistSpaceId(id: string | null): void {
+		const patch = {} as import("./types").UserPreferencesPatchPayload;
+		patch.selected_space_id = id;
+		writeLocalPreferences(patch);
+		void setSelectedSpacePreference(id);
 	}
 
 	/** Set selected space and persist */
-	function setSelectedSpaceId(id: string | null): void {
+	function setSelectedSpaceId(id: string | null, persist = true): void {
 		setSelectedSpaceIdInternal(id);
-		if (id) {
+		if (persist) {
 			persistSpaceId(id);
 		}
 	}
@@ -51,7 +49,7 @@ export function createSpaceStore() {
 			// Try to restore persisted space selection
 			const persistedId = getPersistedSpaceId();
 			if (persistedId && fetchedSpaces.some((space) => space.id === persistedId)) {
-				setSelectedSpaceId(persistedId);
+				setSelectedSpaceId(persistedId, false);
 				setInitialized(true);
 				return persistedId;
 			}
@@ -59,21 +57,21 @@ export function createSpaceStore() {
 			// If default space exists, select it
 			const defaultSpace = fetchedSpaces.find((space) => space.id === DEFAULT_SPACE_ID);
 			if (defaultSpace) {
-				setSelectedSpaceId(DEFAULT_SPACE_ID);
+				setSelectedSpaceId(DEFAULT_SPACE_ID, false);
 				setInitialized(true);
 				return DEFAULT_SPACE_ID;
 			}
 
 			// No client-side space creation; remain unselected when list is empty
 			if (fetchedSpaces.length === 0) {
-				setSelectedSpaceId(null);
+				setSelectedSpaceIdInternal(null);
 				setInitialized(true);
 				return "";
 			}
 
 			// Otherwise, select the first available space
 			const firstSpace = fetchedSpaces[0];
-			setSelectedSpaceId(firstSpace.id);
+			setSelectedSpaceId(firstSpace.id, false);
 			setInitialized(true);
 			return firstSpace.id;
 		} catch (e) {

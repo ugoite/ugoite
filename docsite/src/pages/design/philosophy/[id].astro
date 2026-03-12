@@ -2,9 +2,9 @@
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../../lib/base-path";
 import {
-  getFeatureKindsLinkedToRequirements,
-  getPhilosophies,
-  getPoliciesDetailed,
+	getFeatureKindsLinkedToRequirements,
+	getPhilosophies,
+	getPoliciesDetailed,
 } from "../../../lib/spec-data";
 
 export async function getStaticPaths() {
@@ -21,27 +21,20 @@ if (!item) {
   throw new Error(`Unknown philosophy: ${id}`);
 }
 
-const tokenize = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 3);
-
-const philosophyTokens = new Set(
-  tokenize(
-    `${item.title} ${item.productDesignPrinciple ?? item.summary ?? ""} ${item.codingGuideline ?? ""}`,
-  ),
+const policyOrder = new Map(item.linkedPolicies.map((policyId, index) => [policyId, index]));
+const relatedPolicies = policies
+	.filter((policy) => item.linkedPolicies.includes(policy.id))
+	.sort(
+		(a, b) =>
+			(policyOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+			(policyOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+	);
+const relatedPolicyCards = await Promise.all(
+	relatedPolicies.map(async (policy) => ({
+		policy,
+		featureKinds: await getFeatureKindsLinkedToRequirements(policy.linkedRequirements),
+	})),
 );
-const relatedPolicies = [...policies]
-  .map((policy) => {
-    const sourceTokens = tokenize(`${policy.title} ${policy.summary ?? ""}`);
-    const score = sourceTokens.filter((token) => philosophyTokens.has(token)).length;
-    return { policy, score };
-  })
-  .sort((a, b) => b.score - a.score || a.policy.id.localeCompare(b.policy.id))
-  .slice(0, 6)
-  .map((entry) => entry.policy);
 
 const requirementIds = [...new Set(relatedPolicies.flatMap((policy) => policy.linkedRequirements))].sort((a, b) =>
   a.localeCompare(b),
@@ -84,9 +77,20 @@ const toc = [
 
   <section id="policies" class="doc-card">
     <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Policies</h2>
-    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-      {relatedPolicies.map((policy) => (
-        <a href={withBasePath(`/design/policies/${policy.id.toLowerCase()}`)} class="doc-pill doc-pill-outline">{policy.id}</a>
+    <div class="doc-grid">
+      {relatedPolicyCards.map(({ policy, featureKinds: policyFeatureKinds }) => (
+        <a href={withBasePath(`/design/policies/${policy.id.toLowerCase()}`)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+          <span class="doc-pill" style="margin-bottom: 0.75rem;">{policy.id}</span>
+          <h3 style="font-size: 0.9375rem; font-weight: 700;">{policy.title}</h3>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.7;">
+            {policy.description ?? policy.summary}
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.75rem;">
+            {policyFeatureKinds.map((feature) => (
+              <span class="doc-pill doc-pill-outline">{feature}</span>
+            ))}
+          </div>
+        </a>
       ))}
     </div>
   </section>
@@ -102,6 +106,9 @@ const toc = [
 
   <section id="features" class="doc-card">
     <h2 style="font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem;">Related Features</h2>
+    <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-bottom: 0.75rem; line-height: 1.6;">
+      These feature areas are aggregated from the policies explicitly linked to this philosophy.
+    </p>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
       {featureKinds.map((feature) => (
         <a href={withBasePath(`/app/api-storage/apis/${feature}`)} class="doc-pill doc-pill-outline">{feature}</a>

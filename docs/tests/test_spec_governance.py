@@ -16,6 +16,7 @@ PHILOSOPHY_PATH = SPEC_ROOT / "philosophy" / "foundation.yaml"
 POLICIES_PATH = SPEC_ROOT / "policies" / "policies.yaml"
 SPECIFICATIONS_PATH = SPEC_ROOT / "specifications.yaml"
 REQUIREMENTS_DIR = SPEC_ROOT / "requirements"
+MIN_POLICY_DESCRIPTION_WORDS = 20
 
 
 def _fail(message: str) -> Never:
@@ -207,39 +208,53 @@ def _assert_bidirectional(
                 _fail(f"Missing reverse link for {source_id} and {target_id}")
 
 
-def test_req_ops_003_governance_files_exist() -> None:
-    """REQ-OPS-003: Governance taxonomy YAML files must exist."""
-    _assert_exists(PHILOSOPHY_PATH)
-    _assert_exists(POLICIES_PATH)
-    _assert_exists(SPECIFICATIONS_PATH)
-    _assert_exists(REQUIREMENTS_DIR)
-
-
-def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
-    """REQ-OPS-003: Governance YAMLs must define valid IDs and link lists."""
+def _load_philosophies() -> dict[str, dict[str, Any]]:
     philosophy_loaded = _load_yaml(PHILOSOPHY_PATH)
     if not isinstance(philosophy_loaded, dict):
         _fail("philosophy/foundation.yaml must be a mapping")
     philosophies = philosophy_loaded.get("philosophies")
     if not isinstance(philosophies, list) or not philosophies:
         _fail("philosophies list is required")
-    philosophy_map = _to_id_map(philosophies, "philosophy")
+    return _to_id_map(philosophies, "philosophy")
+
+
+def _assert_philosophy_fields(philosophy_map: dict[str, dict[str, Any]]) -> None:
     for philosophy_id, philosophy in philosophy_map.items():
         for key in ("title", "product_design_principle", "coding_guideline"):
             value = str(philosophy.get(key) or "").strip()
             if not value:
                 _fail(f"{philosophy_id} must define non-empty {key}")
+        _assert_string_list(philosophy, "linked_policies", philosophy_id)
 
-    policy_map = _load_policies()
-    requirement_map = _load_requirement_sets()
-    specification_map = _load_specifications()
 
+def _assert_policy_fields(policy_map: dict[str, dict[str, Any]]) -> None:
+    for policy_id, policy in policy_map.items():
+        _assert_string_list(policy, "linked_philosophies", policy_id)
+        description = str(policy.get("description") or "").strip()
+        if not description:
+            _fail(f"{policy_id} must define non-empty description")
+        if len(description.split()) < MIN_POLICY_DESCRIPTION_WORDS:
+            _fail(f"{policy_id} description must explain the policy in detail")
+
+
+def _assert_spec_source_files_exist(
+    specification_map: dict[str, dict[str, Any]],
+) -> None:
     for spec_id, spec in specification_map.items():
         source_file = str(spec.get("source_file") or "").strip()
         if not source_file:
             _fail(f"{spec_id} must define source_file")
         _assert_exists(SPEC_ROOT / source_file)
 
+
+def _assert_governance_known_refs(
+    philosophy_map: dict[str, dict[str, Any]],
+    policy_map: dict[str, dict[str, Any]],
+    requirement_map: dict[str, dict[str, Any]],
+    specification_map: dict[str, dict[str, Any]],
+) -> None:
+    _assert_known_refs(philosophy_map, "linked_policies", policy_map, "policy")
+    _assert_known_refs(policy_map, "linked_philosophies", philosophy_map, "philosophy")
     _assert_known_refs(
         policy_map,
         "linked_requirements",
@@ -268,12 +283,50 @@ def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
     )
 
 
+def test_req_ops_003_governance_files_exist() -> None:
+    """REQ-OPS-003: Governance taxonomy YAML files must exist."""
+    _assert_exists(PHILOSOPHY_PATH)
+    _assert_exists(POLICIES_PATH)
+    _assert_exists(SPECIFICATIONS_PATH)
+    _assert_exists(REQUIREMENTS_DIR)
+
+
+def test_req_ops_003_ids_and_links_are_structurally_valid() -> None:
+    """REQ-OPS-003: Governance YAMLs must define valid IDs and link lists."""
+    philosophy_map = _load_philosophies()
+    _assert_philosophy_fields(philosophy_map)
+    policy_map = _load_policies()
+    _assert_policy_fields(policy_map)
+    requirement_map = _load_requirement_sets()
+    specification_map = _load_specifications()
+    _assert_spec_source_files_exist(specification_map)
+    _assert_governance_known_refs(
+        philosophy_map,
+        policy_map,
+        requirement_map,
+        specification_map,
+    )
+
+
 def test_req_ops_003_bidirectional_links_hold() -> None:
     """REQ-OPS-003: Policy/requirement/specification links must be bidirectional."""
+    philosophy_loaded = _load_yaml(PHILOSOPHY_PATH)
+    if not isinstance(philosophy_loaded, dict):
+        _fail("philosophy/foundation.yaml must be a mapping")
+    philosophies = philosophy_loaded.get("philosophies")
+    if not isinstance(philosophies, list) or not philosophies:
+        _fail("philosophies list is required")
+    philosophy_map = _to_id_map(philosophies, "philosophy")
     policy_map = _load_policies()
     requirement_map = _load_requirement_sets()
     specification_map = _load_specifications()
 
+    _assert_bidirectional(
+        source_map=philosophy_map,
+        source_key="linked_policies",
+        target_map=policy_map,
+        target_key="linked_philosophies",
+    )
     _assert_bidirectional(
         source_map=policy_map,
         source_key="linked_requirements",
