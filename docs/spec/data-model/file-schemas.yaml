@@ -4,102 +4,54 @@
 # These schemas are used for validation and documentation.
 
 version: "0.2"
-updated: "2026-01"
+updated: "2026-03"
 
 schemas:
-  # Root level
-  global:
-    description: Space registry and system configuration
-    path: global.json
-    schema:
-      type: object
-      required: [version, spaces, hmac_key_id, hmac_key]
-      properties:
-        version:
-          type: integer
-          description: Schema version
-        default_storage:
-          type: string
-          description: Default storage URI (e.g., fs:///path)
-        spaces:
-          type: array
-          items:
-            type: string
-          description: List of space IDs
-        hmac_key_id:
-          type: string
-          description: Current HMAC key identifier
-        hmac_key:
-          type: string
-          description: Base64-encoded HMAC secret
-        last_rotation:
-          type: string
-          format: date-time
-          description: Last key rotation timestamp
-
   # Space level
   space_meta:
     description: Space metadata
     path: spaces/{id}/meta.json
     schema:
       type: object
-      required: [id, name, created_at]
+      required:
+        [id, name, created_at, storage, hmac_key_id, hmac_key, last_rotation]
       properties:
         id:
           type: string
           description: Unique space identifier
         name:
           type: string
-          description: Human-readable space name
+          description: Space identifier reused as the current display name
         created_at:
+          type: number
+          description: Unix timestamp in seconds
+        storage:
+          type: object
+          required: [type, root]
+          properties:
+            type:
+              type: string
+              description: Storage backend kind (for example local or s3)
+            root:
+              type: string
+              description: Backend-specific storage root (for example an absolute path for fs:// or a bucket/prefix for object stores) interpreted by the configured operator
+        hmac_key_id:
+          type: string
+          description: Integrity-signing key identifier for entry and revision writes
+        hmac_key:
+          type: string
+          description: Base64-encoded integrity-signing secret
+        last_rotation:
           type: string
           format: date-time
-        owner_user_id:
-          type: string
-          description: Initial space owner user ID (Milestone 4 planned)
-        admin_user_ids:
-          type: array
-          description: Space admin user IDs (Milestone 4 planned)
-          items:
-            type: string
-        auth:
-          type: object
-          description: Authentication configuration (Milestone 4 planned)
-          properties:
-            mode:
-              type: string
-              enum: [required]
-            primary:
-              type: string
-              enum: [webauthn]
-            oauth2_auto_provision:
-              type: boolean
-        storage_config:
-          type: object
-          properties:
-            uri:
-              type: string
-              description: Storage URI (s3://, fs://, etc.)
-            credentials_profile:
-              type: string
-        merge_strategy:
-          type: string
-          enum: [manual, last_write_wins]
-        default_form:
-          type: string
-          description: Default form for new entries
-        encryption:
-          type: object
-          properties:
-            mode:
-              type: string
-              enum: [none, aes256]
+          description: Timestamp of the latest integrity-key rotation
 
   space_settings:
     description: Space settings
     path: spaces/{id}/settings.json
     schema:
       type: object
+      required: [default_form]
       properties:
         default_form:
           type: string
@@ -108,6 +60,22 @@ schemas:
           enum: [light, dark]
         sync_interval_seconds:
           type: integer
+
+  response_hmac:
+    description: Space-local response-signing key material
+    path: spaces/{id}/hmac.json
+    schema:
+      type: object
+      required: [hmac_key_id, hmac_key, last_rotation]
+      properties:
+        hmac_key_id:
+          type: string
+        hmac_key:
+          type: string
+          description: Base64-encoded response-signing secret
+        last_rotation:
+          type: string
+          format: date-time
 
   # Form definitions (Iceberg)
   form_definition:
@@ -205,26 +173,12 @@ schemas:
     path: spaces/{id}/materialized_views/{sql_id}/meta.json
     schema:
       type: object
-      required: [sql_id, created_at]
+      required: [sql_id, created_at, updated_at, snapshot_id, sql]
       properties:
         sql_id:
           type: string
         sql:
           type: string
-        source_forms:
-          type: array
-          description: Source forms referenced by the SQL/materialized view
-          items:
-            type: string
-        access_policy:
-          type: object
-          description: Effective policy inheritance metadata for the view
-          properties:
-            inherit_from_forms:
-              type: boolean
-            mode:
-              type: string
-              enum: [intersection]
         created_at:
           type: string
           format: date-time
@@ -261,7 +215,7 @@ schemas:
           type: string
           format: date-time
         error:
-          type: string
+          type: [string, "null"]
         view:
           type: object
           required: [sql_id, snapshot_id]
@@ -297,10 +251,10 @@ schemas:
               type: string
               enum: [on_demand, cached]
             cached_at:
-              type: string
+              type: [string, "null"]
               format: date-time
             value:
-              type: integer
+              type: [integer, "null"]
 
   # Iceberg tables
   entries_table:

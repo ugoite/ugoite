@@ -1,0 +1,52 @@
+version: 1
+updated: "2026-03"
+
+space_layout:
+  bootstrap:
+    operation: create_space
+    entries:
+      - path: spaces/{space_id}
+        kind: directory
+      - path: spaces/{space_id}/meta.json
+        kind: file
+        schema: space_meta
+      - path: spaces/{space_id}/settings.json
+        kind: file
+        schema: space_settings
+      - path: spaces/{space_id}/forms
+        kind: directory
+        notes:
+          - Iceberg owns the subtree beneath forms/; only the root directory is specified here.
+      - path: spaces/{space_id}/assets
+        kind: directory
+      - path: spaces/{space_id}/materialized_views
+        kind: directory
+      - path: spaces/{space_id}/sql_sessions
+        kind: directory
+  triggers:
+    response_signing:
+      operation: load_response_hmac_material
+      entries:
+        - path: spaces/{space_id}/hmac.json
+          kind: file
+          schema: response_hmac
+    sql_session_creation:
+      operation: create_sql_session
+      entries:
+        - path: spaces/{space_id}/materialized_views/{sql_id}
+          kind: directory
+        - path: spaces/{space_id}/materialized_views/{sql_id}/meta.json
+          kind: file
+          schema: materialized_view_meta
+        - path: spaces/{space_id}/sql_sessions/{session_id}
+          kind: directory
+        - path: spaces/{space_id}/sql_sessions/{session_id}/meta.json
+          kind: file
+          schema: sql_session_meta
+    asset_save:
+      operation: save_asset
+      entries:
+        - path_glob: spaces/{space_id}/assets/*
+          kind: file
+          notes:
+            - Asset filenames are runtime-generated as {asset_id}_{original_name}.
