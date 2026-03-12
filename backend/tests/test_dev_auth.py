@@ -262,6 +262,27 @@ def test_dev_auth_req_ops_015_rejects_remote_clients(
     assert "loopback clients" in response.json()["detail"]
 
 
+def test_dev_auth_req_ops_015_rejects_unknown_client_host(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth endpoints reject requests without a resolved client host."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setattr(
+        "app.api.endpoints.auth.resolve_client_host", lambda *args, **kwargs: None
+    )
+    clear_auth_manager_cache()
+
+    response = TestClient(app).get("/auth/dev/config")
+
+    assert response.status_code == 403
+    assert "loopback clients" in response.json()["detail"]
+
+
 def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
