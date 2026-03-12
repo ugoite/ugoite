@@ -28,8 +28,57 @@ permissions:
   packages: write
 
 jobs:
-  docker-images:
+  docker-images-ci:
+    name: Docker images (CI)
+    if: ${{ inputs.push == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build backend image for CI
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          cache-from: |
+            type=gha,scope=backend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=backend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            core=./ugoite-core
+            minimum=./ugoite-minimum
+            module=./ugoite-cli
+
+      - name: Build frontend image for CI
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            shared=./shared
+
+  docker-images-publish:
     name: Docker images
+    if: ${{ inputs.push }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
@@ -45,7 +94,6 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Authenticate GHCR pushes
-        if: ${{ inputs.push }}
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -53,7 +101,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute backend GHCR tags
-        if: ${{ inputs.push }}
         id: backend-tags
         env:
           CHANNEL: ${{ inputs.channel }}
@@ -87,7 +134,6 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build backend image
-        if: ${{ inputs.push }}
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -105,26 +151,7 @@ jobs:
             minimum=./ugoite-minimum
             module=./ugoite-cli
 
-      - name: Build backend image for CI
-        if: ${{ inputs.push == false }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: false
-          cache-from: |
-            type=gha,scope=backend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=backend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            core=./ugoite-core
-            minimum=./ugoite-minimum
-            module=./ugoite-cli
-
       - name: Compute frontend GHCR tags
-        if: ${{ inputs.push }}
         id: frontend-tags
         env:
           CHANNEL: ${{ inputs.channel }}
@@ -158,29 +185,12 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build frontend image
-        if: ${{ inputs.push }}
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
           tags: ${{ steps.frontend-tags.outputs.tags }}
-          cache-from: |
-            type=gha,scope=frontend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=frontend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            shared=./shared
-
-      - name: Build frontend image for CI
-        if: ${{ inputs.push == false }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: false
           cache-from: |
             type=gha,scope=frontend-image
             type=gha,scope=docker-build-common
