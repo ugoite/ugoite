@@ -44,12 +44,14 @@ jobs:
             Release Publish
           INITIAL_DELAY_SECONDS: "10"
           PERIOD_SECONDS: "15"
+          SETTLE_POLLS_REQUIRED: "3"
         run: |
           python - <<'PYCODE'
           from __future__ import annotations
 
           import json
           import os
+          import pathlib
           import subprocess
           import time
 
@@ -73,16 +75,63 @@ jobs:
               return payload
 
 
+          def github_event_payload() -> dict[str, object]:
+              event_path = pathlib.Path(os.environ["GITHUB_EVENT_PATH"])
+              payload = json.loads(event_path.read_text(encoding="utf-8"))
+              if not isinstance(payload, dict):
+                  msg = "GitHub event payload must be a JSON object"
+                  raise TypeError(msg)
+              return payload
+
+
+          def pull_request_head_sha(payload: dict[str, object]) -> str | None:
+              pull_request = payload.get("pull_request")
+              if not isinstance(pull_request, dict):
+                  return None
+              head = pull_request.get("head")
+              if not isinstance(head, dict):
+                  return None
+              sha = head.get("sha")
+              if not isinstance(sha, str):
+                  return None
+              normalized = sha.strip()
+              return normalized or None
+
+
+          def merge_group_head_sha(payload: dict[str, object]) -> str | None:
+              merge_group = payload.get("merge_group")
+              if not isinstance(merge_group, dict):
+                  return None
+              sha = merge_group.get("head_sha")
+              if not isinstance(sha, str):
+                  return None
+              normalized = sha.strip()
+              return normalized or None
+
+
+          def target_sha(event: str, payload: dict[str, object], default_sha: str) -> str:
+              if event == "pull_request":
+                  return pull_request_head_sha(payload) or default_sha
+              if event == "merge_group":
+                  return merge_group_head_sha(payload) or default_sha
+              return default_sha
+
+
           curated = workflow_names(os.environ["CURATED_WORKFLOW_NAMES"])
           excluded = workflow_names(os.environ["EXCLUDED_WORKFLOW_NAMES"])
           repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["GITHUB_SHA"]
+          default_sha = os.environ["GITHUB_SHA"]
           event = os.environ["GITHUB_EVENT_NAME"]
           current_run_id = int(os.environ["GITHUB_RUN_ID"])
           initial_delay = int(os.environ["INITIAL_DELAY_SECONDS"])
           period = int(os.environ["PERIOD_SECONDS"])
+          settle_polls_required = int(os.environ["SETTLE_POLLS_REQUIRED"])
+          payload = github_event_payload()
+          sha = target_sha(event, payload, default_sha)
           deadline = time.time() + (55 * 60)
           allowed_conclusions = {"neutral", "skipped", "success"}
+          stable_polls = 0
+          observed_names: set[str] = set()
 
           print(f"Target commit: {sha}")
           print(f"Filtering workflows by event: {event}")
@@ -122,6 +171,13 @@ jobs:
 
               failures: list[str] = []
               pending: list[str] = []
+              current_names = set(latest_by_name)
+              newly_observed = sorted(current_names.difference(observed_names))
+              if newly_observed:
+                  observed_names.update(newly_observed)
+                  stable_polls = 0
+                  print("New curated workflows observed:", ", ".join(newly_observed))
+
               print(f"Current curated workflow runs: {len(latest_by_name)}")
               for name in sorted(latest_by_name):
                   run = latest_by_name[name]
@@ -140,10 +196,24 @@ jobs:
                       + ", ".join(sorted(failures)),
                   )
               if pending:
+                  stable_polls = 0
                   if time.time() > deadline:
                       raise SystemExit(
                           "Timed out waiting for curated workflows: "
                           + ", ".join(sorted(pending)),
+                      )
+                  time.sleep(period)
+                  continue
+
+              stable_polls += 1
+              print(
+                  "Observed curated workflow set stable for "
+                  f"{stable_polls}/{settle_polls_required} poll(s).",
+              )
+              if stable_polls < settle_polls_required:
+                  if time.time() > deadline:
+                      raise SystemExit(
+                          "Timed out waiting for curated workflow set to settle",
                       )
                   time.sleep(period)
                   continue
