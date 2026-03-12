@@ -29,12 +29,12 @@ test.describe("Docsite internal links", () => {
 			}
 			visited.add(normalizedCurrentUrl);
 
-			const response = await page.goto(currentUrl, { waitUntil: "domcontentloaded" });
+			const response = await page.goto(currentUrl, { waitUntil: "load" });
 			expect(response, `Missing navigation response for ${currentUrl}`).not.toBeNull();
 			expect(response!.status(), `Expected ${currentUrl} to resolve`).toBeLessThan(400);
 
-			const hrefs = await page.locator("a[href]").evaluateAll((anchors) =>
-				anchors.map((anchor) =>
+			const hrefs = await page.evaluate(() =>
+				Array.from(document.querySelectorAll("a[href]"), (anchor) =>
 					anchor instanceof HTMLAnchorElement ? anchor.href : "",
 				),
 			);
@@ -89,7 +89,10 @@ function normalizeDocsiteHref(rawHref: string): string | null {
 		? baseUrl.pathname
 		: `${baseUrl.pathname}/`;
 	if (!href.pathname.startsWith(normalizedBasePath)) {
-		return null;
+		throw new Error(
+			`Found same-origin link outside configured base path: ${href.pathname}. ` +
+				`Expected all internal docsite links to start with "${normalizedBasePath}".`,
+		);
 	}
 
 	if (/\.(json|png|jpe?g|svg|ico|css|js)$/i.test(href.pathname)) {

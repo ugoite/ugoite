@@ -71,18 +71,23 @@ export async function startDocsiteServer(options?: {
 			docsiteStartupError = error;
 		});
 
-		docsiteProcess.on("exit", (code) => {
-			if (code && code !== 0) {
+		docsiteProcess.on("exit", (code, signal) => {
+			if (signal !== "SIGTERM" && code && code !== 0) {
 				console.warn(`docsite dev server exited with code ${code}`);
 			}
 		});
 
-		await waitForDocsiteReady(() => resolvedDocsiteUrl, {
-			timeoutMs: 120_000,
-			getStartupError: () => docsiteStartupError,
-			getProcessExitCode: () => docsiteProcess?.exitCode,
-			getRecentLogs: () => docsiteLogs,
-		});
+		try {
+			await waitForDocsiteReady(() => resolvedDocsiteUrl, {
+				timeoutMs: 120_000,
+				getStartupError: () => docsiteStartupError,
+				getProcessExitCode: () => docsiteProcess?.exitCode,
+				getRecentLogs: () => docsiteLogs,
+			});
+		} catch (error) {
+			await stopProcess(docsiteProcess);
+			throw error;
+		}
 	}
 
 	return {
@@ -94,14 +99,7 @@ export async function startDocsiteServer(options?: {
 		},
 		getBaseUrl: () => getResolvedDocsiteUrl(resolvedDocsiteUrl),
 		stop: async () => {
-			if (!docsiteProcess || docsiteProcess.killed) {
-				return;
-			}
-			docsiteProcess.kill("SIGTERM");
-			await new Promise((resolve) => setTimeout(resolve, 800));
-			if (!docsiteProcess.killed) {
-				docsiteProcess.kill("SIGKILL");
-			}
+			await stopProcess(docsiteProcess);
 		},
 	};
 }
@@ -147,4 +145,30 @@ function getResolvedDocsiteUrl(resolvedDocsiteUrl: string | undefined): string {
 		throw new Error("Resolved docsite URL is unavailable");
 	}
 	return resolvedDocsiteUrl;
+}
+
+async function stopProcess(process: ChildProcess | undefined): Promise<void> {
+	if (!process) {
+		return;
+	}
+	if (process.exitCode !== null || process.signalCode !== null) {
+		return;
+	}
+
+	process.kill("SIGTERM");
+	const exitedGracefully = await new Promise<boolean>((resolve) => {
+		const timeoutId = setTimeout(() => {
+			process.removeListener("exit", onExit);
+			resolve(false);
+		}, 5_000);
+		const onExit = () => {
+			clearTimeout(timeoutId);
+			resolve(true);
+		};
+		process.once("exit", onExit);
+	});
+
+	if (!exitedGracefully && process.exitCode === null && process.signalCode === null) {
+		process.kill("SIGKILL");
+	}
 }
