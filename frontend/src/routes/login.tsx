@@ -34,7 +34,7 @@ export default function LoginRoute() {
 		setSubmitError("");
 		try {
 			const response = await action();
-			setAuthTokenCookie(response.bearerToken);
+			setAuthTokenCookie(response.bearerToken, response.expiresAt);
 			navigate(redirectTarget(), { replace: true });
 		} catch (error) {
 			setSubmitError(toMessage(error));

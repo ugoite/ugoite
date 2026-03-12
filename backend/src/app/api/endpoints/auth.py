@@ -13,7 +13,6 @@ from app.core.security import is_local_host, resolve_client_host
 from app.models.payloads import DevAuthLogin
 
 router = APIRouter(prefix="/auth/dev", tags=["auth"])
-DEV_AUTH_LOGIN_MODEL = DevAuthLogin
 
 AuthMode = Literal["manual-totp", "mock-oauth"]
 DEFAULT_DEV_AUTH_MODE: AuthMode = "manual-totp"
@@ -138,7 +137,6 @@ async def dev_login_endpoint(
 ) -> dict[str, int | str]:
     """Validate local development username + TOTP and issue a signed bearer token."""
     _ensure_local_dev_auth_request(request)
-    DEV_AUTH_LOGIN_MODEL.model_validate(payload.model_dump())
     if _resolve_dev_auth_mode() != "manual-totp":
         message = "manual-totp login is not enabled for this local development session."
         raise HTTPException(

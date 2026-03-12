@@ -96,3 +96,11 @@ def test_validate_totp_code_req_ops_015_accepts_current_code() -> None:
     timestamp = 1_700_000_000
     code = _totp_code(secret, timestamp)
     assert validate_totp_code(code, secret, now=timestamp)
+
+
+def test_validate_totp_code_req_ops_015_accepts_unpadded_secret() -> None:
+    """REQ-OPS-015: local manual-totp mode accepts unpadded Base32 secrets."""
+    secret = TEST_TOTP_SECRET.rstrip("=")
+    timestamp = 1_700_000_000
+    code = _totp_code(TEST_TOTP_SECRET, timestamp)
+    assert validate_totp_code(code, secret, now=timestamp)

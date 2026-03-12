@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [ -z "${HOME:-}" ]; then
-	echo "HOME is not set; cannot determine auth file path." >&2
-	exit 1
+  echo "HOME is not set; cannot determine auth file path." >&2
+  exit 1
 fi
 
 AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"
@@ -14,28 +14,28 @@ DEV_USER_ID="${UGOITE_DEV_USER_ID:-}"
 DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 
 announce_mode() {
-	local mode="$1"
-	local detail="$2"
-	echo "Local dev auth mode: ${mode} (${detail})" >&2
+  local mode="$1"
+  local detail="$2"
+  echo "Local dev auth mode: ${mode} (${detail})" >&2
 }
 
 python_ugoite() {
-	python "$@"
+  python "$@"
 }
 
 acquire_lock() {
-	local auth_dir lock_file
-	auth_dir="$(dirname "$AUTH_FILE")"
-	mkdir -p "$auth_dir"
-	lock_file="${AUTH_FILE}.lock"
-	exec 9>"$lock_file"
-	if command -v flock >/dev/null 2>&1; then
-		flock 9
-	fi
+  local auth_dir lock_file
+  auth_dir="$(dirname "$AUTH_FILE")"
+  mkdir -p "$auth_dir"
+  lock_file="${AUTH_FILE}.lock"
+  exec 9>"$lock_file"
+  if command -v flock >/dev/null 2>&1; then
+    flock 9
+  fi
 }
 
 read_cached_context() {
-	python_ugoite - "$AUTH_FILE" <<'PY'
+  python_ugoite - "$AUTH_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -63,11 +63,11 @@ PY
 }
 
 write_auth_context() {
-	local mode="$1"
-	local user_id="$2"
-	local signing_secret="$3"
-	local signing_kid="$4"
-	python_ugoite - "$AUTH_FILE" "$mode" "$user_id" "$signing_secret" "$signing_kid" <<'PY'
+  local mode="$1"
+  local user_id="$2"
+  local signing_secret="$3"
+  local signing_kid="$4"
+  python_ugoite - "$AUTH_FILE" "$mode" "$user_id" "$signing_secret" "$signing_kid" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -87,15 +87,15 @@ PY
 }
 
 random_signing_secret() {
-	python_ugoite - <<'PY'
+  python_ugoite - <<'PY'
 import secrets
 print(secrets.token_urlsafe(32))
 PY
 }
 
 validate_totp_prompt_value() {
-	local totp_code="$1"
-	python_ugoite - "$totp_code" "$DEV_2FA_SECRET" <<'PY'
+  local totp_code="$1"
+  python_ugoite - "$totp_code" "$DEV_2FA_SECRET" <<'PY'
 import base64
 import hashlib
 import hmac
@@ -107,8 +107,16 @@ normalized_code = code.strip()
 if not normalized_code.isdigit() or len(normalized_code) != 6:
     raise SystemExit(1)
 
+normalized_secret = secret.strip().replace(" ", "")
+if not normalized_secret:
+    raise SystemExit(1)
+
+remainder = len(normalized_secret) % 8
+if remainder:
+    normalized_secret += "=" * (8 - remainder)
+
 try:
-    decoded_secret = base64.b32decode(secret.strip().replace(" ", "").upper(), casefold=True)
+    decoded_secret = base64.b32decode(normalized_secret.upper(), casefold=True)
 except (base64.binascii.Error, ValueError):
     raise SystemExit(1)
 
@@ -130,21 +138,22 @@ PY
 }
 
 prompt_non_empty() {
-	local prompt_text="$1"
-	local value=""
-	while [ -z "$value" ]; do
-		read -r -p "$prompt_text" value
-		value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-	done
-	printf '%s\n' "$value"
+  local prompt_text="$1"
+  local value=""
+  while true; do
+    read -r -p "$prompt_text" value
+    value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$value" ] && break
+  done
+  printf '%s\n' "$value"
 }
 
 emit_exports() {
-	local mode="$1"
-	local user_id="$2"
-	local signing_secret="$3"
-	local signing_kid="$4"
-	python_ugoite - "$mode" "$user_id" "$signing_secret" "$signing_kid" "$AUTH_TTL_SECONDS" "$DEV_2FA_SECRET" <<'PY'
+  local mode="$1"
+  local user_id="$2"
+  local signing_secret="$3"
+  local signing_kid="$4"
+  python_ugoite - "$mode" "$user_id" "$signing_secret" "$signing_kid" "$AUTH_TTL_SECONDS" "$DEV_2FA_SECRET" <<'PY'
 import shlex
 import sys
 
@@ -166,67 +175,67 @@ PY
 }
 
 reuse_or_create_context() {
-	local requested_mode="$1"
-	local entered_totp=""
-	local cached_mode=""
-	local cached_user_id=""
-	local cached_signing_secret=""
-	local cached_signing_kid=""
-	local cached_state=""
+  local requested_mode="$1"
+  local entered_totp=""
+  local cached_mode=""
+  local cached_user_id=""
+  local cached_signing_secret=""
+  local cached_signing_kid=""
+  local cached_state=""
 
-	acquire_lock
-	cached_state="$(read_cached_context || true)"
-	if [ -n "$cached_state" ]; then
-		IFS=$'\t' read -r cached_mode cached_user_id cached_signing_secret cached_signing_kid <<<"$cached_state"
-	fi
+  acquire_lock
+  cached_state="$(read_cached_context || true)"
+  if [ -n "$cached_state" ]; then
+    IFS=$'\t' read -r cached_mode cached_user_id cached_signing_secret cached_signing_kid <<<"$cached_state"
+  fi
 
-	if [ "${UGOITE_DEV_AUTH_FORCE_LOGIN:-false}" != "true" ] &&
-		[ "$requested_mode" = "$cached_mode" ] &&
-		{ [ -z "$DEV_USER_ID" ] || [ "$DEV_USER_ID" = "$cached_user_id" ]; } &&
-		[ -n "$cached_signing_secret" ] &&
-		[ -n "$cached_signing_kid" ]; then
-		emit_exports "$requested_mode" "$cached_user_id" "$cached_signing_secret" "$cached_signing_kid"
-		echo "Using cached local dev auth context for ${cached_user_id}." >&2
-		return 0
-	fi
+  if [ "${UGOITE_DEV_AUTH_FORCE_LOGIN:-false}" != "true" ] &&
+    [ "$requested_mode" = "$cached_mode" ] &&
+    { [ -z "$DEV_USER_ID" ] || [ "$DEV_USER_ID" = "$cached_user_id" ]; } &&
+    [ -n "$cached_signing_secret" ] &&
+    [ -n "$cached_signing_kid" ]; then
+    emit_exports "$requested_mode" "$cached_user_id" "$cached_signing_secret" "$cached_signing_kid"
+    echo "Using cached local dev auth context for ${cached_user_id}." >&2
+    return 0
+  fi
 
-	if [ -z "$DEV_USER_ID" ]; then
-		DEV_USER_ID="$(prompt_non_empty 'Local dev username: ')"
-	fi
-	if [ "$requested_mode" = "manual-totp" ]; then
-		entered_totp="${UGOITE_DEV_TOTP_CODE:-}"
-		if [ -z "$entered_totp" ]; then
-			entered_totp="$(prompt_non_empty 'Current 2FA code: ')"
-		fi
-		if ! validate_totp_prompt_value "$entered_totp"; then
-			echo "The provided 2FA code is invalid for UGOITE_DEV_2FA_SECRET." >&2
-			exit 1
-		fi
-	fi
+  if [ -z "$DEV_USER_ID" ]; then
+    DEV_USER_ID="$(prompt_non_empty 'Local dev username: ')"
+  fi
+  if [ "$requested_mode" = "manual-totp" ]; then
+    entered_totp="${UGOITE_DEV_TOTP_CODE:-}"
+    if [ -z "$entered_totp" ]; then
+      entered_totp="$(prompt_non_empty 'Current 2FA code: ')"
+    fi
+    if ! validate_totp_prompt_value "$entered_totp"; then
+      echo "The provided 2FA code is invalid for UGOITE_DEV_2FA_SECRET." >&2
+      exit 1
+    fi
+  fi
 
-	local signing_secret signing_kid
-	signing_secret="${UGOITE_DEV_SIGNING_SECRET:-}"
-	if [ -z "$signing_secret" ]; then
-		signing_secret="$(random_signing_secret)"
-	fi
-	signing_kid="$DEV_SIGNING_KID"
+  local signing_secret signing_kid
+  signing_secret="${UGOITE_DEV_SIGNING_SECRET:-}"
+  if [ -z "$signing_secret" ]; then
+    signing_secret="$(random_signing_secret)"
+  fi
+  signing_kid="$DEV_SIGNING_KID"
 
-	write_auth_context "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
-	emit_exports "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
-	echo "Prepared local dev auth context for ${DEV_USER_ID}." >&2
+  write_auth_context "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
+  emit_exports "$requested_mode" "$DEV_USER_ID" "$signing_secret" "$signing_kid"
+  echo "Prepared local dev auth context for ${DEV_USER_ID}." >&2
 }
 
 case "$AUTH_MODE" in
-manual-totp)
-	announce_mode "manual-totp" "explicit username + 2FA login"
-	reuse_or_create_context "manual-totp"
-	;;
-mock-oauth)
-	announce_mode "mock-oauth" "explicit browser or CLI login"
-	reuse_or_create_context "mock-oauth"
-	;;
-*)
-	echo "Unsupported UGOITE_DEV_AUTH_MODE: ${AUTH_MODE}. Expected manual-totp or mock-oauth." >&2
-	exit 1
-	;;
+  manual-totp)
+    announce_mode "manual-totp" "explicit username + 2FA login"
+    reuse_or_create_context "manual-totp"
+    ;;
+  mock-oauth)
+    announce_mode "mock-oauth" "explicit browser or CLI login"
+    reuse_or_create_context "mock-oauth"
+    ;;
+  *)
+    echo "Unsupported UGOITE_DEV_AUTH_MODE: ${AUTH_MODE}. Expected manual-totp or mock-oauth." >&2
+    exit 1
+    ;;
 esac

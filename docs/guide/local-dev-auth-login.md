@@ -16,7 +16,7 @@ receive a bearer token second.
 Each backend/frontend dev process logs the active mode at startup, for example:
 
 ```text
-Local dev auth mode: manual-totp (login_user=dev-local-user auth_context=updated)
+Local dev auth mode: manual-totp (explicit username + 2FA login)
 ```
 
 ## 2) Install `oathtool` for manual TOTP flows

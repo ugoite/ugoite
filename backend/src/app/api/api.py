@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends
 
 from app.api.endpoints import (
     asset,
-    auth,
     audit,
+    auth,
     entry,
     members,
     preferences,

@@ -237,8 +237,12 @@ def validate_totp_code(
         return False
 
     try:
+        padded_secret = normalized_secret
+        remainder = len(padded_secret) % 8
+        if remainder:
+            padded_secret += "=" * (8 - remainder)
         decoded_secret = base64.b32decode(
-            normalized_secret.upper(),
+            padded_secret.upper(),
             casefold=True,
         )
     except (base64.binascii.Error, ValueError):
