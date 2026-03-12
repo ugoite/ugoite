@@ -890,7 +890,7 @@ def _collect_all_tests_status_details() -> list[str]:
         details.append(
             "all-tests-ci must not use deprecated wait-for-workflows-action@v1",
         )
-    if "gh api" not in workflow_text:
+    if re.search(r"""\[\s*["']gh["']\s*,\s*["']api["']\s*,""", workflow_text) is None:
         details.append("all-tests-ci must poll workflow status via gh api")
     if missing_exclusions:
         details.append(
