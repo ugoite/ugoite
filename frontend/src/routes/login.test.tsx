@@ -37,7 +37,12 @@ describe("/login", () => {
 		fireEvent.input(screen.getByLabelText("2FA code"), {
 			target: { value: "123456" },
 		});
-		fireEvent.submit(screen.getByRole("button", { name: "Sign in with 2FA" }).closest("form")!);
+		const form = screen.getByRole("button", { name: "Sign in with 2FA" }).closest("form");
+		expect(form).not.toBeNull();
+		if (form === null) {
+			throw new Error("Manual login form should exist.");
+		}
+		fireEvent.submit(form);
 
 		await waitFor(() => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });

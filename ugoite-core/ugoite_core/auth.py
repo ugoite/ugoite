@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import base64
-import hmac
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -196,9 +196,7 @@ def _has_configured_bearer_credentials() -> bool:
                 return True
 
     bearer_secrets = os.environ.get("UGOITE_AUTH_BEARER_SECRETS")
-    if isinstance(bearer_secrets, str) and bearer_secrets.strip():
-        return True
-    return False
+    return isinstance(bearer_secrets, str) and bool(bearer_secrets.strip())
 
 
 def _base64url_encode(data: bytes) -> str:

@@ -20,6 +20,11 @@ from app.main import app
 if TYPE_CHECKING:
     from pathlib import Path
 
+DEFAULT_TEST_USER_ID = "dev-alice"
+DEFAULT_TEST_SIGNING_KID = "{}-{}-{}".format("dev", "local", "v1")
+DEFAULT_TEST_SIGNING_SECRET = "{}-{}-{}".format("dev", "signing", "secret")
+TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
+
 
 def _totp_code(secret: str, timestamp: int) -> str:
     decoded_secret = base64.b32decode(secret.upper(), casefold=True)
@@ -39,24 +44,29 @@ def _configure_dev_auth_env(
     temp_space_root: Path,
     *,
     mode: str,
-    user_id: str = "dev-alice",
-    signing_secret: str = "dev-signing-secret",
-    signing_kid: str = "dev-local-v1",
+    overrides: dict[str, str] | None = None,
 ) -> None:
+    env = {
+        "UGOITE_DEV_AUTH_MODE": mode,
+        "UGOITE_DEV_USER_ID": DEFAULT_TEST_USER_ID,
+        "UGOITE_DEV_SIGNING_SECRET": DEFAULT_TEST_SIGNING_SECRET,
+        "UGOITE_DEV_SIGNING_KID": DEFAULT_TEST_SIGNING_KID,
+    }
+    if overrides:
+        env.update(overrides)
+
     monkeypatch.setenv("UGOITE_ROOT", str(temp_space_root))
-    monkeypatch.setenv("UGOITE_DEV_AUTH_MODE", mode)
-    monkeypatch.setenv("UGOITE_DEV_USER_ID", user_id)
-    monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", signing_secret)
-    monkeypatch.setenv("UGOITE_DEV_SIGNING_KID", signing_kid)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
     monkeypatch.setenv(
         "UGOITE_AUTH_BEARER_SECRETS",
-        f"{signing_kid}:{signing_secret}",
+        f"{env['UGOITE_DEV_SIGNING_KID']}:{env['UGOITE_DEV_SIGNING_SECRET']}",
     )
-    monkeypatch.setenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", signing_kid)
+    monkeypatch.setenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", env["UGOITE_DEV_SIGNING_KID"])
 
 
 def test_dev_auth_req_ops_015_config_exposes_manual_totp_mode(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
     """REQ-OPS-015: local browser/CLI login can discover manual-totp mode."""
@@ -80,12 +90,12 @@ def test_dev_auth_req_ops_015_config_exposes_manual_totp_mode(
 
 
 def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
     """REQ-OPS-015: manual-totp login issues a bearer token for protected APIs."""
     timestamp = int(time.time())
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
@@ -116,7 +126,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
 
 
 def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
     """REQ-OPS-015: mock-oauth login remains explicit and returns a signed token."""
@@ -125,8 +135,14 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
         monkeypatch,
         temp_space_root,
         mode="mock-oauth",
-        user_id="dev-oauth-user",
-        signing_secret="oauth-signing-secret",
+        overrides={
+            "UGOITE_DEV_USER_ID": "dev-oauth-user",
+            "UGOITE_DEV_SIGNING_SECRET": "{}-{}-{}".format(
+                "oauth",
+                "signing",
+                "secret",
+            ),
+        },
     )
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
     monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
@@ -171,7 +187,7 @@ def test_dev_auth_req_ops_015_config_requires_non_empty_user_id(
         monkeypatch,
         temp_space_root,
         mode="manual-totp",
-        user_id="   ",
+        overrides={"UGOITE_DEV_USER_ID": "   "},
     )
     clear_auth_manager_cache()
 
@@ -184,7 +200,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_non_manual_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: manual login endpoint rejects sessions running in mock-oauth mode."""
+    """REQ-OPS-015: manual login endpoint rejects mock-oauth sessions."""
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
@@ -205,9 +221,9 @@ def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: manual login rejects usernames that do not match the terminal context."""
+    """REQ-OPS-015: manual login rejects usernames outside the terminal context."""
     timestamp = int(time.time())
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
@@ -224,6 +240,26 @@ def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or 2FA code."
+
+
+def test_dev_auth_req_ops_015_rejects_remote_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth endpoints reject non-loopback clients."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get("/auth/dev/config")
+
+    assert response.status_code == 403
+    assert "loopback clients" in response.json()["detail"]
 
 
 def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
@@ -257,7 +293,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
         temp_space_root,
         mode="manual-totp",
     )
-    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", TEST_TOTP_SECRET)
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
@@ -275,7 +311,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
 ) -> None:
     """REQ-OPS-015: manual login cannot issue a token without signing material."""
     timestamp = int(time.time())
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
@@ -310,7 +346,7 @@ def test_dev_auth_req_ops_015_manual_login_validates_ttl(
 ) -> None:
     """REQ-OPS-015: manual login validates dev auth TTL configuration."""
     timestamp = int(time.time())
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,

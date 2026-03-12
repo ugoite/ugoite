@@ -36,7 +36,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/login") }}
 					>
-						login
+						{t("nav.login")}
 					</a>
 				</li>
 				<li>

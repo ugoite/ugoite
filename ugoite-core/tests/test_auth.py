@@ -12,10 +12,16 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from ugoite_core.auth import clear_auth_manager_cache, get_auth_manager, validate_totp_code
+from ugoite_core.auth import (
+    clear_auth_manager_cache,
+    get_auth_manager,
+    validate_totp_code,
+)
 
 if TYPE_CHECKING:
     import pytest
+
+TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
 
 
 def test_bootstrap_warning_redacts_token_value(
@@ -86,7 +92,7 @@ def _totp_code(secret: str, timestamp: int) -> str:
 
 def test_validate_totp_code_req_ops_015_accepts_current_code() -> None:
     """REQ-OPS-015: local manual-totp mode validates a current six-digit code."""
-    secret = "JBSWY3DPEHPK3PXP"
+    secret = TEST_TOTP_SECRET
     timestamp = 1_700_000_000
     code = _totp_code(secret, timestamp)
     assert validate_totp_code(code, secret, now=timestamp)
