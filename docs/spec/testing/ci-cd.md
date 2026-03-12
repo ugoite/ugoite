@@ -16,11 +16,13 @@
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
 | All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate code-quality workflow health while excluding release/publish automation |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
-| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish |
+| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish plus GHCR image push |
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
-resolve inside the container build.
+resolve inside the container build. Docker Build CI and Release Publish share
+the reusable `.github/workflows/docker-images.yml` image-definition contract so
+release publishing cannot silently drift from CI-validated build contexts.
 
 ## Python CI
 
@@ -193,6 +195,8 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 7. **Human review** must confirm the planned release scope before publishing.
 8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
 9. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
+10. **Release Publish** authenticates to GHCR with `GITHUB_TOKEN`, pushes `ghcr.io/ugoite/ugoite/backend` and `ghcr.io/ugoite/ugoite/frontend`, and keeps tags aligned to the requested version (`<semver>` plus `latest`/`stable` for stable releases, or `<channel>` for alpha/beta).
+11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can pull and run release images without rebuilding from source.
 
 ## Environment Variables
 

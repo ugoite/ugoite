@@ -69,3 +69,71 @@ requirements:
       tests:
       - test_cli_sql_lint_reports_errors
       - test_cli_sql_complete_suggests_tables
+- set_id: REQCAT-SEARCH
+  source_file: requirements/search.yaml
+  scope: Search behavior and discoverability requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-SRCH-004
+  title: Keyword-first search route
+  description: 'The `/spaces/{space_id}/search` route MUST present direct keyword entry
+
+    search as the default experience so users can find entries without first managing
+
+    saved queries or writing SQL.
+
+    '
+  related_spec:
+  - ui/pages/space-search.yaml
+  - features/search.yaml
+  priority: high
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
+      tests:
+      - 'REQ-SRCH-004: runs a direct keyword search and renders matching entries'
+    e2e:
+    - file: e2e/search-ui.test.ts
+      tests:
+      - 'REQ-SRCH-004: search page starts with direct keyword search'
+- set_id: REQCAT-SEARCH
+  source_file: requirements/search.yaml
+  scope: Search behavior and discoverability requirements.
+  linked_policies:
+  - POL-012
+  linked_specifications:
+  - SPEC-FEATURES-REGISTRY
+  - SPEC-STORIES-ADVANCED
+  - SPEC-API-REST
+  id: REQ-SRCH-005
+  title: Structured search reuse through shared query infrastructure
+  description: 'The search route MUST offer advanced structured conditions that compile
+
+    into the shared SQL or query execution path, and advanced searches MUST remain
+
+    reusable from a human-readable search-history UI instead of exposing raw query
+
+    management as the primary workflow.
+
+    '
+  related_spec:
+  - ui/pages/space-search.yaml
+  - features/search.yaml
+  - features/sql.md
+  priority: high
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
+      tests:
+      - 'REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session'
+      - 'REQ-SRCH-005: saved history entries rerun directly or open variable input when needed'
+    e2e:
+    - file: e2e/search-ui.test.ts
+      tests:
+      - 'REQ-SRCH-005: advanced search saves reusable history and opens shared query results'

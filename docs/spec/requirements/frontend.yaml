@@ -1428,7 +1428,7 @@ requirements:
       - 'REQ-FE-054: sqlSessionApi normalizes unix-second timestamps for session rows'
     - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
       tests:
-      - 'REQ-FE-054: renders human-readable updated dates in query search results'
+      - 'REQ-FE-054: renders human-readable updated dates in search history'
     - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
       tests:
       - 'REQ-FE-054: renders human-readable updated dates for query result cards'
