@@ -837,18 +837,21 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-
-
 def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
     """REQ-OPS-019: root mise must declare explicit monorepo config roots."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     monorepo = root_mise.get("monorepo")
     if not isinstance(monorepo, dict):
-        raise AssertionError("root mise.toml must define [monorepo]")
+        message = "root mise.toml must define [monorepo]"
+        raise TypeError(message)
 
     config_roots = monorepo.get("config_roots")
-    if not isinstance(config_roots, list) or not all(isinstance(item, str) for item in config_roots):
-        raise AssertionError("root mise.toml [monorepo].config_roots must be a list of strings")
+    if not isinstance(config_roots, list):
+        message = "root mise.toml [monorepo].config_roots must be a list"
+        raise TypeError(message)
+    if not all(isinstance(item, str) for item in config_roots):
+        message = "root mise.toml [monorepo].config_roots must contain strings only"
+        raise TypeError(message)
 
     root_set = {item for item in config_roots if item}
     discovered = {
@@ -866,13 +869,23 @@ def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
         if fragment not in guide_text
     )
 
-    details: list[str] = []
-    if missing_expected:
-        details.append("root mise config_roots missing: " + ", ".join(missing_expected))
-    if uncovered:
-        details.append("root mise config_roots do not cover package mise files: " + ", ".join(uncovered))
-    if missing_doc_fragments:
-        details.append("ci-cd guide missing monorepo fragments: " + ", ".join(missing_doc_fragments))
+    detail_candidates = (
+        (
+            bool(missing_expected),
+            "root mise config_roots missing: " + ", ".join(missing_expected),
+        ),
+        (
+            bool(uncovered),
+            "root mise config_roots do not cover package mise files: "
+            + ", ".join(uncovered),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing monorepo fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
