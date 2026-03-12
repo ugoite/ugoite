@@ -1,8 +1,12 @@
 # Docker Compose Guide
 
-This guide describes how to run Ugoite with Docker Compose for local development.
+This guide describes how to run Ugoite with Docker Compose for local development
+from source.
 If you are working inside the devcontainer and Docker is not available, use the
 local dev workflow described in [README.md](../../README.md) instead.
+
+If you want pre-built release images from GHCR instead of local builds, use
+[Container Quick Start](container-quickstart.md).
 
 ## Prerequisites
 
