@@ -74,9 +74,33 @@ describe("/spaces/:space_id/search", () => {
 			links: [],
 		};
 		seedEntry("default", entry, record);
+		let metadataSql: string | null = null;
 		server.use(
 			http.get("http://localhost:3000/api/spaces/default/search", () =>
 				HttpResponse.json([{ id: entry.id }]),
+			),
+			http.get(
+				"http://localhost:3000/api/spaces/default/entries",
+				() =>
+					new HttpResponse("bulk entry list should not be used for keyword search", {
+						status: 500,
+					}),
+			),
+			http.post("http://localhost:3000/api/spaces/default/sql-sessions", async ({ request }) => {
+				const body = (await request.json()) as { sql?: string };
+				metadataSql = body.sql ?? null;
+				return HttpResponse.json(
+					{ id: "keyword-session", status: "ready", error: null },
+					{ status: 201 },
+				);
+			}),
+			http.get("http://localhost:3000/api/spaces/default/sql-sessions/keyword-session/rows", () =>
+				HttpResponse.json({
+					rows: [record],
+					offset: 0,
+					limit: 1,
+					total_count: 1,
+				}),
 			),
 		);
 
@@ -89,6 +113,7 @@ describe("/spaces/:space_id/search", () => {
 
 		expect(await screen.findByRole("button", { name: /Alpha Entry/ })).toBeInTheDocument();
 		expect(screen.getByText("1 result")).toBeInTheDocument();
+		expect(metadataSql).toBe("SELECT * FROM entries WHERE id IN ('entry-1') LIMIT 1");
 	});
 
 	it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {
@@ -130,6 +155,9 @@ describe("/spaces/:space_id/search", () => {
 		fireEvent.input(screen.getByLabelText("Updated from"), {
 			target: { value: "2025-03-01" },
 		});
+		fireEvent.input(screen.getByLabelText("Updated to"), {
+			target: { value: "2025-03-03" },
+		});
 		await screen.findByRole("option", { name: "Status" });
 		fireEvent.change(screen.getByLabelText("Field"), { target: { value: "Status" } });
 		fireEvent.input(screen.getByLabelText("Value"), {
@@ -139,10 +167,10 @@ describe("/spaces/:space_id/search", () => {
 
 		await waitFor(() => {
 			expect(savedSqlBody?.name).toBe(
-				"Advanced search - form: Meeting - tag: project - updated-from: 2025-03-01 - Status=Active",
+				"Advanced search - form: Meeting - tag: project - updated-from: 2025-03-01 - updated-to: 2025-03-03 - Status=Active",
 			);
 			expect(savedSqlBody?.sql).toBe(
-				"SELECT * FROM entries WHERE form = 'Meeting' AND tags = 'project' AND updated_at >= '2025-03-01' AND properties.\"Status\" = 'Active' ORDER BY updated_at DESC LIMIT 50",
+				"SELECT * FROM entries WHERE form = 'Meeting' AND tags = 'project' AND updated_at >= 1740787200 AND updated_at <= 1741046399 AND properties.\"Status\" = 'Active' ORDER BY updated_at DESC LIMIT 50",
 			);
 			expect(sessionSqlBody?.sql).toBe(savedSqlBody?.sql);
 			expect(navigateMock).toHaveBeenCalledWith("/spaces/default/entries?session=advanced-session");

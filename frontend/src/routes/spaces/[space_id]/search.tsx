@@ -2,7 +2,6 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
-import { entryApi } from "~/lib/entry-api";
 import { formApi } from "~/lib/form-api";
 import { searchApi } from "~/lib/search-api";
 import { sqlSessionApi } from "~/lib/sql-session-api";
@@ -66,18 +65,56 @@ function coerceSearchResult(
 	};
 }
 
+function buildKeywordMetadataSql(entryIds: string[]): string {
+	const ids = entryIds.map(escapeSqlLiteral).join(", ");
+	return `SELECT * FROM entries WHERE id IN (${ids}) LIMIT ${entryIds.length}`;
+}
+
+function dateInputToUnixSeconds(value: string, boundary: "start" | "end"): number | null {
+	if (!value) return null;
+	const [yearText, monthText, dayText] = value.split("-");
+	const year = Number(yearText);
+	const month = Number(monthText);
+	const day = Number(dayText);
+	if (![year, month, day].every(Number.isInteger)) {
+		return null;
+	}
+	const startOfDay = new Date(Date.UTC(year, month - 1, day));
+	if (
+		startOfDay.getUTCFullYear() !== year ||
+		startOfDay.getUTCMonth() !== month - 1 ||
+		startOfDay.getUTCDate() !== day
+	) {
+		return null;
+	}
+	const millis =
+		boundary === "start" ? startOfDay.getTime() : startOfDay.getTime() + 86_400_000 - 1;
+	return Math.floor(millis / 1000);
+}
+
 async function enrichKeywordResults(
 	spaceId: string,
 	results: SearchResult[],
 ): Promise<SearchResult[]> {
-	const needsEnrichment = results.some((result) => !result.title || !result.updated_at);
-	if (!needsEnrichment) {
+	const idsNeedingEnrichment = [
+		...new Set(
+			results.filter((result) => !result.title || !result.updated_at).map((result) => result.id),
+		),
+	];
+	if (idsNeedingEnrichment.length === 0) {
 		return results;
 	}
 
-	const entries = await entryApi.list(spaceId);
-	const entriesById = new Map(entries.map((entry) => [entry.id, entry] as const));
-	return results.map((result) => coerceSearchResult(result, entriesById.get(result.id)));
+	const session = await sqlSessionApi.create(
+		spaceId,
+		buildKeywordMetadataSql(idsNeedingEnrichment),
+	);
+	if (session.status === "failed") {
+		throw new Error(session.error || "Failed to enrich keyword search results.");
+	}
+	const metadata = await sqlSessionApi.rows(spaceId, session.id, 0, idsNeedingEnrichment.length);
+	const metadataById = new Map(metadata.rows.map((entry) => [entry.id, entry] as const));
+	return results.map((result) => coerceSearchResult(result, metadataById.get(result.id)));
 }
 
 function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
@@ -91,12 +128,14 @@ function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
 		conditions.push(`tags = ${escapeSqlLiteral(tag)}`);
 	}
 
-	if (criteria.updatedFrom) {
-		conditions.push(`updated_at >= ${escapeSqlLiteral(criteria.updatedFrom)}`);
+	const updatedFrom = dateInputToUnixSeconds(criteria.updatedFrom, "start");
+	if (updatedFrom !== null) {
+		conditions.push(`updated_at >= ${updatedFrom}`);
 	}
 
-	if (criteria.updatedTo) {
-		conditions.push(`updated_at <= ${escapeSqlLiteral(criteria.updatedTo)}`);
+	const updatedTo = dateInputToUnixSeconds(criteria.updatedTo, "end");
+	if (updatedTo !== null) {
+		conditions.push(`updated_at <= ${updatedTo}`);
 	}
 
 	for (const condition of criteria.fieldConditions) {
