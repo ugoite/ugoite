@@ -12,6 +12,7 @@ REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
+REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 """
 
@@ -246,6 +247,21 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed",
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
+}
+EXPECTED_MONOREPO_CONFIG_ROOTS = {
+    "backend",
+    "docsite",
+    "e2e",
+    "frontend",
+    "ugoite-cli",
+    "ugoite-core",
+    "ugoite-minimum",
+}
+REQUIRED_MONOREPO_DOC_FRAGMENTS = {
+    "[monorepo].config_roots",
+    "mise run dev",
+    "mise run test",
+    "mise run e2e",
 }
 REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     (
@@ -881,6 +897,59 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
 def test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart() -> None:
     """REQ-OPS-017: Release Publish must push GHCR images and document a quick start."""
     details = _collect_release_publish_ghcr_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
+    """REQ-OPS-019: root mise must declare explicit monorepo config roots."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    monorepo = root_mise.get("monorepo")
+    if not isinstance(monorepo, dict):
+        message = "root mise.toml must define [monorepo]"
+        raise TypeError(message)
+
+    config_roots = monorepo.get("config_roots")
+    if not isinstance(config_roots, list):
+        message = "root mise.toml [monorepo].config_roots must be a list"
+        raise TypeError(message)
+    if not all(isinstance(item, str) for item in config_roots):
+        message = "root mise.toml [monorepo].config_roots must contain strings only"
+        raise TypeError(message)
+
+    root_set = {item for item in config_roots if item}
+    discovered = {
+        Path(path).parent.as_posix()
+        for path in _discover_repo_paths("mise.toml")
+        if "/" in path
+    }
+
+    missing_expected = sorted(EXPECTED_MONOREPO_CONFIG_ROOTS.difference(root_set))
+    uncovered = sorted(discovered.difference(root_set))
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_MONOREPO_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_expected),
+            "root mise config_roots missing: " + ", ".join(missing_expected),
+        ),
+        (
+            bool(uncovered),
+            "root mise config_roots do not cover package mise files: "
+            + ", ".join(uncovered),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing monorepo fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 

@@ -616,3 +616,38 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-019
+  title: Explicit Mise Monorepo Config Roots
+  description: 'The root `mise.toml` MUST declare explicit `[monorepo].config_roots`
+
+    for the package-level mise configurations so top-level developer entrypoints
+
+    no longer rely on deprecated automatic monorepo discovery or emit recurring
+
+    warning noise during normal `mise run ...` usage.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit
