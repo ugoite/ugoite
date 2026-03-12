@@ -1,0 +1,184 @@
+name: Docker Images
+
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: "Push images to GHCR"
+        required: true
+        type: boolean
+      target:
+        description: "Git ref (branch, tag, or SHA) to build"
+        required: false
+        type: string
+        default: ""
+      version:
+        description: "Release version without the leading v"
+        required: false
+        type: string
+        default: ""
+      channel:
+        description: "Release channel for publish aliases"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  docker-images:
+    name: Docker images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Authenticate GHCR pushes
+        if: ${{ inputs.push }}
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute backend GHCR tags
+        if: ${{ inputs.push }}
+        id: backend-tags
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          IMAGE: ghcr.io/${{ github.repository }}/backend
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VERSION" ]; then
+            echo "version input is required when push=true" >&2
+            exit 1
+          fi
+
+          tags=("$IMAGE:$VERSION")
+          case "$CHANNEL" in
+            stable)
+              tags+=("$IMAGE:latest" "$IMAGE:stable")
+              ;;
+            alpha|beta)
+              tags+=("$IMAGE:$CHANNEL")
+              ;;
+            *)
+              echo "unsupported channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Build backend image
+        if: ${{ inputs.push }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.backend-tags.outputs.tags }}
+          cache-from: |
+            type=gha,scope=backend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=backend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            core=./ugoite-core
+            minimum=./ugoite-minimum
+            module=./ugoite-cli
+
+      - name: Build backend image for CI
+        if: ${{ inputs.push == false }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          cache-from: |
+            type=gha,scope=backend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=backend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            core=./ugoite-core
+            minimum=./ugoite-minimum
+            module=./ugoite-cli
+
+      - name: Compute frontend GHCR tags
+        if: ${{ inputs.push }}
+        id: frontend-tags
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          IMAGE: ghcr.io/${{ github.repository }}/frontend
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VERSION" ]; then
+            echo "version input is required when push=true" >&2
+            exit 1
+          fi
+
+          tags=("$IMAGE:$VERSION")
+          case "$CHANNEL" in
+            stable)
+              tags+=("$IMAGE:latest" "$IMAGE:stable")
+              ;;
+            alpha|beta)
+              tags+=("$IMAGE:$CHANNEL")
+              ;;
+            *)
+              echo "unsupported channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Build frontend image
+        if: ${{ inputs.push }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.frontend-tags.outputs.tags }}
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            shared=./shared
+
+      - name: Build frontend image for CI
+        if: ${{ inputs.push == false }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-image
+            type=gha,mode=max,scope=docker-build-common
+          build-contexts: |
+            shared=./shared
