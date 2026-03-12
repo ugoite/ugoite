@@ -63,9 +63,9 @@ test.describe("UI theme flows", () => {
 				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "light");
 
 				await page.getByRole("link", { name: "search" }).click();
-				await page.getByRole("button", { name: "Filter" }).click();
-				await page.getByRole("heading", { name: "Filters" }).waitFor();
-				await page.getByRole("button", { name: "Close" }).click();
+				await page.getByRole("button", { name: "Advanced search" }).click();
+				await page.getByRole("button", { name: "Run advanced search" }).waitFor();
+				await page.getByRole("button", { name: "Quick search" }).click();
 
 				await gotoWithRetry(page, `/spaces/${spaceId}/queries/new`);
 				await waitForQueryForm(page);
@@ -75,11 +75,10 @@ test.describe("UI theme flows", () => {
 				await page.getByRole("button", { name: "Save" }).click();
 				await waitForQueryButton(page, request, variableQueryName, spaceId);
 				await gotoWithRetry(page, `/spaces/${spaceId}/search`);
-				await page.getByPlaceholder("Search queries").fill(variableQueryName);
 				await page
-					.getByRole("button", { name: variableQueryName })
+					.getByRole("button", { name: new RegExp(variableQueryName) })
 					.waitFor({ state: "visible" });
-				await page.getByRole("button", { name: variableQueryName }).click();
+				await page.getByRole("button", { name: new RegExp(variableQueryName) }).click();
 				await page.getByRole("heading", { name: "Query variables" }).waitFor();
 
 				await page.getByLabel("title").fill(entryTitle);
@@ -105,7 +104,8 @@ test.describe("UI theme flows", () => {
 
 				await settingsButton.click();
 				await page.getByRole("radio", { name: "dark" }).click();
-				await page.getByRole("link", { name: "Space settings" }).click();
+				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
+				await gotoWithRetry(page, `/spaces/${spaceId}/settings`);
 				await page.getByRole("heading", { name: "Space Settings", level: 1 }).waitFor();
 
 				await expect(page.locator("html")).toHaveAttribute("data-color-mode", "dark");
