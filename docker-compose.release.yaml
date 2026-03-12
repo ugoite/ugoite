@@ -1,0 +1,19 @@
+services:
+  backend:
+    image: ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./spaces:/data
+    environment:
+      - UGOITE_ROOT=/data
+      - UGOITE_ALLOW_REMOTE=true
+
+  frontend:
+    image: ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
