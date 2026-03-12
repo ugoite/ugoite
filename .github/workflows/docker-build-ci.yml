@@ -23,8 +23,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Validate compose file
-        run: docker compose -f docker-compose.yaml config
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yaml config
+          docker compose -f docker-compose.release.yaml config
 
   docker-build:
     name: Docker Build
