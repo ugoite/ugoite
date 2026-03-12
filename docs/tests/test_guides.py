@@ -38,7 +38,9 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
-RELEASE_PUBLISH_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+RELEASE_PUBLISH_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+)
 RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
@@ -876,8 +878,6 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-
-
 def test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart() -> None:
     """REQ-OPS-017: Release Publish must push GHCR images and document a quick start."""
     details = _collect_release_publish_ghcr_details()
@@ -1029,7 +1029,6 @@ def _collect_release_ci_requirement_details() -> list[str]:
     return [message for condition, message in detail_candidates if condition]
 
 
-
 def _collect_release_publish_ghcr_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
@@ -1044,6 +1043,85 @@ def _collect_release_publish_ghcr_details() -> list[str]:
         if str(permissions.get(name)) != expected
     ]
 
+    publish_images_uses, release_needs = _collect_release_publish_jobs(workflow)
+
+    missing_workflow_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS
+        if fragment not in workflow_text
+    )
+
+    missing_reusable_fragments = _missing_required_fragments(
+        DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS,
+    )
+    missing_readme_fragments = _missing_required_fragments(
+        README_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS,
+    )
+    missing_guide_fragments = _missing_required_fragments(
+        CONTAINER_QUICKSTART_GUIDE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS,
+    )
+    missing_compose_fragments = _missing_required_fragments(
+        RELEASE_COMPOSE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_COMPOSE_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_permissions),
+            "release-publish permissions mismatch: " + ", ".join(missing_permissions),
+        ),
+        (
+            publish_images_uses != "./.github/workflows/docker-images.yml",
+            "release-publish must delegate image builds to docker-images.yml",
+        ),
+        (
+            "publish-images" not in release_needs,
+            "release-publish publish-release job must depend on publish-images",
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "release-publish missing workflow fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_reusable_fragments),
+            "docker-images reusable workflow missing fragments: "
+            + ", ".join(missing_reusable_fragments),
+        ),
+        (
+            bool(missing_readme_fragments),
+            "README missing release quick-start fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_guide_fragments),
+            "container-quickstart.md missing fragments: "
+            + ", ".join(missing_guide_fragments),
+        ),
+        (
+            bool(missing_compose_fragments),
+            "docker-compose.release.yaml missing fragments: "
+            + ", ".join(missing_compose_fragments),
+        ),
+        (
+            bool(missing_ci_cd_fragments),
+            "ci-cd guide missing release container fragments: "
+            + ", ".join(missing_ci_cd_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
+def _collect_release_publish_jobs(
+    workflow: dict[object, object],
+) -> tuple[str, list[object]]:
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         message = "release-publish.yml must define jobs"
@@ -1063,88 +1141,15 @@ def _collect_release_publish_ghcr_details() -> list[str]:
     if isinstance(release_needs, str):
         release_needs = [release_needs]
     if not isinstance(release_needs, list):
-        message = "release-publish.yml jobs.publish-release.needs must be a string or list"
+        message = (
+            "release-publish.yml jobs.publish-release.needs must be a string or list"
+        )
         raise TypeError(message)
+    return publish_images_uses, release_needs
 
-    missing_workflow_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS
-        if fragment not in workflow_text
-    )
 
-    reusable_text = DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8")
-    missing_reusable_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS
-        if fragment not in reusable_text
-    )
-
-    readme_text = README_PATH.read_text(encoding="utf-8")
-    guide_text = CONTAINER_QUICKSTART_GUIDE_PATH.read_text(encoding="utf-8")
-    compose_text = RELEASE_COMPOSE_PATH.read_text(encoding="utf-8")
-    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
-
-    missing_readme_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS
-        if fragment not in readme_text
-    )
-    missing_guide_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS
-        if fragment not in guide_text
-    )
-    missing_compose_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_COMPOSE_FRAGMENTS
-        if fragment not in compose_text
-    )
-    missing_ci_cd_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS
-        if fragment not in ci_cd_text
-    )
-
-    details: list[str] = []
-    if missing_permissions:
-        details.append(
-            "release-publish permissions mismatch: " + ", ".join(missing_permissions),
-        )
-    if publish_images_uses != "./.github/workflows/docker-images.yml":
-        details.append("release-publish must delegate image builds to docker-images.yml")
-    if "publish-images" not in release_needs:
-        details.append("release-publish publish-release job must depend on publish-images")
-    if missing_workflow_fragments:
-        details.append(
-            "release-publish missing workflow fragments: "
-            + ", ".join(missing_workflow_fragments),
-        )
-    if missing_reusable_fragments:
-        details.append(
-            "docker-images reusable workflow missing fragments: "
-            + ", ".join(missing_reusable_fragments),
-        )
-    if missing_readme_fragments:
-        details.append(
-            "README missing release quick-start fragments: "
-            + ", ".join(missing_readme_fragments),
-        )
-    if missing_guide_fragments:
-        details.append(
-            "container-quickstart.md missing fragments: "
-            + ", ".join(missing_guide_fragments),
-        )
-    if missing_compose_fragments:
-        details.append(
-            "docker-compose.release.yaml missing fragments: "
-            + ", ".join(missing_compose_fragments),
-        )
-    if missing_ci_cd_fragments:
-        details.append(
-            "ci-cd guide missing release container fragments: "
-            + ", ".join(missing_ci_cd_fragments),
-        )
-    return details
+def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
+    return sorted(fragment for fragment in required_fragments if fragment not in text)
 
 
 def _load_workflow(workflow_path: Path) -> dict[str, object]:
