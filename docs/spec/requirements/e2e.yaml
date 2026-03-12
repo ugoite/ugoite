@@ -160,3 +160,31 @@ requirements:
       - 'REQ-E2E-005: mobile nav opens as drawer and keeps reading area uncluttered'
       - 'REQ-E2E-005: mobile nav closes by escape and link tap'
       - 'REQ-E2E-005: mobile nav closes by overlay click'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-006
+  title: Docsite Internal Link Integrity
+  description: 'Docsite internal page transitions and page-discovered links MUST resolve
+
+    without 404 responses, including deployments that use a non-root base path.
+
+    '
+  related_spec:
+  - testing/strategy.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/docsite-links.test.ts
+      tests:
+      - 'REQ-E2E-006: docsite internal page links resolve without 404s'
