@@ -183,6 +183,21 @@ describe("preferencesStore", () => {
 		expect(portablePreferences().selected_space_id).toBe("space-remote");
 	});
 
+	it("REQ-FE-003: public routes keep initialized remote portable preferences", async () => {
+		localStorage.setItem("ugoite-selected-space", "space-local");
+		seedPreferences({ selected_space_id: "space-remote" });
+
+		const { initializePortablePreferencesForPath, portablePreferences } = await import(
+			"./preferences-store"
+		);
+		await initializePortablePreferencesForPath("/spaces");
+		localStorage.removeItem("ugoite-selected-space");
+
+		await initializePortablePreferencesForPath("/");
+
+		expect(portablePreferences().selected_space_id).toBe("space-remote");
+	});
+
 	it("REQ-FE-003: reuses an in-flight portable preferences initialization", async () => {
 		let requestCount = 0;
 		const { server } = await import("~/test/mocks/server");

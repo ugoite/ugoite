@@ -167,6 +167,9 @@ const preferencesStore = createRoot(() => {
 	const initializePortablePreferencesForPath = async (
 		pathname: string,
 	): Promise<UserPreferences> => {
+		if (initialized() || initialization) {
+			return initializePortablePreferences();
+		}
 		if (isPublicPortablePreferencesPath(pathname)) {
 			return syncLocalPreferences();
 		}

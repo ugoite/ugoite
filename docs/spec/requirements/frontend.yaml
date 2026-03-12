@@ -111,6 +111,7 @@ requirements:
       tests:
       - 'REQ-FE-003: initializes selected space from local fallback and migrates portable storage'
       - 'REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization'
+      - 'REQ-FE-003: public routes keep initialized remote portable preferences'
       - 'REQ-FE-003: reuses an in-flight portable preferences initialization'
       - 'REQ-FE-003: returns cached portable preferences after initialization'
       - 'REQ-FE-003: skips empty portable preference patches'
