@@ -13,6 +13,9 @@ on:
         type: string
         default: ""
 
+permissions:
+  contents: write
+
 jobs:
   build-cli-binaries:
     name: Build CLI binaries

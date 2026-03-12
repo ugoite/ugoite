@@ -38,8 +38,12 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
-RELEASE_PUBLISH_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
-CLI_RELEASE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
+RELEASE_PUBLISH_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+)
+CLI_RELEASE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
+)
 RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
@@ -119,6 +123,8 @@ REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
     "cargo build --locked --release --bin ugoite --target",
     "gh release upload",
     "ugoite-v${VERSION}-",
+    "permissions:",
+    "contents: write",
 }
 REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS = {
     "create-draft-release",
@@ -873,8 +879,6 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-
-
 def test_docs_req_ops_018_cli_release_binaries_and_install_script() -> None:
     """REQ-OPS-018: CLI release binaries and install path stay aligned."""
     details = _collect_cli_release_install_details()
@@ -1026,7 +1030,6 @@ def _collect_release_ci_requirement_details() -> list[str]:
     return [message for condition, message in detail_candidates if condition]
 
 
-
 def _collect_cli_release_install_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
@@ -1052,72 +1055,79 @@ def _collect_cli_release_install_details() -> list[str]:
     if isinstance(publish_release_needs, str):
         publish_release_needs = [publish_release_needs]
     if not isinstance(publish_release_needs, list):
-        message = "release-publish.yml jobs.publish-release.needs must be a string or list"
+        message = (
+            "release-publish.yml jobs.publish-release.needs must be a string or list"
+        )
         raise TypeError(message)
 
-    cli_workflow_text = CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
-    install_script_text = INSTALL_CLI_SCRIPT_PATH.read_text(encoding="utf-8")
-    readme_text = README_PATH.read_text(encoding="utf-8")
-    cli_guide_text = CLI_GUIDE_PATH.read_text(encoding="utf-8")
-    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
-
-    missing_release_publish = sorted(
-        fragment
-        for fragment in REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS
-        if fragment not in workflow_text
+    missing_release_publish = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS,
     )
-    missing_cli_release = sorted(
-        fragment
-        for fragment in REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS
-        if fragment not in cli_workflow_text
+    missing_cli_release = _missing_required_fragments(
+        CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS,
     )
-    missing_install_script = sorted(
-        fragment
-        for fragment in REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS
-        if fragment not in install_script_text
+    missing_install_script = _missing_required_fragments(
+        INSTALL_CLI_SCRIPT_PATH.read_text(encoding="utf-8"),
+        REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS,
     )
-    missing_readme = sorted(
-        fragment
-        for fragment in REQUIRED_CLI_README_FRAGMENTS
-        if fragment not in readme_text
+    missing_readme = _missing_required_fragments(
+        README_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_README_FRAGMENTS,
     )
-    missing_cli_guide = sorted(
-        fragment
-        for fragment in REQUIRED_CLI_GUIDE_FRAGMENTS
-        if fragment not in cli_guide_text
+    missing_cli_guide = _missing_required_fragments(
+        CLI_GUIDE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_GUIDE_FRAGMENTS,
     )
-    missing_ci_cd = sorted(
-        fragment
-        for fragment in REQUIRED_CLI_CICD_FRAGMENTS
-        if fragment not in ci_cd_text
+    missing_ci_cd = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_CICD_FRAGMENTS,
     )
 
-    details: list[str] = []
-    if str(publish_cli_job.get("uses", "")).strip() != "./.github/workflows/cli-release-binaries.yml":
-        details.append("release-publish must delegate CLI binaries to cli-release-binaries.yml")
-    if "publish-cli-binaries" not in publish_release_needs:
-        details.append("release-publish publish-release job must depend on publish-cli-binaries")
-    if "create-draft-release" not in publish_release_needs:
-        details.append("release-publish publish-release job must depend on create-draft-release")
-    if missing_release_publish:
-        details.append(
-            "release-publish missing CLI release fragments: " + ", ".join(missing_release_publish),
-        )
-    if missing_cli_release:
-        details.append(
-            "cli-release-binaries workflow missing fragments: " + ", ".join(missing_cli_release),
-        )
-    if missing_install_script:
-        details.append(
-            "install-ugoite-cli.sh missing fragments: " + ", ".join(missing_install_script),
-        )
-    if missing_readme:
-        details.append("README missing CLI install fragments: " + ", ".join(missing_readme))
-    if missing_cli_guide:
-        details.append("cli.md missing release install fragments: " + ", ".join(missing_cli_guide))
-    if missing_ci_cd:
-        details.append("ci-cd guide missing CLI release fragments: " + ", ".join(missing_ci_cd))
-    return details
+    detail_candidates = (
+        (
+            str(publish_cli_job.get("uses", "")).strip()
+            != "./.github/workflows/cli-release-binaries.yml",
+            "release-publish must delegate CLI binaries to cli-release-binaries.yml",
+        ),
+        (
+            "publish-cli-binaries" not in publish_release_needs,
+            "release-publish publish-release job must depend on publish-cli-binaries",
+        ),
+        (
+            "create-draft-release" not in publish_release_needs,
+            "release-publish publish-release job must depend on create-draft-release",
+        ),
+        (
+            bool(missing_release_publish),
+            "release-publish missing CLI release fragments: "
+            + ", ".join(missing_release_publish),
+        ),
+        (
+            bool(missing_cli_release),
+            "cli-release-binaries workflow missing fragments: "
+            + ", ".join(missing_cli_release),
+        ),
+        (
+            bool(missing_install_script),
+            "install-ugoite-cli.sh missing fragments: "
+            + ", ".join(missing_install_script),
+        ),
+        (
+            bool(missing_readme),
+            "README missing CLI install fragments: " + ", ".join(missing_readme),
+        ),
+        (
+            bool(missing_cli_guide),
+            "cli.md missing release install fragments: " + ", ".join(missing_cli_guide),
+        ),
+        (
+            bool(missing_ci_cd),
+            "ci-cd guide missing CLI release fragments: " + ", ".join(missing_ci_cd),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
 
 
 def _load_workflow(workflow_path: Path) -> dict[str, object]:
@@ -1126,6 +1136,10 @@ def _load_workflow(workflow_path: Path) -> dict[str, object]:
     if isinstance(workflow, dict):
         return workflow
     return {}
+
+
+def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
+    return sorted(fragment for fragment in required_fragments if fragment not in text)
 
 
 def _load_pre_commit_config() -> dict[str, object]:
