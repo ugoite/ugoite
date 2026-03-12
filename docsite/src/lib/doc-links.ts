@@ -126,13 +126,19 @@ export function resolveDocHref(
 		return null;
 	}
 
-	if (
-		trimmedHref.startsWith("#") ||
-		trimmedHref.startsWith("?") ||
-		trimmedHref.startsWith("//") ||
-		/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedHref)
-	) {
+	if (trimmedHref.startsWith("#") || trimmedHref.startsWith("?")) {
 		return trimmedHref;
+	}
+
+	if (trimmedHref.startsWith("//")) {
+		return trimmedHref;
+	}
+
+	const schemeMatch = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(trimmedHref);
+	if (schemeMatch) {
+		const scheme = schemeMatch[1].toLowerCase();
+		const allowedSchemes = new Set(["http", "https", "mailto"]);
+		return allowedSchemes.has(scheme) ? trimmedHref : null;
 	}
 
 	const { pathname, suffix } = splitHref(trimmedHref);
