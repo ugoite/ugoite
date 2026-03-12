@@ -180,6 +180,8 @@ npm run prepare
 
 This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
 
+The root `mise.toml` also declares explicit `[monorepo].config_roots` for package-level task configs so top-level `mise run dev`, `mise run test`, and `mise run e2e` stay warning-free on current mise releases.
+
 ## Release Process
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
