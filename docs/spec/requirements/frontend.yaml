@@ -110,6 +110,8 @@ requirements:
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-003: initializes selected space from local fallback and migrates portable storage'
+      - 'REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization'
+      - 'REQ-FE-003: public routes keep initialized remote portable preferences'
       - 'REQ-FE-003: reuses an in-flight portable preferences initialization'
       - 'REQ-FE-003: returns cached portable preferences after initialization'
       - 'REQ-FE-003: skips empty portable preference patches'
@@ -419,6 +421,7 @@ requirements:
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
+      - 'REQ-FE-044: public routes apply local locale without remote preference fetch'
     - file: frontend/src/lib/preferences-api.test.ts
       tests:
       - 'REQ-FE-044: surfaces string detail on portable preference load failure'
@@ -1580,6 +1583,7 @@ requirements:
       tests:
       - 'REQ-FE-059: initializes theme preferences from portable storage and updates local fallback'
       - 'REQ-FE-059: migrates missing primary color from local fallback'
+      - 'REQ-FE-059: public routes apply local theme preferences without remote fetch'
     - file: frontend/src/lib/preferences-api.test.ts
       tests:
       - 'REQ-FE-059: stringifies structured detail on portable preference update failure'
