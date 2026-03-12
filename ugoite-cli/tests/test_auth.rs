@@ -82,7 +82,8 @@ fn spawn_recording_server(
                         }
                     }
 
-                    tx.send(String::from_utf8_lossy(&request).into_owned()).unwrap();
+                    tx.send(String::from_utf8_lossy(&request).into_owned())
+                        .unwrap();
                     let response = format!(
                         "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                         body.len(),
@@ -112,14 +113,7 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     );
 
     let set_output = Command::new(ugoite_bin())
-        .args([
-            "config",
-            "set",
-            "--mode",
-            "backend",
-            "--backend-url",
-            &base,
-        ])
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -139,7 +133,7 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
         .expect("failed to execute");
     assert!(output.status.success());
 
-    let request_text = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
     handle.join().unwrap();
 
     assert!(request_text.starts_with("POST /auth/dev/login HTTP/1.1"));

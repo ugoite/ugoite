@@ -1,6 +1,6 @@
 use crate::config::{base_url, load_config, print_json};
 use crate::http;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
 use std::io::{self, Write};
 
@@ -49,10 +49,14 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                 .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
 
             let result = if mock_oauth {
-                http::http_post(&format!("{base}/auth/dev/mock-oauth"), &serde_json::json!({})).await?
+                http::http_post(
+                    &format!("{base}/auth/dev/mock-oauth"),
+                    &serde_json::json!({}),
+                )
+                .await?
             } else {
-                let resolved_username = prompt_value("Username", username)?;
-                let resolved_totp_code = prompt_value("2FA code", totp_code)?;
+                let resolved_username = prompt_non_empty_value("Username", username)?;
+                let resolved_totp_code = prompt_totp_code(totp_code)?;
                 http::http_post(
                     &format!("{base}/auth/dev/login"),
                     &serde_json::json!({
@@ -89,7 +93,7 @@ fn mask_token(t: &str) -> String {
 
 fn prompt_value(label: &str, provided: Option<String>) -> Result<String> {
     if let Some(value) = provided {
-        return Ok(value);
+        return Ok(value.trim().to_string());
     }
 
     print!("{label}: ");
@@ -97,4 +101,20 @@ fn prompt_value(label: &str, provided: Option<String>) -> Result<String> {
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer)?;
     Ok(buffer.trim().to_string())
+}
+
+fn prompt_non_empty_value(label: &str, provided: Option<String>) -> Result<String> {
+    let value = prompt_value(label, provided)?;
+    if value.is_empty() {
+        return Err(anyhow!("{label} must not be empty."));
+    }
+    Ok(value)
+}
+
+fn prompt_totp_code(provided: Option<String>) -> Result<String> {
+    let value = prompt_non_empty_value("2FA code", provided)?;
+    if value.len() != 6 || !value.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(anyhow!("2FA code must be exactly 6 digits."));
+    }
+    Ok(value)
 }

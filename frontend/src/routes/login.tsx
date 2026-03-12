@@ -21,7 +21,7 @@ export default function LoginRoute() {
 
 	const [devConfig] = createResource(async () => {
 		const config = await authApi.getDevConfig();
-		setUsername(config.username_hint);
+		setUsername(config.usernameHint);
 		return config;
 	});
 
@@ -29,12 +29,12 @@ export default function LoginRoute() {
 		clearAuthTokenCookie();
 	});
 
-	const completeLogin = async (action: () => Promise<{ bearer_token: string }>) => {
+	const completeLogin = async (action: () => Promise<{ bearerToken: string }>) => {
 		setIsSubmitting(true);
 		setSubmitError("");
 		try {
 			const response = await action();
-			setAuthTokenCookie(response.bearer_token);
+			setAuthTokenCookie(response.bearerToken);
 			navigate(redirectTarget(), { replace: true });
 		} catch (error) {
 			setSubmitError(toMessage(error));
@@ -52,7 +52,7 @@ export default function LoginRoute() {
 
 	const handleMockOAuth = async () => {
 		await completeLogin(async () => {
-			return await authApi.loginWithMockOAuth();
+			return await authApi.loginWithMockOauth();
 		});
 	};
 
@@ -62,8 +62,8 @@ export default function LoginRoute() {
 				<div>
 					<h1 class="ui-page-title">Login</h1>
 					<p class="ui-page-subtitle mt-2">
-						Local development uses explicit login flows so browser and CLI authentication match
-						the production mental model.
+						Local development uses explicit login flows so browser and CLI authentication match the
+						production mental model.
 					</p>
 				</div>
 
@@ -83,8 +83,8 @@ export default function LoginRoute() {
 							<Show when={config().mode === "manual-totp"}>
 								<form class="ui-stack-sm" onSubmit={handleSubmit}>
 									<p class="text-sm ui-muted">
-										Use the username you confirmed in the terminal and the current 2FA code
-										from your local development authenticator.
+										Use the username you confirmed in the terminal and the current 2FA code from
+										your local development authenticator.
 									</p>
 									<label class="ui-stack-sm">
 										<span class="text-sm font-medium">Username</span>
@@ -112,7 +112,9 @@ export default function LoginRoute() {
 									<button
 										type="submit"
 										class="ui-button ui-button-primary"
-										disabled={!username().trim() || totpCode().trim().length !== 6 || isSubmitting()}
+										disabled={
+											!username().trim() || totpCode().trim().length !== 6 || isSubmitting()
+										}
 									>
 										{isSubmitting() ? "Signing in..." : "Sign in with 2FA"}
 									</button>
@@ -122,8 +124,8 @@ export default function LoginRoute() {
 							<Show when={config().mode === "mock-oauth"}>
 								<div class="ui-stack-sm">
 									<p class="text-sm ui-muted">
-										Use the explicit mock OAuth path to exercise the browser login flow
-										without bypassing authentication at startup.
+										Use the explicit mock OAuth path to exercise the browser login flow without
+										bypassing authentication at startup.
 									</p>
 									<button
 										type="button"

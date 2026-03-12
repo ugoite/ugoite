@@ -129,9 +129,9 @@ export default function SpaceSettingsRoute() {
 
 				<div class="ui-card">
 					<p class="text-sm ui-muted">
-						Localhost and remote mode both require authenticated sessions. Start the dev stack
-						with <code>mise run dev</code>, then complete browser login at <code>/login</code>
-						or through the CLI auth command.
+						Localhost and remote mode both require authenticated sessions. Start the dev stack with{" "}
+						<code>mise run dev</code>, then complete browser login at <code>/login</code> or through
+						the CLI auth command.
 					</p>
 				</div>
 
