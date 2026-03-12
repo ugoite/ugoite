@@ -70,14 +70,14 @@ e2e/                # End-to-end tests (Bun)
 Install the latest stable `ugoite` binary with a one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
 ugoite --help
 ```
 
 Pin an exact release when you do not want the newest stable build:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
 ugoite --help
 ```
 

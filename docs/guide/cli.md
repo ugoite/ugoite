@@ -8,14 +8,14 @@ covers the Cargo-based workflow contributors still use inside the repository.
 Install the latest stable release with a one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
 ugoite --help
 ```
 
 Pin an exact version when you want a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
 ugoite --help
 ```
 
