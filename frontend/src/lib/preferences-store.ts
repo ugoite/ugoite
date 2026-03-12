@@ -63,6 +63,19 @@ const missingPortableFields = (
 const hasPatchValues = (patch: UserPreferencesPatchPayload): boolean =>
 	Object.values(patch).some((value) => value !== undefined);
 
+const normalizePathname = (pathname: string): string => {
+	const trimmed = pathname.trim();
+	if (!trimmed || trimmed === "/") {
+		return "/";
+	}
+	return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+};
+
+const isPublicPortablePreferencesPath = (pathname: string): boolean => {
+	const normalized = normalizePathname(pathname);
+	return normalized === "/" || normalized === "/about" || normalized === "/login";
+};
+
 const applyUiPreferences = (preferences: UserPreferences): void => {
 	if (preferences.locale) {
 		setLocale(preferences.locale);
@@ -89,6 +102,11 @@ const preferencesStore = createRoot(() => {
 	const [loading, setLoading] = createSignal(false);
 	let initialization: Promise<UserPreferences> | null = null;
 
+	const syncLocalPreferences = (): UserPreferences => {
+		const localPreferences = mergePreferences(readLocalPreferences(), emptyUserPreferences());
+		return syncPreferences(localPreferences);
+	};
+
 	const syncPreferences = (next: UserPreferences): UserPreferences => {
 		setPortablePreferences(next);
 		writeLocalPreferences(next);
@@ -111,8 +129,7 @@ const preferencesStore = createRoot(() => {
 			return initialization;
 		}
 
-		const localPreferences = mergePreferences(readLocalPreferences(), emptyUserPreferences());
-		syncPreferences(localPreferences);
+		const localPreferences = syncLocalPreferences();
 		setLoading(true);
 
 		initialization = (async () => {
@@ -147,6 +164,15 @@ const preferencesStore = createRoot(() => {
 		return initialization;
 	};
 
+	const initializePortablePreferencesForPath = async (
+		pathname: string,
+	): Promise<UserPreferences> => {
+		if (isPublicPortablePreferencesPath(pathname)) {
+			return syncLocalPreferences();
+		}
+		return initializePortablePreferences();
+	};
+
 	const patchPortablePreferences = async (
 		patch: UserPreferencesPatchPayload,
 	): Promise<UserPreferences> => {
@@ -172,6 +198,7 @@ const preferencesStore = createRoot(() => {
 		loading,
 		resetPortablePreferencesState,
 		initializePortablePreferences,
+		initializePortablePreferencesForPath,
 		patchPortablePreferences,
 		setSelectedSpacePreference: (selectedSpaceId: string | null) => {
 			const patch = {} as UserPreferencesPatchPayload;
@@ -206,9 +233,12 @@ export const portablePreferencesInitialized = preferencesStore.initialized;
 export const portablePreferencesLoading = preferencesStore.loading;
 export const resetPortablePreferencesState = preferencesStore.resetPortablePreferencesState;
 export const initializePortablePreferences = preferencesStore.initializePortablePreferences;
+export const initializePortablePreferencesForPath =
+	preferencesStore.initializePortablePreferencesForPath;
 export const patchPortablePreferences = preferencesStore.patchPortablePreferences;
 export const setSelectedSpacePreference = preferencesStore.setSelectedSpacePreference;
 export const setLocalePreference = preferencesStore.setLocalePreference;
 export const setUiThemePreference = preferencesStore.setUiThemePreference;
 export const setColorModePreference = preferencesStore.setColorModePreference;
 export const setPrimaryColorPreference = preferencesStore.setPrimaryColorPreference;
+export const isPublicPortablePreferencesRoute = isPublicPortablePreferencesPath;
