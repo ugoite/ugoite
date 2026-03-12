@@ -1,57 +1,57 @@
 # Directory Structure
 
+## Machine-Readable Layout
+
+`directory-layout.yaml` is the machine-readable source of truth for the paths in
+this document. Tests read that YAML file and compare it against the filesystem
+layout that `ugoite-core` actually creates.
+
 ## Space Layout
+
+### Bootstrap Scaffold
+
+Immediately after `create_space`, the runtime creates this scaffold:
 
 ```
 spaces/
   {space_id}/                         # Each space is self-contained
-    hmac.json                         # Space-local response-signing key material
     meta.json                         # Space metadata
-    settings.json                     # Editor preferences, defaults
+    settings.json                     # Editor preferences and defaults
     forms/                            # Iceberg-managed root for Form tables
-    assets/                           # Binary files (images, audio, etc.)
-      {hash}.{ext}                    # Content-addressed storage
-    materialized_views/               # SQL materialized view metadata (no rows)
+    assets/                           # Binary files (created lazily on upload)
+    materialized_views/               # Materialized view root; individual views are lazy
     sql_sessions/                     # SQL query sessions (metadata only)
-      {session_id}/                   # Session directory
-        meta.json                     # Session metadata (status, snapshots)
 ```
+
+### Lazy Additions
+
+The runtime adds these paths only when the corresponding feature is used:
+
+| Trigger | Paths |
+|---------|-------|
+| Response signing | `spaces/{space_id}/hmac.json` |
+| SQL session creation | `spaces/{space_id}/materialized_views/{sql_id}/meta.json`, `spaces/{space_id}/sql_sessions/{session_id}/meta.json` |
+| Asset upload | `spaces/{space_id}/assets/*` |
 
 ## Space Level
 
-### `hmac.json`
-
-Space-local response-signing key material:
-
-```json
-{
-  "hmac_key_id": "key-2025-11-01",
-  "hmac_key": "base64-encoded-secret",
-  "last_rotation": "2025-11-15T00:00:00Z"
-}
-```
-
 ### `meta.json`
+
+`meta.json` is created during `create_space` and carries both the stable space
+metadata and the per-space integrity key used for entry/revision signing.
 
 ```json
 {
   "id": "space-main",
-  "name": "Personal Knowledge",
-  "created_at": "2025-08-12T12:00:00Z",
-  "owner_user_id": "user-admin-001",
-  "admin_user_ids": ["user-admin-001"],
-  "auth": {
-    "mode": "required",
-    "primary": "webauthn",
-    "oauth2_auto_provision": false
+  "name": "space-main",
+  "created_at": 1762000000.123,
+  "storage": {
+    "type": "local",
+    "root": "/var/lib/ugoite"
   },
-  "storage_config": {
-    "uri": "s3://my-bucket/ugoite/space-main",
-    "credentials_profile": "default"
-  },
-  "merge_strategy": "manual",
-  "default_form": "Entry",
-  "encryption": { "mode": "none" }
+  "hmac_key_id": "key-6fe43d8d7b8842d0bca5d98976715f1a",
+  "hmac_key": "base64-encoded-secret",
+  "last_rotation": "2026-03-11T10:00:00Z"
 }
 ```
 
@@ -62,6 +62,19 @@ Space-local response-signing key material:
   "default_form": "Entry",
   "editor_theme": "dark",
   "sync_interval_seconds": 60
+}
+```
+
+### `hmac.json`
+
+`hmac.json` is created lazily the first time response signing is used. It is
+separate from the integrity key fields stored in `meta.json`.
+
+```json
+{
+  "hmac_key_id": "key-2026-03-11-response",
+  "hmac_key": "base64-encoded-secret",
+  "last_rotation": "2026-03-11T10:05:00Z"
 }
 ```
 
@@ -149,7 +162,51 @@ under `materialized_views/`. The metadata is created on SQL creation, refreshed
 on SQL update, and deleted on SQL deletion. The on-disk layout for future
 Iceberg-managed views is intentionally not specified.
 
+Example `materialized_views/{sql_id}/meta.json`:
+
+```json
+{
+  "sql_id": "2e8de8f8-bb3c-48c8-9b59-5328de0b9cdd",
+  "created_at": "2026-03-11T10:10:00Z",
+  "updated_at": "2026-03-11T10:10:00Z",
+  "snapshot_id": 123456789,
+  "sql": "SELECT * FROM Entry.entries"
+}
+```
+
 ## SQL Sessions (Metadata Only)
 
 SQL sessions persist **only metadata** to allow re-running queries against the
 current entries tables. Result rows are never stored under `sql_sessions/`.
+
+Example `sql_sessions/{session_id}/meta.json`:
+
+```json
+{
+  "id": "efab8d7f-99c4-4bb8-b4a1-09c8f18df7b4",
+  "space_id": "space-main",
+  "sql_id": "2e8de8f8-bb3c-48c8-9b59-5328de0b9cdd",
+  "sql": "SELECT * FROM Entry.entries",
+  "status": "ready",
+  "created_at": "2026-03-11T10:10:00Z",
+  "expires_at": "2026-03-11T10:20:00Z",
+  "error": null,
+  "view": {
+    "sql_id": "2e8de8f8-bb3c-48c8-9b59-5328de0b9cdd",
+    "snapshot_id": 123456789,
+    "snapshot_at": "2026-03-11T10:10:00Z",
+    "schema_version": 1
+  },
+  "pagination": {
+    "strategy": "offset",
+    "order_by": ["updated_at", "id"],
+    "default_limit": 50,
+    "max_limit": 1000
+  },
+  "count": {
+    "mode": "on_demand",
+    "cached_at": null,
+    "value": null
+  }
+}
+```

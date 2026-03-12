@@ -326,7 +326,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/file-schemas.yaml#global
+  - data-model/directory-structure.md#bootstrap-scaffold
   priority: high
   status: implemented
   tests:
@@ -448,3 +448,42 @@ requirements:
       tests:
       - test_preferences_req_sto_011_default_values
       - test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
+  - POL-011
+  - POL-014
+  linked_specifications:
+  - SPEC-ARCH-OVERVIEW
+  - SPEC-DM-DIRECTORY
+  - SPEC-DM-OVERVIEW
+  - SPEC-ARCH-DECISIONS
+  id: REQ-STO-012
+  title: Documentation-driven storage layout synchronization
+  description: 'The documented storage layout MUST be machine-readable and tested
+
+    against the files and directories that `ugoite-core` actually creates.
+
+    Tests MUST distinguish the bootstrap scaffold created by `create_space`
+
+    from paths that appear lazily on first use, including response-signing
+
+    metadata and SQL session metadata.
+
+    '
+  related_spec:
+  - data-model/directory-structure.md
+  - data-model/directory-layout.yaml
+  - data-model/file-schemas.yaml
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_storage_docs.py
+      tests:
+      - test_docs_req_sto_012_storage_layout_bootstrap_matches_runtime
+      - test_docs_req_sto_012_storage_layout_lazy_paths_match_runtime_triggers
