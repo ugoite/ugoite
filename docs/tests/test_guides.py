@@ -228,8 +228,26 @@ REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
+REQUIRED_ALL_TESTS_CURATED_WORKFLOWS = {
+    "CodeQL",
+    "Commitlint CI",
+    "Devcontainer CI",
+    "Docker Build CI",
+    "Docsite CI",
+    "E2E Tests",
+    "Frontend CI",
+    "Python CI",
+    "README Command Guard",
+    "Rust CI",
+    "SBOM CI",
+    "ScanCode",
+    "Shell CI",
+    "YAML Workflow CI",
+}
 REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
     "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
+    "curated code-quality workflows",
+    "deprecated wait-action runtimes",
     "exclude release/publish automation",
     "Release CI",
     "Release Publish",
@@ -955,6 +973,7 @@ def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
 
 
 def _collect_all_tests_status_details() -> list[str]:
+    workflow_text = ALL_TESTS_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
@@ -976,27 +995,21 @@ def _collect_all_tests_status_details() -> list[str]:
             step
             for step in steps
             if isinstance(step, dict)
-            and step.get("uses") == "int128/wait-for-workflows-action@v1"
+            and step.get("name") == "Wait for curated workflows"
         ),
         None,
     )
     if wait_step is None:
-        return ["all-tests-ci missing wait-for-workflows-action step"]
+        return ["all-tests-ci missing curated wait step"]
 
-    with_block = wait_step.get("with", {})
-    if not isinstance(with_block, dict):
-        message = "all-tests-ci wait-for-workflows step must define a with mapping"
-        raise TypeError(message)
-
-    excluded_workflows = with_block.get("exclude-workflow-names", "")
-    if not isinstance(excluded_workflows, str):
-        message = "all-tests-ci exclude-workflow-names must be a multiline string"
-        raise TypeError(message)
-
-    missing_exclusions = sorted(
-        workflow_name
-        for workflow_name in REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS
-        if workflow_name not in excluded_workflows
+    excluded_workflows, curated_workflows = _collect_all_tests_workflow_env(wait_step)
+    missing_exclusions = _missing_all_tests_workflows(
+        excluded_workflows,
+        REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS,
+    )
+    missing_curated = _missing_all_tests_workflows(
+        curated_workflows,
+        REQUIRED_ALL_TESTS_CURATED_WORKFLOWS,
     )
     guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
     missing_doc_fragments = sorted(
@@ -1006,10 +1019,20 @@ def _collect_all_tests_status_details() -> list[str]:
     )
 
     details: list[str] = []
+    if "int128/wait-for-workflows-action@v1" in workflow_text:
+        details.append(
+            "all-tests-ci must not use deprecated wait-for-workflows-action@v1",
+        )
+    if re.search(r"""\[\s*["']gh["']\s*,\s*["']api["']\s*,""", workflow_text) is None:
+        details.append("all-tests-ci must poll workflow status via gh api")
     if missing_exclusions:
         details.append(
             "all-tests-ci exclude-workflow-names missing: "
             + ", ".join(missing_exclusions),
+        )
+    if missing_curated:
+        details.append(
+            "all-tests-ci curated workflow list missing: " + ", ".join(missing_curated),
         )
     if missing_doc_fragments:
         details.append(
@@ -1017,6 +1040,32 @@ def _collect_all_tests_status_details() -> list[str]:
             + ", ".join(missing_doc_fragments),
         )
     return details
+
+
+def _collect_all_tests_workflow_env(wait_step: dict[object, object]) -> tuple[str, str]:
+    env_block = wait_step.get("env", {})
+    if not isinstance(env_block, dict):
+        message = "all-tests-ci curated wait step must define an env mapping"
+        raise TypeError(message)
+
+    excluded_workflows = env_block.get("EXCLUDED_WORKFLOW_NAMES", "")
+    curated_workflows = env_block.get("CURATED_WORKFLOW_NAMES", "")
+    if not isinstance(excluded_workflows, str) or not isinstance(
+        curated_workflows,
+        str,
+    ):
+        message = "all-tests-ci workflow name env vars must be multiline strings"
+        raise TypeError(message)
+    return excluded_workflows, curated_workflows
+
+
+def _missing_all_tests_workflows(
+    configured: str,
+    required: set[str],
+) -> list[str]:
+    return sorted(
+        workflow_name for workflow_name in required if workflow_name not in configured
+    )
 
 
 def _collect_release_ci_requirement_details() -> list[str]:
