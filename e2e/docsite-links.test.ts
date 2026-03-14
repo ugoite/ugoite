@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server";
 
 let docsiteServer: DocsiteServer | undefined;
@@ -33,11 +33,7 @@ test.describe("Docsite internal links", () => {
 			expect(response, `Missing navigation response for ${currentUrl}`).not.toBeNull();
 			expect(response!.status(), `Expected ${currentUrl} to resolve`).toBeLessThan(400);
 
-			const hrefs = await page.evaluate(() =>
-				Array.from(document.querySelectorAll("a[href]"), (anchor) =>
-					anchor instanceof HTMLAnchorElement ? anchor.href : "",
-				),
-			);
+			const hrefs = await collectPageHrefs(page);
 
 			for (const href of hrefs) {
 				const normalizedHref = normalizeDocsiteHref(href);
@@ -100,4 +96,27 @@ function normalizeDocsiteHref(rawHref: string): string | null {
 	}
 
 	return normalizeCrawlUrl(href.toString());
+}
+
+async function collectPageHrefs(page: Page): Promise<string[]> {
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			await page.waitForLoadState("load");
+			return await page.evaluate(() =>
+				Array.from(document.querySelectorAll("a[href]"), (anchor) =>
+					anchor instanceof HTMLAnchorElement ? anchor.href : "",
+				),
+			);
+		} catch (error) {
+			if (
+				!(error instanceof Error) ||
+				!error.message.includes("Execution context was destroyed") ||
+				attempt === 2
+			) {
+				throw error;
+			}
+		}
+	}
+
+	return [];
 }
