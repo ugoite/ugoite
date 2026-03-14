@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret}"
+PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 STATIC_E2E_TOKENS_JSON='{"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
 export UGOITE_DEV_AUTH_MODE=mock-oauth
 export UGOITE_DEV_USER_ID=e2e-user
@@ -22,6 +23,7 @@ export UGOITE_DEV_SIGNING_SECRET="$DEV_SIGNING_SECRET"
 export UGOITE_AUTH_BEARER_SECRETS="$DEV_SIGNING_KID:$DEV_SIGNING_SECRET"
 export UGOITE_AUTH_BEARER_ACTIVE_KIDS="$DEV_SIGNING_KID"
 export UGOITE_AUTH_BEARER_TOKENS_JSON="$STATIC_E2E_TOKENS_JSON"
+export UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS"
 
 backend_start_timeout="${E2E_BACKEND_START_TIMEOUT_SECONDS:-120}"
 frontend_start_timeout="${E2E_FRONTEND_START_TIMEOUT_SECONDS:-120}"
@@ -52,7 +54,14 @@ for i in $(seq 1 "$backend_start_timeout"); do
 done
 
 E2E_AUTH_BEARER_TOKEN="$(
-  curl -fsS -X POST http://localhost:8000/auth/dev/mock-oauth | python3 -c 'import json, sys; print(json.load(sys.stdin)["bearer_token"])'
+  docker compose -f "$ROOT_DIR/docker-compose.e2e.yml" exec -T backend python -c '
+import json
+from urllib.request import Request, urlopen
+
+request = Request("http://127.0.0.1:8000/auth/dev/mock-oauth", method="POST")
+with urlopen(request) as response:
+    print(json.load(response)["bearer_token"])
+'
 )"
 export E2E_AUTH_BEARER_TOKEN
 

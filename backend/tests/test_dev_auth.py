@@ -266,14 +266,22 @@ def test_dev_auth_req_ops_015_rejects_unknown_client_host(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: dev auth endpoints reject requests without a resolved client host."""
+    """REQ-OPS-015: dev auth endpoints reject requests.
+
+    Requests without a resolved client host must be rejected.
+    """
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
         mode="mock-oauth",
     )
+
+    def _missing_client_host(*_args: object, **_kwargs: object) -> None:
+        return None
+
     monkeypatch.setattr(
-        "app.api.endpoints.auth.resolve_client_host", lambda *args, **kwargs: None
+        "app.api.endpoints.auth.resolve_client_host",
+        _missing_client_host,
     )
     clear_auth_manager_cache()
 

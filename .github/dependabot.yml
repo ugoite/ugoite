@@ -31,12 +31,12 @@ updates:
       interval: "daily"
 
   - package-ecosystem: "uv"
-    directory: "/ugoite-cli"
+    directory: "/ugoite-core"
     schedule:
       interval: "daily"
 
-  - package-ecosystem: "uv"
-    directory: "/ugoite-core"
+  - package-ecosystem: "cargo"
+    directory: "/ugoite-cli"
     schedule:
       interval: "daily"
 

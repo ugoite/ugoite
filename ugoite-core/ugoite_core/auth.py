@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -245,7 +246,7 @@ def validate_totp_code(
             padded_secret.upper(),
             casefold=True,
         )
-    except (base64.binascii.Error, ValueError):
+    except (binascii.Error, ValueError):
         return False
 
     timestamp = int(time.time() if now is None else now)

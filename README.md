@@ -58,6 +58,7 @@ e2e/                # End-to-end tests (Bun)
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
@@ -110,7 +111,8 @@ If you need to re-prompt the local dev login context (username + 2FA validation)
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-To use the explicit mock OAuth development flow instead:
+To use the explicit mock OAuth development flow instead of the default
+manual TOTP prompt:
 
 ```bash
 UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
@@ -165,7 +167,33 @@ These two environments are separate and intended for different uses—use the De
 
 ---
 
-## Docker Compose
+## Container Quick Start (published images)
+
+Pull and run a published release from GHCR:
+
+```bash
+mkdir -p spaces
+UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml pull
+UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d
+```
+
+Published images:
+
+- `ghcr.io/ugoite/ugoite/backend`
+- `ghcr.io/ugoite/ugoite/frontend`
+
+Tag conventions:
+
+- stable releases publish the exact SemVer tag plus `latest` and `stable`
+- alpha releases publish the exact prerelease tag plus `alpha`
+- beta releases publish the exact prerelease tag plus `beta`
+
+For more examples, direct `docker pull` commands, and shutdown steps, see
+[Container Quick Start](docs/guide/container-quickstart.md).
+
+---
+
+## Docker Compose from source
 
 Start services with:
 
