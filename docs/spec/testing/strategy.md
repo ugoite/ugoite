@@ -56,7 +56,7 @@ mise run //ugoite-minimum:test # Portable Rust core tests
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
-mise run //ugoite-cli:test # CLI Rust tests
+mise run //ugoite-cli:test # CLI Rust tests with 100% coverage enforcement
 ```
 
 ### E2E Tests
@@ -87,7 +87,7 @@ cd e2e && npm run test
 
 | Module | Target | Current |
 |--------|--------|---------|
-| ugoite-cli | >80% | ~85% |
+| ugoite-cli | 100% | 100% (enforced) |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
 | e2e | Critical paths | Complete |

@@ -109,9 +109,9 @@ REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "cargo-clippy",
     "cargo-clippy-cli",
     "cargo-llvm-cov-core",
-    "cargo-test-cli",
+    "cargo-llvm-cov-cli",
 }
-REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_RUST_CI_STEPS = {"Enforce Rust coverage floor (cli)"}
 REQUIRED_RELEASE_CI_PERMISSIONS = {
     "contents": "write",
     "issues": "write",
@@ -595,7 +595,20 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
-    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    """REQ-OPS-006: Rust pre-commit checks must include CLI coverage parity with CI."""
+    missing_parts = _collect_req_ops_006_rust_precommit_parity_details()
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
+def _collect_req_ops_006_rust_precommit_parity_details() -> list[str]:
+    return [
+        *_collect_req_ops_006_pre_commit_details(),
+        *_collect_req_ops_006_ci_details(),
+    ]
+
+
+def _collect_req_ops_006_pre_commit_details() -> list[str]:
     pre_commit = _load_pre_commit_config()
     configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
     missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
@@ -606,19 +619,53 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
     if isinstance(cargo_clippy_cli, dict):
         clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
 
+    cli_cov_entry = ""
+    cargo_llvm_cov_cli = hook_entries.get("cargo-llvm-cov-cli")
+    if isinstance(cargo_llvm_cov_cli, dict):
+        cli_cov_entry = str(cargo_llvm_cov_cli.get("entry", ""))
+
     missing_parts: list[str] = []
     if missing_hooks:
         missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
     if "--no-default-features" not in clippy_cli_entry:
         missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+    if "--fail-under-lines 100" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must enforce 100% line coverage")
+    if "--no-default-features" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must pass --no-default-features")
 
+    return missing_parts
+
+
+def _collect_req_ops_006_ci_details() -> list[str]:
+    missing_parts: list[str] = []
     rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
     missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
     if missing_ci_steps:
         missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
 
-    if missing_parts:
-        raise AssertionError("; ".join(missing_parts))
+    workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    cli_coverage_command = (
+        "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
+    )
+    if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
+        missing_parts.append("rust-ci must install llvm-tools-preview")
+    if cli_coverage_command not in workflow_text:
+        missing_parts.append("rust-ci must enforce 100% ugoite-cli coverage")
+
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        [
+            cli_coverage_command,
+            "mise run //ugoite-cli:test",
+            "100% CLI line-coverage gate",
+        ],
+        "ci-cd spec must document the ugoite-cli 100% coverage gate",
+    )
+    if spec_detail:
+        missing_parts.append(spec_detail)
+
+    return missing_parts
 
 
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
