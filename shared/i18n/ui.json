@@ -2,6 +2,7 @@
   "en": {
     "nav.home": "Home",
     "nav.spaces": "Spaces",
+    "nav.login": "Login",
     "nav.about": "About",
     "spaceShell.top.dashboard": "dashboard",
     "spaceShell.top.search": "search",
@@ -40,6 +41,7 @@
   "ja": {
     "nav.home": "ホーム",
     "nav.spaces": "スペース",
+    "nav.login": "ログイン",
     "nav.about": "このアプリについて",
     "spaceShell.top.dashboard": "ダッシュボード",
     "spaceShell.top.search": "検索",

@@ -19,6 +19,7 @@ services:
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy
     working_dir: /app
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -34,6 +35,7 @@ services:
       - frontend_node_modules:/usr/src/app/node_modules
     environment:
       - BACKEND_URL=http://backend:8000
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy
     entrypoint: ["bun", "run", "dev"]
     depends_on:
       - backend
