@@ -4,6 +4,9 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
 import { spaceApi } from "~/lib/space-api";
 
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+
 const navigateMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
@@ -97,5 +100,25 @@ describe("/spaces", () => {
 		expect(
 			screen.queryByText(/localhost and remote mode both require authentication/i),
 		).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("401 Unauthorized"));
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("Failed to load spaces.")).toBeInTheDocument();
+		});
+
+		expect(
+			screen.getByText(
+				"Authentication required. Re-run mise run dev if you need to refresh local login.",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Local Dev Auth/Login" })).toHaveAttribute(
+			"href",
+			localDevAuthGuideUrl,
+		);
 	});
 });

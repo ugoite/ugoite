@@ -5,6 +5,9 @@ import { SpaceSettings } from "~/components/SpaceSettings";
 import { spaceApi } from "~/lib/space-api";
 import type { SpaceMember, SpacePatchPayload } from "~/lib/types";
 
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+
 const managedRoles = ["admin", "editor", "viewer"] as const;
 type ManagedRole = (typeof managedRoles)[number];
 
@@ -14,23 +17,32 @@ const toMessage = (value: unknown): string => {
 	return "";
 };
 
-const authHintFromError = (value: unknown): string => {
+const authHintFromError = (
+	value: unknown,
+): { message: string; showGuide: boolean } | null => {
 	const message = toMessage(value).toLowerCase();
 	if (
 		message.includes("401") ||
 		message.includes("authentication") ||
 		message.includes("unauthorized")
 	) {
-		return "Authentication required. Re-run `mise run dev` (or `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`) to refresh local login.";
+		return {
+			message:
+				"Authentication required. Re-run mise run dev if you need to refresh local login.",
+			showGuide: true,
+		};
 	}
 	if (
 		message.includes("403") ||
 		message.includes("forbidden") ||
 		message.includes("not authorized")
 	) {
-		return "You are signed in but do not have enough permissions for this action.";
+		return {
+			message: "You are signed in but do not have enough permissions for this action.",
+			showGuide: false,
+		};
 	}
-	return "";
+	return null;
 };
 
 export default function SpaceSettingsRoute() {
@@ -115,6 +127,9 @@ export default function SpaceSettingsRoute() {
 		}
 	};
 
+	const spaceAuthHint = createMemo(() => {
+		return authHintFromError(space.error);
+	});
 	const memberAuthHint = createMemo(() => {
 		return authHintFromError(memberActionError() || members.error);
 	});
@@ -129,9 +144,16 @@ export default function SpaceSettingsRoute() {
 
 				<div class="ui-card">
 					<p class="text-sm ui-muted">
-						Localhost and remote mode both require authenticated sessions. Use local login flow via
-						<code>mise run dev</code> and force refresh with
-						<code>UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev</code> when needed.
+						Localhost and remote mode both require authenticated sessions. Follow{" "}
+						<a
+							href={localDevAuthGuideUrl}
+							target="_blank"
+							rel="noopener"
+							class="hover:underline"
+						>
+							Local Dev Auth/Login
+						</a>{" "}
+						for the canonical <code>mise run dev</code> workflow and token refresh steps.
 					</p>
 				</div>
 
@@ -141,8 +163,22 @@ export default function SpaceSettingsRoute() {
 					</Show>
 					<Show when={space.error}>
 						<p class="text-sm ui-text-danger">Failed to load space.</p>
-						<Show when={authHintFromError(space.error)}>
-							<p class="text-sm ui-muted mt-1">{authHintFromError(space.error)}</p>
+						<Show when={spaceAuthHint()}>
+							{(hint) => (
+								<div class="ui-stack-sm mt-1">
+									<p class="text-sm ui-muted">{hint().message}</p>
+									<Show when={hint().showGuide}>
+										<a
+											href={localDevAuthGuideUrl}
+											target="_blank"
+											rel="noopener"
+											class="ui-muted text-sm hover:underline"
+										>
+											Local Dev Auth/Login
+										</a>
+									</Show>
+								</div>
+							)}
 						</Show>
 					</Show>
 					<Show when={space()}>
@@ -208,7 +244,21 @@ export default function SpaceSettingsRoute() {
 						<p class="text-sm ui-text-danger">{memberActionError()}</p>
 					</Show>
 					<Show when={memberAuthHint()}>
-						<p class="text-sm ui-muted">{memberAuthHint()}</p>
+						{(hint) => (
+							<div class="ui-stack-sm">
+								<p class="text-sm ui-muted">{hint().message}</p>
+								<Show when={hint().showGuide}>
+									<a
+										href={localDevAuthGuideUrl}
+										target="_blank"
+										rel="noopener"
+										class="ui-muted text-sm hover:underline"
+									>
+										Local Dev Auth/Login
+									</a>
+								</Show>
+							</div>
+						)}
 					</Show>
 
 					<Show when={members.loading}>
