@@ -169,9 +169,11 @@ requirements:
 
     MUST be linted in both pre-commit and CI, and the same local/CI gate MUST
 
-    run repository artifact hygiene checks that block tracked dependency trees
+    run repository artifact hygiene checks that fail tracked files still
 
-    and oversized artifacts before merge.
+    matching ignore rules, block tracked dependency trees, and reject oversized
+
+    artifacts before merge.
 
     '
   related_spec:
@@ -183,6 +185,12 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_005_yaml_workflow_lint_gates_declared
+    - file: docs/tests/test_artifact_hygiene.py
+      tests:
+      - test_req_ops_005_root_artifact_hygiene_accepts_clean_repo
+      - test_req_ops_005_root_artifact_hygiene_rejects_tracked_ignored_paths
+      - test_req_ops_005_root_artifact_hygiene_rejects_generated_dirs
+      - test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
