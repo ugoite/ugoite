@@ -21,7 +21,8 @@ jobs:
       test_type: ${{ steps.select.outputs.test_type }}
       selection_reason: ${{ steps.select.outputs.selection_reason }}
     steps:
-      - name: Checkout
+      - name: Checkout PR history
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@v6
         with:
           persist-credentials: false

@@ -995,7 +995,10 @@ def test_docs_req_ops_020_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> 
         'event_name in {"merge_group", "push"}',
         "docs/**",
         "docsite/**",
-        'bash e2e/scripts/run-e2e-compose.sh "${{ needs.select-tier.outputs.test_type }}"',
+        (
+            "bash e2e/scripts/run-e2e-compose.sh "
+            '"${{ needs.select-tier.outputs.test_type }}"'
+        ),
         'run-e2e-compose.sh "${{ needs.select-tier.outputs.test_type }}"',
     }
     missing_workflow_fragments = sorted(
@@ -1007,6 +1010,7 @@ def test_docs_req_ops_020_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> 
         "`merge_group` and",
         "pushes to `main` always run the full compose-backed suite.",
         "pull_request with docs/docsite-only paths => smoke",
+        "| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue |",
     }
     missing_doc_fragments = sorted(
         fragment for fragment in doc_fragments if fragment not in ci_cd_text
