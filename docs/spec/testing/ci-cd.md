@@ -46,8 +46,11 @@ jobs:
     - actionlint
 ```
 
-The root artifact hygiene gate fails if `git ls-files -ci --exclude-standard`
-returns any tracked paths that still match repository ignore rules, so generated
+The root artifact hygiene gate blocks tracked files under generated dependency
+or build directories such as `node_modules/` and `target/`, and it rejects
+tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+`scripts/check-root-artifact-hygiene.sh`. It also fails if `git ls-files -ci --exclude-standard`
+returns tracked paths that still match repository ignore rules, so generated
 artifacts cannot quietly remain source-controlled.
 
 ## Rust CI
@@ -153,10 +156,12 @@ jobs:
     - cd ugoite-cli && cargo test --no-default-features
 ```
 
-Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`,
-clean package-specific crate artifacts before rebuild/test, and expose
-`mise run cleanup:rust-targets` to remove both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow unexpectedly.
+Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
+The default `ugoite-core` build path stays incremental, `mise run
+//ugoite-core:build:clean` provides a package-local destructive rebuild when the
+editable extension is stale, and `mise run cleanup:rust-targets` removes both
+the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
+path when artifacts grow unexpectedly.
 
 ## SBOM and Supply Chain CI
 
@@ -184,7 +189,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
-- **Root artifact hygiene**: Blocks placeholder-only files and tracked artifacts that still match ignore rules
+- **Root artifact hygiene**: Blocks placeholder-only files, tracked artifacts under generated dependency/build trees, oversized tracked artifacts unless allowlisted, and tracked artifacts that still match ignore rules
 - **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
 
 Conventional Commit enforcement (local):
