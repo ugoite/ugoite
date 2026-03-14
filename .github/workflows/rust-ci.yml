@@ -115,4 +115,6 @@ jobs:
           CARGO_PROFILE_TEST_DEBUG: 0
           CARGO_BUILD_JOBS: 1
           RUSTFLAGS: -C debuginfo=0
-        run: cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
