@@ -119,6 +119,85 @@ describe("preferencesStore", () => {
 		expect(getPreferencePatches()).toContainEqual(expectedPatch);
 	});
 
+	it("REQ-FE-044: public routes apply local locale without remote preference fetch", async () => {
+		let requestCount = 0;
+		const { server } = await import("~/test/mocks/server");
+		const { http, HttpResponse } = await import("msw");
+		server.use(
+			http.get("http://localhost:3000/api/preferences/me", () => {
+				requestCount += 1;
+				return HttpResponse.json({ locale: "ja" });
+			}),
+		);
+		localStorage.setItem("ugoite-locale", "ja");
+
+		const { initializePortablePreferencesForPath } = await import("./preferences-store");
+		const { locale, t } = await import("./i18n");
+		await initializePortablePreferencesForPath("/");
+
+		expect(requestCount).toBe(0);
+		expect(locale()).toBe("ja");
+		expect(t("themeMenu.language")).toBe("言語");
+		expect(document.documentElement.lang).toBe("ja");
+	});
+
+	it("REQ-FE-059: public routes apply local theme preferences without remote fetch", async () => {
+		let requestCount = 0;
+		const { server } = await import("~/test/mocks/server");
+		const { http, HttpResponse } = await import("msw");
+		server.use(
+			http.get("http://localhost:3000/api/preferences/me", () => {
+				requestCount += 1;
+				return HttpResponse.json({
+					ui_theme: "classic",
+					color_mode: "dark",
+					primary_color: "blue",
+				});
+			}),
+		);
+		localStorage.setItem("ugoite-ui-theme", "pop");
+		localStorage.setItem("ugoite-color-mode", "dark");
+		localStorage.setItem("ugoite-primary-color", "amber");
+
+		const { initializePortablePreferencesForPath } = await import("./preferences-store");
+		const { colorMode, primaryColor, uiTheme } = await import("./ui-theme");
+		await initializePortablePreferencesForPath("/about/");
+
+		expect(requestCount).toBe(0);
+		expect(uiTheme()).toBe("pop");
+		expect(colorMode()).toBe("dark");
+		expect(primaryColor()).toBe("amber");
+		expect(document.documentElement.dataset.uiTheme).toBe("pop");
+		expect(document.documentElement.dataset.colorMode).toBe("dark");
+		expect(document.documentElement.dataset.primaryColor).toBe("amber");
+	});
+
+	it("REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization", async () => {
+		seedPreferences({ selected_space_id: "space-remote" });
+
+		const { initializePortablePreferencesForPath, portablePreferences } = await import(
+			"./preferences-store"
+		);
+		await initializePortablePreferencesForPath("/spaces");
+
+		expect(portablePreferences().selected_space_id).toBe("space-remote");
+	});
+
+	it("REQ-FE-003: public routes keep initialized remote portable preferences", async () => {
+		localStorage.setItem("ugoite-selected-space", "space-local");
+		seedPreferences({ selected_space_id: "space-remote" });
+
+		const { initializePortablePreferencesForPath, portablePreferences } = await import(
+			"./preferences-store"
+		);
+		await initializePortablePreferencesForPath("/spaces");
+		localStorage.removeItem("ugoite-selected-space");
+
+		await initializePortablePreferencesForPath("/");
+
+		expect(portablePreferences().selected_space_id).toBe("space-remote");
+	});
+
 	it("REQ-FE-003: reuses an in-flight portable preferences initialization", async () => {
 		let requestCount = 0;
 		const { server } = await import("~/test/mocks/server");

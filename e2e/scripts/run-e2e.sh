@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret}"
+PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 STATIC_E2E_TOKENS_JSON='{"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
 
 echo "Checking for existing processes on ports 8000 and 3000..."
@@ -79,11 +80,11 @@ cd "$ROOT_DIR/frontend"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
 if [ "$FRONTEND_MODE" = "prod" ]; then
   echo "Building frontend for production..."
-  BACKEND_URL=http://localhost:8000 bun run build
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" bun run build
   echo "Starting production frontend server..."
-  BACKEND_URL=http://localhost:8000 NODE_ENV=production bun run start &
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production bun run start &
 else
-  BACKEND_URL=http://localhost:8000 bun run dev &
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" bun run dev &
 fi
 FRONTEND_PID=$!
 

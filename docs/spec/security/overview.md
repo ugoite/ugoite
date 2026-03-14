@@ -47,7 +47,8 @@ targets an **Authenticated Access by Default** model.
 
 ### HMAC Signing
 - All data revisions signed with locally generated key
-- Key stored in `global.json`
+- Space integrity key stored in `spaces/{space_id}/meta.json`
+- Response-signing key stored in `spaces/{space_id}/hmac.json` and created on first response-signing use
 - Prevents tampering and detects corruption
 
 ### Input Sanitization
@@ -78,7 +79,7 @@ targets an **Authenticated Access by Default** model.
 
 ### Dependency Automation
 
-- Dependabot updates are enabled across GitHub Actions, Bun, npm, uv, cargo, and Docker manifests.
+- Dependabot updates are enabled across GitHub Actions, Bun, npm, Docker, uv-managed Python workspaces (`backend`, `ugoite-core`), and Cargo manifests (`ugoite-core`, `ugoite-cli`).
 - GitHub Dependency Graph and advisory alerts are expected to remain enabled for this repository.
 
 
@@ -129,7 +130,8 @@ space-scoped and uses the following profile:
 ## Incident Response
 
 1. **Data Corruption**: Restore from revision history
-2. **Key Compromise**: Rotate `hmac_key` in `global.json`
+2. **Key Compromise**: Rotate the integrity key in `spaces/{space_id}/meta.json`
+   and the response-signing key in `spaces/{space_id}/hmac.json` as needed
 3. **Credential Recovery**: Admin performs forced reset and issues backup codes
 
 ## Audit Logging

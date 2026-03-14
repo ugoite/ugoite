@@ -18,7 +18,7 @@
 	"dependencies": {
 		"@astrojs/check": "^0.9.7",
 		"@tailwindcss/vite": "^4.2.1",
-		"astro": "^5.18.0",
+		"astro": "^6.0.4",
 		"marked": "^17.0.4",
 		"prismjs": "1.30.0",
 		"yaml": "^2.8.1",
@@ -26,7 +26,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
-		"@types/node": "^25.4.0",
+		"@types/node": "^25.5.0",
 		"typescript": "^5.9.3"
 	}
 }

@@ -12,6 +12,8 @@ REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
+REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
+REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 """
 
 from __future__ import annotations
@@ -37,10 +39,16 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
+RELEASE_PUBLISH_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
+)
 RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
 SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
+DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "docker-images.yml"
+)
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
@@ -56,6 +64,7 @@ UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
+CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
@@ -64,6 +73,7 @@ RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 COLUMN_COUNT_THRESHOLD = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
     DOCKER_BUILD_WORKFLOW_PATH,
@@ -106,6 +116,54 @@ REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
     "no-op cleanly",
     "bootstrap-sha",
     "0.0.1",
+}
+REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
+    "contents": "write",
+    "packages": "write",
+}
+REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
+    "./.github/workflows/docker-images.yml",
+    "push: true",
+    "version: ${{ inputs.version }}",
+    "channel: ${{ inputs.channel }}",
+    "target: ${{ inputs.target }}",
+}
+REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
+    "workflow_call",
+    "docker/login-action@v4",
+    "registry: ghcr.io",
+    "ghcr.io/${{ github.repository }}/backend",
+    "ghcr.io/${{ github.repository }}/frontend",
+    "$IMAGE:latest",
+    "$IMAGE:stable",
+    "$IMAGE:$CHANNEL",
+}
+REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
+    "docker-compose.release.yaml",
+    "ghcr.io/ugoite/ugoite/backend",
+    "ghcr.io/ugoite/ugoite/frontend",
+    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d",
+}
+REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
+    "ghcr.io/ugoite/ugoite/backend",
+    "ghcr.io/ugoite/ugoite/frontend",
+    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml pull",
+    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d",
+    "latest",
+    "stable",
+    "alpha",
+    "beta",
+}
+REQUIRED_RELEASE_COMPOSE_FRAGMENTS = {
+    "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}",
+    "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}",
+    "UGOITE_ROOT=/data",
+    "BACKEND_URL=http://backend:8000",
+}
+REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
+    "ghcr.io/ugoite/ugoite/backend",
+    "ghcr.io/ugoite/ugoite/frontend",
+    "docker-compose.release.yaml",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -171,8 +229,26 @@ REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
+REQUIRED_ALL_TESTS_CURATED_WORKFLOWS = {
+    "CodeQL",
+    "Commitlint CI",
+    "Devcontainer CI",
+    "Docker Build CI",
+    "Docsite CI",
+    "E2E Tests",
+    "Frontend CI",
+    "Python CI",
+    "README Command Guard",
+    "Rust CI",
+    "SBOM CI",
+    "ScanCode",
+    "Shell CI",
+    "YAML Workflow CI",
+}
 REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
     "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
+    "curated code-quality workflows",
+    "deprecated wait-action runtimes",
     "exclude release/publish automation",
     "Release CI",
     "Release Publish",
@@ -190,6 +266,21 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed",
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
+}
+EXPECTED_MONOREPO_CONFIG_ROOTS = {
+    "backend",
+    "docsite",
+    "e2e",
+    "frontend",
+    "ugoite-cli",
+    "ugoite-core",
+    "ugoite-minimum",
+}
+REQUIRED_MONOREPO_DOC_FRAGMENTS = {
+    "[monorepo].config_roots",
+    "mise run dev",
+    "mise run test",
+    "mise run e2e",
 }
 REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     (
@@ -822,7 +913,68 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart() -> None:
+    """REQ-OPS-017: Release Publish must push GHCR images and document a quick start."""
+    details = _collect_release_publish_ghcr_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
+    """REQ-OPS-019: root mise must declare explicit monorepo config roots."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    monorepo = root_mise.get("monorepo")
+    if not isinstance(monorepo, dict):
+        message = "root mise.toml must define [monorepo]"
+        raise TypeError(message)
+
+    config_roots = monorepo.get("config_roots")
+    if not isinstance(config_roots, list):
+        message = "root mise.toml [monorepo].config_roots must be a list"
+        raise TypeError(message)
+    if not all(isinstance(item, str) for item in config_roots):
+        message = "root mise.toml [monorepo].config_roots must contain strings only"
+        raise TypeError(message)
+
+    root_set = {item for item in config_roots if item}
+    discovered = {
+        Path(path).parent.as_posix()
+        for path in _discover_repo_paths("mise.toml")
+        if "/" in path
+    }
+
+    missing_expected = sorted(EXPECTED_MONOREPO_CONFIG_ROOTS.difference(root_set))
+    uncovered = sorted(discovered.difference(root_set))
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_MONOREPO_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_expected),
+            "root mise config_roots missing: " + ", ".join(missing_expected),
+        ),
+        (
+            bool(uncovered),
+            "root mise config_roots do not cover package mise files: "
+            + ", ".join(uncovered),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing monorepo fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _collect_all_tests_status_details() -> list[str]:
+    workflow_text = ALL_TESTS_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
@@ -844,27 +996,21 @@ def _collect_all_tests_status_details() -> list[str]:
             step
             for step in steps
             if isinstance(step, dict)
-            and step.get("uses") == "int128/wait-for-workflows-action@v1"
+            and step.get("name") == "Wait for curated workflows"
         ),
         None,
     )
     if wait_step is None:
-        return ["all-tests-ci missing wait-for-workflows-action step"]
+        return ["all-tests-ci missing curated wait step"]
 
-    with_block = wait_step.get("with", {})
-    if not isinstance(with_block, dict):
-        message = "all-tests-ci wait-for-workflows step must define a with mapping"
-        raise TypeError(message)
-
-    excluded_workflows = with_block.get("exclude-workflow-names", "")
-    if not isinstance(excluded_workflows, str):
-        message = "all-tests-ci exclude-workflow-names must be a multiline string"
-        raise TypeError(message)
-
-    missing_exclusions = sorted(
-        workflow_name
-        for workflow_name in REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS
-        if workflow_name not in excluded_workflows
+    excluded_workflows, curated_workflows = _collect_all_tests_workflow_env(wait_step)
+    missing_exclusions = _missing_all_tests_workflows(
+        excluded_workflows,
+        REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS,
+    )
+    missing_curated = _missing_all_tests_workflows(
+        curated_workflows,
+        REQUIRED_ALL_TESTS_CURATED_WORKFLOWS,
     )
     guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
     missing_doc_fragments = sorted(
@@ -874,10 +1020,20 @@ def _collect_all_tests_status_details() -> list[str]:
     )
 
     details: list[str] = []
+    if "int128/wait-for-workflows-action@v1" in workflow_text:
+        details.append(
+            "all-tests-ci must not use deprecated wait-for-workflows-action@v1",
+        )
+    if re.search(r"""\[\s*["']gh["']\s*,\s*["']api["']\s*,""", workflow_text) is None:
+        details.append("all-tests-ci must poll workflow status via gh api")
     if missing_exclusions:
         details.append(
             "all-tests-ci exclude-workflow-names missing: "
             + ", ".join(missing_exclusions),
+        )
+    if missing_curated:
+        details.append(
+            "all-tests-ci curated workflow list missing: " + ", ".join(missing_curated),
         )
     if missing_doc_fragments:
         details.append(
@@ -885,6 +1041,32 @@ def _collect_all_tests_status_details() -> list[str]:
             + ", ".join(missing_doc_fragments),
         )
     return details
+
+
+def _collect_all_tests_workflow_env(wait_step: dict[object, object]) -> tuple[str, str]:
+    env_block = wait_step.get("env", {})
+    if not isinstance(env_block, dict):
+        message = "all-tests-ci curated wait step must define an env mapping"
+        raise TypeError(message)
+
+    excluded_workflows = env_block.get("EXCLUDED_WORKFLOW_NAMES", "")
+    curated_workflows = env_block.get("CURATED_WORKFLOW_NAMES", "")
+    if not isinstance(excluded_workflows, str) or not isinstance(
+        curated_workflows,
+        str,
+    ):
+        message = "all-tests-ci workflow name env vars must be multiline strings"
+        raise TypeError(message)
+    return excluded_workflows, curated_workflows
+
+
+def _missing_all_tests_workflows(
+    configured: str,
+    required: set[str],
+) -> list[str]:
+    return sorted(
+        workflow_name for workflow_name in required if workflow_name not in configured
+    )
 
 
 def _collect_release_ci_requirement_details() -> list[str]:
@@ -964,6 +1146,129 @@ def _collect_release_ci_requirement_details() -> list[str]:
         ),
     )
     return [message for condition, message in detail_candidates if condition]
+
+
+def _collect_release_publish_ghcr_details() -> list[str]:
+    workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
+    permissions = workflow.get("permissions")
+    if not isinstance(permissions, dict):
+        message = "release-publish.yml must define top-level permissions"
+        raise TypeError(message)
+
+    missing_permissions = [
+        f"{name}={expected}"
+        for name, expected in REQUIRED_RELEASE_PUBLISH_PERMISSIONS.items()
+        if str(permissions.get(name)) != expected
+    ]
+
+    publish_images_uses, release_needs = _collect_release_publish_jobs(workflow)
+
+    missing_workflow_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS
+        if fragment not in workflow_text
+    )
+
+    missing_reusable_fragments = _missing_required_fragments(
+        DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS,
+    )
+    missing_readme_fragments = _missing_required_fragments(
+        README_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS,
+    )
+    missing_guide_fragments = _missing_required_fragments(
+        CONTAINER_QUICKSTART_GUIDE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS,
+    )
+    missing_compose_fragments = _missing_required_fragments(
+        RELEASE_COMPOSE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_COMPOSE_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            bool(missing_permissions),
+            "release-publish permissions mismatch: " + ", ".join(missing_permissions),
+        ),
+        (
+            publish_images_uses != "./.github/workflows/docker-images.yml",
+            "release-publish must delegate image builds to docker-images.yml",
+        ),
+        (
+            "publish-images" not in release_needs,
+            "release-publish publish-release job must depend on publish-images",
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "release-publish missing workflow fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_reusable_fragments),
+            "docker-images reusable workflow missing fragments: "
+            + ", ".join(missing_reusable_fragments),
+        ),
+        (
+            bool(missing_readme_fragments),
+            "README missing release quick-start fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_guide_fragments),
+            "container-quickstart.md missing fragments: "
+            + ", ".join(missing_guide_fragments),
+        ),
+        (
+            bool(missing_compose_fragments),
+            "docker-compose.release.yaml missing fragments: "
+            + ", ".join(missing_compose_fragments),
+        ),
+        (
+            bool(missing_ci_cd_fragments),
+            "ci-cd guide missing release container fragments: "
+            + ", ".join(missing_ci_cd_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
+def _collect_release_publish_jobs(
+    workflow: dict[object, object],
+) -> tuple[str, list[object]]:
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "release-publish.yml must define jobs"
+        raise TypeError(message)
+
+    publish_images_job = jobs.get("publish-images")
+    publish_release_job = jobs.get("publish-release")
+    if not isinstance(publish_images_job, dict):
+        message = "release-publish.yml must define jobs.publish-images"
+        raise TypeError(message)
+    if not isinstance(publish_release_job, dict):
+        message = "release-publish.yml must define jobs.publish-release"
+        raise TypeError(message)
+
+    publish_images_uses = str(publish_images_job.get("uses", "")).strip()
+    release_needs = publish_release_job.get("needs", [])
+    if isinstance(release_needs, str):
+        release_needs = [release_needs]
+    if not isinstance(release_needs, list):
+        message = (
+            "release-publish.yml jobs.publish-release.needs must be a string or list"
+        )
+        raise TypeError(message)
+    return publish_images_uses, release_needs
+
+
+def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
+    return sorted(fragment for fragment in required_fragments if fragment not in text)
 
 
 def _load_workflow(workflow_path: Path) -> dict[str, object]:
@@ -1207,13 +1512,36 @@ def _extract_workflow_pin_value(
     raise AssertionError(message)
 
 
-def _collect_build_steps(workflow: dict[str, object]) -> list[dict[str, object]]:
+def _collect_build_steps(
+    workflow: dict[str, object],
+    *,
+    seen_workflows: set[Path] | None = None,
+) -> list[dict[str, object]]:
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         return []
+    if seen_workflows is None:
+        seen_workflows = set()
     build_steps: list[dict[str, object]] = []
     for job in jobs.values():
-        steps = job.get("steps", []) if isinstance(job, dict) else []
+        if not isinstance(job, dict):
+            continue
+        uses = job.get("uses")
+        if isinstance(uses, str) and uses.startswith("./.github/workflows/"):
+            nested_workflow_path = (REPO_ROOT / uses.removeprefix("./")).resolve()
+            if (
+                nested_workflow_path.exists()
+                and nested_workflow_path not in seen_workflows
+            ):
+                seen_workflows.add(nested_workflow_path)
+                nested_workflow = _load_workflow(nested_workflow_path)
+                build_steps.extend(
+                    _collect_build_steps(
+                        nested_workflow,
+                        seen_workflows=seen_workflows,
+                    ),
+                )
+        steps = job.get("steps", [])
         for step in steps:
             if not isinstance(step, dict):
                 continue

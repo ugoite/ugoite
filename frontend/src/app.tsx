@@ -1,24 +1,28 @@
-import { Router } from "@solidjs/router";
+import { Router, useLocation } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { Suspense, onMount } from "solid-js";
+import { Suspense, createEffect, type JSXElement } from "solid-js";
 import Nav from "~/components/Nav";
-import { initializePortablePreferences } from "~/lib/preferences-store";
+import { initializePortablePreferencesForPath } from "~/lib/preferences-store";
 import "./app.css";
 
-export default function App() {
-	onMount(() => {
-		void initializePortablePreferences();
+function AppShell(props: { children: JSXElement }) {
+	const location = useLocation();
+
+	createEffect(() => {
+		void initializePortablePreferencesForPath(location.pathname);
 	});
 
 	return (
-		<Router
-			root={(props) => (
-				<>
-					<Nav />
-					<Suspense>{props.children}</Suspense>
-				</>
-			)}
-		>
+		<>
+			<Nav />
+			<Suspense>{props.children}</Suspense>
+		</>
+	);
+}
+
+export default function App() {
+	return (
+		<Router root={(props) => <AppShell>{props.children}</AppShell>}>
 			<FileRoutes />
 		</Router>
 	);

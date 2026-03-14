@@ -1,7 +1,5 @@
 """Local development authentication endpoints."""
 
-from __future__ import annotations
-
 import os
 import time
 from typing import Literal
@@ -25,8 +23,10 @@ def _default_dev_token_kid() -> str:
 
 def _resolve_dev_auth_mode() -> AuthMode:
     raw_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", DEFAULT_DEV_AUTH_MODE).strip()
-    if raw_mode in {"manual-totp", "mock-oauth"}:
-        return raw_mode
+    if raw_mode == "manual-totp":
+        return "manual-totp"
+    if raw_mode == "mock-oauth":
+        return "mock-oauth"
     message = "Unsupported UGOITE_DEV_AUTH_MODE. Expected manual-totp or mock-oauth."
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -91,7 +91,7 @@ def _ensure_local_dev_auth_request(request: Request) -> None:
         request.client.host if request.client else None,
         trust_proxy_headers=trust_proxy_headers,
     )
-    if is_local_host(client_host):
+    if client_host is not None and is_local_host(client_host):
         return
 
     raise HTTPException(
