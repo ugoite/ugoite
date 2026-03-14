@@ -124,6 +124,13 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
+If only the editable `ugoite-core` extension looks stale, use a package-local
+clean rebuild without wiping the entire shared target tree:
+
+```bash
+mise run //ugoite-core:build:clean
+```
+
 If you need to rotate/refresh the automatic token manually, run:
 
 ```bash
