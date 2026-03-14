@@ -15,6 +15,7 @@ REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
 REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
+REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
 """
 
 from __future__ import annotations
@@ -335,6 +336,11 @@ REQUIRED_MONOREPO_DOC_FRAGMENTS = {
     "mise run dev",
     "mise run test",
     "mise run e2e",
+}
+REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
+    "100% coverage",
+    "//frontend:test:coverage",
+    "node ./node_modules/vitest/vitest.mjs run --coverage",
 }
 REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     (
@@ -1032,6 +1038,78 @@ def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
     details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
+    """REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    root_test = root_mise.get("tasks", {}).get("test")
+    if not isinstance(root_test, dict):
+        raise TypeError("root mise.toml must define tasks.test")
+
+    depends = root_test.get("depends")
+    if not isinstance(depends, list):
+        raise TypeError("root mise.toml tasks.test depends must be a list")
+
+    if "//frontend:test:coverage" not in depends:
+        raise AssertionError(
+            "root mise.toml tasks.test must depend on //frontend:test:coverage",
+        )
+
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    frontend_tasks = frontend_mise.get("tasks", {})
+    if not isinstance(frontend_tasks, dict):
+        raise TypeError("frontend/mise.toml must define [tasks]")
+
+    coverage_task = frontend_tasks.get("test:coverage")
+    if not isinstance(coverage_task, dict):
+        raise AssertionError('frontend/mise.toml must define [tasks."test:coverage"]')
+
+    coverage_run = coverage_task.get("run")
+    if not isinstance(coverage_run, str):
+        raise TypeError('frontend/mise.toml [tasks."test:coverage"].run must be a string')
+    if "node ./node_modules/vitest/vitest.mjs run --coverage" not in coverage_run:
+        raise AssertionError(
+            'frontend/mise.toml [tasks."test:coverage"] must run node vitest coverage',
+        )
+
+    workflow = _load_yaml_base_mapping(FRONTEND_CI_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        raise TypeError("frontend-ci.yml must define jobs")
+    ci_job = jobs.get("ci")
+    if not isinstance(ci_job, dict):
+        raise TypeError("frontend-ci.yml must define jobs.ci")
+    steps = ci_job.get("steps", [])
+    if not isinstance(steps, list):
+        raise TypeError("frontend-ci.yml jobs.ci.steps must be a list")
+
+    coverage_step_run: str | None = None
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("name") == "Run Vitest with 100% coverage gate":
+            run = step.get("run")
+            if isinstance(run, str):
+                coverage_step_run = run
+            break
+
+    if coverage_step_run is None:
+        raise AssertionError("frontend-ci.yml must define the frontend coverage gate step")
+    if "node ./node_modules/vitest/vitest.mjs run --coverage" not in coverage_step_run:
+        raise AssertionError("frontend-ci.yml coverage gate must run node vitest coverage")
+
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_doc_fragments:
+        raise AssertionError(
+            "ci-cd guide missing frontend coverage fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
 
 
 def _collect_all_tests_status_details() -> list[str]:

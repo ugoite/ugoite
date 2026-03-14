@@ -51,7 +51,7 @@ description = "Run docsite dev server only"
 depends = ["//docsite:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
+depends = ["//backend:test", "//frontend:test:coverage", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
 description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend, frontend, ugoite-cli)"
 
 [tasks."test:docs"]
