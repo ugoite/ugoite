@@ -6,6 +6,7 @@ use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::HashMap;
+pub use ugoite_minimum::text::compute_word_count;
 use uuid::Uuid;
 
 use crate::entry;
@@ -197,10 +198,6 @@ fn extract_sections(body: &str) -> Vec<(String, String)> {
     }
 
     sections
-}
-
-pub fn compute_word_count(content: &str) -> usize {
-    content.split_whitespace().count()
 }
 
 fn parse_boolean(value: &str) -> Option<bool> {

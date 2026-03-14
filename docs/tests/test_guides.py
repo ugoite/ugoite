@@ -15,6 +15,7 @@ REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
 REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
+REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
 """
 
 from __future__ import annotations
@@ -320,6 +321,28 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed",
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
+}
+REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
+    "cargo-test-minimum",
+    "cargo-wasm-minimum",
+}
+REQUIRED_MINIMUM_WASM_CI_STEPS = {
+    "Run tests (minimum)",
+    "Install wasm32 target (minimum)",
+    "Build wasm32 (minimum)",
+}
+REQUIRED_MINIMUM_BOUNDARY_README_FRAGMENTS = {
+    "wasm32-unknown-unknown",
+    "compute_word_count",
+    "OpenDAL",
+    "ugoite-core",
+    "ugoite-minimum",
+}
+REQUIRED_MINIMUM_BOUNDARY_DOC_FRAGMENTS = {
+    "`ugoite-minimum`",
+    "`ugoite-core`",
+    "compute_word_count",
+    "OpenDAL",
 }
 EXPECTED_MONOREPO_CONFIG_ROOTS = {
     "backend",
@@ -1030,6 +1053,61 @@ def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
+    """REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit."""
+    pre_commit = _load_pre_commit_config()
+    configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
+    missing_hooks = sorted(
+        REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS.difference(configured_hooks),
+    )
+
+    workflow_step_names = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
+    missing_ci_steps = sorted(
+        REQUIRED_MINIMUM_WASM_CI_STEPS.difference(workflow_step_names),
+    )
+
+    minimum_readme = _read_required_text(
+        REPO_ROOT / "ugoite-minimum" / "README.md",
+        "ugoite-minimum README is missing at {path}; required by REQ-OPS-020.",
+    )
+    future_proofing = _read_required_text(
+        REPO_ROOT / "docs" / "spec" / "architecture" / "future-proofing.md",
+        "future-proofing.md is missing at {path}; required by REQ-OPS-020.",
+    )
+
+    missing_readme = sorted(
+        fragment
+        for fragment in REQUIRED_MINIMUM_BOUNDARY_README_FRAGMENTS
+        if fragment not in minimum_readme
+    )
+    missing_doc = sorted(
+        fragment
+        for fragment in REQUIRED_MINIMUM_BOUNDARY_DOC_FRAGMENTS
+        if fragment not in future_proofing
+    )
+
+    details: list[str] = []
+    if missing_hooks:
+        details.append(
+            "pre-commit missing minimum wasm hooks: " + ", ".join(missing_hooks),
+        )
+    if missing_ci_steps:
+        details.append("rust-ci missing minimum wasm steps: " + ", ".join(missing_ci_steps))
+    if missing_readme:
+        details.append(
+            "ugoite-minimum README missing boundary fragments: "
+            + ", ".join(missing_readme),
+        )
+    if missing_doc:
+        details.append(
+            "future-proofing.md missing minimum/core boundary fragments: "
+            + ", ".join(missing_doc),
+        )
+
     if details:
         raise AssertionError("; ".join(details))
 

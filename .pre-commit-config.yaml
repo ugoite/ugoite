@@ -92,6 +92,13 @@ repos:
         files: ^ugoite-minimum/
         pass_filenames: false
 
+      - id: cargo-wasm-minimum
+        name: cargo build wasm32 (ugoite-minimum)
+        entry: bash -c "cd ugoite-minimum && rustup target add wasm32-unknown-unknown && cargo build --target wasm32-unknown-unknown --lib"
+        language: system
+        files: ^ugoite-minimum/
+        pass_filenames: false
+
       - id: cargo-test-cli
         name: cargo test (ugoite-cli)
         entry: bash -c "cd ugoite-cli && cargo test --no-default-features"

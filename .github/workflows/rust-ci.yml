@@ -46,6 +46,13 @@ jobs:
         working-directory: ./ugoite-minimum
         run: cargo test
 
+      - name: Install wasm32 target (minimum)
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build wasm32 (minimum)
+        working-directory: ./ugoite-minimum
+        run: cargo build --target wasm32-unknown-unknown --lib
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:

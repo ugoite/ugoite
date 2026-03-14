@@ -690,3 +690,40 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-020
+  title: Portable Minimum Layer WASM Gates
+  description: '`ugoite-minimum` MUST have explicit WASM-oriented quality gates in
+
+    pre-commit and Rust CI, and the repository MUST document the responsibility
+
+    boundary between `ugoite-minimum` and `ugoite-core`, including which
+
+    portable helpers have already moved and why heavier logic still remains in
+
+    `ugoite-core`.
+
+    '
+  related_spec:
+  - architecture/future-proofing.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared
