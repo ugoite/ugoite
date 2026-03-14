@@ -51,7 +51,7 @@ def resolve_client_host(
 def is_local_host(host: str | None) -> bool:
     """Return True when ``host`` represents a loopback address."""
     if host is None:
-        return True
+        return False
 
     normalized = host.strip().lower()
     if normalized in LOCAL_CLIENT_SENTINELS:
