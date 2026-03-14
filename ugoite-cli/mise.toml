@@ -6,5 +6,9 @@ run = "cargo clean -p ugoite-cli && cargo build"
 description = "Build ugoite-cli"
 
 [tasks.test]
-run = "cargo clean -p ugoite-cli && cargo test"
+run = "cargo test"
 description = "Run ugoite-cli Rust test suite"
+
+[tasks."test:clean"]
+run = "cargo clean -p ugoite-cli && cargo test"
+description = "Clean package-local artifacts and rerun the ugoite-cli Rust test suite"
