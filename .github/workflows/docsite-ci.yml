@@ -59,3 +59,7 @@ jobs:
       - name: Validation test (build)
         working-directory: ./docsite
         run: bun run test:validation
+
+      - name: Run docsite Vitest with 100% coverage gate
+        working-directory: ./docsite
+        run: node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1

@@ -31,6 +31,7 @@ Ugoite follows **Test-Driven Development (TDD)**:
 | ugoite-cli | cargo test | `ugoite-cli/tests/` |
 | backend | pytest | `backend/tests/` |
 | frontend | vitest | `frontend/src/**/*.test.ts(x)` |
+| docsite | vitest | `docsite/src/**/*.test.ts` |
 
 ### Integration Tests
 
@@ -56,6 +57,7 @@ mise run //ugoite-minimum:test # Portable Rust core tests
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
+mise run //docsite:test    # Docsite Vitest unit tests
 mise run //ugoite-cli:test # CLI Rust tests with 100% coverage enforcement
 ```
 
@@ -90,6 +92,7 @@ cd e2e && npm run test
 | ugoite-cli | 100% | 100% (enforced) |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
+| docsite | 100% | 100% (enforced) |
 | e2e | Critical paths | Complete |
 
 ## Test Organization
@@ -153,6 +156,11 @@ frontend/src/
 │   └── client.test.ts   # API client tests
 └── components/
     └── *.test.tsx       # Component tests
+
+docsite/src/lib/
+├── spec-data.test.ts    # Spec/YAML loading tests
+├── doc-links.test.ts    # Internal link resolution tests
+└── navigation.test.ts   # Navigation tree tests
 ```
 
 ## Requirements Traceability

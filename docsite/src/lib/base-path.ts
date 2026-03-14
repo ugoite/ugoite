@@ -1,12 +1,10 @@
-const rawBaseUrl = import.meta.env.BASE_URL ?? "/";
+const rawBaseUrl = import.meta.env.BASE_URL;
 
 const normalizedBaseUrl = rawBaseUrl.endsWith("/")
 	? rawBaseUrl
 	: `${rawBaseUrl}/`;
 
-const normalizedBaseNoTrailingSlash = normalizedBaseUrl.endsWith("/")
-	? normalizedBaseUrl.slice(0, -1)
-	: normalizedBaseUrl;
+const normalizedBaseNoTrailingSlash = normalizedBaseUrl.slice(0, -1);
 
 export function withBasePath(href: string): string {
 	if (href.length === 0) {
