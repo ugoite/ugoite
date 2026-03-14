@@ -68,6 +68,32 @@ jobs:
             exit 1
           fi
 
+  create-draft-release:
+    name: Create draft release
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Create or reuse draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Reusing existing release $tag"
+            exit 0
+          fi
+
+          args=(--target "$TARGET" --title "$tag" --generate-notes --draft)
+          if [ "$CHANNEL" != "stable" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$tag" "${args[@]}"
+
   publish-images:
     name: Publish release images
     needs: validate
@@ -81,25 +107,32 @@ jobs:
       version: ${{ inputs.version }}
       channel: ${{ inputs.channel }}
 
+  publish-cli-binaries:
+    name: Publish CLI binaries
+    needs:
+      - validate
+      - create-draft-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/cli-release-binaries.yml
+    with:
+      version: ${{ inputs.version }}
+      target: ${{ inputs.target }}
+
   publish-release:
     name: Publish GitHub release
     needs:
       - validate
+      - create-draft-release
       - publish-images
+      - publish-cli-binaries
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Publish GitHub release
+      - name: Finalize GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
-          CHANNEL: ${{ inputs.channel }}
-          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          tag="v$VERSION"
-          args=(--target "$TARGET" --title "$tag" --generate-notes)
-          if [ "$CHANNEL" != "stable" ]; then
-            args+=(--prerelease)
-          fi
-          gh release create "$tag" "${args[@]}"
+          gh release edit "v$VERSION" --draft=false

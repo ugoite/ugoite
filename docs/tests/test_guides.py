@@ -12,8 +12,9 @@ REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
-REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-017: Release publish must push GHCR images and document a quick start.
+REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
+REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 """
 
 from __future__ import annotations
@@ -42,6 +43,9 @@ RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml
 RELEASE_PUBLISH_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
 )
+CLI_RELEASE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
+)
 RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
@@ -64,6 +68,7 @@ UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
+INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
@@ -88,10 +93,16 @@ REQUIRED_BACKEND_BUILD_CONTEXTS = {
 REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
-    "Check root placeholder artifacts",
+    "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
+    "scripts/check-root-artifact-hygiene.sh",
+    "node_modules/",
+    "target/",
+    "1 MiB",
+]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
@@ -116,6 +127,56 @@ REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
     "no-op cleanly",
     "bootstrap-sha",
     "0.0.1",
+}
+REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "cargo build --locked --release --bin ugoite --target",
+    "gh release upload",
+    "ugoite-v${VERSION}-",
+    "permissions:",
+    "contents: write",
+}
+REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS = {
+    "create-draft-release",
+    "publish-cli-binaries",
+    "./.github/workflows/cli-release-binaries.yml",
+    "version: ${{ inputs.version }}",
+    "target: ${{ inputs.target }}",
+    "--draft",
+    "--draft=false",
+}
+REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
+    "UGOITE_VERSION",
+    "UGOITE_INSTALL_DIR",
+    "UGOITE_DOWNLOAD_BASE_URL",
+    "releases/latest",
+    "uname -s",
+    "uname -m",
+    "install -m 0755",
+    "sha256sum",
+    "shasum -a 256",
+}
+REQUIRED_CLI_README_FRAGMENTS = {
+    "install-ugoite-cli.sh",
+    "ugoite --help",
+    "UGOITE_VERSION=0.1.0",
+}
+REQUIRED_CLI_GUIDE_FRAGMENTS = {
+    "install-ugoite-cli.sh",
+    "ugoite --help",
+    "cargo build",
+    "cargo run -q -p ugoite-cli -- --help",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+}
+REQUIRED_CLI_CICD_FRAGMENTS = {
+    ".github/workflows/cli-release-binaries.yml",
+    "scripts/install-ugoite-cli.sh",
+    "ugoite --help",
 }
 REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
     "contents": "write",
@@ -512,8 +573,13 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
     missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
     python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
     leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS,
+        "ci-cd spec must document the root artifact hygiene guard",
+    )
 
-    if missing_hooks or missing_steps or leaked_steps:
+    if missing_hooks or missing_steps or leaked_steps or spec_detail:
         details: list[str] = []
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
@@ -523,6 +589,8 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        if spec_detail:
+            details.append(spec_detail)
         raise AssertionError("; ".join(details))
 
 
@@ -638,8 +706,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 core_mise,
                 "build",
+                "uv run maturin develop",
+                "ugoite-core build task must build the editable Rust extension",
+            ),
+            _require_task_excludes(
+                core_mise,
+                "build",
                 "cargo clean -p ugoite-core",
-                "ugoite-core build task must clean package-local Rust artifacts",
+                "ugoite-core build task must stay incremental by default",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "uv run maturin develop",
+                "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
             _require_task_contains(
                 cli_mise,
@@ -920,6 +1006,13 @@ def test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart() -> N
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_018_cli_release_binaries_and_install_script() -> None:
+    """REQ-OPS-018: CLI release binaries and install path stay aligned."""
+    details = _collect_cli_release_install_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
     """REQ-OPS-019: root mise must declare explicit monorepo config roots."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
@@ -1143,6 +1236,106 @@ def _collect_release_ci_requirement_details() -> list[str]:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing fragments: " + ", ".join(missing_doc_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
+def _collect_cli_release_install_details() -> list[str]:
+    workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "release-publish.yml must define jobs"
+        raise TypeError(message)
+
+    create_draft_job = jobs.get("create-draft-release")
+    publish_cli_job = jobs.get("publish-cli-binaries")
+    publish_release_job = jobs.get("publish-release")
+    if not isinstance(create_draft_job, dict):
+        message = "release-publish.yml must define jobs.create-draft-release"
+        raise TypeError(message)
+    if not isinstance(publish_cli_job, dict):
+        message = "release-publish.yml must define jobs.publish-cli-binaries"
+        raise TypeError(message)
+    if not isinstance(publish_release_job, dict):
+        message = "release-publish.yml must define jobs.publish-release"
+        raise TypeError(message)
+
+    publish_release_needs = publish_release_job.get("needs", [])
+    if isinstance(publish_release_needs, str):
+        publish_release_needs = [publish_release_needs]
+    if not isinstance(publish_release_needs, list):
+        message = (
+            "release-publish.yml jobs.publish-release.needs must be a string or list"
+        )
+        raise TypeError(message)
+
+    missing_release_publish = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS,
+    )
+    missing_cli_release = _missing_required_fragments(
+        CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS,
+    )
+    missing_install_script = _missing_required_fragments(
+        INSTALL_CLI_SCRIPT_PATH.read_text(encoding="utf-8"),
+        REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS,
+    )
+    missing_readme = _missing_required_fragments(
+        README_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_README_FRAGMENTS,
+    )
+    missing_cli_guide = _missing_required_fragments(
+        CLI_GUIDE_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_GUIDE_FRAGMENTS,
+    )
+    missing_ci_cd = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_CLI_CICD_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            str(publish_cli_job.get("uses", "")).strip()
+            != "./.github/workflows/cli-release-binaries.yml",
+            "release-publish must delegate CLI binaries to cli-release-binaries.yml",
+        ),
+        (
+            "publish-cli-binaries" not in publish_release_needs,
+            "release-publish publish-release job must depend on publish-cli-binaries",
+        ),
+        (
+            "create-draft-release" not in publish_release_needs,
+            "release-publish publish-release job must depend on create-draft-release",
+        ),
+        (
+            bool(missing_release_publish),
+            "release-publish missing CLI release fragments: "
+            + ", ".join(missing_release_publish),
+        ),
+        (
+            bool(missing_cli_release),
+            "cli-release-binaries workflow missing fragments: "
+            + ", ".join(missing_cli_release),
+        ),
+        (
+            bool(missing_install_script),
+            "install-ugoite-cli.sh missing fragments: "
+            + ", ".join(missing_install_script),
+        ),
+        (
+            bool(missing_readme),
+            "README missing CLI install fragments: " + ", ".join(missing_readme),
+        ),
+        (
+            bool(missing_cli_guide),
+            "cli.md missing release install fragments: " + ", ".join(missing_cli_guide),
+        ),
+        (
+            bool(missing_ci_cd),
+            "ci-cd guide missing CLI release fragments: " + ", ".join(missing_ci_cd),
         ),
     )
     return [message for condition, message in detail_candidates if condition]
@@ -1381,6 +1574,18 @@ def _require_task_contains(
     if any(expected in command for command in commands):
         return None
     return message
+
+
+def _require_task_excludes(
+    config: dict[str, object],
+    task_name: str,
+    forbidden: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(forbidden in command for command in commands):
+        return message
+    return None
 
 
 def _require_exact_task_run(
