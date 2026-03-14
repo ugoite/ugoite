@@ -1,4 +1,5 @@
 import { loadingState } from "./loading";
+import { getRequestEvent } from "solid-js/web";
 
 export const getBackendBase = (): string => {
 	// In test environment, use absolute URL for MSW to intercept
@@ -32,6 +33,31 @@ export type ApiFetchOptions = RequestInit & {
 	trackLoading?: boolean;
 };
 
+const applyServerRequestAuth = (requestInit: RequestInit): RequestInit => {
+	if (typeof window !== "undefined") {
+		return requestInit;
+	}
+
+	const event = getRequestEvent();
+	if (!event) {
+		return requestInit;
+	}
+
+	const headers = new Headers(requestInit.headers);
+	const cookieHeader = event.request.headers.get("cookie");
+	if (cookieHeader && !headers.has("cookie")) {
+		headers.set("cookie", cookieHeader);
+	}
+	const authorizationHeader = event.request.headers.get("authorization");
+	if (authorizationHeader && !headers.has("authorization")) {
+		headers.set("authorization", authorizationHeader);
+	}
+	return {
+		...requestInit,
+		headers,
+	};
+};
+
 export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
 	const base = getBackendBase();
 	let url: string;
@@ -48,8 +74,9 @@ export const apiFetch = async (path = "/", options?: ApiFetchOptions) => {
 		loadingState.start();
 	}
 	const { trackLoading: _trackLoading, ...requestInit } = options ?? {};
+	const serverAwareRequestInit = applyServerRequestAuth(requestInit);
 	try {
-		return await fetch(url, requestInit);
+		return await fetch(url, serverAwareRequestInit);
 	} finally {
 		if (shouldTrackLoading) {
 			loadingState.stop();

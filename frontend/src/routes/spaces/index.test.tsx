@@ -98,4 +98,14 @@ describe("/spaces", () => {
 			screen.queryByText(/localhost and remote mode both require authentication/i),
 		).not.toBeInTheDocument();
 	});
+
+	it("REQ-OPS-015: redirects unauthenticated users to the explicit login route", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("401 Unauthorized"));
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(navigateMock).toHaveBeenCalledWith("/login?next=%2Fspaces");
+		});
+	});
 });
