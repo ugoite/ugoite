@@ -124,6 +124,13 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
+If only the CLI crate looks stale during local testing, use a package-local
+clean rerun instead of wiping the whole shared target tree:
+
+```bash
+mise run //ugoite-cli:test:clean
+```
+
 If you need to rotate/refresh the automatic token manually, run:
 
 ```bash
