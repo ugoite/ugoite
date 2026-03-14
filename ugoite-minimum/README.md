@@ -35,11 +35,14 @@ rustup target add wasm32-unknown-unknown
 cargo build --target wasm32-unknown-unknown --lib
 ```
 
-The repo also exposes the same build through:
+From the repo root, run the same build through:
 
 ```bash
-mise run build:wasm
+mise run //ugoite-minimum:build:wasm
 ```
+
+If you are already inside `ugoite-minimum/`, `mise run build:wasm` runs the
+same task.
 
 ## Why only small extractions move here
 

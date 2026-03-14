@@ -337,6 +337,7 @@ REQUIRED_MINIMUM_BOUNDARY_README_FRAGMENTS = {
     "OpenDAL",
     "ugoite-core",
     "ugoite-minimum",
+    "//ugoite-minimum:build:wasm",
 }
 REQUIRED_MINIMUM_BOUNDARY_DOC_FRAGMENTS = {
     "`ugoite-minimum`",
@@ -1096,7 +1097,9 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
             "pre-commit missing minimum wasm hooks: " + ", ".join(missing_hooks),
         )
     if missing_ci_steps:
-        details.append("rust-ci missing minimum wasm steps: " + ", ".join(missing_ci_steps))
+        details.append(
+            "rust-ci missing minimum wasm steps: " + ", ".join(missing_ci_steps),
+        )
     if missing_readme:
         details.append(
             "ugoite-minimum README missing boundary fragments: "
