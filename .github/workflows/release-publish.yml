@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   validate:
@@ -93,6 +94,19 @@ jobs:
           fi
           gh release create "$tag" "${args[@]}"
 
+  publish-images:
+    name: Publish release images
+    needs: validate
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: true
+      target: ${{ inputs.target }}
+      version: ${{ inputs.version }}
+      channel: ${{ inputs.channel }}
+
   publish-cli-binaries:
     name: Publish CLI binaries
     needs:
@@ -110,6 +124,7 @@ jobs:
     needs:
       - validate
       - create-draft-release
+      - publish-images
       - publish-cli-binaries
     runs-on: ubuntu-24.04
     timeout-minutes: 20

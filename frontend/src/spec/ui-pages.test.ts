@@ -43,6 +43,10 @@ const allowedComponentTypes = new Set([
 	"data-grid",
 	"csv-download-button",
 	"settings-panel",
+	"segmented-control",
+	"search-panel",
+	"structured-search-form",
+	"entry-card-grid",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {

@@ -1,6 +1,9 @@
 min_version = "2025.11.3"
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["backend", "docsite", "e2e", "frontend", "ugoite-cli", "ugoite-core", "ugoite-minimum"]
+
 [settings]
 experimental = true
 
