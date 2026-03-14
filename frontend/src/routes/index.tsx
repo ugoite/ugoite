@@ -8,6 +8,9 @@ export default function Home() {
 				Local-first knowledge, structured for search and automation
 			</p>
 			<div class="flex justify-center gap-3 sm:gap-4 flex-wrap">
+				<A href="/login" class="ui-button ui-button-secondary">
+					Log in
+				</A>
 				<A href="/spaces" class="ui-button ui-button-primary">
 					Open Spaces
 				</A>
