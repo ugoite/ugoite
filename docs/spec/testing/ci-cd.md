@@ -6,7 +6,7 @@
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
-| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
+| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -57,11 +57,15 @@ jobs:
 
 ```yaml
 jobs:
-  lint:
+  ci:
     - cd frontend && biome ci .
-  test:
-    - cd frontend && bun test
+    - cd frontend && bun install
+    - cd frontend && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 ```
+
+The root `mise run test` contract must enforce the same frontend 100% coverage
+gate by depending on `//frontend:test:coverage`, so local verification and CI
+fail for the same coverage regressions.
 
 ## Docsite CI
 
