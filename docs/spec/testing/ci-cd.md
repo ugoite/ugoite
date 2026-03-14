@@ -46,9 +46,10 @@ jobs:
     - actionlint
 ```
 
-The root artifact hygiene gate blocks tracked files under generated dependency
-or build directories such as `node_modules/` and `target/`, and it rejects
-tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+The root artifact hygiene gate fails tracked paths that still match repository
+ignore rules, it blocks tracked files under generated dependency or build
+directories such as `node_modules/` and `target/`, and it rejects tracked
+files larger than `1 MiB` unless they are explicitly allowlisted in
 `scripts/check-root-artifact-hygiene.sh`.
 
 ## Rust CI
@@ -194,7 +195,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
-- **Root artifact hygiene**: Blocks root-level files with placeholder-only content
+- **Root artifact hygiene**: Blocks placeholder files, tracked+ignored paths, generated dependency trees, and oversized tracked artifacts
 - **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
 
 Conventional Commit enforcement (local):
