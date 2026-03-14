@@ -3,5 +3,5 @@ run = "cargo build"
 description = "Build ugoite-minimum"
 
 [tasks.test]
-run = "cargo test"
-description = "Run ugoite-minimum Rust test suite"
+run = "command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked && python3 ../scripts/check_minimum_coverage.py"
+description = "Run ugoite-minimum Rust test suite with 100% coverage enforcement"

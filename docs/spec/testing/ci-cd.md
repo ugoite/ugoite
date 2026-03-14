@@ -5,7 +5,7 @@
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
-| Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
+| Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
@@ -57,6 +57,10 @@ files larger than `1 MiB` unless they are explicitly allowlisted in
 ```yaml
 jobs:
   ci:
+    - cd ugoite-minimum && cargo fmt --check
+    - cd ugoite-minimum && cargo clippy -- -D warnings
+    - cd ugoite-minimum && cargo test
+    - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
     - cd ugoite-core && cargo clippy -- -D warnings
@@ -147,6 +151,10 @@ jobs:
   ci:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
+    - cd ugoite-minimum && cargo fmt --check
+    - cd ugoite-minimum && cargo clippy -- -D warnings
+    - cd ugoite-minimum && cargo test
+    - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
     - cd ugoite-core && cargo clippy -- -D warnings
@@ -158,6 +166,13 @@ jobs:
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
     - cd ugoite-cli && cargo test --no-default-features
 ```
+
+The package-local `mise run //ugoite-minimum:test` task installs
+`cargo-llvm-cov` when needed and runs `python3 ../scripts/check_minimum_coverage.py`,
+which executes `cargo llvm-cov --test test_coverage --json` and normalizes
+delimiter-only line-mapping noise before enforcing the same 100% ugoite-minimum
+line-coverage gate. That keeps the root `mise run test` path aligned with Rust
+CI while still surfacing substantive uncovered lines from the portable crate.
 
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
 The default `ugoite-core` build path stays incremental, and root `mise run
@@ -191,7 +206,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with `ugoite-minimum` enforcing a 100% ugoite-minimum line-coverage gate via `cargo llvm-cov`
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics

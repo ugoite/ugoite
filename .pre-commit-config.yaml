@@ -85,11 +85,11 @@ repos:
         files: ^ugoite-cli/
         pass_filenames: false
 
-      - id: cargo-test-minimum
-        name: cargo test (ugoite-minimum)
-        entry: bash -c "cd ugoite-minimum && cargo test"
+      - id: cargo-llvm-cov-minimum
+        name: cargo llvm-cov (ugoite-minimum 100%)
+        entry: bash -c "python3 scripts/check_minimum_coverage.py"
         language: system
-        files: ^ugoite-minimum/
+        files: ^ugoite-minimum/(src/.*\.rs|tests/.*\.rs|Cargo\.toml)$
         pass_filenames: false
 
       - id: cargo-test-cli
