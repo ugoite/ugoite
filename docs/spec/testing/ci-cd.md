@@ -66,7 +66,7 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo test --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 ```
 
 ## Frontend CI
@@ -156,7 +156,7 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo test --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 ```
 
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
@@ -167,7 +167,9 @@ that local test workflow. `mise run //ugoite-core:build:clean` provides a
 package-local destructive rebuild when the editable extension is stale.
 `mise run cleanup:rust-targets` removes both the shared target root and the
 legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
-unexpectedly.
+unexpectedly. `mise run //ugoite-cli:test` installs `cargo-llvm-cov` and
+`llvm-tools-preview` if needed, then enforces the same 100% CLI line-coverage gate
+as Rust CI.
 
 ## SBOM and Supply Chain CI
 
@@ -191,7 +193,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
@@ -249,7 +251,7 @@ Before pushing, run the same checks as CI:
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
 cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
-cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 
 # Python
 cd .. && uvx ruff format --check .

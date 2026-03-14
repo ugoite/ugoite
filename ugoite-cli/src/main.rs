@@ -1,9 +1,6 @@
-mod commands;
-mod config;
-mod http;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use ugoite_cli::commands;
 
 #[derive(Parser)]
 #[command(name = "ugoite", about = "Ugoite CLI - Knowledge base management")]
