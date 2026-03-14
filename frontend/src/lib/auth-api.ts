@@ -56,7 +56,9 @@ export const authApi = {
 	async getDevConfig(): Promise<DevAuthConfig> {
 		const response = await apiFetch("/auth/dev/config", { trackLoading: false });
 		if (!response.ok) {
-			throw new Error(`Failed to load local auth config: ${response.statusText}`);
+			throw new Error(
+				await formatAuthError(response, `Failed to load local auth config: ${response.statusText}`),
+			);
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {

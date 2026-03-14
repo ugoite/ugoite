@@ -63,6 +63,21 @@ describe("authApi", () => {
 		);
 
 		server.use(
+			http.get("http://localhost:3000/api/auth/dev/config", () =>
+				HttpResponse.json(
+					{
+						detail:
+							"Local development auth endpoints are only available from loopback clients.",
+					},
+					{ status: 403, statusText: "Forbidden" },
+				),
+			),
+		);
+		await expect(authApi.getDevConfig()).rejects.toThrow(
+			"Local development auth endpoints are only available from loopback clients.",
+		);
+
+		server.use(
 			http.post("http://localhost:3000/api/auth/dev/login", () =>
 				HttpResponse.json(
 					{

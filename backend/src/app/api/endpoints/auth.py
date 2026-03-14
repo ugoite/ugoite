@@ -1,6 +1,7 @@
 """Local development authentication endpoints."""
 
 import os
+import secrets
 import time
 from typing import Literal
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/auth/dev", tags=["auth"])
 AuthMode = Literal["manual-totp", "mock-oauth"]
 DEFAULT_DEV_AUTH_MODE: AuthMode = "manual-totp"
 DEFAULT_DEV_AUTH_TTL_SECONDS = 43_200
+DEV_AUTH_PROXY_TOKEN_HEADER = "x-ugoite-dev-auth-proxy-token"
 
 
 def _default_dev_token_kid() -> str:
@@ -82,6 +84,26 @@ def _dev_auth_ttl_seconds() -> int:
     return ttl_seconds
 
 
+def _trusted_dev_auth_proxy_token() -> str | None:
+    token = os.environ.get("UGOITE_DEV_AUTH_PROXY_TOKEN")
+    if token is None:
+        return None
+    normalized = token.strip()
+    return normalized or None
+
+
+def _is_trusted_dev_auth_proxy(request: Request) -> bool:
+    configured_token = _trusted_dev_auth_proxy_token()
+    if configured_token is None:
+        return False
+
+    provided_token = request.headers.get(DEV_AUTH_PROXY_TOKEN_HEADER)
+    if provided_token is None or not provided_token:
+        return False
+
+    return secrets.compare_digest(provided_token, configured_token)
+
+
 def _ensure_local_dev_auth_request(request: Request) -> None:
     trust_proxy_headers = (
         os.environ.get("UGOITE_TRUST_PROXY_HEADERS", "false").lower() == "true"
@@ -92,6 +114,8 @@ def _ensure_local_dev_auth_request(request: Request) -> None:
         trust_proxy_headers=trust_proxy_headers,
     )
     if client_host is not None and is_local_host(client_host):
+        return
+    if _is_trusted_dev_auth_proxy(request):
         return
 
     raise HTTPException(

@@ -262,6 +262,75 @@ def test_dev_auth_req_ops_015_rejects_remote_clients(
     assert "loopback clients" in response.json()["detail"]
 
 
+def test_dev_auth_req_ops_015_allows_trusted_proxy_token(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth config accepts trusted frontend proxy requests."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get(
+        "/auth/dev/config",
+        headers={"x-ugoite-dev-auth-proxy-token": "proxy-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "mock-oauth"
+
+
+def test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth config rejects untrusted proxy tokens."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get(
+        "/auth/dev/config",
+        headers={"x-ugoite-dev-auth-proxy-token": "wrong-secret"},
+    )
+
+    assert response.status_code == 403
+    assert "loopback clients" in response.json()["detail"]
+
+
+def test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth config rejects remote proxy requests without the token."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get("/auth/dev/config")
+
+    assert response.status_code == 403
+    assert "loopback clients" in response.json()["detail"]
+
+
 def test_dev_auth_req_ops_015_rejects_unknown_client_host(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,

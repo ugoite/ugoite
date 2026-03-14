@@ -6,6 +6,9 @@ if [ -z "${HOME:-}" ]; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"
 AUTH_FILE="${UGOITE_DEV_AUTH_FILE:-${HOME}/.ugoite/dev-auth.json}"
 AUTH_TTL_SECONDS="${UGOITE_DEV_AUTH_TTL_SECONDS:-43200}"
@@ -20,7 +23,7 @@ announce_mode() {
 }
 
 python_ugoite() {
-  python "$@"
+  PYTHONPATH="${REPO_ROOT}/ugoite-core${PYTHONPATH:+:${PYTHONPATH}}" python "$@"
 }
 
 acquire_lock() {
@@ -96,44 +99,12 @@ PY
 validate_totp_prompt_value() {
   local totp_code="$1"
   python_ugoite - "$totp_code" "$DEV_2FA_SECRET" <<'PY'
-import base64
-import hashlib
-import hmac
 import sys
-import time
+
+from ugoite_core.auth import validate_totp_code
 
 code, secret = sys.argv[1:3]
-normalized_code = code.strip()
-if not normalized_code.isdigit() or len(normalized_code) != 6:
-    raise SystemExit(1)
-
-normalized_secret = secret.strip().replace(" ", "")
-if not normalized_secret:
-    raise SystemExit(1)
-
-remainder = len(normalized_secret) % 8
-if remainder:
-    normalized_secret += "=" * (8 - remainder)
-
-try:
-    decoded_secret = base64.b32decode(normalized_secret.upper(), casefold=True)
-except (base64.binascii.Error, ValueError):
-    raise SystemExit(1)
-
-counter = int(time.time()) // 30
-for delta in (-1, 0, 1):
-    candidate_counter = counter + delta
-    digest = hmac.new(
-        decoded_secret,
-        candidate_counter.to_bytes(8, "big"),
-        hashlib.sha1,
-    ).digest()
-    offset = digest[-1] & 0x0F
-    binary = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
-    candidate = f"{binary % 1_000_000:06d}"
-    if hmac.compare_digest(candidate, normalized_code):
-        raise SystemExit(0)
-raise SystemExit(1)
+raise SystemExit(0 if validate_totp_code(code, secret) else 1)
 PY
 }
 
