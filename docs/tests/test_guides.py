@@ -93,10 +93,16 @@ REQUIRED_BACKEND_BUILD_CONTEXTS = {
 REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
-    "Check root placeholder artifacts",
+    "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
+    "scripts/check-root-artifact-hygiene.sh",
+    "git ls-files -ci --exclude-standard",
+    "tracked paths",
+    "ignore rules",
+]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
@@ -566,8 +572,13 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
     missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
     python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
     leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS,
+        "ci-cd spec must document the root artifact hygiene guard",
+    )
 
-    if missing_hooks or missing_steps or leaked_steps:
+    if missing_hooks or missing_steps or leaked_steps or spec_detail:
         details: list[str] = []
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
@@ -577,6 +588,8 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        if spec_detail:
+            details.append(spec_detail)
         raise AssertionError("; ".join(details))
 
 
