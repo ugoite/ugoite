@@ -797,21 +797,21 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 ["bash scripts/cleanup-rust-targets.sh"],
                 "root mise must expose cleanup:rust-targets",
             ),
-            _require_exact_task_depends(
+            _require_exact_task_run(
                 root_mise,
                 "test",
                 [
-                    "//ugoite-core:build",
-                    "//backend:test:no-build",
-                    "//frontend:test:coverage",
-                    "//ugoite-cli:test",
-                    "//ugoite-core:test:no-build",
-                    "//ugoite-minimum:test",
-                    "test:docs",
+                    "mise run //ugoite-core:build",
+                    "mise run //backend:test:no-build",
+                    "mise run //frontend:test:coverage",
+                    "mise run //ugoite-cli:test",
+                    "mise run //ugoite-core:test:no-build",
+                    "mise run //ugoite-minimum:test",
+                    "mise run test:docs",
                 ],
                 (
-                    "root mise test must build ugoite-core once and reuse "
-                    "no-build backend/core test tasks"
+                    "root mise test must build ugoite-core once before "
+                    "reusing no-build backend/core test tasks"
                 ),
             ),
             _require_file_contains(
@@ -1138,15 +1138,7 @@ def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
 def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
     """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
-    root_test = _load_mise_task_mapping(
-        root_mise,
-        task_name="test",
-        path_label="root mise.toml",
-    )
-    root_depends = _load_task_depends(
-        root_test,
-        task_label="root mise.toml tasks.test",
-    )
+    root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
@@ -1171,8 +1163,8 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
 
     detail_candidates = (
         (
-            "//frontend:test:coverage" not in root_depends,
-            "root mise.toml tasks.test must depend on //frontend:test:coverage",
+            "mise run //frontend:test:coverage" not in root_runs,
+            "root mise.toml tasks.test must run //frontend:test:coverage",
         ),
         (
             REQUIRED_FRONTEND_COVERAGE_COMMAND not in coverage_run,

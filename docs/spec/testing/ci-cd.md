@@ -159,13 +159,14 @@ jobs:
 ```
 
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
-The default `ugoite-core` build path stays incremental, root `mise run test`
-hoists `//ugoite-core:build` once and then reuses that editable extension
-through `//backend:test:no-build` and `//ugoite-core:test:no-build`, `mise run
-//ugoite-core:build:clean` provides a package-local destructive rebuild when the
-editable extension is stale, and `mise run cleanup:rust-targets` removes both
-the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
-path when artifacts grow unexpectedly.
+The default `ugoite-core` build path stays incremental, and root `mise run
+test` runs `//ugoite-core:build` before `//backend:test:no-build` and
+`//ugoite-core:test:no-build` so one editable extension build is reused across
+that local test workflow. `mise run //ugoite-core:build:clean` provides a
+package-local destructive rebuild when the editable extension is stale.
+`mise run cleanup:rust-targets` removes both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+unexpectedly.
 
 ## SBOM and Supply Chain CI
 
