@@ -631,6 +631,45 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-018
+  title: CLI Release Binaries and Install Path
+  description: 'Release Publish MUST create predictable CLI archives for the supported
+
+    release platforms (at minimum Linux x86_64 + arm64, macOS x86_64, and
+
+    macOS arm64), attach them to the GitHub Release, and keep a maintained
+
+    one-liner install path plus quick-start documentation so users can run
+
+    `ugoite --help` without cloning and building from source.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  - ../guide/cli.md
+  - ../README.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_018_cli_release_binaries_and_install_script
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-019
   title: Explicit Mise Monorepo Config Roots
   description: 'The root `mise.toml` MUST declare explicit `[monorepo].config_roots`
