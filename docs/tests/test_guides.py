@@ -102,6 +102,9 @@ REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "git ls-files -ci --exclude-standard",
     "tracked paths",
     "ignore rules",
+    "node_modules/",
+    "target/",
+    "1 MiB",
 ]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
@@ -257,35 +260,36 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "manual-totp",
     "mock-oauth",
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "oathtool",
-    "derive a deterministic bearer token",
+    "/login",
+    "ugoite auth login",
+    "signed bearer token",
     "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
-    "UGOITE_DEV_AUTH_MODE=manual-totp",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
     "Local Dev Auth/Login",
+    "/login",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
-    "| UGOITE_DEV_TOTP_CODE |",
-    "| UGOITE_DEV_MANUAL_TOKEN |",
-    "| UGOITE_DEV_MOCK_OAUTH_TOKEN |",
+    "| UGOITE_DEV_USER_ID |",
+    "| UGOITE_DEV_AUTH_FORCE_LOGIN |",
+    "| UGOITE_DEV_2FA_SECRET |",
 }
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
-    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"',
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
+    "UGOITE_DEV_SIGNING_SECRET",
+    "UGOITE_DEV_SIGNING_KID",
     "path.chmod(0o600)",
-    "require_working_oathtool",
-    'announce_mode "automatic"',
     'announce_mode "manual-totp"',
     'announce_mode "mock-oauth"',
-    "manual-totp mode requires one of:",
+    "Local dev username:",
+    "Current 2FA code:",
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
@@ -705,8 +709,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 core_mise,
                 "build",
+                "uv run maturin develop",
+                "ugoite-core build task must build the editable Rust extension",
+            ),
+            _require_task_excludes(
+                core_mise,
+                "build",
                 "cargo clean -p ugoite-core",
-                "ugoite-core build task must clean package-local Rust artifacts",
+                "ugoite-core build task must stay incremental by default",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "uv run maturin develop",
+                "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
             _require_task_contains(
                 cli_mise,
@@ -1555,6 +1577,18 @@ def _require_task_contains(
     if any(expected in command for command in commands):
         return None
     return message
+
+
+def _require_task_excludes(
+    config: dict[str, object],
+    task_name: str,
+    forbidden: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(forbidden in command for command in commands):
+        return message
+    return None
 
 
 def _require_exact_task_run(

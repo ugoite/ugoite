@@ -212,6 +212,6 @@ def test_resolve_client_host_empty_forwarded() -> None:
     assert result == "10.0.0.1"
 
 
-def test_is_local_host_none_returns_true() -> None:
-    """REQ-SEC-001: is_local_host returns True when host is None."""
-    assert is_local_host(None) is True
+def test_is_local_host_none_returns_false() -> None:
+    """REQ-SEC-001: is_local_host rejects requests when the client host is unknown."""
+    assert is_local_host(None) is False

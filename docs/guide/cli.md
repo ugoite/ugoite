@@ -127,14 +127,20 @@ cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3
 
 ## Auth profile commands
 
-In `backend` / `api` modes, CLI and frontend share the same credential env conventions:
+In `backend` / `api` modes, CLI and frontend share the same bearer token env convention:
 
 - `UGOITE_AUTH_BEARER_TOKEN`
 - `UGOITE_AUTH_API_KEY`
 
 ```bash
-# Print export commands for current shell
-cargo run -q -p ugoite-cli -- auth login --bearer-token TOKEN_VALUE
+# Route auth commands to the backend
+cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
+
+# Exchange username + 2FA for a bearer token in manual-totp mode
+cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
+
+# Or use the explicit mock OAuth login path
+cargo run -q -p ugoite-cli -- auth login --mock-oauth
 
 # Inspect active auth setup
 cargo run -q -p ugoite-cli -- auth profile
