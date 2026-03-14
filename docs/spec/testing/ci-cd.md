@@ -36,6 +36,21 @@ jobs:
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
 
+## YAML / Workflow and Repository Artifact Hygiene
+
+```yaml
+jobs:
+  ci:
+    - bash scripts/check-root-artifact-hygiene.sh
+    - yamllint ...
+    - actionlint
+```
+
+The root artifact hygiene gate blocks tracked files under generated dependency
+or build directories such as `node_modules/` and `target/`, and it rejects
+tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+`scripts/check-root-artifact-hygiene.sh`.
+
 ## Rust CI
 
 ```yaml
