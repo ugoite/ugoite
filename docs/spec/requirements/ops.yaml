@@ -208,11 +208,10 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-006
   title: Rust Pre-commit and CI Test Parity
-  description: 'Rust pre-commit hooks MUST enforce format, lint, and test gates
-
-    across both ugoite-core and ugoite-cli, including ugoite-cli test execution
-
-    parity with Rust CI.
+  description: 'Rust pre-commit hooks MUST enforce format, lint, and coverage/test
+    gates across ugoite-minimum, ugoite-core, and ugoite-cli, including a
+    100% line-coverage gate for ugoite-minimum that stays aligned with Rust
+    CI and the local `mise run test` path.
 
     '
   related_spec:

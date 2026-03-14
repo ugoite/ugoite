@@ -66,6 +66,7 @@ PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
+UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
@@ -110,12 +111,27 @@ REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
+    "cargo-clippy-minimum",
     "cargo-clippy",
     "cargo-clippy-cli",
+    "cargo-llvm-cov-minimum",
     "cargo-llvm-cov-core",
     "cargo-test-cli",
 }
-REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_RUST_CI_STEPS = {
+    "Run tests (minimum)",
+    "Enforce Rust coverage floor (minimum)",
+    "Run tests (cli)",
+}
+REQUIRED_MINIMUM_COVERAGE_COMMAND = "scripts/check_minimum_coverage.py"
+REQUIRED_MINIMUM_COVERAGE_BACKING_COMMAND = "cargo llvm-cov --test test_coverage --json"
+REQUIRED_MINIMUM_COVERAGE_STEP_NAME = "Enforce Rust coverage floor (minimum)"
+REQUIRED_MINIMUM_COVERAGE_DOC_FRAGMENTS = {
+    "100% ugoite-minimum line-coverage gate",
+    "mise run //ugoite-minimum:test",
+    REQUIRED_MINIMUM_COVERAGE_COMMAND,
+    REQUIRED_MINIMUM_COVERAGE_BACKING_COMMAND,
+}
 REQUIRED_RELEASE_CI_PERMISSIONS = {
     "contents": "write",
     "issues": "write",
@@ -615,7 +631,7 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
-    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    """REQ-OPS-006: Rust pre-commit checks must keep minimum coverage parity with CI."""
     pre_commit = _load_pre_commit_config()
     configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
     missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
@@ -626,19 +642,80 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
     if isinstance(cargo_clippy_cli, dict):
         clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
 
-    missing_parts: list[str] = []
-    if missing_hooks:
-        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
-    if "--no-default-features" not in clippy_cli_entry:
-        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+    minimum_cov_entry = ""
+    cargo_cov_minimum = hook_entries.get("cargo-llvm-cov-minimum")
+    if isinstance(cargo_cov_minimum, dict):
+        minimum_cov_entry = str(cargo_cov_minimum.get("entry", ""))
 
     rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
     missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
-    if missing_ci_steps:
-        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    root_runs = _get_task_run_commands(root_mise, "test")
+    minimum_mise = tomllib.loads(UGOITE_MINIMUM_MISE_PATH.read_text(encoding="utf-8"))
+    minimum_task = _load_mise_task_mapping(
+        minimum_mise,
+        task_name="test",
+        path_label="ugoite-minimum/mise.toml",
+    )
+    minimum_run = _load_task_run(
+        minimum_task,
+        task_label="ugoite-minimum/mise.toml [tasks.test]",
+    )
+    minimum_step_run = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name=REQUIRED_MINIMUM_COVERAGE_STEP_NAME,
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_MINIMUM_COVERAGE_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
 
-    if missing_parts:
-        raise AssertionError("; ".join(missing_parts))
+    detail_candidates = (
+        (
+            bool(missing_hooks),
+            "pre-commit missing hooks: " + ", ".join(missing_hooks),
+        ),
+        (
+            "--no-default-features" not in clippy_cli_entry,
+            "cargo-clippy-cli must pass --no-default-features",
+        ),
+        (
+            REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_cov_entry,
+            "cargo-llvm-cov-minimum must run the minimum coverage wrapper",
+        ),
+        (
+            bool(missing_ci_steps),
+            "rust-ci missing steps: " + ", ".join(missing_ci_steps),
+        ),
+        (
+            "mise run //ugoite-minimum:test" not in root_runs,
+            "root mise.toml tasks.test must run //ugoite-minimum:test",
+        ),
+        (
+            REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_run,
+            "ugoite-minimum/mise.toml [tasks.test] must run the wrapper",
+        ),
+        (
+            minimum_step_run is None,
+            "rust-ci.yml must define the minimum coverage gate step",
+        ),
+        (
+            minimum_step_run is not None
+            and REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_step_run,
+            "rust-ci minimum coverage gate must run the minimum coverage wrapper",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing minimum coverage fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
