@@ -16,6 +16,7 @@ REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-022: Docsite 100% coverage must be explicit in CI and root mise test.
 """
 
 from __future__ import annotations
@@ -69,6 +70,7 @@ BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
+DOCSITE_MISE_PATH = REPO_ROOT / "docsite" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
 INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
@@ -236,12 +238,14 @@ REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-format-check",
     "docsite-typecheck",
     "docsite-validation-test",
+    "docsite-vitest-coverage",
 }
 REQUIRED_DOCSITE_CI_STEPS = {
     "Lint",
     "Format check",
     "Typecheck",
     "Validation test (build)",
+    "Run docsite Vitest with 100% coverage gate",
 }
 REQUIRED_FRONTEND_DEV_FRAGMENTS = {
     "../scripts/wait-for-http.sh http://localhost:8000/health 30",
@@ -357,6 +361,15 @@ REQUIRED_FRONTEND_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage"
 )
 REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS = {
+    "100% coverage",
+    "//docsite:test:coverage",
+    "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1",
+}
+REQUIRED_DOCSITE_COVERAGE_COMMAND = (
+    "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
+)
+REQUIRED_DOCSITE_COVERAGE_STEP_NAME = "Run docsite Vitest with 100% coverage gate"
 UV_SETUP_WORKFLOW_PATHS = (
     DEVCONTAINER_CI_WORKFLOW_PATH,
     PYTHON_CI_WORKFLOW_PATH,
@@ -853,6 +866,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                     "mise run //ugoite-core:build",
                     "mise run //backend:test:no-build",
                     "mise run //frontend:test:coverage",
+                    "mise run //docsite:test:coverage",
                     "mise run //ugoite-cli:test",
                     "mise run //ugoite-core:test:no-build",
                     "mise run //ugoite-minimum:test",
@@ -1231,6 +1245,61 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing frontend coverage fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_022_docsite_coverage_gate_is_explicit() -> None:
+    """REQ-OPS-022: Docsite 100% coverage must stay explicit in CI and root tests."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    root_runs = _get_task_run_commands(root_mise, "test")
+    docsite_mise = tomllib.loads(DOCSITE_MISE_PATH.read_text(encoding="utf-8"))
+    coverage_task = _load_mise_task_mapping(
+        docsite_mise,
+        task_name="test:coverage",
+        path_label="docsite/mise.toml",
+    )
+    coverage_run = _load_task_run(
+        coverage_task,
+        task_label='docsite/mise.toml [tasks."test:coverage"]',
+    )
+    coverage_step_run = _find_workflow_step_run(
+        DOCSITE_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name=REQUIRED_DOCSITE_COVERAGE_STEP_NAME,
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            "mise run //docsite:test:coverage" not in root_runs,
+            "root mise.toml tasks.test must run //docsite:test:coverage",
+        ),
+        (
+            REQUIRED_DOCSITE_COVERAGE_COMMAND not in coverage_run,
+            'docsite/mise.toml [tasks."test:coverage"] must run node vitest coverage',
+        ),
+        (
+            coverage_step_run is None,
+            "docsite-ci.yml must define the docsite coverage gate step",
+        ),
+        (
+            coverage_step_run is not None
+            and REQUIRED_DOCSITE_COVERAGE_COMMAND not in coverage_step_run,
+            "docsite-ci.yml coverage gate must run node vitest coverage",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing docsite coverage fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )

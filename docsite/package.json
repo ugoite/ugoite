@@ -8,12 +8,15 @@
 		"dev": "astro dev --host 127.0.0.1 --strictPort --port 4321",
 		"build": "astro build",
 		"preview": "astro preview --host",
-		"lint": "biome check --formatter-enabled=false --linter-enabled=true --assist-enabled=false astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
+		"lint": "biome check --formatter-enabled=false --linter-enabled=true --assist-enabled=false astro.config.mjs biome.json package.json tsconfig.json vitest.config.ts src/env.d.ts src/lib/*.ts",
 		"format": "biome format --write .",
-		"format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false astro.config.mjs package.json tsconfig.json biome.json src/env.d.ts",
+		"format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false astro.config.mjs biome.json package.json tsconfig.json vitest.config.ts src/env.d.ts src/lib/*.ts",
 		"typecheck": "astro check",
+		"test": "vitest",
+		"test:run": "vitest run",
+		"test:coverage": "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1",
 		"test:validation": "bun run build",
-		"validate": "bun run lint && bun run format:check && bun run typecheck && bun run test:validation"
+		"validate": "bun run lint && bun run format:check && bun run typecheck && bun run test:validation && bun run test:coverage"
 	},
 	"dependencies": {
 		"@astrojs/check": "^0.9.7",
@@ -27,6 +30,8 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
 		"@types/node": "^25.5.0",
-		"typescript": "^5.9.3"
+		"@vitest/coverage-v8": "^4.1.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.0"
 	}
 }

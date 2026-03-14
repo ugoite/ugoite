@@ -191,3 +191,17 @@ requirements:
     - file: e2e/docsite-links.test.ts
       tests:
       - 'REQ-E2E-006: docsite internal page links resolve without 404s'
+    vitest:
+    - file: docsite/src/lib/base-path.test.ts
+      tests:
+      - 'REQ-E2E-006: withBasePath preserves external links and prefixes internal routes'
+      - 'REQ-E2E-006: withBasePath keeps configured non-root base paths stable'
+    - file: docsite/src/lib/doc-links.test.ts
+      tests:
+      - 'REQ-E2E-006: resolveDocHref preserves safe external targets and rejects unsupported schemes'
+      - 'REQ-E2E-006: resolveDocHref resolves absolute docsite and application routes against the configured base path'
+      - 'REQ-E2E-006: resolveDocHref resolves relative docs and repository source links without leaking outside the base path'
+    - file: docsite/src/lib/navigation.test.ts
+      tests:
+      - 'REQ-E2E-006: navigation helpers build child docsite links from spec data'
+      - 'REQ-E2E-006: navigation helpers tolerate missing child anchors without mutating shared nav state'
