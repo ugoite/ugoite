@@ -16,7 +16,7 @@
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
 | All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate curated code-quality workflow health while excluding release/publish automation and deprecated wait actions |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
-| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish plus GHCR image push |
+| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
@@ -35,6 +35,21 @@ jobs:
     - cd backend && uv run pytest -W error
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
+
+## YAML / Workflow and Repository Artifact Hygiene
+
+```yaml
+jobs:
+  ci:
+    - bash scripts/check-root-artifact-hygiene.sh
+    - yamllint ...
+    - actionlint
+```
+
+The root artifact hygiene gate blocks tracked files under generated dependency
+or build directories such as `node_modules/` and `target/`, and it rejects
+tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+`scripts/check-root-artifact-hygiene.sh`.
 
 ## Rust CI
 
@@ -139,10 +154,12 @@ jobs:
     - cd ugoite-cli && cargo test --no-default-features
 ```
 
-Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`,
-clean package-specific crate artifacts before rebuild/test, and expose
-`mise run cleanup:rust-targets` to remove both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow unexpectedly.
+Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
+The default `ugoite-core` build path stays incremental, `mise run
+//ugoite-core:build:clean` provides a package-local destructive rebuild when the
+editable extension is stale, and `mise run cleanup:rust-targets` removes both
+the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
+path when artifacts grow unexpectedly.
 
 ## SBOM and Supply Chain CI
 
@@ -195,8 +212,9 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 7. **Human review** must confirm the planned release scope before publishing.
 8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
 9. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
-10. **Release Publish** authenticates to GHCR with `GITHUB_TOKEN`, pushes `ghcr.io/ugoite/ugoite/backend` and `ghcr.io/ugoite/ugoite/frontend`, and keeps tags aligned to the requested version (`<semver>` plus `latest`/`stable` for stable releases, or `<channel>` for alpha/beta).
+10. **Release Publish** authenticates to GHCR with `GITHUB_TOKEN`, pushes `ghcr.io/ugoite/ugoite/backend` and `ghcr.io/ugoite/ugoite/frontend`, keeps tags aligned to the requested version (`<semver>` plus `latest`/`stable` for stable releases, or `<channel>` for alpha/beta), creates a draft GitHub Release, builds CLI archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, and `aarch64-apple-darwin` through `.github/workflows/cli-release-binaries.yml`, uploads those assets plus `.sha256` checksum files, and then finalizes the release.
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can pull and run release images without rebuilding from source.
+12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository.
 
 ## Environment Variables
 

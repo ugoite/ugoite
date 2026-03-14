@@ -59,11 +59,30 @@ e2e/                # End-to-end tests (Bun)
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
+- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
 
 ---
+
+## CLI Quick Start
+
+Install the latest stable `ugoite` binary with a one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
+ugoite --help
+```
+
+Pin an exact release when you do not want the newest stable build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
+ugoite --help
+```
+
+For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
@@ -103,6 +122,13 @@ shared Rust target cache and the legacy ugoite-core cache path:
 
 ```bash
 mise run cleanup:rust-targets
+```
+
+If only the editable `ugoite-core` extension looks stale, use a package-local
+clean rebuild without wiping the entire shared target tree:
+
+```bash
+mise run //ugoite-core:build:clean
 ```
 
 If you need to re-prompt the local dev login context (username + 2FA validation), run:
