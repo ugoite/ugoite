@@ -101,6 +101,8 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
+    "tracked paths that still match repository",
+    "ignore rules",
     "node_modules/",
     "target/",
     "1 MiB",
