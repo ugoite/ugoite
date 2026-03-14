@@ -65,6 +65,7 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
@@ -712,6 +713,7 @@ def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> Non
 def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
     """REQ-OPS-011: Rust target caches must stay bounded and cleanable."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
     core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
     cli_mise = tomllib.loads(UGOITE_CLI_MISE_PATH.read_text(encoding="utf-8"))
 
@@ -744,6 +746,39 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "uv run maturin develop",
                 "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
+            _require_exact_task_run(
+                core_mise,
+                "test:no-build",
+                [
+                    "cargo test -j 1",
+                    (
+                        "if [ -d tests ]; then uv run --with pytest --with "
+                        "pytest-asyncio python -m pytest; fi"
+                    ),
+                ],
+                (
+                    "ugoite-core test:no-build task must run crate and Python "
+                    "binding tests without rebuilding"
+                ),
+            ),
+            _require_exact_task_depends(
+                core_mise,
+                "test",
+                ["build"],
+                "ugoite-core test task must depend on build",
+            ),
+            _require_exact_task_run(
+                backend_mise,
+                "test:no-build",
+                ["uv run pytest"],
+                "backend test:no-build task must run backend pytest directly",
+            ),
+            _require_exact_task_depends(
+                backend_mise,
+                "test",
+                ["//ugoite-core:build"],
+                "backend test task must depend on ugoite-core:build",
+            ),
             _require_task_contains(
                 cli_mise,
                 "install",
@@ -761,6 +796,23 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "cleanup:rust-targets",
                 ["bash scripts/cleanup-rust-targets.sh"],
                 "root mise must expose cleanup:rust-targets",
+            ),
+            _require_exact_task_depends(
+                root_mise,
+                "test",
+                [
+                    "//ugoite-core:build",
+                    "//backend:test:no-build",
+                    "//frontend:test:coverage",
+                    "//ugoite-cli:test",
+                    "//ugoite-core:test:no-build",
+                    "//ugoite-minimum:test",
+                    "test:docs",
+                ],
+                (
+                    "root mise test must build ugoite-core once and reuse "
+                    "no-build backend/core test tasks"
+                ),
             ),
             _require_file_contains(
                 RUST_TARGET_CLEANUP_PATH,
@@ -1668,6 +1720,19 @@ def _load_task_run(task: dict[str, object], *, task_label: str) -> str:
     raise TypeError(message)
 
 
+def _get_task_depends(config: dict[str, object], task_name: str) -> list[str]:
+    tasks = config.get("tasks", {})
+    if not isinstance(tasks, dict):
+        return []
+    task = tasks.get(task_name)
+    if not isinstance(task, dict):
+        return []
+    depends = task.get("depends")
+    if isinstance(depends, list) and all(isinstance(item, str) for item in depends):
+        return list(depends)
+    return []
+
+
 def _require_shared_target_dir(
     config: dict[str, object],
     label: str,
@@ -1708,6 +1773,17 @@ def _require_exact_task_run(
     message: str,
 ) -> str | None:
     if _get_task_run_commands(config, task_name) == expected:
+        return None
+    return message
+
+
+def _require_exact_task_depends(
+    config: dict[str, object],
+    task_name: str,
+    expected: list[str],
+    message: str,
+) -> str | None:
+    if _get_task_depends(config, task_name) == expected:
         return None
     return message
 

@@ -370,15 +370,17 @@ requirements:
   title: Rust Target Cache Discipline
   description: 'Local Rust build and test tasks MUST share a bounded target root,
 
-    keep the default ugoite-core local build path incremental, and expose
+    keep the default ugoite-core local build path incremental, reuse one
 
-    explicit clean rebuild/cleanup commands when stale artifacts need a
+    editable ugoite-core build inside root `mise run test` before backend and
 
-    destructive reset. Rust CI MUST use the same shared target root so
+    ugoite-core test execution, and expose explicit clean rebuild/cleanup
 
-    repeated ugoite-core and ugoite-cli development does not balloon
+    commands when stale artifacts need a destructive reset. Rust CI MUST use
 
-    target caches into tens of gigabytes.
+    the same shared target root so repeated ugoite-core and ugoite-cli
+
+    development does not balloon target caches into tens of gigabytes.
 
     '
   related_spec:
