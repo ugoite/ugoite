@@ -65,6 +65,20 @@ test.describe("Smoke Tests", () => {
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
+	test("REQ-OPS-015: browser mock-oauth login reaches the spaces page", async ({ browser }) => {
+		const context = await browser.newContext();
+		const page = await context.newPage();
+
+		try {
+			await page.goto("/login");
+			await page.getByRole("button", { name: "Continue with Mock OAuth" }).click();
+			await expect(page).toHaveURL(/\/spaces$/);
+			await expect(page.getByText("Available Spaces")).toBeVisible();
+		} finally {
+			await context.close();
+		}
+	});
+
 	test("GET /spaces returns list", async ({ request }) => {
 		const res = await request.get(getBackendUrl("/spaces"));
 		expect(res.ok()).toBeTruthy();

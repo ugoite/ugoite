@@ -93,10 +93,16 @@ REQUIRED_BACKEND_BUILD_CONTEXTS = {
 REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
-    "Check root placeholder artifacts",
+    "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
+    "scripts/check-root-artifact-hygiene.sh",
+    "node_modules/",
+    "target/",
+    "1 MiB",
+]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
@@ -251,35 +257,36 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "manual-totp",
     "mock-oauth",
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "oathtool",
-    "derive a deterministic bearer token",
+    "/login",
+    "ugoite auth login",
+    "signed bearer token",
     "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
-    "UGOITE_DEV_AUTH_MODE=manual-totp",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
     "Local Dev Auth/Login",
+    "/login",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
-    "| UGOITE_DEV_TOTP_CODE |",
-    "| UGOITE_DEV_MANUAL_TOKEN |",
-    "| UGOITE_DEV_MOCK_OAUTH_TOKEN |",
+    "| UGOITE_DEV_USER_ID |",
+    "| UGOITE_DEV_AUTH_FORCE_LOGIN |",
+    "| UGOITE_DEV_2FA_SECRET |",
 }
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
-    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"',
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
+    "UGOITE_DEV_SIGNING_SECRET",
+    "UGOITE_DEV_SIGNING_KID",
     "path.chmod(0o600)",
-    "require_working_oathtool",
-    'announce_mode "automatic"',
     'announce_mode "manual-totp"',
     'announce_mode "mock-oauth"',
-    "manual-totp mode requires one of:",
+    "Local dev username:",
+    "Current 2FA code:",
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
@@ -566,8 +573,13 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
     missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
     python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
     leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS,
+        "ci-cd spec must document the root artifact hygiene guard",
+    )
 
-    if missing_hooks or missing_steps or leaked_steps:
+    if missing_hooks or missing_steps or leaked_steps or spec_detail:
         details: list[str] = []
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
@@ -577,6 +589,8 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        if spec_detail:
+            details.append(spec_detail)
         raise AssertionError("; ".join(details))
 
 
@@ -692,8 +706,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 core_mise,
                 "build",
+                "uv run maturin develop",
+                "ugoite-core build task must build the editable Rust extension",
+            ),
+            _require_task_excludes(
+                core_mise,
+                "build",
                 "cargo clean -p ugoite-core",
-                "ugoite-core build task must clean package-local Rust artifacts",
+                "ugoite-core build task must stay incremental by default",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "uv run maturin develop",
+                "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
             _require_task_contains(
                 cli_mise,
@@ -746,8 +778,15 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             ),
             _require_file_contains(
                 README_PATH,
-                ["mise run cleanup:rust-targets"],
-                "README must document cleanup:rust-targets",
+                [
+                    "mise run cleanup:rust-targets",
+                    "mise run //ugoite-core:build:clean",
+                    "mise run //ugoite-cli:test:clean",
+                ],
+                (
+                    "README must document cleanup:rust-targets and package-local "
+                    "clean rebuild/test commands"
+                ),
             ),
         ]
         if detail is not None
