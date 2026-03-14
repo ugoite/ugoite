@@ -40,28 +40,33 @@ impl Default for EndpointConfig {
 }
 
 pub fn config_path() -> PathBuf {
-    if let Ok(p) = std::env::var("UGOITE_CLI_CONFIG_PATH") {
-        if !p.trim().is_empty() {
-            return PathBuf::from(p);
-        }
+    if let Some(path) = non_empty_env_path("UGOITE_CLI_CONFIG_PATH") {
+        return path;
     }
-    if let Ok(h) = std::env::var("UGOITE_CONFIG_HOME") {
-        if !h.trim().is_empty() {
-            return PathBuf::from(h).join("ugoite").join("cli-endpoints.json");
-        }
+    if let Some(config_home) = non_empty_env_path("UGOITE_CONFIG_HOME") {
+        return config_home.join("ugoite").join("cli-endpoints.json");
     }
-    if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
-        if !x.trim().is_empty() {
-            return PathBuf::from(x).join("ugoite").join("cli-endpoints.json");
-        }
+    if let Some(xdg_config_home) = non_empty_env_path("XDG_CONFIG_HOME") {
+        return xdg_config_home.join("ugoite").join("cli-endpoints.json");
     }
     dirs_home().join(".ugoite").join("cli-endpoints.json")
 }
 
+fn non_empty_env_path(key: &str) -> Option<PathBuf> {
+    std::env::var(key).ok().and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(value))
+        }
+    })
+}
+
 fn dirs_home() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+    match std::env::var("HOME") {
+        Ok(home) => PathBuf::from(home),
+        Err(_) => PathBuf::from("."),
+    }
 }
 
 pub fn load_config() -> EndpointConfig {
@@ -69,8 +74,9 @@ pub fn load_config() -> EndpointConfig {
     if !path.exists() {
         return EndpointConfig::default();
     }
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
+    let read_text = std::fs::read_to_string(&path);
+    let text = match read_text {
+        Ok(text) => text,
         Err(_) => return EndpointConfig::default(),
     };
     serde_json::from_str(&text).unwrap_or_default()
@@ -81,7 +87,8 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let text = serde_json::to_string_pretty(config)?;
+    let text =
+        serde_json::to_string_pretty(config).expect("EndpointConfig serialization is infallible");
     std::fs::write(&path, text)?;
     Ok(path)
 }
@@ -89,18 +96,27 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
 pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     use opendal::services::Fs;
     let trimmed = path.trim_end_matches('/');
-    let mut root = if trimmed.is_empty() { "/" } else { trimmed };
-    if let Some(local_root) = root.strip_prefix("file://") {
-        root = if local_root.is_empty() {
+    let root = if let Some(local_root) = path.strip_prefix("file://") {
+        let local_root = local_root.trim_end_matches('/');
+        if local_root.is_empty() {
             "/"
         } else {
             local_root
-        };
-    } else if root.contains("://") {
-        bail!("unsupported storage uri in core mode: {root}");
+        }
+    } else if path.contains("://") {
+        bail!("unsupported storage uri in core mode: {path}");
+    } else if trimmed.is_empty() {
+        "/"
+    } else {
+        trimmed
+    };
+    if root.contains('\0') {
+        bail!("unsupported local path contains null byte: {path:?}");
     }
     let builder = Fs::default().root(root);
-    Ok(opendal::Operator::new(builder)?.finish())
+    opendal::Operator::new(builder)
+        .map(|operator| operator.finish())
+        .map_err(Into::into)
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
@@ -135,8 +151,7 @@ pub fn base_url(config: &EndpointConfig) -> Option<String> {
 }
 
 pub fn print_json<T: serde::Serialize>(value: &T) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).unwrap_or_default()
-    );
+    let pretty_json = serde_json::to_string_pretty(value);
+    let rendered = pretty_json.unwrap_or_default();
+    println!("{rendered}");
 }

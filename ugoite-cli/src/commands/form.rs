@@ -102,22 +102,14 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             let ws = space_ws_path(&root, &space_id);
             ugoite_core::form::upsert_form(&op, &ws, &form_def).await?;
             if let Some(s) = strategies {
-                let v: serde_json::Value = serde_json::from_str(&s)?;
-                let strats: Vec<String> = v
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|x| x.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                if !strats.is_empty() {
+                let strategies_value: serde_json::Value = serde_json::from_str(&s)?;
+                if !strategies_value.is_null() {
                     let integrity = RealIntegrityProvider::from_space(&op, &space_id).await?;
                     ugoite_core::form::migrate_form(
                         &op,
                         &ws,
                         &form_def,
-                        Some(serde_json::json!(strats)),
+                        Some(strategies_value),
                         &integrity,
                     )
                     .await?;

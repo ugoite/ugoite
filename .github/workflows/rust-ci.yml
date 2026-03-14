@@ -24,7 +24,7 @@ jobs:
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
           toolchain: 1.93.0
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
@@ -111,6 +111,18 @@ jobs:
         working-directory: ./ugoite-cli
         run: cargo clippy --no-default-features -- -D warnings
 
-      - name: Run tests (cli)
+      - name: Enforce Rust coverage floor (cli)
         working-directory: ./ugoite-cli
-        run: cargo test --no-default-features
+        env:
+          CARGO_INCREMENTAL: 0
+          CARGO_PROFILE_DEV_DEBUG: 0
+          CARGO_PROFILE_TEST_DEBUG: 0
+          CARGO_BUILD_JOBS: 1
+          RUSTFLAGS: -C debuginfo=0
+        run: |
+          cargo clean -p ugoite-cli
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1 || {
+            cargo llvm-cov report --text --show-missing-lines
+            exit 1
+          }
