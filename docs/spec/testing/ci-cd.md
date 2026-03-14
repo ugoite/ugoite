@@ -14,13 +14,15 @@
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
-| All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate code-quality workflow health while excluding release/publish automation |
+| All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate curated code-quality workflow health while excluding release/publish automation and deprecated wait actions |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
-| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with CLI release assets |
+| Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
-resolve inside the container build.
+resolve inside the container build. Docker Build CI and Release Publish share
+the reusable `.github/workflows/docker-images.yml` image-definition contract so
+release publishing cannot silently drift from CI-validated build contexts.
 
 ## Python CI
 
@@ -180,19 +182,22 @@ npm run prepare
 
 This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
 
+The root `mise.toml` also declares explicit `[monorepo].config_roots` for package-level task configs so top-level `mise run dev`, `mise run test`, and `mise run e2e` stay warning-free on current mise releases.
+
 ## Release Process
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **All Tests Status** must stay focused on code-quality workflows and exclude release/publish automation (`Release CI`, `Release Publish`) so auxiliary release failures do not turn branch health red.
+3. **All Tests Status** must stay focused on curated code-quality workflows, exclude release/publish automation (`Release CI`, `Release Publish`), and avoid deprecated wait-action runtimes so auxiliary release failures and platform warnings do not turn branch health red.
 4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
 5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
 6. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
 7. **Human review** must confirm the planned release scope before publishing.
 8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
 9. **Stable/alpha/beta channels** are validated by channel-specific SemVer patterns at publish time.
-10. **Release Publish** creates a draft GitHub Release, builds CLI archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, and `aarch64-apple-darwin` through `.github/workflows/cli-release-binaries.yml`, uploads those assets plus `.sha256` checksum files, and then finalizes the release.
-11. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository.
+10. **Release Publish** authenticates to GHCR with `GITHUB_TOKEN`, pushes `ghcr.io/ugoite/ugoite/backend` and `ghcr.io/ugoite/ugoite/frontend`, keeps tags aligned to the requested version (`<semver>` plus `latest`/`stable` for stable releases, or `<channel>` for alpha/beta), creates a draft GitHub Release, builds CLI archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, and `aarch64-apple-darwin` through `.github/workflows/cli-release-binaries.yml`, uploads those assets plus `.sha256` checksum files, and then finalizes the release.
+11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can pull and run release images without rebuilding from source.
+12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository.
 
 ## Environment Variables
 

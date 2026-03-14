@@ -128,6 +128,9 @@ requirements:
     - file: e2e/ui-pages-screenshots.test.ts
       tests:
       - 'REQ-E2E-004: export screenshots for all UI page specs'
+    - file: e2e/public-pages.test.ts
+      tests:
+      - 'REQ-E2E-004: public pages avoid auth-only portable preference requests'
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
