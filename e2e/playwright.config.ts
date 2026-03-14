@@ -4,8 +4,7 @@ const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 const e2eTestTimeoutEnv = process.env.E2E_TEST_TIMEOUT_MS;
 const ciReporter = process.env.PLAYWRIGHT_CI_REPORTER;
 const junitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE ?? "test-results/junit.xml";
-const e2eAuthBearerToken = process.env.E2E_AUTH_BEARER_TOKEN;
-if (!e2eAuthBearerToken || !e2eAuthBearerToken.trim()) {
+if (!(process.env.E2E_AUTH_BEARER_TOKEN?.trim())) {
 	throw new Error("E2E_AUTH_BEARER_TOKEN is required");
 }
 const e2eTestTimeoutMs =
@@ -28,9 +27,6 @@ export default defineConfig({
 	reporter,
 	use: {
 		baseURL: frontendUrl,
-		extraHTTPHeaders: {
-			Authorization: `Bearer ${e2eAuthBearerToken}`,
-		},
 		trace: "retain-on-failure",
 	},
 });
