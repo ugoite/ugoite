@@ -11,6 +11,7 @@
 
 set -e
 
+TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -85,11 +86,23 @@ done
 
 echo ""
 echo "=========================================="
-echo "Running E2E tests..."
+echo "Running E2E tests (type: $TEST_TYPE)..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
-cmd=(npm run test --)
+case "$TEST_TYPE" in
+  smoke)
+    cmd=(npm run test:smoke --)
+    ;;
+  full)
+    cmd=(npm run test --)
+    ;;
+  *)
+    echo "Unknown test type: $TEST_TYPE"
+    echo "Usage: ./e2e/scripts/run-e2e-compose.sh [smoke|full]"
+    exit 1
+    ;;
+esac
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
   cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
 fi

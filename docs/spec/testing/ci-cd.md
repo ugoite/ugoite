@@ -8,7 +8,7 @@
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
-| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
+| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Path-aware smoke/full E2E with merge-queue full coverage |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push/PR for devcontainer & setup inputs, merge queue | Build/smoke devcontainer with authenticated pulls and path-filtered setup contracts |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
@@ -23,6 +23,13 @@ Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 resolve inside the container build. Docker Build CI and Release Publish share
 the reusable `.github/workflows/docker-images.yml` image-definition contract so
 release publishing cannot silently drift from CI-validated build contexts.
+
+E2E CI selects a deterministic tier before running tests. `merge_group` and
+pushes to `main` always run the full compose-backed suite. Pull requests only
+drop to the smoke tier when every changed file stays inside docs/docsite
+metadata paths (`docs/**`, `docsite/**`, `README.md`, `LICENSE`, `AGENTS.md`,
+and `.github/ISSUE_TEMPLATE/**`); any application or workflow-input change
+keeps the full suite.
 
 ## Python CI
 
@@ -78,11 +85,16 @@ jobs:
 
 ```yaml
 jobs:
+  select-tier:
+    - merge_group / push => full
+    - pull_request with docs/docsite-only paths => smoke
+    - all other pull_request changes => full
   e2e:
+    - build backend/frontend images
     - Start backend (background)
     - Start frontend (background)
     - Wait for servers
-    - cd e2e && npm run test
+    - bash e2e/scripts/run-e2e-compose.sh "${{ needs.select-tier.outputs.test_type }}"
     timeout: 30 minutes
 ```
 
