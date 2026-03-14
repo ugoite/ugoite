@@ -765,9 +765,9 @@ requirements:
 
     portable helpers have already moved and why heavier logic still remains in
 
-    `ugoite-core`.
+     `ugoite-core`.
 
-    '
+     '
   related_spec:
   - architecture/future-proofing.md
   priority: medium
@@ -810,3 +810,42 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_021_frontend_coverage_gate_is_explicit
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-022
+  title: Path-Aware Pull Request E2E Tiering
+  description: 'E2E CI MUST deterministically select a lighter smoke tier for
+
+    pull requests that only change low-risk docs/docsite metadata paths, while
+
+    `merge_group` and pushes to `main` MUST continue to run the full E2E suite.
+
+    The tiering rule MUST be visible in `.github/workflows/e2e-ci.yml` and
+
+    documented in `docs/spec/testing/ci-cd.md` so reviewers can audit when full
+
+    integration coverage is still required.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue
