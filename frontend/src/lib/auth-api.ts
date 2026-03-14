@@ -70,7 +70,10 @@ export const authApi = {
 	},
 
 	async loginWithTotp(username: string, totpCode: string): Promise<DevAuthLoginResponse> {
-		const loginPayload = { username, ["totp_code"]: totpCode };
+		const loginPayload = Object.fromEntries([
+			["username", username],
+			["totp_code", totpCode],
+		]);
 		const response = await apiFetch("/auth/dev/login", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },

@@ -66,8 +66,7 @@ describe("authApi", () => {
 			http.get("http://localhost:3000/api/auth/dev/config", () =>
 				HttpResponse.json(
 					{
-						detail:
-							"Local development auth endpoints are only available from loopback clients.",
+						detail: "Local development auth endpoints are only available from loopback clients.",
 					},
 					{ status: 403, statusText: "Forbidden" },
 				),
