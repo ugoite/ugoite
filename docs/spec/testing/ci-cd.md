@@ -36,6 +36,20 @@ jobs:
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
 
+## YAML / Workflow and Repository Artifact Hygiene
+
+```yaml
+jobs:
+  ci:
+    - bash scripts/check-root-artifact-hygiene.sh
+    - yamllint ...
+    - actionlint
+```
+
+The root artifact hygiene gate fails if `git ls-files -ci --exclude-standard`
+returns any tracked paths that still match repository ignore rules, so generated
+artifacts cannot quietly remain source-controlled.
+
 ## Rust CI
 
 ```yaml
@@ -170,7 +184,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
-- **Root artifact hygiene**: Blocks root-level files with placeholder-only content
+- **Root artifact hygiene**: Blocks placeholder-only files and tracked artifacts that still match ignore rules
 - **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
 
 Conventional Commit enforcement (local):

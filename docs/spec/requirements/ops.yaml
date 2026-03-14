@@ -167,9 +167,11 @@ requirements:
   title: YAML and Workflow Lint Gates
   description: 'YAML specification/configuration files and GitHub Actions workflows
 
-    MUST be linted in both pre-commit and CI so regressions are detected before
+    MUST be linted in both pre-commit and CI, and the same local/CI gate MUST
 
-    merge.
+    fail if tracked files still match repository ignore rules so generated
+
+    artifacts do not silently remain in Git history.
 
     '
   related_spec:

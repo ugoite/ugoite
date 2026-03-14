@@ -1,6 +1,6 @@
 target
 ugoite_core/*.so
-ugoite_core/_ugoite_core.*
+ugoite_core/*.pyd
 
 # Python-generated files
 __pycache__/
