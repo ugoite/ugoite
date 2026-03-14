@@ -17,6 +17,7 @@ REQ-OPS-018: CLI release binaries and install path must stay documented and wire
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
 REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 """
 
 from __future__ import annotations
@@ -1383,6 +1384,68 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> None:
+    """REQ-OPS-022: E2E CI must tier PRs while keeping merge-queue coverage full."""
+    workflow = _load_yaml_base_mapping(E2E_CI_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "e2e-ci.yml must define jobs"
+        raise TypeError(message)
+
+    required_jobs = {
+        "build-images": jobs.get("build-images"),
+        "select-tier": jobs.get("select-tier"),
+        "e2e": jobs.get("e2e"),
+    }
+    missing_jobs = sorted(
+        name for name, value in required_jobs.items() if not isinstance(value, dict)
+    )
+
+    workflow_text = E2E_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    workflow_fragments = {
+        'event_name in {"merge_group", "push"}',
+        "docs/**",
+        "docsite/**",
+        (
+            "bash e2e/scripts/run-e2e-compose.sh "
+            '"${{ needs.select-tier.outputs.test_type }}"'
+        ),
+        'run-e2e-compose.sh "${{ needs.select-tier.outputs.test_type }}"',
+    }
+    missing_workflow_fragments = sorted(
+        fragment for fragment in workflow_fragments if fragment not in workflow_text
+    )
+
+    doc_fragments = {
+        "Pull requests only",
+        "`merge_group` and",
+        "pushes to `main` always run the full compose-backed suite.",
+        "pull_request with docs/docsite-only paths => smoke",
+        "| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue |",
+    }
+    missing_doc_fragments = sorted(
+        fragment for fragment in doc_fragments if fragment not in ci_cd_text
+    )
+
+    details: list[str] = []
+    if missing_jobs:
+        details.append("e2e-ci missing jobs: " + ", ".join(missing_jobs))
+    if missing_workflow_fragments:
+        details.append(
+            "e2e-ci missing tiering fragments: "
+            + ", ".join(missing_workflow_fragments),
+        )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing E2E tiering fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
     if details:
         raise AssertionError("; ".join(details))
 
