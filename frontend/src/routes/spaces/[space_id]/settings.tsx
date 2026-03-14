@@ -17,9 +17,7 @@ const toMessage = (value: unknown): string => {
 	return "";
 };
 
-const authHintFromError = (
-	value: unknown,
-): { message: string; showGuide: boolean } | null => {
+const authHintFromError = (value: unknown): { message: string; showGuide: boolean } | null => {
 	const message = toMessage(value).toLowerCase();
 	if (
 		message.includes("401") ||
@@ -28,7 +26,7 @@ const authHintFromError = (
 	) {
 		return {
 			message:
-				"Authentication required. Re-run mise run dev if you need to refresh local login.",
+				"Authentication required. Open /login and sign in again for this local development session.",
 			showGuide: true,
 		};
 	}
@@ -144,16 +142,13 @@ export default function SpaceSettingsRoute() {
 
 				<div class="ui-card">
 					<p class="text-sm ui-muted">
-						Localhost and remote mode both require authenticated sessions. Follow{" "}
-						<a
-							href={localDevAuthGuideUrl}
-							target="_blank"
-							rel="noopener"
-							class="hover:underline"
-						>
+						Localhost and remote mode both require authenticated sessions. Start the dev stack with{" "}
+						<code>mise run dev</code>, sign in at <code>/login</code> or through the CLI auth
+						command, and follow{" "}
+						<a href={localDevAuthGuideUrl} target="_blank" rel="noopener" class="hover:underline">
 							Local Dev Auth/Login
 						</a>{" "}
-						for the canonical <code>mise run dev</code> workflow and token refresh steps.
+						for the canonical workflow and local auth troubleshooting steps.
 					</p>
 				</div>
 

@@ -112,13 +112,21 @@ describe("/spaces", () => {
 		});
 
 		expect(
-			screen.getByText(
-				"Authentication required. Re-run mise run dev if you need to refresh local login.",
-			),
+			screen.getByText("Authentication required. Open /login to start a local browser session."),
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Local Dev Auth/Login" })).toHaveAttribute(
 			"href",
 			localDevAuthGuideUrl,
 		);
+	});
+
+	it("REQ-OPS-015: redirects unauthenticated users to the explicit login route", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("401 Unauthorized"));
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(navigateMock).toHaveBeenCalledWith("/login?next=%2Fspaces");
+		});
 	});
 });

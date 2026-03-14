@@ -36,6 +36,21 @@ jobs:
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
 
+## YAML / Workflow and Repository Artifact Hygiene
+
+```yaml
+jobs:
+  ci:
+    - bash scripts/check-root-artifact-hygiene.sh
+    - yamllint ...
+    - actionlint
+```
+
+The root artifact hygiene gate blocks tracked files under generated dependency
+or build directories such as `node_modules/` and `target/`, and it rejects
+tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+`scripts/check-root-artifact-hygiene.sh`.
+
 ## Rust CI
 
 ```yaml
@@ -139,10 +154,12 @@ jobs:
     - cd ugoite-cli && cargo test --no-default-features
 ```
 
-Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`,
-clean package-specific crate artifacts before rebuild/test, and expose
-`mise run cleanup:rust-targets` to remove both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow unexpectedly.
+Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
+The default `ugoite-core` build path stays incremental, `mise run
+//ugoite-core:build:clean` provides a package-local destructive rebuild when the
+editable extension is stale, and `mise run cleanup:rust-targets` removes both
+the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
+path when artifacts grow unexpectedly.
 
 ## SBOM and Supply Chain CI
 

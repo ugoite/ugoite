@@ -92,7 +92,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (backend + frontend + docsite — `automatic` auth mode is the default):
+Start development (backend + frontend + docsite — `manual-totp` is the default local auth mode):
 
 ```bash
 mise run dev
@@ -124,12 +124,39 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
+If only the editable `ugoite-core` extension looks stale, use a package-local
+clean rebuild without wiping the entire shared target tree:
+
+```bash
+mise run //ugoite-core:build:clean
+```
+
 See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the
-canonical `mise run dev` workflow, including force-refreshing the local token,
-switching between `automatic` / `manual-totp` / `mock-oauth`, and running only
-`dev:backend`, `dev:frontend`, or `dev:docsite` when needed. See
+canonical `mise run dev` workflow, including the explicit `/login` browser
+flow, refreshing the local login context, supported auth modes, and the
+`dev:backend`, `dev:frontend`, or `dev:docsite` shortcuts when needed. See
 [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind
 `mise run seed`.
+
+Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
+When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
+
+Details:
+
+Backend (dev) example:
+
+```bash
+cd backend
+uv run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend (dev) example:
+
+```bash
+cd frontend
+bun install
+bun dev
+```
 
 ---
 
