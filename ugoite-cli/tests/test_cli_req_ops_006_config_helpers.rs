@@ -197,6 +197,17 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
 /// REQ-OPS-006: endpoint helpers must stay covered for path, URL, and JSON output handling.
 #[test]
 fn test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path() {
+    struct BrokenSerialize;
+
+    impl serde::Serialize for BrokenSerialize {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(serde::ser::Error::custom("broken serializer"))
+        }
+    }
+
     assert_eq!(
         space_ws_path("/unused/root", "demo-space"),
         "spaces/demo-space"
@@ -230,4 +241,5 @@ fn test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path() {
     );
 
     print_json(&serde_json::json!({"ok": true}));
+    print_json(&BrokenSerialize);
 }
