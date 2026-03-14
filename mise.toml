@@ -16,12 +16,12 @@ BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA = "true"
 BROWSERSLIST_IGNORE_OLD_DATA = "true"
 
 [tools]
-biome = "latest"
+biome = "2.3.15"
 bun = "1.3.8"
 node = "lts"
 python = "3.12"
 rust = "1.93.0"
-uv = "latest"
+uv = "0.10.10"
 
 [tasks.setup]
 run = [
@@ -51,7 +51,7 @@ description = "Run docsite dev server only"
 depends = ["//docsite:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
+depends = ["//backend:test", "//frontend:test:coverage", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
 description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend, frontend, ugoite-cli)"
 
 [tasks."test:docs"]
