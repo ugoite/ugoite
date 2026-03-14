@@ -93,10 +93,16 @@ REQUIRED_BACKEND_BUILD_CONTEXTS = {
 REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
-    "Check root placeholder artifacts",
+    "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
+    "scripts/check-root-artifact-hygiene.sh",
+    "node_modules/",
+    "target/",
+    "1 MiB",
+]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
@@ -251,16 +257,18 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "manual-totp",
     "mock-oauth",
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "oathtool",
-    "derive a deterministic bearer token",
+    "/login",
+    "ugoite auth login",
+    "signed bearer token",
     "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "Local Dev Auth/Login",
     "canonical `mise run dev` workflow",
+    "/login",
 }
 FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev",
@@ -272,21 +280,21 @@ LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL = (
 )
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
-    "| UGOITE_DEV_TOTP_CODE |",
-    "| UGOITE_DEV_MANUAL_TOKEN |",
-    "| UGOITE_DEV_MOCK_OAUTH_TOKEN |",
+    "| UGOITE_DEV_USER_ID |",
+    "| UGOITE_DEV_AUTH_FORCE_LOGIN |",
+    "| UGOITE_DEV_2FA_SECRET |",
 }
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
-    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"',
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
+    "UGOITE_DEV_SIGNING_SECRET",
+    "UGOITE_DEV_SIGNING_KID",
     "path.chmod(0o600)",
-    "require_working_oathtool",
-    'announce_mode "automatic"',
     'announce_mode "manual-totp"',
     'announce_mode "mock-oauth"',
-    "manual-totp mode requires one of:",
+    "Local dev username:",
+    "Current 2FA code:",
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
@@ -573,8 +581,13 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
     missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
     python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
     leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS,
+        "ci-cd spec must document the root artifact hygiene guard",
+    )
 
-    if missing_hooks or missing_steps or leaked_steps:
+    if missing_hooks or missing_steps or leaked_steps or spec_detail:
         details: list[str] = []
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
@@ -584,6 +597,8 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        if spec_detail:
+            details.append(spec_detail)
         raise AssertionError("; ".join(details))
 
 
@@ -699,8 +714,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 core_mise,
                 "build",
+                "uv run maturin develop",
+                "ugoite-core build task must build the editable Rust extension",
+            ),
+            _require_task_excludes(
+                core_mise,
+                "build",
                 "cargo clean -p ugoite-core",
-                "ugoite-core build task must clean package-local Rust artifacts",
+                "ugoite-core build task must stay incremental by default",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "uv run maturin develop",
+                "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
             _require_task_contains(
                 cli_mise,
@@ -862,21 +895,27 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
 
 
 def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
-    """REQ-OPS-015: Local dev auth docs must stay canonical and cover explicit manual modes."""
+    """REQ-OPS-015: Local dev auth docs stay canonical and cover manual modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
-    api_storage_text = (REPO_ROOT / "docsite" / "src" / "pages" / "app" / "api-storage" / "index.astro").read_text(
-        encoding="utf-8",
-    )
-    frontend_docsite_text = (REPO_ROOT / "docsite" / "src" / "pages" / "app" / "frontend" / "index.astro").read_text(
-        encoding="utf-8",
-    )
-    spaces_index_text = (REPO_ROOT / "frontend" / "src" / "routes" / "spaces" / "index.tsx").read_text(
-        encoding="utf-8",
-    )
+    api_storage_text = (
+        REPO_ROOT / "docsite" / "src" / "pages" / "app" / "api-storage" / "index.astro"
+    ).read_text(encoding="utf-8")
+    frontend_docsite_text = (
+        REPO_ROOT / "docsite" / "src" / "pages" / "app" / "frontend" / "index.astro"
+    ).read_text(encoding="utf-8")
+    spaces_index_text = (
+        REPO_ROOT / "frontend" / "src" / "routes" / "spaces" / "index.tsx"
+    ).read_text(encoding="utf-8")
     space_settings_text = (
-        REPO_ROOT / "frontend" / "src" / "routes" / "spaces" / "[space_id]" / "settings.tsx"
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "routes"
+        / "spaces"
+        / "[space_id]"
+        / "settings.tsx"
     ).read_text(encoding="utf-8")
 
     details: list[str] = []
@@ -909,8 +948,8 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     )
     if duplicated_readme:
         details.append(
-            "README must point to the canonical guide instead of duplicating auth commands: "
-            + ", ".join(duplicated_readme),
+            "README must point to the canonical guide instead of duplicating auth "
+            "commands: " + ", ".join(duplicated_readme),
         )
 
     missing_env_matrix = sorted(
@@ -932,7 +971,8 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     missing_canonical_pointers = sorted(
         name
         for name, text in canonical_pointer_sources.items()
-        if "Local Dev Auth/Login" not in text or LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL not in text
+        if "Local Dev Auth/Login" not in text
+        or LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL not in text
     )
     if missing_canonical_pointers:
         details.append(
@@ -1589,6 +1629,18 @@ def _require_task_contains(
     if any(expected in command for command in commands):
         return None
     return message
+
+
+def _require_task_excludes(
+    config: dict[str, object],
+    task_name: str,
+    forbidden: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(forbidden in command for command in commands):
+        return message
+    return None
 
 
 def _require_exact_task_run(

@@ -5,25 +5,29 @@ This is the canonical guide for the auth-aware `mise run dev` workflow.
 README/docsite/developer-facing UI should link here instead of repeating
 mode-specific auth steps inline.
 
-The default path remains automatic, but you can now opt into explicit manual
-development auth modes when you want to debug login behavior instead of letting
-the helper silently bootstrap everything for you.
+The helper now prepares a **login context**, not an already-authenticated
+session. The browser and CLI must sign in explicitly after startup, so local
+development follows the same mental model as production: authenticate first,
+receive a bearer token second.
+
+The default path remains `manual-totp`, and you can opt into `mock-oauth`
+when you want to exercise an explicit OAuth-style login flow. In every case,
+the browser and CLI must sign in explicitly after startup.
 
 ## 1) Auth modes at a glance
 
 | Mode | How to enable | What it does |
 |---|---|---|
-| `automatic` (default) | `mise run dev` | Uses `oathtool`, refreshes a cached local token, and exports matching backend/frontend bearer env vars automatically. |
-| `manual-totp` | `UGOITE_DEV_AUTH_MODE=manual-totp ... mise run dev` | Skips automatic token generation and expects an explicit developer-provided TOTP step that is used locally to derive a deterministic bearer token for dev-only flows. |
-| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth ... mise run dev` | Uses a deterministic mock OAuth-style bearer token so you can intentionally exercise authenticated UI/API flows without the automatic TOTP bootstrap path. |
+| `manual-totp` (default) | `mise run dev` | Prompts for a local username and validates a current 2FA code in the terminal, then exposes a browser/CLI login flow at `/login` or `ugoite auth login`. |
+| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit mock OAuth browser/CLI login path after the stack is running. |
 
 Each backend/frontend dev process logs the active mode at startup, for example:
 
 ```text
-Local dev auth mode: manual-totp (token_source=UGOITE_DEV_TOTP_CODE)
+Local dev auth mode: manual-totp (explicit username + 2FA login)
 ```
 
-## 2) Install oathtool for the automatic and manual TOTP flows
+## 2) Install `oathtool` for manual TOTP flows
 
 ```bash
 sudo apt-get update && sudo apt-get install -y oathtool
@@ -46,109 +50,110 @@ Override it when needed:
 export UGOITE_DEV_2FA_SECRET="YOUR_BASE32_SECRET"
 ```
 
-## 4) Automatic mode (default)
+## 4) Start the dev stack
 
 ```bash
 mise run dev
 ```
 
-The frontend dev server waits for `http://localhost:8000/health` before it starts,
-so authenticated `/api/*` requests such as the spaces list do not hit the frontend
-proxy before the backend is ready during local startup.
+The helper waits for `http://localhost:8000/health` before the frontend dev
+server starts, so `/api/*` requests do not race the backend startup.
 
-In `automatic` mode, the helper:
+On the first run (or after `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`), the
+terminal prompts for:
 
-- generates a TOTP code using `oathtool`
-- creates or refreshes a local bearer token
-- stores it in `~/.ugoite/dev-auth.json` with local-user-only (`0600`) permissions
-- exports matching `UGOITE_BOOTSTRAP_BEARER_TOKEN` and `UGOITE_AUTH_BEARER_TOKEN`
+1. a local development username
+2. a current 2FA code
 
-Force a fresh automatic login:
+The helper validates that code against `UGOITE_DEV_2FA_SECRET`, then stores the
+resulting **login context** in `~/.ugoite/dev-auth.json` with owner-only
+permissions (`0600`). The file contains the selected mode, username, and local
+signing material for dev login sessions. It does **not** store an authenticated
+bearer token and it does **not** start the app already logged in.
+
+Force a fresh prompt:
 
 ```bash
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-Optional automatic-mode overrides:
+Optional startup overrides:
 
 ```bash
-export UGOITE_DEV_AUTH_FILE="$HOME/.ugoite/dev-auth.json"
-export UGOITE_DEV_AUTH_TTL_SECONDS=43200
 export UGOITE_DEV_USER_ID="dev-local-user"
+export UGOITE_DEV_AUTH_TTL_SECONDS=43200
 ```
 
-## 5) Manual TOTP mode
+## 5) Browser login (`manual-totp`)
 
-Use `manual-totp` when you want to keep the dev secret and `oathtool` flow
-visible and under your control instead of letting the helper refresh the cached
-automatic token for you.
+After the stack is running, open:
 
-Preferred flow:
+```text
+http://localhost:3000/login
+```
+
+Then:
+
+1. enter the same username you confirmed in the terminal
+2. enter the current 2FA code from your authenticator (or from `oathtool`)
+3. submit the form
+
+Example TOTP generation:
 
 ```bash
-export UGOITE_DEV_AUTH_MODE=manual-totp
-export UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}")"
-mise run dev
+oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 ```
 
-Advanced override if you want to pick the bearer token yourself:
+The browser receives a signed bearer token only **after** the login form is
+submitted successfully. The frontend stores that token in a local session cookie
+for the `/api/*` proxy, so protected pages can render normally after login.
+
+## 6) CLI login (`manual-totp`)
+
+Configure the CLI to target the backend directly:
 
 ```bash
-export UGOITE_DEV_AUTH_MODE=manual-totp
-export UGOITE_DEV_MANUAL_TOKEN="dev-manual-auth-token"
-mise run dev
+cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 ```
 
-`manual-totp` also respects pre-exported matching auth variables:
+Then log in explicitly:
 
 ```bash
-export UGOITE_DEV_AUTH_MODE=manual-totp
-export UGOITE_AUTH_BEARER_TOKEN="dev-manual-auth-token"
-export UGOITE_BOOTSTRAP_BEARER_TOKEN="dev-manual-auth-token"
-mise run dev
+cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
 ```
 
-Notes:
+The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
+shell. That token is minted only after the backend validates the username + 2FA
+input.
 
-- The current local dev stack does not call a separate auth server. Manual mode
-  still works by exporting the bearer token into both the backend bootstrap path
-  and the frontend proxy path.
-- `UGOITE_DEV_TOTP_CODE` is the explicit manual step that keeps the CLI
-  `oathtool` invocation visible when you want to debug or demonstrate the local
-  2FA workflow.
-- The current `manual-totp` implementation does not validate that code against a
-  separate auth service or re-check it against `UGOITE_DEV_2FA_SECRET`. It uses
-  the provided value locally to derive a deterministic bearer token for the dev
-  backend/frontend pair.
+## 7) Mock OAuth mode
 
-## 6) Mock OAuth mode
-
-Use `mock-oauth` when you want an explicit, reproducible login-like path without
-relying on the automatic `oathtool` bootstrap.
-
-```bash
-export UGOITE_DEV_AUTH_MODE=mock-oauth
-mise run dev
-```
-
-Optional overrides:
+Use `mock-oauth` when you want an explicit OAuth-style login path without
+pre-authenticating the stack at startup.
 
 ```bash
 export UGOITE_DEV_AUTH_MODE=mock-oauth
-export UGOITE_DEV_USER_ID="dev-oauth-user"
-export UGOITE_DEV_MOCK_OAUTH_TOKEN="mock-oauth-dev-token"
 mise run dev
 ```
 
-The default mock token is deterministic for the chosen `UGOITE_DEV_USER_ID`, so
-the backend and frontend dev tasks keep sharing the same token during one local
-session without needing a cached auth file.
+Browser flow:
 
-## 7) Verify auth locally
+1. open `http://localhost:3000/login`
+2. click **Continue with Mock OAuth**
 
-1. Open `http://localhost:3000`.
-2. Confirm API calls include `Authorization: Bearer <token>`.
-3. Check backend health (`/health` is intentionally unauthenticated):
+CLI flow:
+
+```bash
+cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
+cargo run -q -p ugoite-cli -- auth login --mock-oauth
+```
+
+## 8) Verify auth locally
+
+1. Open `http://localhost:3000/login`.
+2. Complete either the username + 2FA form or the mock OAuth button.
+3. Confirm protected pages such as `/spaces` load successfully.
+4. Check backend health (`/health` is intentionally unauthenticated):
 
 ```bash
 curl -i http://localhost:8000/health
@@ -156,7 +161,7 @@ curl -i http://localhost:8000/health
 
 Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
 
-## 8) Start one service at a time
+## 9) Start one service at a time
 
 Use the root `mise` tasks below when you want to keep the same auth-aware
 startup flow but only run one service in the foreground:

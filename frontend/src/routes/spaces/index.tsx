@@ -38,8 +38,7 @@ export default function SpacesIndexRoute() {
 			message.includes("unauthorized")
 		) {
 			return {
-				message:
-					"Authentication required. Re-run mise run dev if you need to refresh local login.",
+				message: "Authentication required. Open /login to start a local browser session.",
 				showGuide: true,
 			};
 		}
@@ -103,7 +102,7 @@ export default function SpacesIndexRoute() {
 			message.includes("unauthorized")
 		) {
 			setRedirected(true);
-			navigate("/");
+			navigate("/login?next=%2Fspaces");
 		}
 	});
 
