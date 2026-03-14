@@ -116,5 +116,9 @@ jobs:
           CARGO_BUILD_JOBS: 1
           RUSTFLAGS: -C debuginfo=0
         run: |
+          cargo clean -p ugoite-cli
           cargo llvm-cov clean --workspace
-          cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
+          cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1 || {
+            cargo llvm-cov report --text --show-missing-lines
+            exit 1
+          }
