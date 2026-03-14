@@ -31,13 +31,7 @@ vi.mock("@codemirror/state", () => {
 	return {
 		Compartment: FakeCompartment,
 		EditorState: {
-			create: ({
-				doc,
-				extensions = [],
-			}: {
-				doc: string;
-				extensions?: unknown[];
-			}) => ({
+			create: ({ doc, extensions = [] }: { doc: string; extensions?: unknown[] }) => ({
 				doc: {
 					toString: () => doc,
 					get length() {
@@ -79,7 +73,9 @@ vi.mock("@codemirror/view", () => {
 				this.state = state;
 				this.listeners = (state.extensions ?? [])
 					.filter(
-						(extension): extension is { type: "updateListener"; listener: typeof this.listeners[number] } =>
+						(
+							extension,
+						): extension is { type: "updateListener"; listener: (typeof this.listeners)[number] } =>
 							typeof extension === "object" &&
 							extension !== null &&
 							"type" in extension &&
@@ -151,11 +147,7 @@ describe("REQ-FE-036: SQL Query Editor", () => {
 		const onChange = vi.fn();
 
 		const result = render(() => (
-			<SqlQueryEditor
-				value={value()}
-				onChange={onChange}
-				schema={buildSqlSchema([])}
-			/>
+			<SqlQueryEditor value={value()} onChange={onChange} schema={buildSqlSchema([])} />
 		));
 
 		setValue("SELECT id FROM entries");
