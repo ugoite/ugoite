@@ -6,7 +6,7 @@
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
-| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
+| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -72,11 +72,15 @@ jobs:
 
 ```yaml
 jobs:
-  lint:
+  ci:
     - cd frontend && biome ci .
-  test:
-    - cd frontend && bun test
+    - cd frontend && bun install
+    - cd frontend && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 ```
+
+The root `mise run test` contract must enforce the same frontend 100% coverage
+gate by depending on `//frontend:test:coverage`, so local verification and CI
+fail for the same coverage regressions.
 
 ## Docsite CI
 
@@ -155,13 +159,16 @@ jobs:
 ```
 
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
-The default `ugoite-core` build path stays incremental, `mise run
-//ugoite-core:build:clean` provides a package-local destructive rebuild when the
-editable extension is stale, and `mise run cleanup:rust-targets` removes both
-the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
-path when artifacts grow unexpectedly. `mise run //ugoite-cli:test` installs
-`cargo-llvm-cov` and `llvm-tools-preview` if needed, then enforces the same
-100% CLI line-coverage gate as Rust CI.
+The default `ugoite-core` build path stays incremental, and root `mise run
+test` runs `//ugoite-core:build` before `//backend:test:no-build` and
+`//ugoite-core:test:no-build` so one editable extension build is reused across
+that local test workflow. `mise run //ugoite-core:build:clean` provides a
+package-local destructive rebuild when the editable extension is stale.
+`mise run cleanup:rust-targets` removes both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+unexpectedly. `mise run //ugoite-cli:test` installs `cargo-llvm-cov` and
+`llvm-tools-preview` if needed, then enforces the same 100% CLI line-coverage gate
+as Rust CI.
 
 ## SBOM and Supply Chain CI
 
