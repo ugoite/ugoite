@@ -163,6 +163,19 @@ fn test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips() {
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", "/");
     let save_err = save_config(&config).expect_err("root path should not be writable as config");
     assert!(save_err.to_string().contains("Is a directory"));
+
+    let blocking_parent = temp.path().join("not-a-directory");
+    std::fs::write(&blocking_parent, "blocker").expect("write blocking file");
+    std::env::set_var(
+        "UGOITE_CLI_CONFIG_PATH",
+        blocking_parent.join("config.json").display().to_string(),
+    );
+    let parent_err = save_config(&config).expect_err("file parent should block config creation");
+    let parent_err_text = parent_err.to_string().to_lowercase();
+    assert!(
+        parent_err_text.contains("directory") || parent_err_text.contains("exists"),
+        "unexpected parent creation error: {parent_err_text}"
+    );
 }
 
 /// REQ-OPS-006: local file roots must stay portable while unsupported remote URIs fail explicitly.
@@ -180,6 +193,9 @@ fn test_cli_req_ops_006_operator_for_path_supports_file_and_rejects_remote_uris(
     assert!(err
         .to_string()
         .contains("unsupported storage uri in core mode: s3://bucket/demo"));
+
+    let nul_err = operator_for_path("file://\0").expect_err("nul path should fail");
+    assert!(nul_err.to_string().contains("null byte"));
 }
 
 /// REQ-OPS-006: space path parsing must support both workspace paths and bare IDs.

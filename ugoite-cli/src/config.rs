@@ -83,7 +83,8 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let text = serde_json::to_string_pretty(config)?;
+    let text =
+        serde_json::to_string_pretty(config).expect("EndpointConfig serialization is infallible");
     std::fs::write(&path, text)?;
     Ok(path)
 }
@@ -105,8 +106,13 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     } else {
         trimmed
     };
+    if root.contains('\0') {
+        bail!("unsupported local path contains null byte: {path:?}");
+    }
     let builder = Fs::default().root(root);
-    Ok(opendal::Operator::new(builder)?.finish())
+    opendal::Operator::new(builder)
+        .map(|operator| operator.finish())
+        .map_err(Into::into)
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
