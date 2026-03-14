@@ -526,7 +526,11 @@ requirements:
 
     to opt out of automatic token generation when they need
 
-    to debug authentication intentionally.
+    to debug authentication intentionally. README, docsite setup pages, and
+
+    developer-facing auth guidance MUST point back to one canonical auth-aware
+
+    guide instead of duplicating mode-specific startup instructions.
 
     '
   related_spec:

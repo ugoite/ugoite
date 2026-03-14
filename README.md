@@ -124,40 +124,12 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
-If you need to rotate/refresh the automatic token manually, run:
-
-```bash
-UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
-```
-
-To opt into explicit manual modes instead of the default automatic bootstrap:
-
-```bash
-UGOITE_DEV_AUTH_MODE=manual-totp UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}")" mise run dev
-UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
-```
-
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the automatic flow, manual TOTP + `oathtool` steps, and the mock OAuth-style local mode. See [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind `mise run seed`.
-
-Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
-When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
-
-Details:
-
-Backend (dev) example:
-
-```bash
-cd backend
-uv run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Frontend (dev) example:
-
-```bash
-cd frontend
-bun install
-bun dev
-```
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the
+canonical `mise run dev` workflow, including force-refreshing the local token,
+switching between `automatic` / `manual-totp` / `mock-oauth`, and running only
+`dev:backend`, `dev:frontend`, or `dev:docsite` when needed. See
+[CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind
+`mise run seed`.
 
 ---
 

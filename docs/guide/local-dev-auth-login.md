@@ -1,6 +1,10 @@
 # Local Development Authentication and Login
 
-`mise run dev` always routes auth setup through `scripts/dev-auth-env.sh`.
+This is the canonical guide for the auth-aware `mise run dev` workflow.
+`mise run dev` always routes auth setup through `scripts/dev-auth-env.sh`, and
+README/docsite/developer-facing UI should link here instead of repeating
+mode-specific auth steps inline.
+
 The default path remains automatic, but you can now opt into explicit manual
 development auth modes when you want to debug login behavior instead of letting
 the helper silently bootstrap everything for you.
@@ -151,3 +155,18 @@ curl -i http://localhost:8000/health
 ```
 
 Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
+
+## 8) Start one service at a time
+
+Use the root `mise` tasks below when you want to keep the same auth-aware
+startup flow but only run one service in the foreground:
+
+```bash
+mise run dev:backend
+mise run dev:frontend
+mise run dev:docsite
+```
+
+The backend and frontend tasks still source `scripts/dev-auth-env.sh`, and the
+frontend task still waits for `http://localhost:8000/health` before it starts
+proxying `/api/*` requests.

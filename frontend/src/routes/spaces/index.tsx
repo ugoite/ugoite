@@ -2,6 +2,9 @@ import { A, useNavigate } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { spaceApi } from "~/lib/space-api";
 
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+
 const toMessage = (value: unknown): string => {
 	if (value instanceof Error && value.message.trim()) {
 		return value.message;
@@ -27,23 +30,30 @@ export default function SpacesIndexRoute() {
 	const [createError, setCreateError] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
 
-	const authHint = createMemo((): string => {
+	const authHint = createMemo((): { message: string; showGuide: boolean } | null => {
 		const message = spacesError().toLowerCase();
 		if (
 			message.includes("401") ||
 			message.includes("authentication") ||
 			message.includes("unauthorized")
 		) {
-			return "Authentication required. Re-run `mise run dev` if you need to refresh local login.";
+			return {
+				message:
+					"Authentication required. Re-run mise run dev if you need to refresh local login.",
+				showGuide: true,
+			};
 		}
 		if (
 			message.includes("403") ||
 			message.includes("forbidden") ||
 			message.includes("not authorized")
 		) {
-			return "You are signed in but do not have permission to view these spaces.";
+			return {
+				message: "You are signed in but do not have permission to view these spaces.",
+				showGuide: false,
+			};
 		}
-		return "";
+		return null;
 	});
 
 	const hasNoSpaces = createMemo(
@@ -168,7 +178,21 @@ export default function SpacesIndexRoute() {
 				<Show when={spacesError()}>
 					<p class="ui-alert ui-alert-error text-sm">Failed to load spaces.</p>
 					<Show when={authHint()}>
-						<p class="text-sm ui-muted mt-2">{authHint()}</p>
+						{(hint) => (
+							<div class="ui-stack-sm mt-2">
+								<p class="text-sm ui-muted">{hint().message}</p>
+								<Show when={hint().showGuide}>
+									<a
+										href={localDevAuthGuideUrl}
+										target="_blank"
+										rel="noopener"
+										class="ui-muted text-sm hover:underline"
+									>
+										Local Dev Auth/Login
+									</a>
+								</Show>
+							</div>
+						)}
 					</Show>
 				</Show>
 				<Show when={hasNoSpaces() && !showCreateForm()}>
