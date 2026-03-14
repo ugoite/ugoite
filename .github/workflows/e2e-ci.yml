@@ -16,6 +16,7 @@ jobs:
     name: Build Docker images
     permissions:
       contents: read
+      packages: write
     uses: ./.github/workflows/docker-images.yml
     with:
       push: false
