@@ -99,12 +99,18 @@ jobs:
 ```yaml
 jobs:
   e2e:
-    - Start backend (background)
-    - Start frontend (background)
-    - Wait for servers
-    - cd e2e && npm run test
+    - Build backend image
+    - Build frontend image
+    - bash e2e/scripts/run-e2e-compose.sh full
     timeout: 30 minutes
 ```
+
+The shared compose runner remains the CI path. Local `mise run e2e` prefers
+that same compose runner when Docker is available, and otherwise falls back to a
+production-style host runner that keeps the same Playwright JUnit/no-skips
+validation contract. CI reuses pre-built images by setting
+`E2E_BUILD_IMAGES=false`, while Docker-enabled local runs build the images from
+the current workspace before starting the compose stack.
 
 ## Devcontainer CI
 
@@ -265,8 +271,11 @@ cd docsite && bun run lint && bun run format:check && bun run typecheck && bun r
 # Frontend
 cd ../frontend && biome ci . && bun run test:run --coverage
 
-# E2E (requires servers running)
+# E2E (authoritative local parity path)
 cd .. && mise run e2e
+
+# Fast local iteration only (not CI parity)
+cd .. && mise run e2e:dev
 
 # Conventional commits + release metadata
 npm run commitlint:range
