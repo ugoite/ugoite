@@ -4,8 +4,9 @@ import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server
 let docsiteServer: DocsiteServer | undefined;
 
 test.describe("Docsite internal links", () => {
+	test.describe.configure({ timeout: 180_000 });
+
 	test.beforeAll(async () => {
-		test.setTimeout(180_000);
 		docsiteServer = await startDocsiteServer({ basePath: "/ugoite" });
 	});
 

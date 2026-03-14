@@ -59,9 +59,10 @@ pub fn config_path() -> PathBuf {
 }
 
 fn dirs_home() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+    match std::env::var("HOME") {
+        Ok(home) => PathBuf::from(home),
+        Err(_) => PathBuf::from("."),
+    }
 }
 
 pub fn load_config() -> EndpointConfig {
@@ -69,8 +70,9 @@ pub fn load_config() -> EndpointConfig {
     if !path.exists() {
         return EndpointConfig::default();
     }
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
+    let read_text = std::fs::read_to_string(&path);
+    let text = match read_text {
+        Ok(text) => text,
         Err(_) => return EndpointConfig::default(),
     };
     serde_json::from_str(&text).unwrap_or_default()
@@ -139,8 +141,7 @@ pub fn base_url(config: &EndpointConfig) -> Option<String> {
 }
 
 pub fn print_json<T: serde::Serialize>(value: &T) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).unwrap_or_default()
-    );
+    let pretty_json = serde_json::to_string_pretty(value);
+    let rendered = pretty_json.unwrap_or_default();
+    println!("{rendered}");
 }
