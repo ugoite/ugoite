@@ -40,22 +40,26 @@ impl Default for EndpointConfig {
 }
 
 pub fn config_path() -> PathBuf {
-    if let Ok(p) = std::env::var("UGOITE_CLI_CONFIG_PATH") {
-        if !p.trim().is_empty() {
-            return PathBuf::from(p);
-        }
+    if let Some(path) = non_empty_env_path("UGOITE_CLI_CONFIG_PATH") {
+        return path;
     }
-    if let Ok(h) = std::env::var("UGOITE_CONFIG_HOME") {
-        if !h.trim().is_empty() {
-            return PathBuf::from(h).join("ugoite").join("cli-endpoints.json");
-        }
+    if let Some(config_home) = non_empty_env_path("UGOITE_CONFIG_HOME") {
+        return config_home.join("ugoite").join("cli-endpoints.json");
     }
-    if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
-        if !x.trim().is_empty() {
-            return PathBuf::from(x).join("ugoite").join("cli-endpoints.json");
-        }
+    if let Some(xdg_config_home) = non_empty_env_path("XDG_CONFIG_HOME") {
+        return xdg_config_home.join("ugoite").join("cli-endpoints.json");
     }
     dirs_home().join(".ugoite").join("cli-endpoints.json")
+}
+
+fn non_empty_env_path(key: &str) -> Option<PathBuf> {
+    std::env::var(key).ok().and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(value))
+        }
+    })
 }
 
 fn dirs_home() -> PathBuf {
