@@ -30,6 +30,13 @@ run = [
 description = "Run Rust crate tests and Python binding tests"
 depends = ["build"]
 
+[tasks."test:no-build"]
+run = [
+	"cargo test -j 1",
+	"if [ -d tests ]; then uv run --with pytest --with pytest-asyncio python -m pytest; fi",
+]
+description = "Run Rust crate tests and Python binding tests without rebuilding the editable extension"
+
 [tasks.lint]
 run = "cargo clippy && uv run ruff check ."
 description = "Run Rust and Python linters"
