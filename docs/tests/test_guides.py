@@ -116,12 +116,12 @@ REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "cargo-clippy-cli",
     "cargo-llvm-cov-minimum",
     "cargo-llvm-cov-core",
-    "cargo-test-cli",
+    "cargo-llvm-cov-cli",
 }
 REQUIRED_RUST_CI_STEPS = {
     "Run tests (minimum)",
     "Enforce Rust coverage floor (minimum)",
-    "Run tests (cli)",
+    "Enforce Rust coverage floor (cli)",
 }
 REQUIRED_MINIMUM_COVERAGE_COMMAND = "scripts/check_minimum_coverage.py"
 REQUIRED_MINIMUM_COVERAGE_BACKING_COMMAND = "cargo llvm-cov --test test_coverage --json"
@@ -631,7 +631,20 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
-    """REQ-OPS-006: Rust pre-commit checks must keep minimum coverage parity with CI."""
+    """REQ-OPS-006: Rust pre-commit checks must keep minimum and CLI parity with CI."""
+    missing_parts = _collect_req_ops_006_rust_precommit_parity_details()
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
+def _collect_req_ops_006_rust_precommit_parity_details() -> list[str]:
+    return [
+        *_collect_req_ops_006_pre_commit_details(),
+        *_collect_req_ops_006_ci_details(),
+    ]
+
+
+def _collect_req_ops_006_pre_commit_details() -> list[str]:
     pre_commit = _load_pre_commit_config()
     configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
     missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
@@ -646,7 +659,28 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
     cargo_cov_minimum = hook_entries.get("cargo-llvm-cov-minimum")
     if isinstance(cargo_cov_minimum, dict):
         minimum_cov_entry = str(cargo_cov_minimum.get("entry", ""))
+    cli_cov_entry = ""
+    cargo_llvm_cov_cli = hook_entries.get("cargo-llvm-cov-cli")
+    if isinstance(cargo_llvm_cov_cli, dict):
+        cli_cov_entry = str(cargo_llvm_cov_cli.get("entry", ""))
 
+    missing_parts: list[str] = []
+    if missing_hooks:
+        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+    if "--no-default-features" not in clippy_cli_entry:
+        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+    if REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_cov_entry:
+        missing_parts.append("cargo-llvm-cov-minimum must run the wrapper")
+    if "--fail-under-lines 100" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must enforce 100% line coverage")
+    if "--no-default-features" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must pass --no-default-features")
+
+    return missing_parts
+
+
+def _collect_req_ops_006_ci_details() -> list[str]:
+    missing_parts: list[str] = []
     rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
     missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
@@ -673,49 +707,46 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
         if fragment not in guide_text
     )
 
-    detail_candidates = (
-        (
-            bool(missing_hooks),
-            "pre-commit missing hooks: " + ", ".join(missing_hooks),
-        ),
-        (
-            "--no-default-features" not in clippy_cli_entry,
-            "cargo-clippy-cli must pass --no-default-features",
-        ),
-        (
-            REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_cov_entry,
-            "cargo-llvm-cov-minimum must run the minimum coverage wrapper",
-        ),
-        (
-            bool(missing_ci_steps),
-            "rust-ci missing steps: " + ", ".join(missing_ci_steps),
-        ),
-        (
-            "mise run //ugoite-minimum:test" not in root_runs,
-            "root mise.toml tasks.test must run //ugoite-minimum:test",
-        ),
-        (
-            REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_run,
+    workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    cli_coverage_command = (
+        "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
+    )
+    if missing_ci_steps:
+        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+    if "mise run //ugoite-minimum:test" not in root_runs:
+        missing_parts.append("root mise.toml tasks.test must run //ugoite-minimum:test")
+    if REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_run:
+        missing_parts.append(
             "ugoite-minimum/mise.toml [tasks.test] must run the wrapper",
-        ),
-        (
-            minimum_step_run is None,
-            "rust-ci.yml must define the minimum coverage gate step",
-        ),
-        (
-            minimum_step_run is not None
-            and REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_step_run,
-            "rust-ci minimum coverage gate must run the minimum coverage wrapper",
-        ),
-        (
-            bool(missing_doc_fragments),
+        )
+    if minimum_step_run is None:
+        missing_parts.append("rust-ci.yml must define the minimum coverage gate step")
+    elif REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_step_run:
+        missing_parts.append("rust-ci minimum coverage gate must run the wrapper")
+    if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
+        missing_parts.append("rust-ci must install llvm-tools-preview")
+    if cli_coverage_command not in workflow_text:
+        missing_parts.append("rust-ci must enforce 100% ugoite-cli coverage")
+
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        [
+            cli_coverage_command,
+            "mise run //ugoite-cli:test",
+            "100% CLI line-coverage gate",
+        ],
+        "ci-cd spec must document the ugoite-cli 100% coverage gate",
+    )
+    if spec_detail:
+        missing_parts.append(spec_detail)
+
+    if missing_doc_fragments:
+        missing_parts.append(
             "ci-cd guide missing minimum coverage fragments: "
             + ", ".join(missing_doc_fragments),
-        ),
-    )
-    details = [message for condition, message in detail_candidates if condition]
-    if details:
-        raise AssertionError("; ".join(details))
+        )
+
+    return missing_parts
 
 
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
