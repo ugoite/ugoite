@@ -1,25 +1,54 @@
 # CLI Guide
 
-This guide explains how to run the Ugoite CLI inside the devcontainer.
+This guide explains the recommended release-install path for `ugoite`, then
+covers the Cargo-based workflow contributors still use inside the repository.
 
-## Install dependencies
+## Install the released CLI (recommended)
 
-From the repository root:
+Install the latest stable release with a one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
+ugoite --help
+```
+
+Pin an exact version when you want a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
+ugoite --help
+```
+
+The installer writes `ugoite` into `~/.local/bin` by default. Override the
+install directory with `UGOITE_INSTALL_DIR=/custom/bin` when needed.
+
+Supported release artifacts currently target:
+
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+
+Release archives use predictable names such as
+`ugoite-v0.1.0-x86_64-unknown-linux-gnu.tar.gz` plus a matching `.sha256`
+checksum file.
+
+## Build from source (contributors)
+
+Install dependencies from the repository root:
 
 ```bash
 mise run //ugoite-cli:install
 ```
 
-Alternatively, you can build directly in the CLI folder:
+Alternatively, build directly in the CLI folder:
 
 ```bash
 cd ugoite-cli
 cargo build
 ```
 
-## Run the CLI
-
-From the repository root, run the Rust CLI with Cargo:
+Run the CLI from source with Cargo:
 
 ```bash
 cargo run -q -p ugoite-cli -- --help
@@ -27,18 +56,16 @@ cargo run -q -p ugoite-cli -- --help
 
 ## Basic workflow
 
-Create a local data directory and list spaces:
+If you installed a released binary, use `ugoite` directly:
 
 ```bash
 mkdir -p ./spaces
-cargo run -q -p ugoite-cli -- space list --root ./spaces
+ugoite space list --root ./spaces
+ugoite create-space --root ./spaces demo
 ```
 
-Create a new space:
-
-```bash
-cargo run -q -p ugoite-cli -- create-space --root ./spaces demo
-```
+If you are actively developing inside the repository, you can swap those for
+`cargo run -q -p ugoite-cli -- ...` instead.
 
 ## Seed local sample data
 
@@ -55,8 +82,7 @@ different target space, scenario, entry count, or deterministic RNG seed, set
 the matching environment variables before running the task:
 
 ```bash
-UGOITE_SEED_SPACE_ID=ux-demo UGOITE_SEED_SCENARIO=supply-chain \
-UGOITE_SEED_ENTRY_COUNT=25 UGOITE_SEED_VALUE=42 mise run seed
+UGOITE_SEED_SPACE_ID=ux-demo UGOITE_SEED_SCENARIO=supply-chain UGOITE_SEED_ENTRY_COUNT=25 UGOITE_SEED_VALUE=42 mise run seed
 mise run seed:scenarios
 ```
 
@@ -98,7 +124,6 @@ cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://loc
 # Route commands to API endpoint
 cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3000/api
 ```
-
 
 ## Auth profile commands
 
