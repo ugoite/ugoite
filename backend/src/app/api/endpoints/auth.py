@@ -16,7 +16,7 @@ router = APIRouter(prefix="/auth/dev", tags=["auth"])
 AuthMode = Literal["manual-totp", "mock-oauth"]
 DEFAULT_DEV_AUTH_MODE: AuthMode = "manual-totp"
 DEFAULT_DEV_AUTH_TTL_SECONDS = 43_200
-DEV_AUTH_PROXY_TOKEN_HEADER = "x-ugoite-dev-auth-proxy-token"
+DEV_AUTH_PROXY_HEADER_NAME = "x-ugoite-dev-auth-proxy-token"
 
 
 def _default_dev_token_kid() -> str:
@@ -97,7 +97,7 @@ def _is_trusted_dev_auth_proxy(request: Request) -> bool:
     if configured_token is None:
         return False
 
-    provided_token = request.headers.get(DEV_AUTH_PROXY_TOKEN_HEADER)
+    provided_token = request.headers.get(DEV_AUTH_PROXY_HEADER_NAME)
     if provided_token is None or not provided_token:
         return False
 
