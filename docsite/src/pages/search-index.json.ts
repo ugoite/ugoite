@@ -11,11 +11,14 @@ type SearchItem = {
 };
 
 function titleFromPath(relativePath: string): string {
-	const base = relativePath
-		.replace(/\.(md|ya?ml)$/i, "")
-		.split("/")
-		.at(-1) ?? relativePath;
-	return base.replaceAll(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+	const base =
+		relativePath
+			.replace(/\.(md|ya?ml)$/i, "")
+			.split("/")
+			.at(-1) ?? relativePath;
+	return base
+		.replaceAll(/[-_]/g, " ")
+		.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function toPlainText(raw: string): string {
@@ -37,7 +40,8 @@ async function readDocItems(): Promise<SearchItem[]> {
 			entries.map(async (entry) => {
 				const fullPath = path.join(dir, entry.name);
 				if (entry.isDirectory()) return await walk(fullPath);
-				if (entry.isFile() && /\.(md|ya?ml)$/i.test(entry.name)) return [fullPath];
+				if (entry.isFile() && /\.(md|ya?ml)$/i.test(entry.name))
+					return [fullPath];
 				return [];
 			}),
 		);
