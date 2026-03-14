@@ -370,15 +370,17 @@ requirements:
   title: Rust Target Cache Discipline
   description: 'Local Rust build and test tasks MUST share a bounded target root,
 
-    keep the default ugoite-core local build path incremental, and expose
+    keep the default ugoite-core local build path incremental, reuse one
 
-    explicit clean rebuild/cleanup commands when stale artifacts need a
+    editable ugoite-core build inside root `mise run test` before backend and
 
-    destructive reset. Rust CI MUST use the same shared target root so
+    ugoite-core test execution, and expose explicit clean rebuild/cleanup
 
-    repeated ugoite-core and ugoite-cli development does not balloon
+    commands when stale artifacts need a destructive reset. Rust CI MUST use
 
-    target caches into tens of gigabytes.
+    the same shared target root so repeated ugoite-core and ugoite-cli
+
+    development does not balloon target caches into tens of gigabytes.
 
     '
   related_spec:
@@ -724,3 +726,36 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-021
+  title: Frontend Coverage Must Be a Hard Gate
+  description: 'Frontend CI and the root `mise run test` task MUST enforce 100%
+
+    coverage for frontend code, and the contract MUST remain documented so the
+
+    hard gate is explicit rather than only implied by frontend-local config.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_021_frontend_coverage_gate_is_explicit
