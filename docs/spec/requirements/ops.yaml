@@ -169,13 +169,11 @@ requirements:
 
     MUST be linted in both pre-commit and CI, and the same local/CI gate MUST
 
-    run repository artifact hygiene checks that block tracked dependency trees
+    run repository artifact hygiene checks that fail tracked files still
 
-    and oversized artifacts before merge, and fail if tracked files still
+    matching ignore rules, block tracked dependency trees, and reject oversized
 
-    match repository ignore rules so generated artifacts do not silently remain
-
-    in Git history.
+    artifacts before merge.
 
     '
   related_spec:
@@ -187,6 +185,12 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_005_yaml_workflow_lint_gates_declared
+    - file: docs/tests/test_artifact_hygiene.py
+      tests:
+      - test_req_ops_005_root_artifact_hygiene_accepts_clean_repo
+      - test_req_ops_005_root_artifact_hygiene_rejects_tracked_ignored_paths
+      - test_req_ops_005_root_artifact_hygiene_rejects_generated_dirs
+      - test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -203,12 +207,12 @@ requirements:
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-006
-  title: Rust Pre-commit and CI Test Parity
-  description: 'Rust pre-commit hooks MUST enforce format, lint, and test gates
+  title: Rust Pre-commit and CI Coverage Parity
+  description: 'Rust pre-commit hooks MUST enforce format, lint, and coverage gates
 
     across both ugoite-core and ugoite-cli, including ugoite-cli test execution
 
-    parity with Rust CI.
+    and 100% line-coverage parity with Rust CI.
 
     '
   related_spec:
@@ -374,15 +378,17 @@ requirements:
   title: Rust Target Cache Discipline
   description: 'Local Rust build and test tasks MUST share a bounded target root,
 
-    keep the default ugoite-core local build path incremental, and expose
+    keep the default ugoite-core local build path incremental, reuse one
 
-    explicit clean rebuild/cleanup commands when stale artifacts need a
+    editable ugoite-core build inside root `mise run test` before backend and
 
-    destructive reset. Rust CI MUST use the same shared target root so
+    ugoite-core test execution, and expose explicit clean rebuild/cleanup
 
-    repeated ugoite-core and ugoite-cli development does not balloon
+    commands when stale artifacts need a destructive reset. Rust CI MUST use
 
-    target caches into tens of gigabytes.
+    the same shared target root so repeated ugoite-core and ugoite-cli
+
+    development does not balloon target caches into tens of gigabytes.
 
     '
   related_spec:
@@ -530,7 +536,13 @@ requirements:
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
-    mode may pre-inject a bearer token into the running stack.
+    mode may pre-inject a bearer token into the running stack. README, docsite
+
+    setup pages, and developer-facing auth guidance MUST point back to one
+
+    canonical auth-aware guide instead of duplicating mode-specific startup
+
+    instructions.
 
     '
   related_spec:
@@ -545,6 +557,7 @@ requirements:
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
+      - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
       tests:
       - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode
@@ -693,6 +706,10 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_018_cli_release_binaries_and_install_script
+      - test_docs_req_ops_018_install_script_supports_prerelease_quick_start
+      - test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease
+      - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
+      - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -728,3 +745,112 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-020
+  title: Portable Minimum Layer WASM Gates
+  description: '`ugoite-minimum` MUST have explicit WASM-oriented quality gates in
+
+    pre-commit and Rust CI, and the repository MUST document the responsibility
+
+    boundary between `ugoite-minimum` and `ugoite-core`, including which
+
+    portable helpers have already moved and why heavier logic still remains in
+
+     `ugoite-core`.
+
+     '
+  related_spec:
+  - architecture/future-proofing.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-021
+  title: Frontend Coverage Must Be a Hard Gate
+  description: 'Frontend CI and the root `mise run test` task MUST enforce 100%
+
+    coverage for frontend code, and the contract MUST remain documented so the
+
+    hard gate is explicit rather than only implied by frontend-local config.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_021_frontend_coverage_gate_is_explicit
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-022
+  title: Path-Aware Pull Request E2E Tiering
+  description: 'E2E CI MUST deterministically select a lighter smoke tier for
+
+    pull requests that only change low-risk docs/docsite metadata paths, while
+
+    `merge_group` and pushes to `main` MUST continue to run the full E2E suite.
+
+    The tiering rule MUST be visible in `.github/workflows/e2e-ci.yml` and
+
+    documented in `docs/spec/testing/ci-cd.md` so reviewers can audit when full
+
+    integration coverage is still required.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue

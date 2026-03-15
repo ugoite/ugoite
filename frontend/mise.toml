@@ -9,3 +9,7 @@ run = "eval \"$(bash ../scripts/dev-auth-env.sh)\" && bash ../scripts/wait-for-h
 [tasks.test]
 run = "bun run test:run"
 description = "Run frontend unit/component tests with Vitest"
+
+[tasks."test:coverage"]
+run = "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
+description = "Run frontend unit/component tests with 100% coverage enforcement"

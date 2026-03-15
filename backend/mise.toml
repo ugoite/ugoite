@@ -12,3 +12,7 @@ run = "eval \"$(bash ../scripts/dev-auth-env.sh)\" && UGOITE_ALLOW_REMOTE=true u
 run = "uv run pytest"
 description = "Run backend pytest suite"
 depends = ["//ugoite-core:build"]
+
+[tasks."test:no-build"]
+run = "uv run pytest"
+description = "Run backend pytest suite assuming ugoite-core is already built"
