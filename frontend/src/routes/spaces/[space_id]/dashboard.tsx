@@ -6,6 +6,7 @@ import { assetApi } from "~/lib/asset-api";
 import { SpaceShell } from "~/components/SpaceShell";
 import { createEntryStore } from "~/lib/entry-store";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
+import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/form-api";
 import { spaceApi } from "~/lib/space-api";
@@ -59,7 +60,7 @@ export default function SpaceDashboardRoute() {
 			setShowCreateFormDialog(false);
 			await refetchForms();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create form");
+			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
 		}
 	};
 
@@ -70,12 +71,12 @@ export default function SpaceDashboardRoute() {
 		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
-			alert("Please select a form to create an entry.");
+			alert(t("dashboard.error.selectFormBeforeCreate"));
 			return;
 		}
 		const formDef = entryForms().find((entryForm) => entryForm.name === formName);
 		if (!formDef) {
-			alert("Selected form was not found. Please refresh and try again.");
+			alert(t("dashboard.error.selectedFormNotFound"));
 			return;
 		}
 		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
@@ -85,7 +86,7 @@ export default function SpaceDashboardRoute() {
 			setShowCreateEntryDialog(false);
 			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create entry");
+			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateEntry"));
 		}
 	};
 
@@ -102,7 +103,9 @@ export default function SpaceDashboardRoute() {
 			await assetApi.delete(spaceId(), assetId);
 			await refetchAssets();
 		} catch (error) {
-			setAssetActionError(error instanceof Error ? error.message : "Failed to delete asset");
+			setAssetActionError(
+				error instanceof Error ? error.message : t("dashboard.error.failedDeleteAsset"),
+			);
 		}
 	};
 
@@ -112,22 +115,26 @@ export default function SpaceDashboardRoute() {
 				<div>
 					<h1 class="ui-page-title text-3xl sm:text-4xl">{displaySpaceName()}</h1>
 					<Show when={space.error}>
-						<p class="text-sm ui-text-danger">Failed to load space.</p>
+						<p class="text-sm ui-text-danger">{t("dashboard.error.failedLoadSpace")}</p>
 					</Show>
 				</div>
 
 				<div class="grid gap-4 sm:grid-cols-2">
 					<section class="ui-card ui-stack-sm">
 						<div>
-							<h2 class="text-lg font-semibold">Create entry</h2>
+							<h2 class="text-lg font-semibold">{t("dashboard.section.createEntry.heading")}</h2>
 							<Show
 								when={!forms.loading}
-								fallback={<p class="text-sm ui-muted">Loading forms...</p>}
+								fallback={
+									<p class="text-sm ui-muted">{t("dashboard.section.createEntry.loading")}</p>
+								}
 							>
 								<p class="text-sm ui-muted">
 									{entryForms().length > 0
-										? `${entryForms().length} forms available`
-										: "Create a form first to start writing entries."}
+										? t("dashboard.section.createEntry.formsAvailable", {
+												count: entryForms().length,
+											})
+										: t("dashboard.section.createEntry.empty")}
 								</p>
 							</Show>
 						</div>
@@ -138,20 +145,20 @@ export default function SpaceDashboardRoute() {
 								disabled={entryForms().length === 0}
 								onClick={() => setShowCreateEntryDialog(true)}
 							>
-								New entry
+								{t("dashboard.section.createEntry.new")}
 							</button>
 							<A
 								href={`/spaces/${spaceId()}/entries`}
 								class="ui-button ui-button-secondary text-sm"
 							>
-								Browse entries
+								{t("dashboard.section.createEntry.browse")}
 							</A>
 						</div>
 					</section>
 					<section class="ui-card ui-stack-sm">
 						<div>
-							<h2 class="text-lg font-semibold">Create form</h2>
-							<p class="text-sm ui-muted">Define fields once and reuse them in entries.</p>
+							<h2 class="text-lg font-semibold">{t("dashboard.section.createForm.heading")}</h2>
+							<p class="text-sm ui-muted">{t("dashboard.section.createForm.description")}</p>
 						</div>
 						<div class="flex flex-wrap gap-2">
 							<button
@@ -159,17 +166,17 @@ export default function SpaceDashboardRoute() {
 								class="ui-button ui-button-primary text-sm"
 								onClick={() => setShowCreateFormDialog(true)}
 							>
-								New form
+								{t("dashboard.section.createForm.new")}
 							</button>
 							<A href={`/spaces/${spaceId()}/forms`} class="ui-button ui-button-secondary text-sm">
-								Browse forms
+								{t("dashboard.section.createForm.browse")}
 							</A>
 						</div>
 					</section>
 					<section class="ui-card ui-stack-sm">
 						<div>
-							<h2 class="text-lg font-semibold">Assets</h2>
-							<p class="text-sm ui-muted">Upload files and keep catalog metadata in sync.</p>
+							<h2 class="text-lg font-semibold">{t("dashboard.section.assets.heading")}</h2>
+							<p class="text-sm ui-muted">{t("dashboard.section.assets.description")}</p>
 						</div>
 						<AssetUploader
 							assets={assets() || []}
@@ -180,7 +187,7 @@ export default function SpaceDashboardRoute() {
 							<p class="ui-alert ui-alert-error text-sm">{assetActionError()}</p>
 						</Show>
 						<Show when={assets.loading}>
-							<p class="text-sm ui-muted">Loading assets...</p>
+							<p class="text-sm ui-muted">{t("dashboard.section.assets.loading")}</p>
 						</Show>
 					</section>
 				</div>

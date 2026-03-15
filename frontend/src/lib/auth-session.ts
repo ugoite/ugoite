@@ -1,5 +1,22 @@
 const authCookieName = "ugoite_auth_bearer_token";
 
+const findCookieDescriptor = () => {
+	let target: object | null = document;
+	while (target) {
+		const descriptor = Object.getOwnPropertyDescriptor(target, "cookie");
+		if (descriptor) return descriptor;
+		target = Object.getPrototypeOf(target);
+	}
+	return null;
+};
+
+const writeDocumentCookie = (value: string) => {
+	const descriptor = findCookieDescriptor();
+	if (descriptor?.set) {
+		descriptor.set.call(document, value);
+	}
+};
+
 const cookieLifetime = (expiresAt: number | undefined): string => {
 	if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
 		return "";
@@ -14,12 +31,14 @@ export const setAuthTokenCookie = (token: string, expiresAt?: number): void => {
 		return;
 	}
 	const secure = window.location.protocol === "https:" ? "; Secure" : "";
-	document.cookie = `${authCookieName}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure}${cookieLifetime(expiresAt)}`;
+	writeDocumentCookie(
+		`${authCookieName}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure}${cookieLifetime(expiresAt)}`,
+	);
 };
 
 export const clearAuthTokenCookie = (): void => {
 	if (typeof document === "undefined") {
 		return;
 	}
-	document.cookie = `${authCookieName}=; Path=/; Max-Age=0; SameSite=Lax`;
+	writeDocumentCookie(`${authCookieName}=; Path=/; Max-Age=0; SameSite=Lax`);
 };

@@ -1,9 +1,14 @@
 // REQ-FE-014: Search UI component
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { SearchBar } from "./SearchBar";
+import { setLocale } from "~/lib/i18n";
 
 describe("SearchBar", () => {
+	beforeEach(() => {
+		setLocale("en");
+	});
+
 	it("should render search input", () => {
 		render(() => <SearchBar onSearch={vi.fn()} />);
 		expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument();
@@ -92,6 +97,12 @@ describe("SearchBar", () => {
 	it("should display singular result count when resultsCount is 1", () => {
 		render(() => <SearchBar onSearch={vi.fn()} resultsCount={1} />);
 		expect(screen.getByText(/1 result$/i)).toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: renders localized zero-result fallback when count is nullish", () => {
+		setLocale("ja");
+		render(() => <SearchBar onSearch={vi.fn()} resultsCount={null as unknown as number} />);
+		expect(screen.getByText("0 件")).toBeInTheDocument();
 	});
 
 	it("handleSubmit prevents default form submission", () => {

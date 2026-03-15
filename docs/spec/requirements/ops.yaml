@@ -595,6 +595,8 @@ requirements:
       tests:
       - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'
       - 'REQ-OPS-015: writes and clears browser auth cookies with explicit expiry'
+      - 'REQ-OPS-015: writes and clears browser auth cookies with explicit expiry safely when document is unavailable'
+      - 'REQ-OPS-015: no-ops when cookie descriptors are unavailable'
     - file: frontend/src/routes/spaces/index.test.tsx
       tests:
       - 'REQ-OPS-015: redirects unauthenticated users to the explicit login route'

@@ -1,4 +1,5 @@
 import { createSignal, Show, For } from "solid-js";
+import { t } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
 
 export interface AssetUploaderProps {
@@ -37,7 +38,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 			/* v8 ignore stop */
 		} catch (err) {
 			/* v8 ignore start */
-			setError(err instanceof Error ? err.message : "Upload failed");
+			setError(err instanceof Error ? err.message : t("assetUploader.error.uploadFailed"));
 			/* v8 ignore stop */
 		} finally {
 			setUploading(false);
@@ -92,8 +93,8 @@ export function AssetUploader(props: AssetUploaderProps) {
 							d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
 						/>
 					</svg>
-					<Show when={uploading()} fallback="Upload Asset">
-						Uploading...
+					<Show when={uploading()} fallback={t("assetUploader.button.upload")}>
+						{t("assetUploader.button.uploading")}
 					</Show>
 				</label>
 				<input
@@ -103,7 +104,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 					id="file-upload"
 					type="file"
 					class="sr-only"
-					aria-label="Upload asset"
+					aria-label={t("assetUploader.fileInputAria")}
 					accept={props.accept}
 					onChange={handleFileChange}
 					disabled={uploading()}
@@ -118,7 +119,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 			{/* Assets List */}
 			<Show when={props.assets && props.assets.length > 0}>
 				<div class="space-y-2">
-					<h4 class="text-sm font-medium">Assets</h4>
+					<h4 class="text-sm font-medium">{t("assetUploader.heading")}</h4>
 					<For each={props.assets}>
 						{(asset) => (
 							<div class="ui-card ui-card-interactive flex items-center justify-between gap-3">
@@ -139,7 +140,7 @@ export function AssetUploader(props: AssetUploaderProps) {
 									<button
 										type="button"
 										onClick={() => handleRemove(asset.id)}
-										aria-label={`Remove asset ${asset.name}`}
+										aria-label={t("assetUploader.removeAria", { name: asset.name })}
 										class="ui-button ui-button-danger ui-button-sm flex-shrink-0"
 									>
 										<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

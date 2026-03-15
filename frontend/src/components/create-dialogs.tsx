@@ -52,7 +52,7 @@ const createFieldInputId = (prefix: string, name: string, index: number) => {
 
 /* v8 ignore start */
 const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
-	return def.type === "object_list" ? "[]" : "Enter value";
+	return def.type === "object_list" ? "[]" : t("createDialog.entry.textareaPlaceholder");
 };
 /* v8 ignore stop */
 
@@ -77,8 +77,8 @@ const getRowReferenceIssue = (field: FieldIssueSource, context?: FieldIssueConte
 	if (field.type !== "row_reference") return null;
 	const targetForm = field.targetForm?.trim();
 	/* v8 ignore start */
-	if (!targetForm) return "Target form required for row_reference";
-	if (isReservedMetadataForm(targetForm)) return "Target form is reserved";
+	if (!targetForm) return t("createDialog.validation.targetFormRequired");
+	if (isReservedMetadataForm(targetForm)) return t("createDialog.validation.targetFormReserved");
 	/* v8 ignore stop */
 	/* v8 ignore start */
 	if (context?.availableForms && context.availableForms.length > 0) {
@@ -89,7 +89,7 @@ const getRowReferenceIssue = (field: FieldIssueSource, context?: FieldIssueConte
 			validTargets.add(context.currentFormName.trim().toLowerCase());
 		}
 		if (!validTargets.has(targetForm.toLowerCase())) {
-			return "Target form does not exist";
+			return t("createDialog.validation.targetFormDoesNotExist");
 		}
 	}
 	/* v8 ignore stop */
@@ -103,7 +103,7 @@ const buildFieldIssues = (fields: FieldIssueSource[], context?: FieldIssueContex
 		const trimmed = field.name.trim();
 		if (!trimmed) return;
 		if (isReservedMetadataColumn(trimmed)) {
-			issues.set(index, "Reserved metadata column name");
+			issues.set(index, t("createDialog.validation.reservedMetadataColumnName"));
 			return;
 		}
 		const rowIssue = getRowReferenceIssue(field, context);
@@ -116,7 +116,7 @@ const buildFieldIssues = (fields: FieldIssueSource[], context?: FieldIssueContex
 		const normalized = trimmed.toLowerCase();
 		/* v8 ignore start */
 		if (seen.has(normalized)) {
-			issues.set(index, "Duplicate column name");
+			issues.set(index, t("createDialog.validation.duplicateColumnName"));
 			return;
 		}
 		/* v8 ignore stop */
@@ -368,7 +368,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!current) return;
 		const [name, def] = current;
 		if (def.required && !(fieldValues()[name] || "").trim()) {
-			setErrorMessage(`Please answer required field: ${name}.`);
+			setErrorMessage(t("createDialog.entry.error.answerRequired", { field: name }));
 			return;
 		}
 		setErrorMessage(null);
@@ -380,7 +380,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		if (!current) return;
 		const [name, def] = current;
 		if (def.required) {
-			setErrorMessage(`Required field cannot be skipped: ${name}.`);
+			setErrorMessage(t("createDialog.entry.error.skipRequired", { field: name }));
 			return;
 		}
 		clearFieldValue(name);
@@ -398,7 +398,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	};
 
 	const buildMissingRequiredFieldsMessage = (missing: string[]) =>
-		`Please fill required fields: ${missing.join(", ")}.`;
+		t("createDialog.entry.error.fillRequiredFields", { fields: missing.join(", ") });
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
@@ -406,14 +406,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		const formName = selectedForm().trim();
 		/* v8 ignore start */
 		if (!entryTitle || !formName) {
-			setErrorMessage("Please provide a title and select a form.");
+			setErrorMessage(t("createDialog.entry.error.provideTitleAndForm"));
 			return;
 		}
 		/* v8 ignore stop */
 		if (inputMode() === "markdown") {
 			const markdown = markdownInput().trim();
 			if (!markdown) {
-				setErrorMessage("Please provide markdown content.");
+				setErrorMessage(t("createDialog.entry.error.provideMarkdown"));
 				return;
 			}
 			props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
@@ -449,12 +449,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 				onClick={(e) => e.stopPropagation()}
 				onKeyDown={(e) => e.stopPropagation()}
 			>
-				<h2 class="text-lg font-semibold mb-4">Create New Entry</h2>
+				<h2 class="text-lg font-semibold mb-4">{t("createDialog.entry.heading")}</h2>
 
 				<form onSubmit={handleSubmit} class="ui-stack-sm">
 					<div class="ui-field">
 						<label class="ui-label" for="entry-title">
-							Title
+							{t("createDialog.entry.titleLabel")}
 						</label>
 						<input
 							ref={inputRef}
@@ -462,7 +462,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							type="text"
 							value={title()}
 							onInput={(e) => setTitle(e.currentTarget.value)}
-							placeholder="Enter entry title..."
+							placeholder={t("createDialog.entry.titlePlaceholder")}
 							class="ui-input"
 							autofocus
 						/>
@@ -472,13 +472,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 						when={selectableForms().length > 0}
 						fallback={
 							<div class="ui-card ui-card-dashed text-sm ui-muted">
-								Create a form first to start writing entries.
+								{t("createDialog.entry.empty")}
 							</div>
 						}
 					>
 						<div class="ui-field">
 							<label class="ui-label" for="entry-form">
-								Form <span class="ui-text-danger">*</span>
+								{t("createDialog.entry.formLabel")} <span class="ui-text-danger">*</span>
 							</label>
 							<select
 								id="entry-form"
@@ -490,7 +490,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								}}
 							>
 								<option value="" disabled>
-									Select a form
+									{t("createDialog.entry.formPlaceholder")}
 								</option>
 								<For each={selectableForms()}>
 									{(entryForm) => <option value={entryForm.name}>{entryForm.name}</option>}
@@ -499,11 +499,17 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							<Show when={selectedFormDef()}>
 								{(entryForm) => (
 									<div class="ui-card mt-3">
-										<p class="text-xs font-semibold ui-muted uppercase tracking-wide">Fields</p>
+										<p class="text-xs font-semibold ui-muted uppercase tracking-wide">
+											{t("createDialog.entry.fieldsTitle")}
+										</p>
 										<div class="mt-2 flex flex-wrap gap-2">
 											<Show
 												when={Object.keys(entryForm().fields || {}).length > 0}
-												fallback={<span class="text-xs ui-muted">No fields defined.</span>}
+												fallback={
+													<span class="text-xs ui-muted">
+														{t("createDialog.entry.noFieldsDefined")}
+													</span>
+												}
 											>
 												<For each={Object.entries(entryForm().fields)}>
 													{([name, def]) => (
@@ -525,28 +531,28 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 					</Show>
 
 					<div class="ui-field">
-						<p class="ui-label">Input mode</p>
+						<p class="ui-label">{t("createDialog.entry.inputMode")}</p>
 						<div class="flex flex-wrap gap-2">
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "webform" ? "ui-button-primary" : "ui-button-secondary"}`}
 								onClick={() => setInputMode("webform")}
 							>
-								Web form
+								{t("createDialog.entry.inputMode.webform")}
 							</button>
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "markdown" ? "ui-button-primary" : "ui-button-secondary"}`}
 								onClick={() => setInputMode("markdown")}
 							>
-								Markdown
+								{t("createDialog.entry.inputMode.markdown")}
 							</button>
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "chat" ? "ui-button-primary" : "ui-button-secondary"}`}
 								onClick={() => setInputMode("chat")}
 							>
-								Chat
+								{t("createDialog.entry.inputMode.chat")}
 							</button>
 						</div>
 					</div>
@@ -559,9 +565,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
 					<Show when={inputMode() === "markdown" && selectedFormDef()}>
 						<div class="ui-card">
-							<p class="text-sm font-semibold">Markdown input</p>
+							<p class="text-sm font-semibold">{t("createDialog.entry.markdownTitle")}</p>
 							<textarea
-								aria-label="Markdown input"
+								aria-label={t("createDialog.entry.markdownAria")}
 								class="ui-input ui-textarea mt-3 min-h-56"
 								value={markdownInput()}
 								onInput={(e) => setMarkdownInput(e.currentTarget.value)}
@@ -571,7 +577,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
 					<Show when={inputMode() === "webform" && webFormFields().length > 0}>
 						<div class="ui-card">
-							<p class="text-sm font-semibold">Form fields</p>
+							<p class="text-sm font-semibold">{t("createDialog.entry.formFieldsTitle")}</p>
 							<div class="ui-stack-sm mt-3">
 								<For each={webFormFields()}>
 									{([name, def], index) => {
@@ -585,8 +591,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 												<label class="ui-label" for={fieldId}>
 													{name}
 													<span class="ui-muted ml-2 text-xs">
-														({def.type}
-														{def.required ? ", required" : ""})
+														{t(
+															def.required
+																? "createDialog.entry.fieldMeta.required"
+																: "createDialog.entry.fieldMeta.optional",
+															{ type: def.type },
+														)}
 													</span>
 												</label>
 												<Show
@@ -619,9 +629,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
 					<Show when={inputMode() === "chat" && chatFields().length > 0}>
 						<div class="ui-card">
-							<p class="text-sm font-semibold">Chat input</p>
+							<p class="text-sm font-semibold">{t("createDialog.entry.chatTitle")}</p>
 							<p class="text-xs ui-muted mt-1">
-								Question {Math.min(chatStep() + 1, chatFields().length)} / {chatFields().length}
+								{t("createDialog.entry.chatProgress", {
+									current: Math.min(chatStep() + 1, chatFields().length),
+									total: chatFields().length,
+								})}
 							</p>
 							<div class="mt-3 flex flex-wrap gap-2">
 								<For each={chatFields()}>
@@ -637,7 +650,13 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													setErrorMessage(null);
 												}}
 											>
-												{name} ({answered() ? "answered" : def.required ? "required" : "optional"})
+												{name} (
+												{answered()
+													? t("createDialog.entry.chatStatus.answered")
+													: def.required
+														? t("createDialog.entry.chatStatus.required")
+														: t("createDialog.entry.chatStatus.optional")}
+												)
 											</button>
 										);
 									}}
@@ -658,8 +677,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 											<label class="ui-label" for={fieldId}>
 												{name}
 												<span class="ui-muted ml-2 text-xs">
-													({def.type}
-													{def.required ? ", required" : ", optional"})
+													{t(
+														def.required
+															? "createDialog.entry.chatFieldMeta.required"
+															: "createDialog.entry.chatFieldMeta.optional",
+														{ type: def.type },
+													)}
 												</span>
 											</label>
 											<Show
@@ -688,7 +711,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 													disabled={chatStep() <= 0}
 													onClick={() => moveChatStep(-1)}
 												>
-													Previous question
+													{t("createDialog.entry.chatPrevious")}
 												</button>
 												<div class="flex items-center gap-2">
 													<button
@@ -696,7 +719,11 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														class="ui-button ui-button-secondary text-xs"
 														onClick={handleSkipChatField}
 													>
-														{def.required ? "Skip field" : "Skip optional field"}
+														{t(
+															def.required
+																? "createDialog.entry.chatSkip"
+																: "createDialog.entry.chatSkipOptional",
+														)}
 													</button>
 													<Show when={chatStep() < chatFields().length - 1}>
 														<button
@@ -704,7 +731,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 															class="ui-button ui-button-secondary text-xs"
 															onClick={handleAdvanceChatStep}
 														>
-															Next question
+															{t("createDialog.entry.chatNext")}
 														</button>
 													</Show>
 												</div>
@@ -726,14 +753,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							onClick={props.onClose}
 							class="ui-button ui-button-secondary text-sm"
 						>
-							Cancel
+							{t("common.cancel")}
 						</button>
 						<button
 							type="submit"
 							disabled={!title().trim() || !selectedForm().trim() || selectableForms().length === 0}
 							class="ui-button ui-button-primary text-sm"
 						>
-							Create
+							{t("common.create")}
 						</button>
 					</div>
 				</form>
@@ -778,7 +805,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 	const nameIssue = createMemo(
 		() =>
 			/* v8 ignore start */
-			isReservedMetadataForm(name()) ? "Reserved metadata form name" : "",
+			isReservedMetadataForm(name()) ? t("createDialog.validation.reservedMetadataFormName") : "",
 		/* v8 ignore stop */
 	);
 
@@ -882,12 +909,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold mb-4">Create New Form</h2>
+					<h2 class="text-lg font-semibold mb-4">{t("createDialog.form.heading")}</h2>
 
 					<form onSubmit={handleSubmit} class="ui-stack-sm flex-1 overflow-auto">
 						<div class="ui-field">
 							<label class="ui-label" for="form-name">
-								Name
+								{t("createDialog.form.nameLabel")}
 							</label>
 							<input
 								ref={inputRef}
@@ -895,7 +922,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								type="text"
 								value={name()}
 								onInput={(e) => setName(e.currentTarget.value)}
-								placeholder="e.g. Meeting, Task"
+								placeholder={t("createDialog.form.namePlaceholder")}
 								class="ui-input"
 								classList={{ "ui-input-error": Boolean(nameIssue()) }}
 								autofocus
@@ -907,13 +934,13 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
 						<div class="ui-stack-sm">
 							<div class="flex justify-between items-center">
-								<span class="text-sm font-semibold">Columns</span>
+								<span class="text-sm font-semibold">{t("createDialog.form.columnsTitle")}</span>
 								<button
 									type="button"
 									onClick={addField}
 									class="ui-button ui-button-secondary ui-button-sm text-xs"
 								>
-									+ Add Column
+									{t("createDialog.form.addColumn")}
 								</button>
 							</div>
 
@@ -923,7 +950,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 										<div class={columnEditorRowClass}>
 											<input
 												type="text"
-												placeholder="Column Name"
+												placeholder={t("createDialog.form.columnNamePlaceholder")}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 												class={columnNameInputClass}
@@ -944,7 +971,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 													type="button"
 													onClick={() => removeField(i)}
 													class="ui-button ui-button-secondary ui-button-sm"
-													aria-label="Remove column"
+													aria-label={t("createDialog.form.removeColumnAria")}
 												>
 													×
 												</button>
@@ -952,11 +979,13 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 										</div>
 										<Show when={field().type === "row_reference"}>
 											<div class={columnAuxRowClass}>
-												<span class="text-xs ui-muted">Target Form:</span>
+												<span class="text-xs ui-muted">
+													{t("createDialog.form.targetFormLabel")}
+												</span>
 												<input
 													type="text"
 													list={`row-ref-targets-${i}`}
-													placeholder="e.g. Project"
+													placeholder={t("createDialog.form.targetFormPlaceholder")}
 													value={field().targetForm || ""}
 													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
 													class={columnAuxInputClass}
@@ -975,21 +1004,23 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								)}
 							</Index>
 							<Show when={fields().length === 0}>
-								<div class="ui-card text-sm ui-muted italic text-center">No columns defined</div>
+								<div class="ui-card text-sm ui-muted italic text-center">
+									{t("createDialog.form.noColumnsDefined")}
+								</div>
 							</Show>
 							<div class="ui-alert ui-alert-warning text-xs space-y-1">
 								<p>
-									Reserved metadata columns are system-owned and cannot be used:{" "}
-									{RESERVED_METADATA_COLUMNS.join(", ")}
+									{t("createDialog.form.warning.reservedColumns", {
+										columns: RESERVED_METADATA_COLUMNS.join(", "),
+									})}
 								</p>
 								<p>
-									Reserved metadata forms cannot be used: {RESERVED_METADATA_CLASSES.join(", ")}
+									{t("createDialog.form.warning.reservedForms", {
+										forms: RESERVED_METADATA_CLASSES.join(", "),
+									})}
 								</p>
-								<p>
-									List fields accept Markdown bullets (e.g. <code>- item</code>) or one value per
-									line.
-								</p>
-								<p>Boolean fields accept true/false, yes/no, on/off, and 1/0.</p>
+								<p>{t("createDialog.form.warning.listFields")}</p>
+								<p>{t("createDialog.form.warning.booleanFields")}</p>
 							</div>
 						</div>
 
@@ -999,14 +1030,14 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								onClick={props.onClose}
 								class="ui-button ui-button-secondary text-sm"
 							>
-								Cancel
+								{t("common.cancel")}
 							</button>
 							<button
 								type="submit"
 								disabled={!name().trim() || hasFieldIssues() || Boolean(nameIssue())}
 								class="ui-button ui-button-primary text-sm"
 							>
-								Create Form
+								{t("createDialog.form.create")}
 							</button>
 						</div>
 					</form>
@@ -1201,24 +1232,26 @@ export function EditFormDialog(props: EditFormDialogProps) {
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-lg font-semibold mb-4">Edit Form: {props.entryForm?.name}</h2>
+					<h2 class="text-lg font-semibold mb-4">
+						{t("createDialog.form.editHeading", { name: props.entryForm?.name ?? "" })}
+					</h2>
 					<div class="ui-alert ui-alert-warning text-sm">
 						<p>
-							<strong>Warning:</strong> Removing or renaming columns will delete associated data in
-							existing entries.
+							<strong>{t("createDialog.form.editWarningLabel")}</strong>{" "}
+							{t("createDialog.form.editWarningBody")}
 						</p>
 					</div>
 
 					<form onSubmit={handleSubmit} class="ui-stack-sm flex-1 overflow-auto">
 						<div class="ui-stack-sm">
 							<div class="flex justify-between items-center">
-								<span class="text-sm font-semibold">Columns</span>
+								<span class="text-sm font-semibold">{t("createDialog.form.columnsTitle")}</span>
 								<button
 									type="button"
 									onClick={addField}
 									class="ui-button ui-button-secondary ui-button-sm text-xs"
 								>
-									+ Add Column
+									{t("createDialog.form.addColumn")}
 								</button>
 							</div>
 
@@ -1228,14 +1261,14 @@ export function EditFormDialog(props: EditFormDialogProps) {
 										<div class={columnEditorRowClass}>
 											<input
 												type="text"
-												placeholder="Column Name"
+												placeholder={t("createDialog.form.columnNamePlaceholder")}
 												disabled={!field().isNew && !!props.entryForm.fields[field().name]}
 												value={field().name}
 												onInput={(e) => updateField(i, "name", e.currentTarget.value)}
 												class={columnNameInputClass}
 												classList={{ "ui-input-error": fieldIssues().has(i) && field().isNew }}
 												aria-invalid={fieldIssues().has(i) || undefined}
-												title={!field().isNew ? "Delete and add a new column to rename" : ""}
+												title={!field().isNew ? t("createDialog.form.renameHint") : ""}
 											/>
 											<div class={columnEditorControlsClass}>
 												<select
@@ -1251,7 +1284,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 													type="button"
 													onClick={() => removeField(i)}
 													class="ui-button ui-button-secondary ui-button-sm"
-													aria-label="Remove column"
+													aria-label={t("createDialog.form.removeColumnAria")}
 												>
 													×
 												</button>
@@ -1259,11 +1292,13 @@ export function EditFormDialog(props: EditFormDialogProps) {
 										</div>
 										<Show when={field().type === "row_reference"}>
 											<div class={columnAuxRowClass}>
-												<span class="text-xs ui-muted">Target Form:</span>
+												<span class="text-xs ui-muted">
+													{t("createDialog.form.targetFormLabel")}
+												</span>
 												<input
 													type="text"
 													list={`row-ref-targets-edit-${i}`}
-													placeholder="e.g. Project"
+													placeholder={t("createDialog.form.targetFormPlaceholder")}
 													value={field().targetForm || ""}
 													onInput={(e) => updateField(i, "targetForm", e.currentTarget.value)}
 													class={columnAuxInputClass}
@@ -1280,10 +1315,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
 										</Show>
 										<Show when={!props.entryForm.fields[field().name] || field().isNew}>
 											<div class={columnAuxRowClass}>
-												<span class="text-xs ui-muted">Default Value:</span>
+												<span class="text-xs ui-muted">
+													{t("createDialog.form.defaultValueLabel")}
+												</span>
 												<input
 													type="text"
-													placeholder="(Optional) e.g. Pending"
+													placeholder={t("createDialog.form.defaultValuePlaceholder")}
 													value={field().defaultValue || ""}
 													onInput={(e) => updateField(i, "defaultValue", e.currentTarget.value)}
 													class={columnAuxInputClass}
@@ -1294,23 +1331,25 @@ export function EditFormDialog(props: EditFormDialogProps) {
 								)}
 							</Index>
 							<Show when={fields().length === 0}>
-								<div class="ui-card text-sm ui-muted italic text-center">No columns defined</div>
+								<div class="ui-card text-sm ui-muted italic text-center">
+									{t("createDialog.form.noColumnsDefined")}
+								</div>
 							</Show>
 							<div class="ui-alert ui-alert-warning text-xs space-y-1">
 								<p>
-									Reserved metadata columns are system-owned and cannot be used:{" "}
-									{RESERVED_METADATA_COLUMNS.join(", ")}
+									{t("createDialog.form.warning.reservedColumns", {
+										columns: RESERVED_METADATA_COLUMNS.join(", "),
+									})}
 								</p>
 								<Show when={nameIssue()}>
 									<p>
-										Reserved metadata forms cannot be edited: {RESERVED_METADATA_CLASSES.join(", ")}
+										{t("createDialog.form.warning.reservedFormsEdit", {
+											forms: RESERVED_METADATA_CLASSES.join(", "),
+										})}
 									</p>
 								</Show>
-								<p>
-									List fields accept Markdown bullets (e.g. <code>- item</code>) or one value per
-									line.
-								</p>
-								<p>Boolean fields accept true/false, yes/no, on/off, and 1/0.</p>
+								<p>{t("createDialog.form.warning.listFields")}</p>
+								<p>{t("createDialog.form.warning.booleanFields")}</p>
 							</div>
 						</div>
 
@@ -1320,14 +1359,14 @@ export function EditFormDialog(props: EditFormDialogProps) {
 								onClick={props.onClose}
 								class="ui-button ui-button-secondary text-sm"
 							>
-								Cancel
+								{t("common.cancel")}
 							</button>
 							<button
 								type="submit"
 								disabled={hasFieldIssues() || Boolean(nameIssue())}
 								class="ui-button ui-button-primary text-sm"
 							>
-								Save Changes
+								{t("createDialog.form.saveChanges")}
 							</button>
 						</div>
 					</form>

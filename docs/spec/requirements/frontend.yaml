@@ -418,6 +418,17 @@ requirements:
       tests:
       - switches locale and translates labels
       - applies locale attributes on initialize
+      - 'REQ-FE-044: interpolates localized placeholders'
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes create-form dialog copy in Japanese'
+      - 'REQ-FE-044: localizes create-entry dialog copy in Japanese'
+    - file: frontend/src/components/AssetUploader.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes asset uploader controls in Japanese'
+    - file: frontend/src/components/ListPanel.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes entry list controls and empty state in Japanese'
     - file: frontend/src/lib/preferences-store.test.ts
       tests:
       - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
@@ -430,6 +441,15 @@ requirements:
       - shows language options in settings menu
       - switches locale when language changes
       - 'REQ-FE-044: persists locale via portable preferences with local fallback'
+    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+      tests:
+      - 'REQ-FE-044: dashboard localizes main workflow copy in Japanese'
+    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes entries route CTA copy in Japanese'
+    - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes forms route CTA copy in Japanese'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.

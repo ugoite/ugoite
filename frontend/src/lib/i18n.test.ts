@@ -45,4 +45,16 @@ describe("i18n", () => {
 		setLocale("invalid" as never);
 		expect(locale()).toBe("en");
 	});
+
+	it("REQ-FE-044: interpolates localized placeholders", () => {
+		expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 })).toBe(
+			"2 forms available",
+		);
+
+		setLocale("ja");
+
+		expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 })).toBe(
+			"利用可能なフォーム 2 件",
+		);
+	});
 });

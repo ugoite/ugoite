@@ -5,6 +5,7 @@ import SpaceDashboardRoute from "./dashboard";
 import { spaceApi } from "~/lib/space-api";
 import { formApi } from "~/lib/form-api";
 import { assetApi } from "~/lib/asset-api";
+import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
 const navigateMock = vi.fn();
@@ -75,6 +76,7 @@ describe("/spaces/:space_id/dashboard", () => {
 
 	beforeEach(() => {
 		navigateMock.mockReset();
+		setLocale("en");
 		(spaceApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
 			id: "default",
 			name: "Default Space",
@@ -127,5 +129,23 @@ describe("/spaces/:space_id/dashboard", () => {
 			expect(screen.getByRole("heading", { name: "Default Space" })).toBeInTheDocument();
 		});
 		expect(screen.queryByRole("heading", { name: "default" })).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: dashboard localizes main workflow copy in Japanese", async () => {
+		setLocale("ja");
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "エントリを作成" })).toBeInTheDocument();
+		});
+		expect(screen.getByRole("button", { name: "新しいエントリ" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "フォームを作成" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "新しいフォーム" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "アセット" })).toBeInTheDocument();
+		expect(
+			screen.getByText("ファイルをアップロードし、カタログのメタデータを同期します。"),
+		).toBeInTheDocument();
 	});
 });
