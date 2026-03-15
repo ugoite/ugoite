@@ -707,6 +707,7 @@ requirements:
       tests:
       - test_docs_req_ops_018_cli_release_binaries_and_install_script
       - test_docs_req_ops_018_install_script_supports_prerelease_quick_start
+      - test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease
       - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
       - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
 - set_id: REQCAT-OPS
