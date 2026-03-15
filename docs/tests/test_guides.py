@@ -465,6 +465,17 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
             message = f"README command drift detected: missing mise task `{task}`"
             raise AssertionError(message)
 
+    mise_data = tomllib.loads(mise)
+    e2e_run = mise_data.get("tasks", {}).get("e2e", {}).get("run")
+    if e2e_run != "bash e2e/scripts/run-e2e-parity.sh full":
+        message = "Root `mise run e2e` must use the shared E2E parity wrapper"
+        raise AssertionError(message)
+
+    e2e_ci_workflow = E2E_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    if "bash e2e/scripts/run-e2e-compose.sh full" not in e2e_ci_workflow:
+        message = "E2E CI workflow must use the shared docker-compose E2E runner"
+        raise AssertionError(message)
+
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
@@ -480,6 +491,7 @@ def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     source_paths = [
         REPO_ROOT / "docker-compose.yaml",
         REPO_ROOT / "e2e/scripts/run-e2e.sh",
+        REPO_ROOT / "e2e/scripts/run-e2e-compose.sh",
         REPO_ROOT / ".github/workflows/e2e-ci.yml",
         REPO_ROOT / ".github/workflows/frontend-ci.yml",
         REPO_ROOT / "frontend/src/routes/api/[...path].ts",
