@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import textwrap
 from pathlib import Path, PurePosixPath
 
@@ -1152,6 +1153,68 @@ def test_docs_req_ops_015_dev_auth_script_declares_manual_modes() -> None:
         message = "dev-auth-env.sh missing manual auth mode fragments: " + ", ".join(
             missing,
         )
+        raise AssertionError(message)
+
+
+def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-015: mock-oauth startup stays explicit without terminal prompts."""
+    auth_file = tmp_path / "dev-auth.json"
+    script_path = REPO_ROOT / "scripts" / "dev-auth-env.sh"
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(tmp_path),
+            "UGOITE_DEV_AUTH_MODE": "mock-oauth",
+            "UGOITE_DEV_AUTH_FILE": str(auth_file),
+            "UGOITE_DEV_SIGNING_KID": "mock-oauth-test-kid",
+            "UGOITE_DEV_SIGNING_SECRET": "mock-oauth-test-secret",
+        },
+    )
+    env.pop("UGOITE_DEV_USER_ID", None)
+    env.pop("UGOITE_DEV_TOTP_CODE", None)
+
+    result = subprocess.run(
+        ["/bin/bash", str(script_path)],
+        cwd=REPO_ROOT,
+        env=env,
+        input="",
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        message = (
+            "mock-oauth startup should not block on terminal input; "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        raise AssertionError(message)
+
+    if "Local dev username:" in result.stdout or "Local dev username:" in result.stderr:
+        message = "mock-oauth startup must not prompt for a local username"
+        raise AssertionError(message)
+
+    if "Current 2FA code:" in result.stdout or "Current 2FA code:" in result.stderr:
+        message = "mock-oauth startup must not prompt for a TOTP code"
+        raise AssertionError(message)
+
+    exports = result.stdout
+    if "export UGOITE_DEV_AUTH_MODE=mock-oauth" not in exports:
+        message = "mock-oauth startup must export the selected auth mode"
+        raise AssertionError(message)
+    if "export UGOITE_DEV_USER_ID=dev-local-user" not in exports:
+        message = "mock-oauth startup must default UGOITE_DEV_USER_ID"
+        raise AssertionError(message)
+
+    auth_payload = json.loads(auth_file.read_text(encoding="utf-8"))
+    if auth_payload["mode"] != "mock-oauth":
+        message = "mock-oauth startup must persist the selected mode"
+        raise AssertionError(message)
+    if auth_payload["user_id"] != "dev-local-user":
+        message = "mock-oauth startup must persist the default dev user"
         raise AssertionError(message)
 
 
