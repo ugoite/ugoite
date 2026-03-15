@@ -187,11 +187,12 @@ test` runs `//ugoite-core:build` before `//backend:test:no-build` and
 `//ugoite-core:test:no-build` so one editable extension build is reused across
 that local test workflow. `mise run //ugoite-core:build:clean` provides a
 package-local destructive rebuild when the editable extension is stale.
-`mise run cleanup:rust-targets` removes both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
-unexpectedly. `mise run //ugoite-cli:test` installs `cargo-llvm-cov` and
-`llvm-tools-preview` if needed, then enforces the same 100% CLI line-coverage gate
-as Rust CI.
+The default `mise run //ugoite-cli:test` path stays incremental (`cargo test`),
+while `mise run //ugoite-cli:test:clean` provides a package-local destructive
+rerun when CLI artifacts are stale. `mise run cleanup:rust-targets` removes
+both the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
+path when artifacts grow unexpectedly. Rust CI and pre-commit still enforce the
+100% CLI line-coverage gate through `cargo llvm-cov`.
 
 ## SBOM and Supply Chain CI
 

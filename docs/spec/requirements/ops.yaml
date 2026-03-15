@@ -382,9 +382,13 @@ requirements:
 
     editable ugoite-core build inside root `mise run test` before backend and
 
-    ugoite-core test execution, and expose explicit clean rebuild/cleanup
+    ugoite-core test execution, keep the default ugoite-cli local test path
 
-    commands when stale artifacts need a destructive reset. Rust CI MUST use
+    incremental, and expose explicit clean rebuild/test/cleanup commands when
+
+    stale artifacts need a
+
+    destructive reset. Rust CI MUST use
 
     the same shared target root so repeated ugoite-core and ugoite-cli
 
