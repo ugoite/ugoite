@@ -6,7 +6,7 @@
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
-| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR | Lint (biome) |
+| Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
@@ -46,9 +46,10 @@ jobs:
     - actionlint
 ```
 
-The root artifact hygiene gate blocks tracked files under generated dependency
-or build directories such as `node_modules/` and `target/`, and it rejects
-tracked files larger than `1 MiB` unless they are explicitly allowlisted in
+The root artifact hygiene gate fails tracked paths that still match repository
+ignore rules, it blocks tracked files under generated dependency or build
+directories such as `node_modules/` and `target/`, and it rejects tracked
+files larger than `1 MiB` unless they are explicitly allowlisted in
 `scripts/check-root-artifact-hygiene.sh`.
 
 ## Rust CI
@@ -65,18 +66,22 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo test --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 ```
 
 ## Frontend CI
 
 ```yaml
 jobs:
-  lint:
+  ci:
     - cd frontend && biome ci .
-  test:
-    - cd frontend && bun test
+    - cd frontend && bun install
+    - cd frontend && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 ```
+
+The root `mise run test` contract must enforce the same frontend 100% coverage
+gate by depending on `//frontend:test:coverage`, so local verification and CI
+fail for the same coverage regressions.
 
 ## Docsite CI
 
@@ -94,12 +99,18 @@ jobs:
 ```yaml
 jobs:
   e2e:
-    - Start backend (background)
-    - Start frontend (background)
-    - Wait for servers
-    - cd e2e && npm run test
+    - Build backend image
+    - Build frontend image
+    - bash e2e/scripts/run-e2e-compose.sh full
     timeout: 30 minutes
 ```
+
+The shared compose runner remains the CI path. Local `mise run e2e` prefers
+that same compose runner when Docker is available, and otherwise falls back to a
+production-style host runner that keeps the same Playwright JUnit/no-skips
+validation contract. CI reuses pre-built images by setting
+`E2E_BUILD_IMAGES=false`, while Docker-enabled local runs build the images from
+the current workspace before starting the compose stack.
 
 ## Devcontainer CI
 
@@ -151,15 +162,20 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo test --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 ```
 
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
-The default `ugoite-core` build path stays incremental, `mise run
-//ugoite-core:build:clean` provides a package-local destructive rebuild when the
-editable extension is stale, and `mise run cleanup:rust-targets` removes both
-the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
-path when artifacts grow unexpectedly.
+The default `ugoite-core` build path stays incremental, and root `mise run
+test` runs `//ugoite-core:build` before `//backend:test:no-build` and
+`//ugoite-core:test:no-build` so one editable extension build is reused across
+that local test workflow. `mise run //ugoite-core:build:clean` provides a
+package-local destructive rebuild when the editable extension is stale.
+`mise run cleanup:rust-targets` removes both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+unexpectedly. `mise run //ugoite-cli:test` installs `cargo-llvm-cov` and
+`llvm-tools-preview` if needed, then enforces the same 100% CLI line-coverage gate
+as Rust CI.
 
 ## SBOM and Supply Chain CI
 
@@ -183,11 +199,11 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
 - **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
-- **Root artifact hygiene**: Blocks root-level files with placeholder-only content
+- **Root artifact hygiene**: Blocks placeholder files, tracked+ignored paths, generated dependency trees, and oversized tracked artifacts
 - **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
 
 Conventional Commit enforcement (local):
@@ -241,7 +257,7 @@ Before pushing, run the same checks as CI:
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
 cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
-cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 
 # Python
 cd .. && uvx ruff format --check .
@@ -255,8 +271,11 @@ cd docsite && bun run lint && bun run format:check && bun run typecheck && bun r
 # Frontend
 cd ../frontend && biome ci . && bun run test:run --coverage
 
-# E2E (requires servers running)
+# E2E (authoritative local parity path)
 cd .. && mise run e2e
+
+# Fast local iteration only (not CI parity)
+cd .. && mise run e2e:dev
 
 # Conventional commits + release metadata
 npm run commitlint:range

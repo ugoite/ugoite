@@ -232,6 +232,20 @@ Run all tests from repo root:
 mise run test
 ```
 
+Run the authoritative local E2E suite. It prefers the docker-compose path used
+by GitHub Actions when Docker is available, and otherwise falls back to a
+production-style host runner with the same Playwright JUnit/no-skips gates:
+
+```bash
+mise run e2e
+```
+
+For faster local iteration against direct dev servers (not CI parity):
+
+```bash
+mise run e2e:dev
+```
+
 Where you can run this:
 
 - Dev Container: everything needed to run tests is available; run `mise run test`.
