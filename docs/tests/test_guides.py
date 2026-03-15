@@ -186,6 +186,9 @@ REQUIRED_CLI_CICD_FRAGMENTS = {
     "scripts/install-ugoite-cli.sh",
     "ugoite --help",
 }
+REQUIRED_RELEASE_DRAFT_CHECKOUT_REF = (
+    "${{ inputs.target != '' && inputs.target || github.sha }}"
+)
 REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
     "contents": "write",
     "packages": "write",
@@ -1284,6 +1287,76 @@ def test_docs_req_ops_018_cli_release_binaries_and_install_script() -> None:
     details = _collect_cli_release_install_details()
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target() -> (
+    None
+):
+    """REQ-OPS-018: Release Publish draft job checks out the requested target."""
+    workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = "release-publish.yml must define jobs"
+        raise TypeError(message)
+
+    create_draft_job = jobs.get("create-draft-release")
+    if not isinstance(create_draft_job, dict):
+        message = "release-publish.yml must define jobs.create-draft-release"
+        raise TypeError(message)
+
+    steps = create_draft_job.get("steps", [])
+    if not isinstance(steps, list):
+        message = "create-draft-release steps must be a list"
+        raise TypeError(message)
+
+    checkout_index = next(
+        (
+            index
+            for index, step in enumerate(steps)
+            if isinstance(step, dict) and step.get("uses") == "actions/checkout@v6"
+        ),
+        None,
+    )
+    if checkout_index is None:
+        message = "create-draft-release must check out the requested release target"
+        raise AssertionError(message)
+
+    checkout_step = steps[checkout_index]
+    if not isinstance(checkout_step, dict):
+        message = "checkout step must be a mapping"
+        raise TypeError(message)
+
+    with_block = checkout_step.get("with", {})
+    if not isinstance(with_block, dict):
+        message = "checkout step must define a with mapping"
+        raise TypeError(message)
+
+    configured_ref = str(with_block.get("ref", "")).strip()
+    if configured_ref != REQUIRED_RELEASE_DRAFT_CHECKOUT_REF:
+        message = (
+            "create-draft-release checkout must use the requested target ref "
+            f"(got {configured_ref!r})"
+        )
+        raise AssertionError(message)
+
+    create_step_index = next(
+        (
+            index
+            for index, step in enumerate(steps)
+            if isinstance(step, dict)
+            and step.get("name") == "Create or reuse draft release"
+        ),
+        None,
+    )
+    if create_step_index is None:
+        message = "create-draft-release must define the release creation step"
+        raise AssertionError(message)
+
+    if checkout_index >= create_step_index:
+        message = (
+            "create-draft-release must check out the target before gh release create"
+        )
+        raise AssertionError(message)
 
 
 def test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit() -> None:
