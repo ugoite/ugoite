@@ -38,12 +38,20 @@ tracked_paths = subprocess.check_output(
     text=False,
 ).decode("utf-8").split("\0")
 
+tracked_ignored: list[str] = []
 forbidden_paths: list[tuple[str, str]] = []
 oversized_paths: list[tuple[str, int]] = []
 
 for raw_path in tracked_paths:
     if not raw_path:
         continue
+
+    if subprocess.run(
+        ["git", "check-ignore", "--no-index", raw_path],
+        capture_output=True,
+        check=False,
+    ).returncode == 0:
+        tracked_ignored.append(raw_path)
 
     path = PurePosixPath(raw_path)
     forbidden_segment = next(
@@ -62,8 +70,21 @@ for raw_path in tracked_paths:
     if size > MAX_TRACKED_FILE_BYTES and raw_path not in ALLOWED_LARGE_TRACKED_PATHS:
         oversized_paths.append((raw_path, size))
 
-if forbidden_paths or oversized_paths:
+if tracked_ignored or forbidden_paths or oversized_paths:
     messages: list[str] = []
+    if tracked_ignored:
+        lines = [
+            "Tracked files must not also match ignore rules:",
+        ]
+        lines.extend(f"  - {path}" for path in sorted(tracked_ignored))
+        lines.extend(
+            [
+                "",
+                "Either untrack the artifact or narrow the ignore rules so",
+                "intentional source files do not appear as tracked+ignored.",
+            ]
+        )
+        messages.append("\n".join(lines))
     if forbidden_paths:
         lines = [
             "Tracked files must not live under generated dependency/build directories:",
