@@ -297,12 +297,9 @@ a:hover {
 
 	/* Shell */
 	.doc-shell {
-		max-width: 80rem;
+		max-width: 64rem;
 		margin: 0 auto;
 		padding: 2rem 1.5rem 4rem;
-		display: grid;
-		grid-template-columns: 15rem minmax(0, 1fr);
-		gap: 2rem;
 	}
 
 	.doc-shell-3col {
@@ -310,7 +307,7 @@ a:hover {
 		margin: 0 auto;
 		padding: 2rem 1.5rem 4rem;
 		display: grid;
-		grid-template-columns: 14rem minmax(0, 1fr) 14rem;
+		grid-template-columns: minmax(0, 1fr) 14rem;
 		gap: 2rem;
 	}
 
@@ -320,14 +317,8 @@ a:hover {
 		padding: 2rem 1.5rem 4rem;
 	}
 
-	/* Sidebar */
-	.doc-sidebar {
-		position: sticky;
-		top: 4rem;
-		height: fit-content;
-		max-height: calc(100vh - 5rem);
-		overflow-y: auto;
-		padding-right: 0.5rem;
+	.doc-shell-main {
+		min-width: 0;
 	}
 
 	.doc-sidebar-section {
@@ -1015,12 +1006,10 @@ a:hover {
 
 	/* Responsive */
 	@media (max-width: 1024px) {
-		.doc-shell,
 		.doc-shell-3col {
 			grid-template-columns: 1fr;
 		}
 
-		.doc-sidebar,
 		.doc-right {
 			display: none;
 		}
