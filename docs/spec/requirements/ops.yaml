@@ -111,6 +111,12 @@ requirements:
       - test_req_ops_003_governance_files_exist
       - test_req_ops_003_ids_and_links_are_structurally_valid
       - test_req_ops_003_bidirectional_links_hold
+    vitest:
+    - file: docsite/src/lib/spec-data.test.ts
+      tests:
+      - 'REQ-OPS-003: philosophy and policy helpers normalize governance YAML data'
+      - 'REQ-OPS-003: requirement and feature helpers sort governance sources predictably'
+      - 'REQ-OPS-003: ui page and relationship helpers expose only visible spec data'
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -243,9 +249,11 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-007
   title: Docsite Format/Lint/Test Parity
-  description: 'Docsite quality gates MUST define explicit format, lint, and test-equivalent
+  description: 'Docsite quality gates MUST define explicit format, lint, typecheck,
 
-    validation in both pre-commit hooks and Docsite CI.
+    build validation, and behavior-test coverage validation in both pre-commit
+
+    hooks and Docsite CI.
 
     '
   related_spec:
@@ -904,3 +912,36 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_023_public_package_stays_separate_from_private_tooling
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-024
+  title: Docsite Coverage Must Be a Hard Gate
+  description: 'Docsite CI and the root `mise run test` task MUST enforce 100% coverage
+
+    for docsite behavior tests, and the contract MUST remain documented so the
+
+    hard gate is explicit rather than only implied by docsite-local config.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_024_docsite_coverage_gate_is_explicit

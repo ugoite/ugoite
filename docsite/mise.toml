@@ -17,7 +17,12 @@ run = "bun run typecheck"
 depends = ["lint", "format:check", "typecheck"]
 
 [tasks.test]
-depends = ["check"]
+run = "bun run test:run"
+description = "Run docsite unit tests with Vitest"
+
+[tasks."test:coverage"]
+run = "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
+description = "Run docsite unit tests with 100% coverage enforcement"
 
 [tasks.build]
 run = "bun run build"

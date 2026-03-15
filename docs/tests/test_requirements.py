@@ -24,7 +24,7 @@ USER_MANAGEMENT_COVERAGE_TASK = (
     "Requirement coverage check confirms all new REQ-* are linked to tests"
 )
 
-REQ_ID_PATTERN = re.compile(r"REQ-[A-Z]+-\d{3}")
+REQ_ID_PATTERN = re.compile(r"REQ-[A-Z0-9]+-\d{3}")
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,7 @@ class Requirement:
 
 TEST_SCAN_RULES: tuple[tuple[Path, tuple[str, ...]], ...] = (
     (REPO_ROOT / "backend" / "tests", ("test_*.py",)),
+    (REPO_ROOT / "docsite" / "src", ("*.test.ts", "*.test.tsx")),
     (REPO_ROOT / "ugoite-minimum" / "tests", ("test_*.rs",)),
     (REPO_ROOT / "ugoite-cli" / "tests", ("test_*.rs",)),
     (REPO_ROOT / "ugoite-core" / "tests", ("test_*.rs",)),
