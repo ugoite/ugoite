@@ -1,0 +1,111 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../lib/base-path";
+
+const toc = [
+  { id: "overview", title: "Overview" },
+  { id: "first-steps", title: "First Steps" },
+  { id: "next", title: "Next" },
+];
+
+const firstSteps = [
+  {
+    icon: "🚀",
+    title: "Run with Docker Compose",
+    description:
+      "Use the main getting-started guide for the fastest local browser-based setup.",
+    href: "/docs/guide/docker-compose",
+    detail: "Frontend + backend together",
+  },
+  {
+    icon: "📦",
+    title: "Container Quickstart",
+    description:
+      "Pull published images and start Ugoite without cloning or building from source.",
+    href: "/docs/guide/container-quickstart",
+    detail: "Best for trying the released stack",
+  },
+  {
+    icon: "🔐",
+    title: "Auth Overview",
+    description:
+      "Understand how browser, CLI, and API access fit together before you sign in.",
+    href: "/docs/guide/auth-overview",
+    detail: "Useful before team rollout",
+  },
+  {
+    icon: "⌨️",
+    title: "CLI Guide",
+    description:
+      "Prefer the terminal? Learn the CLI entrypoints and installation flow first.",
+    href: "/docs/guide/cli",
+    detail: "Automation-friendly",
+  },
+];
+
+const nextSteps = [
+  {
+    icon: "🖥️",
+    title: "Explore the application",
+    description: "See how the browser UI, API, CLI, and MCP surfaces fit together.",
+    href: "/app",
+  },
+  {
+    icon: "💡",
+    title: "Read the design model",
+    description: "Dive into philosophy, policies, requirements, and feature traceability.",
+    href: "/design",
+  },
+  {
+    icon: "📚",
+    title: "Browse source specs",
+    description: "Open the machine-readable docs if you want implementation-level detail.",
+    href: "/docs/spec/index",
+  },
+];
+---
+
+<BaseLayout
+  title="Getting Started | Ugoite"
+  description="A user-first path for understanding Ugoite and starting it locally."
+  toc={toc}
+>
+  <section id="overview" class="doc-card-hero">
+    <div style="position: relative; z-index: 1;">
+      <span class="doc-pill">Getting Started</span>
+      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
+        Start with Ugoite before diving into design docs
+      </h1>
+      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 42rem; line-height: 1.6;">
+        Ugoite gives you a private, portable knowledge space that runs on infrastructure you control.
+        Start by launching the app, understanding how you sign in, and choosing the surface that fits your workflow.
+      </p>
+    </div>
+  </section>
+
+  <section id="first-steps">
+    <div class="doc-grid">
+      {firstSteps.map((step) => (
+        <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
+          <h2 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h2>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
+          <span class="doc-pill" style="margin-top: 0.75rem;">{step.detail}</span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section id="next" class="doc-card">
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Once you are running, here is where to go next</h2>
+    <div class="doc-grid">
+      {nextSteps.map((step) => (
+        <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
+          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h3>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

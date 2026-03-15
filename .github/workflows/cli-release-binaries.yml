@@ -70,6 +70,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           asset_name="ugoite-v${VERSION}-${TARGET}.tar.gz"
+          installer_name="ugoite-v${VERSION}-${TARGET}.install.sh"
           cp "target/rust/${TARGET}/release/ugoite" dist/ugoite
           tar -C dist -czf "dist/${asset_name}" ugoite
           if command -v sha256sum >/dev/null 2>&1; then
@@ -77,7 +78,9 @@ jobs:
           else
             (cd dist && shasum -a 256 "${asset_name}" > "${asset_name}.sha256")
           fi
+          bash scripts/render-cli-release-installer.sh "${VERSION}" "${TARGET}" "dist/${installer_name}"
           echo "asset_name=${asset_name}" >>"$GITHUB_OUTPUT"
+          echo "installer_name=${installer_name}" >>"$GITHUB_OUTPUT"
 
       - name: Upload CLI release assets
         env:
@@ -85,4 +88,8 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          gh release upload "v${VERSION}"             "dist/${{ steps.package.outputs.asset_name }}"             "dist/${{ steps.package.outputs.asset_name }}.sha256"             --clobber
+          gh release upload "v${VERSION}" \
+            "dist/${{ steps.package.outputs.asset_name }}" \
+            "dist/${{ steps.package.outputs.asset_name }}.sha256" \
+            "dist/${{ steps.package.outputs.installer_name }}" \
+            --clobber
