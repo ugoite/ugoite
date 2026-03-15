@@ -120,7 +120,9 @@ export async function getPhilosophies(): Promise<PhilosophyItem[]> {
 	);
 }
 
-export async function getPhilosophyById(id: string): Promise<PhilosophyItem | null> {
+export async function getPhilosophyById(
+	id: string,
+): Promise<PhilosophyItem | null> {
 	const items = await getPhilosophies();
 	return items.find((item) => item.id === id) ?? null;
 }

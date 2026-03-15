@@ -18,6 +18,9 @@ targets an **Authenticated Access by Default** model.
 - Remote access requires `UGOITE_ALLOW_REMOTE=true`.
 - Protected API/MCP routes require authenticated identity.
 - Phase 1 providers support bearer token and API key authentication.
+- Local development obtains browser/CLI bearer tokens through explicit
+  `manual-totp` or `mock-oauth` login endpoints after startup instead of
+  injecting an authenticated token before the app starts.
 
 ## Network Isolation
 
