@@ -698,9 +698,11 @@ requirements:
 
     release platforms (at minimum Linux x86_64 + arm64, macOS x86_64, and
 
-    macOS arm64), attach them to the GitHub Release, and keep a maintained
+    macOS arm64), attach them to the GitHub Release, generate matching
 
-    one-liner install path plus quick-start documentation so users can run
+    platform-specific one-liner installer assets, and keep a maintained
+
+    generic install path plus quick-start documentation so users can run
 
     `ugoite --help` without cloning and building from source.
 
@@ -718,6 +720,7 @@ requirements:
       - test_docs_req_ops_018_cli_release_binaries_and_install_script
       - test_docs_req_ops_018_install_script_supports_prerelease_quick_start
       - test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease
+      - test_docs_req_ops_018_platform_installer_asset_validates_prerelease
       - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
       - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
 - set_id: REQCAT-OPS
