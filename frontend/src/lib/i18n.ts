@@ -7,6 +7,7 @@ type Dictionary = typeof uiDictionary;
 
 export type Locale = keyof Dictionary;
 export type TranslationKey = keyof Dictionary["en"];
+export type TranslationParams = Record<string, string | number>;
 
 const availableLocales = new Set<Locale>(Object.keys(uiDictionary) as Locale[]);
 
@@ -49,11 +50,16 @@ const localeStore = createRoot(() => {
 export const locale = localeStore.locale;
 export const setLocale = localeStore.setLocale;
 
-export const t = (key: TranslationKey): string => {
+export const t = (key: TranslationKey, params?: TranslationParams): string => {
 	const currentLocale = locale();
 	/* v8 ignore start */
 	const currentDict = uiDictionary[currentLocale] ?? uiDictionary.en;
-	return currentDict[key] ?? uiDictionary.en[key] ?? key;
+	const template = currentDict[key] ?? uiDictionary.en[key] ?? key;
+	if (!params) return template;
+	return Object.entries(params).reduce(
+		(message, [name, value]) => message.replaceAll(`{${name}}`, String(value)),
+		template,
+	);
 	/* v8 ignore stop */
 };
 

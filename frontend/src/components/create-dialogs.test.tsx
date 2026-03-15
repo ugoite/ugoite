@@ -154,6 +154,27 @@ describe("CreateFormDialog", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Remove column" }));
 		expect(screen.queryByPlaceholderText("Column Name")).not.toBeInTheDocument();
 	});
+
+	it("REQ-FE-044: localizes create-form dialog copy in Japanese", async () => {
+		setLocale("ja");
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		expect(screen.getByRole("heading", { name: "新しいフォームを作成" })).toBeInTheDocument();
+		expect(screen.getByLabelText("名前")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "+ カラムを追加" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "フォームを作成" })).toBeInTheDocument();
+	});
 });
 
 describe("CreateEntryDialog", () => {
@@ -958,6 +979,30 @@ describe("CreateEntryDialog", () => {
 		fireEvent.click(dialog, { target: dialog });
 
 		expect(onClose).toHaveBeenCalled();
+	});
+
+	it("REQ-FE-044: localizes create-entry dialog copy in Japanese", async () => {
+		setLocale("ja");
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		expect(screen.getByRole("heading", { name: "新しいエントリを作成" })).toBeInTheDocument();
+		expect(screen.getByLabelText("タイトル")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Webフォーム" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "作成" })).toBeInTheDocument();
+		expect(screen.getByText("フォームフィールド")).toBeInTheDocument();
 	});
 });
 

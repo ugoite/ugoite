@@ -5,6 +5,7 @@ import { createMemo, createSignal } from "solid-js";
 import SpaceFormsIndexPane from "./index";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
+import { setLocale } from "~/lib/i18n";
 import { createSpaceStore } from "~/lib/space-store";
 import type { Form } from "~/lib/types";
 
@@ -58,6 +59,7 @@ describe("/spaces/:space_id/forms", () => {
 
 	beforeEach(() => {
 		navigateMock.mockReset();
+		setLocale("en");
 		setSearchParamsMock.mockReset();
 		for (const key of Object.keys(searchParamsMock)) {
 			delete searchParamsMock[key];
@@ -107,5 +109,16 @@ describe("/spaces/:space_id/forms", () => {
 		});
 		expect(setSearchParamsMock).not.toHaveBeenCalled();
 		expect(screen.queryByRole("option", { name: "Assets" })).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: localizes forms route CTA copy in Japanese", async () => {
+		setLocale("ja");
+		renderPane([meetingForm]);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "フォームグリッド" })).toBeInTheDocument();
+		});
+		expect(screen.getByRole("button", { name: "新しいフォーム" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
 	});
 });

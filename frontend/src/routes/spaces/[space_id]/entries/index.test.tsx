@@ -11,6 +11,7 @@ import { createSpaceStore } from "~/lib/space-store";
 import { createMemo, createSignal } from "solid-js";
 import type { Form } from "~/lib/types";
 import { server } from "~/test/mocks/server";
+import { setLocale } from "~/lib/i18n";
 
 const navigateMock = vi.fn();
 const searchParamsMock: Record<string, string> = {};
@@ -29,6 +30,7 @@ vi.mock("@solidjs/router", () => ({
 describe("/spaces/:space_id/entries", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
+		setLocale("en");
 		for (const key of Object.keys(searchParamsMock)) {
 			delete searchParamsMock[key];
 		}
@@ -179,5 +181,34 @@ describe("/spaces/:space_id/entries", () => {
 		expect(await screen.findByText("Query Entry")).toBeInTheDocument();
 		expect(await screen.findByText(`Updated ${expectedDate}`)).toBeInTheDocument();
 		expect(screen.queryByText("Updated 1772960822.056")).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: localizes entries route CTA copy in Japanese", async () => {
+		setLocale("ja");
+		render(() => {
+			const entryStore = createEntryStore(() => "default");
+			const spaceStore = createSpaceStore();
+			const [forms] = createSignal<Form[]>([]);
+			const [loadingForms] = createSignal(false);
+			const [columnTypes] = createSignal<string[]>([]);
+			return (
+				<EntriesRouteContext.Provider
+					value={{
+						spaceStore,
+						spaceId: () => "default",
+						entryStore,
+						forms: createMemo(() => forms()),
+						loadingForms,
+						columnTypes,
+						refetchForms: () => undefined,
+					}}
+				>
+					<SpaceEntriesIndexPane />
+				</EntriesRouteContext.Provider>
+			);
+		});
+
+		expect(await screen.findByRole("heading", { name: "エントリ" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "新しいエントリ" })).toBeInTheDocument();
 	});
 });

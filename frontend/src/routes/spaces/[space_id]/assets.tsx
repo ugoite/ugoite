@@ -2,6 +2,7 @@ import { A, useParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { AssetUploader } from "~/components/AssetUploader";
 import { assetApi } from "~/lib/asset-api";
+import { t } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
 
 export default function SpaceAssetsRoute() {
@@ -26,7 +27,7 @@ export default function SpaceAssetsRoute() {
 			await assetApi.delete(spaceId(), assetId);
 			await refetch();
 		} catch (err) {
-			setActionError(err instanceof Error ? err.message : "Failed to delete asset");
+			setActionError(err instanceof Error ? err.message : t("assetDetail.failedDelete"));
 		}
 	};
 
@@ -34,9 +35,9 @@ export default function SpaceAssetsRoute() {
 		<main class="ui-shell ui-page">
 			<div class="max-w-4xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="ui-page-title">Assets</h1>
+					<h1 class="ui-page-title">{t("assetsPage.heading")}</h1>
 					<A href={`/spaces/${spaceId()}/entries`} class="text-sm">
-						Back to Entries
+						{t("assetsPage.backToEntries")}
 					</A>
 				</div>
 
@@ -46,10 +47,10 @@ export default function SpaceAssetsRoute() {
 					<p class="ui-alert ui-alert-error text-sm mt-4">{actionError()}</p>
 				</Show>
 				<Show when={assets.loading}>
-					<p class="text-sm ui-muted mt-4">Loading assets...</p>
+					<p class="text-sm ui-muted mt-4">{t("dashboard.section.assets.loading")}</p>
 				</Show>
 				<Show when={assets.error}>
-					<p class="ui-alert ui-alert-error text-sm mt-4">Failed to load assets.</p>
+					<p class="ui-alert ui-alert-error text-sm mt-4">{t("assetsPage.failedLoad")}</p>
 				</Show>
 			</div>
 		</main>

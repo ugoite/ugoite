@@ -1,10 +1,15 @@
 // REQ-FE-015: Asset upload UI
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import { AssetUploader } from "./AssetUploader";
+import { setLocale } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
 
 describe("AssetUploader", () => {
+	beforeEach(() => {
+		setLocale("en");
+	});
+
 	it("should render file input", () => {
 		render(() => <AssetUploader onUpload={vi.fn()} />);
 		const input = screen.getByLabelText(/upload asset/i);
@@ -124,5 +129,17 @@ describe("AssetUploader", () => {
 
 		expect(screen.getByText("video.mp4")).toBeInTheDocument();
 		expect(screen.getByText("file.txt")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: localizes asset uploader controls in Japanese", () => {
+		setLocale("ja");
+		const assets: Asset[] = [{ id: "att-1", name: "doc.pdf", path: "assets/att-1_doc.pdf" }];
+
+		render(() => <AssetUploader onUpload={vi.fn()} assets={assets} onRemove={vi.fn()} />);
+
+		expect(screen.getByText("アセットをアップロード")).toBeInTheDocument();
+		expect(screen.getByLabelText("アセットをアップロード")).toBeInTheDocument();
+		expect(screen.getByText("アセット")).toBeInTheDocument();
+		expect(screen.getByLabelText("アセット doc.pdf を削除")).toBeInTheDocument();
 	});
 });
