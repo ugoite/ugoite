@@ -221,3 +221,35 @@ requirements:
     - file: e2e/docsite-theme-controls.test.ts
       tests:
       - 'REQ-E2E-007: docsite keeps a fixed UI theme and only exposes color mode selection'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-008
+  title: Docsite Getting-Started First Navigation
+  description: 'The docsite landing experience and main navigation MUST explain what
+
+    Ugoite is and surface getting-started paths before design/developer
+
+    references, while keeping deeper design and source documentation available.
+
+    '
+  related_spec:
+  - ui/README.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/docsite-onboarding.test.ts
+      tests:
+      - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
+      - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
+      - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
