@@ -8,6 +8,7 @@ export type NavItem = {
 
 export type NavSection = {
 	title: string;
+	overviewHref: string;
 	items: NavItem[];
 };
 
@@ -22,6 +23,7 @@ export const topLinks: NavItem[] = [
 export const navSections: NavSection[] = [
 	{
 		title: "Getting Started",
+		overviewHref: "/getting-started",
 		items: [
 			{ title: "Overview", href: "/getting-started" },
 			{ title: "Docker Compose", href: "/docs/guide/docker-compose" },
@@ -35,6 +37,7 @@ export const navSections: NavSection[] = [
 	},
 	{
 		title: "Application",
+		overviewHref: "/app",
 		items: [
 			{ title: "Overview", href: "/app" },
 			{ title: "Frontend", href: "/app/frontend" },
@@ -48,6 +51,7 @@ export const navSections: NavSection[] = [
 	},
 	{
 		title: "Design Principles",
+		overviewHref: "/design",
 		items: [
 			{ title: "Overview", href: "/design" },
 			{ title: "Philosophy", href: "/design/philosophy", items: [] },
@@ -59,6 +63,7 @@ export const navSections: NavSection[] = [
 	},
 	{
 		title: "Source Docs",
+		overviewHref: "/docs/spec/index",
 		items: [
 			{ title: "Spec Index", href: "/docs/spec/index" },
 			{ title: "REST API", href: "/docs/spec/api/rest" },

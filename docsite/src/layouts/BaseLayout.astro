@@ -19,10 +19,13 @@ const navSections = await getNavSectionsWithChildren();
 const searchIndexUrl = withBasePath("/search-index.json");
 const subNavByHref = new Map(
   navSections.flatMap((section) => {
-    const [overview, ...children] = section.items;
+    const overview = section.items.find((item) => item.href === section.overviewHref);
     if (!overview) {
       return [];
     }
+    const children = section.items.filter(
+      (item) => item.href !== section.overviewHref,
+    );
     return [[overview.href, children.slice(0, 5)]];
   }),
 );

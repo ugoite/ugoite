@@ -1473,6 +1473,7 @@ requirements:
       tests:
       - 'REQ-FE-056: does not show persistent auth guidance during normal space listing'
       - 'REQ-FE-056: shows concise auth errors only when space loading fails'
+      - 'REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
