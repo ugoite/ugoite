@@ -16,5 +16,4 @@ spaces/
 backend/.coverage
 frontend/coverage/
 /target/
-/Cargo.lock
 backend/.coverage
