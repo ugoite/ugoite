@@ -7,7 +7,7 @@
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
-| Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
+| Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR, merge queue | Lint, format check, typecheck, validation build, and tests with mandatory 100% coverage |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue | Path-aware smoke/full E2E with merge-queue full coverage |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push/PR for devcontainer & setup inputs, merge queue | Build/smoke devcontainer with authenticated pulls and path-filtered setup contracts |
@@ -104,7 +104,12 @@ jobs:
     - cd docsite && bun run format:check
     - cd docsite && bun run typecheck
     - cd docsite && bun run test:validation
+    - cd docsite && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 ```
+
+The root `mise run test` contract must enforce the same docsite 100% coverage
+gate by depending on `//docsite:test:coverage`, so local verification and CI
+fail for the same coverage regressions.
 
 ## E2E CI
 
@@ -232,7 +237,7 @@ uvx pre-commit run --all-files
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
 - **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with both `ugoite-minimum` and `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
-- **Docsite parity hooks**: Lint, format check, typecheck, and validation test for `docsite/`
+- **Docsite parity hooks**: Lint, format check, typecheck, validation build, and 100% Vitest coverage for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
 - **Root artifact hygiene**: Blocks placeholder files, tracked+ignored paths, generated dependency trees, and oversized tracked artifacts
@@ -300,7 +305,7 @@ cd backend && uv run ty check . && uv run pytest -W error
 
 # Docs
 cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
-cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation
+cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 
 # Frontend
 cd ../frontend && biome ci . && bun run test:run --coverage

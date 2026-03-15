@@ -1,14 +1,25 @@
-const rawBaseUrl = import.meta.env.BASE_URL ?? "/";
+function normalizeBaseUrl(baseUrl: string): string {
+	const trimmedBaseUrl = baseUrl.trim();
+	if (trimmedBaseUrl.length === 0 || trimmedBaseUrl === "/") {
+		return "/";
+	}
 
-const normalizedBaseUrl = rawBaseUrl.endsWith("/")
-	? rawBaseUrl
-	: `${rawBaseUrl}/`;
+	const withLeadingSlash = trimmedBaseUrl.startsWith("/")
+		? trimmedBaseUrl
+		: `/${trimmedBaseUrl}`;
+	return withLeadingSlash.endsWith("/")
+		? withLeadingSlash
+		: `${withLeadingSlash}/`;
+}
 
-const normalizedBaseNoTrailingSlash = normalizedBaseUrl.endsWith("/")
-	? normalizedBaseUrl.slice(0, -1)
-	: normalizedBaseUrl;
+export function withBasePath(
+	href: string,
+	baseUrl: string = import.meta.env.BASE_URL,
+): string {
+	const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+	const normalizedBaseNoTrailingSlash =
+		normalizedBaseUrl === "/" ? "/" : normalizedBaseUrl.slice(0, -1);
 
-export function withBasePath(href: string): string {
 	if (href.length === 0) {
 		return normalizedBaseUrl;
 	}
