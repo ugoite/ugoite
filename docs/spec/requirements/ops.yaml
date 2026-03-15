@@ -671,7 +671,9 @@ requirements:
 
     to GHCR with deterministic stable/alpha/beta tags aligned to the requested
 
-    SemVer, and repository/docs guidance MUST expose a quick-start path for
+    SemVer, make those published container packages anonymously pullable, and
+
+    repository/docs guidance MUST expose a quick-start path for
 
     pulling and running those release images without rebuilding from source.
 

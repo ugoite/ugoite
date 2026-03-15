@@ -42,6 +42,10 @@ on:
         required: false
         type: string
         default: "ugoite-frontend:ci"
+    secrets:
+      GHCR_VISIBILITY_TOKEN:
+        description: "Classic PAT with package-admin access used to make GHCR packages public"
+        required: false
 
 jobs:
   docker-images-ci:
@@ -180,6 +184,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate GHCR visibility token
+        env:
+          GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GHCR_VISIBILITY_TOKEN:-}" ]; then
+            echo "GHCR_VISIBILITY_TOKEN must be configured so published GHCR images are anonymously pullable." >&2
+            exit 1
+          fi
+
       - name: Compute backend GHCR tags
         id: backend-tags
         env:
@@ -279,3 +293,14 @@ jobs:
             type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             shared=./shared
+
+      - name: Make GHCR images public
+        env:
+          GHCR_OWNER: ${{ github.repository_owner }}
+          GHCR_REPOSITORY: ${{ github.repository }}
+          GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}
+        run: |
+          set -euo pipefail
+          package_prefix="${GHCR_REPOSITORY#*/}"
+          bash scripts/set-ghcr-package-public.sh "$GHCR_OWNER" "${package_prefix}/backend"
+          bash scripts/set-ghcr-package-public.sh "$GHCR_OWNER" "${package_prefix}/frontend"
