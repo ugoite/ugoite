@@ -210,9 +210,11 @@ requirements:
   title: Rust Pre-commit and CI Coverage Parity
   description: 'Rust pre-commit hooks MUST enforce format, lint, and coverage gates
 
-    across both ugoite-core and ugoite-cli, including ugoite-cli test execution
+    across ugoite-minimum, ugoite-core, and ugoite-cli, including 100% line-coverage
 
-    and 100% line-coverage parity with Rust CI.
+    parity for both ugoite-minimum and ugoite-cli with Rust CI and the local
+
+    `mise run test` path.
 
     '
   related_spec:

@@ -65,6 +65,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@0adbae4d29359521325013e359f3079a4539f48a # cargo-llvm-cov
 
+      - name: Enforce Rust coverage floor (minimum)
+        run: python3 scripts/check_minimum_coverage.py
+
       - name: Run ty check (core)
         working-directory: ./ugoite-core
         run: uv run ty check .
