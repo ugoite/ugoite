@@ -544,7 +544,13 @@ requirements:
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
-    mode may pre-inject a bearer token into the running stack.
+    mode may pre-inject a bearer token into the running stack. README, docsite
+
+    setup pages, and developer-facing auth guidance MUST point back to one
+
+    canonical auth-aware guide instead of duplicating mode-specific startup
+
+    instructions.
 
     '
   related_spec:
@@ -559,6 +565,7 @@ requirements:
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
+      - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
       tests:
       - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode
@@ -707,6 +714,10 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_018_cli_release_binaries_and_install_script
+      - test_docs_req_ops_018_install_script_supports_prerelease_quick_start
+      - test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease
+      - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
+      - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -757,6 +768,43 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-020
+  title: Portable Minimum Layer WASM Gates
+  description: '`ugoite-minimum` MUST have explicit WASM-oriented quality gates in
+
+    pre-commit and Rust CI, and the repository MUST document the responsibility
+
+    boundary between `ugoite-minimum` and `ugoite-core`, including which
+
+    portable helpers have already moved and why heavier logic still remains in
+
+     `ugoite-core`.
+
+     '
+  related_spec:
+  - architecture/future-proofing.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-021
   title: Frontend Coverage Must Be a Hard Gate
   description: 'Frontend CI and the root `mise run test` task MUST enforce 100%
@@ -791,6 +839,45 @@ requirements:
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-022
+  title: Path-Aware Pull Request E2E Tiering
+  description: 'E2E CI MUST deterministically select a lighter smoke tier for
+
+    pull requests that only change low-risk docs/docsite metadata paths, while
+
+    `merge_group` and pushes to `main` MUST continue to run the full E2E suite.
+
+    The tiering rule MUST be visible in `.github/workflows/e2e-ci.yml` and
+
+    documented in `docs/spec/testing/ci-cd.md` so reviewers can audit when full
+
+    integration coverage is still required.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-023
   title: Docsite Coverage Must Be a Hard Gate
   description: 'Docsite CI and the root `mise run test` task MUST enforce 100% coverage
 
@@ -807,4 +894,4 @@ requirements:
     pytest:
     - file: docs/tests/test_guides.py
       tests:
-      - test_docs_req_ops_022_docsite_coverage_gate_is_explicit
+      - test_docs_req_ops_023_docsite_coverage_gate_is_explicit

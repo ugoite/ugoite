@@ -116,6 +116,7 @@ function githubSourceUrl(repoRelativePath: string): string | null {
 export function resolveDocHref(
 	rawHref: string | null | undefined,
 	currentDocRelativePath: string,
+	baseUrl: string = import.meta.env.BASE_URL,
 ): string | null {
 	if (!rawHref) {
 		return null;
@@ -148,7 +149,7 @@ export function resolveDocHref(
 			const docsTarget = pathname.slice(docsPrefix.length);
 			const docRoute = findDocRouteForTarget(docsTarget);
 			if (docRoute) {
-				return withBasePath(`/docs/${docRoute}${suffix}`);
+				return withBasePath(`/docs/${docRoute}${suffix}`, baseUrl);
 			}
 			const docsDirectoryUrl = githubSourceUrl(
 				path.posix.join("docs", docsTarget),
@@ -159,7 +160,10 @@ export function resolveDocHref(
 			return null;
 		}
 
-		return withBasePath(`${stripKnownDocExtension(pathname)}${suffix}`);
+		return withBasePath(
+			`${stripKnownDocExtension(pathname)}${suffix}`,
+			baseUrl,
+		);
 	}
 
 	const currentRepoDocPath = path.posix.join("/docs", currentDocRelativePath);
@@ -172,7 +176,7 @@ export function resolveDocHref(
 		const docsTarget = resolvedRepoPath.slice(docsPrefix.length);
 		const docRoute = findDocRouteForTarget(docsTarget);
 		if (docRoute) {
-			return withBasePath(`/docs/${docRoute}${suffix}`);
+			return withBasePath(`/docs/${docRoute}${suffix}`, baseUrl);
 		}
 
 		const docsDirectoryUrl = githubSourceUrl(resolvedRepoPath.slice(1));

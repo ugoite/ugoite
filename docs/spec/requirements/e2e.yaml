@@ -205,3 +205,33 @@ requirements:
       tests:
       - 'REQ-E2E-006: navigation helpers build child docsite links from spec data'
       - 'REQ-E2E-006: navigation helpers tolerate missing child anchors without mutating shared nav state'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-007
+  title: Docsite Theme Controls Stay Documentation-Focused
+  description: 'Docsite pages MUST keep one canonical UI theme and only expose color
+
+    mode selection, so documentation does not inherit or advertise product UI
+
+    theme switching from app-local preferences.
+
+    '
+  related_spec:
+  - testing/strategy.md
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/docsite-theme-controls.test.ts
+      tests:
+      - 'REQ-E2E-007: docsite keeps a fixed UI theme and only exposes color mode selection'

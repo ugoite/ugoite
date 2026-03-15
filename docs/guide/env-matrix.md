@@ -1,6 +1,8 @@
 # Environment Variable Matrix
 
-This matrix summarizes primary runtime variables by mode.
+This matrix summarizes primary runtime variables by mode. `E2E runner` refers to
+the direct-process helper in `e2e/scripts/run-e2e.sh`, while `Docker Compose`
+refers to the CI-parity compose helper in `e2e/scripts/run-e2e-compose.sh`.
 
 | Variable | Local dev | E2E runner | Docker Compose | CI |
 |---|---|---|---|---|
@@ -26,6 +28,10 @@ This matrix summarizes primary runtime variables by mode.
 | E2E_BACKEND_PORT | n/a | optional | n/a | optional |
 | E2E_FRONTEND_PORT | n/a | optional | n/a | optional |
 | E2E_FRONTEND_MODE | n/a | optional | n/a | optional |
-| E2E_TEST_TIMEOUT_MS | n/a | optional | n/a | optional |
+| E2E_ENFORCE_CI_GATES | n/a | optional | n/a | n/a |
+| E2E_BUILD_IMAGES | n/a | n/a | optional (`true` for local parity runs) | set to `false` because CI pre-builds the images |
+| E2E_BACKEND_START_TIMEOUT_SECONDS | n/a | n/a | optional | optional |
+| E2E_FRONTEND_START_TIMEOUT_SECONDS | n/a | n/a | optional | optional |
+| E2E_TEST_TIMEOUT_MS | n/a | optional | optional | optional |
 
 Use mode-specific `.env` files to avoid mixing values between workflows.
