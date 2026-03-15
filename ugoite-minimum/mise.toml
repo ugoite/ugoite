@@ -5,3 +5,7 @@ description = "Build ugoite-minimum"
 [tasks.test]
 run = "cargo test"
 description = "Run ugoite-minimum Rust test suite"
+
+[tasks."build:wasm"]
+run = "rustup target add wasm32-unknown-unknown && cargo build --target wasm32-unknown-unknown --lib"
+description = "Build ugoite-minimum for wasm32-unknown-unknown"
