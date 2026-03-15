@@ -14,6 +14,7 @@ import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/form-api";
+import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { FormCreatePayload } from "~/lib/types";
@@ -34,7 +35,7 @@ export default function SpaceFormsIndexPane() {
 			setShowCreateFormDialog(false);
 			ctx.refetchForms();
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create form");
+			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
 		}
 	};
 
@@ -126,11 +127,11 @@ export default function SpaceFormsIndexPane() {
 			<div class="mx-auto max-w-6xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
-						<h1 class="ui-page-title">{sessionId().trim() ? "Query Results" : "Form Grid"}</h1>
+						<h1 class="ui-page-title">
+							{sessionId().trim() ? t("querySession.heading") : t("formsPage.heading")}
+						</h1>
 						<p class="text-sm ui-muted">
-							{sessionId().trim()
-								? "Viewing query results in a grid."
-								: "Browse form records in a grid."}
+							{sessionId().trim() ? t("querySession.formsDescription") : t("formsPage.description")}
 						</p>
 					</div>
 					<div class="flex items-center gap-2">
@@ -143,7 +144,7 @@ export default function SpaceFormsIndexPane() {
 								onChange={(e) => handleFormSelection(e.currentTarget.value)}
 							>
 								<option value="" disabled>
-									Select form
+									{t("formsPage.selectPlaceholder")}
 								</option>
 								{selectableForms().map((entry) => (
 									<option value={entry.name}>{entry.name}</option>
@@ -154,7 +155,7 @@ export default function SpaceFormsIndexPane() {
 								class="ui-button ui-button-primary text-sm"
 								onClick={() => setShowCreateFormDialog(true)}
 							>
-								New form
+								{t("formsPage.newButton")}
 							</button>
 						</Show>
 						<Show when={sessionId().trim()}>
@@ -163,7 +164,7 @@ export default function SpaceFormsIndexPane() {
 								class="ui-button ui-button-secondary text-sm"
 								onClick={() => navigate(`/spaces/${ctx.spaceId()}/forms`)}
 							>
-								Clear query
+								{t("querySession.clear")}
 							</button>
 						</Show>
 					</div>
@@ -173,28 +174,28 @@ export default function SpaceFormsIndexPane() {
 					<Show when={sessionId().trim()}>
 						<div class="ui-stack-sm">
 							<Show when={session()?.status === "running"}>
-								<p class="text-sm ui-muted">Preparing query...</p>
+								<p class="text-sm ui-muted">{t("querySession.preparing")}</p>
 							</Show>
 							<Show when={session()?.status === "failed"}>
-								<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
+								<p class="text-sm ui-text-danger">{session()?.error || t("querySession.failed")}</p>
 							</Show>
 							<Show when={session()?.status === "expired"}>
-								<p class="text-sm ui-text-danger">Query session expired.</p>
+								<p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
 							</Show>
 							<Show when={sessionRows.loading}>
-								<p class="text-sm ui-muted">Loading results...</p>
+								<p class="text-sm ui-muted">{t("querySession.loadingResults")}</p>
 							</Show>
 							<Show when={!sessionRows.loading && sessionEntries().length === 0}>
-								<p class="text-sm ui-muted">No results found.</p>
+								<p class="text-sm ui-muted">{t("querySession.noResults")}</p>
 							</Show>
 							<Show when={sessionEntries().length > 0}>
 								<div class="ui-table-wrapper overflow-x-auto">
 									<table class="ui-table text-sm min-w-full">
 										<thead class="ui-table-head">
 											<tr>
-												<th class="ui-table-header-cell">Title</th>
-												<th class="ui-table-header-cell">Form</th>
-												<th class="ui-table-header-cell">Updated</th>
+												<th class="ui-table-header-cell">{t("common.title")}</th>
+												<th class="ui-table-header-cell">{t("common.form")}</th>
+												<th class="ui-table-header-cell">{t("common.updated")}</th>
 												<For each={sessionFields()}>
 													{(field) => <th class="ui-table-header-cell">{field}</th>}
 												</For>
@@ -214,7 +215,7 @@ export default function SpaceFormsIndexPane() {
 																	)
 																}
 															>
-																{entry.title || "Untitled"}
+																{entry.title || t("common.untitled")}
 															</button>
 														</td>
 														<td class="ui-table-cell ui-table-cell-muted">{entry.form || "-"}</td>
@@ -238,7 +239,11 @@ export default function SpaceFormsIndexPane() {
 							<Show when={totalCount() > 0}>
 								<div class="flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
 									<div>
-										Page {page()} of {totalPages()} · {totalCount()} results
+										{t("querySession.pagination", {
+											page: page(),
+											totalPages: totalPages(),
+											resultCount: totalCount(),
+										})}
 									</div>
 									<div class="flex items-center gap-2">
 										<button
@@ -247,7 +252,7 @@ export default function SpaceFormsIndexPane() {
 											disabled={page() <= 1}
 											onClick={() => setPage((prev) => Math.max(1, prev - 1))}
 										>
-											Previous
+											{t("common.previous")}
 										</button>
 										<button
 											type="button"
@@ -255,7 +260,7 @@ export default function SpaceFormsIndexPane() {
 											disabled={page() >= totalPages()}
 											onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
 										>
-											Next
+											{t("common.next")}
 										</button>
 									</div>
 								</div>
@@ -265,13 +270,13 @@ export default function SpaceFormsIndexPane() {
 					<Show when={!sessionId().trim()}>
 						<Show
 							when={selectedForm()}
-							fallback={<p class="text-sm ui-muted">Create a form to get started.</p>}
+							fallback={<p class="text-sm ui-muted">{t("formsPage.empty")}</p>}
 						>
 							{(form) => (
 								<>
 									<div class="mb-4">
 										<h2 class="text-xl font-semibold">{form().name}</h2>
-										<p class="text-sm ui-muted">Query results for the selected form.</p>
+										<p class="text-sm ui-muted">{t("formsPage.selectedDescription")}</p>
 									</div>
 									<FormTable
 										spaceId={ctx.spaceId()}

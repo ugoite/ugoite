@@ -13,6 +13,7 @@ import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
+import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/sql-session-api";
 import type { EntryRecord } from "~/lib/types";
@@ -108,12 +109,12 @@ export default function SpaceEntriesIndexPane() {
 		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
-			alert("Please select a form to create an entry.");
+			alert(t("dashboard.error.selectFormBeforeCreate"));
 			return;
 		}
 		const formDef = creatableForms().find((s) => s.name === formName);
 		if (!formDef) {
-			alert("Selected form was not found. Please refresh and try again.");
+			alert(t("dashboard.error.selectedFormNotFound"));
 			return;
 		}
 		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
@@ -123,7 +124,7 @@ export default function SpaceEntriesIndexPane() {
 			setShowCreateEntryDialog(false);
 			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to create entry");
+			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateEntry"));
 		}
 	};
 
@@ -137,9 +138,11 @@ export default function SpaceEntriesIndexPane() {
 			<div class="mx-auto max-w-6xl">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
-						<h1 class="ui-page-title">{sessionId().trim() ? "Query Results" : "Entries"}</h1>
+						<h1 class="ui-page-title">
+							{sessionId().trim() ? t("querySession.heading") : t("entriesPage.heading")}
+						</h1>
 						<Show when={sessionId().trim()}>
-							<p class="text-sm ui-muted">Showing results for this query session.</p>
+							<p class="text-sm ui-muted">{t("entriesPage.queryDescription")}</p>
 						</Show>
 					</div>
 					<div class="flex items-center gap-2">
@@ -149,7 +152,7 @@ export default function SpaceEntriesIndexPane() {
 								class="ui-button ui-button-secondary text-sm"
 								onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
 							>
-								Clear query
+								{t("querySession.clear")}
 							</button>
 						</Show>
 						<button
@@ -157,29 +160,29 @@ export default function SpaceEntriesIndexPane() {
 							class="ui-button ui-button-primary text-sm"
 							onClick={() => setShowCreateEntryDialog(true)}
 						>
-							New entry
+							{t("entriesPage.newButton")}
 						</button>
 					</div>
 				</div>
 
 				<div class="mt-6">
 					<Show when={sessionId().trim() && session()?.status === "running"}>
-						<p class="text-sm ui-muted">Preparing query...</p>
+						<p class="text-sm ui-muted">{t("querySession.preparing")}</p>
 					</Show>
 					<Show when={session()?.status === "failed"}>
-						<p class="text-sm ui-text-danger">{session()?.error || "Query failed."}</p>
+						<p class="text-sm ui-text-danger">{session()?.error || t("querySession.failed")}</p>
 					</Show>
 					<Show when={session()?.status === "expired"}>
-						<p class="text-sm ui-text-danger">Query session expired.</p>
+						<p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
 					</Show>
 					<Show when={isLoading()}>
-						<p class="text-sm ui-muted">Loading entries...</p>
+						<p class="text-sm ui-muted">{t("listPanel.loadingEntries")}</p>
 					</Show>
 					<Show when={errorMessage()}>
 						<p class="text-sm ui-text-danger">{errorMessage()}</p>
 					</Show>
 					<Show when={!isLoading() && displayEntries().length === 0 && !errorMessage()}>
-						<p class="text-sm ui-muted">No entries found.</p>
+						<p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
 					</Show>
 					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						<For each={displayEntries()}>
@@ -190,12 +193,14 @@ export default function SpaceEntriesIndexPane() {
 									onClick={() => handleSelectEntry(entry.id)}
 								>
 									<div class="flex items-start justify-between gap-2">
-										<h2 class="text-base font-semibold">{entry.title || "Untitled"}</h2>
+										<h2 class="text-base font-semibold">{entry.title || t("common.untitled")}</h2>
 										<Show when={entry.form}>
 											<span class="ui-pill">{entry.form}</span>
 										</Show>
 									</div>
-									<p class="mt-2 text-xs ui-muted">Updated {formatDateLabel(entry.updated_at)}</p>
+									<p class="mt-2 text-xs ui-muted">
+										{t("common.updatedAt", { date: formatDateLabel(entry.updated_at) })}
+									</p>
 								</button>
 							)}
 						</For>
@@ -203,7 +208,11 @@ export default function SpaceEntriesIndexPane() {
 					<Show when={sessionId().trim() && totalCount() > 0}>
 						<div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
 							<div>
-								Page {page()} of {totalPages()} · {totalCount()} results
+								{t("querySession.pagination", {
+									page: page(),
+									totalPages: totalPages(),
+									resultCount: totalCount(),
+								})}
 							</div>
 							<div class="flex items-center gap-2">
 								<button
@@ -212,7 +221,7 @@ export default function SpaceEntriesIndexPane() {
 									disabled={page() <= 1}
 									onClick={() => setPage((prev) => Math.max(1, prev - 1))}
 								>
-									Previous
+									{t("common.previous")}
 								</button>
 								<button
 									type="button"
@@ -220,7 +229,7 @@ export default function SpaceEntriesIndexPane() {
 									disabled={page() >= totalPages()}
 									onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
 								>
-									Next
+									{t("common.next")}
 								</button>
 							</div>
 						</div>

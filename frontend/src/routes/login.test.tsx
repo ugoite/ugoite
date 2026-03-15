@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import LoginRoute from "./login";
+import { clearAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 
 const navigateMock = vi.fn();
@@ -20,7 +21,7 @@ describe("/login", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
 		resetMockData();
-		document.cookie = "ugoite_auth_bearer_token=; Path=/; Max-Age=0; SameSite=Lax";
+		clearAuthTokenCookie();
 	});
 
 	it("REQ-OPS-015: signs in with manual-totp and stores a browser auth cookie", async () => {
