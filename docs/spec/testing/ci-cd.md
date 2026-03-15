@@ -239,7 +239,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
 3. **All Tests Status** must stay focused on curated code-quality workflows, exclude release/publish automation (`Release CI`, `Release Publish`), and avoid deprecated wait-action runtimes so auxiliary release failures and platform warnings do not turn branch health red.
 4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
-5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
+5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `packages/ugoite/package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, the repository root `package.json` must stay private tooling for Husky/commitlint only, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
 6. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
 7. **Human review** must confirm the planned release scope before publishing.
 8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
@@ -248,6 +248,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can pull and run release images without rebuilding from source.
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository.
 13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep the published CLI install path aligned with the documented `space list` and `create-space` workflow for an exact release version.
+14. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
 
 ## Environment Variables
 

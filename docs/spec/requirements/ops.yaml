@@ -305,7 +305,11 @@ requirements:
   title: Release Automation Bootstrap and PR Permissions
   description: 'Release automation MUST keep its bootstrap version metadata aligned at
 
-    `0.0.1`, bound pre-release-please history with `bootstrap-sha`, use a
+    `0.0.1` across `.github/.release-please-manifest.json` and the public
+
+    installer package metadata, bound pre-release-please history with
+
+    `bootstrap-sha`, use a
 
     dedicated `RELEASE_PLEASE_TOKEN` auth path for release PR creation, and
 
@@ -854,3 +858,38 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-023
+  title: Public Installer Package Must Stay Separate From Private Tooling
+  description: 'The repository MUST keep the public `ugoite` installer package
+
+    separate from the private root Node tooling package. The public package
+
+    metadata MUST stay non-private, packable, and expose `ugoite-install`
+
+    while the root `package.json` remains private repository tooling.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_023_public_package_stays_separate_from_private_tooling
