@@ -12,7 +12,21 @@ on:
       - main
 
 jobs:
+  build-images:
+    name: Build Docker images
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: false
+      export_artifacts: true
+      artifact_name: e2e-docker-images
+      backend_local_tag: ugoite-backend:e2e
+      frontend_local_tag: ugoite-frontend:e2e
+
   e2e:
+    needs: build-images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -39,43 +53,22 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build backend image (from docker-build-ci cache)
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: false
-          load: true
-          tags: ugoite-backend:e2e
-          cache-from: |
-            type=gha,scope=backend-image
-            type=gha,scope=docker-build-common
-          build-contexts: |
-            core=./ugoite-core
-            minimum=./ugoite-minimum
-            module=./ugoite-cli
-
-      - name: Build frontend image (from docker-build-ci cache)
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: false
-          load: true
-          tags: ugoite-frontend:e2e
-          cache-from: |
-            type=gha,scope=frontend-image
-            type=gha,scope=docker-build-common
-          build-contexts: |
-            shared=./shared
-
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Download Docker image archives
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-docker-images
+          path: exported-images
+
+      - name: Load Docker images
+        run: |
+          set -euo pipefail
+          gzip -dc exported-images/backend-image.tar.gz | docker load
+          gzip -dc exported-images/frontend-image.tar.gz | docker load
 
       - name: Install docsite dependencies
         working-directory: ./docsite

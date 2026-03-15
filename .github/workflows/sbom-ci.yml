@@ -18,7 +18,21 @@ permissions:
   attestations: write
 
 jobs:
+  build-images:
+    name: Build Docker images
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: false
+      export_artifacts: true
+      artifact_name: sbom-docker-images
+      backend_local_tag: ugoite-backend:sbom
+      frontend_local_tag: ugoite-frontend:sbom
+
   sbom-supply-chain:
+    needs: build-images
     name: SBOM + Signing + Security Checks
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -26,30 +40,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build backend image
-        uses: docker/build-push-action@v7
+      - name: Download Docker image archives
+        uses: actions/download-artifact@v4
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          load: true
-          tags: ugoite-backend:sbom
-          build-contexts: |
-            core=./ugoite-core
-            minimum=./ugoite-minimum
-            module=./ugoite-cli
+          name: sbom-docker-images
+          path: exported-images
 
-      - name: Build frontend image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          load: true
-          tags: ugoite-frontend:sbom
-          build-contexts: |
-            shared=./shared
+      - name: Load Docker images
+        run: |
+          set -euo pipefail
+          gzip -dc exported-images/backend-image.tar.gz | docker load
+          gzip -dc exported-images/frontend-image.tar.gz | docker load
 
       - name: Install Syft
         run: |

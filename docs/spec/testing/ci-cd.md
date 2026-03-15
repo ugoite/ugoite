@@ -20,9 +20,10 @@
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
-resolve inside the container build. Docker Build CI and Release Publish share
-the reusable `.github/workflows/docker-images.yml` image-definition contract so
-release publishing cannot silently drift from CI-validated build contexts.
+resolve inside the container build. Docker Build CI, E2E CI, SBOM CI, and
+Release Publish share the reusable `.github/workflows/docker-images.yml`
+image-definition contract so image build behavior cannot silently drift between
+CI validation, local-image artifact export, and release publishing.
 
 ## Python CI
 
