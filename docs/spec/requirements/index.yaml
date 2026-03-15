@@ -160,6 +160,9 @@ requirements:
     - file: ugoite-core/tests/test_index.rs
       tests:
       - test_index_req_idx_005_word_count
+    - file: ugoite-minimum/tests/test_text.rs
+      tests:
+      - test_text_req_idx_005_word_count_portable
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Indexing and query engine behavior requirements.

@@ -83,18 +83,22 @@ pub fn is_reserved_metadata_form(name: &str) -> bool {
     false
 }
 
-pub fn register_metadata_columns(columns: Vec<String>) {
-    if let Ok(mut set) = metadata_columns_store().lock() {
-        for column in columns {
-            set.insert(column);
-        }
+pub fn register_metadata_columns<I>(columns: I)
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut set = metadata_columns_guard();
+    for column in columns {
+        set.insert(column);
     }
 }
 
-pub fn register_metadata_forms(forms: Vec<String>) {
-    if let Ok(mut store) = metadata_forms_store().lock() {
-        for name in forms {
-            store.insert(name.trim().to_lowercase());
-        }
+pub fn register_metadata_forms<I>(forms: I)
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut store = metadata_forms_guard();
+    for name in forms {
+        store.insert(name.trim().to_lowercase());
     }
 }
