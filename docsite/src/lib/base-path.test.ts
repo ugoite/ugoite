@@ -24,16 +24,24 @@ test("REQ-E2E-006: withBasePath preserves external links and prefixes internal r
 });
 
 test("REQ-E2E-006: withBasePath keeps configured non-root base paths stable", async () => {
-	vi.stubEnv("BASE_URL", "/ugoite");
-	vi.resetModules();
 	const { withBasePath } = await import("./base-path");
 
-	expect(withBasePath("")).toBe("/ugoite/");
-	expect(withBasePath("/")).toBe("/ugoite/");
-	expect(withBasePath("/docs/spec/index")).toBe("/ugoite/docs/spec/index");
-	expect(withBasePath("design/philosophy")).toBe("/ugoite/design/philosophy");
-	expect(withBasePath("/ugoite")).toBe("/ugoite");
-	expect(withBasePath("/ugoite/docs/spec/index")).toBe(
+	expect(withBasePath("", "/ugoite")).toBe("/ugoite/");
+	expect(withBasePath("/", "/ugoite")).toBe("/ugoite/");
+	expect(withBasePath("/docs/spec/index", "/ugoite")).toBe(
+		"/ugoite/docs/spec/index",
+	);
+	expect(withBasePath("design/philosophy", "/ugoite")).toBe(
+		"/ugoite/design/philosophy",
+	);
+	expect(withBasePath("docs/spec/index", "ugoite")).toBe(
+		"/ugoite/docs/spec/index",
+	);
+	expect(withBasePath("docs/spec/index", "/ugoite/")).toBe(
+		"/ugoite/docs/spec/index",
+	);
+	expect(withBasePath("/ugoite", "/ugoite")).toBe("/ugoite");
+	expect(withBasePath("/ugoite/docs/spec/index", "/ugoite")).toBe(
 		"/ugoite/docs/spec/index",
 	);
 });

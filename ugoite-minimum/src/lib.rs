@@ -7,3 +7,4 @@ pub mod metadata;
 pub mod search;
 pub mod space;
 pub mod storage;
+pub mod text;

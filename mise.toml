@@ -68,20 +68,24 @@ description = "Check consistency between documentation and implementation"
 run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
 
 [tasks.e2e]
-description = "Run E2E tests with backend and frontend servers"
-run = "bash e2e/scripts/run-e2e.sh full"
+description = "Run the authoritative E2E path (docker-compose when available, parity fallback otherwise)"
+run = "bash e2e/scripts/run-e2e-parity.sh full"
 
 [tasks.screenshot]
-description = "Capture UI page screenshots for docsite"
+description = "Capture UI page screenshots for docsite with local dev servers"
 run = "bash e2e/scripts/run-e2e.sh screenshot"
 
 [tasks."e2e:smoke"]
-description = "Run only smoke E2E tests (fast verification)"
+description = "Run smoke E2E tests against local dev servers (fast, not CI parity)"
 run = "bash e2e/scripts/run-e2e.sh smoke"
 
 [tasks."e2e:entries"]
-description = "Run entries E2E tests"
+description = "Run entries E2E tests against local dev servers (fast, not CI parity)"
 run = "bash e2e/scripts/run-e2e.sh entries"
+
+[tasks."e2e:dev"]
+description = "Run full E2E tests against local dev servers (fast, not CI parity)"
+run = "bash e2e/scripts/run-e2e.sh full"
 
 [tasks.seed]
 description = "Seed a local development space with sample data"

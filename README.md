@@ -131,30 +131,12 @@ clean rebuild without wiping the entire shared target tree:
 mise run //ugoite-core:build:clean
 ```
 
-If you need to re-prompt the local dev login context (username + 2FA validation), run:
-
-```bash
-UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
-```
-
-To use the explicit mock OAuth development flow instead of the default
-manual TOTP prompt:
-
-```bash
-UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
-```
-
-After `mise run dev` starts:
-
-- open `http://localhost:3000/login` and sign in through the browser, or
-- use the CLI login surface:
-
-```bash
-cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
-cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
-```
-
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the manual TOTP + `oathtool` steps, the mock OAuth-style local mode, and the browser/CLI login flow. See [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind `mise run seed`.
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the
+canonical `mise run dev` workflow, including the explicit `/login` browser
+flow, refreshing the local login context, supported auth modes, and the
+`dev:backend`, `dev:frontend`, or `dev:docsite` shortcuts when needed. See
+[CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind
+`mise run seed`.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
@@ -248,6 +230,20 @@ Run all tests from repo root:
 
 ```bash
 mise run test
+```
+
+Run the authoritative local E2E suite. It prefers the docker-compose path used
+by GitHub Actions when Docker is available, and otherwise falls back to a
+production-style host runner with the same Playwright JUnit/no-skips gates:
+
+```bash
+mise run e2e
+```
+
+For faster local iteration against direct dev servers (not CI parity):
+
+```bash
+mise run e2e:dev
 ```
 
 Where you can run this:
