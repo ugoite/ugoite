@@ -1299,20 +1299,40 @@ def test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target(
     None
 ):
     """REQ-OPS-018: Release Publish draft job checks out the requested target."""
+    _assert_release_publish_job_checks_out_requested_target(
+        job_name="create-draft-release",
+        release_step_name="Create or reuse draft release",
+    )
+
+
+def test_docs_req_ops_018_release_publish_finalize_job_checks_out_target() -> None:
+    """REQ-OPS-018: Release Publish finalize job checks out the requested target."""
+    _assert_release_publish_job_checks_out_requested_target(
+        job_name="publish-release",
+        release_step_name="Finalize GitHub release",
+    )
+
+
+def _assert_release_publish_job_checks_out_requested_target(
+    *,
+    job_name: str,
+    release_step_name: str,
+) -> None:
+    """Ensure a release-publish job checks out the requested target."""
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         message = "release-publish.yml must define jobs"
         raise TypeError(message)
 
-    create_draft_job = jobs.get("create-draft-release")
-    if not isinstance(create_draft_job, dict):
-        message = "release-publish.yml must define jobs.create-draft-release"
+    release_job = jobs.get(job_name)
+    if not isinstance(release_job, dict):
+        message = f"release-publish.yml must define jobs.{job_name}"
         raise TypeError(message)
 
-    steps = create_draft_job.get("steps", [])
+    steps = release_job.get("steps", [])
     if not isinstance(steps, list):
-        message = "create-draft-release steps must be a list"
+        message = f"{job_name} steps must be a list"
         raise TypeError(message)
 
     checkout_index = next(
@@ -1324,7 +1344,7 @@ def test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target(
         None,
     )
     if checkout_index is None:
-        message = "create-draft-release must check out the requested release target"
+        message = f"{job_name} must check out the requested release target"
         raise AssertionError(message)
 
     checkout_step = steps[checkout_index]
@@ -1340,28 +1360,25 @@ def test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target(
     configured_ref = str(with_block.get("ref", "")).strip()
     if configured_ref != REQUIRED_RELEASE_DRAFT_CHECKOUT_REF:
         message = (
-            "create-draft-release checkout must use the requested target ref "
+            f"{job_name} checkout must use the requested target ref "
             f"(got {configured_ref!r})"
         )
         raise AssertionError(message)
 
-    create_step_index = next(
+    release_step_index = next(
         (
             index
             for index, step in enumerate(steps)
-            if isinstance(step, dict)
-            and step.get("name") == "Create or reuse draft release"
+            if isinstance(step, dict) and step.get("name") == release_step_name
         ),
         None,
     )
-    if create_step_index is None:
-        message = "create-draft-release must define the release creation step"
+    if release_step_index is None:
+        message = f"{job_name} must define the {release_step_name!r} step"
         raise AssertionError(message)
 
-    if checkout_index >= create_step_index:
-        message = (
-            "create-draft-release must check out the target before gh release create"
-        )
+    if checkout_index >= release_step_index:
+        message = f"{job_name} must check out the target before {release_step_name}"
         raise AssertionError(message)
 
 

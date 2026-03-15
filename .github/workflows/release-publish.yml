@@ -134,6 +134,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Checkout requested release target
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
       - name: Finalize GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
