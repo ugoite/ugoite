@@ -26,7 +26,9 @@ import json
 import os
 import re
 import subprocess
+import tarfile
 import textwrap
+from hashlib import sha256
 from pathlib import Path, PurePosixPath
 
 import bashlex
@@ -1313,6 +1315,129 @@ def test_docs_req_ops_018_release_publish_finalize_job_checks_out_target() -> No
     )
 
 
+def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-018: Installer supports prerelease quick-start commands."""
+    version = "0.0.1-beta.1"
+    release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
+    home_dir = tmp_path / "home"
+    work_dir = tmp_path / "work"
+    install_dir = home_dir / ".local" / "bin"
+    home_dir.mkdir()
+    work_dir.mkdir()
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(home_dir),
+            "PATH": f"{install_dir}{os.pathsep}{env.get('PATH', '')}",
+            "UGOITE_VERSION": version,
+            "UGOITE_DOWNLOAD_BASE_URL": release_dir.as_uri(),
+        },
+    )
+    installed_binary = install_dir / "ugoite"
+
+    install_result = subprocess.run(
+        ["/bin/bash", str(INSTALL_CLI_SCRIPT_PATH)],
+        cwd=work_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if install_result.returncode != 0:
+        message = (
+            "install-ugoite-cli.sh should install an exact prerelease from a local "
+            f"release mirror; stdout={install_result.stdout!r} "
+            f"stderr={install_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if not installed_binary.exists():
+        message = "install-ugoite-cli.sh should install ugoite into ~/.local/bin"
+        raise AssertionError(message)
+
+    help_result = subprocess.run(
+        [str(installed_binary), "--help"],
+        cwd=work_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if help_result.returncode != 0 or "Ugoite CLI - Knowledge base management" not in (
+        help_result.stdout
+    ):
+        message = (
+            "installed prerelease CLI should answer --help; "
+            f"stdout={help_result.stdout!r} stderr={help_result.stderr!r}"
+        )
+        raise AssertionError(message)
+
+    spaces_dir = work_dir / "spaces"
+    spaces_dir.mkdir()
+    list_before_result = subprocess.run(
+        [str(installed_binary), "space", "list", "--root", "./spaces"],
+        cwd=work_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if list_before_result.returncode != 0:
+        message = (
+            "installed prerelease CLI should list spaces before create-space; "
+            f"stdout={list_before_result.stdout!r} "
+            f"stderr={list_before_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if json.loads(list_before_result.stdout) != []:
+        message = "space list should start empty for a fresh quick-start workspace"
+        raise AssertionError(message)
+
+    create_result = subprocess.run(
+        [str(installed_binary), "create-space", "--root", "./spaces", "demo"],
+        cwd=work_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if create_result.returncode != 0:
+        message = (
+            "installed prerelease CLI should create a documented quick-start space; "
+            f"stdout={create_result.stdout!r} stderr={create_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if json.loads(create_result.stdout) != {"created": True, "id": "demo"}:
+        message = "create-space should report the created demo space"
+        raise AssertionError(message)
+
+    list_after_result = subprocess.run(
+        [str(installed_binary), "space", "list", "--root", "./spaces"],
+        cwd=work_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if list_after_result.returncode != 0:
+        message = (
+            "installed prerelease CLI should list the created demo space; "
+            f"stdout={list_after_result.stdout!r} "
+            f"stderr={list_after_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if json.loads(list_after_result.stdout) != ["demo"]:
+        message = "space list should include the created demo space"
+        raise AssertionError(message)
+
+
 def _assert_release_publish_job_checks_out_requested_target(
     *,
     job_name: str,
@@ -1992,6 +2117,132 @@ def _collect_release_publish_ghcr_details() -> list[str]:
         ),
     )
     return [message for condition, message in detail_candidates if condition]
+
+
+def _create_fake_cli_release_dir(tmp_path: Path, *, version: str) -> Path:
+    target = _detect_install_cli_target()
+    release_tag = f"v{version}"
+    release_dir = tmp_path / "release"
+    archive_name = f"ugoite-{release_tag}-{target}.tar.gz"
+    archive_path = release_dir / archive_name
+    checksum_path = release_dir / f"{archive_name}.sha256"
+    binary_path = tmp_path / "ugoite"
+
+    release_dir.mkdir()
+    binary_path.write_text(_fake_quick_start_cli_script(), encoding="utf-8")
+    binary_path.chmod(0o755)
+
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.add(binary_path, arcname="ugoite")
+
+    checksum = sha256(archive_path.read_bytes()).hexdigest()
+    checksum_path.write_text(f"{checksum}  {archive_name}\n", encoding="utf-8")
+    return release_dir
+
+
+def _detect_install_cli_target() -> str:
+    sysname = os.uname().sysname
+    machine = os.uname().machine
+
+    if sysname == "Linux":
+        if machine == "x86_64":
+            return "x86_64-unknown-linux-gnu"
+        if machine in {"arm64", "aarch64"}:
+            return "aarch64-unknown-linux-gnu"
+        message = f"Unsupported Linux architecture for install script test: {machine}"
+        raise AssertionError(message)
+
+    if sysname == "Darwin":
+        if machine == "x86_64":
+            return "x86_64-apple-darwin"
+        if machine in {"arm64", "aarch64"}:
+            return "aarch64-apple-darwin"
+        message = f"Unsupported macOS architecture for install script test: {machine}"
+        raise AssertionError(message)
+
+    message = f"Unsupported operating system for install script test: {sysname}"
+    raise AssertionError(message)
+
+
+def _fake_quick_start_cli_script() -> str:
+    return textwrap.dedent(
+        """\
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        if [ "$#" -eq 0 ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "help" ]; then
+          cat <<'EOF'
+        Ugoite CLI - Knowledge base management
+
+        Usage: ugoite <COMMAND>
+        EOF
+          exit 0
+        fi
+
+        if [ "${1:-}" = "space" ] && [ "${2:-}" = "list" ]; then
+          shift 2
+          root=""
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --root)
+                root="$2"
+                shift 2
+                ;;
+              *)
+                printf 'unsupported argument: %s\\n' "$1" >&2
+                exit 1
+                ;;
+            esac
+          done
+          python - "$root" <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        root = Path(sys.argv[1])
+        root.mkdir(parents=True, exist_ok=True)
+        spaces = sorted(path.name for path in root.iterdir() if path.is_dir())
+        json.dump(spaces, sys.stdout, indent=2)
+        sys.stdout.write("\\n")
+        PY
+          exit 0
+        fi
+
+        if [ "${1:-}" = "create-space" ]; then
+          shift
+          root=""
+          space_id=""
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --root)
+                root="$2"
+                shift 2
+                ;;
+              *)
+                space_id="$1"
+                shift
+                ;;
+            esac
+          done
+          python - "$root" "$space_id" <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        root = Path(sys.argv[1])
+        space_id = sys.argv[2]
+        root.mkdir(parents=True, exist_ok=True)
+        (root / space_id).mkdir(parents=True, exist_ok=True)
+        json.dump({"created": True, "id": space_id}, sys.stdout, indent=2)
+        sys.stdout.write("\\n")
+        PY
+          exit 0
+        fi
+
+        printf 'unsupported command: %s\\n' "$*" >&2
+        exit 1
+        """,
+    )
 
 
 def _collect_release_publish_jobs(
