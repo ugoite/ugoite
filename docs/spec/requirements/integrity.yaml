@@ -33,7 +33,7 @@ requirements:
       tests:
       - test_entry_history_append
     rust:
-    - file: ugoite-minimum/tests/test_integrity.rs
+    - file: ugoite-minimum/tests/test_coverage.rs
       tests:
       - test_integrity_req_int_001_hmac_provider_matches_known_digest
     - file: ugoite-core/tests/test_integrity.rs
