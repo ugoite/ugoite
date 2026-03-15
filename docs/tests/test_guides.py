@@ -141,12 +141,14 @@ REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
     "aarch64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
+    "macos-15-large",
     "cargo build --locked --release --bin ugoite --target",
     "gh release upload",
     "ugoite-v${VERSION}-",
     "permissions:",
     "contents: write",
 }
+DEPRECATED_CLI_RELEASE_RUNNER_FRAGMENTS = {"macos-13"}
 REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS = {
     "create-draft-release",
     "publish-cli-binaries",
@@ -1763,6 +1765,7 @@ def _collect_release_ci_requirement_details() -> list[str]:
 
 def _collect_cli_release_install_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    cli_release_workflow_text = CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
@@ -1796,8 +1799,13 @@ def _collect_cli_release_install_details() -> list[str]:
         REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS,
     )
     missing_cli_release = _missing_required_fragments(
-        CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        cli_release_workflow_text,
         REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS,
+    )
+    deprecated_cli_release_runners = sorted(
+        fragment
+        for fragment in DEPRECATED_CLI_RELEASE_RUNNER_FRAGMENTS
+        if fragment in cli_release_workflow_text
     )
     missing_install_script = _missing_required_fragments(
         INSTALL_CLI_SCRIPT_PATH.read_text(encoding="utf-8"),
@@ -1839,6 +1847,11 @@ def _collect_cli_release_install_details() -> list[str]:
             bool(missing_cli_release),
             "cli-release-binaries workflow missing fragments: "
             + ", ".join(missing_cli_release),
+        ),
+        (
+            bool(deprecated_cli_release_runners),
+            "cli-release-binaries workflow still references deprecated runners: "
+            + ", ".join(deprecated_cli_release_runners),
         ),
         (
             bool(missing_install_script),
