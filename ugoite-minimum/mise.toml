@@ -3,9 +3,8 @@ run = "cargo build"
 description = "Build ugoite-minimum"
 
 [tasks.test]
-run = "cargo test"
-description = "Run ugoite-minimum Rust test suite"
-
+run = "if ! command -v cargo-llvm-cov >/dev/null 2>&1; then cargo install cargo-llvm-cov --locked; fi && python3 ../scripts/check_minimum_coverage.py"
+description = "Run ugoite-minimum Rust test suite with 100% coverage enforcement"
 [tasks."build:wasm"]
 run = "rustup target add wasm32-unknown-unknown && cargo build --target wasm32-unknown-unknown --lib"
 description = "Build ugoite-minimum for wasm32-unknown-unknown"

@@ -43,13 +43,19 @@ test("REQ-E2E-006: navigation helpers build child docsite links from spec data",
 	expect(topLinks.map((item) => item.href)).toContain("/docs/spec/index");
 
 	const sections = await getNavSectionsWithChildren();
-	const philosophyItems = sections[0]?.items.find(
+	const designSection = sections.find(
+		(section) => section.title === "Design Principles",
+	);
+	const applicationSection = sections.find(
+		(section) => section.title === "Application",
+	);
+	const philosophyItems = designSection?.items.find(
 		(item) => item.href === "/design/philosophy",
 	)?.items;
-	const policyItems = sections[0]?.items.find(
+	const policyItems = designSection?.items.find(
 		(item) => item.href === "/design/policies",
 	)?.items;
-	const uiPageItems = sections[1]?.items.find(
+	const uiPageItems = applicationSection?.items.find(
 		(item) => item.href === "/app/frontend/pages",
 	)?.items;
 
@@ -63,8 +69,9 @@ test("REQ-E2E-006: navigation helpers build child docsite links from spec data",
 		{ title: "space-dashboard", href: "/app/frontend/pages/space-dashboard" },
 	]);
 	expect(
-		navSections[0]?.items.find((item) => item.href === "/design/philosophy")
-			?.items,
+		navSections
+			.find((section) => section.title === "Design Principles")
+			?.items.find((item) => item.href === "/design/philosophy")?.items,
 	).toEqual([]);
 });
 
@@ -79,8 +86,12 @@ test("REQ-E2E-006: navigation helpers tolerate missing child anchors without mut
 		{ id: "space-dashboard", title: "Dashboard", route: "/dashboard" },
 	]);
 
-	const designSection = navSections[0];
-	const appSection = navSections[1];
+	const designSection = navSections.find(
+		(section) => section.title === "Design Principles",
+	);
+	const appSection = navSections.find(
+		(section) => section.title === "Application",
+	);
 	if (!designSection || !appSection) {
 		throw new Error("Expected default docsite navigation sections");
 	}
@@ -94,14 +105,20 @@ test("REQ-E2E-006: navigation helpers tolerate missing child anchors without mut
 	);
 
 	const sections = await getNavSectionsWithChildren();
+	const hydratedDesignSection = sections.find(
+		(section) => section.title === "Design Principles",
+	);
+	const hydratedAppSection = sections.find(
+		(section) => section.title === "Application",
+	);
 
-	expect(sections[0]?.items.map((item) => item.href)).not.toContain(
+	expect(hydratedDesignSection?.items.map((item) => item.href)).not.toContain(
 		"/design/philosophy",
 	);
-	expect(sections[0]?.items.map((item) => item.href)).not.toContain(
+	expect(hydratedDesignSection?.items.map((item) => item.href)).not.toContain(
 		"/design/policies",
 	);
-	expect(sections[1]?.items.map((item) => item.href)).not.toContain(
+	expect(hydratedAppSection?.items.map((item) => item.href)).not.toContain(
 		"/app/frontend/pages",
 	);
 	expect(specDataMocks.getPhilosophies).toHaveBeenCalledTimes(1);
