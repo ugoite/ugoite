@@ -4,6 +4,13 @@
 services:
   backend:
     image: ugoite-backend:e2e
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      additional_contexts:
+        core: ./ugoite-core
+        minimum: ./ugoite-minimum
+        module: ./ugoite-cli
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -21,6 +28,11 @@ services:
 
   frontend:
     image: ugoite-frontend:e2e
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared
     ports:
       - "127.0.0.1:3000:3000"
     environment:

@@ -12,6 +12,7 @@ use ugoite_minimum::metadata::{
 };
 use ugoite_minimum::space::storage_type_and_root;
 use ugoite_minimum::storage::{StorageBackend, StorageEntry};
+use ugoite_minimum::text::compute_word_count;
 
 #[derive(Clone, Default)]
 struct MockStorage {
@@ -197,4 +198,11 @@ fn test_space_req_sto_004_storage_type_and_root_normalizes_local_and_remote_uris
     assert_eq!(storage_type, "local");
     assert_eq!(root, "/var/lib/ugoite");
     assert_eq!(scheme, "file");
+}
+
+#[test]
+/// REQ-IDX-005
+fn test_text_req_idx_005_word_count_portable_for_minimum_coverage_gate() {
+    assert_eq!(compute_word_count("One two three"), 3);
+    assert_eq!(compute_word_count("  tabs\tand\nnewlines  still count "), 5);
 }
