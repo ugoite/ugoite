@@ -1,0 +1,45 @@
+{
+  "name": "ugoite",
+  "version": "0.0.1",
+  "private": false,
+  "description": "Public installer package for the released Ugoite CLI",
+  "license": "MIT",
+  "homepage": "https://github.com/ugoite/ugoite/tree/main/packages/ugoite",
+  "bugs": {
+    "url": "https://github.com/ugoite/ugoite/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ugoite/ugoite.git",
+    "directory": "packages/ugoite"
+  },
+  "keywords": [
+    "ugoite",
+    "cli",
+    "installer",
+    "local-first",
+    "knowledge-space"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "bin": {
+    "ugoite-install": "./bin/ugoite-install"
+  },
+  "files": [
+    "bin",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

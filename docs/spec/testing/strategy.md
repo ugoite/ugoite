@@ -52,7 +52,7 @@ mise run test
 
 ### Individual Packages
 ```bash
-mise run //ugoite-minimum:test # Portable Rust core tests
+mise run //ugoite-minimum:test # Portable Rust core tests with 100% coverage enforcement
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
@@ -98,6 +98,7 @@ you need a faster local feedback loop.
 
 | Module | Target | Current |
 |--------|--------|---------|
+| ugoite-minimum | 100% | 100% (enforced) |
 | ugoite-cli | 100% | 100% (enforced) |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
@@ -137,8 +138,7 @@ Details:
 
 ```
 ugoite-minimum/tests/
-├── test_storage.rs      # Storage abstraction tests
-├── test_integrity.rs    # Portable integrity tests
+├── test_coverage.rs     # Portable coverage-focused tests for storage/integrity/metadata
 └── ...
 
 ugoite-core/tests/

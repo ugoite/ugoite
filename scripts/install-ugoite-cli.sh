@@ -5,6 +5,7 @@ REPO="${UGOITE_GITHUB_REPO:-ugoite/ugoite}"
 VERSION_INPUT="${UGOITE_VERSION:-latest}"
 INSTALL_DIR="${UGOITE_INSTALL_DIR:-$HOME/.local/bin}"
 DOWNLOAD_BASE_URL="${UGOITE_DOWNLOAD_BASE_URL:-}"
+TARGET_OVERRIDE="${UGOITE_TARGET_OVERRIDE:-}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -49,6 +50,11 @@ resolve_tag() {
 }
 
 detect_target() {
+  if [ -n "$TARGET_OVERRIDE" ]; then
+    printf '%s' "$TARGET_OVERRIDE"
+    return
+  fi
+
   os_name="$(uname -s)"
   arch_name="$(uname -m)"
 

@@ -8,19 +8,50 @@ export type NavItem = {
 
 export type NavSection = {
 	title: string;
+	overviewHref: string;
 	items: NavItem[];
 };
 
 export const topLinks: NavItem[] = [
 	{ title: "Home", href: "/" },
-	{ title: "Design", href: "/design" },
+	{ title: "Getting Started", href: "/getting-started" },
 	{ title: "Application", href: "/app" },
+	{ title: "Design", href: "/design" },
 	{ title: "Source Docs", href: "/docs/spec/index" },
 ];
 
 export const navSections: NavSection[] = [
 	{
+		title: "Getting Started",
+		overviewHref: "/getting-started",
+		items: [
+			{ title: "Overview", href: "/getting-started" },
+			{ title: "Docker Compose", href: "/docs/guide/docker-compose" },
+			{
+				title: "Container Quickstart",
+				href: "/docs/guide/container-quickstart",
+			},
+			{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
+			{ title: "CLI Guide", href: "/docs/guide/cli" },
+		],
+	},
+	{
+		title: "Application",
+		overviewHref: "/app",
+		items: [
+			{ title: "Overview", href: "/app" },
+			{ title: "Frontend", href: "/app/frontend" },
+			{ title: "UI Pages", href: "/app/frontend/pages", items: [] },
+			{ title: "API & Storage", href: "/app/api-storage" },
+			{ title: "CLI", href: "/app/cli" },
+			{ title: "CLI Commands", href: "/app/cli/commands" },
+			{ title: "Data Model", href: "/app/api-storage/data-model" },
+			{ title: "API Catalog", href: "/app/api-storage/apis" },
+		],
+	},
+	{
 		title: "Design Principles",
+		overviewHref: "/design",
 		items: [
 			{ title: "Overview", href: "/design" },
 			{ title: "Philosophy", href: "/design/philosophy", items: [] },
@@ -31,20 +62,8 @@ export const navSections: NavSection[] = [
 		],
 	},
 	{
-		title: "Application",
-		items: [
-			{ title: "Overview", href: "/app" },
-			{ title: "API & Storage", href: "/app/api-storage" },
-			{ title: "API Catalog", href: "/app/api-storage/apis" },
-			{ title: "Data Model", href: "/app/api-storage/data-model" },
-			{ title: "CLI", href: "/app/cli" },
-			{ title: "CLI Commands", href: "/app/cli/commands" },
-			{ title: "Frontend", href: "/app/frontend" },
-			{ title: "UI Pages", href: "/app/frontend/pages", items: [] },
-		],
-	},
-	{
 		title: "Source Docs",
+		overviewHref: "/docs/spec/index",
 		items: [
 			{ title: "Spec Index", href: "/docs/spec/index" },
 			{ title: "REST API", href: "/docs/spec/api/rest" },

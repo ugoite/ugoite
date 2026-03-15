@@ -17,14 +17,18 @@ const { title, description, toc = [], related = [], fullWidth = false } = Astro.
 const hasRight = toc.length > 0 || related.length > 0;
 const navSections = await getNavSectionsWithChildren();
 const searchIndexUrl = withBasePath("/search-index.json");
-const designSection = navSections.find((section) => section.title === "Design Principles");
-const appSection = navSections.find((section) => section.title === "Application");
-const sourceSection = navSections.find((section) => section.title === "Source Docs");
-const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
-  ["/design", (designSection?.items ?? []).filter((item) => item.href !== "/design").slice(0, 5)],
-  ["/app", (appSection?.items ?? []).filter((item) => item.href !== "/app").slice(0, 5)],
-  ["/docs/spec/index", (sourceSection?.items ?? []).filter((item) => item.href !== "/docs/spec/index").slice(0, 5)],
-]);
+const subNavByHref = new Map(
+  navSections.flatMap((section) => {
+    const overview = section.items.find((item) => item.href === section.overviewHref);
+    if (!overview) {
+      return [];
+    }
+    const children = section.items.filter(
+      (item) => item.href !== section.overviewHref,
+    );
+    return [[overview.href, children.slice(0, 5)]];
+  }),
+);
 ---
 
 <html lang="en">
@@ -119,10 +123,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
       </main>
     ) : hasRight ? (
       <main class="doc-shell-3col">
-        <aside class="doc-sidebar">
-          <DocNavTree navSections={navSections} />
-        </aside>
-        <div class="space-y-6">
+        <div class="doc-shell-main space-y-6">
           <slot />
         </div>
         <aside class="doc-right">
@@ -146,10 +147,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
       </main>
     ) : (
       <main class="doc-shell">
-        <aside class="doc-sidebar">
-          <DocNavTree navSections={navSections} />
-        </aside>
-        <div class="space-y-6">
+        <div class="doc-shell-main space-y-6">
           <slot />
         </div>
       </main>

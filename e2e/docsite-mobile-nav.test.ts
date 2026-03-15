@@ -5,7 +5,7 @@ const docPath = "/docs/spec/index";
 
 let docsiteServer: DocsiteServer | undefined;
 
-test.describe("Docsite mobile navigation", () => {
+test.describe("Docsite navigation layout", () => {
 	test.beforeAll(async () => {
 		test.setTimeout(180_000);
 		docsiteServer = await startDocsiteServer();
@@ -23,7 +23,8 @@ test.describe("Docsite mobile navigation", () => {
 
 		await expect(page.locator(".mobile-nav-toggle")).toBeVisible();
 		await expect(page.locator(".site-nav")).toBeHidden();
-		await expect(page.locator("main .doc-sidebar").first()).toBeHidden();
+		await expect(page.locator("main .doc-sidebar")).toHaveCount(0);
+		await expect(page.locator(".doc-right")).toBeHidden();
 
 		await page.locator(".mobile-nav-toggle").click();
 		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
@@ -65,6 +66,18 @@ test.describe("Docsite mobile navigation", () => {
 			overlayBox.y + Math.min(40, overlayBox.height - 6),
 		);
 		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
+	});
+
+	test("REQ-E2E-009: desktop doc pages use the header nav without rendering a left sidebar", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
+
+		await expect(page.locator(".site-nav")).toBeVisible();
+		await expect(page.locator(".mobile-nav-toggle")).toBeHidden();
+		await expect(page.locator("main .doc-sidebar")).toHaveCount(0);
+		await expect(page.locator(".doc-right")).toBeVisible();
 	});
 });
 
