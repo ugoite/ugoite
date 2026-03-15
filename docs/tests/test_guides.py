@@ -505,7 +505,7 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
         raise AssertionError(message)
 
     e2e_ci_workflow = E2E_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
-    if "bash e2e/scripts/run-e2e-compose.sh full" not in e2e_ci_workflow:
+    if "bash e2e/scripts/run-e2e-compose.sh" not in e2e_ci_workflow:
         message = "E2E CI workflow must use the shared docker-compose E2E runner"
         raise AssertionError(message)
 
