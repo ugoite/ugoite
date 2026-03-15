@@ -99,13 +99,12 @@ done
 
 echo ""
 echo "=========================================="
-echo "Running E2E tests..."
+echo "Running E2E tests (type: $TEST_TYPE)..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
 mkdir -p "$(dirname "$PLAYWRIGHT_JUNIT_OUTPUT_FILE")"
 rm -f "$PLAYWRIGHT_JUNIT_OUTPUT_FILE"
-
 case "$TEST_TYPE" in
   smoke)
     cmd=(npm run test:smoke --)
@@ -125,7 +124,6 @@ case "$TEST_TYPE" in
     exit 1
     ;;
 esac
-
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
   cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
 fi
