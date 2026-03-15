@@ -37,6 +37,14 @@ tracked_paths = subprocess.check_output(
     ["git", "ls-files", "-z"],
     text=False,
 ).decode("utf-8").split("\0")
+tracked_ignored = [
+    path
+    for path in subprocess.check_output(
+        ["git", "ls-files", "-ci", "--exclude-standard"],
+        text=True,
+    ).splitlines()
+    if path
+]
 
 tracked_ignored: list[str] = []
 forbidden_paths: list[tuple[str, str]] = []
