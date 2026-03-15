@@ -1,0 +1,88 @@
+name: CLI Release Binaries
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version without the leading v"
+        required: true
+        type: string
+      target:
+        description: "Git ref (branch, tag, or SHA) to build"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build-cli-binaries:
+    name: Build CLI binaries
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+          - runner: macos-13
+            rust_target: x86_64-apple-darwin
+          - runner: macos-14
+            rust_target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        with:
+          toolchain: 1.93.0
+          targets: ${{ matrix.rust_target }}
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ugoite-minimum
+            ugoite-core
+            ugoite-cli
+
+      - name: Build CLI release binary
+        working-directory: ./ugoite-cli
+        run: cargo build --locked --release --bin ugoite --target "${{ matrix.rust_target }}"
+
+      - name: Package CLI release archive
+        id: package
+        env:
+          TARGET: ${{ matrix.rust_target }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          asset_name="ugoite-v${VERSION}-${TARGET}.tar.gz"
+          cp "target/rust/${TARGET}/release/ugoite" dist/ugoite
+          tar -C dist -czf "dist/${asset_name}" ugoite
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum "${asset_name}" > "${asset_name}.sha256")
+          else
+            (cd dist && shasum -a 256 "${asset_name}" > "${asset_name}.sha256")
+          fi
+          echo "asset_name=${asset_name}" >>"$GITHUB_OUTPUT"
+
+      - name: Upload CLI release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release upload "v${VERSION}"             "dist/${{ steps.package.outputs.asset_name }}"             "dist/${{ steps.package.outputs.asset_name }}.sha256"             --clobber

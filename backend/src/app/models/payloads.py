@@ -13,12 +13,27 @@ Identifier = Annotated[
 ]
 BoundedIdentifier = Annotated[str, StringConstraints(max_length=128)]
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=256)]
+TotpCode = Annotated[
+    str,
+    StringConstraints(
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+    ),
+]
 
 
 class SpaceCreate(BaseModel):
     """Space creation payload."""
 
     name: Identifier
+
+
+class DevAuthLogin(BaseModel):
+    """Local development username + TOTP login payload."""
+
+    username: Identifier
+    totp_code: TotpCode
 
 
 class EntryCreate(BaseModel):
