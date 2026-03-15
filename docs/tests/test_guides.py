@@ -897,8 +897,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 cli_mise,
                 "test",
+                "cargo test",
+                "ugoite-cli test task must run cargo test",
+            ),
+            _require_task_excludes(
+                cli_mise,
+                "test",
                 "cargo clean -p ugoite-cli",
-                "ugoite-cli test task must clean package-local Rust artifacts",
+                "ugoite-cli test task must stay incremental by default",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:clean",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli test:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:clean",
+                "cargo test",
+                "ugoite-cli test:clean task must rerun cargo test after cleaning",
             ),
             _require_exact_task_run(
                 root_mise,
@@ -938,8 +956,15 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             ),
             _require_file_contains(
                 README_PATH,
-                ["mise run cleanup:rust-targets"],
-                "README must document cleanup:rust-targets",
+                [
+                    "mise run cleanup:rust-targets",
+                    "mise run //ugoite-core:build:clean",
+                    "mise run //ugoite-cli:test:clean",
+                ],
+                (
+                    "README must document cleanup:rust-targets and package-local "
+                    "clean rebuild/test commands"
+                ),
             ),
         ]
         if detail is not None

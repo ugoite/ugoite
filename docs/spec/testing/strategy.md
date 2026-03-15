@@ -56,8 +56,12 @@ mise run //ugoite-minimum:test # Portable Rust core tests
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
-mise run //ugoite-cli:test # CLI Rust tests with 100% coverage enforcement
+mise run //ugoite-cli:test # Incremental CLI Rust tests
+mise run //ugoite-cli:test:clean # Clean package-local CLI artifacts and rerun tests
 ```
+
+CLI 100% line coverage remains enforced in pre-commit and Rust CI via
+`cargo llvm-cov`.
 
 ### E2E Tests
 ```bash

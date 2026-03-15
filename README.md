@@ -131,6 +131,12 @@ clean rebuild without wiping the entire shared target tree:
 mise run //ugoite-core:build:clean
 ```
 
+If only the CLI crate looks stale during local testing, use a package-local
+clean rerun instead of wiping the whole shared target tree:
+
+```bash
+mise run //ugoite-cli:test:clean
+```
 See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the
 canonical `mise run dev` workflow, including the explicit `/login` browser
 flow, refreshing the local login context, supported auth modes, and the
