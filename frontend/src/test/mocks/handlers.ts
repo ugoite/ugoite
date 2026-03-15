@@ -20,6 +20,12 @@ let mockAssets: Map<string, Map<string, Asset>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
 let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> = new Map();
 let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> = new Map();
+let mockDevAuthConfig = {
+	mode: "manual-totp" as "manual-totp" | "mock-oauth",
+	username_hint: "dev-local-user",
+	supports_manual_totp: true,
+	supports_mock_oauth: false,
+};
 let mockPreferences: UserPreferences = {
 	selected_space_id: null,
 	locale: null,
@@ -41,6 +47,12 @@ export const resetMockData = () => {
 	mockForms = new Map();
 	mockSqlEntries = new Map();
 	mockSqlSessions = new Map();
+	mockDevAuthConfig = {
+		mode: "manual-totp",
+		username_hint: "dev-local-user",
+		supports_manual_totp: true,
+		supports_mock_oauth: false,
+	};
 	mockPreferences = {
 		selected_space_id: null,
 		locale: null,
@@ -92,9 +104,57 @@ export const seedPreferences = (preferences: Partial<UserPreferences>) => {
 	};
 };
 
+export const seedDevAuthConfig = (
+	config: Partial<{
+		mode: "manual-totp" | "mock-oauth";
+		username_hint: string;
+		supports_manual_totp: boolean;
+		supports_mock_oauth: boolean;
+	}>,
+) => {
+	mockDevAuthConfig = {
+		...mockDevAuthConfig,
+		...config,
+	};
+};
+
 export const getPreferencePatches = () => preferencePatches.slice();
 
 export const handlers = [
+	http.get("http://localhost:3000/api/auth/dev/config", () => {
+		return HttpResponse.json(mockDevAuthConfig);
+	}),
+
+	http.post("http://localhost:3000/api/auth/dev/login", async ({ request }) => {
+		const body = (await request.json()) as { username?: string; totp_code?: string };
+		if (
+			mockDevAuthConfig.mode !== "manual-totp" ||
+			body.username !== mockDevAuthConfig.username_hint ||
+			body.totp_code !== "123456"
+		) {
+			return HttpResponse.json({ detail: "Invalid username or 2FA code." }, { status: 401 });
+		}
+		return HttpResponse.json({
+			bearer_token: "frontend-test-token",
+			user_id: mockDevAuthConfig.username_hint,
+			expires_at: 1_900_000_000,
+		});
+	}),
+
+	http.post("http://localhost:3000/api/auth/dev/mock-oauth", () => {
+		if (mockDevAuthConfig.mode !== "mock-oauth") {
+			return HttpResponse.json(
+				{ detail: "mock-oauth login is not enabled for this local development session." },
+				{ status: 409 },
+			);
+		}
+		return HttpResponse.json({
+			bearer_token: "frontend-test-token",
+			user_id: mockDevAuthConfig.username_hint,
+			expires_at: 1_900_000_000,
+		});
+	}),
+
 	http.get("http://localhost:3000/api/preferences/me", () => {
 		return HttpResponse.json(mockPreferences);
 	}),

@@ -8,6 +8,10 @@ export function getFrontendUrl(path: string): string {
 }
 
 export function getBackendUrl(path: string): string {
+	return new URL(`/api${path}`, frontendUrl).toString();
+}
+
+function getDirectBackendUrl(path: string): string {
 	return new URL(path, backendUrl).toString();
 }
 
@@ -31,12 +35,32 @@ async function waitForOk(
 	throw new Error(`Timed out waiting for ${url}`);
 }
 
+async function waitForReachable(
+	request: APIRequestContext,
+	url: string,
+	timeoutMs: number,
+): Promise<void> {
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		try {
+			const response = await request.get(url);
+			if (response.status() < 500) {
+				return;
+			}
+		} catch {
+			// Ignore transient errors while waiting.
+		}
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+	throw new Error(`Timed out waiting for ${url}`);
+}
+
 export async function waitForServers(
 	request: APIRequestContext,
 	options: { timeoutMs?: number } = {},
 ): Promise<void> {
 	const timeoutMs = options.timeoutMs ?? 60_000;
-	await waitForOk(request, getBackendUrl("/spaces"), timeoutMs);
+	await waitForReachable(request, getDirectBackendUrl("/spaces"), timeoutMs);
 	await waitForOk(request, getFrontendUrl("/"), timeoutMs);
 }
 
@@ -56,4 +80,3 @@ export async function ensureDefaultForm(
 		throw new Error(`Failed to ensure default form: ${response.status()} ${body}`);
 	}
 }
-

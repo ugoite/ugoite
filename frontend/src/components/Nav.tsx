@@ -32,6 +32,15 @@ export default function Nav() {
 				</li>
 				<li>
 					<a
+						href="/login"
+						class="ui-nav-link"
+						classList={{ "ui-nav-link-active": active("/login") }}
+					>
+						{t("nav.login")}
+					</a>
+				</li>
+				<li>
+					<a
 						href="/about"
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/about") }}

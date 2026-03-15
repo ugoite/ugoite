@@ -4,22 +4,40 @@
 services:
   backend:
     image: ugoite-backend:e2e
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      additional_contexts:
+        core: ./ugoite-core
+        minimum: ./ugoite-minimum
+        module: ./ugoite-cli
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_DEV_AUTH_MODE=${UGOITE_DEV_AUTH_MODE}
+      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID}
+      - UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID}
+      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET}
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN}
+      - UGOITE_AUTH_BEARER_SECRETS=${UGOITE_AUTH_BEARER_SECRETS}
+      - UGOITE_AUTH_BEARER_ACTIVE_KIDS=${UGOITE_AUTH_BEARER_ACTIVE_KIDS}
       - UGOITE_AUTH_BEARER_TOKENS_JSON=${UGOITE_AUTH_BEARER_TOKENS_JSON}
-      - UGOITE_BOOTSTRAP_BEARER_TOKEN=${UGOITE_BOOTSTRAP_BEARER_TOKEN}
-      - UGOITE_BOOTSTRAP_USER_ID=e2e-user
       - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
 
   frontend:
     image: ugoite-frontend:e2e
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
-      - UGOITE_AUTH_BEARER_TOKEN=${E2E_AUTH_BEARER_TOKEN}
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN}
+      - UGOITE_PROXY_TIMEOUT_MS=${UGOITE_PROXY_TIMEOUT_MS}
     depends_on:
       - backend

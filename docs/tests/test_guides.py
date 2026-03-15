@@ -16,6 +16,7 @@ REQ-OPS-017: Release publish must push GHCR images and document a quick start.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
+REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
 """
 
 from __future__ import annotations
@@ -65,6 +66,7 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
+BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
@@ -94,27 +96,36 @@ REQUIRED_BACKEND_BUILD_CONTEXTS = {
 REQUIRED_FRONTEND_BUILD_CONTEXTS = {"shared=./shared"}
 REQUIRED_PRE_COMMIT_HOOKS = {"root-artifact-hygiene", "yamllint", "actionlint"}
 REQUIRED_YAML_WORKFLOW_CI_STEPS = {
-    "Check root placeholder artifacts",
+    "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
 }
+REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
+    "scripts/check-root-artifact-hygiene.sh",
+    "tracked paths that still match repository",
+    "ignore rules",
+    "node_modules/",
+    "target/",
+    "1 MiB",
+]
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
     "cargo-clippy",
     "cargo-clippy-cli",
     "cargo-llvm-cov-core",
-    "cargo-test-cli",
+    "cargo-llvm-cov-cli",
 }
-REQUIRED_RUST_CI_STEPS = {"Run tests (cli)"}
+REQUIRED_RUST_CI_STEPS = {"Enforce Rust coverage floor (cli)"}
 REQUIRED_RELEASE_CI_PERMISSIONS = {
     "contents": "write",
     "issues": "write",
     "pull-requests": "write",
 }
 REQUIRED_RELEASE_CI_TOKEN_FRAGMENTS = {
-    "secrets.RELEASE_PLEASE_TOKEN != ''",
-    "secrets.RELEASE_PLEASE_TOKEN == ''",
+    "RELEASE_PLEASE_ENABLED",
+    "env.RELEASE_PLEASE_ENABLED == 'true'",
+    "env.RELEASE_PLEASE_ENABLED != 'true'",
     "SKIP_NO_RELEASE_PLEASE_TOKEN",
 }
 REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
@@ -252,35 +263,36 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "manual-totp",
     "mock-oauth",
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "oathtool",
-    "derive a deterministic bearer token",
+    "/login",
+    "ugoite auth login",
+    "signed bearer token",
     "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
-    "UGOITE_DEV_AUTH_MODE=manual-totp",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
     "Local Dev Auth/Login",
+    "/login",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
-    "| UGOITE_DEV_TOTP_CODE |",
-    "| UGOITE_DEV_MANUAL_TOKEN |",
-    "| UGOITE_DEV_MOCK_OAUTH_TOKEN |",
+    "| UGOITE_DEV_USER_ID |",
+    "| UGOITE_DEV_AUTH_FORCE_LOGIN |",
+    "| UGOITE_DEV_2FA_SECRET |",
 }
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
-    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-automatic}"',
-    "UGOITE_DEV_TOTP_CODE",
-    "UGOITE_DEV_MANUAL_TOKEN",
-    "UGOITE_DEV_MOCK_OAUTH_TOKEN",
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_FORCE_LOGIN",
+    "UGOITE_DEV_SIGNING_SECRET",
+    "UGOITE_DEV_SIGNING_KID",
     "path.chmod(0o600)",
-    "require_working_oathtool",
-    'announce_mode "automatic"',
     'announce_mode "manual-totp"',
     'announce_mode "mock-oauth"',
-    "manual-totp mode requires one of:",
+    "Local dev username:",
+    "Current 2FA code:",
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
 REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
@@ -360,6 +372,21 @@ REQUIRED_MONOREPO_DOC_FRAGMENTS = {
     "mise run test",
     "mise run e2e",
 }
+REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
+    "100% coverage",
+    "//frontend:test:coverage",
+    "node ./node_modules/vitest/vitest.mjs run --coverage",
+}
+REQUIRED_FRONTEND_COVERAGE_COMMAND = (
+    "node ./node_modules/vitest/vitest.mjs run --coverage"
+)
+REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+UV_SETUP_WORKFLOW_PATHS = (
+    DEVCONTAINER_CI_WORKFLOW_PATH,
+    PYTHON_CI_WORKFLOW_PATH,
+    RUST_CI_WORKFLOW_PATH,
+    YAML_WORKFLOW_CI_WORKFLOW_PATH,
+)
 REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     (
         "bash scripts/dev-seed.sh --space-id cli-demo --scenario lab-qa "
@@ -462,6 +489,17 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
             message = f"README command drift detected: missing mise task `{task}`"
             raise AssertionError(message)
 
+    mise_data = tomllib.loads(mise)
+    e2e_run = mise_data.get("tasks", {}).get("e2e", {}).get("run")
+    if e2e_run != "bash e2e/scripts/run-e2e-parity.sh full":
+        message = "Root `mise run e2e` must use the shared E2E parity wrapper"
+        raise AssertionError(message)
+
+    e2e_ci_workflow = E2E_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    if "bash e2e/scripts/run-e2e-compose.sh full" not in e2e_ci_workflow:
+        message = "E2E CI workflow must use the shared docker-compose E2E runner"
+        raise AssertionError(message)
+
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
@@ -477,6 +515,7 @@ def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     source_paths = [
         REPO_ROOT / "docker-compose.yaml",
         REPO_ROOT / "e2e/scripts/run-e2e.sh",
+        REPO_ROOT / "e2e/scripts/run-e2e-compose.sh",
         REPO_ROOT / ".github/workflows/e2e-ci.yml",
         REPO_ROOT / ".github/workflows/frontend-ci.yml",
         REPO_ROOT / "frontend/src/routes/api/[...path].ts",
@@ -502,46 +541,46 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
         message = "mise.toml must define [tools]"
         raise TypeError(message)
 
-    bun_versions = _extract_workflow_pin_values(
-        [DOCSITE_CI_WORKFLOW_PATH, FRONTEND_CI_WORKFLOW_PATH],
-        uses_fragment="setup-bun",
-        key="bun-version",
-    )
-    rust_versions = _extract_workflow_pin_values(
-        [RUST_CI_WORKFLOW_PATH],
-        uses_fragment="rust-toolchain",
-        key="toolchain",
-    )
-    python_versions = _extract_workflow_pin_values(
-        [SCANCODE_WORKFLOW_PATH],
-        uses_fragment="scancode-action",
-        key="python-version",
-    )
+    expected_tools = {
+        "biome": _extract_single_workflow_pin_value(
+            [FRONTEND_CI_WORKFLOW_PATH],
+            uses_fragment="setup-biome",
+            key="version",
+            label="CI biome pins",
+        ),
+        "bun": _extract_single_workflow_pin_value(
+            [DOCSITE_CI_WORKFLOW_PATH, FRONTEND_CI_WORKFLOW_PATH],
+            uses_fragment="setup-bun",
+            key="bun-version",
+            label="CI bun-version pins",
+        ),
+        "python": _extract_single_workflow_pin_value(
+            [SCANCODE_WORKFLOW_PATH],
+            uses_fragment="scancode-action",
+            key="python-version",
+            label="CI python-version pins",
+        ),
+        "rust": _extract_single_workflow_pin_value(
+            [RUST_CI_WORKFLOW_PATH],
+            uses_fragment="rust-toolchain",
+            key="toolchain",
+            label="CI rust toolchain pins",
+        ),
+        "uv": _extract_single_workflow_pin_value(
+            list(UV_SETUP_WORKFLOW_PATHS),
+            uses_fragment="setup-uv",
+            key="version",
+            label="CI uv-version pins",
+        ),
+    }
 
-    if len(bun_versions) != 1:
-        message = f"CI bun-version pins must be consistent: {sorted(bun_versions)}"
-        raise AssertionError(message)
-    if len(rust_versions) != 1:
-        message = f"CI rust toolchain pins must be consistent: {sorted(rust_versions)}"
-        raise AssertionError(message)
-    if len(python_versions) != 1:
-        message = (
-            f"CI python-version pins must be consistent: {sorted(python_versions)}"
-        )
-        raise AssertionError(message)
-
-    bun_version = next(iter(bun_versions))
-    rust_version = next(iter(rust_versions))
-    python_version = next(iter(python_versions))
-
-    if str(tools.get("bun")) != bun_version:
-        message = "mise.toml [tools].bun must match CI bun-version"
-        raise AssertionError(message)
-    if str(tools.get("rust")) != rust_version:
-        message = "mise.toml [tools].rust must match CI rust toolchain"
-        raise AssertionError(message)
-    if str(tools.get("python")) != python_version:
-        message = "mise.toml [tools].python must match CI python-version"
+    mismatches = sorted(
+        f"{tool}={tools.get(tool)!r} (expected {expected})"
+        for tool, expected in expected_tools.items()
+        if str(tools.get(tool)) != expected
+    )
+    if mismatches:
+        message = "mise.toml [tools] drift: " + "; ".join(mismatches)
         raise AssertionError(message)
 
 
@@ -590,8 +629,13 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
     missing_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.difference(ci_steps))
     python_ci_steps = _collect_workflow_step_names(PYTHON_CI_WORKFLOW_PATH)
     leaked_steps = sorted(REQUIRED_YAML_WORKFLOW_CI_STEPS.intersection(python_ci_steps))
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS,
+        "ci-cd spec must document the root artifact hygiene guard",
+    )
 
-    if missing_hooks or missing_steps or leaked_steps:
+    if missing_hooks or missing_steps or leaked_steps or spec_detail:
         details: list[str] = []
         if missing_hooks:
             details.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
@@ -601,11 +645,26 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
             )
         if leaked_steps:
             details.append("python-ci should not include: " + ", ".join(leaked_steps))
+        if spec_detail:
+            details.append(spec_detail)
         raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
-    """REQ-OPS-006: Rust pre-commit checks must include CLI test parity with CI."""
+    """REQ-OPS-006: Rust pre-commit checks must include CLI coverage parity with CI."""
+    missing_parts = _collect_req_ops_006_rust_precommit_parity_details()
+    if missing_parts:
+        raise AssertionError("; ".join(missing_parts))
+
+
+def _collect_req_ops_006_rust_precommit_parity_details() -> list[str]:
+    return [
+        *_collect_req_ops_006_pre_commit_details(),
+        *_collect_req_ops_006_ci_details(),
+    ]
+
+
+def _collect_req_ops_006_pre_commit_details() -> list[str]:
     pre_commit = _load_pre_commit_config()
     configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
     missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
@@ -616,19 +675,53 @@ def test_docs_req_ops_006_rust_precommit_parity() -> None:
     if isinstance(cargo_clippy_cli, dict):
         clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
 
+    cli_cov_entry = ""
+    cargo_llvm_cov_cli = hook_entries.get("cargo-llvm-cov-cli")
+    if isinstance(cargo_llvm_cov_cli, dict):
+        cli_cov_entry = str(cargo_llvm_cov_cli.get("entry", ""))
+
     missing_parts: list[str] = []
     if missing_hooks:
         missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
     if "--no-default-features" not in clippy_cli_entry:
         missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+    if "--fail-under-lines 100" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must enforce 100% line coverage")
+    if "--no-default-features" not in cli_cov_entry:
+        missing_parts.append("cargo-llvm-cov-cli must pass --no-default-features")
 
+    return missing_parts
+
+
+def _collect_req_ops_006_ci_details() -> list[str]:
+    missing_parts: list[str] = []
     rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
     missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
     if missing_ci_steps:
         missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
 
-    if missing_parts:
-        raise AssertionError("; ".join(missing_parts))
+    workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    cli_coverage_command = (
+        "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
+    )
+    if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
+        missing_parts.append("rust-ci must install llvm-tools-preview")
+    if cli_coverage_command not in workflow_text:
+        missing_parts.append("rust-ci must enforce 100% ugoite-cli coverage")
+
+    spec_detail = _require_file_contains(
+        CI_CD_SPEC_PATH,
+        [
+            cli_coverage_command,
+            "mise run //ugoite-cli:test",
+            "100% CLI line-coverage gate",
+        ],
+        "ci-cd spec must document the ugoite-cli 100% coverage gate",
+    )
+    if spec_detail:
+        missing_parts.append(spec_detail)
+
+    return missing_parts
 
 
 def test_docs_req_ops_007_docsite_quality_parity_declared() -> None:
@@ -705,6 +798,7 @@ def test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared() -> Non
 def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
     """REQ-OPS-011: Rust target caches must stay bounded and cleanable."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
     core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
     cli_mise = tomllib.loads(UGOITE_CLI_MISE_PATH.read_text(encoding="utf-8"))
 
@@ -716,8 +810,59 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 core_mise,
                 "build",
+                "uv run maturin develop",
+                "ugoite-core build task must build the editable Rust extension",
+            ),
+            _require_task_excludes(
+                core_mise,
+                "build",
                 "cargo clean -p ugoite-core",
-                "ugoite-core build task must clean package-local Rust artifacts",
+                "ugoite-core build task must stay incremental by default",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "cargo clean -p ugoite-core",
+                "ugoite-core build:clean task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                core_mise,
+                "build:clean",
+                "uv run maturin develop",
+                "ugoite-core build:clean task must rebuild the editable Rust extension",
+            ),
+            _require_exact_task_run(
+                core_mise,
+                "test:no-build",
+                [
+                    "cargo test -j 1",
+                    (
+                        "if [ -d tests ]; then uv run --with pytest --with "
+                        "pytest-asyncio python -m pytest; fi"
+                    ),
+                ],
+                (
+                    "ugoite-core test:no-build task must run crate and Python "
+                    "binding tests without rebuilding"
+                ),
+            ),
+            _require_exact_task_depends(
+                core_mise,
+                "test",
+                ["build"],
+                "ugoite-core test task must depend on build",
+            ),
+            _require_exact_task_run(
+                backend_mise,
+                "test:no-build",
+                ["uv run pytest"],
+                "backend test:no-build task must run backend pytest directly",
+            ),
+            _require_exact_task_depends(
+                backend_mise,
+                "test",
+                ["//ugoite-core:build"],
+                "backend test task must depend on ugoite-core:build",
             ),
             _require_task_contains(
                 cli_mise,
@@ -736,6 +881,23 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "cleanup:rust-targets",
                 ["bash scripts/cleanup-rust-targets.sh"],
                 "root mise must expose cleanup:rust-targets",
+            ),
+            _require_exact_task_run(
+                root_mise,
+                "test",
+                [
+                    "mise run //ugoite-core:build",
+                    "mise run //backend:test:no-build",
+                    "mise run //frontend:test:coverage",
+                    "mise run //ugoite-cli:test",
+                    "mise run //ugoite-core:test:no-build",
+                    "mise run //ugoite-minimum:test",
+                    "mise run test:docs",
+                ],
+                (
+                    "root mise test must build ugoite-core once before "
+                    "reusing no-build backend/core test tasks"
+                ),
             ),
             _require_file_contains(
                 RUST_TARGET_CLEANUP_PATH,
@@ -1111,6 +1273,61 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
             + ", ".join(missing_doc),
         )
 
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
+    """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    root_runs = _get_task_run_commands(root_mise, "test")
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    coverage_task = _load_mise_task_mapping(
+        frontend_mise,
+        task_name="test:coverage",
+        path_label="frontend/mise.toml",
+    )
+    coverage_run = _load_task_run(
+        coverage_task,
+        task_label='frontend/mise.toml [tasks."test:coverage"]',
+    )
+    coverage_step_run = _find_workflow_step_run(
+        FRONTEND_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name=REQUIRED_FRONTEND_COVERAGE_STEP_NAME,
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    detail_candidates = (
+        (
+            "mise run //frontend:test:coverage" not in root_runs,
+            "root mise.toml tasks.test must run //frontend:test:coverage",
+        ),
+        (
+            REQUIRED_FRONTEND_COVERAGE_COMMAND not in coverage_run,
+            'frontend/mise.toml [tasks."test:coverage"] must run node vitest coverage',
+        ),
+        (
+            coverage_step_run is None,
+            "frontend-ci.yml must define the frontend coverage gate step",
+        ),
+        (
+            coverage_step_run is not None
+            and REQUIRED_FRONTEND_COVERAGE_COMMAND not in coverage_step_run,
+            "frontend-ci.yml coverage gate must run node vitest coverage",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing frontend coverage fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
@@ -1604,6 +1821,52 @@ def _get_task_run_commands(config: dict[str, object], task_name: str) -> list[st
     return []
 
 
+def _load_mise_task_mapping(
+    config: dict[str, object],
+    *,
+    task_name: str,
+    path_label: str,
+) -> dict[str, object]:
+    tasks = config.get("tasks", {})
+    if not isinstance(tasks, dict):
+        message = f"{path_label} must define [tasks]"
+        raise TypeError(message)
+    task = tasks.get(task_name)
+    if not isinstance(task, dict):
+        message = f'{path_label} must define [tasks."{task_name}"]'
+        raise TypeError(message)
+    return task
+
+
+def _load_task_depends(task: dict[str, object], *, task_label: str) -> list[str]:
+    depends = task.get("depends")
+    if isinstance(depends, list) and all(isinstance(item, str) for item in depends):
+        return list(depends)
+    message = f"{task_label} depends must be a list"
+    raise TypeError(message)
+
+
+def _load_task_run(task: dict[str, object], *, task_label: str) -> str:
+    run = task.get("run")
+    if isinstance(run, str):
+        return run
+    message = f"{task_label}.run must be a string"
+    raise TypeError(message)
+
+
+def _get_task_depends(config: dict[str, object], task_name: str) -> list[str]:
+    tasks = config.get("tasks", {})
+    if not isinstance(tasks, dict):
+        return []
+    task = tasks.get(task_name)
+    if not isinstance(task, dict):
+        return []
+    depends = task.get("depends")
+    if isinstance(depends, list) and all(isinstance(item, str) for item in depends):
+        return list(depends)
+    return []
+
+
 def _require_shared_target_dir(
     config: dict[str, object],
     label: str,
@@ -1625,6 +1888,18 @@ def _require_task_contains(
     return message
 
 
+def _require_task_excludes(
+    config: dict[str, object],
+    task_name: str,
+    forbidden: str,
+    message: str,
+) -> str | None:
+    commands = _get_task_run_commands(config, task_name)
+    if any(forbidden in command for command in commands):
+        return message
+    return None
+
+
 def _require_exact_task_run(
     config: dict[str, object],
     task_name: str,
@@ -1632,6 +1907,17 @@ def _require_exact_task_run(
     message: str,
 ) -> str | None:
     if _get_task_run_commands(config, task_name) == expected:
+        return None
+    return message
+
+
+def _require_exact_task_depends(
+    config: dict[str, object],
+    task_name: str,
+    expected: list[str],
+    message: str,
+) -> str | None:
+    if _get_task_depends(config, task_name) == expected:
         return None
     return message
 
@@ -1727,6 +2013,24 @@ def _extract_workflow_pin_values(
     return values
 
 
+def _extract_single_workflow_pin_value(
+    workflow_paths: list[Path],
+    *,
+    uses_fragment: str,
+    key: str,
+    label: str,
+) -> str:
+    values = _extract_workflow_pin_values(
+        workflow_paths,
+        uses_fragment=uses_fragment,
+        key=key,
+    )
+    if len(values) != 1:
+        message = f"{label} must be consistent: {sorted(values)}"
+        raise AssertionError(message)
+    return next(iter(values))
+
+
 def _extract_workflow_pin_value(
     *,
     workflow_path: Path,
@@ -1752,6 +2056,33 @@ def _extract_workflow_pin_value(
                 return str(with_block[key]).strip().strip('"')
     message = f"{workflow_path.name} must define pinned {key}"
     raise AssertionError(message)
+
+
+def _find_workflow_step_run(
+    workflow_path: Path,
+    *,
+    job_name: str,
+    step_name: str,
+) -> str | None:
+    workflow = _load_yaml_base_mapping(workflow_path)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = f"{workflow_path.name} must define jobs"
+        raise TypeError(message)
+    job = jobs.get(job_name)
+    if not isinstance(job, dict):
+        message = f"{workflow_path.name} must define jobs.{job_name}"
+        raise TypeError(message)
+    steps = job.get("steps", [])
+    if not isinstance(steps, list):
+        message = f"{workflow_path.name} jobs.{job_name}.steps must be a list"
+        raise TypeError(message)
+    for step in steps:
+        if not isinstance(step, dict) or step.get("name") != step_name:
+            continue
+        run = step.get("run")
+        return run if isinstance(run, str) else None
+    return None
 
 
 def _collect_build_steps(

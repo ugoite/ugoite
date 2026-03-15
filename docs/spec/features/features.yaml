@@ -38,6 +38,8 @@ files:
     file: forms.yaml
   - kind: assets
     file: assets.yaml
+  - kind: auth
+    file: auth.yaml
   - kind: search
     file: search.yaml
   - kind: sql
