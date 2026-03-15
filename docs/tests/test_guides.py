@@ -50,6 +50,8 @@ RELEASE_PUBLISH_WORKFLOW_PATH = (
 CLI_RELEASE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
 )
+ROOT_GITIGNORE_PATH = REPO_ROOT / ".gitignore"
+ROOT_CARGO_LOCK_PATH = REPO_ROOT / "Cargo.lock"
 RELEASE_CONFIG_PATH = REPO_ROOT / ".github" / "release-please-config.json"
 RUST_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "rust-ci.yml"
 SCANCODE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "scancode.yml"
@@ -141,14 +143,14 @@ REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
     "aarch64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
-    "macos-15-large",
+    "macos-15",
     "cargo build --locked --release --bin ugoite --target",
     "gh release upload",
     "ugoite-v${VERSION}-",
     "permissions:",
     "contents: write",
 }
-DEPRECATED_CLI_RELEASE_RUNNER_FRAGMENTS = {"macos-13"}
+FORBIDDEN_CLI_RELEASE_RUNNER_FRAGMENTS = {"macos-13", "macos-15-large"}
 REQUIRED_RELEASE_PUBLISH_CLI_FRAGMENTS = {
     "create-draft-release",
     "publish-cli-binaries",
@@ -185,6 +187,8 @@ REQUIRED_CLI_GUIDE_FRAGMENTS = {
 }
 REQUIRED_CLI_CICD_FRAGMENTS = {
     ".github/workflows/cli-release-binaries.yml",
+    "Cargo.lock",
+    "macos-15",
     "scripts/install-ugoite-cli.sh",
     "ugoite --help",
 }
@@ -1766,6 +1770,7 @@ def _collect_release_ci_requirement_details() -> list[str]:
 def _collect_cli_release_install_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     cli_release_workflow_text = CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    gitignore_text = ROOT_GITIGNORE_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
@@ -1802,9 +1807,9 @@ def _collect_cli_release_install_details() -> list[str]:
         cli_release_workflow_text,
         REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS,
     )
-    deprecated_cli_release_runners = sorted(
+    forbidden_cli_release_runners = sorted(
         fragment
-        for fragment in DEPRECATED_CLI_RELEASE_RUNNER_FRAGMENTS
+        for fragment in FORBIDDEN_CLI_RELEASE_RUNNER_FRAGMENTS
         if fragment in cli_release_workflow_text
     )
     missing_install_script = _missing_required_fragments(
@@ -1849,9 +1854,17 @@ def _collect_cli_release_install_details() -> list[str]:
             + ", ".join(missing_cli_release),
         ),
         (
-            bool(deprecated_cli_release_runners),
-            "cli-release-binaries workflow still references deprecated runners: "
-            + ", ".join(deprecated_cli_release_runners),
+            bool(forbidden_cli_release_runners),
+            "cli-release-binaries workflow still references forbidden runners: "
+            + ", ".join(forbidden_cli_release_runners),
+        ),
+        (
+            not ROOT_CARGO_LOCK_PATH.exists(),
+            "repository root must commit Cargo.lock for clean-checkout release builds",
+        ),
+        (
+            "/Cargo.lock" in gitignore_text,
+            ".gitignore must not ignore the root Cargo.lock used by release builds",
         ),
         (
             bool(missing_install_script),
