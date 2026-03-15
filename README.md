@@ -59,11 +59,30 @@ e2e/                # End-to-end tests (Bun)
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
+- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
 
 ---
+
+## CLI Quick Start
+
+Install the latest stable `ugoite` binary with a one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
+ugoite --help
+```
+
+Pin an exact release when you do not want the newest stable build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
+ugoite --help
+```
+
+For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
@@ -73,7 +92,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (backend + frontend + docsite — `automatic` auth mode is the default):
+Start development (backend + frontend + docsite — `manual-totp` is the default local auth mode):
 
 ```bash
 mise run dev
@@ -105,20 +124,37 @@ shared Rust target cache and the legacy ugoite-core cache path:
 mise run cleanup:rust-targets
 ```
 
-If you need to rotate/refresh the automatic token manually, run:
+If only the editable `ugoite-core` extension looks stale, use a package-local
+clean rebuild without wiping the entire shared target tree:
+
+```bash
+mise run //ugoite-core:build:clean
+```
+
+If you need to re-prompt the local dev login context (username + 2FA validation), run:
 
 ```bash
 UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev
 ```
 
-To opt into explicit manual modes instead of the default automatic bootstrap:
+To use the explicit mock OAuth development flow instead of the default
+manual TOTP prompt:
 
 ```bash
-UGOITE_DEV_AUTH_MODE=manual-totp UGOITE_DEV_TOTP_CODE="$(oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}")" mise run dev
 UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev
 ```
 
-See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the automatic flow, manual TOTP + `oathtool` steps, and the mock OAuth-style local mode. See [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind `mise run seed`.
+After `mise run dev` starts:
+
+- open `http://localhost:3000/login` and sign in through the browser, or
+- use the CLI login surface:
+
+```bash
+cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
+cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
+```
+
+See [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the manual TOTP + `oathtool` steps, the mock OAuth-style local mode, and the browser/CLI login flow. See [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind `mise run seed`.
 
 Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
 When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
