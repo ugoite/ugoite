@@ -8,7 +8,7 @@
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR | Lint, format check, typecheck, validation test |
-| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR | Full E2E with live servers |
+| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue | Path-aware smoke/full E2E with merge-queue full coverage |
 | Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
 | Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push/PR for devcontainer & setup inputs, merge queue | Build/smoke devcontainer with authenticated pulls and path-filtered setup contracts |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
@@ -24,6 +24,13 @@ resolve inside the container build. Docker Build CI, E2E CI, SBOM CI, and
 Release Publish share the reusable `.github/workflows/docker-images.yml`
 image-definition contract so image build behavior cannot silently drift between
 CI validation, local-image artifact export, and release publishing.
+
+E2E CI selects a deterministic tier before running tests. `merge_group` and
+pushes to `main` always run the full compose-backed suite. Pull requests only
+drop to the smoke tier when every changed file stays inside docs/docsite
+metadata paths (`docs/**`, `docsite/**`, `README.md`, `LICENSE`, `AGENTS.md`,
+and `.github/ISSUE_TEMPLATE/**`); any application or workflow-input change
+keeps the full suite.
 
 ## Python CI
 
@@ -99,10 +106,18 @@ jobs:
 
 ```yaml
 jobs:
+  build-images:
+    - reusable docker-images.yml export of local backend/frontend image archives
+  select-tier:
+    - merge_group / push => full
+    - pull_request with docs/docsite-only paths => smoke
+    - all other pull_request changes => full
   e2e:
-    - Build backend image
-    - Build frontend image
-    - bash e2e/scripts/run-e2e-compose.sh full
+    - download and load pre-built backend/frontend images
+    - Start backend (background)
+    - Start frontend (background)
+    - Wait for servers
+    - bash e2e/scripts/run-e2e-compose.sh "${{ needs.select-tier.outputs.test_type }}"
     timeout: 30 minutes
 ```
 
