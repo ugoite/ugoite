@@ -119,10 +119,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
       </main>
     ) : hasRight ? (
       <main class="doc-shell-3col">
-        <aside class="doc-sidebar">
-          <DocNavTree navSections={navSections} />
-        </aside>
-        <div class="space-y-6">
+        <div class="doc-shell-main space-y-6">
           <slot />
         </div>
         <aside class="doc-right">
@@ -146,10 +143,7 @@ const subNavByHref = new Map<string, Array<{ title: string; href: string }>>([
       </main>
     ) : (
       <main class="doc-shell">
-        <aside class="doc-sidebar">
-          <DocNavTree navSections={navSections} />
-        </aside>
-        <div class="space-y-6">
+        <div class="doc-shell-main space-y-6">
           <slot />
         </div>
       </main>
