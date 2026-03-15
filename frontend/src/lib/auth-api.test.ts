@@ -9,7 +9,7 @@ import { server } from "~/test/mocks/server";
 describe("authApi", () => {
 	beforeEach(() => {
 		resetMockData();
-		document.cookie = "ugoite_auth_bearer_token=; Path=/; Max-Age=0; SameSite=Lax";
+		clearAuthTokenCookie();
 	});
 
 	it("REQ-OPS-015: surfaces local auth config and login response errors clearly", async () => {
@@ -175,6 +175,14 @@ describe("authSession", () => {
 		vi.stubGlobal("document", undefined);
 
 		expect(() => setAuthTokenCookie("token-value", 1_900_000_000)).not.toThrow();
+		expect(() => clearAuthTokenCookie()).not.toThrow();
+	});
+
+	it("REQ-OPS-015: no-ops when cookie descriptors are unavailable", () => {
+		vi.stubGlobal("document", Object.create(null));
+		vi.stubGlobal("window", { location: { protocol: "http:" } });
+
+		expect(() => setAuthTokenCookie("token-value")).not.toThrow();
 		expect(() => clearAuthTokenCookie()).not.toThrow();
 	});
 });

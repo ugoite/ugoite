@@ -1,4 +1,5 @@
 import { createSignal, Show, onMount, onCleanup, createEffect } from "solid-js";
+import { t } from "~/lib/i18n";
 
 export interface SearchBarProps {
 	onSearch: (query: string) => void;
@@ -87,7 +88,7 @@ export function SearchBar(props: SearchBarProps) {
 						type="text"
 						value={query()}
 						onInput={(e) => setQuery(e.currentTarget.value)}
-						placeholder={props.placeholder || "Search entries... (⌘K)"}
+						placeholder={props.placeholder || t("searchBar.placeholder")}
 						class="ui-input w-full pl-10 pr-20"
 					/>
 
@@ -96,7 +97,7 @@ export function SearchBar(props: SearchBarProps) {
 						<button
 							type="button"
 							onClick={handleClear}
-							aria-label="Clear search"
+							aria-label={t("searchBar.clearAria")}
 							class="ui-button ui-button-secondary ui-button-sm absolute right-2"
 						>
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,11 +116,13 @@ export function SearchBar(props: SearchBarProps) {
 			{/* Status Messages */}
 			<div class="mt-2 text-sm">
 				<Show when={props.loading}>
-					<span class="ui-muted">Searching...</span>
+					<span class="ui-muted">{t("searchBar.searching")}</span>
 				</Show>
 				<Show when={props.resultsCount !== undefined && !props.loading}>
 					<span class="ui-muted">
-						{props.resultsCount} {props.resultsCount === 1 ? "result" : "results"}
+						{t(props.resultsCount === 1 ? "searchBar.results.one" : "searchBar.results.other", {
+							count: props.resultsCount ?? 0,
+						})}
 					</span>
 				</Show>
 			</div>

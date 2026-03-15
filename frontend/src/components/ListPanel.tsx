@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import type { Accessor } from "solid-js";
+import { t } from "~/lib/i18n";
 import type { EntryRecord, Form } from "~/lib/types";
 import { SearchBar } from "./SearchBar";
 
@@ -75,7 +76,10 @@ export function ListPanel(props: ListPanelProps) {
 								d="M12 4v16m8-8H4"
 							/>
 						</svg>
-						{props.createLabel || (props.mode === "entries" ? "New Entry" : "New Form")}
+						{props.createLabel ||
+							(props.mode === "entries"
+								? t("listPanel.create.entries")
+								: t("listPanel.create.forms"))}
 					</button>
 					<Show when={props.createDisabled && props.createDisabledReason}>
 						<p class="mt-2 text-xs ui-muted">{props.createDisabledReason}</p>
@@ -102,7 +106,7 @@ export function ListPanel(props: ListPanelProps) {
 			<Show when={props.mode === "entries" && props.forms.length > 0}>
 				<div class="px-4 py-3 ui-divider">
 					<label class="ui-label text-xs mb-1" for="filter-form">
-						Filter by Form
+						{t("listPanel.filterByForm")}
 					</label>
 					<select
 						id="filter-form"
@@ -110,7 +114,7 @@ export function ListPanel(props: ListPanelProps) {
 						value={props.filterForm()}
 						onChange={(e) => props.onFilterFormChange(e.currentTarget.value)}
 					>
-						<option value="">All</option>
+						<option value="">{t("listPanel.allForms")}</option>
 						<For each={props.forms}>{(s) => <option value={s.name}>{s.name}</option>}</For>
 					</select>
 				</div>
@@ -123,6 +127,7 @@ export function ListPanel(props: ListPanelProps) {
 						entries={entries}
 						loading={loading}
 						error={error}
+						forms={props.forms}
 						selectedId={props.selectedId}
 						onSelect={props.onSelectEntry}
 					/>
@@ -144,6 +149,7 @@ interface EntryListContentProps {
 	entries: Accessor<EntryRecord[]>;
 	loading: Accessor<boolean>;
 	error: Accessor<string | null>;
+	forms: Form[];
 	selectedId?: string;
 	onSelect?: (entryId: string) => void;
 }
@@ -174,7 +180,7 @@ function EntryListContent(props: EntryListContentProps) {
 								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 							/>
 						</svg>
-						<span class="ui-muted text-sm">Loading entries...</span>
+						<span class="ui-muted text-sm">{t("listPanel.loadingEntries")}</span>
 					</div>
 				</div>
 			</Show>
@@ -208,15 +214,13 @@ function EntryListContent(props: EntryListContentProps) {
 								d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
 							/>
 						</svg>
-						<p class="ui-muted font-medium mb-1">No entries yet</p>
-						{/* v8 ignore start */}
+						<p class="ui-muted font-medium mb-1">{t("listPanel.empty.entries.title")}</p>
 						<Show
-							when={props.mode === "entries" && props.forms.length === 0}
-							fallback={<p class="text-sm ui-muted">Create your first entry to get started</p>}
+							when={props.forms.length === 0}
+							fallback={<p class="text-sm ui-muted">{t("listPanel.empty.entries.description")}</p>}
 						>
-							<p class="text-sm ui-muted">Create a form first to start writing entries</p>
+							<p class="text-sm ui-muted">{t("listPanel.empty.entries.noForms")}</p>
 						</Show>
-						{/* v8 ignore stop */}
 					</div>
 				</div>
 			</Show>
@@ -267,7 +271,9 @@ function EntryListItem(props: EntryListItemProps) {
 				aria-pressed={props.isSelected}
 			>
 				<div class="flex justify-between items-start mb-2">
-					<h3 class="font-semibold truncate flex-1 pr-2">{props.entry.title || "Untitled"}</h3>
+					<h3 class="font-semibold truncate flex-1 pr-2">
+						{props.entry.title || t("common.untitled")}
+					</h3>
 					<Show when={props.entry.form}>
 						<span class="ui-pill text-xs whitespace-nowrap">{props.entry.form}</span>
 					</Show>
@@ -302,7 +308,7 @@ function EntryListItem(props: EntryListItemProps) {
 							d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
 						/>
 					</svg>
-					<span>Updated {formatDate(props.entry.updated_at)}</span>
+					<span>{t("common.updatedAt", { date: formatDate(props.entry.updated_at) })}</span>
 				</div>
 			</button>
 		</li>
@@ -337,8 +343,8 @@ function FormListContent(props: FormListContentProps) {
 								d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
 							/>
 						</svg>
-						<p class="ui-muted font-medium mb-1">No forms yet</p>
-						<p class="text-sm ui-muted">Create your first form to get started</p>
+						<p class="ui-muted font-medium mb-1">{t("listPanel.empty.forms.title")}</p>
+						<p class="text-sm ui-muted">{t("listPanel.empty.forms.description")}</p>
 					</div>
 				</div>
 			}
@@ -356,8 +362,12 @@ function FormListContent(props: FormListContentProps) {
 							>
 								<div class="font-semibold">{entryForm.name}</div>
 								<div class="text-xs ui-muted mt-1">
-									{Object.keys(entryForm.fields).length}{" "}
-									{Object.keys(entryForm.fields).length === 1 ? "field" : "fields"}
+									{t(
+										Object.keys(entryForm.fields).length === 1
+											? "listPanel.fieldCount.one"
+											: "listPanel.fieldCount.other",
+										{ count: Object.keys(entryForm.fields).length },
+									)}
 								</div>
 							</button>
 						</li>

@@ -1,12 +1,17 @@
 // REQ-FE-004: Entry list display
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
+import { setLocale } from "~/lib/i18n";
 import { ListPanel } from "./ListPanel";
 import type { Form, EntryRecord } from "~/lib/types";
 
 describe("ListPanel", () => {
+	beforeEach(() => {
+		setLocale("en");
+	});
+
 	const mockForms: Form[] = [
 		{
 			name: "Meeting",
@@ -252,6 +257,23 @@ describe("ListPanel", () => {
 			));
 			expect(screen.getByText("Untitled")).toBeInTheDocument();
 			expect(screen.getByText("42")).toBeInTheDocument();
+		});
+
+		it("REQ-FE-044: localizes entry list controls and empty state in Japanese", () => {
+			setLocale("ja");
+			const [filterForm, setFilterForm] = createSignal("");
+			render(() => (
+				<ListPanel
+					mode="entries"
+					forms={mockForms}
+					filterForm={filterForm}
+					onFilterFormChange={setFilterForm}
+					entries={[]}
+				/>
+			));
+			expect(screen.getByRole("button", { name: "新しいエントリ" })).toBeInTheDocument();
+			expect(screen.getByText("フォームで絞り込む")).toBeInTheDocument();
+			expect(screen.getByText("まだエントリがありません")).toBeInTheDocument();
 		});
 	});
 

@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { assetApi } from "~/lib/asset-api";
+import { t } from "~/lib/i18n";
 
 export default function SpaceAssetDetailRoute() {
 	const navigate = useNavigate();
@@ -25,7 +26,7 @@ export default function SpaceAssetDetailRoute() {
 			await assetApi.delete(spaceId(), assetId());
 			navigate(`/spaces/${spaceId()}/assets`);
 		} catch (err) {
-			setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
+			setDeleteError(err instanceof Error ? err.message : t("assetDetail.failedDelete"));
 		} finally {
 			setIsDeleting(false);
 		}
@@ -35,31 +36,31 @@ export default function SpaceAssetDetailRoute() {
 		<main class="ui-shell ui-page">
 			<div class="max-w-3xl mx-auto p-6">
 				<div class="flex items-center justify-between mb-6">
-					<h1 class="ui-page-title">Asset</h1>
+					<h1 class="ui-page-title">{t("assetDetail.heading")}</h1>
 					<A href={`/spaces/${spaceId()}/assets`} class="text-sm">
-						Back to Assets
+						{t("assetDetail.backToAssets")}
 					</A>
 				</div>
 
 				<Show when={assets.loading}>
-					<p class="text-sm ui-muted">Loading asset...</p>
+					<p class="text-sm ui-muted">{t("assetDetail.loading")}</p>
 				</Show>
 				<Show when={assets.error}>
-					<p class="ui-alert ui-alert-error text-sm">Failed to load asset.</p>
+					<p class="ui-alert ui-alert-error text-sm">{t("assetDetail.failedLoad")}</p>
 				</Show>
 				<Show when={asset()}>
 					{(item) => (
 						<div class="ui-card">
-							<p class="text-sm">Name: {item().name}</p>
-							<p class="text-sm ui-muted">ID: {item().id}</p>
-							<p class="text-sm ui-muted">Path: {item().path}</p>
+							<p class="text-sm">{t("assetDetail.name", { name: item().name })}</p>
+							<p class="text-sm ui-muted">{t("assetDetail.id", { id: item().id })}</p>
+							<p class="text-sm ui-muted">{t("assetDetail.path", { path: item().path })}</p>
 							<button
 								type="button"
 								class="ui-button ui-button-danger mt-4"
 								onClick={handleDelete}
 								disabled={isDeleting()}
 							>
-								{isDeleting() ? "Deleting..." : "Delete Asset"}
+								{isDeleting() ? t("assetDetail.deleting") : t("assetDetail.delete")}
 							</button>
 							<Show when={deleteError()}>
 								<p class="ui-alert ui-alert-error text-sm mt-2">{deleteError()}</p>
