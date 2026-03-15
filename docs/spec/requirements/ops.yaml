@@ -557,6 +557,7 @@ requirements:
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
+      - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
       tests:
       - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode

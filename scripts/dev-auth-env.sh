@@ -14,6 +14,7 @@ AUTH_FILE="${UGOITE_DEV_AUTH_FILE:-${HOME}/.ugoite/dev-auth.json}"
 AUTH_TTL_SECONDS="${UGOITE_DEV_AUTH_TTL_SECONDS:-43200}"
 DEV_2FA_SECRET="${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 DEV_USER_ID="${UGOITE_DEV_USER_ID:-}"
+DEFAULT_DEV_USER_ID="dev-local-user"
 DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 
 announce_mode() {
@@ -170,10 +171,10 @@ reuse_or_create_context() {
     return 0
   fi
 
-  if [ -z "$DEV_USER_ID" ]; then
-    DEV_USER_ID="$(prompt_non_empty 'Local dev username: ')"
-  fi
   if [ "$requested_mode" = "manual-totp" ]; then
+    if [ -z "$DEV_USER_ID" ]; then
+      DEV_USER_ID="$(prompt_non_empty 'Local dev username: ')"
+    fi
     entered_totp="${UGOITE_DEV_TOTP_CODE:-}"
     if [ -z "$entered_totp" ]; then
       entered_totp="$(prompt_non_empty 'Current 2FA code: ')"
@@ -182,6 +183,8 @@ reuse_or_create_context() {
       echo "The provided 2FA code is invalid for UGOITE_DEV_2FA_SECRET." >&2
       exit 1
     fi
+  elif [ -z "$DEV_USER_ID" ]; then
+    DEV_USER_ID="$DEFAULT_DEV_USER_ID"
   fi
 
   local signing_secret signing_kid
