@@ -54,11 +54,13 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Design",
 			"Source Docs",
 		]);
-		await expect(page.locator(".doc-sidebar .doc-sidebar-title")).toHaveText([
-			"Getting Started",
-			"Application",
-			"Design Principles",
-			"Source Docs",
+		await expect(
+			page.locator(".site-nav-menu").nth(1).locator(".site-nav-submenu a"),
+		).toHaveText([
+			"Docker Compose",
+			"Container Quickstart",
+			"Auth Overview",
+			"CLI Guide",
 		]);
 	});
 

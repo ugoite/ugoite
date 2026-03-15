@@ -253,3 +253,33 @@ requirements:
       - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
       - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
       - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
+- set_id: REQCAT-E2E
+  source_file: requirements/e2e.yaml
+  scope: End-to-end confidence and cross-layer behavior requirements.
+  linked_policies:
+  - POL-005
+  - POL-006
+  - POL-008
+  - POL-009
+  linked_specifications:
+  - SPEC-TESTING-STRATEGY
+  - SPEC-TESTING-CICD
+  - SPEC-UI-OVERVIEW
+  id: REQ-E2E-009
+  title: Docsite Desktop Navigation Stays Content-First
+  description: 'Docsite desktop layouts MUST use the header navigation instead of rendering
+
+    a separate left documentation sidebar, while keeping the mobile drawer
+
+    navigation available on smaller viewports.
+
+    '
+  related_spec:
+  - ui/README.md
+  priority: high
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/docsite-mobile-nav.test.ts
+      tests:
+      - 'REQ-E2E-009: desktop doc pages use the header nav without rendering a left sidebar'
