@@ -18,6 +18,7 @@ REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
 REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
+REQ-OPS-023: Public installer package must stay separate from private tooling.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tarfile
 import textwrap
@@ -73,6 +75,7 @@ PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
+UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
 UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
@@ -92,6 +95,11 @@ WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
+PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
+PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
+PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
+PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 COLUMN_COUNT_THRESHOLD = 2
@@ -123,12 +131,27 @@ REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
 REQUIRED_SHARED_RUST_TARGET_DIR = "../target/rust"
 REQUIRED_RUST_PRE_COMMIT_HOOKS = {
     "rustfmt",
+    "cargo-clippy-minimum",
     "cargo-clippy",
     "cargo-clippy-cli",
+    "cargo-llvm-cov-minimum",
     "cargo-llvm-cov-core",
     "cargo-llvm-cov-cli",
 }
-REQUIRED_RUST_CI_STEPS = {"Enforce Rust coverage floor (cli)"}
+REQUIRED_RUST_CI_STEPS = {
+    "Run tests (minimum)",
+    "Enforce Rust coverage floor (minimum)",
+    "Enforce Rust coverage floor (cli)",
+}
+REQUIRED_MINIMUM_COVERAGE_COMMAND = "scripts/check_minimum_coverage.py"
+REQUIRED_MINIMUM_COVERAGE_BACKING_COMMAND = "cargo llvm-cov --test test_coverage --json"
+REQUIRED_MINIMUM_COVERAGE_STEP_NAME = "Enforce Rust coverage floor (minimum)"
+REQUIRED_MINIMUM_COVERAGE_DOC_FRAGMENTS = {
+    "100% ugoite-minimum line-coverage gate",
+    "mise run //ugoite-minimum:test",
+    REQUIRED_MINIMUM_COVERAGE_COMMAND,
+    REQUIRED_MINIMUM_COVERAGE_BACKING_COMMAND,
+}
 REQUIRED_RELEASE_CI_PERMISSIONS = {
     "contents": "write",
     "issues": "write",
@@ -145,6 +168,8 @@ REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
     "no-op cleanly",
     "bootstrap-sha",
     "0.0.1",
+    "packages/ugoite/package.json",
+    "root `package.json` must stay private tooling",
 }
 REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
     "x86_64-unknown-linux-gnu",
@@ -232,6 +257,25 @@ REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
     "version: ${{ inputs.version }}",
     "channel: ${{ inputs.channel }}",
     "target: ${{ inputs.target }}",
+}
+REQUIRED_PUBLIC_PACKAGE_DOC_FRAGMENTS = {
+    "packages/ugoite/package.json",
+    "root `package.json` must stay private tooling",
+    "npm pack --dry-run",
+    "ugoite-install",
+}
+REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS = {
+    "npm install -g ugoite",
+    "ugoite-install",
+    "scripts/install-ugoite-cli.sh",
+    "UGOITE_VERSION",
+}
+REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS = {
+    "--print-script-url",
+    "UGOITE_VERSION",
+    "UGOITE_GITHUB_REPO",
+    "scripts/install-ugoite-cli.sh",
+    "raw.githubusercontent.com",
 }
 REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
     "workflow_call",
@@ -697,7 +741,7 @@ def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
 
 
 def test_docs_req_ops_006_rust_precommit_parity() -> None:
-    """REQ-OPS-006: Rust pre-commit checks must include CLI coverage parity with CI."""
+    """REQ-OPS-006: Rust pre-commit checks must keep minimum and CLI parity with CI."""
     missing_parts = _collect_req_ops_006_rust_precommit_parity_details()
     if missing_parts:
         raise AssertionError("; ".join(missing_parts))
@@ -721,6 +765,10 @@ def _collect_req_ops_006_pre_commit_details() -> list[str]:
     if isinstance(cargo_clippy_cli, dict):
         clippy_cli_entry = str(cargo_clippy_cli.get("entry", ""))
 
+    minimum_cov_entry = ""
+    cargo_cov_minimum = hook_entries.get("cargo-llvm-cov-minimum")
+    if isinstance(cargo_cov_minimum, dict):
+        minimum_cov_entry = str(cargo_cov_minimum.get("entry", ""))
     cli_cov_entry = ""
     cargo_llvm_cov_cli = hook_entries.get("cargo-llvm-cov-cli")
     if isinstance(cargo_llvm_cov_cli, dict):
@@ -731,6 +779,8 @@ def _collect_req_ops_006_pre_commit_details() -> list[str]:
         missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
     if "--no-default-features" not in clippy_cli_entry:
         missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+    if REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_cov_entry:
+        missing_parts.append("cargo-llvm-cov-minimum must run the wrapper")
     if "--fail-under-lines 100" not in cli_cov_entry:
         missing_parts.append("cargo-llvm-cov-cli must enforce 100% line coverage")
     if "--no-default-features" not in cli_cov_entry:
@@ -743,13 +793,46 @@ def _collect_req_ops_006_ci_details() -> list[str]:
     missing_parts: list[str] = []
     rust_ci_steps = _collect_workflow_step_names(RUST_CI_WORKFLOW_PATH)
     missing_ci_steps = sorted(REQUIRED_RUST_CI_STEPS.difference(rust_ci_steps))
-    if missing_ci_steps:
-        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    root_runs = _get_task_run_commands(root_mise, "test")
+    minimum_mise = tomllib.loads(UGOITE_MINIMUM_MISE_PATH.read_text(encoding="utf-8"))
+    minimum_task = _load_mise_task_mapping(
+        minimum_mise,
+        task_name="test",
+        path_label="ugoite-minimum/mise.toml",
+    )
+    minimum_run = _load_task_run(
+        minimum_task,
+        task_label="ugoite-minimum/mise.toml [tasks.test]",
+    )
+    minimum_step_run = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name=REQUIRED_MINIMUM_COVERAGE_STEP_NAME,
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_MINIMUM_COVERAGE_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
 
     workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     cli_coverage_command = (
         "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
     )
+    if missing_ci_steps:
+        missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
+    if "mise run //ugoite-minimum:test" not in root_runs:
+        missing_parts.append("root mise.toml tasks.test must run //ugoite-minimum:test")
+    if REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_run:
+        missing_parts.append(
+            "ugoite-minimum/mise.toml [tasks.test] must run the wrapper",
+        )
+    if minimum_step_run is None:
+        missing_parts.append("rust-ci.yml must define the minimum coverage gate step")
+    elif REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_step_run:
+        missing_parts.append("rust-ci minimum coverage gate must run the wrapper")
     if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
         missing_parts.append("rust-ci must install llvm-tools-preview")
     if cli_coverage_command not in workflow_text:
@@ -766,6 +849,12 @@ def _collect_req_ops_006_ci_details() -> list[str]:
     )
     if spec_detail:
         missing_parts.append(spec_detail)
+
+    if missing_doc_fragments:
+        missing_parts.append(
+            "ci-cd guide missing minimum coverage fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
 
     return missing_parts
 
@@ -1842,6 +1931,201 @@ def test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> 
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -> None:
+    """REQ-OPS-023: Public installer package stays separate from private tooling."""
+    root_package = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    public_package = _load_json_mapping(PUBLIC_PACKAGE_JSON_PATH)
+    manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
+    release_config = _load_json_mapping(RELEASE_CONFIG_PATH)
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    public_readme = _read_required_text(
+        PUBLIC_PACKAGE_README_PATH,
+        "public package README is missing at {path}; required by REQ-OPS-023.",
+    )
+    public_license = _read_required_text(
+        PUBLIC_PACKAGE_LICENSE_PATH,
+        "public package LICENSE is missing at {path}; required by REQ-OPS-023.",
+    )
+    public_installer = _read_required_text(
+        PUBLIC_PACKAGE_INSTALLER_PATH,
+        "public package installer is missing at {path}; required by REQ-OPS-023.",
+    )
+
+    packages = release_config.get("packages")
+    if not isinstance(packages, dict):
+        message = "release-please-config.json must define packages"
+        raise TypeError(message)
+    release_entry = packages.get("packages/ugoite")
+    if not isinstance(release_entry, dict):
+        message = 'release-please-config.json must define packages."packages/ugoite"'
+        raise TypeError(message)
+
+    npm_executable = shutil.which("npm")
+    if not npm_executable:
+        message = "npm must be available to validate packages/ugoite"
+        raise AssertionError(message)
+
+    pack_result = subprocess.run(
+        [npm_executable, "pack", "--json", "--dry-run"],
+        cwd=PUBLIC_PACKAGE_DIR,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    packed_files: set[str] = set()
+    if pack_result.returncode == 0:
+        pack_payload = json.loads(pack_result.stdout or "[]")
+        if isinstance(pack_payload, list) and pack_payload:
+            files = pack_payload[0].get("files", [])
+            if isinstance(files, list):
+                packed_files = {
+                    str(item.get("path"))
+                    for item in files
+                    if isinstance(item, dict) and isinstance(item.get("path"), str)
+                }
+
+    script_url_result = subprocess.run(
+        ["/bin/bash", str(PUBLIC_PACKAGE_INSTALLER_PATH), "--print-script-url"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    public_version = str(public_package.get("version", ""))
+    expected_script_url = (
+        "https://raw.githubusercontent.com/ugoite/ugoite/"
+        f"v{public_version}/scripts/install-ugoite-cli.sh"
+    )
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_DOC_FRAGMENTS
+        if fragment not in ci_cd_text
+    )
+    missing_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS
+        if fragment not in public_readme
+    )
+    missing_installer_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS
+        if fragment not in public_installer
+    )
+    required_pack_files = {
+        "package.json",
+        "README.md",
+        "LICENSE",
+        "bin/ugoite-install",
+    }
+    missing_pack_files = sorted(required_pack_files.difference(packed_files))
+
+    detail_candidates = (
+        (
+            root_package.get("private") is not True,
+            "root package.json must stay private tooling",
+        ),
+        (
+            str(root_package.get("name", "")).strip() != "ugoite-release-tooling",
+            "root package.json must stay named ugoite-release-tooling",
+        ),
+        (
+            public_package.get("private") is True,
+            "packages/ugoite/package.json must not be private",
+        ),
+        (
+            str(public_package.get("name", "")).strip() != "ugoite",
+            "packages/ugoite/package.json must define name=ugoite",
+        ),
+        (
+            str(manifest.get("packages/ugoite", "")).strip() != public_version,
+            "release manifest must track packages/ugoite package.json version",
+        ),
+        (
+            str(release_entry.get("package-name", "")).strip() != "ugoite",
+            "release-please packages/ugoite entry must define package-name=ugoite",
+        ),
+        (
+            not isinstance(public_package.get("files"), list),
+            "packages/ugoite/package.json must define a files allowlist",
+        ),
+        (
+            not isinstance(public_package.get("bin"), dict)
+            or str(public_package["bin"].get("ugoite-install", "")).strip()
+            != "./bin/ugoite-install",
+            "packages/ugoite/package.json must expose bin.ugoite-install",
+        ),
+        (
+            not isinstance(public_package.get("publishConfig"), dict)
+            or str(public_package["publishConfig"].get("access", "")).strip()
+            != "public",
+            "packages/ugoite/package.json must set publishConfig.access=public",
+        ),
+        (
+            not isinstance(public_package.get("repository"), dict)
+            or str(public_package["repository"].get("directory", "")).strip()
+            != "packages/ugoite",
+            "packages/ugoite/package.json repository.directory must be packages/ugoite",
+        ),
+        (
+            not isinstance(public_package.get("bugs"), dict)
+            or not str(public_package["bugs"].get("url", "")).strip(),
+            "packages/ugoite/package.json must define bugs.url",
+        ),
+        (
+            str(public_package.get("license", "")).strip() != "MIT",
+            "packages/ugoite/package.json must define license=MIT",
+        ),
+        (
+            str(public_license.splitlines()[0]).strip() != "MIT License",
+            "packages/ugoite/LICENSE must preserve the MIT license text",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing public package fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+        (
+            bool(missing_readme_fragments),
+            "packages/ugoite/README.md missing fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_installer_fragments),
+            "packages/ugoite/bin/ugoite-install missing fragments: "
+            + ", ".join(missing_installer_fragments),
+        ),
+        (
+            pack_result.returncode != 0,
+            "npm pack --dry-run failed for packages/ugoite: "
+            + pack_result.stderr.strip(),
+        ),
+        (
+            bool(missing_pack_files),
+            "packages/ugoite pack output missing files: "
+            + ", ".join(missing_pack_files),
+        ),
+        (
+            script_url_result.returncode != 0,
+            "ugoite-install --print-script-url failed: "
+            + script_url_result.stderr.strip(),
+        ),
+        (
+            script_url_result.returncode == 0
+            and script_url_result.stdout.strip() != expected_script_url,
+            (
+                "ugoite-install --print-script-url must target the matching versioned "
+                f"installer script (got {script_url_result.stdout.strip()!r})"
+            ),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _collect_all_tests_status_details() -> list[str]:
     workflow_text = ALL_TESTS_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
@@ -1972,9 +2256,9 @@ def _collect_release_ci_requirement_details() -> list[str]:
 
     release_config = _load_json_mapping(RELEASE_CONFIG_PATH)
     manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
-    package_data = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    package_data = _load_json_mapping(PUBLIC_PACKAGE_JSON_PATH)
     bootstrap_sha = str(release_config.get("bootstrap-sha", "")).strip()
-    manifest_version = str(manifest.get(".", ""))
+    manifest_version = str(manifest.get("packages/ugoite", ""))
     package_version = str(package_data.get("version", ""))
 
     guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
@@ -2007,7 +2291,10 @@ def _collect_release_ci_requirement_details() -> list[str]:
         ),
         (
             package_version != "0.0.1",
-            f"package.json version must start at 0.0.1 (got {package_version!r})",
+            (
+                "packages/ugoite/package.json version must start at 0.0.1 "
+                f"(got {package_version!r})"
+            ),
         ),
         (
             bool(missing_doc_fragments),
