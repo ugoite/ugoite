@@ -1,5 +1,6 @@
+import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
-import { render } from "@solidjs/testing-library";
+import { render, waitFor } from "@solidjs/testing-library";
 import { SqlQueryEditor } from "./SqlQueryEditor";
 import { buildSqlSchema } from "~/lib/sql";
 
@@ -9,7 +10,7 @@ vi.mock("@codemirror/autocomplete", () => ({
 
 vi.mock("@codemirror/lint", () => ({
 	lintGutter: () => ({ type: "lintGutter" }),
-	linter: () => ({ type: "linter" }),
+	linter: (source: unknown) => ({ type: "linter", source }),
 }));
 
 vi.mock("@codemirror/lang-sql", () => ({
@@ -30,13 +31,14 @@ vi.mock("@codemirror/state", () => {
 	return {
 		Compartment: FakeCompartment,
 		EditorState: {
-			create: ({ doc }: { doc: string }) => ({
+			create: ({ doc, extensions = [] }: { doc: string; extensions?: unknown[] }) => ({
 				doc: {
 					toString: () => doc,
 					get length() {
 						return doc.length;
 					},
 				},
+				extensions,
 			}),
 			readOnly: {
 				of: (value: boolean) => ({ type: "readOnly", value }),
@@ -59,10 +61,42 @@ vi.mock("@codemirror/view", () => {
 					toString: () => string;
 					length: number;
 				};
+				extensions?: unknown[];
 			};
+			listeners: Array<(update: { docChanged: boolean; state: typeof this.state }) => void>;
 
-			constructor({ state }: { state: { doc: { toString: () => string; length: number } } }) {
+			constructor({
+				state,
+			}: {
+				state: { doc: { toString: () => string; length: number }; extensions?: unknown[] };
+			}) {
 				this.state = state;
+				this.listeners = (state.extensions ?? [])
+					.filter(
+						(
+							extension,
+						): extension is { type: "updateListener"; listener: (typeof this.listeners)[number] } =>
+							typeof extension === "object" &&
+							extension !== null &&
+							"type" in extension &&
+							extension.type === "updateListener" &&
+							"listener" in extension &&
+							typeof extension.listener === "function",
+					)
+					.map((extension) => extension.listener);
+
+				for (const extension of state.extensions ?? []) {
+					if (
+						typeof extension === "object" &&
+						extension !== null &&
+						"type" in extension &&
+						extension.type === "linter" &&
+						"source" in extension &&
+						typeof extension.source === "function"
+					) {
+						extension.source({ state: this.state });
+					}
+				}
 			}
 
 			dispatch({
@@ -78,7 +112,11 @@ vi.mock("@codemirror/view", () => {
 							toString: () => nextValue,
 							length: nextValue.length,
 						},
+						extensions: this.state.extensions,
 					};
+					for (const listener of this.listeners) {
+						listener({ docChanged: true, state: this.state });
+					}
 				}
 			}
 
@@ -101,6 +139,23 @@ describe("REQ-FE-036: SQL Query Editor", () => {
 			/>
 		));
 		expect(onDiagnostics).toHaveBeenCalled();
+		result.unmount();
+	});
+
+	it("propagates editor updates through the change listener", async () => {
+		const [value, setValue] = createSignal("SELECT * FROM entries");
+		const onChange = vi.fn();
+
+		const result = render(() => (
+			<SqlQueryEditor value={value()} onChange={onChange} schema={buildSqlSchema([])} />
+		));
+
+		setValue("SELECT id FROM entries");
+
+		await waitFor(() => {
+			expect(onChange).toHaveBeenCalledWith("SELECT id FROM entries");
+		});
+
 		result.unmount();
 	});
 });
