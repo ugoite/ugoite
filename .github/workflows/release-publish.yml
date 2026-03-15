@@ -106,6 +106,8 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/docker-images.yml
+    secrets:
+      GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}
     with:
       push: true
       target: ${{ inputs.target }}
