@@ -199,15 +199,21 @@ These two environments are separate and intended for different uses—use the De
 
 ## Container Quick Start (published images)
 
-Pull and run a published release from GHCR:
+Download and run a published release image bundle:
 
 ```bash
 mkdir -p spaces
-UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml pull
-UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d
+UGOITE_VERSION=0.0.1
+curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml"
+curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz"
+curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz"
+gzip -dc "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
+gzip -dc "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
+UGOITE_VERSION="$UGOITE_VERSION" docker compose -f docker-compose.release.yaml up -d
 ```
 
-Published images:
+The downloaded archives load the canonical release image names used by
+`docker-compose.release.yaml`:
 
 - `ghcr.io/ugoite/ugoite/backend`
 - `ghcr.io/ugoite/ugoite/frontend`
@@ -218,7 +224,7 @@ Tag conventions:
 - alpha releases publish the exact prerelease tag plus `alpha`
 - beta releases publish the exact prerelease tag plus `beta`
 
-For more examples, direct `docker pull` commands, and shutdown steps, see
+For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).
 
 ---
