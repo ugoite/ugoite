@@ -78,6 +78,9 @@ UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
 INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
+RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
+    REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
+)
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
@@ -1435,6 +1438,58 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
         raise AssertionError(message)
     if json.loads(list_after_result.stdout) != ["demo"]:
         message = "space list should include the created demo space"
+        raise AssertionError(message)
+
+
+def test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-018: Release quick-start smoke script validates a prerelease."""
+    version = "0.0.1-beta.2"
+    release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
+    work_dir = tmp_path / "quick-start-smoke"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "UGOITE_VERSION": version,
+            "UGOITE_DOWNLOAD_BASE_URL": release_dir.as_uri(),
+            "UGOITE_INSTALL_SCRIPT_PATH": str(INSTALL_CLI_SCRIPT_PATH),
+            "UGOITE_QUICKSTART_WORKDIR": str(work_dir),
+        },
+    )
+
+    smoke_result = subprocess.run(
+        ["/bin/bash", str(RELEASE_CLI_QUICKSTART_SCRIPT_PATH)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if smoke_result.returncode != 0:
+        message = (
+            "release quick-start smoke script should validate a published "
+            f"prerelease flow; stdout={smoke_result.stdout!r} "
+            f"stderr={smoke_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if "Quick-start smoke test passed" not in smoke_result.stderr:
+        message = (
+            "release quick-start smoke script should report a successful "
+            f"verification; stderr={smoke_result.stderr!r}"
+        )
+        raise AssertionError(message)
+
+    installed_binary = work_dir / "home" / ".local" / "bin" / "ugoite"
+    if not installed_binary.exists():
+        message = "release quick-start smoke script should install ugoite in workdir"
+        raise AssertionError(message)
+
+    created_space_dir = work_dir / "work" / "spaces" / "demo"
+    if not created_space_dir.is_dir():
+        message = "release quick-start smoke script should create the demo space"
         raise AssertionError(message)
 
 
