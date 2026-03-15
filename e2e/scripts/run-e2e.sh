@@ -1,11 +1,14 @@
 #!/bin/bash
-# E2E test runner script
+# Direct-process E2E runner for fast local iteration and for no-Docker parity
+# fallback via `run-e2e-parity.sh`.
+#
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
 #   test-type: "smoke", "entries", "screenshot", or "full" (runs standard tests)
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
 #   E2E_FRONTEND_MODE: "dev" (default) or "prod" to use build+start for SSR speed
+#   E2E_ENFORCE_CI_GATES: "true" to emit JUnit output and fail on skipped tests
 
 set -e
 
@@ -22,6 +25,12 @@ DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret}"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 STATIC_E2E_TOKENS_JSON='{"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
+ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
+
+if [ "$ENFORCE_CI_GATES" = "true" ]; then
+  export PLAYWRIGHT_CI_REPORTER=junit
+  export PLAYWRIGHT_JUNIT_OUTPUT_FILE="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
+fi
 
 echo "Checking for existing processes on ports 8000 and 3000..."
 fuser -k 8000/tcp 2>/dev/null || true
@@ -143,6 +152,11 @@ echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
 
+if [ "$ENFORCE_CI_GATES" = "true" ]; then
+  mkdir -p "$(dirname "$PLAYWRIGHT_JUNIT_OUTPUT_FILE")"
+  rm -f "$PLAYWRIGHT_JUNIT_OUTPUT_FILE"
+fi
+
 TEST_TIMEOUT_ARGS=()
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
   TEST_TIMEOUT_ARGS=(--timeout "${E2E_TEST_TIMEOUT_MS}")
@@ -167,6 +181,29 @@ case "$TEST_TYPE" in
     exit 1
     ;;
 esac
+
+if [ "$ENFORCE_CI_GATES" = "true" ]; then
+  python3 - <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+report = Path(os.environ["PLAYWRIGHT_JUNIT_OUTPUT_FILE"])
+if not report.exists():
+    raise SystemExit(f"missing junit report: {report}")
+
+root = ET.parse(report).getroot()
+suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
+tests = sum(int(float(s.attrib.get("tests", "0") or 0)) for s in suites)
+if tests == 0:
+    raise SystemExit("e2e tests: zero executed tests")
+if skipped > 0:
+    raise SystemExit(f"e2e tests: skipped={skipped} is not allowed")
+sys.stdout.write(f"e2e tests OK: tests={tests}, skipped={skipped}\n")
+PY
+fi
 
 echo ""
 echo "=========================================="

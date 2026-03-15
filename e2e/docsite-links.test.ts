@@ -1,11 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server";
 
 let docsiteServer: DocsiteServer | undefined;
 
 test.describe("Docsite internal links", () => {
+	test.describe.configure({ timeout: 180_000 });
+
 	test.beforeAll(async () => {
-		test.setTimeout(180_000);
 		docsiteServer = await startDocsiteServer({ basePath: "/ugoite" });
 	});
 
@@ -13,41 +14,52 @@ test.describe("Docsite internal links", () => {
 		await docsiteServer?.stop();
 	});
 
-	test("REQ-E2E-006: docsite internal page links resolve without 404s", async ({ page }) => {
+	test("REQ-E2E-006: docsite internal page links resolve without 404s", async ({
+		browser,
+		request,
+	}) => {
+		test.setTimeout(180_000);
 		const queue = [buildDocsiteUrl("/")];
 		const visited = new Set<string>();
+		const parserPage = await browser.newPage();
 
-		while (queue.length > 0) {
-			const currentUrl = queue.shift();
-			if (!currentUrl) {
-				continue;
-			}
-
-			const normalizedCurrentUrl = normalizeCrawlUrl(currentUrl);
-			if (visited.has(normalizedCurrentUrl)) {
-				continue;
-			}
-			visited.add(normalizedCurrentUrl);
-
-			const response = await page.goto(currentUrl, { waitUntil: "load" });
-			expect(response, `Missing navigation response for ${currentUrl}`).not.toBeNull();
-			expect(response!.status(), `Expected ${currentUrl} to resolve`).toBeLessThan(400);
-
-			const hrefs = await page.evaluate(() =>
-				Array.from(document.querySelectorAll("a[href]"), (anchor) =>
-					anchor instanceof HTMLAnchorElement ? anchor.href : "",
-				),
-			);
-
-			for (const href of hrefs) {
-				const normalizedHref = normalizeDocsiteHref(href);
-				if (!normalizedHref) {
+		try {
+			while (queue.length > 0) {
+				const currentUrl = queue.shift();
+				if (!currentUrl) {
 					continue;
 				}
-				if (!visited.has(normalizedHref)) {
-					queue.push(normalizedHref);
+
+				const normalizedCurrentUrl = normalizeCrawlUrl(currentUrl);
+				if (visited.has(normalizedCurrentUrl)) {
+					continue;
+				}
+				const response = await request.get(currentUrl);
+				expect(response.status(), `Expected ${currentUrl} to resolve`).toBeLessThan(400);
+
+				const resolvedUrl = normalizeCrawlUrl(response.url());
+				visited.add(normalizedCurrentUrl);
+				visited.add(resolvedUrl);
+
+				const contentType = response.headers()["content-type"] ?? "";
+				if (!contentType.includes("text/html")) {
+					continue;
+				}
+
+				const hrefs = await extractPageHrefs(parserPage, await response.text());
+
+				for (const href of hrefs) {
+					const normalizedHref = normalizeDocsiteHref(href, response.url());
+					if (!normalizedHref) {
+						continue;
+					}
+					if (!visited.has(normalizedHref)) {
+						queue.push(normalizedHref);
+					}
 				}
 			}
+		} finally {
+			await parserPage.close();
 		}
 
 		expect(
@@ -74,12 +86,12 @@ function normalizeCrawlUrl(rawUrl: string): string {
 	return url.toString();
 }
 
-function normalizeDocsiteHref(rawHref: string): string | null {
+function normalizeDocsiteHref(rawHref: string, currentUrl: string): string | null {
 	if (!rawHref || !docsiteServer) {
 		return null;
 	}
 
-	const href = new URL(rawHref);
+	const href = new URL(rawHref, currentUrl);
 	const baseUrl = new URL(docsiteServer.getBaseUrl());
 	if (href.origin !== baseUrl.origin) {
 		return null;
@@ -100,4 +112,13 @@ function normalizeDocsiteHref(rawHref: string): string | null {
 	}
 
 	return normalizeCrawlUrl(href.toString());
+}
+
+async function extractPageHrefs(page: Page, html: string): Promise<string[]> {
+	await page.setContent(html, { waitUntil: "domcontentloaded" });
+	return page.locator("a[href]").evaluateAll((anchors) =>
+		anchors.map((anchor) =>
+			anchor instanceof HTMLAnchorElement ? anchor.getAttribute("href") ?? "" : "",
+		),
+	);
 }
