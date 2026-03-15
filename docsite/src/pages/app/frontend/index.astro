@@ -3,6 +3,9 @@ import BaseLayout from "../../../layouts/BaseLayout.astro";
 import TerminalCommand from "../../../components/TerminalCommand.astro";
 import { withBasePath } from "../../../lib/base-path";
 
+const localDevAuthGuideHref =
+  "https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+
 const toc = [
   { id: "overview", title: "Overview" },
   { id: "setup", title: "Setup" },
@@ -28,7 +31,9 @@ const toc = [
   <section id="setup" class="doc-card">
     <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Setup</h2>
     <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-bottom: 1rem; line-height: 1.6;">
-      The frontend shares the same infrastructure as the API & Block Storage setup. All you need is to start both backend and frontend servers.
+      Use the same auth-aware startup flow as the rest of the local stack. The
+      canonical `mise run dev` guide explains the supported login modes and when
+      to refresh local tokens.
     </p>
     <div style="display: grid; gap: 0.75rem;">
       <div>
@@ -36,12 +41,20 @@ const toc = [
         <TerminalCommand command="mise run setup" />
       </div>
       <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Start backend</p>
-        <TerminalCommand command="cd backend && uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000" />
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Start the full local stack</p>
+        <TerminalCommand command="mise run dev" />
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+          See{" "}
+          <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a>{" "}
+          for the canonical startup flow, auth modes, and token refresh steps.
+        </p>
       </div>
       <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Start frontend</p>
-        <TerminalCommand command="cd frontend && BACKEND_URL=http://localhost:8000 bun run dev" />
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Frontend only (optional)</p>
+        <TerminalCommand command="mise run dev:frontend" />
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+          Run this after a backend is already serving `http://localhost:8000/health`.
+        </p>
       </div>
       <div>
         <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. Run E2E tests</p>

@@ -92,9 +92,16 @@ repos:
         files: ^ugoite-minimum/
         pass_filenames: false
 
-      - id: cargo-test-cli
-        name: cargo test (ugoite-cli)
-        entry: bash -c "cd ugoite-cli && cargo test --no-default-features"
+      - id: cargo-wasm-minimum
+        name: cargo build wasm32 (ugoite-minimum)
+        entry: bash -c "cd ugoite-minimum && rustup target add wasm32-unknown-unknown && cargo build --target wasm32-unknown-unknown --lib"
+        language: system
+        files: ^ugoite-minimum/
+        pass_filenames: false
+
+      - id: cargo-llvm-cov-cli
+        name: cargo llvm-cov (ugoite-cli 100%)
+        entry: bash -c "cd ugoite-cli && cargo clean -p ugoite-cli && CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C debuginfo=0' CARGO_BUILD_JOBS=1 cargo llvm-cov clean --workspace && CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C debuginfo=0' CARGO_BUILD_JOBS=1 cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1 || { cargo llvm-cov report --text --show-missing-lines; exit 1; }"
         language: system
         files: ^ugoite-cli/
         pass_filenames: false

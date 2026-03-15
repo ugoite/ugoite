@@ -46,12 +46,20 @@ tracked_ignored = [
     if path
 ]
 
+tracked_ignored: list[str] = []
 forbidden_paths: list[tuple[str, str]] = []
 oversized_paths: list[tuple[str, int]] = []
 
 for raw_path in tracked_paths:
     if not raw_path:
         continue
+
+    if subprocess.run(
+        ["git", "check-ignore", "--no-index", raw_path],
+        capture_output=True,
+        check=False,
+    ).returncode == 0:
+        tracked_ignored.append(raw_path)
 
     path = PurePosixPath(raw_path)
     forbidden_segment = next(
@@ -75,11 +83,15 @@ if tracked_ignored or forbidden_paths or oversized_paths:
     if tracked_ignored:
         lines = [
             "Tracked files must not also match ignore rules:",
-            *[f"  - {path}" for path in sorted(tracked_ignored)],
-            "",
-            "Either untrack the artifact or narrow the ignore rules so intentional",
-            "source files do not appear as tracked+ignored.",
         ]
+        lines.extend(f"  - {path}" for path in sorted(tracked_ignored))
+        lines.extend(
+            [
+                "",
+                "Either untrack the artifact or narrow the ignore rules so",
+                "intentional source files do not appear as tracked+ignored.",
+            ]
+        )
         messages.append("\n".join(lines))
     if forbidden_paths:
         lines = [
