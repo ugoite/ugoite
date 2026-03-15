@@ -89,6 +89,7 @@ RELEASE_INSTALLER_RENDERER_PATH = (
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
+GHCR_VISIBILITY_SCRIPT_PATH = REPO_ROOT / "scripts" / "set-ghcr-package-public.sh"
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
@@ -256,6 +257,7 @@ REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
 REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
     "./.github/workflows/docker-images.yml",
     "push: true",
+    "GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}",
     "version: ${{ inputs.version }}",
     "channel: ${{ inputs.channel }}",
     "target: ${{ inputs.target }}",
@@ -285,6 +287,10 @@ REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
     "registry: ghcr.io",
     "ghcr.io/${{ github.repository }}/backend",
     "ghcr.io/${{ github.repository }}/frontend",
+    "Validate GHCR visibility token",
+    "Make GHCR images public",
+    "GHCR_VISIBILITY_TOKEN",
+    "scripts/set-ghcr-package-public.sh",
     "$IMAGE:latest",
     "$IMAGE:stable",
     "$IMAGE:$CHANNEL",
@@ -315,6 +321,15 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend",
     "ghcr.io/ugoite/ugoite/frontend",
     "docker-compose.release.yaml",
+    "GHCR_VISIBILITY_TOKEN",
+    "anonymously pullable",
+}
+REQUIRED_GHCR_VISIBILITY_SCRIPT_FRAGMENTS = {
+    "https://api.github.com/orgs/",
+    "/packages/container/",
+    "/visibility",
+    '{"visibility":"public"}',
+    "X-GitHub-Api-Version: 2022-11-28",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -2533,6 +2548,10 @@ def _collect_release_publish_ghcr_details() -> list[str]:
         DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
         REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS,
     )
+    missing_visibility_script_fragments = _missing_required_fragments(
+        GHCR_VISIBILITY_SCRIPT_PATH.read_text(encoding="utf-8"),
+        REQUIRED_GHCR_VISIBILITY_SCRIPT_FRAGMENTS,
+    )
     missing_readme_fragments = _missing_required_fragments(
         README_PATH.read_text(encoding="utf-8"),
         REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS,
@@ -2572,6 +2591,11 @@ def _collect_release_publish_ghcr_details() -> list[str]:
             bool(missing_reusable_fragments),
             "docker-images reusable workflow missing fragments: "
             + ", ".join(missing_reusable_fragments),
+        ),
+        (
+            bool(missing_visibility_script_fragments),
+            "GHCR visibility helper script missing fragments: "
+            + ", ".join(missing_visibility_script_fragments),
         ),
         (
             bool(missing_readme_fragments),
