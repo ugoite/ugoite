@@ -5,6 +5,7 @@ import { Marked } from "marked";
 import YAML from "yaml";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
+import { resolveDocHref } from "../../lib/doc-links";
 import { titleFromSegment } from "../../lib/navigation";
 
 type TocItem = {
@@ -25,78 +26,7 @@ function escapeAttribute(raw: string): string {
   return escapeHtml(raw).replaceAll("`", "&#96;");
 }
 
-function sanitizeUrl(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-
-  if (
-    trimmed.startsWith("/") ||
-    trimmed.startsWith("./") ||
-    trimmed.startsWith("../") ||
-    trimmed.startsWith("#")
-  ) {
-    return trimmed;
-  }
-
-  try {
-    const parsed = new URL(trimmed, "https://example.local");
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return trimmed;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-const safeMarked = new Marked({
-  gfm: true,
-});
-
 const toc: TocItem[] = [];
-
-safeMarked.use({
-  renderer: {
-    html(token) {
-      return escapeHtml(token.text);
-    },
-    link({ href, title, text }) {
-      const safeHref = sanitizeUrl(href);
-      const safeText = escapeHtml(text ?? href ?? "link");
-      if (!safeHref) {
-        return safeText;
-      }
-
-      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-      return `<a href="${escapeAttribute(safeHref)}"${titleAttr} rel="noopener noreferrer">${safeText}</a>`;
-    },
-    image({ href, title, text }) {
-      const safeSrc = sanitizeUrl(href);
-      if (!safeSrc) {
-        return "";
-      }
-
-      const safeAlt = escapeAttribute(text ?? "");
-      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-      return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr} loading="lazy" decoding="async" />`;
-    },
-    heading({ tokens, depth }) {
-      const text = this.parser.parseInline(tokens);
-      const raw = tokens.map((token) => token.raw).join(" ").trim();
-      const id = raw
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, "")
-        .trim()
-        .replace(/\s+/g, "-");
-      if (depth <= 3 && raw.length > 0 && id.length > 0) {
-        toc.push({ id, title: raw });
-      }
-      return `<h${depth} id="${id}">${text}</h${depth}>`;
-    },
-  },
-});
 
 export async function getStaticPaths() {
   const docsRoot = path.resolve(process.cwd(), "../docs");
@@ -152,6 +82,51 @@ if (!fullPath || !relativePath) {
   throw new Error(`Doc source not found for slug: ${slugPath}`);
 }
 
+const safeMarked = new Marked({
+  gfm: true,
+});
+
+safeMarked.use({
+  renderer: {
+    html(token) {
+      return escapeHtml(token.text);
+    },
+    link({ href, title, text }) {
+      const safeHref = resolveDocHref(href, relativePath);
+      const safeText = escapeHtml(text ?? href ?? "link");
+      if (!safeHref) {
+        return safeText;
+      }
+
+      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+      return `<a href="${escapeAttribute(safeHref)}"${titleAttr} rel="noopener noreferrer">${safeText}</a>`;
+    },
+    image({ href, title, text }) {
+      const safeSrc = resolveDocHref(href, relativePath);
+      if (!safeSrc) {
+        return "";
+      }
+
+      const safeAlt = escapeAttribute(text ?? "");
+      const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+      return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr} loading="lazy" decoding="async" />`;
+    },
+    heading({ tokens, depth }) {
+      const text = this.parser.parseInline(tokens);
+      const raw = tokens.map((token) => token.raw).join(" ").trim();
+      const id = raw
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-");
+      if (depth <= 3 && raw.length > 0 && id.length > 0) {
+        toc.push({ id, title: raw });
+      }
+      return `<h${depth} id="${id}">${text}</h${depth}>`;
+    },
+  },
+});
+
 const source = await fs.readFile(fullPath, "utf-8");
 const isYaml = /\.(ya?ml)$/.test(relativePath);
 
@@ -162,7 +137,9 @@ const html = isYaml
 const parts = slugPath.split("/").filter(Boolean);
 const breadcrumbs = parts.map((part, index) => ({
   label: titleFromSegment(part),
-  href: withBasePath(`/docs/${parts.slice(0, index + 1).join("/")}`),
+  href:
+    resolveDocHref(`/docs/${parts.slice(0, index + 1).join("/")}`, relativePath) ??
+    withBasePath(`/docs/${parts.slice(0, index + 1).join("/")}`),
 }));
 
 const related = await getRelatedLinks(relativePath);

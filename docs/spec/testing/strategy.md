@@ -56,7 +56,7 @@ mise run //ugoite-minimum:test # Portable Rust core tests
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
 mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
-mise run //ugoite-cli:test # CLI Rust tests
+mise run //ugoite-cli:test # CLI Rust tests with 100% coverage enforcement
 ```
 
 ### E2E Tests
@@ -65,14 +65,17 @@ mise run e2e
 ```
 
 This command:
-1. Starts backend server on port 8000
-2. Starts frontend server on port 3000
-3. Waits for servers to be ready
-4. Executes E2E tests
-5. Shuts down servers
+1. Prefers the Docker Compose path used in CI when Docker is available locally
+2. Falls back to a production-style host runner when Docker is unavailable
+3. Uses CI-equivalent Playwright JUnit/no-skipped-tests gates in either mode
+4. Executes the full Playwright E2E suite
+5. Shuts down any services it started
 
 ### Fast E2E Iteration
 ```bash
+# Single-command fast path (not CI parity)
+mise run e2e:dev
+
 # Terminal 1: Backend
 mise run //backend:dev
 
@@ -83,11 +86,15 @@ mise run //frontend:dev
 cd e2e && npm run test
 ```
 
+Use `mise run e2e` before pushing when you need CI-equivalent validation. Use
+`mise run e2e:dev`, `mise run e2e:smoke`, or the three-terminal flow above when
+you need a faster local feedback loop.
+
 ## Coverage Requirements
 
 | Module | Target | Current |
 |--------|--------|---------|
-| ugoite-cli | >80% | ~85% |
+| ugoite-cli | 100% | 100% (enforced) |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
 | e2e | Critical paths | Complete |

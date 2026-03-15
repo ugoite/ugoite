@@ -18,11 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check root placeholder artifacts
-        run: bash scripts/check-placeholder-artifacts.sh
+      - name: Check root artifact hygiene
+        run: bash scripts/check-root-artifact-hygiene.sh
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.10.10
 
       - name: Run yamllint
         run: >

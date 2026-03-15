@@ -46,15 +46,37 @@ def load_sql_rules(path: str | None = None) -> dict[str, Any]:
     return data
 
 
+def _normalize_string_list(value: object) -> list[str] | None:
+    """Return a list containing only string items."""
+    if not isinstance(value, list):
+        return None
+    return [item for item in value if isinstance(item, str)]
+
+
+def _normalize_table_columns(value: object) -> dict[str, list[str]]:
+    """Return table-specific columns containing only string items."""
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: dict[str, list[str]] = {}
+    for table_name, columns_obj in value.items():
+        if not isinstance(table_name, str):
+            continue
+        normalized_columns = _normalize_string_list(columns_obj)
+        if normalized_columns is not None:
+            normalized[table_name] = normalized_columns
+    return normalized
+
+
 def build_sql_schema(
     forms: list[dict[str, Any]],
     rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return SQL completion schema based on shared rules and forms."""
     rules = rules or load_sql_rules()
-    base_columns = list(rules.get("base_columns", []))
-    base_tables = list(rules.get("base_tables", ["entries"]))
-    table_columns = rules.get("table_columns", {})
+    base_columns = _normalize_string_list(rules.get("base_columns")) or []
+    base_tables = _normalize_string_list(rules.get("base_tables")) or ["entries"]
+    table_columns = _normalize_table_columns(rules.get("table_columns"))
 
     form_field_set: set[str] = set()
     for item in forms:
@@ -66,9 +88,7 @@ def build_sql_schema(
 
     tables: dict[str, list[str]] = {}
     for table in base_tables:
-        columns = None
-        if isinstance(table_columns, dict):
-            columns = table_columns.get(table)
+        columns = table_columns.get(table)
         if isinstance(columns, list):
             tables[table] = list(columns)
         else:
