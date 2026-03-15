@@ -106,14 +106,25 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/docker-images.yml
-    secrets:
-      GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}
-      RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
     with:
       push: true
       target: ${{ inputs.target }}
       version: ${{ inputs.version }}
       channel: ${{ inputs.channel }}
+
+  export-release-image-archives:
+    name: Export release image archives
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: false
+      target: ${{ inputs.target }}
+      export_artifacts: true
+      artifact_name: release-docker-images
+      backend_local_tag: ghcr.io/${{ github.repository }}/backend:${{ inputs.version }}
+      frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:${{ inputs.version }}
 
   publish-cli-binaries:
     name: Publish CLI binaries
@@ -133,6 +144,7 @@ jobs:
       - validate
       - create-draft-release
       - publish-images
+      - export-release-image-archives
       - publish-cli-binaries
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -141,6 +153,55 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Download release image archives
+        uses: actions/download-artifact@v4
+        with:
+          name: release-docker-images
+          path: exported-images
+
+      - name: Package release container quick-start assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          backend_asset="ugoite-backend-v${VERSION}.docker.tar.gz"
+          frontend_asset="ugoite-frontend-v${VERSION}.docker.tar.gz"
+          cp docker-compose.release.yaml dist/docker-compose.release.yaml
+          cp exported-images/backend-image.tar.gz "dist/${backend_asset}"
+          cp exported-images/frontend-image.tar.gz "dist/${frontend_asset}"
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            (
+              cd dist
+              sha256sum docker-compose.release.yaml > docker-compose.release.yaml.sha256
+              sha256sum "${backend_asset}" > "${backend_asset}.sha256"
+              sha256sum "${frontend_asset}" > "${frontend_asset}.sha256"
+            )
+          else
+            (
+              cd dist
+              shasum -a 256 docker-compose.release.yaml > docker-compose.release.yaml.sha256
+              shasum -a 256 "${backend_asset}" > "${backend_asset}.sha256"
+              shasum -a 256 "${frontend_asset}" > "${frontend_asset}.sha256"
+            )
+          fi
+
+      - name: Upload release container quick-start assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release upload "v${VERSION}" \
+            dist/docker-compose.release.yaml \
+            dist/docker-compose.release.yaml.sha256 \
+            "dist/ugoite-backend-v${VERSION}.docker.tar.gz" \
+            "dist/ugoite-backend-v${VERSION}.docker.tar.gz.sha256" \
+            "dist/ugoite-frontend-v${VERSION}.docker.tar.gz" \
+            "dist/ugoite-frontend-v${VERSION}.docker.tar.gz.sha256" \
+            --clobber
 
       - name: Finalize GitHub release
         env:

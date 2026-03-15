@@ -42,13 +42,6 @@ on:
         required: false
         type: string
         default: "ugoite-frontend:ci"
-    secrets:
-      GHCR_VISIBILITY_TOKEN:
-        description: "Optional token with package-admin access used to make GHCR packages public"
-        required: false
-      RELEASE_PLEASE_TOKEN:
-        description: "Optional release automation token used as a fallback for GHCR visibility updates"
-        required: false
 
 jobs:
   docker-images-ci:
@@ -286,28 +279,3 @@ jobs:
             type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             shared=./shared
-
-      - name: Make GHCR images public
-        env:
-          GHCR_OWNER: ${{ github.repository_owner }}
-          GHCR_REPOSITORY: ${{ github.repository }}
-          GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}
-          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          token="${GHCR_VISIBILITY_TOKEN:-}"
-          if [ -z "$token" ]; then
-            token="${RELEASE_PLEASE_TOKEN:-}"
-          fi
-          if [ -z "$token" ]; then
-            token="${GITHUB_TOKEN:-}"
-          fi
-          if [ -z "$token" ]; then
-            echo "A token is required to make published GHCR images anonymously pullable." >&2
-            exit 1
-          fi
-          export GHCR_VISIBILITY_TOKEN="$token"
-          package_prefix="${GHCR_REPOSITORY#*/}"
-          bash scripts/set-ghcr-package-public.sh "$GHCR_OWNER" "${package_prefix}/backend"
-          bash scripts/set-ghcr-package-public.sh "$GHCR_OWNER" "${package_prefix}/frontend"

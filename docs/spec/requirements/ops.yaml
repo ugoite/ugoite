@@ -671,11 +671,15 @@ requirements:
 
     to GHCR with deterministic stable/alpha/beta tags aligned to the requested
 
-    SemVer, make those published container packages anonymously pullable, and
+    SemVer, attach exact-version backend/frontend container image archives plus
 
-    repository/docs guidance MUST expose a quick-start path for
+    `docker-compose.release.yaml` to the GitHub Release, and repository/docs
 
-    pulling and running those release images without rebuilding from source.
+    guidance MUST expose a quick-start path for
+
+    downloading, loading, and running those release images without rebuilding
+
+    from source.
 
     '
   related_spec:
@@ -688,7 +692,7 @@ requirements:
     pytest:
     - file: docs/tests/test_guides.py
       tests:
-      - test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart
+      - test_docs_req_ops_017_release_publish_exports_container_assets
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
