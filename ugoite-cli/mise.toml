@@ -2,9 +2,19 @@
 CARGO_TARGET_DIR = "../target/rust"
 
 [tasks.install]
-run = "cargo clean -p ugoite-cli && cargo build"
+run = [
+	"command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked",
+	"rustup component add llvm-tools-preview",
+	"cargo clean -p ugoite-cli && cargo build",
+]
 description = "Build ugoite-cli"
 
 [tasks.test]
-run = "cargo clean -p ugoite-cli && cargo test"
-description = "Run ugoite-cli Rust test suite"
+run = [
+	"command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked",
+	"rustup component add llvm-tools-preview",
+	"cargo clean -p ugoite-cli",
+	"CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C debuginfo=0' CARGO_BUILD_JOBS=1 cargo llvm-cov clean --workspace",
+	"CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C debuginfo=0' CARGO_BUILD_JOBS=1 cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1",
+]
+description = "Run ugoite-cli Rust test suite with 100% coverage enforcement"

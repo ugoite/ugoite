@@ -15,12 +15,14 @@ jobs:
     name: Release Please PR
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      RELEASE_PLEASE_ENABLED: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     steps:
       - name: Print release auth path
-        run: echo "release_auth_path=${{ secrets.RELEASE_PLEASE_TOKEN != '' && 'RELEASE_PLEASE_TOKEN' || 'SKIP_NO_RELEASE_PLEASE_TOKEN' }}"
+        run: echo "release_auth_path=${{ env.RELEASE_PLEASE_ENABLED == 'true' && 'RELEASE_PLEASE_TOKEN' || 'SKIP_NO_RELEASE_PLEASE_TOKEN' }}"
 
       - name: Run release-please
-        if: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
+        if: ${{ env.RELEASE_PLEASE_ENABLED == 'true' }}
         id: release_please
         uses: googleapis/release-please-action@v4
         with:
@@ -30,11 +32,11 @@ jobs:
           skip-github-release: true
 
       - name: Print release planning outputs
-        if: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
+        if: ${{ env.RELEASE_PLEASE_ENABLED == 'true' }}
         run: |
           echo "release_created=${{ steps.release_please.outputs.release_created }}"
           echo "prs_created=${{ steps.release_please.outputs.prs_created }}"
 
       - name: Skip release-please without dedicated token
-        if: ${{ secrets.RELEASE_PLEASE_TOKEN == '' }}
+        if: ${{ env.RELEASE_PLEASE_ENABLED != 'true' }}
         run: echo "Skipping release-please because RELEASE_PLEASE_TOKEN is not configured."

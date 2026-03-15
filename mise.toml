@@ -16,12 +16,12 @@ BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA = "true"
 BROWSERSLIST_IGNORE_OLD_DATA = "true"
 
 [tools]
-biome = "latest"
+biome = "2.3.15"
 bun = "1.3.8"
 node = "lts"
 python = "3.12"
 rust = "1.93.0"
-uv = "latest"
+uv = "0.10.10"
 
 [tasks.setup]
 run = [
@@ -51,7 +51,15 @@ description = "Run docsite dev server only"
 depends = ["//docsite:dev"]
 
 [tasks.test]
-depends = ["//backend:test", "//frontend:test", "//ugoite-cli:test", "//ugoite-core:test", "//ugoite-minimum:test", "test:docs"]
+run = [
+	"mise run //ugoite-core:build",
+	"mise run //backend:test:no-build",
+	"mise run //frontend:test:coverage",
+	"mise run //ugoite-cli:test",
+	"mise run //ugoite-core:test:no-build",
+	"mise run //ugoite-minimum:test",
+	"mise run test:docs",
+]
 description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend, frontend, ugoite-cli)"
 
 [tasks."test:docs"]
@@ -59,20 +67,24 @@ description = "Check consistency between documentation and implementation"
 run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
 
 [tasks.e2e]
-description = "Run E2E tests with backend and frontend servers"
-run = "bash e2e/scripts/run-e2e.sh full"
+description = "Run the authoritative E2E path (docker-compose when available, parity fallback otherwise)"
+run = "bash e2e/scripts/run-e2e-parity.sh full"
 
 [tasks.screenshot]
-description = "Capture UI page screenshots for docsite"
+description = "Capture UI page screenshots for docsite with local dev servers"
 run = "bash e2e/scripts/run-e2e.sh screenshot"
 
 [tasks."e2e:smoke"]
-description = "Run only smoke E2E tests (fast verification)"
+description = "Run smoke E2E tests against local dev servers (fast, not CI parity)"
 run = "bash e2e/scripts/run-e2e.sh smoke"
 
 [tasks."e2e:entries"]
-description = "Run entries E2E tests"
+description = "Run entries E2E tests against local dev servers (fast, not CI parity)"
 run = "bash e2e/scripts/run-e2e.sh entries"
+
+[tasks."e2e:dev"]
+description = "Run full E2E tests against local dev servers (fast, not CI parity)"
+run = "bash e2e/scripts/run-e2e.sh full"
 
 [tasks.seed]
 description = "Seed a local development space with sample data"

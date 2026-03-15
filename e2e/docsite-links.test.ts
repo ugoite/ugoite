@@ -4,8 +4,9 @@ import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server
 let docsiteServer: DocsiteServer | undefined;
 
 test.describe("Docsite internal links", () => {
+	test.describe.configure({ timeout: 180_000 });
+
 	test.beforeAll(async () => {
-		test.setTimeout(180_000);
 		docsiteServer = await startDocsiteServer({ basePath: "/ugoite" });
 	});
 
@@ -17,6 +18,7 @@ test.describe("Docsite internal links", () => {
 		browser,
 		request,
 	}) => {
+		test.setTimeout(180_000);
 		const queue = [buildDocsiteUrl("/")];
 		const visited = new Set<string>();
 		const parserPage = await browser.newPage();
@@ -32,7 +34,6 @@ test.describe("Docsite internal links", () => {
 				if (visited.has(normalizedCurrentUrl)) {
 					continue;
 				}
-
 				const response = await request.get(currentUrl);
 				expect(response.status(), `Expected ${currentUrl} to resolve`).toBeLessThan(400);
 
