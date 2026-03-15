@@ -4,7 +4,7 @@
   "include-component-in-tag": false,
   "bootstrap-sha": "ac732af5887049664f82d78325803bd7f4db0a68",
   "packages": {
-    ".": {
+    "packages/ugoite": {
       "release-type": "simple",
       "package-name": "ugoite",
       "include-v-in-tag": true,
