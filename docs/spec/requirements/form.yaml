@@ -164,6 +164,9 @@ requirements:
     - file: ugoite-core/tests/test_form.rs
       tests:
       - test_form_req_form_005_reject_reserved_metadata_columns
+    - file: ugoite-minimum/tests/test_coverage.rs
+      tests:
+      - test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and_extendable
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -190,6 +193,9 @@ requirements:
     - file: ugoite-core/tests/test_form.rs
       tests:
       - test_form_req_form_006_reject_reserved_metadata_form
+    - file: ugoite-minimum/tests/test_coverage.rs
+      tests:
+      - test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_extendable
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.

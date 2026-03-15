@@ -5,7 +5,7 @@
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
 | Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
-| Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Core/CLI format, lint, test, and coverage |
+| Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR, merge queue | Lint, format check, typecheck, validation build, and tests with mandatory 100% coverage |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue | Path-aware smoke/full E2E with merge-queue full coverage |
@@ -65,6 +65,10 @@ files larger than `1 MiB` unless they are explicitly allowlisted in
 ```yaml
 jobs:
   ci:
+    - cd ugoite-minimum && cargo fmt --check
+    - cd ugoite-minimum && cargo clippy -- -D warnings
+    - cd ugoite-minimum && cargo test
+    - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
     - cd ugoite-core && cargo clippy -- -D warnings
@@ -174,6 +178,10 @@ jobs:
   ci:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
+    - cd ugoite-minimum && cargo fmt --check
+    - cd ugoite-minimum && cargo clippy -- -D warnings
+    - cd ugoite-minimum && cargo test
+    - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
     - cd ugoite-core && cargo clippy -- -D warnings
@@ -186,17 +194,25 @@ jobs:
     - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 ```
 
+The package-local `mise run //ugoite-minimum:test` task installs
+`cargo-llvm-cov` when needed and runs `python3 ../scripts/check_minimum_coverage.py`,
+which executes `cargo llvm-cov --test test_coverage --json` and normalizes
+delimiter-only line-mapping noise before enforcing the same 100% ugoite-minimum line-coverage gate.
+That keeps the root `mise run test` path aligned with Rust CI while still surfacing
+substantive uncovered lines from the portable crate.
+
 Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
 The default `ugoite-core` build path stays incremental, and root `mise run
 test` runs `//ugoite-core:build` before `//backend:test:no-build` and
 `//ugoite-core:test:no-build` so one editable extension build is reused across
 that local test workflow. `mise run //ugoite-core:build:clean` provides a
 package-local destructive rebuild when the editable extension is stale.
-`mise run cleanup:rust-targets` removes both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
-unexpectedly. `mise run //ugoite-cli:test` installs `cargo-llvm-cov` and
-`llvm-tools-preview` if needed, then enforces the same 100% CLI line-coverage gate
-as Rust CI.
+The default `mise run //ugoite-cli:test` path stays incremental (`cargo test`),
+while `mise run //ugoite-cli:test:clean` provides a package-local destructive
+rerun when CLI artifacts are stale. `mise run cleanup:rust-targets` removes
+both the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
+path when artifacts grow unexpectedly. Rust CI and pre-commit still enforce the
+100% CLI line-coverage gate through `cargo llvm-cov`.
 
 ## SBOM and Supply Chain CI
 
@@ -220,7 +236,7 @@ uvx pre-commit run --all-files
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
+- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with both `ugoite-minimum` and `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
 - **Docsite parity hooks**: Lint, format check, typecheck, validation build, and 100% Vitest coverage for `docsite/`
 - **Yamllint**: Validates YAML syntax/style on committed YAML files
 - **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
@@ -244,7 +260,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
 3. **All Tests Status** must stay focused on curated code-quality workflows, exclude release/publish automation (`Release CI`, `Release Publish`), and avoid deprecated wait-action runtimes so auxiliary release failures and platform warnings do not turn branch health red.
 4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
-5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
+5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `packages/ugoite/package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, the repository root `package.json` must stay private tooling for Husky/commitlint only, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
 6. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
 7. **Human review** must confirm the planned release scope before publishing.
 8. **Release Publish** is manual (`workflow_dispatch`) and requires explicit `APPROVED` confirmation.
@@ -253,6 +269,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can pull and run release images without rebuilding from source.
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository.
 13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep the published CLI install path aligned with the documented `space list` and `create-space` workflow for an exact release version.
+14. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
 
 ## Environment Variables
 
