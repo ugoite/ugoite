@@ -28,6 +28,19 @@ To enable cross-platform operation and varied deployment targets:
   - WebAssembly bindings can target the portable `ugoite-minimum` layer in
     future browser contexts
 
+### Current responsibility split
+
+| Layer | Keep here |
+| --- | --- |
+| `ugoite-minimum` | Portable models, storage traits, integrity helpers, metadata reservation rules, URI normalization, and pure text helpers such as `compute_word_count` |
+| `ugoite-core` | OpenDAL-backed storage adapters, indexing orchestration, SQL/materialized views, CRUD flows, and Python bindings |
+
+Portable helpers should only move into `ugoite-minimum` when they stay free of
+OpenDAL, Iceberg, Parquet, Python bindings, and storage-aware orchestration.
+That is why `compute_word_count` can live in the portable layer today, while the
+larger property-casting pipeline in `ugoite-core::index` still stays in the
+heavier core until it has a smaller transport-agnostic API.
+
 ## Data Portability
 
 The data model is designed to remain:

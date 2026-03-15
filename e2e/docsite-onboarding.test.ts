@@ -13,7 +13,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		await docsiteServer?.stop();
 	});
 
-	test("REQ-E2E-007: landing page explains what Ugoite is and points first-time users to getting started", async ({
+	test("REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started", async ({
 		page,
 	}) => {
 		await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
@@ -39,7 +39,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		).toBeVisible();
 	});
 
-	test("REQ-E2E-007: desktop navigation prioritizes getting-started content before design docs", async ({
+	test("REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs", async ({
 		page,
 	}) => {
 		await page.setViewportSize({ width: 1280, height: 900 });
@@ -62,7 +62,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		]);
 	});
 
-	test("REQ-E2E-007: mobile navigation keeps getting-started links ahead of design content", async ({
+	test("REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content", async ({
 		page,
 	}) => {
 		await page.setViewportSize({ width: 390, height: 844 });

@@ -5,3 +5,4 @@
 [tool.ruff.lint.per-file-ignores]
 "docs/tests/test_storage_docs.py" = ["S603", "S607"]
 "docs/tests/test_artifact_hygiene.py" = ["S101", "S603", "S607"]
+"docs/tests/test_guides.py" = ["S603"]
