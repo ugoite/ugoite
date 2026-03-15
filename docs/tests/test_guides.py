@@ -271,10 +271,18 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "0600",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
-    "UGOITE_DEV_AUTH_MODE=mock-oauth",
     "Local Dev Auth/Login",
+    "canonical `mise run dev` workflow",
     "/login",
 }
+FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
+    "UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev",
+    "UGOITE_DEV_AUTH_MODE=manual-totp",
+    "UGOITE_DEV_AUTH_MODE=mock-oauth",
+}
+LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL = (
+    "https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md"
+)
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
     "| UGOITE_DEV_USER_ID |",
@@ -1017,10 +1025,28 @@ def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
 
 
 def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
-    """REQ-OPS-015: Local dev auth docs must cover explicit manual modes."""
+    """REQ-OPS-015: Local dev auth docs stay canonical and cover manual modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
+    api_storage_text = (
+        REPO_ROOT / "docsite" / "src" / "pages" / "app" / "api-storage" / "index.astro"
+    ).read_text(encoding="utf-8")
+    frontend_docsite_text = (
+        REPO_ROOT / "docsite" / "src" / "pages" / "app" / "frontend" / "index.astro"
+    ).read_text(encoding="utf-8")
+    spaces_index_text = (
+        REPO_ROOT / "frontend" / "src" / "routes" / "spaces" / "index.tsx"
+    ).read_text(encoding="utf-8")
+    space_settings_text = (
+        REPO_ROOT
+        / "frontend"
+        / "src"
+        / "routes"
+        / "spaces"
+        / "[space_id]"
+        / "settings.tsx"
+    ).read_text(encoding="utf-8")
 
     details: list[str] = []
 
@@ -1045,6 +1071,17 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
             "README missing manual auth fragments: " + ", ".join(missing_readme),
         )
 
+    duplicated_readme = sorted(
+        fragment
+        for fragment in FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
+        if fragment in readme_text
+    )
+    if duplicated_readme:
+        details.append(
+            "README must point to the canonical guide instead of duplicating auth "
+            "commands: " + ", ".join(duplicated_readme),
+        )
+
     missing_env_matrix = sorted(
         fragment
         for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS
@@ -1053,6 +1090,24 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     if missing_env_matrix:
         details.append(
             "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
+        )
+
+    canonical_pointer_sources = {
+        "docsite api-storage page": api_storage_text,
+        "docsite frontend page": frontend_docsite_text,
+        "frontend spaces route": spaces_index_text,
+        "frontend space settings route": space_settings_text,
+    }
+    missing_canonical_pointers = sorted(
+        name
+        for name, text in canonical_pointer_sources.items()
+        if "Local Dev Auth/Login" not in text
+        or LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL not in text
+    )
+    if missing_canonical_pointers:
+        details.append(
+            "Local dev auth pointers missing canonical guide links in: "
+            + ", ".join(missing_canonical_pointers),
         )
 
     if details:
