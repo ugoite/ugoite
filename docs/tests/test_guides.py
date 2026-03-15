@@ -78,6 +78,9 @@ UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
 INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
+RELEASE_INSTALLER_RENDERER_PATH = (
+    REPO_ROOT / "scripts" / "render-cli-release-installer.sh"
+)
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
@@ -152,6 +155,8 @@ REQUIRED_CLI_RELEASE_WORKFLOW_FRAGMENTS = {
     "cargo build --locked --release --bin ugoite --target",
     "gh release upload",
     "ugoite-v${VERSION}-",
+    ".install.sh",
+    "render-cli-release-installer.sh",
     "permissions:",
     "contents: write",
 }
@@ -169,6 +174,7 @@ REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
     "UGOITE_VERSION",
     "UGOITE_INSTALL_DIR",
     "UGOITE_DOWNLOAD_BASE_URL",
+    "UGOITE_TARGET_OVERRIDE",
     "releases/latest",
     "uname -s",
     "uname -m",
@@ -176,10 +182,17 @@ REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
     "sha256sum",
     "shasum -a 256",
 }
+REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
+    "ugoite-v0.1.0-x86_64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.1.0-aarch64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.1.0-x86_64-apple-darwin.install.sh",
+    "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
+}
 REQUIRED_CLI_README_FRAGMENTS = {
     "install-ugoite-cli.sh",
     "ugoite --help",
     "UGOITE_VERSION=0.1.0",
+    *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
     "install-ugoite-cli.sh",
@@ -189,13 +202,22 @@ REQUIRED_CLI_GUIDE_FRAGMENTS = {
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "aarch64-apple-darwin",
+    *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_CICD_FRAGMENTS = {
     ".github/workflows/cli-release-binaries.yml",
     "Cargo.lock",
     "macos-15",
     "scripts/install-ugoite-cli.sh",
+    "scripts/render-cli-release-installer.sh",
+    ".install.sh",
     "ugoite --help",
+}
+REQUIRED_RELEASE_INSTALLER_RENDERER_FRAGMENTS = {
+    "UGOITE_TARGET_OVERRIDE",
+    "install-ugoite-cli.sh",
+    "raw.githubusercontent.com",
+    "UGOITE_GITHUB_REPO",
 }
 REQUIRED_RELEASE_DRAFT_CHECKOUT_REF = (
     "${{ inputs.target != '' && inputs.target || github.sha }}"
@@ -1474,48 +1496,54 @@ def test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease(
     release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
     work_dir = tmp_path / "quick-start-smoke"
 
-    env = os.environ.copy()
-    env.update(
-        {
-            "UGOITE_VERSION": version,
-            "UGOITE_DOWNLOAD_BASE_URL": release_dir.as_uri(),
-            "UGOITE_INSTALL_SCRIPT_PATH": str(INSTALL_CLI_SCRIPT_PATH),
-            "UGOITE_QUICKSTART_WORKDIR": str(work_dir),
-        },
+    _assert_release_quick_start_smoke(
+        tmp_path=tmp_path,
+        version=version,
+        release_dir=release_dir,
+        install_script_path=INSTALL_CLI_SCRIPT_PATH,
+        work_dir=work_dir,
     )
 
-    smoke_result = subprocess.run(
-        ["/bin/bash", str(RELEASE_CLI_QUICKSTART_SCRIPT_PATH)],
-        cwd=tmp_path,
-        env=env,
+
+def test_docs_req_ops_018_platform_installer_asset_validates_prerelease(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-018: Platform installer asset validates a prerelease quick-start."""
+    version = "0.0.1-beta.3"
+    release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
+    work_dir = tmp_path / "quick-start-asset-smoke"
+    target = _detect_install_cli_target()
+    installer_asset_path = tmp_path / f"ugoite-v{version}-{target}.install.sh"
+
+    render_result = subprocess.run(
+        [
+            "/bin/bash",
+            str(RELEASE_INSTALLER_RENDERER_PATH),
+            version,
+            target,
+            str(installer_asset_path),
+        ],
+        cwd=REPO_ROOT,
         text=True,
         capture_output=True,
-        timeout=30,
+        timeout=10,
         check=False,
     )
-    if smoke_result.returncode != 0:
+    if render_result.returncode != 0:
         message = (
-            "release quick-start smoke script should validate a published "
-            f"prerelease flow; stdout={smoke_result.stdout!r} "
-            f"stderr={smoke_result.stderr!r}"
-        )
-        raise AssertionError(message)
-    if "Quick-start smoke test passed" not in smoke_result.stderr:
-        message = (
-            "release quick-start smoke script should report a successful "
-            f"verification; stderr={smoke_result.stderr!r}"
+            "render-cli-release-installer.sh should generate a target-specific "
+            f"installer asset; stdout={render_result.stdout!r} "
+            f"stderr={render_result.stderr!r}"
         )
         raise AssertionError(message)
 
-    installed_binary = work_dir / "home" / ".local" / "bin" / "ugoite"
-    if not installed_binary.exists():
-        message = "release quick-start smoke script should install ugoite in workdir"
-        raise AssertionError(message)
-
-    created_space_dir = work_dir / "work" / "spaces" / "demo"
-    if not created_space_dir.is_dir():
-        message = "release quick-start smoke script should create the demo space"
-        raise AssertionError(message)
+    _assert_release_quick_start_smoke(
+        tmp_path=tmp_path,
+        version=version,
+        release_dir=release_dir,
+        install_script_path=installer_asset_path,
+        work_dir=work_dir,
+    )
 
 
 def _assert_release_publish_job_checks_out_requested_target(
@@ -1993,6 +2021,11 @@ def _collect_cli_release_install_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     cli_release_workflow_text = CLI_RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
     gitignore_text = ROOT_GITIGNORE_PATH.read_text(encoding="utf-8")
+    renderer_text = _read_required_text(
+        RELEASE_INSTALLER_RENDERER_PATH,
+        "scripts/render-cli-release-installer.sh is missing at {path}; "
+        "required by REQ-OPS-018.",
+    )
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
@@ -2037,6 +2070,10 @@ def _collect_cli_release_install_details() -> list[str]:
     missing_install_script = _missing_required_fragments(
         INSTALL_CLI_SCRIPT_PATH.read_text(encoding="utf-8"),
         REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS,
+    )
+    missing_renderer = _missing_required_fragments(
+        renderer_text,
+        REQUIRED_RELEASE_INSTALLER_RENDERER_FRAGMENTS,
     )
     missing_readme = _missing_required_fragments(
         README_PATH.read_text(encoding="utf-8"),
@@ -2092,6 +2129,11 @@ def _collect_cli_release_install_details() -> list[str]:
             bool(missing_install_script),
             "install-ugoite-cli.sh missing fragments: "
             + ", ".join(missing_install_script),
+        ),
+        (
+            bool(missing_renderer),
+            "render-cli-release-installer.sh missing fragments: "
+            + ", ".join(missing_renderer),
         ),
         (
             bool(missing_readme),
@@ -2197,6 +2239,58 @@ def _collect_release_publish_ghcr_details() -> list[str]:
         ),
     )
     return [message for condition, message in detail_candidates if condition]
+
+
+def _assert_release_quick_start_smoke(
+    *,
+    tmp_path: Path,
+    version: str,
+    release_dir: Path,
+    install_script_path: Path,
+    work_dir: Path,
+) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "UGOITE_VERSION": version,
+            "UGOITE_DOWNLOAD_BASE_URL": release_dir.as_uri(),
+            "UGOITE_INSTALL_SCRIPT_PATH": str(install_script_path),
+            "UGOITE_QUICKSTART_WORKDIR": str(work_dir),
+        },
+    )
+
+    smoke_result = subprocess.run(
+        ["/bin/bash", str(RELEASE_CLI_QUICKSTART_SCRIPT_PATH)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if smoke_result.returncode != 0:
+        message = (
+            "release quick-start smoke script should validate a published "
+            f"prerelease flow; stdout={smoke_result.stdout!r} "
+            f"stderr={smoke_result.stderr!r}"
+        )
+        raise AssertionError(message)
+    if "Quick-start smoke test passed" not in smoke_result.stderr:
+        message = (
+            "release quick-start smoke script should report a successful "
+            f"verification; stderr={smoke_result.stderr!r}"
+        )
+        raise AssertionError(message)
+
+    installed_binary = work_dir / "home" / ".local" / "bin" / "ugoite"
+    if not installed_binary.exists():
+        message = "release quick-start smoke script should install ugoite in workdir"
+        raise AssertionError(message)
+
+    created_space_dir = work_dir / "work" / "spaces" / "demo"
+    if not created_space_dir.is_dir():
+        message = "release quick-start smoke script should create the demo space"
+        raise AssertionError(message)
 
 
 def _create_fake_cli_release_dir(tmp_path: Path, *, version: str) -> Path:
