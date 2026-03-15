@@ -12,7 +12,7 @@ REQ-OPS-011: Rust target cache discipline must be declared.
 REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
 REQ-OPS-013: All Tests Status must exclude release automation from branch health.
 REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
-REQ-OPS-017: Release publish must push GHCR images and document a quick start.
+REQ-OPS-017: Release publish must ship container quick-start assets and document them.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
@@ -89,7 +89,6 @@ RELEASE_INSTALLER_RENDERER_PATH = (
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
-GHCR_VISIBILITY_SCRIPT_PATH = REPO_ROOT / "scripts" / "set-ghcr-package-public.sh"
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
@@ -257,8 +256,20 @@ REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
 REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
     "./.github/workflows/docker-images.yml",
     "push: true",
-    "GHCR_VISIBILITY_TOKEN: ${{ secrets.GHCR_VISIBILITY_TOKEN }}",
-    "RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}",
+    "export_artifacts: true",
+    "artifact_name: release-docker-images",
+    (
+        "backend_local_tag: ghcr.io/${{ github.repository }}/backend:"
+        "${{ inputs.version }}"
+    ),
+    (
+        "frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:"
+        "${{ inputs.version }}"
+    ),
+    "actions/download-artifact@v4",
+    "ugoite-backend-v${VERSION}.docker.tar.gz",
+    "ugoite-frontend-v${VERSION}.docker.tar.gz",
+    "docker-compose.release.yaml",
     "version: ${{ inputs.version }}",
     "channel: ${{ inputs.channel }}",
     "target: ${{ inputs.target }}",
@@ -288,29 +299,47 @@ REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
     "registry: ghcr.io",
     "ghcr.io/${{ github.repository }}/backend",
     "ghcr.io/${{ github.repository }}/frontend",
-    "Make GHCR images public",
-    "GHCR_VISIBILITY_TOKEN",
-    "RELEASE_PLEASE_TOKEN",
-    "GITHUB_TOKEN",
-    'token="${GHCR_VISIBILITY_TOKEN:-}"',
-    'token="${RELEASE_PLEASE_TOKEN:-}"',
-    'token="${GITHUB_TOKEN:-}"',
-    "scripts/set-ghcr-package-public.sh",
+    "export_artifacts:",
+    "artifact_name:",
+    "backend_local_tag:",
+    "frontend_local_tag:",
+    (
+        'docker image save "$BACKEND_LOCAL_TAG" | gzip > '
+        "exported-images/backend-image.tar.gz"
+    ),
+    (
+        'docker image save "$FRONTEND_LOCAL_TAG" | gzip > '
+        "exported-images/frontend-image.tar.gz"
+    ),
+    "actions/upload-artifact@v7",
     "$IMAGE:latest",
     "$IMAGE:stable",
     "$IMAGE:$CHANNEL",
 }
 REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "docker-compose.release.yaml",
+    "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
+    "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz",
+    "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz",
+    "docker load",
     "ghcr.io/ugoite/ugoite/backend",
     "ghcr.io/ugoite/ugoite/frontend",
-    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d",
+    (
+        'UGOITE_VERSION="$UGOITE_VERSION" docker compose -f '
+        "docker-compose.release.yaml up -d"
+    ),
 }
 REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
+    "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
+    "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz",
+    "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz",
+    "docker load",
     "ghcr.io/ugoite/ugoite/backend",
     "ghcr.io/ugoite/ugoite/frontend",
-    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml pull",
-    "UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml up -d",
+    (
+        'UGOITE_VERSION="$UGOITE_VERSION" docker compose -f '
+        "docker-compose.release.yaml up -d"
+    ),
     "latest",
     "stable",
     "alpha",
@@ -326,17 +355,9 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend",
     "ghcr.io/ugoite/ugoite/frontend",
     "docker-compose.release.yaml",
-    "GHCR_VISIBILITY_TOKEN",
-    "RELEASE_PLEASE_TOKEN",
-    "falls back to `GITHUB_TOKEN`",
-    "anonymously pullable",
-}
-REQUIRED_GHCR_VISIBILITY_SCRIPT_FRAGMENTS = {
-    "https://api.github.com/orgs/",
-    "/packages/container/",
-    "/visibility",
-    '{"visibility":"public"}',
-    "X-GitHub-Api-Version: 2022-11-28",
+    "ugoite-backend-v<version>.docker.tar.gz",
+    "ugoite-frontend-v<version>.docker.tar.gz",
+    "download, load, and run",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -1458,9 +1479,9 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_017_release_publish_pushes_ghcr_and_docs_quickstart() -> None:
-    """REQ-OPS-017: Release Publish must push GHCR images and document a quick start."""
-    details = _collect_release_publish_ghcr_details()
+def test_docs_req_ops_017_release_publish_exports_container_assets() -> None:
+    """REQ-OPS-017: Release Publish must ship container quick-start assets and docs."""
+    details = _collect_release_publish_container_details()
     if details:
         raise AssertionError("; ".join(details))
 
@@ -2529,7 +2550,7 @@ def _collect_cli_release_install_details() -> list[str]:
     return [message for condition, message in detail_candidates if condition]
 
 
-def _collect_release_publish_ghcr_details() -> list[str]:
+def _collect_release_publish_container_details() -> list[str]:
     workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
     permissions = workflow.get("permissions")
@@ -2543,7 +2564,9 @@ def _collect_release_publish_ghcr_details() -> list[str]:
         if str(permissions.get(name)) != expected
     ]
 
-    publish_images_uses, release_needs = _collect_release_publish_jobs(workflow)
+    publish_images_uses, export_images_uses, release_needs = (
+        _collect_release_publish_jobs(workflow)
+    )
 
     missing_workflow_fragments = sorted(
         fragment
@@ -2554,10 +2577,6 @@ def _collect_release_publish_ghcr_details() -> list[str]:
     missing_reusable_fragments = _missing_required_fragments(
         DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
         REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS,
-    )
-    missing_visibility_script_fragments = _missing_required_fragments(
-        GHCR_VISIBILITY_SCRIPT_PATH.read_text(encoding="utf-8"),
-        REQUIRED_GHCR_VISIBILITY_SCRIPT_FRAGMENTS,
     )
     missing_readme_fragments = _missing_required_fragments(
         README_PATH.read_text(encoding="utf-8"),
@@ -2586,8 +2605,17 @@ def _collect_release_publish_ghcr_details() -> list[str]:
             "release-publish must delegate image builds to docker-images.yml",
         ),
         (
+            export_images_uses != "./.github/workflows/docker-images.yml",
+            "release-publish must delegate image archive export to docker-images.yml",
+        ),
+        (
             "publish-images" not in release_needs,
             "release-publish publish-release job must depend on publish-images",
+        ),
+        (
+            "export-release-image-archives" not in release_needs,
+            "release-publish publish-release job must depend on "
+            "export-release-image-archives",
         ),
         (
             bool(missing_workflow_fragments),
@@ -2598,11 +2626,6 @@ def _collect_release_publish_ghcr_details() -> list[str]:
             bool(missing_reusable_fragments),
             "docker-images reusable workflow missing fragments: "
             + ", ".join(missing_reusable_fragments),
-        ),
-        (
-            bool(missing_visibility_script_fragments),
-            "GHCR visibility helper script missing fragments: "
-            + ", ".join(missing_visibility_script_fragments),
         ),
         (
             bool(missing_readme_fragments),
@@ -2808,22 +2831,27 @@ def _fake_quick_start_cli_script() -> str:
 
 def _collect_release_publish_jobs(
     workflow: dict[object, object],
-) -> tuple[str, list[object]]:
+) -> tuple[str, str, list[object]]:
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         message = "release-publish.yml must define jobs"
         raise TypeError(message)
 
     publish_images_job = jobs.get("publish-images")
+    export_images_job = jobs.get("export-release-image-archives")
     publish_release_job = jobs.get("publish-release")
     if not isinstance(publish_images_job, dict):
         message = "release-publish.yml must define jobs.publish-images"
+        raise TypeError(message)
+    if not isinstance(export_images_job, dict):
+        message = "release-publish.yml must define jobs.export-release-image-archives"
         raise TypeError(message)
     if not isinstance(publish_release_job, dict):
         message = "release-publish.yml must define jobs.publish-release"
         raise TypeError(message)
 
     publish_images_uses = str(publish_images_job.get("uses", "")).strip()
+    export_images_uses = str(export_images_job.get("uses", "")).strip()
     release_needs = publish_release_job.get("needs", [])
     if isinstance(release_needs, str):
         release_needs = [release_needs]
@@ -2832,7 +2860,7 @@ def _collect_release_publish_jobs(
             "release-publish.yml jobs.publish-release.needs must be a string or list"
         )
         raise TypeError(message)
-    return publish_images_uses, release_needs
+    return publish_images_uses, export_images_uses, release_needs
 
 
 def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
