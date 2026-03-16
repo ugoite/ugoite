@@ -8,12 +8,20 @@ services:
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_DEV_AUTH_MODE=mock-oauth
+      - UGOITE_DEV_USER_ID=dev-local-user
+      - UGOITE_DEV_SIGNING_KID=release-compose-local-v1
+      - UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret
+      - UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret
+      - UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
 
   frontend:
     image: ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
     depends_on:
       - backend
