@@ -33,7 +33,7 @@
 		"baseline-browser-mapping": "^2.10.7",
 		"browserslist": "^4.28.1",
 		"js-tokens": "^10.0.0",
-		"jsdom": "^28.1.0",
+		"jsdom": "^29.0.0",
 		"msw": "^2.12.11",
 		"tailwindcss": "^4.2.1",
 		"vite": "^8.0.0",
