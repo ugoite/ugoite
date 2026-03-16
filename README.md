@@ -212,6 +212,10 @@ gzip -dc "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
 UGOITE_VERSION="$UGOITE_VERSION" docker compose -f docker-compose.release.yaml up -d
 ```
 
+Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
+and you will land on `/spaces`. For more background on the explicit browser
+login flow, see [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
+
 The downloaded archives load the canonical release image names used by
 `docker-compose.release.yaml`:
 
