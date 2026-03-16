@@ -328,6 +328,8 @@ REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
         'UGOITE_VERSION="$UGOITE_VERSION" docker compose -f '
         "docker-compose.release.yaml up -d"
     ),
+    "http://localhost:3000/login",
+    "Continue with Mock OAuth",
 }
 REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
     "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
@@ -344,12 +346,22 @@ REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
     "stable",
     "alpha",
     "beta",
+    "http://localhost:3000/login",
+    "Continue with Mock OAuth",
 }
 REQUIRED_RELEASE_COMPOSE_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}",
     "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}",
+    "127.0.0.1:3000:3000",
     "UGOITE_ROOT=/data",
     "BACKEND_URL=http://backend:8000",
+    "UGOITE_DEV_AUTH_MODE=mock-oauth",
+    "UGOITE_DEV_USER_ID=dev-local-user",
+    "UGOITE_DEV_SIGNING_KID=release-compose-local-v1",
+    "UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret",
+    "UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret",
+    "UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy",
 }
 REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend",

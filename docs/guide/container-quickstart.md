@@ -57,8 +57,12 @@ UGOITE_VERSION="$UGOITE_VERSION" docker compose -f docker-compose.release.yaml u
 
 Then open:
 
-- Frontend UI: http://localhost:3000
+- Frontend UI login: http://localhost:3000/login
 - Backend API: http://localhost:8000
+
+Then click **Continue with Mock OAuth** to reach `/spaces`. For more detail on
+the explicit browser login flow, see
+[Local Dev Auth Login](local-dev-auth-login.md).
 
 To stop the stack:
 
@@ -94,6 +98,10 @@ docker pull ghcr.io/ugoite/ugoite/frontend:0.0.1
 
 - The release compose file keeps data on the host under `./spaces` to preserve
   the local-first storage model.
+- The published quick start binds both services to `127.0.0.1`, wires the dev
+  auth proxy token between frontend and backend, and enables explicit
+  `mock-oauth` browser login so `/login` works without editing the Compose
+  file.
 - The frontend container talks to the backend through the Compose network via
   `http://backend:8000`.
 - Release image archives are attached to every GitHub Release so the public
