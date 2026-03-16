@@ -2564,9 +2564,13 @@ def _collect_release_publish_container_details() -> list[str]:
         if str(permissions.get(name)) != expected
     ]
 
-    publish_images_uses, export_images_uses, release_needs = (
-        _collect_release_publish_jobs(workflow)
-    )
+    (
+        publish_images_uses,
+        export_images_uses,
+        publish_images_permissions,
+        export_images_permissions,
+        release_needs,
+    ) = _collect_release_publish_jobs(workflow)
 
     missing_workflow_fragments = sorted(
         fragment
@@ -2607,6 +2611,15 @@ def _collect_release_publish_container_details() -> list[str]:
         (
             export_images_uses != "./.github/workflows/docker-images.yml",
             "release-publish must delegate image archive export to docker-images.yml",
+        ),
+        (
+            str(publish_images_permissions.get("packages")) != "write",
+            "release-publish publish-images job must allow packages: write",
+        ),
+        (
+            str(export_images_permissions.get("packages")) != "write",
+            "release-publish export-release-image-archives job must allow "
+            "packages: write",
         ),
         (
             "publish-images" not in release_needs,
@@ -2831,7 +2844,7 @@ def _fake_quick_start_cli_script() -> str:
 
 def _collect_release_publish_jobs(
     workflow: dict[object, object],
-) -> tuple[str, str, list[object]]:
+) -> tuple[str, str, dict[object, object], dict[object, object], list[object]]:
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
         message = "release-publish.yml must define jobs"
@@ -2852,6 +2865,19 @@ def _collect_release_publish_jobs(
 
     publish_images_uses = str(publish_images_job.get("uses", "")).strip()
     export_images_uses = str(export_images_job.get("uses", "")).strip()
+    publish_images_permissions = publish_images_job.get("permissions", {})
+    export_images_permissions = export_images_job.get("permissions", {})
+    if not isinstance(publish_images_permissions, dict):
+        message = (
+            "release-publish.yml jobs.publish-images.permissions must be a mapping"
+        )
+        raise TypeError(message)
+    if not isinstance(export_images_permissions, dict):
+        message = (
+            "release-publish.yml jobs.export-release-image-archives.permissions "
+            "must be a mapping"
+        )
+        raise TypeError(message)
     release_needs = publish_release_job.get("needs", [])
     if isinstance(release_needs, str):
         release_needs = [release_needs]
@@ -2860,7 +2886,13 @@ def _collect_release_publish_jobs(
             "release-publish.yml jobs.publish-release.needs must be a string or list"
         )
         raise TypeError(message)
-    return publish_images_uses, export_images_uses, release_needs
+    return (
+        publish_images_uses,
+        export_images_uses,
+        publish_images_permissions,
+        export_images_permissions,
+        release_needs,
+    )
 
 
 def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
