@@ -21,6 +21,7 @@ REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-025: Published release quick-start verification must stay wired.
 """
 
 from __future__ import annotations
@@ -64,6 +65,9 @@ RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml
 RELEASE_PUBLISH_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
 )
+RELEASE_QUICKSTART_VERIFY_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "release-quickstart-verify.yml"
+)
 CLI_RELEASE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
 )
@@ -105,6 +109,9 @@ RELEASE_INSTALLER_RENDERER_PATH = (
 )
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
+)
+RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH = (
+    REPO_ROOT / "scripts" / "verify-release-container-quickstart.sh"
 )
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
@@ -387,6 +394,42 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ugoite-backend-v<version>.docker.tar.gz",
     "ugoite-frontend-v<version>.docker.tar.gz",
     "download, load, and run",
+}
+REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
+    "workflow_call",
+    "workflow_dispatch",
+    "Verify released CLI quick start",
+    "Verify released browser quick start",
+    "actions/cache@v5",
+    "actions/setup-node@v6",
+    "actions/upload-artifact@v8",
+    "bash scripts/verify-release-cli-quickstart.sh",
+    "bash scripts/verify-release-container-quickstart.sh",
+    "PLAYWRIGHT_JUNIT_OUTPUT_FILE",
+}
+REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
+    "docker-compose.release.yaml",
+    "ugoite-backend-v${VERSION_INPUT}.docker.tar.gz",
+    "ugoite-frontend-v${VERSION_INPUT}.docker.tar.gz",
+    "docker load",
+    "wait-for-http.sh",
+    "npx playwright test",
+    "smoke.test.ts",
+    "search-ui.test.ts",
+    "auth/dev/mock-oauth",
+    "config set --mode backend --backend-url http://127.0.0.1:8000",
+    "auth login --mock-oauth",
+    "space list",
+    "create-space",
+    "Release container quick-start verification passed",
+}
+REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
+    "| Release Quickstart Verify | `.github/workflows/release-quickstart-verify.yml` |",
+    "scripts/verify-release-container-quickstart.sh",
+    "scripts/verify-release-cli-quickstart.sh",
+    "./.github/workflows/release-quickstart-verify.yml",
+    "smoke.test.ts",
+    "search-ui.test.ts",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -1746,6 +1789,13 @@ def test_docs_req_ops_018_platform_installer_asset_validates_prerelease(
     )
 
 
+def test_docs_req_ops_025_release_quickstart_verification_stays_wired() -> None:
+    """REQ-OPS-025: published release quick-start verification stays wired."""
+    details = _collect_release_quickstart_verification_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _assert_release_publish_job_checks_out_requested_target(
     *,
     job_name: str,
@@ -2949,6 +2999,227 @@ def _collect_release_publish_container_details() -> list[str]:
             bool(missing_ci_cd_fragments),
             "ci-cd guide missing release container fragments: "
             + ", ".join(missing_ci_cd_fragments),
+        ),
+    )
+    return [message for condition, message in detail_candidates if condition]
+
+
+def _require_mapping(
+    value: object,
+    *,
+    message: str,
+) -> dict[object, object]:
+    if not isinstance(value, dict):
+        raise TypeError(message)
+    return value
+
+
+def _load_release_quickstart_verify_state() -> tuple[
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+]:
+    workflow = _load_yaml_base_mapping(RELEASE_QUICKSTART_VERIFY_WORKFLOW_PATH)
+    permissions = _require_mapping(
+        workflow.get("permissions"),
+        message="release-quickstart-verify.yml must define top-level permissions",
+    )
+    on_block = _require_mapping(
+        workflow.get("on", {}),
+        message="release-quickstart-verify.yml must define an on mapping",
+    )
+    jobs = _require_mapping(
+        workflow.get("jobs", {}),
+        message="release-quickstart-verify.yml must define jobs",
+    )
+    workflow_dispatch = _require_mapping(
+        on_block.get("workflow_dispatch", {}),
+        message="release-quickstart-verify.yml workflow_dispatch must be a mapping",
+    )
+    workflow_call = _require_mapping(
+        on_block.get("workflow_call", {}),
+        message="release-quickstart-verify.yml workflow_call must be a mapping",
+    )
+    workflow_dispatch_inputs = _require_mapping(
+        workflow_dispatch.get("inputs", {}),
+        message=(
+            "release-quickstart-verify.yml workflow_dispatch.inputs must be a mapping"
+        ),
+    )
+    workflow_call_inputs = _require_mapping(
+        workflow_call.get("inputs", {}),
+        message="release-quickstart-verify.yml workflow_call.inputs must be a mapping",
+    )
+    verify_cli_job = _require_mapping(
+        jobs.get("verify-cli-quickstart"),
+        message="release-quickstart-verify.yml must define jobs.verify-cli-quickstart",
+    )
+    verify_container_job = _require_mapping(
+        jobs.get("verify-container-quickstart"),
+        message=(
+            "release-quickstart-verify.yml must define jobs.verify-container-quickstart"
+        ),
+    )
+    return (
+        permissions,
+        workflow_dispatch_inputs,
+        workflow_call_inputs,
+        verify_cli_job,
+        verify_container_job,
+    )
+
+
+def _load_release_publish_verify_quickstart_job() -> tuple[
+    dict[object, object],
+    list[object],
+    dict[object, object],
+    dict[object, object],
+]:
+    release_publish_workflow = _load_yaml_base_mapping(RELEASE_PUBLISH_WORKFLOW_PATH)
+    release_jobs = _require_mapping(
+        release_publish_workflow.get("jobs", {}),
+        message="release-publish.yml must define jobs",
+    )
+    verify_release_job = _require_mapping(
+        release_jobs.get("verify-release-quickstart"),
+        message="release-publish.yml must define jobs.verify-release-quickstart",
+    )
+    verify_release_permissions = _require_mapping(
+        verify_release_job.get("permissions", {}),
+        message=(
+            "release-publish.yml jobs.verify-release-quickstart.permissions must "
+            "be a mapping"
+        ),
+    )
+    verify_release_with = _require_mapping(
+        verify_release_job.get("with", {}),
+        message=(
+            "release-publish.yml jobs.verify-release-quickstart.with must be a mapping"
+        ),
+    )
+    verify_release_needs = verify_release_job.get("needs", [])
+    if isinstance(verify_release_needs, str):
+        verify_release_needs = [verify_release_needs]
+    if not isinstance(verify_release_needs, list):
+        message = (
+            "release-publish.yml jobs.verify-release-quickstart.needs must be a "
+            "string or list"
+        )
+        raise TypeError(message)
+    return (
+        verify_release_job,
+        verify_release_needs,
+        verify_release_permissions,
+        verify_release_with,
+    )
+
+
+def _collect_release_quickstart_verification_details() -> list[str]:
+    workflow_text = _read_required_text(
+        RELEASE_QUICKSTART_VERIFY_WORKFLOW_PATH,
+        "release-quickstart-verify.yml is missing at {path}; required by REQ-OPS-025.",
+    )
+    script_text = _read_required_text(
+        RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH,
+        "verify-release-container-quickstart.sh is missing at {path}; required by "
+        "REQ-OPS-025.",
+    )
+    (
+        permissions,
+        workflow_dispatch_inputs,
+        workflow_call_inputs,
+        verify_cli_job,
+        verify_container_job,
+    ) = _load_release_quickstart_verify_state()
+
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS,
+    )
+    missing_script_fragments = _missing_required_fragments(
+        script_text,
+        REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS,
+    )
+    (
+        verify_release_job,
+        verify_release_needs,
+        verify_release_permissions,
+        verify_release_with,
+    ) = _load_release_publish_verify_quickstart_job()
+
+    detail_candidates = (
+        (
+            str(permissions.get("contents")) != "read",
+            "release-quickstart-verify.yml permissions must allow contents: read",
+        ),
+        (
+            "version" not in workflow_dispatch_inputs,
+            "release-quickstart-verify workflow_dispatch must require a version input",
+        ),
+        (
+            "version" not in workflow_call_inputs,
+            "release-quickstart-verify workflow_call must require a version input",
+        ),
+        (
+            str(verify_cli_job.get("runs-on")) != "ubuntu-24.04",
+            (
+                "release-quickstart-verify verify-cli-quickstart job must run on "
+                "ubuntu-24.04"
+            ),
+        ),
+        (
+            str(verify_container_job.get("runs-on")) != "ubuntu-24.04",
+            (
+                "release-quickstart-verify verify-container-quickstart job must "
+                "run on ubuntu-24.04"
+            ),
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "release-quickstart-verify workflow missing fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_script_fragments),
+            "verify-release-container-quickstart.sh missing fragments: "
+            + ", ".join(missing_script_fragments),
+        ),
+        (
+            bool(missing_ci_cd_fragments),
+            "ci-cd guide missing release quick-start verification fragments: "
+            + ", ".join(missing_ci_cd_fragments),
+        ),
+        (
+            str(verify_release_job.get("uses", "")).strip()
+            != "./.github/workflows/release-quickstart-verify.yml",
+            (
+                "release-publish must delegate post-publish quick-start "
+                "verification to release-quickstart-verify.yml"
+            ),
+        ),
+        (
+            "publish-release" not in verify_release_needs,
+            (
+                "release-publish verify-release-quickstart job must depend on "
+                "publish-release"
+            ),
+        ),
+        (
+            str(verify_release_permissions.get("contents")) != "read",
+            ("release-publish verify-release-quickstart job must allow contents: read"),
+        ),
+        (
+            str(verify_release_with.get("version")) != "${{ inputs.version }}",
+            (
+                "release-publish verify-release-quickstart job must pass "
+                "inputs.version to the reusable workflow"
+            ),
         ),
     )
     return [message for condition, message in detail_candidates if condition]

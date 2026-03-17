@@ -22,6 +22,7 @@
 | Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks, exclusions, and native code-scanning handoff |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
+| Release Quickstart Verify | `.github/workflows/release-quickstart-verify.yml` | Manual (`workflow_dispatch`), reusable (`workflow_call`) | Download published release assets, run the release compose stack, verify browser stories with Playwright, and verify released CLI install/auth flows |
 
 GitHub branch protection and merge queue now rely on GitHub-native required status
 checks declared in `.github/required-status-checks.json`. Each required workflow
@@ -188,6 +189,33 @@ validation contract. CI reuses pre-built images by setting
 `E2E_BUILD_IMAGES=false`, while Docker-enabled local runs build the images from
 the current workspace before starting the compose stack.
 
+## Release Quickstart Verification
+
+```yaml
+jobs:
+  verify-cli-quickstart:
+    - bash scripts/verify-release-cli-quickstart.sh
+  verify-container-quickstart:
+    - download the exact release compose file and backend/frontend image archives
+    - docker load the published images
+    - UGOITE_VERSION=<version> docker compose -f docker-compose.release.yaml up -d
+    - npx playwright test smoke.test.ts search-ui.test.ts
+    - install the released CLI and verify backend-mode auth + create-space
+```
+
+`Release Quickstart Verify` lives at
+`./.github/workflows/release-quickstart-verify.yml`. It is both manually
+dispatchable for an existing release and reusable from `Release Publish`. The
+browser job runs `scripts/verify-release-container-quickstart.sh`, which
+downloads the exact release assets, starts `docker-compose.release.yaml`, waits
+for `/health` and `/login`, runs the published browser stories with
+`smoke.test.ts` and `search-ui.test.ts`, then installs the released CLI and
+verifies `auth login --mock-oauth`, `space list`, and `create-space` against
+the running release backend. The CLI job separately runs
+`scripts/verify-release-cli-quickstart.sh` so the generic installer path and
+local `space list` / `create-space` quick start remain validated for the same
+exact release version.
+
 ## Devcontainer CI
 
 ```yaml
@@ -335,7 +363,8 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can download, load, and run release images without rebuilding from source.
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository; the docs must also expose exact per-target one-liners for the `ugoite-v<version>-<target>.install.sh` release assets.
 13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep both the generic installer path and the per-target `.install.sh` asset path aligned with the documented `space list` and `create-space` workflow for an exact release version.
-14. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
+14. **Published release verification** must stay wired through `.github/workflows/release-quickstart-verify.yml`, which downloads exact release assets, starts `docker-compose.release.yaml`, runs `smoke.test.ts` plus `search-ui.test.ts`, and verifies a released CLI install can authenticate to and operate against the running release backend; `Release Publish` must delegate to that reusable workflow after finalizing the GitHub Release.
+15. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
 
 ## Environment Variables
 
