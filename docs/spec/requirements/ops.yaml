@@ -906,11 +906,19 @@ requirements:
 
     metadata MUST stay non-private, packable, and expose `ugoite-install`
 
-    while the root `package.json` remains private repository tooling.
+    while the root `package.json` remains private repository tooling, and the
+
+    top-level install docs MUST make that split explicit so users can discover
+
+    the public package-managed install path without reverse-engineering release
+
+    automation files.
 
     '
   related_spec:
   - testing/ci-cd.md
+  - ../README.md
+  - ../guide/cli.md
   priority: medium
   status: implemented
   tests:
