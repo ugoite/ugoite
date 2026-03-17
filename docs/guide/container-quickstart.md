@@ -1,8 +1,8 @@
 # Container Quick Start
 
 This guide covers the official release image archives attached to each GitHub
-Release. Use it when you want to run a tagged Ugoite release without cloning
-the repository and rebuilding images locally.
+Release. Use it when you want the quickest way to run a tagged Ugoite release
+without cloning the repository or rebuilding images locally.
 
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
@@ -35,12 +35,12 @@ Examples:
 - `ghcr.io/ugoite/ugoite/frontend:0.0.1-beta.2`
 - `ghcr.io/ugoite/ugoite/frontend:beta`
 
-## Quick start with Docker Compose
+## Quick start with pre-built release assets
 
 Create the local-first data directory:
 
 ```bash
-mkdir -p spaces
+mkdir -p "${UGOITE_SPACES_DIR:-spaces}"
 ```
 
 Download an exact release and start it:
@@ -78,6 +78,25 @@ required after `docker load`.
 Use exact release versions such as `0.0.1`, `0.0.1-beta.7`, or
 `0.0.1-alpha.3` when downloading release assets.
 
+## Environment Variables
+
+These are the supported release-compose environment variables for the shipped
+`docker-compose.release.yaml` quick start:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `UGOITE_VERSION` | required | Exact release version for the downloaded assets and release compose images. Use exact versions like `0.0.1`, `0.0.1-beta.7`, or `0.0.1-alpha.3` for release asset downloads. |
+| `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
+| `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
+| `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
+| `UGOITE_DEV_USER_ID` | `dev-local-user` | Mock OAuth user id created by the shipped release compose login flow. |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token between frontend and backend so `/login` works out of the box in the published quick start. |
+
+The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
+the Compose network, and it pre-wires the signing/bearer settings needed for
+the explicit `mock-oauth` browser login flow. Most users only need the
+variables listed above.
+
 ## Authenticated GHCR pulls
 
 If you already have GHCR package access, you can pull the canonical image tags
@@ -96,8 +115,8 @@ docker pull ghcr.io/ugoite/ugoite/frontend:0.0.1
 
 ## Notes
 
-- The release compose file keeps data on the host under `./spaces` to preserve
-  the local-first storage model.
+- By default, the release compose file keeps data on the host under `./spaces`
+  to preserve the local-first storage model.
 - The published quick start binds both services to `127.0.0.1`, wires the dev
   auth proxy token between frontend and backend, and enables explicit
   `mock-oauth` browser login so `/login` works without editing the Compose
