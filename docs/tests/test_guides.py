@@ -266,7 +266,7 @@ REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
         "frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:"
         "${{ inputs.version }}"
     ),
-    "actions/download-artifact@v4",
+    "actions/download-artifact@v8",
     "ugoite-backend-v${VERSION}.docker.tar.gz",
     "ugoite-frontend-v${VERSION}.docker.tar.gz",
     "docker-compose.release.yaml",
