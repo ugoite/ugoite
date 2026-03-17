@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download Docker image archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sbom-docker-images
           path: exported-images
@@ -156,3 +156,33 @@ jobs:
           name: sbom-artifacts
           path: artifacts/sbom
           if-no-files-found: error
+
+  required-check:
+    name: SBOM CI
+    if: ${{ always() }}
+    needs:
+      - build-images
+      - sbom-supply-chain
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY
