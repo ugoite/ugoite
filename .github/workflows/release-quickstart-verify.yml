@@ -1,0 +1,80 @@
+name: Release Quickstart Verify
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Exact released SemVer or prerelease without the v prefix"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact released SemVer or prerelease without the v prefix"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-cli-quickstart:
+    name: Verify released CLI quick start
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Verify released CLI quick start
+        env:
+          UGOITE_VERSION: ${{ inputs.version }}
+        run: bash scripts/verify-release-cli-quickstart.sh
+
+  verify-container-quickstart:
+    name: Verify released browser quick start
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Restore Playwright and e2e node cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            e2e/node_modules
+          key: >-
+            ${{ runner.os }}-release-quickstart-${{
+              hashFiles('e2e/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-release-quickstart-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Verify released browser quick start
+        env:
+          UGOITE_VERSION: ${{ inputs.version }}
+          PLAYWRIGHT_CI_REPORTER: junit
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/release-junit.xml
+        run: bash scripts/verify-release-container-quickstart.sh
+
+      - name: Upload Playwright test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v8
+        with:
+          name: release-quickstart-playwright-results
+          path: e2e/test-results
+          if-no-files-found: ignore

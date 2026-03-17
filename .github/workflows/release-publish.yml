@@ -211,3 +211,13 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "v$VERSION" --draft=false
+
+  verify-release-quickstart:
+    name: Verify release quick start
+    needs:
+      - publish-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-quickstart-verify.yml
+    with:
+      version: ${{ inputs.version }}
