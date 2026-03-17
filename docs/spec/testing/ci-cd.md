@@ -241,6 +241,7 @@ jobs:
         **/uv.lock
     - git diff-based change detection for PR and push
     - always run the detector on merge queue entries
+    - include docs/tests/*.py in tracked devcontainer inputs
   version-consistency:
     - pytest docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins
     - pytest docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_change_detection_covers_inputs
@@ -259,11 +260,12 @@ Devcontainer CI now uses an in-workflow change detector instead of top-level
 `paths` filters so the required summary check is always emitted on pull
 requests, merge queue entries, and pushes to `main`. The detector reads
 `DEVCONTAINER_INPUT_PATTERNS`, which must keep covering current and future
-`mise.toml` files. When no tracked input changed on a pull request or `push`,
-the smoke build is skipped but the summary check still reports success with an
-explicit selection reason. `merge_group` always runs the smoke build because
-GitHub does not support `paths` filtering there and branch health cannot depend
-on a disappearing required check.
+`mise.toml` files plus docs guide tests that validate devcontainer setup
+contracts. When no tracked input changed on a pull request or `push`, the smoke
+build is skipped but the summary check still reports success with an explicit
+selection reason. `merge_group` always runs the smoke build because GitHub does
+not support `paths` filtering there and branch health cannot depend on a
+disappearing required check.
 
 ## Rust CI
 
@@ -364,7 +366,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository; the docs must also expose exact per-target one-liners for the `ugoite-v<version>-<target>.install.sh` release assets.
 13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep both the generic installer path and the per-target `.install.sh` asset path aligned with the documented `space list` and `create-space` workflow for an exact release version.
 14. **Published release verification** must stay wired through `.github/workflows/release-quickstart-verify.yml`, which downloads exact release assets, starts `docker-compose.release.yaml`, runs `smoke.test.ts` plus `search-ui.test.ts`, and verifies a released CLI install can authenticate to and operate against the running release backend; `Release Publish` must delegate to that reusable workflow after finalizing the GitHub Release.
-15. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
+15. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow, and `README.md` plus `docs/guide/cli.md` must make the split between the public package and the private root tooling package explicit.
 
 ## Environment Variables
 
