@@ -330,6 +330,12 @@ REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     ),
     "http://localhost:3000/login",
     "Continue with Mock OAuth",
+    "Environment Variables",
+    "UGOITE_SPACES_DIR",
+    "UGOITE_FRONTEND_PORT",
+    "UGOITE_BACKEND_PORT",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN",
 }
 REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
     "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
@@ -348,20 +354,28 @@ REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
     "beta",
     "http://localhost:3000/login",
     "Continue with Mock OAuth",
+    "## Environment Variables",
+    "UGOITE_SPACES_DIR",
+    "UGOITE_FRONTEND_PORT",
+    "UGOITE_BACKEND_PORT",
+    "UGOITE_DEV_USER_ID",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN",
 }
 REQUIRED_RELEASE_COMPOSE_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}",
     "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}",
-    "127.0.0.1:3000:3000",
+    "127.0.0.1:${UGOITE_FRONTEND_PORT:-3000}:3000",
+    "127.0.0.1:${UGOITE_BACKEND_PORT:-8000}:8000",
+    "${UGOITE_SPACES_DIR:-./spaces}:/data",
     "UGOITE_ROOT=/data",
     "BACKEND_URL=http://backend:8000",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
-    "UGOITE_DEV_USER_ID=dev-local-user",
+    "UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}",
     "UGOITE_DEV_SIGNING_KID=release-compose-local-v1",
     "UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret",
     "UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret",
     "UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1",
-    "UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}",
 }
 REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ghcr.io/ugoite/ugoite/backend",
@@ -370,6 +384,7 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "ugoite-backend-v<version>.docker.tar.gz",
     "ugoite-frontend-v<version>.docker.tar.gz",
     "download, load, and run",
+    "Environment Variables",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
