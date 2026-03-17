@@ -8,11 +8,16 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   guard:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Validate key commands in README
         run: |
