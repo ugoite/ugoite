@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "ruleset": {
+    "name": "main only pr",
+    "target": "branch",
+    "default_branch_only": true
+  },
+  "required_status_checks": [
+    {
+      "context": "Commitlint CI",
+      "workflow": ".github/workflows/commitlint-ci.yml",
+      "job_id": "required-check",
+      "events": ["pull_request", "merge_group"]
+    },
+    {
+      "context": "Devcontainer CI",
+      "workflow": ".github/workflows/devcontainer-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Docker Build CI",
+      "workflow": ".github/workflows/docker-build-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Docsite CI",
+      "workflow": ".github/workflows/docsite-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "E2E Tests",
+      "workflow": ".github/workflows/e2e-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Frontend CI",
+      "workflow": ".github/workflows/frontend-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Python CI",
+      "workflow": ".github/workflows/python-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "README Command Guard",
+      "workflow": ".github/workflows/readme-command-guard.yml",
+      "job_id": "required-check",
+      "events": ["pull_request", "merge_group"]
+    },
+    {
+      "context": "Rust CI",
+      "workflow": ".github/workflows/rust-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "SBOM CI",
+      "workflow": ".github/workflows/sbom-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "ScanCode",
+      "workflow": ".github/workflows/scancode.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Shell CI",
+      "workflow": ".github/workflows/shell-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "YAML Workflow CI",
+      "workflow": ".github/workflows/yaml-workflow-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    }
+  ],
+  "native_code_scanning": [
+    {
+      "tool": "CodeQL",
+      "workflow": ".github/workflows/codeql.yml"
+    }
+  ],
+  "excluded_from_required_status_checks": ["Release CI", "Release Publish"]
+}
