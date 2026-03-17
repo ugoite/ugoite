@@ -2,6 +2,8 @@ name: Frontend CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -66,6 +68,35 @@ jobs:
           if tests == 0:
             raise SystemExit("frontend tests: zero executed tests")
           if skipped > 0:
-            raise SystemExit(f"frontend tests: skipped={skipped} is not allowed")
+             raise SystemExit(f"frontend tests: skipped={skipped} is not allowed")
           sys.stdout.write(f"frontend tests OK: tests={tests}, skipped={skipped}\n")
+          PY
+
+  required-check:
+    name: Frontend CI
+    if: ${{ always() }}
+    needs:
+      - ci
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
           PY

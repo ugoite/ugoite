@@ -51,3 +51,32 @@ jobs:
           python-version: "3.12"
         env:
           VULNERABLECODE_URL: "https://public.vulnerablecode.io/"
+
+  required-check:
+    name: ScanCode
+    if: ${{ always() }}
+    needs:
+      - scancode
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY
