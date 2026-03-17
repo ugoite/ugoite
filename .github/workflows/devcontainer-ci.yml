@@ -25,6 +25,7 @@ jobs:
       DEVCONTAINER_INPUT_PATTERNS: |
         .github/workflows/devcontainer-ci.yml
         .devcontainer/**
+        docs/tests/*.py
         .pre-commit-config.yaml
         mise.toml
         **/mise.toml
