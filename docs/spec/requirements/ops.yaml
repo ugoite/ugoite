@@ -438,11 +438,11 @@ requirements:
   title: Devcontainer Trigger Discipline
   description: 'Devcontainer CI MUST use path filters for push and pull_request so
 
-    the build-and-smoke workflow only runs for devcontainer and setup inputs,
+    the build-and-smoke workflow only runs for devcontainer, setup, and guide-test
 
-    and the trigger contract MUST keep covering current and future mise.toml
+    inputs that validate those setup contracts, and the trigger contract MUST
 
-    files.
+    keep covering current and future mise.toml files.
 
     '
   related_spec:
