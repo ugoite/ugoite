@@ -4,43 +4,9 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - ".github/workflows/devcontainer-ci.yml"
-      - ".devcontainer/**"
-      - ".pre-commit-config.yaml"
-      - "mise.toml"
-      - "**/mise.toml"
-      - "package.json"
-      - "**/package.json"
-      - "package-lock.json"
-      - "**/package-lock.json"
-      - "Cargo.toml"
-      - "**/Cargo.toml"
-      - "Cargo.lock"
-      - "**/Cargo.lock"
-      - "**/bun.lock"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/devcontainer-ci.yml"
-      - ".devcontainer/**"
-      - ".pre-commit-config.yaml"
-      - "mise.toml"
-      - "**/mise.toml"
-      - "package.json"
-      - "**/package.json"
-      - "package-lock.json"
-      - "**/package-lock.json"
-      - "Cargo.toml"
-      - "**/Cargo.toml"
-      - "Cargo.lock"
-      - "**/Cargo.lock"
-      - "**/bun.lock"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
   merge_group:
     branches:
       - main
@@ -50,6 +16,111 @@ permissions:
   packages: read
 
 jobs:
+  detect-devcontainer-inputs:
+    name: Detect devcontainer-impacting changes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      DEVCONTAINER_INPUT_PATTERNS: |
+        .github/workflows/devcontainer-ci.yml
+        .devcontainer/**
+        docs/tests/*.py
+        .pre-commit-config.yaml
+        mise.toml
+        **/mise.toml
+        package.json
+        **/package.json
+        package-lock.json
+        **/package-lock.json
+        Cargo.toml
+        **/Cargo.toml
+        Cargo.lock
+        **/Cargo.lock
+        **/bun.lock
+        **/pyproject.toml
+        **/uv.lock
+    outputs:
+      should_run: ${{ steps.detect.outputs.should_run }}
+      selection_reason: ${{ steps.detect.outputs.selection_reason }}
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect devcontainer-impacting changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import fnmatch
+          import os
+          import subprocess
+          from pathlib import PurePosixPath
+
+          patterns = [
+              line.strip()
+              for line in os.environ["DEVCONTAINER_INPUT_PATTERNS"].splitlines()
+              if line.strip()
+          ]
+
+          def matches(path: str) -> bool:
+              candidate = PurePosixPath(path)
+              return any(
+                  fnmatch.fnmatch(path, pattern) or candidate.match(pattern)
+                  for pattern in patterns
+              )
+
+          event_name = os.environ["EVENT_NAME"].strip()
+          head_sha = os.environ["HEAD_SHA"].strip()
+          if not head_sha:
+              raise SystemExit("HEAD_SHA is required")
+
+          if event_name == "merge_group":
+              should_run = True
+              selection_reason = "merge_group always runs devcontainer smoke"
+          else:
+              base_sha = (
+                  os.environ["PR_BASE_SHA"].strip()
+                  if event_name == "pull_request"
+                  else os.environ["BEFORE_SHA"].strip()
+              )
+              if not base_sha or set(base_sha) == {"0"}:
+                  should_run = True
+                  selection_reason = (
+                      f"{event_name} without a comparable base runs devcontainer smoke"
+                  )
+              else:
+                  raw = subprocess.check_output(
+                      ["git", "diff", "--name-only", f"{base_sha}...{head_sha}"],
+                      text=True,
+                  )
+                  changed_files = [
+                      line.strip()
+                      for line in raw.splitlines()
+                      if line.strip()
+                  ]
+                  should_run = any(matches(path) for path in changed_files)
+                  selection_reason = (
+                      f"{event_name} touched devcontainer or setup inputs"
+                      if should_run
+                      else f"{event_name} skipped devcontainer smoke because no tracked inputs changed"
+                  )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"should_run={'true' if should_run else 'false'}\n")
+              handle.write(f"selection_reason={selection_reason}\n")
+          print(selection_reason)
+          PY
+
   version-consistency:
     name: Tool Version Consistency Check
     runs-on: ubuntu-24.04
@@ -72,14 +143,17 @@ jobs:
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins -v
 
-      - name: Check devcontainer trigger coverage (REQ-OPS-012)
+      - name: Check devcontainer change-detection coverage (REQ-OPS-012)
         run: >
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error
-          docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs -v
+          docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_change_detection_covers_inputs -v
 
   devcontainer-build-smoke:
+    needs:
+      - detect-devcontainer-inputs
     name: Devcontainer Build and Smoke
+    if: ${{ needs.detect-devcontainer-inputs.outputs.should_run == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -98,6 +172,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Announce devcontainer smoke selection
+        run: echo "${{ needs.detect-devcontainer-inputs.outputs.selection_reason }}"
+
       - name: Build and smoke test devcontainer
         uses: devcontainers/ci@v0.3
         with:
@@ -105,3 +182,34 @@ jobs:
             gh --version
             mise --version
             bash --version | head -n 1
+
+  required-check:
+    name: Devcontainer CI
+    if: ${{ always() }}
+    needs:
+      - detect-devcontainer-inputs
+      - version-consistency
+      - devcontainer-build-smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY

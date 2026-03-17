@@ -68,7 +68,28 @@ e2e/                # End-to-end tests (Bun)
 
 ## CLI Quick Start
 
-Install the latest stable `ugoite` binary with a one-liner:
+Install the public `ugoite` npm bootstrap package:
+
+```bash
+npm install -g ugoite
+ugoite-install
+ugoite --help
+```
+
+Pin an exact published package version when needed:
+
+```bash
+npm install -g ugoite@0.1.0
+ugoite-install
+ugoite --help
+```
+
+The published package metadata lives in `packages/ugoite/package.json`, while
+the repository root `package.json` stays private tooling for Husky/commitlint
+and release automation.
+
+If you prefer the direct shell bootstrap, install the latest stable `ugoite`
+binary with a one-liner:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
@@ -199,10 +220,14 @@ These two environments are separate and intended for different uses—use the De
 
 ## Container Quick Start (published images)
 
+Start here if you want the quickest way to try a published Ugoite release.
+This path uses pre-built release assets and does not require cloning the
+repository or building images from source.
+
 Download and run a published release image bundle:
 
 ```bash
-mkdir -p spaces
+mkdir -p "${UGOITE_SPACES_DIR:-spaces}"
 UGOITE_VERSION=0.0.1
 curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml"
 curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz"
@@ -228,12 +253,26 @@ Tag conventions:
 - alpha releases publish the exact prerelease tag plus `alpha`
 - beta releases publish the exact prerelease tag plus `beta`
 
+### Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `UGOITE_VERSION` | required | Exact release version for the downloaded assets and release compose images |
+| `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into the backend container at `/data` |
+| `UGOITE_FRONTEND_PORT` | `3000` | Host port that exposes the frontend UI |
+| `UGOITE_BACKEND_PORT` | `8000` | Host port that exposes the backend API |
+| `UGOITE_DEV_USER_ID` | `dev-local-user` | Mock OAuth user id used by the shipped quick-start login flow |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token wiring between the frontend proxy and backend dev auth flow |
+
 For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).
 
 ---
 
 ## Docker Compose from source
+
+If you want to build the current workspace from source instead of running the
+published release assets above, use this contributor-oriented path.
 
 Start services with:
 

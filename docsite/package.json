@@ -19,9 +19,9 @@
 		"validate": "bun run lint && bun run format:check && bun run typecheck && bun run test:validation && bun run test:coverage"
 	},
 	"dependencies": {
-		"@astrojs/check": "^0.9.7",
+		"@astrojs/check": "^0.9.8",
 		"@tailwindcss/vite": "^4.2.1",
-		"astro": "^6.0.4",
+		"astro": "^6.0.5",
 		"marked": "^17.0.4",
 		"prismjs": "1.30.0",
 		"yaml": "^2.8.1",

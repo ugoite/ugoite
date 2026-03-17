@@ -156,7 +156,7 @@ jobs:
           ref: ${{ inputs.target != '' && inputs.target || github.sha }}
 
       - name: Download release image archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-docker-images
           path: exported-images
@@ -211,3 +211,13 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "v$VERSION" --draft=false
+
+  verify-release-quickstart:
+    name: Verify release quick start
+    needs:
+      - publish-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-quickstart-verify.yml
+    with:
+      version: ${{ inputs.version }}

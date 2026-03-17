@@ -37,6 +37,12 @@ test.describe("Docsite onboarding-first navigation", () => {
 				name: /start with ugoite before diving into design docs/i,
 			}),
 		).toBeVisible();
+		await expect(page.locator("#first-steps .doc-card h2")).toHaveText([
+			"Try the published release",
+			"Build from source with Docker Compose",
+			"Auth Overview",
+			"CLI Guide",
+		]);
 	});
 
 	test("REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs", async ({
@@ -57,8 +63,8 @@ test.describe("Docsite onboarding-first navigation", () => {
 		await expect(
 			page.locator(".site-nav-menu").nth(1).locator(".site-nav-submenu a"),
 		).toHaveText([
-			"Docker Compose",
 			"Container Quickstart",
+			"Docker Compose",
 			"Auth Overview",
 			"CLI Guide",
 		]);
