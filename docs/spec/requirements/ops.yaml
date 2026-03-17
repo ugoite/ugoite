@@ -675,7 +675,11 @@ requirements:
 
     downloading, loading, and running those release images without rebuilding
 
-    from source.
+    from source. That quick-start guidance MUST lead with the pre-built release
+
+    flow and document the configurable release-compose environment variables in
+
+    a dedicated section.
 
     '
   related_spec:
