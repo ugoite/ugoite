@@ -182,6 +182,7 @@ jobs:
       - select-tier
       - e2e
     runs-on: ubuntu-24.04
+    permissions: {}
     steps:
       - name: Check upstream job results
         env:
