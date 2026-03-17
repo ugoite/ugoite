@@ -2,12 +2,17 @@ name: Docsite CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
   merge_group:
     branches:
       - main
+
+permissions:
+  contents: read
 
 jobs:
   ci:
@@ -63,3 +68,33 @@ jobs:
       - name: Run docsite Vitest with 100% coverage gate
         working-directory: ./docsite
         run: node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
+
+  required-check:
+    name: Docsite CI
+    if: ${{ always() }}
+    needs:
+      - ci
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY
