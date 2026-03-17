@@ -4,19 +4,36 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push, PR | Lint, type check, pytest |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Lint, type check, pytest |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR, merge queue | Lint, format check, typecheck, validation build, and tests with mandatory 100% coverage |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue | Path-aware smoke/full E2E with merge-queue full coverage |
-| Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push, PR | Build backend/frontend images and validate compose |
-| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push/PR for devcontainer & setup inputs, merge queue | Build/smoke devcontainer with authenticated pulls and path-filtered setup contracts |
+| Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push on `main`, PR, merge queue | Build backend/frontend images and validate compose |
+| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push on `main`, PR, merge queue | Build/smoke devcontainer with authenticated pulls and in-workflow change detection |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
+| ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue, manual | Run license/compliance and vulnerability scanning |
+| Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, yamllint, and actionlint |
+| README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
+| CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual | Native code scanning for Actions, JavaScript/TypeScript, Python, and Rust |
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
-| All Tests Status | `.github/workflows/all-tests-ci.yml` | Push on `main`, PR, merge queue | Aggregate curated code-quality workflow health while excluding release/publish automation and deprecated wait actions |
+| Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks, exclusions, and native code-scanning handoff |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
+
+GitHub branch protection and merge queue now rely on GitHub-native required status
+checks declared in `.github/required-status-checks.json`. Each required workflow
+emits a stable summary check with the workflow name, so the repository ruleset
+can require direct workflow health instead of a polling rollup workflow.
+Required workflows must not depend on top-level `paths` filters that would make
+a check disappear. Path-aware workflows such as Devcontainer CI perform
+in-workflow change detection and still emit their summary check when the
+expensive job is skipped. Release automation (`Release CI`, `Release Publish`)
+stays excluded from required status checks, and CodeQL remains enforced through
+the repository's native code-scanning rule rather than the required-status-check
+list.
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
@@ -31,6 +48,40 @@ drop to the smoke tier when every changed file stays inside docs/docsite
 metadata paths (`docs/**`, `docsite/**`, `README.md`, `LICENSE`, `AGENTS.md`,
 and `.github/ISSUE_TEMPLATE/**`); any application or workflow-input change
 keeps the full suite.
+
+## Native Required Status Checks
+
+The required-check contract is versioned in `.github/required-status-checks.json`.
+That JSON file is the source of truth for:
+
+- which direct workflow summary checks the `main only pr` ruleset requires
+- which workflows are explicitly excluded from required status checks
+- which code-scanning tools stay enforced through GitHub-native code-scanning rules
+
+Repository settings must stay aligned by applying ruleset updates from that JSON
+contract with `gh api` whenever the required-check list changes.
+
+Each required workflow exposes a summary check that uses the workflow name as
+its check context and fails if any upstream job in that workflow fails or is
+cancelled. The summary check always runs with `if: ${{ always() }}` so GitHub
+never leaves a required context in the `Expected` state when a workflow takes a
+path-aware no-op.
+
+| Required Check | Workflow | Events | Notes |
+|----------------|----------|--------|-------|
+| Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Direct summary check for Conventional Commit enforcement |
+| Devcontainer CI | `.github/workflows/devcontainer-ci.yml` | Push on `main`, PR, merge queue | Uses an in-workflow change detector and only runs the expensive smoke build when tracked inputs changed |
+| Docker Build CI | `.github/workflows/docker-build-ci.yml` | Push on `main`, PR, merge queue | Summary check covers compose validation plus reusable image build |
+| Docsite CI | `.github/workflows/docsite-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for docsite quality gates |
+| E2E Tests | `.github/workflows/e2e-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export, tier selection, and Playwright execution |
+| Frontend CI | `.github/workflows/frontend-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Biome + Vitest coverage |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, and docs tests |
+| README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Direct summary check for canonical root commands |
+| Rust CI | `.github/workflows/rust-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for minimum/core/CLI Rust gates |
+| SBOM CI | `.github/workflows/sbom-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export plus SBOM/signing/security gates |
+| ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue | Direct summary check for compliance scanning |
+| Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for shell quality gates |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for root hygiene and workflow linting |
 
 ## Python CI
 
@@ -141,35 +192,52 @@ the current workspace before starting the compose stack.
 
 ```yaml
 jobs:
+  detect-devcontainer-inputs:
+    env:
+      DEVCONTAINER_INPUT_PATTERNS: |
+        .github/workflows/devcontainer-ci.yml
+        .devcontainer/**
+        .pre-commit-config.yaml
+        mise.toml
+        **/mise.toml
+        package.json
+        **/package.json
+        package-lock.json
+        **/package-lock.json
+        Cargo.toml
+        **/Cargo.toml
+        Cargo.lock
+        **/Cargo.lock
+        **/bun.lock
+        **/pyproject.toml
+        **/uv.lock
+    - git diff-based change detection for PR and push
+    - always run the detector on merge queue entries
+    - include docs/tests/*.py in tracked devcontainer inputs
   version-consistency:
     - pytest docs/tests/test_guides.py::test_docs_req_ops_001_mise_versions_match_ci_pins
-    - pytest docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs
+    - pytest docs/tests/test_guides.py::test_docs_req_ops_012_devcontainer_change_detection_covers_inputs
   devcontainer-build-smoke:
-    on:
-      pull_request / push:
-        paths:
-          - .github/workflows/devcontainer-ci.yml
-          - .devcontainer/**
-          - .pre-commit-config.yaml
-          - mise.toml
-          - **/mise.toml
-          - package.json / package-lock.json / Cargo.toml / Cargo.lock
-          - **/package.json / **/package-lock.json / **/bun.lock
-          - **/pyproject.toml / **/uv.lock / **/Cargo.toml / **/Cargo.lock
-      merge_group:
-        branches: [main]
+    if: detect-devcontainer-inputs.outputs.should_run == 'true'
     - docker/setup-buildx-action (enables type=gha cache driver)
     - docker/login-action (ghcr.io, GITHUB_TOKEN)
     - devcontainers/ci build + smoke command
     - Run smoke command: gh/mise/bash versions
+  required-check:
+    if: always()
+    - summary check still reports success when the smoke build is skipped
 ```
 
-Push and pull-request filtering intentionally track devcontainer inputs and
-dependency/setup manifests instead of every source-file change. `mise.toml`
-coverage is dynamic via globbed trigger patterns plus a guide test that scans
-the repository for current `mise.toml` files. GitHub Actions does not currently
-support `paths` filters for `merge_group`, so merge queue coverage remains
-branch-scoped.
+Devcontainer CI now uses an in-workflow change detector instead of top-level
+`paths` filters so the required summary check is always emitted on pull
+requests, merge queue entries, and pushes to `main`. The detector reads
+`DEVCONTAINER_INPUT_PATTERNS`, which must keep covering current and future
+`mise.toml` files plus docs guide tests that validate devcontainer setup
+contracts. When no tracked input changed on a pull request or `push`, the smoke
+build is skipped but the summary check still reports success with an explicit
+selection reason. `merge_group` always runs the smoke build because GitHub does
+not support `paths` filtering there and branch health cannot depend on a
+disappearing required check.
 
 ## Rust CI
 
@@ -257,8 +325,8 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 ## Release Process
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
-2. **Static checks and tests** must pass through existing CI workflows and `All Tests Status`.
-3. **All Tests Status** must stay focused on curated code-quality workflows, exclude release/publish automation (`Release CI`, `Release Publish`), and avoid deprecated wait-action runtimes so auxiliary release failures and platform warnings do not turn branch health red.
+2. **Static checks and tests** must pass through existing CI workflows and the native required checks declared in `.github/required-status-checks.json`.
+3. **GitHub-native required status checks** must map directly to workflow summary jobs, exclude release/publish automation (`Release CI`, `Release Publish`), and leave CodeQL on the repository code-scanning rule instead of a synthetic rollup workflow.
 4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
 5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `packages/ugoite/package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, the repository root `package.json` must stay private tooling for Husky/commitlint only, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
 6. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
@@ -269,7 +337,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can download, load, and run release images without rebuilding from source, and those docs must keep a dedicated `Environment Variables` section aligned with the shipped release-compose overrides.
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository; the docs must also expose exact per-target one-liners for the `ugoite-v<version>-<target>.install.sh` release assets.
 13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep both the generic installer path and the per-target `.install.sh` asset path aligned with the documented `space list` and `create-space` workflow for an exact release version.
-14. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, and must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow.
+14. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow, and `README.md` plus `docs/guide/cli.md` must make the split between the public package and the private root tooling package explicit.
 
 ## Environment Variables
 

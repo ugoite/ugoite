@@ -8,11 +8,16 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   guard:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Validate key commands in README
         run: |
@@ -32,3 +37,33 @@ jobs:
           done
 
           echo "README command guard passed"
+
+  required-check:
+    name: README Command Guard
+    if: ${{ always() }}
+    needs:
+      - guard
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY

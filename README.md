@@ -68,7 +68,28 @@ e2e/                # End-to-end tests (Bun)
 
 ## CLI Quick Start
 
-Install the latest stable `ugoite` binary with a one-liner:
+Install the public `ugoite` npm bootstrap package:
+
+```bash
+npm install -g ugoite
+ugoite-install
+ugoite --help
+```
+
+Pin an exact published package version when needed:
+
+```bash
+npm install -g ugoite@0.1.0
+ugoite-install
+ugoite --help
+```
+
+The published package metadata lives in `packages/ugoite/package.json`, while
+the repository root `package.json` stays private tooling for Husky/commitlint
+and release automation.
+
+If you prefer the direct shell bootstrap, install the latest stable `ugoite`
+binary with a one-liner:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash

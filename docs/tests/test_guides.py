@@ -9,8 +9,9 @@ REQ-OPS-008: PR template validation rules must be enforced in CI.
 REQ-OPS-009: Release automation bootstrap and PR permissions must be documented.
 REQ-OPS-010: Frontend local-dev proxy readiness must be declared.
 REQ-OPS-011: Rust target cache discipline must be declared.
-REQ-OPS-012: Devcontainer trigger paths must cover setup inputs.
-REQ-OPS-013: All Tests Status must exclude release automation from branch health.
+REQ-OPS-012: Devcontainer change detection must cover setup inputs.
+REQ-OPS-013: Native required status checks must stay authoritative and
+exclude release automation.
 REQ-OPS-016: Local sample-data seeding must be discoverable from root dev tasks.
 REQ-OPS-017: Release publish must ship container quick-start assets and document them.
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
@@ -31,12 +32,23 @@ import shutil
 import subprocess
 import tarfile
 import textwrap
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 
 import bashlex
 import tomllib
 import yaml
+
+
+@dataclass(frozen=True)
+class _RequiredStatusCheckEntry:
+    context: str
+    workflow_text: str
+    workflow_path: Path
+    job_id: str
+    events: tuple[str, ...]
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUIDE_DIR = REPO_ROOT / "docs" / "guide"
@@ -67,7 +79,12 @@ DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH = (
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
-ALL_TESTS_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "all-tests-ci.yml"
+LEGACY_ALL_TESTS_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "all-tests-ci.yml"
+)
+REQUIRED_STATUS_CHECKS_CONFIG_PATH = (
+    REPO_ROOT / ".github" / "required-status-checks.json"
+)
 PR_TEMPLATE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "pr-require-close-issue.yml"
 )
@@ -216,12 +233,16 @@ REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
     "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
 }
 REQUIRED_CLI_README_FRAGMENTS = {
+    "npm install -g ugoite",
+    "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
     "UGOITE_VERSION=0.1.0",
     *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
+    "npm install -g ugoite",
+    "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
     "cargo build",
@@ -266,7 +287,7 @@ REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
         "frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:"
         "${{ inputs.version }}"
     ),
-    "actions/download-artifact@v4",
+    "actions/download-artifact@v8",
     "ugoite-backend-v${VERSION}.docker.tar.gz",
     "ugoite-frontend-v${VERSION}.docker.tar.gz",
     "docker-compose.release.yaml",
@@ -285,6 +306,18 @@ REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS = {
     "ugoite-install",
     "scripts/install-ugoite-cli.sh",
     "UGOITE_VERSION",
+}
+REQUIRED_PUBLIC_PACKAGE_ROOT_README_FRAGMENTS = {
+    "packages/ugoite/package.json",
+    "root `package.json` stays private tooling",
+    "npm install -g ugoite",
+    "ugoite-install",
+}
+REQUIRED_PUBLIC_PACKAGE_CLI_GUIDE_FRAGMENTS = {
+    "packages/ugoite/package.json",
+    "root `package.json` stays private tooling",
+    "npm install -g ugoite",
+    "ugoite-install",
 }
 REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS = {
     "--print-script-url",
@@ -459,9 +492,7 @@ REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     "Current 2FA code:",
     "Unsupported UGOITE_DEV_AUTH_MODE",
 }
-REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS = {"Release CI", "Release Publish"}
-REQUIRED_ALL_TESTS_CURATED_WORKFLOWS = {
-    "CodeQL",
+REQUIRED_NATIVE_REQUIRED_CHECKS = {
     "Commitlint CI",
     "Devcontainer CI",
     "Docker Build CI",
@@ -476,13 +507,20 @@ REQUIRED_ALL_TESTS_CURATED_WORKFLOWS = {
     "Shell CI",
     "YAML Workflow CI",
 }
-REQUIRED_ALL_TESTS_DOC_FRAGMENTS = {
-    "| All Tests Status | `.github/workflows/all-tests-ci.yml` |",
-    "curated code-quality workflows",
-    "deprecated wait-action runtimes",
-    "exclude release/publish automation",
+REQUIRED_NATIVE_REQUIRED_CHECK_EXCLUSIONS = {"Release CI", "Release Publish"}
+REQUIRED_NATIVE_CODE_SCANNING_TOOLS = {"CodeQL"}
+REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
+    "| Required Status Checks | `.github/required-status-checks.json` |",
+    "GitHub-native required status checks",
+    "summary check",
     "Release CI",
     "Release Publish",
+    "CodeQL",
+}
+REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS = {
+    "in-workflow change detector",
+    "`DEVCONTAINER_INPUT_PATTERNS`",
+    "summary check still reports success",
 }
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
@@ -571,6 +609,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
     ".devcontainer/**",
+    "docs/tests/*.py",
     ".pre-commit-config.yaml",
     "mise.toml",
     "**/mise.toml",
@@ -1241,44 +1280,64 @@ def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
     return details
 
 
-def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
-    """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
+def test_docs_req_ops_012_devcontainer_change_detection_covers_inputs() -> None:
+    """REQ-OPS-012: Devcontainer change detection covers setup and guide-test inputs."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
     pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
     push_paths = _collect_trigger_paths(workflow, "push")
+    detector_patterns = _collect_job_env_lines(
+        workflow,
+        job_id="detect-devcontainer-inputs",
+        key="DEVCONTAINER_INPUT_PATTERNS",
+    )
     discovered_mise_paths = _discover_repo_paths("mise.toml")
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
 
     details: list[str] = []
-    if not pull_request_paths:
-        details.append("devcontainer-ci pull_request trigger must define paths")
-    if not push_paths:
-        details.append("devcontainer-ci push trigger must define paths")
-    if pull_request_paths != push_paths:
-        details.append("devcontainer-ci push and pull_request paths must match")
+    if pull_request_paths:
+        details.append("devcontainer-ci pull_request trigger must not define paths")
+    if push_paths:
+        details.append("devcontainer-ci push trigger must not define paths")
+    if not detector_patterns:
+        details.append(
+            "devcontainer-ci detect-devcontainer-inputs must declare "
+            "DEVCONTAINER_INPUT_PATTERNS",
+        )
 
     missing_patterns = sorted(
-        REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS.difference(pull_request_paths),
+        REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS.difference(detector_patterns),
     )
     if missing_patterns:
         details.append(
-            "devcontainer-ci trigger paths missing patterns: "
+            "devcontainer-ci change-detection patterns missing entries: "
             + ", ".join(missing_patterns),
         )
 
     uncovered_mise_paths = sorted(
         path
         for path in discovered_mise_paths
-        if not _matches_any_workflow_pattern(path, pull_request_paths)
+        if not _matches_any_workflow_pattern(path, detector_patterns)
     )
     if uncovered_mise_paths:
         details.append(
-            "devcontainer-ci trigger paths must cover all mise.toml files: "
+            "devcontainer-ci change-detection patterns must cover all mise.toml files: "
             + ", ".join(uncovered_mise_paths),
         )
 
     step_names = _collect_workflow_step_names(DEVCONTAINER_CI_WORKFLOW_PATH)
-    if "Check devcontainer trigger coverage (REQ-OPS-012)" not in step_names:
+    if "Check devcontainer change-detection coverage (REQ-OPS-012)" not in step_names:
         details.append("devcontainer-ci must validate REQ-OPS-012 in CI")
+
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing devcontainer change-detection fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
 
     if details:
         raise AssertionError("; ".join(details))
@@ -1453,9 +1512,9 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
         raise AssertionError(message)
 
 
-def test_docs_req_ops_013_all_tests_status_excludes_release_automation() -> None:
-    """REQ-OPS-013: All Tests Status must exclude release automation workflows."""
-    details = _collect_all_tests_status_details()
+def test_docs_req_ops_013_native_required_checks_contract() -> None:
+    """REQ-OPS-013: Native required checks must stay authoritative and verifiable."""
+    details = _collect_native_required_checks_details()
     if details:
         raise AssertionError("; ".join(details))
 
@@ -2022,6 +2081,8 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
     manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
     release_config = _load_json_mapping(RELEASE_CONFIG_PATH)
     ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    root_readme = README_PATH.read_text(encoding="utf-8")
+    cli_guide = CLI_GUIDE_PATH.read_text(encoding="utf-8")
     public_readme = _read_required_text(
         PUBLIC_PACKAGE_README_PATH,
         "public package README is missing at {path}; required by REQ-OPS-023.",
@@ -2092,6 +2153,16 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
         fragment
         for fragment in REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS
         if fragment not in public_readme
+    )
+    missing_root_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_ROOT_README_FRAGMENTS
+        if fragment not in root_readme
+    )
+    missing_cli_guide_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_CLI_GUIDE_FRAGMENTS
+        if fragment not in cli_guide
     )
     missing_installer_fragments = sorted(
         fragment
@@ -2175,6 +2246,16 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
             bool(missing_readme_fragments),
             "packages/ugoite/README.md missing fragments: "
             + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_root_readme_fragments),
+            "README.md missing public package discoverability fragments: "
+            + ", ".join(missing_root_readme_fragments),
+        ),
+        (
+            bool(missing_cli_guide_fragments),
+            "docs/guide/cli.md missing public package discoverability fragments: "
+            + ", ".join(missing_cli_guide_fragments),
         ),
         (
             bool(missing_installer_fragments),
@@ -2265,100 +2346,336 @@ def test_docs_req_ops_024_docsite_coverage_gate_is_explicit() -> None:
         raise AssertionError("; ".join(details))
 
 
-def _collect_all_tests_status_details() -> list[str]:
-    workflow_text = ALL_TESTS_WORKFLOW_PATH.read_text(encoding="utf-8")
-    workflow = _load_yaml_base_mapping(ALL_TESTS_WORKFLOW_PATH)
+def _collect_native_required_checks_details() -> list[str]:
+    if LEGACY_ALL_TESTS_WORKFLOW_PATH.exists():
+        message = (
+            "all-tests-ci.yml must be removed after migrating to native required checks"
+        )
+        return [message]
+
+    config = _load_json_mapping(REQUIRED_STATUS_CHECKS_CONFIG_PATH)
+    entries = _load_required_status_check_entries(config)
+    configured_contexts = {entry.context for entry in entries}
+    details: list[str] = []
+
+    duplicate_contexts = _collect_duplicate_required_check_contexts(entries)
+    for entry in entries:
+        details.extend(_collect_required_status_check_entry_details(entry))
+
+    details.extend(
+        _collect_required_status_check_config_details(
+            config,
+            configured_contexts=configured_contexts,
+            duplicate_contexts=duplicate_contexts,
+        ),
+    )
+    details.extend(_collect_required_status_check_doc_details())
+
+    return details
+
+
+def _load_required_status_check_entries(
+    config: dict[str, object],
+) -> list[_RequiredStatusCheckEntry]:
+    required_checks = config.get("required_status_checks", [])
+    if not isinstance(required_checks, list):
+        message = "required-status-checks.json must define required_status_checks"
+        raise TypeError(message)
+
+    entries: list[_RequiredStatusCheckEntry] = []
+    for index, item in enumerate(required_checks):
+        if not isinstance(item, dict):
+            message = f"required_status_checks[{index}] must be a mapping"
+            raise TypeError(message)
+        context = _load_required_status_check_string(
+            item,
+            key="context",
+            index=index,
+        )
+        workflow_text = _load_required_status_check_string(
+            item,
+            key="workflow",
+            index=index,
+        )
+        job_id = _load_required_status_check_string(item, key="job_id", index=index)
+        events = _load_required_status_check_events(item, index=index)
+        entries.append(
+            _RequiredStatusCheckEntry(
+                context=context,
+                workflow_text=workflow_text,
+                workflow_path=REPO_ROOT / workflow_text,
+                job_id=job_id,
+                events=events,
+            ),
+        )
+    return entries
+
+
+def _load_required_status_check_string(
+    entry: dict[object, object],
+    *,
+    key: str,
+    index: int,
+) -> str:
+    value = entry.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    message = f"required_status_checks[{index}].{key} must be a string"
+    raise TypeError(message)
+
+
+def _load_required_status_check_events(
+    entry: dict[object, object],
+    *,
+    index: int,
+) -> tuple[str, ...]:
+    events = entry.get("events")
+    if not isinstance(events, list) or not all(
+        isinstance(item, str) for item in events
+    ):
+        message = f"required_status_checks[{index}].events must be a list[str]"
+        raise TypeError(message)
+    return tuple(events)
+
+
+def _collect_duplicate_required_check_contexts(
+    entries: list[_RequiredStatusCheckEntry],
+) -> set[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for entry in entries:
+        if entry.context in seen:
+            duplicates.add(entry.context)
+        seen.add(entry.context)
+    return duplicates
+
+
+def _collect_required_status_check_entry_details(
+    entry: _RequiredStatusCheckEntry,
+) -> list[str]:
+    if not entry.workflow_path.exists():
+        return [f"required check workflow missing: {entry.workflow_text}"]
+
+    workflow = _load_yaml_base_mapping(entry.workflow_path)
     jobs = workflow.get("jobs", {})
     if not isinstance(jobs, dict):
-        message = "all-tests-ci.yml must define jobs"
+        message = f"{entry.workflow_text} must define jobs"
         raise TypeError(message)
 
-    all_tests_job = jobs.get("all-tests-check")
-    if not isinstance(all_tests_job, dict):
-        message = "all-tests-ci.yml must define jobs.all-tests-check"
-        raise TypeError(message)
+    job = jobs.get(entry.job_id)
+    if not isinstance(job, dict):
+        message = f"{entry.workflow_text} missing required-check job id {entry.job_id}"
+        return [message]
 
-    steps = all_tests_job.get("steps", [])
-    if not isinstance(steps, list):
-        message = "all-tests-ci.yml jobs.all-tests-check.steps must be a list"
-        raise TypeError(message)
+    details = _collect_required_status_check_job_details(entry, job)
+    details.extend(_collect_required_status_check_trigger_details(entry, workflow))
+    return details
 
-    wait_step = next(
-        (
-            step
-            for step in steps
-            if isinstance(step, dict)
-            and step.get("name") == "Wait for curated workflows"
-        ),
-        None,
-    )
-    if wait_step is None:
-        return ["all-tests-ci missing curated wait step"]
 
-    excluded_workflows, curated_workflows = _collect_all_tests_workflow_env(wait_step)
-    missing_exclusions = _missing_all_tests_workflows(
-        excluded_workflows,
-        REQUIRED_ALL_TESTS_EXCLUDED_WORKFLOWS,
-    )
-    missing_curated = _missing_all_tests_workflows(
-        curated_workflows,
-        REQUIRED_ALL_TESTS_CURATED_WORKFLOWS,
-    )
-    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
-    missing_doc_fragments = sorted(
-        fragment
-        for fragment in REQUIRED_ALL_TESTS_DOC_FRAGMENTS
-        if fragment not in guide_text
-    )
-
+def _collect_required_status_check_job_details(
+    entry: _RequiredStatusCheckEntry,
+    job: dict[object, object],
+) -> list[str]:
     details: list[str] = []
-    if "int128/wait-for-workflows-action@v1" in workflow_text:
+    if job.get("name") != entry.context:
         details.append(
-            "all-tests-ci must not use deprecated wait-for-workflows-action@v1",
+            f"{entry.workflow_text} required-check job name must be {entry.context}",
         )
-    if re.search(r"""\[\s*["']gh["']\s*,\s*["']api["']\s*,""", workflow_text) is None:
-        details.append("all-tests-ci must poll workflow status via gh api")
-    if missing_exclusions:
+    if job.get("if") != "${{ always() }}":
         details.append(
-            "all-tests-ci exclude-workflow-names missing: "
-            + ", ".join(missing_exclusions),
+            f"{entry.workflow_text} required-check job must use if: "
+            "${{ always() }}",
         )
-    if missing_curated:
+
+    needs = job.get("needs")
+    valid_needs = (
+        isinstance(needs, list)
+        and needs
+        and all(isinstance(item, str) and item for item in needs)
+    )
+    if not valid_needs:
         details.append(
-            "all-tests-ci curated workflow list missing: " + ", ".join(missing_curated),
-        )
-    if missing_doc_fragments:
-        details.append(
-            "ci-cd guide missing All Tests Status fragments: "
-            + ", ".join(missing_doc_fragments),
+            f"{entry.workflow_text} required-check job must declare non-empty needs",
         )
     return details
 
 
-def _collect_all_tests_workflow_env(wait_step: dict[object, object]) -> tuple[str, str]:
-    env_block = wait_step.get("env", {})
-    if not isinstance(env_block, dict):
-        message = "all-tests-ci curated wait step must define an env mapping"
-        raise TypeError(message)
-
-    excluded_workflows = env_block.get("EXCLUDED_WORKFLOW_NAMES", "")
-    curated_workflows = env_block.get("CURATED_WORKFLOW_NAMES", "")
-    if not isinstance(excluded_workflows, str) or not isinstance(
-        curated_workflows,
-        str,
-    ):
-        message = "all-tests-ci workflow name env vars must be multiline strings"
-        raise TypeError(message)
-    return excluded_workflows, curated_workflows
-
-
-def _missing_all_tests_workflows(
-    configured: str,
-    required: set[str],
+def _collect_required_status_check_trigger_details(
+    entry: _RequiredStatusCheckEntry,
+    workflow: dict[str, object],
 ) -> list[str]:
-    return sorted(
-        workflow_name for workflow_name in required if workflow_name not in configured
+    on_block = workflow.get("on", {})
+    if not isinstance(on_block, dict):
+        message = f"{entry.workflow_text} must define an on mapping"
+        raise TypeError(message)
+
+    details: list[str] = []
+    for event_name in entry.events:
+        details.extend(
+            _collect_required_status_check_event_details(
+                workflow,
+                workflow_text=entry.workflow_text,
+                on_block=on_block,
+                event_name=event_name,
+            ),
+        )
+    return details
+
+
+def _collect_required_status_check_event_details(
+    workflow: dict[str, object],
+    *,
+    workflow_text: str,
+    on_block: dict[object, object],
+    event_name: str,
+) -> list[str]:
+    trigger = on_block.get(event_name)
+    if event_name not in on_block:
+        return [f"{workflow_text} missing required trigger {event_name}"]
+
+    details: list[str] = []
+    if _collect_trigger_paths(workflow, event_name):
+        details.append(
+            f"{workflow_text} must not use top-level paths filters for required "
+            f"event {event_name}",
+        )
+    if event_name in {"pull_request", "merge_group", "push"}:
+        if not isinstance(trigger, dict):
+            details.append(
+                f"{workflow_text} trigger {event_name} must define branches for main",
+            )
+            return details
+        branches = trigger.get("branches", [])
+        if not isinstance(branches, list) or "main" not in branches:
+            details.append(f"{workflow_text} trigger {event_name} must target main")
+    return details
+
+
+def _collect_required_status_check_config_details(
+    config: dict[str, object],
+    *,
+    configured_contexts: set[str],
+    duplicate_contexts: set[str],
+) -> list[str]:
+    details: list[str] = []
+    missing_contexts = sorted(
+        REQUIRED_NATIVE_REQUIRED_CHECKS.difference(configured_contexts),
     )
+    unexpected_contexts = sorted(
+        configured_contexts.difference(REQUIRED_NATIVE_REQUIRED_CHECKS),
+    )
+    if missing_contexts:
+        details.append(
+            "required-status-checks.json missing contexts: "
+            + ", ".join(missing_contexts),
+        )
+    if unexpected_contexts:
+        details.append(
+            "required-status-checks.json unexpected contexts: "
+            + ", ".join(unexpected_contexts),
+        )
+    if duplicate_contexts:
+        details.append(
+            "required-status-checks.json duplicate contexts: "
+            + ", ".join(sorted(duplicate_contexts)),
+        )
+
+    details.extend(_collect_required_status_check_exclusion_details(config))
+    details.extend(_collect_required_status_check_code_scanning_details(config))
+    details.extend(_collect_required_status_check_ruleset_details(config))
+    return details
+
+
+def _collect_required_status_check_exclusion_details(
+    config: dict[str, object],
+) -> list[str]:
+    exclusions = config.get("excluded_from_required_status_checks", [])
+    if not isinstance(exclusions, list) or not all(
+        isinstance(item, str) for item in exclusions
+    ):
+        message = (
+            "required-status-checks.json excluded_from_required_status_checks "
+            "must be list[str]"
+        )
+        raise TypeError(message)
+
+    missing_exclusions = sorted(
+        REQUIRED_NATIVE_REQUIRED_CHECK_EXCLUSIONS.difference(exclusions),
+    )
+    if not missing_exclusions:
+        return []
+    message = "required-status-checks.json missing exclusions: " + ", ".join(
+        missing_exclusions,
+    )
+    return [message]
+
+
+def _collect_required_status_check_code_scanning_details(
+    config: dict[str, object],
+) -> list[str]:
+    native_code_scanning = config.get("native_code_scanning", [])
+    if not isinstance(native_code_scanning, list):
+        message = "required-status-checks.json native_code_scanning must be a list"
+        raise TypeError(message)
+
+    configured_tools = {
+        tool_entry.get("tool")
+        for tool_entry in native_code_scanning
+        if isinstance(tool_entry, dict) and isinstance(tool_entry.get("tool"), str)
+    }
+    missing_tools = sorted(
+        REQUIRED_NATIVE_CODE_SCANNING_TOOLS.difference(configured_tools),
+    )
+    if not missing_tools:
+        return []
+    message = (
+        "required-status-checks.json missing native code-scanning tools: "
+        + ", ".join(missing_tools)
+    )
+    return [message]
+
+
+def _collect_required_status_check_ruleset_details(
+    config: dict[str, object],
+) -> list[str]:
+    ruleset = config.get("ruleset", {})
+    if not isinstance(ruleset, dict):
+        message = "required-status-checks.json ruleset must be a mapping"
+        raise TypeError(message)
+
+    details: list[str] = []
+    if ruleset.get("name") != "main only pr":
+        details.append(
+            "required-status-checks.json ruleset.name must stay main only pr",
+        )
+    if ruleset.get("target") != "branch":
+        details.append("required-status-checks.json ruleset.target must stay branch")
+    if ruleset.get("default_branch_only") is not True:
+        details.append(
+            "required-status-checks.json must declare default_branch_only=true",
+        )
+    return details
+
+
+def _collect_required_status_check_doc_details() -> list[str]:
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+
+    details: list[str] = []
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing native required-check fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+    if "All Tests Status" in guide_text:
+        details.append(
+            "ci-cd guide must not reference All Tests Status after migration",
+        )
+    return details
 
 
 def _collect_release_ci_requirement_details() -> list[str]:
@@ -3140,6 +3457,27 @@ def _collect_trigger_paths(workflow: dict[str, object], trigger: str) -> set[str
     if isinstance(paths, list) and all(isinstance(item, str) for item in paths):
         return {item for item in paths if item}
     return set()
+
+
+def _collect_job_env_lines(
+    workflow: dict[str, object],
+    *,
+    job_id: str,
+    key: str,
+) -> set[str]:
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return set()
+    job = jobs.get(job_id, {})
+    if not isinstance(job, dict):
+        return set()
+    env = job.get("env", {})
+    if not isinstance(env, dict):
+        return set()
+    raw_value = env.get(key, "")
+    if not isinstance(raw_value, str):
+        return set()
+    return {line.strip() for line in raw_value.splitlines() if line.strip()}
 
 
 def _discover_repo_paths(file_name: str) -> list[str]:
