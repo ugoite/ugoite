@@ -233,12 +233,16 @@ REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
     "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
 }
 REQUIRED_CLI_README_FRAGMENTS = {
+    "npm install -g ugoite",
+    "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
     "UGOITE_VERSION=0.1.0",
     *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
+    "npm install -g ugoite",
+    "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
     "cargo build",
@@ -302,6 +306,18 @@ REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS = {
     "ugoite-install",
     "scripts/install-ugoite-cli.sh",
     "UGOITE_VERSION",
+}
+REQUIRED_PUBLIC_PACKAGE_ROOT_README_FRAGMENTS = {
+    "packages/ugoite/package.json",
+    "root `package.json` stays private tooling",
+    "npm install -g ugoite",
+    "ugoite-install",
+}
+REQUIRED_PUBLIC_PACKAGE_CLI_GUIDE_FRAGMENTS = {
+    "packages/ugoite/package.json",
+    "root `package.json` stays private tooling",
+    "npm install -g ugoite",
+    "ugoite-install",
 }
 REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS = {
     "--print-script-url",
@@ -578,6 +594,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
     ".devcontainer/**",
+    "docs/tests/*.py",
     ".pre-commit-config.yaml",
     "mise.toml",
     "**/mise.toml",
@@ -1249,7 +1266,7 @@ def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
 
 
 def test_docs_req_ops_012_devcontainer_change_detection_covers_inputs() -> None:
-    """REQ-OPS-012: Devcontainer change detection covers setup inputs."""
+    """REQ-OPS-012: Devcontainer change detection covers setup and guide-test inputs."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
     pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
     push_paths = _collect_trigger_paths(workflow, "push")
@@ -2049,6 +2066,8 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
     manifest = _load_json_mapping(RELEASE_MANIFEST_PATH)
     release_config = _load_json_mapping(RELEASE_CONFIG_PATH)
     ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    root_readme = README_PATH.read_text(encoding="utf-8")
+    cli_guide = CLI_GUIDE_PATH.read_text(encoding="utf-8")
     public_readme = _read_required_text(
         PUBLIC_PACKAGE_README_PATH,
         "public package README is missing at {path}; required by REQ-OPS-023.",
@@ -2119,6 +2138,16 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
         fragment
         for fragment in REQUIRED_PUBLIC_PACKAGE_README_FRAGMENTS
         if fragment not in public_readme
+    )
+    missing_root_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_ROOT_README_FRAGMENTS
+        if fragment not in root_readme
+    )
+    missing_cli_guide_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PUBLIC_PACKAGE_CLI_GUIDE_FRAGMENTS
+        if fragment not in cli_guide
     )
     missing_installer_fragments = sorted(
         fragment
@@ -2202,6 +2231,16 @@ def test_docs_req_ops_023_public_package_stays_separate_from_private_tooling() -
             bool(missing_readme_fragments),
             "packages/ugoite/README.md missing fragments: "
             + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_root_readme_fragments),
+            "README.md missing public package discoverability fragments: "
+            + ", ".join(missing_root_readme_fragments),
+        ),
+        (
+            bool(missing_cli_guide_fragments),
+            "docs/guide/cli.md missing public package discoverability fragments: "
+            + ", ".join(missing_cli_guide_fragments),
         ),
         (
             bool(missing_installer_fragments),
