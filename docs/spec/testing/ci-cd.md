@@ -150,6 +150,7 @@ jobs:
         paths:
           - .github/workflows/devcontainer-ci.yml
           - .devcontainer/**
+          - docs/tests/*.py
           - .pre-commit-config.yaml
           - mise.toml
           - **/mise.toml
@@ -164,12 +165,12 @@ jobs:
     - Run smoke command: gh/mise/bash versions
 ```
 
-Push and pull-request filtering intentionally track devcontainer inputs and
-dependency/setup manifests instead of every source-file change. `mise.toml`
-coverage is dynamic via globbed trigger patterns plus a guide test that scans
-the repository for current `mise.toml` files. GitHub Actions does not currently
-support `paths` filters for `merge_group`, so merge queue coverage remains
-branch-scoped.
+Push and pull-request filtering intentionally track devcontainer inputs,
+dependency/setup manifests, and the docs guide tests that validate those setup
+contracts instead of every source-file change. `mise.toml` coverage is dynamic
+via globbed trigger patterns plus a guide test that scans the repository for
+current `mise.toml` files. GitHub Actions does not currently support `paths`
+filters for `merge_group`, so merge queue coverage remains branch-scoped.
 
 ## Rust CI
 

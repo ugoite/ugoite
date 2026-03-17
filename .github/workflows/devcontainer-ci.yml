@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/devcontainer-ci.yml"
       - ".devcontainer/**"
+      - "docs/tests/*.py"
       - ".pre-commit-config.yaml"
       - "mise.toml"
       - "**/mise.toml"
@@ -27,6 +28,7 @@ on:
     paths:
       - ".github/workflows/devcontainer-ci.yml"
       - ".devcontainer/**"
+      - "docs/tests/*.py"
       - ".pre-commit-config.yaml"
       - "mise.toml"
       - "**/mise.toml"

@@ -572,6 +572,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
     ".devcontainer/**",
+    "docs/tests/*.py",
     ".pre-commit-config.yaml",
     "mise.toml",
     "**/mise.toml",
@@ -1243,7 +1244,7 @@ def _collect_frontend_dev_proxy_readiness_details() -> list[str]:
 
 
 def test_docs_req_ops_012_devcontainer_trigger_paths_cover_inputs() -> None:
-    """REQ-OPS-012: Devcontainer triggers must cover setup inputs and mise.toml."""
+    """REQ-OPS-012: Devcontainer triggers must cover inputs, guide tests, and mise."""
     workflow = _load_yaml_base_mapping(DEVCONTAINER_CI_WORKFLOW_PATH)
     pull_request_paths = _collect_trigger_paths(workflow, "pull_request")
     push_paths = _collect_trigger_paths(workflow, "push")
