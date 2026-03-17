@@ -438,9 +438,9 @@ requirements:
   title: Devcontainer Change-Detection Discipline
   description: 'Devcontainer CI MUST use an explicit in-workflow change detector
     for push and pull_request so the required summary check is always emitted,
-    the build-and-smoke workflow only runs for devcontainer and setup inputs when
-    appropriate, and the detector contract MUST keep covering current and future
-    mise.toml files.
+    the build-and-smoke workflow only runs for devcontainer, setup, and
+    guide-test inputs when appropriate, and the detector contract MUST keep
+    covering current and future mise.toml files.
 
     '
   related_spec:
@@ -902,11 +902,19 @@ requirements:
 
     metadata MUST stay non-private, packable, and expose `ugoite-install`
 
-    while the root `package.json` remains private repository tooling.
+    while the root `package.json` remains private repository tooling, and the
+
+    top-level install docs MUST make that split explicit so users can discover
+
+    the public package-managed install path without reverse-engineering release
+
+    automation files.
 
     '
   related_spec:
   - testing/ci-cd.md
+  - ../README.md
+  - ../guide/cli.md
   priority: medium
   status: implemented
   tests:
