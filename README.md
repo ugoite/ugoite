@@ -12,6 +12,15 @@ Ugoite is a knowledge management system built on three core principles:
 | **Easy** | Markdown-first with automatic structure extraction |
 | **Freedom** | Your data, your storage, your AI - no vendor lock-in |
 
+## Start Here
+
+Pick the shortest path for what you want to do right now:
+
+- **Try the published release** — use [Container Quick Start](docs/guide/container-quickstart.md) to run the released browser experience without cloning the repository.
+- **Use the CLI** — use the [CLI Guide](docs/guide/cli.md) to install the released CLI or run it from source.
+- **Develop from source** — run `mise run setup`, then `mise run dev`, when you want the current backend, frontend, and docsite together.
+- **Need sign-in details?** — see [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the canonical `mise run dev` workflow and explicit `/login` flow.
+
 ## Key Features
 
 - **Markdown as Table**: Markdown sections map to Form-defined fields stored in Iceberg tables
@@ -52,15 +61,23 @@ e2e/                # End-to-end tests (Bun)
 
 ---
 
-## Documentation
+## Documentation Map
+
+Start with the user-facing guides:
+
+- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
+- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+- [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+
+Go deeper when you need architecture or implementation contracts:
 
 - [Specification Index](docs/spec/index.md) - Technical specifications
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
-- [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
-- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
-- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+
+Track ongoing work:
+
 - [Roadmap](docs/tasks/roadmap.md) - Future milestones
 - [Current Tasks](docs/tasks/tasks.md) - Active development
 

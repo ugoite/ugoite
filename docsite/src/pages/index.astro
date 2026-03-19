@@ -1,67 +1,10 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { withBasePath } from "../lib/base-path";
-
-const features = [
-  {
-    icon: "🗄️",
-    title: "Local-First Storage",
-    description: "Your knowledge lives on portable block storage — S3, local filesystem, or any compatible backend. No mandatory SaaS dependency.",
-  },
-  {
-    icon: "🤖",
-    title: "AI-Native Workflows",
-    description: "MCP integration, spec-driven governance, and traceable AI actions. Every operation is auditable through linked requirements.",
-  },
-  {
-    icon: "🖥️",
-    title: "Multi-Surface Control",
-    description: "Operate from API, CLI, or browser UI. All surfaces share one durable core logic layer and data model.",
-  },
-  {
-    icon: "⚡",
-    title: "Serverless Ready",
-    description: "Thin FastAPI adapter with zero business logic — deploy as a serverless function or traditional service.",
-  },
-  {
-    icon: "🔒",
-    title: "Privacy by Design",
-    description: "Data stays where you put it. No telemetry, no cloud lock-in. Full control over your knowledge infrastructure.",
-  },
-  {
-    icon: "📐",
-    title: "Spec-Driven Development",
-    description: "Every feature traces to YAML specs: philosophy → policy → requirement → implementation. Machine-readable, human-friendly.",
-  },
-];
-
-const startCards = [
-  {
-    icon: "🚀",
-    title: "Try the published release",
-    description: "Pull published images and run Ugoite without cloning the repo.",
-    href: "/docs/guide/container-quickstart",
-    badge: "Start here",
-  },
-  {
-    icon: "🛠️",
-    title: "Build from source with Docker Compose",
-    description: "Spin up the current backend and frontend workspace together.",
-    href: "/docs/guide/docker-compose",
-    badge: "Build from source",
-  },
-  {
-    icon: "🔐",
-    title: "Understand auth and access",
-    description: "See how browser, CLI, and API access fit together before you log in.",
-    href: "/docs/guide/auth-overview",
-    badge: "User guide",
-  },
-];
+import { nextStepCards, primaryStartCards } from "../lib/onboarding";
 ---
 
 <BaseLayout title="Ugoite — Local-First Knowledge Space" fullWidth={true}>
-  <!-- Hero -->
   <section class="doc-card-hero" style="text-align: center; padding: 5rem 2rem 4rem;">
     <div style="position: relative; z-index: 1;">
       <p class="doc-pill" style="margin-bottom: 1.5rem;">Start Here &middot; Local-First &middot; AI-Native</p>
@@ -75,28 +18,34 @@ const startCards = [
       </p>
 
       <p style="max-width: 36rem; margin: 1.5rem auto 0; font-size: 0.9375rem; line-height: 1.7; color: var(--doc-muted);">
-        A private, portable knowledge space you can run with Docker, explore in the browser, or automate from the CLI — without handing your data to a SaaS.
+        A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
       </p>
+
+      <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem;">
+        <span class="doc-pill">Local-first data</span>
+        <span class="doc-pill">Browser + CLI surfaces</span>
+        <span class="doc-pill">Design and specs one step deeper</span>
+      </div>
 
       <div style="display: flex; gap: 0.75rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap;">
         <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-primary">Get Started</a>
-        <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">See the App</a>
-        <a href={withBasePath("/design")} class="doc-btn doc-btn-outline">Design Principles</a>
+        <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">Browse Application</a>
+        <a href={withBasePath("/docs/spec/index")} class="doc-btn doc-btn-outline">Read Specs</a>
       </div>
     </div>
   </section>
 
-  <section class="doc-card" style="margin-top: 2rem;">
+  <section id="start-paths" class="doc-card" style="margin-top: 2rem;">
     <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
       <div>
-        <p class="doc-pill" style="margin-bottom: 0.75rem;">Getting Started</p>
-        <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0;">Pick the path that fits how you want to try Ugoite</h2>
+        <p class="doc-pill" style="margin-bottom: 0.75rem;">Choose Your Path</p>
+        <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0;">Most people only need one of these three entry points</h2>
       </div>
       <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-outline">Open the getting-started guide</a>
     </div>
 
     <div class="doc-grid" style="margin-top: 1.5rem;">
-      {startCards.map((card) => (
+      {primaryStartCards.map((card) => (
         <a href={withBasePath(card.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
           <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">{card.icon}</div>
           <div class="doc-pill" style="margin-bottom: 0.75rem;">{card.badge}</div>
@@ -107,38 +56,26 @@ const startCards = [
     </div>
   </section>
 
-  <!-- Feature grid -->
-  <section style="margin-top: 3rem;">
-    <div class="doc-grid">
-      {features.map((f) => (
-        <article class="doc-card doc-card-hover">
-          <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">{f.icon}</div>
-          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{f.title}</h3>
-          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{f.description}</p>
-        </article>
-      ))}
+  <section id="next-steps" class="doc-card" style="margin-top: 2rem;">
+    <div>
+      <p class="doc-pill" style="margin-bottom: 0.75rem;">Then Go Deeper Only Where It Helps</p>
+      <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0;">
+        Once you are running, jump straight to the browser, auth, or deeper docs
+      </h2>
+      <p style="font-size: 0.875rem; color: var(--doc-muted); margin-top: 0.75rem; line-height: 1.7;">
+        The main navigation keeps <strong>Application</strong>, <strong>Design</strong>, and <strong>Source Docs</strong> available without forcing first-time users through the whole spec tree.
+      </p>
     </div>
-  </section>
 
-  <!-- Quick stats -->
-  <section class="doc-card" style="margin-top: 2rem;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 1rem;">
-      <div class="doc-stat">
-        <div class="doc-stat-value">3</div>
-        <div class="doc-stat-label">Ways to use it</div>
-      </div>
-      <div class="doc-stat">
-        <div class="doc-stat-value">0</div>
-        <div class="doc-stat-label">Mandatory SaaS services</div>
-      </div>
-      <div class="doc-stat">
-        <div class="doc-stat-value">1</div>
-        <div class="doc-stat-label">Shared core logic layer</div>
-      </div>
-      <div class="doc-stat">
-        <div class="doc-stat-value">Any</div>
-        <div class="doc-stat-label">Portable storage target</div>
-      </div>
+    <div class="doc-grid" style="margin-top: 1.5rem;">
+      {nextStepCards.map((card) => (
+        <a href={withBasePath(card.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{card.icon}</div>
+          <div class="doc-pill" style="margin-bottom: 0.5rem;">{card.badge}</div>
+          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{card.title}</h3>
+          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{card.description}</p>
+        </a>
+      ))}
     </div>
   </section>
 </BaseLayout>

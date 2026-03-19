@@ -1,67 +1,12 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
+import { nextStepCards, primaryStartCards } from "../../lib/onboarding";
 
 const toc = [
   { id: "overview", title: "Overview" },
-  { id: "first-steps", title: "First Steps" },
+  { id: "first-steps", title: "Choose a Path" },
   { id: "next", title: "Next" },
-];
-
-const firstSteps = [
-  {
-    icon: "🚀",
-    title: "Try the published release",
-    description:
-      "Pull published images and start Ugoite without cloning or building from source.",
-    href: "/docs/guide/container-quickstart",
-    detail: "Quickest way to try the released stack",
-  },
-  {
-    icon: "🛠️",
-    title: "Build from source with Docker Compose",
-    description:
-      "Use the source-build guide when you want to run the current workspace instead of a published release.",
-    href: "/docs/guide/docker-compose",
-    detail: "Contributor-oriented path",
-  },
-  {
-    icon: "🔐",
-    title: "Auth Overview",
-    description:
-      "Understand how browser, CLI, and API access fit together before you sign in.",
-    href: "/docs/guide/auth-overview",
-    detail: "Useful before team rollout",
-  },
-  {
-    icon: "⌨️",
-    title: "CLI Guide",
-    description:
-      "Prefer the terminal? Learn the CLI entrypoints and installation flow first.",
-    href: "/docs/guide/cli",
-    detail: "Automation-friendly",
-  },
-];
-
-const nextSteps = [
-  {
-    icon: "🖥️",
-    title: "Explore the application",
-    description: "See how the browser UI, API, CLI, and MCP surfaces fit together.",
-    href: "/app",
-  },
-  {
-    icon: "💡",
-    title: "Read the design model",
-    description: "Dive into philosophy, policies, requirements, and feature traceability.",
-    href: "/design",
-  },
-  {
-    icon: "📚",
-    title: "Browse source specs",
-    description: "Open the machine-readable docs if you want implementation-level detail.",
-    href: "/docs/spec/index",
-  },
 ];
 ---
 
@@ -77,31 +22,35 @@ const nextSteps = [
         Start with Ugoite before diving into design docs
       </h1>
       <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 42rem; line-height: 1.6;">
-        Ugoite gives you a private, portable knowledge space that runs on infrastructure you control.
-        Start by launching the app, understanding how you sign in, and choosing the surface that fits your workflow.
+        Pick the shortest path for what you want to do right now, then move to the browser, auth guide, or deeper reference docs only when you actually need them.
       </p>
     </div>
   </section>
 
   <section id="first-steps">
     <div class="doc-grid">
-      {firstSteps.map((step) => (
+      {primaryStartCards.map((step) => (
         <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
           <h2 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h2>
           <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
-          <span class="doc-pill" style="margin-top: 0.75rem;">{step.detail}</span>
+          <span class="doc-pill" style="margin-top: 0.75rem;">{step.badge}</span>
         </a>
       ))}
     </div>
   </section>
 
   <section id="next" class="doc-card">
-    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Once you are running, here is where to go next</h2>
+    <p class="doc-pill" style="margin-bottom: 0.75rem;">After You Start</p>
+    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.75rem;">Keep the next move simple</h2>
+    <p style="font-size: 0.875rem; color: var(--doc-muted); line-height: 1.7;">
+      Go straight to the surface or reference you need instead of reading the full spec tree front to back.
+    </p>
     <div class="doc-grid">
-      {nextSteps.map((step) => (
+      {nextStepCards.map((step) => (
         <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
           <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
+          <div class="doc-pill" style="margin-bottom: 0.5rem;">{step.badge}</div>
           <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h3>
           <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
         </a>
