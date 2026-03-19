@@ -489,6 +489,8 @@ REQUIRED_WAIT_FOR_HTTP_FRAGMENTS = {
 }
 REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "/api/*",
+    "prepares the local auth context **once**",
+    "single username + 2FA prompt sequence",
     "waits for `http://localhost:8000/health`",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
@@ -1491,6 +1493,43 @@ def test_docs_req_ops_015_dev_auth_script_declares_manual_modes() -> None:
             missing,
         )
         raise AssertionError(message)
+
+
+def test_docs_req_ops_015_root_dev_bootstraps_auth_before_fanout() -> None:
+    """REQ-OPS-015: Root `mise run dev` must prepare auth context once before fanout."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+    expected_root_dev_run = (
+        'eval "$(cd backend && uv run bash ../scripts/dev-auth-env.sh)" '
+        "&& mise run //backend:dev ::: //frontend:dev ::: //docsite:dev"
+    )
+
+    details = [
+        detail
+        for detail in [
+            _require_exact_task_run(
+                root_mise,
+                "dev",
+                [expected_root_dev_run],
+                "root mise.toml tasks.dev must bootstrap auth once before fanning out",
+            ),
+            _require_file_contains(
+                LOCAL_DEV_AUTH_GUIDE_PATH,
+                [
+                    "prepares the local auth context **once**",
+                    "single username + 2FA prompt sequence",
+                ],
+                "local-dev-auth-login.md must describe the single root auth bootstrap",
+            ),
+        ]
+        if detail is not None
+    ]
+
+    if "The root task prepares the local auth context **once**" not in guide_text:
+        details.append("local-dev-auth-login.md must explain root auth bootstrap")
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(

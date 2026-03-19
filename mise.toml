@@ -36,7 +36,7 @@ run = [
 ]
 
 [tasks.dev]
-depends = ["//backend:dev", "//frontend:dev", "//docsite:dev"]
+run = "eval \"$(cd backend && uv run bash ../scripts/dev-auth-env.sh)\" && mise run //backend:dev ::: //frontend:dev ::: //docsite:dev"
 
 [tasks."dev:backend"]
 description = "Run backend dev server only"
