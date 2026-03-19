@@ -26,7 +26,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.7",
 		"@solidjs/testing-library": "^0.8.10",
-		"@tailwindcss/vite": "^4.2.1",
+		"@tailwindcss/vite": "^4.2.2",
 		"@testing-library/dom": "^10.4.0",
 		"@testing-library/jest-dom": "^6.6.3",
 		"@vitest/coverage-v8": "^4.1.0",
