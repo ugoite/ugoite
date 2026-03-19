@@ -26,6 +26,16 @@ test.describe("Docsite onboarding-first navigation", () => {
 				/a private, portable knowledge space you can run with docker/i,
 			),
 		).toBeVisible();
+		await expect(page.locator("#start-paths a h3")).toHaveText([
+			"Try the published release",
+			"Run from source",
+			"Use the CLI",
+		]);
+		await expect(page.locator("#next-steps a h3")).toHaveText([
+			"Explore the browser app",
+			"Understand auth and access",
+			"Read design and source docs",
+		]);
 
 		const getStartedLink = page.getByRole("link", { name: "Get Started" });
 		await expect(getStartedLink).toBeVisible();
@@ -39,9 +49,13 @@ test.describe("Docsite onboarding-first navigation", () => {
 		).toBeVisible();
 		await expect(page.locator("#first-steps .doc-card h2")).toHaveText([
 			"Try the published release",
-			"Build from source with Docker Compose",
-			"Auth Overview",
-			"CLI Guide",
+			"Run from source",
+			"Use the CLI",
+		]);
+		await expect(page.locator("#next .doc-card h3")).toHaveText([
+			"Explore the browser app",
+			"Understand auth and access",
+			"Read design and source docs",
 		]);
 	});
 
