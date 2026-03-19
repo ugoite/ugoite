@@ -56,6 +56,10 @@ export UGOITE_DEV_2FA_SECRET="YOUR_BASE32_SECRET"
 mise run dev
 ```
 
+The root task prepares the local auth context **once** before it fans out to the
+backend, frontend, and docsite dev tasks. On a first `manual-totp` run, expect a
+single username + 2FA prompt sequence before the backend and frontend start.
+
 The helper waits for `http://localhost:8000/health` before the frontend dev
 server starts, so `/api/*` requests do not race the backend startup.
 
@@ -174,4 +178,5 @@ mise run dev:docsite
 
 The backend and frontend tasks still source `scripts/dev-auth-env.sh`, and the
 frontend task still waits for `http://localhost:8000/health` before it starts
-proxying `/api/*` requests.
+proxying `/api/*` requests. The root `mise run dev` task simply prepares that
+auth context once up front so the shared startup flow stays deterministic.
