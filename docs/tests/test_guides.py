@@ -27,6 +27,7 @@ REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -116,7 +117,6 @@ RELEASE_NOTES_RENDERER_PATH = REPO_ROOT / "scripts" / "render_release_notes.py"
 RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-container-quickstart.sh"
 )
-RELEASE_CHANGELOG_DIR = REPO_ROOT / "docs" / "version" / "changelog"
 RELEASE_CHANGELOG_ENTRYPOINT_PATH = (
     REPO_ROOT / "docs" / "spec" / "versions" / "changelog.md"
 )
@@ -1990,6 +1990,84 @@ def test_docs_req_ops_026_release_publish_uses_channel_changelog_sources() -> No
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_026_release_renderer_accepts_yaml_comments(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-026: Release note renderer must tolerate YAML comments."""
+    spec = importlib.util.spec_from_file_location(
+        "render_release_notes_module",
+        RELEASE_NOTES_RENDERER_PATH,
+    )
+    if spec is None or spec.loader is None:
+        message = "Unable to load scripts/render_release_notes.py"
+        raise AssertionError(message)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    temp_repo_root = tmp_path / "repo"
+    changelog_dir = temp_repo_root / "docs" / "version" / "changelog"
+    changelog_dir.mkdir(parents=True)
+    doc_path = temp_repo_root / "docs" / "spec" / "versions" / "changelog-stable.md"
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text("# Stable Channel Changelog\n", encoding="utf-8")
+    (changelog_dir / "stable.yaml").write_text(
+        textwrap.dedent(
+            """
+            # Leading comment
+            channel: stable
+            title: Stable Channel Changelog # inline comment
+            doc_path: docs/spec/versions/changelog-stable.md
+            summary: >
+              Stable releases communicate the supported slice.
+              # Comment-only folded line
+              With durable guidance.
+            release_notes:
+              # Nested comment
+              intro: >
+                Stable releases use exact versions.
+                # Another folded comment
+                Operators can trust these notes.
+              expectations:
+                - Use exact versions. # inline list comment
+                # Comment between list items
+                - Focus on deployable behavior.
+              added:
+                - Deployable release images.
+              changed:
+                - Channel notes stay separate.
+              planned:
+                - Future stable summaries.
+            """,
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    original_repo_root = module.REPO_ROOT
+    original_changelog_dir = module.CHANGELOG_DIR
+    module.REPO_ROOT = temp_repo_root
+    module.CHANGELOG_DIR = changelog_dir
+    try:
+        rendered = module.render_release_notes(channel="stable", version="0.0.1")
+    finally:
+        module.REPO_ROOT = original_repo_root
+        module.CHANGELOG_DIR = original_changelog_dir
+
+    for fragment in (
+        "# v0.0.1 Stable Channel Changelog",
+        "Stable releases communicate the supported slice. With durable guidance.",
+        "Stable releases use exact versions. Operators can trust these notes.",
+        "- Use exact versions.",
+        "- Focus on deployable behavior.",
+    ):
+        if fragment not in rendered:
+            message = (
+                "render_release_notes.py should preserve content when YAML "
+                f"comments are present: missing {fragment!r}"
+            )
+            raise AssertionError(message)
 
 
 def _assert_release_publish_job_checks_out_requested_target(
