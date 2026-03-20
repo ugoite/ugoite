@@ -45,3 +45,6 @@ sqlparser = "0.61.0"
 [dev-dependencies]
 pyo3 = { version = "0.24.1", features = ["auto-initialize"] }
 tempfile = "3"
+
+[patch.crates-io]
+reqsign = { path = "vendor/reqsign" }
