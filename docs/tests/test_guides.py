@@ -510,6 +510,10 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "canonical `mise run dev` workflow",
     "/login",
 }
+REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_FRAGMENTS = {
+    "sudo apt-get update && sudo apt-get install -y oathtool",
+    "oathtool --version",
+}
 FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev",
     "UGOITE_DEV_AUTH_MODE=manual-totp",
@@ -1393,6 +1397,10 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
+    devcontainer_text = (REPO_ROOT / ".devcontainer" / "devcontainer.json").read_text(
+        encoding="utf-8",
+    )
+    devcontainer_ci_text = DEVCONTAINER_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     api_storage_text = (
         REPO_ROOT / "docsite" / "src" / "pages" / "app" / "api-storage" / "index.astro"
     ).read_text(encoding="utf-8")
@@ -1454,6 +1462,17 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     if missing_env_matrix:
         details.append(
             "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
+        )
+
+    missing_devcontainer = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_FRAGMENTS
+        if fragment not in devcontainer_text and fragment not in devcontainer_ci_text
+    )
+    if missing_devcontainer:
+        details.append(
+            "devcontainer setup missing manual auth tooling fragments: "
+            + ", ".join(missing_devcontainer),
         )
 
     canonical_pointer_sources = {

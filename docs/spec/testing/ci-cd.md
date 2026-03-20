@@ -250,7 +250,7 @@ jobs:
     - docker/setup-buildx-action (enables type=gha cache driver)
     - docker/login-action (ghcr.io, GITHUB_TOKEN)
     - devcontainers/ci build + smoke command
-    - Run smoke command: gh/mise/bash versions
+    - Run smoke command: gh/mise/bash/oathtool versions
   required-check:
     if: always()
     - summary check still reports success when the smoke build is skipped
