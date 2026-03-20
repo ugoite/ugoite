@@ -542,8 +542,13 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "canonical `mise run dev` workflow",
     "/login",
 }
-REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_FRAGMENTS = {
-    "sudo apt-get update && sudo apt-get install -y oathtool",
+REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS = {
+    "sudo apt-get update",
+    "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "
+    "--no-install-recommends oathtool",
+    "sudo rm -rf /var/lib/apt/lists/*",
+}
+REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS = {
     "oathtool --version",
 }
 FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
@@ -1496,15 +1501,26 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
             "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
         )
 
-    missing_devcontainer = sorted(
+    missing_devcontainer_install = sorted(
         fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_FRAGMENTS
-        if fragment not in devcontainer_text and fragment not in devcontainer_ci_text
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS
+        if fragment not in devcontainer_text
     )
-    if missing_devcontainer:
+    if missing_devcontainer_install:
         details.append(
-            "devcontainer setup missing manual auth tooling fragments: "
-            + ", ".join(missing_devcontainer),
+            "devcontainer setup missing manual auth install fragments: "
+            + ", ".join(missing_devcontainer_install),
+        )
+
+    missing_devcontainer_ci = sorted(
+        fragment
+        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS
+        if fragment not in devcontainer_ci_text
+    )
+    if missing_devcontainer_ci:
+        details.append(
+            "devcontainer CI missing manual auth smoke fragments: "
+            + ", ".join(missing_devcontainer_ci),
         )
 
     canonical_pointer_sources = {

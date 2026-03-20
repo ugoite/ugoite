@@ -41,6 +41,6 @@
 		"GH_TOKEN": "${localEnv:GH_TOKEN}",
 		"GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
 	},
-	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y oathtool",
+	"postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends oathtool && sudo rm -rf /var/lib/apt/lists/*",
 	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && if git config --get core.hooksPath >/dev/null; then git config --unset-all core.hooksPath; fi && uvx pre-commit install && cd /workspace/e2e && npx playwright --version && npx playwright install --with-deps chromium"
 }
