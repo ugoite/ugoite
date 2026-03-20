@@ -129,7 +129,7 @@ it finishes, confirm the seeded space:
 
 ```bash
 cargo run -q -p ugoite-cli -- space list --root .
-ls ./spaces/dev-seed
+ls "./spaces/${UGOITE_SEED_SPACE_ID:-dev-seed}"
 ```
 
 If you prefer the underlying direct command, the task is just a thin wrapper
