@@ -550,7 +550,11 @@ requirements:
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
-    mode may pre-inject a bearer token into the running stack. README, docsite
+    mode may pre-inject a bearer token into the running stack. The standard
+
+    devcontainer setup MUST include `oathtool` so manual-totp flows remain
+
+    reproducible inside the canonical contributor environment. README, docsite
 
     setup pages, and developer-facing auth guidance MUST point back to one
 
