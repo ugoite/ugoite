@@ -234,7 +234,7 @@ bun dev
 Important: this repo provides two distinct container-based workflows:
 
 - Dev Container (development):
-  - `.devcontainer/devcontainer.json` creates a reproducible environment for developers and runs `mise install` as part of the setup.
+  - `.devcontainer/devcontainer.json` creates a reproducible environment for developers, installs `oathtool` for manual TOTP flows, and runs `mise install` as part of the setup.
   - Use Dev Container for onboarding, local development, and consistent dev tooling.
 
 - Docker Compose (deployment / CI):
