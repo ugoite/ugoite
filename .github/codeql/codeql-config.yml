@@ -10,6 +10,7 @@ paths-ignore:
   - '**/node_modules/**'
   - '**/e2e/**'
   - 'vendor/reqsign/**'
+  - 'ugoite-core/vendor/reqsign/**'
 
 # Query filters to customize which alerts are reported
 # The path-injection alerts are false positives because:
