@@ -10,6 +10,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG_DIR = REPO_ROOT / "docs" / "version" / "changelog"
 
 
+def _strip_yaml_comment(line: str) -> str:
+    in_single_quote = False
+    in_double_quote = False
+    for index, char in enumerate(line):
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            continue
+        if (
+            char == "#"
+            and not in_single_quote
+            and not in_double_quote
+            and (index == 0 or line[index - 1].isspace())
+        ):
+            return line[:index].rstrip()
+    return line.rstrip()
+
+
 def _require_non_empty_string(
     mapping: dict[str, object],
     key: str,
@@ -52,7 +72,7 @@ def _parse_folded(
     index = start_index
     prefix = " " * indent
     while index < len(lines):
-        line = lines[index]
+        line = _strip_yaml_comment(lines[index])
         if not line.strip():
             index += 1
             continue
@@ -73,7 +93,7 @@ def _parse_list(
     items: list[str] = []
     index = start_index
     while index < len(lines):
-        item_line = lines[index]
+        item_line = _strip_yaml_comment(lines[index])
         if not item_line.strip():
             index += 1
             continue
@@ -94,7 +114,7 @@ def _parse_release_notes(
     index = start_index
 
     while index < len(lines):
-        nested = lines[index]
+        nested = _strip_yaml_comment(lines[index])
         if not nested.strip():
             index += 1
             continue
@@ -133,7 +153,7 @@ def _load_channel_document(path: Path) -> dict[str, object]:
     index = 0
 
     while index < len(lines):
-        raw_line = lines[index]
+        raw_line = _strip_yaml_comment(lines[index])
         if not raw_line.strip():
             index += 1
             continue
