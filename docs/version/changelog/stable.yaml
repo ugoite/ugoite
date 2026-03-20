@@ -1,0 +1,25 @@
+channel: stable
+title: Stable Channel Changelog
+doc_path: docs/spec/versions/changelog-stable.md
+summary: >
+  Stable releases communicate the supported, operator-ready slice of Ugoite
+  with durable upgrade and deployment guidance.
+release_notes:
+  intro: >
+    Stable releases use plain SemVer tags and serve as the long-lived reference
+    point for operators and local-first teams that want supported behavior
+    without prerelease risk.
+  expectations:
+    - Use exact versions such as 0.0.1 and the stable/latest image aliases for supported rollouts.
+    - Focus notes on deployable behavior, upgrade impact, and operator guidance.
+    - Keep prerelease experiments out of the stable narrative until they are ready for support.
+  added:
+    - Deployable backend and frontend release images plus exact-version quick-start assets.
+    - Predictable CLI binaries and installer assets for supported release platforms.
+    - Post-publish quick-start verification that covers browser flows and released CLI authentication.
+  changed:
+    - Release communication is tracked as repository-managed channel notes instead of one mixed changelog page.
+    - Stable notes stay separate from beta and alpha experimentation so supported behavior remains easy to review.
+  planned:
+    - Final v0.1 release communication with known issues and next-step guidance once release-preparation closes.
+    - Stable summaries for future release streams after v0.1 hardening completes.
