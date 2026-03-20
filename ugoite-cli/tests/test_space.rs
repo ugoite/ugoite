@@ -153,3 +153,56 @@ fn test_create_sample_space_req_api_009() {
     let space_dir = dir.path().join("spaces").join("sample-space");
     assert!(space_dir.exists());
 }
+
+/// REQ-API-009: Direct sample-data CLI should show progress and create the target space.
+#[test]
+fn test_sample_data_progress_req_api_009() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "space",
+            "sample-data",
+            &root,
+            "sample-progress",
+            "--scenario",
+            "lab-qa",
+            "--entry-count",
+            "10",
+            "--seed",
+            "7",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"created\": true"),
+        "Expected created JSON output, got: {stdout}"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Seed progress ["),
+        "Expected progress output, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("(10/10) Completed"),
+        "Expected completed progress output, got: {stderr}"
+    );
+
+    let space_dir = dir.path().join("spaces").join("sample-progress");
+    assert!(
+        space_dir.exists(),
+        "Sample data command should create the space"
+    );
+}

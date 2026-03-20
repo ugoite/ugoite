@@ -124,11 +124,20 @@ UGOITE_SEED_SPACE_ID=ux-demo UGOITE_SEED_SCENARIO=supply-chain UGOITE_SEED_ENTRY
 mise run seed:scenarios
 ```
 
+The seed flow prints a terminal progress bar while entries are generated. After
+it finishes, confirm the seeded space:
+
+```bash
+cargo run -q -p ugoite-cli -- space list --root .
+ls ./spaces/dev-seed
+```
+
 If you prefer the underlying direct command, the task is just a thin wrapper
 over the Rust CLI and keeps Cargo builds inside the shared `target/rust` cache:
 
 ```bash
 bash scripts/dev-seed.sh --space-id cli-demo --scenario lab-qa --entry-count 10 --seed 7
+CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-data . cli-demo --scenario lab-qa --entry-count 10 --seed 7
 CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios
 ```
 

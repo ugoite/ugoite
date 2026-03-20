@@ -43,6 +43,27 @@ fn test_sample_data_req_api_010_list_scenarios() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// REQ-API-009
+async fn test_sample_data_req_api_009_respects_requested_small_entry_count() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let options = SampleDataOptions {
+        space_id: "sample-space-small".to_string(),
+        scenario: "lab-qa".to_string(),
+        entry_count: 6,
+        seed: Some(9),
+    };
+
+    let summary = create_sample_space(&op, "/tmp", &options).await?;
+    assert_eq!(summary.space_id, "sample-space-small");
+    assert_eq!(summary.entry_count, 6);
+
+    let entries = entry::list_entries(&op, "spaces/sample-space-small").await?;
+    assert_eq!(entries.len(), 6);
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-API-010
 async fn test_sample_data_req_api_010_job_lifecycle() -> anyhow::Result<()> {
     let op = setup_operator()?;
