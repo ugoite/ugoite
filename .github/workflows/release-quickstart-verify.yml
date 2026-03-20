@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v8
+        uses: actions/upload-artifact@v7
         with:
           name: release-quickstart-playwright-results
           path: e2e/test-results

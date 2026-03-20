@@ -433,7 +433,7 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
     "Verify released browser quick start",
     "actions/cache@v5",
     "actions/setup-node@v6",
-    "actions/upload-artifact@v8",
+    "actions/upload-artifact@v7",
     "bash scripts/verify-release-cli-quickstart.sh",
     "bash scripts/verify-release-container-quickstart.sh",
     "PLAYWRIGHT_JUNIT_OUTPUT_FILE",
