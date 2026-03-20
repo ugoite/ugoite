@@ -177,7 +177,7 @@ Confirm the default dataset after a run:
 
 ```bash
 cargo run -q -p ugoite-cli -- space list --root .
-ls ./spaces/dev-seed
+ls "./spaces/${UGOITE_SEED_SPACE_ID:-dev-seed}"
 ```
 
 If Rust build artifacts grow unexpectedly during local development, clear the

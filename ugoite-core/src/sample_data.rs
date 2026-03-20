@@ -618,12 +618,12 @@ impl JobProgressWriter {
         Ok(())
     }
 
-    async fn complete(&mut self, summary: SampleDataSummary) -> Result<()> {
+    async fn complete(&mut self, summary: &SampleDataSummary) -> Result<()> {
         self.job.status = SampleJobStatus::Completed;
         self.job.status_message = Some("Completed".to_string());
         self.job.processed_entries = self.job.total_entries;
         self.job.completed_at = Some(Utc::now());
-        self.job.summary = Some(summary);
+        self.job.summary = Some(summary.clone());
         self.job.error = None;
         write_job(&self.op, &self.job).await?;
         Ok(())
@@ -747,11 +747,11 @@ impl ProgressReporter {
         Ok(())
     }
 
-    async fn complete(&mut self, summary: SampleDataSummary) -> Result<()> {
+    async fn complete(&mut self, summary: &SampleDataSummary) -> Result<()> {
         match self {
             ProgressReporter::None => {}
             ProgressReporter::Job(writer) => writer.complete(summary).await?,
-            ProgressReporter::Terminal(writer) => writer.complete(&summary)?,
+            ProgressReporter::Terminal(writer) => writer.complete(summary)?,
         }
         Ok(())
     }
@@ -2200,7 +2200,7 @@ pub async fn create_sample_space_with_terminal_progress(
     let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
     match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
         Ok(summary) => {
-            progress.complete(summary.clone()).await?;
+            progress.complete(&summary).await?;
             Ok(summary)
         }
         Err(err) => {
@@ -2267,7 +2267,7 @@ pub async fn create_sample_space_job(
 
         match summary {
             Ok(summary) => {
-                let _ = progress.complete(summary).await;
+                let _ = progress.complete(&summary).await;
             }
             Err(err) => {
                 let _ = progress.fail(&err.to_string()).await;
