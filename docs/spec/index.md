@@ -60,7 +60,7 @@ Ugoite is a knowledge management system built on three core principles:
 - [Versions Overview](versions/index.md) - How versions, milestones, phases, and tasks fit together
 - [v0.1 Release Stream](versions/v0.1.md) - Current foundational release stream and milestone summary
 - [v0.2 Roadmap](versions/v0.2.md) - Planned capabilities beyond the v0.1 stream
-- [Changelog](versions/changelog.md) - Added/changed/planned view across versions
+- [Changelog](versions/changelog.md) - Channel entrypoint for stable, beta, and alpha release notes
 
 ### Security & Quality
 - [Security Overview](security/overview.md) - Security strategy and threat model

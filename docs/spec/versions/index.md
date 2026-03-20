@@ -49,12 +49,15 @@ flow:
    summary.
 2. Follow the linked milestone YAML files under `docs/version/` when you need
    task-level detail.
-3. Use the changelog page for a compact "Added / Changed / Planned" view.
+3. Use the changelog entrypoint to choose the stable, beta, or alpha release-note view.
 
 ## Linked Pages
 
 - [v0.1 release stream](v0.1.md)
 - [v0.2 roadmap](v0.2.md)
 - [changelog](changelog.md)
+- [stable changelog](changelog-stable.md)
+- [beta changelog](changelog-beta.md)
+- [alpha changelog](changelog-alpha.md)
 - [machine-readable v0.1 tracker](../../version/v0.1.yaml)
 - [machine-readable v0.2 tracker](../../version/v0.2.yaml)

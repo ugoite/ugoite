@@ -1,0 +1,24 @@
+channel: beta
+title: Beta Channel Changelog
+doc_path: docs/spec/versions/changelog-beta.md
+summary: >
+  Beta releases communicate the near-stable prerelease slice of Ugoite for
+  broader validation before operator-facing support.
+release_notes:
+  intro: >
+    Beta releases use SemVer prerelease tags such as 0.0.1-beta.1 and give
+    operators and contributors a wider validation window before stable rollout.
+  expectations:
+    - Use exact beta versions or the beta image alias when validating prerelease behavior.
+    - Focus notes on known rollout risk, validation scope, and near-stable changes.
+    - Keep experimental alpha-only guidance out of the beta narrative unless it is ready for broader review.
+  added:
+    - Release quick-start verification for the published browser stories and CLI authentication path.
+    - Deterministic beta image tags and exact-version release asset downloads.
+    - Channel-specific prerelease communication for workflows approaching stable support.
+  changed:
+    - Beta release notes are kept separate from stable and alpha notes so reviewers can focus on near-stable risk.
+    - Repository-managed changelog files now drive beta release-note context during publish.
+  planned:
+    - Broader beta guidance for user-management completion and release-preparation polish.
+    - Future beta summaries for capabilities graduating toward supported releases.
