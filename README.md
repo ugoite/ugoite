@@ -169,7 +169,16 @@ mise run seed:scenarios
 
 The seed task wraps the existing Rust CLI sample-data command, keeps builds in
 the shared `target/rust` cache, and refuses to overwrite an existing local
-space, so repeated runs stay predictable.
+space, so repeated runs stay predictable. It also prints a terminal progress
+bar while entries are generated and verifies `./spaces/<space-id>` exists
+before returning success.
+
+Confirm the default dataset after a run:
+
+```bash
+cargo run -q -p ugoite-cli -- space list --root .
+ls "./spaces/${UGOITE_SEED_SPACE_ID:-dev-seed}"
+```
 
 If Rust build artifacts grow unexpectedly during local development, clear the
 shared Rust target cache and the legacy ugoite-core cache path:
