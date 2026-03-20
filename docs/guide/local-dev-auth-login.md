@@ -29,6 +29,11 @@ Local dev auth mode: manual-totp (explicit username + 2FA login)
 
 ## 2) Install `oathtool` for manual TOTP flows
 
+If you open the repository in the standard devcontainer, this step is already
+handled for you during container setup.
+
+If you are developing outside the devcontainer, install it manually:
+
 ```bash
 sudo apt-get update && sudo apt-get install -y oathtool
 ```

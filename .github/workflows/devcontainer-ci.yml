@@ -182,6 +182,7 @@ jobs:
             gh --version
             mise --version
             bash --version | head -n 1
+            oathtool --version
 
   required-check:
     name: Devcontainer CI
