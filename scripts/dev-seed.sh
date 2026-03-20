@@ -5,7 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/dev-seed.sh [--root PATH] [--space-id ID] [--scenario NAME] [--entry-count N] [--seed VALUE]
 
-Create local sample data with the existing ugoite-cli sample-data command.
+Create local sample data with the existing ugoite-cli sample-data command and
+visible terminal progress.
 
 Defaults:
   --root        .
@@ -114,4 +115,9 @@ fi
 
 "${command[@]}"
 
-echo "Seeded local sample space at $ROOT_PATH/spaces/$SPACE_ID" >&2
+if [[ ! -d "$ROOT_PATH/spaces/$SPACE_ID" ]]; then
+  echo "Seed command finished but sample space directory is missing: $ROOT_PATH/spaces/$SPACE_ID" >&2
+  exit 1
+fi
+
+echo "Verified seeded local sample space at $ROOT_PATH/spaces/$SPACE_ID" >&2

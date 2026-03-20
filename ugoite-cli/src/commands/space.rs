@@ -210,7 +210,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 entry_count,
                 seed,
             };
-            ugoite_core::sample_data::create_sample_space(&op, &root_uri, &opts).await?;
+            ugoite_core::sample_data::create_sample_space_with_terminal_progress(
+                &op, &root_uri, &opts,
+            )
+            .await?;
             print_json(&serde_json::json!({"created": true}));
         }
         SpaceSubCmd::SampleScenarios => {

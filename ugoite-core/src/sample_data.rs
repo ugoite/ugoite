@@ -9,11 +9,11 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::io::{stderr, IsTerminal, Write};
 use uuid::Uuid;
 
 pub const DEFAULT_SCENARIO: &str = "renewable-ops";
 pub const DEFAULT_ENTRY_COUNT: usize = 5_000;
-const MIN_ENTRY_COUNT: usize = 100;
 const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
 
@@ -75,11 +75,37 @@ fn default_entry_count() -> usize {
 }
 
 fn normalize_entry_count(entry_count: usize, form_count: usize) -> usize {
-    let mut count = entry_count.clamp(MIN_ENTRY_COUNT, MAX_ENTRY_COUNT);
+    let mut count = entry_count.clamp(1, MAX_ENTRY_COUNT);
     if count < form_count {
         count = form_count;
     }
     count
+}
+
+#[derive(Clone)]
+struct ResolvedSampleDataPlan {
+    scenario: String,
+    form_defs: Vec<Value>,
+    form_count: usize,
+    entry_count: usize,
+}
+
+fn resolve_sample_data_plan(options: &SampleDataOptions) -> Result<ResolvedSampleDataPlan> {
+    let scenario = if options.scenario.trim().is_empty() {
+        DEFAULT_SCENARIO.to_string()
+    } else {
+        options.scenario.trim().to_string()
+    };
+    let form_defs = scenario_forms(&scenario)
+        .ok_or_else(|| anyhow!("Unknown sample data scenario: {}", scenario))?;
+    let form_count = form_defs.len();
+    let entry_count = normalize_entry_count(options.entry_count, form_count);
+    Ok(ResolvedSampleDataPlan {
+        scenario,
+        form_defs,
+        form_count,
+        entry_count,
+    })
 }
 
 fn allocate_counts(entry_count: usize, weights: &[f64]) -> Vec<usize> {
@@ -576,8 +602,10 @@ impl JobProgressWriter {
 
     async fn maybe_update(&mut self, processed: usize, message: &str) -> Result<()> {
         let threshold = 50usize;
+        let message_changed = self.job.status_message.as_deref() != Some(message);
         if processed < self.job.total_entries
             && processed.saturating_sub(self.last_flushed) < threshold
+            && !message_changed
         {
             return Ok(());
         }
@@ -611,29 +639,128 @@ impl JobProgressWriter {
     }
 }
 
+struct TerminalProgressWriter {
+    total_entries: usize,
+    last_rendered: usize,
+    last_message: Option<String>,
+    is_terminal: bool,
+    last_line_len: usize,
+}
+
+impl TerminalProgressWriter {
+    fn new(total_entries: usize) -> Self {
+        Self {
+            total_entries,
+            last_rendered: 0,
+            last_message: None,
+            is_terminal: stderr().is_terminal(),
+            last_line_len: 0,
+        }
+    }
+
+    fn render_threshold(&self) -> usize {
+        (self.total_entries / 20).max(1)
+    }
+
+    fn render_line(&self, processed: usize, message: &str) -> String {
+        let width = 20usize;
+        let capped = processed.min(self.total_entries);
+        let percent = if self.total_entries == 0 {
+            100usize
+        } else {
+            ((capped * 100) / self.total_entries).min(100)
+        };
+        let filled = if self.total_entries == 0 {
+            width
+        } else {
+            (((capped * width) + (self.total_entries / 2)) / self.total_entries).min(width)
+        };
+        let bar = format!("{}{}", "#".repeat(filled), "-".repeat(width - filled));
+        format!(
+            "Seed progress [{}] {:>3}% ({}/{}) {}",
+            bar, percent, capped, self.total_entries, message
+        )
+    }
+
+    fn should_render(&self, processed: usize, message: &str) -> bool {
+        let capped = processed.min(self.total_entries);
+        capped == self.total_entries
+            || (capped == 0 && self.last_message.is_none())
+            || self.last_message.as_deref() != Some(message)
+            || capped.saturating_sub(self.last_rendered) >= self.render_threshold()
+    }
+
+    fn render(&mut self, processed: usize, message: &str) -> Result<()> {
+        if !self.should_render(processed, message) {
+            return Ok(());
+        }
+
+        let line = self.render_line(processed, message);
+        let mut err = stderr();
+        if self.is_terminal {
+            let padding = " ".repeat(self.last_line_len.saturating_sub(line.len()));
+            write!(err, "\r{}{}", line, padding)?;
+            if processed.min(self.total_entries) == self.total_entries && message == "Completed" {
+                writeln!(err)?;
+            }
+            err.flush()?;
+            self.last_line_len = line.len();
+        } else {
+            writeln!(err, "{line}")?;
+            err.flush()?;
+        }
+
+        self.last_rendered = processed.min(self.total_entries);
+        self.last_message = Some(message.to_string());
+        Ok(())
+    }
+
+    fn complete(&mut self, summary: &SampleDataSummary) -> Result<()> {
+        self.render(summary.entry_count, "Completed")
+    }
+
+    fn fail(&mut self, error: &str) -> Result<()> {
+        let mut err = stderr();
+        if self.is_terminal && self.last_line_len > 0 {
+            writeln!(err)?;
+            self.last_line_len = 0;
+        }
+        writeln!(err, "Seed progress failed: {error}")?;
+        err.flush()?;
+        Ok(())
+    }
+}
+
 enum ProgressReporter {
     None,
     Job(Box<JobProgressWriter>),
+    Terminal(TerminalProgressWriter),
 }
 
 impl ProgressReporter {
     async fn report(&mut self, processed: usize, message: &str) -> Result<()> {
-        if let ProgressReporter::Job(writer) = self {
-            writer.maybe_update(processed, message).await?;
+        match self {
+            ProgressReporter::None => {}
+            ProgressReporter::Job(writer) => writer.maybe_update(processed, message).await?,
+            ProgressReporter::Terminal(writer) => writer.render(processed, message)?,
         }
         Ok(())
     }
 
     async fn complete(&mut self, summary: SampleDataSummary) -> Result<()> {
-        if let ProgressReporter::Job(writer) = self {
-            writer.complete(summary).await?;
+        match self {
+            ProgressReporter::None => {}
+            ProgressReporter::Job(writer) => writer.complete(summary).await?,
+            ProgressReporter::Terminal(writer) => writer.complete(&summary)?,
         }
         Ok(())
     }
 
     async fn fail(&mut self, error: &str) -> Result<()> {
-        if let ProgressReporter::Job(writer) = self {
-            writer.fail(error).await?;
+        match self {
+            ProgressReporter::None => {}
+            ProgressReporter::Job(writer) => writer.fail(error).await?,
+            ProgressReporter::Terminal(writer) => writer.fail(error)?,
         }
         Ok(())
     }
@@ -2002,32 +2129,26 @@ async fn create_sample_space_with_progress(
     op: &Operator,
     root_uri: &str,
     options: &SampleDataOptions,
+    plan: &ResolvedSampleDataPlan,
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
-    let scenario = if options.scenario.trim().is_empty() {
-        DEFAULT_SCENARIO.to_string()
-    } else {
-        options.scenario.trim().to_string()
-    };
-
-    let form_defs = scenario_forms(&scenario)
-        .ok_or_else(|| anyhow!("Unknown sample data scenario: {}", scenario))?;
-    let form_count = form_defs.len();
-    let entry_count = normalize_entry_count(options.entry_count, form_count);
-
+    progress.report(0, "Creating space").await?;
     space::create_space(op, &options.space_id, root_uri).await?;
     let ws_path = format!("spaces/{}", options.space_id);
 
-    for form_def in &form_defs {
+    progress.report(0, "Installing forms").await?;
+    for form_def in &plan.form_defs {
         form::upsert_form(op, &ws_path, form_def).await?;
     }
 
-    let form_names: Vec<String> = form_defs
+    let form_names: Vec<String> = plan
+        .form_defs
         .iter()
         .filter_map(|form_def| form_def.get("name").and_then(|name| name.as_str()))
         .map(|name| name.to_string())
         .collect();
-    let forms_map: std::collections::HashMap<String, Value> = form_defs
+    let forms_map: std::collections::HashMap<String, Value> = plan
+        .form_defs
         .iter()
         .filter_map(|form_def| {
             form_def
@@ -2044,18 +2165,18 @@ async fn create_sample_space_with_progress(
         op,
         ws_path: &ws_path,
         space_id: &options.space_id,
-        entry_count,
+        entry_count: plan.entry_count,
         rng: &mut rng,
         forms_map: &forms_map,
         progress,
     };
-    generate_entries_for_scenario(&scenario, &mut context).await?;
+    generate_entries_for_scenario(&plan.scenario, &mut context).await?;
 
     Ok(SampleDataSummary {
         space_id: options.space_id.clone(),
-        scenario,
-        entry_count,
-        form_count,
+        scenario: plan.scenario.clone(),
+        entry_count: plan.entry_count,
+        form_count: plan.form_count,
         forms: form_names,
     })
 }
@@ -2065,8 +2186,28 @@ pub async fn create_sample_space(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
+    let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::None;
-    create_sample_space_with_progress(op, root_uri, options, &mut progress).await
+    create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await
+}
+
+pub async fn create_sample_space_with_terminal_progress(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+) -> Result<SampleDataSummary> {
+    let plan = resolve_sample_data_plan(options)?;
+    let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
+    match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
+        Ok(summary) => {
+            progress.complete(summary.clone()).await?;
+            Ok(summary)
+        }
+        Err(err) => {
+            let _ = progress.fail(&err.to_string()).await;
+            Err(err)
+        }
+    }
 }
 
 pub async fn create_sample_space_job(
@@ -2074,31 +2215,23 @@ pub async fn create_sample_space_job(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
-    let scenario = if options.scenario.trim().is_empty() {
-        DEFAULT_SCENARIO.to_string()
-    } else {
-        options.scenario.trim().to_string()
-    };
-    let form_defs = scenario_forms(&scenario)
-        .ok_or_else(|| anyhow!("Unknown sample data scenario: {}", scenario))?;
+    let plan = resolve_sample_data_plan(options)?;
     if space::space_exists(op, &options.space_id).await? {
         return Err(anyhow!("Space already exists: {}", options.space_id));
     }
-    let form_count = form_defs.len();
-    let entry_count = normalize_entry_count(options.entry_count, form_count);
 
     ensure_jobs_dir(op).await?;
     let job_id = Uuid::new_v4().to_string();
     let job = SampleDataJob {
         job_id: job_id.clone(),
         space_id: options.space_id.clone(),
-        scenario: scenario.clone(),
-        entry_count,
+        scenario: plan.scenario.clone(),
+        entry_count: plan.entry_count,
         seed: options.seed,
         status: SampleJobStatus::Queued,
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
-        total_entries: entry_count,
+        total_entries: plan.entry_count,
         started_at: None,
         completed_at: None,
         error: None,
@@ -2110,11 +2243,12 @@ pub async fn create_sample_space_job(
     let op_clone = op.clone();
     let options_clone = SampleDataOptions {
         space_id: options.space_id.clone(),
-        scenario: scenario.clone(),
-        entry_count,
+        scenario: plan.scenario.clone(),
+        entry_count: plan.entry_count,
         seed: options.seed,
     };
     let root_uri = root_uri.to_string();
+    let plan_clone = plan.clone();
 
     let job_for_progress = job.clone();
     tokio::spawn(async move {
@@ -2122,9 +2256,14 @@ pub async fn create_sample_space_job(
             op_clone.clone(),
             job_for_progress,
         )));
-        let summary =
-            create_sample_space_with_progress(&op_clone, &root_uri, &options_clone, &mut progress)
-                .await;
+        let summary = create_sample_space_with_progress(
+            &op_clone,
+            &root_uri,
+            &options_clone,
+            &plan_clone,
+            &mut progress,
+        )
+        .await;
 
         match summary {
             Ok(summary) => {

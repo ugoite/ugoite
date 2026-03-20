@@ -605,11 +605,15 @@ REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "ugoite-cli",
     "sample-data",
     "Refusing to overwrite existing local sample space",
+    "Seed command finished but sample space directory is missing",
+    "Verified seeded local sample space at",
 }
 REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed",
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
+    "terminal progress",
+    "cargo run -q -p ugoite-cli -- space list --root .",
 }
 REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
     "cargo-test-minimum",
@@ -679,7 +683,13 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
         "--entry-count 10 --seed 7"
     ),
     "UGOITE_SEED_SCENARIO=supply-chain",
+    (
+        "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- "
+        "space sample-data . cli-demo --scenario lab-qa --entry-count 10 --seed 7"
+    ),
     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
+    "terminal progress",
+    "space list --root .",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
