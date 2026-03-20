@@ -6,4 +6,4 @@
 "docs/tests/test_storage_docs.py" = ["S603", "S607"]
 "docs/tests/test_artifact_hygiene.py" = ["S101", "S603", "S607"]
 "scripts/check_minimum_coverage.py" = ["S603", "S607"]
-"docs/tests/test_guides.py" = ["S603"]
+"docs/tests/test_guides.py" = ["S603", "S607"]

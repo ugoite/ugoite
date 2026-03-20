@@ -5,3 +5,6 @@ members = [
     "ugoite-minimum",
 ]
 resolver = "2"
+
+[patch.crates-io]
+reqsign = { path = "vendor/reqsign" }
