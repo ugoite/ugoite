@@ -93,7 +93,8 @@ jobs:
             exit 0
           fi
 
-          args=(--target "$TARGET" --title "$tag" --generate-notes --draft)
+          channel_notes="$(python3 scripts/render_release_notes.py --channel "$CHANNEL" --version "$VERSION")"
+          args=(--target "$TARGET" --title "$tag" --generate-notes --draft --notes "$channel_notes")
           if [ "$CHANNEL" != "stable" ]; then
             args+=(--prerelease)
           fi
