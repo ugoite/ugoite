@@ -998,3 +998,46 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_025_release_quickstart_verification_stays_wired
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-026
+  title: Channel-Scoped Release Changelog Sources
+  description: 'The repository MUST keep separate stable, beta, and alpha changelog
+
+    sources under `docs/version`, expose discoverable human-readable changelog
+
+    entrypoints from `docs/spec/versions/changelog.md`, and have `Release
+
+    Publish` prepend the matching repository-rendered channel notes before
+
+    GitHub-generated release notes.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  - versions/index.md
+  - versions/changelog.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_versions.py
+      tests:
+      - test_docs_req_ops_026_release_channel_changelog_sources_exist
+      - test_docs_req_ops_026_release_preparation_tracks_channel_drafting
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_026_release_publish_uses_channel_changelog_sources

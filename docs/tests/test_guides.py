@@ -22,6 +22,7 @@ REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queu
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-025: Published release quick-start verification must stay wired.
+REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import textwrap
 from dataclasses import dataclass
@@ -110,8 +112,13 @@ RELEASE_INSTALLER_RENDERER_PATH = (
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
+RELEASE_NOTES_RENDERER_PATH = REPO_ROOT / "scripts" / "render_release_notes.py"
 RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-container-quickstart.sh"
+)
+RELEASE_CHANGELOG_DIR = REPO_ROOT / "docs" / "version" / "changelog"
+RELEASE_CHANGELOG_ENTRYPOINT_PATH = (
+    REPO_ROOT / "docs" / "spec" / "versions" / "changelog.md"
 )
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
@@ -461,6 +468,29 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
     "./.github/workflows/release-quickstart-verify.yml",
     "smoke.test.ts",
     "search-ui.test.ts",
+}
+REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS = {
+    "scripts/render_release_notes.py",
+    '--channel "$CHANNEL"',
+    '--version "$VERSION"',
+    (
+        'channel_notes="$(python3 scripts/render_release_notes.py '
+        '--channel "$CHANNEL" --version "$VERSION")"'
+    ),
+    '--notes "$channel_notes"',
+}
+REQUIRED_RELEASE_CHANGELOG_ENTRYPOINT_FRAGMENTS = {
+    "changelog-stable.md",
+    "changelog-beta.md",
+    "changelog-alpha.md",
+    "../../version/changelog/stable.yaml",
+    "../../version/changelog/beta.yaml",
+    "../../version/changelog/alpha.yaml",
+}
+REQUIRED_RELEASE_CHANGELOG_CICD_FRAGMENTS = {
+    "scripts/render_release_notes.py",
+    "docs/version/changelog/<channel>.yaml",
+    "stable/alpha/beta",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -1863,6 +1893,101 @@ def test_docs_req_ops_018_platform_installer_asset_validates_prerelease(
 def test_docs_req_ops_025_release_quickstart_verification_stays_wired() -> None:
     """REQ-OPS-025: published release quick-start verification stays wired."""
     details = _collect_release_quickstart_verification_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_026_release_publish_uses_channel_changelog_sources() -> None:
+    """REQ-OPS-026: Release Publish must render channel-scoped changelog notes."""
+    workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    changelog_entrypoint = RELEASE_CHANGELOG_ENTRYPOINT_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS,
+    )
+    missing_entrypoint_fragments = _missing_required_fragments(
+        changelog_entrypoint,
+        REQUIRED_RELEASE_CHANGELOG_ENTRYPOINT_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_RELEASE_CHANGELOG_CICD_FRAGMENTS,
+    )
+
+    details = [
+        message
+        for condition, message in (
+            (
+                not RELEASE_NOTES_RENDERER_PATH.exists(),
+                (
+                    "scripts/render_release_notes.py must exist for channel "
+                    "changelog rendering"
+                ),
+            ),
+            (
+                bool(missing_workflow_fragments),
+                "release-publish missing channel changelog fragments: "
+                + ", ".join(missing_workflow_fragments),
+            ),
+            (
+                bool(missing_entrypoint_fragments),
+                "versions/changelog.md missing channel changelog fragments: "
+                + ", ".join(missing_entrypoint_fragments),
+            ),
+            (
+                bool(missing_ci_cd_fragments),
+                "ci-cd guide missing channel changelog fragments: "
+                + ", ".join(missing_ci_cd_fragments),
+            ),
+        )
+        if condition
+    ]
+
+    version_by_channel = {
+        "stable": "0.0.1",
+        "beta": "0.0.1-beta.1",
+        "alpha": "0.0.1-alpha.1",
+    }
+    for channel, version in version_by_channel.items():
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(RELEASE_NOTES_RENDERER_PATH),
+                "--channel",
+                channel,
+                "--version",
+                version,
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            details.append(
+                (
+                    "render_release_notes.py failed for "
+                    f"{channel}: {result.stderr.strip()}"
+                ),
+            )
+            continue
+        expected_fragments = [
+            f"# v{version}",
+            f"`docs/version/changelog/{channel}.yaml`",
+            f"`docs/spec/versions/changelog-{channel}.md`",
+        ]
+        missing_rendered = [
+            fragment for fragment in expected_fragments if fragment not in result.stdout
+        ]
+        if missing_rendered:
+            details.append(
+                "render_release_notes.py missing fragments for "
+                f"{channel}: {', '.join(missing_rendered)}",
+            )
+
     if details:
         raise AssertionError("; ".join(details))
 

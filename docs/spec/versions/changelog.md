@@ -1,51 +1,29 @@
 # Changelog
 
-This page summarizes what each release stream adds, changes, or plans to add.
-For task-level status, follow the machine-readable files under `docs/version/`.
+Ugoite now keeps release communication in channel-scoped tracks so stable,
+beta, and alpha notes do not blur together in one mixed page.
 
-## v0.2 (planned)
+The machine-readable sources live under `docs/version/changelog/`, while this
+entrypoint keeps the human-readable release-note views discoverable from the
+existing versions index.
 
-### Added
+## Release note channels
 
-- Planned query-driven user-controlled views
-- Planned shareable view definitions stored with the product data model
-- Planned production-ready MCP resource and tool coverage
-- Planned AI workflow automation, vector search, voice transcription, and
-  computational entries
+| Channel | Audience | Human-readable page | Machine-readable source |
+|---------|----------|---------------------|-------------------------|
+| stable | Supported operator-ready releases | [Stable changelog](changelog-stable.md) | [`../../version/changelog/stable.yaml`](../../version/changelog/stable.yaml) |
+| beta | Broad prerelease validation before stable cut | [Beta changelog](changelog-beta.md) | [`../../version/changelog/beta.yaml`](../../version/changelog/beta.yaml) |
+| alpha | Earliest validated previews and experiments | [Alpha changelog](changelog-alpha.md) | [`../../version/changelog/alpha.yaml`](../../version/changelog/alpha.yaml) |
 
-### Changed
+Use the page that matches the channel you plan to install or publish:
 
-- Shifts the release story from "foundational platform hardening" toward
-  "user-controlled experiences and AI-native workflows"
+- [Stable changelog](changelog-stable.md)
+- [Beta changelog](changelog-beta.md)
+- [Alpha changelog](changelog-alpha.md)
 
-### Planned
+## Version stream snapshots
 
-- Design, implementation, and testing work for the `user-controlled-view` and
-  `ai-enabled-and-ai-used` milestones
+The version stream pages still explain what `v0.1` and `v0.2` mean overall:
 
-## v0.1 (in progress)
-
-### Added
-
-- Local-first MVP across backend, frontend, CLI, and storage abstraction
-- REST and MCP foundations plus sandboxed execution support
-- Shared Rust `ugoite-core` architecture and unified Form terminology
-- YAML-based requirements and automated requirement traceability
-- Iceberg-backed entries, Ugoite SQL, redesigned space UI, theme switching, and
-  sample data generation
-
-### Changed
-
-- Entry storage moved to a Form-first Iceberg-backed model
-- Repository terminology was normalized to Space / Form / Entry / Asset
-- Product specs became more machine-readable and more tightly coupled to tests
-
-### Planned
-
-- Release-preparation work such as deployable images, quick-start docs, and
-  final release communication
-
-### In Progress
-
-- User-management completion for authentication, authorization, memberships,
-  service accounts, and audit coverage
+- [v0.1 Release Stream](v0.1.md)
+- [v0.2 Roadmap](v0.2.md)
