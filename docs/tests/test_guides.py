@@ -2940,10 +2940,20 @@ def _collect_required_status_check_code_scanning_details(
     if not isinstance(ignored_paths, list):
         message = ".github/codeql/codeql-config.yml paths-ignore must be a list"
         raise TypeError(message)
-    if "vendor/reqsign/**" not in ignored_paths:
+    required_ignored_paths = {
+        "vendor/reqsign/**",
+        "ugoite-core/vendor/reqsign/**",
+    }
+    missing_ignored_paths = sorted(
+        required_ignored_paths.difference(
+            path for path in ignored_paths if isinstance(path, str)
+        ),
+    )
+    if missing_ignored_paths:
         details.append(
-            ".github/codeql/codeql-config.yml must ignore vendor/reqsign/** "
-            "to avoid third-party vendored alerts blocking native CodeQL status",
+            ".github/codeql/codeql-config.yml must ignore vendored reqsign paths "
+            "to avoid third-party alerts blocking native CodeQL status: "
+            + ", ".join(missing_ignored_paths),
         )
 
     return details
