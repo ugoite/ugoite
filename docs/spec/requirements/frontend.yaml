@@ -1220,6 +1220,11 @@ requirements:
 
     collide with reserved metadata column names (e.g., title, form, tags).
 
+
+    Reserved-name guidance MUST stay hidden until a reserved metadata field or
+
+    form name is entered, and MUST hide again after the reserved name is removed.
+
     '
   related_spec:
   - data-model/overview.md#metadata-vs-content-columns
@@ -1231,6 +1236,8 @@ requirements:
     - file: frontend/src/components/create-dialogs.test.tsx
       tests:
       - 'REQ-FE-039: blocks reserved metadata column names'
+      - 'REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form'
+      - 'REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
