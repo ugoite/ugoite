@@ -1,6 +1,7 @@
 """Version roadmap consistency tests.
 
 REQ-OPS-004: Version milestones must be YAML-defined with phase metadata.
+REQ-OPS-026: Release changelog sources must stay channel-scoped.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION_DIR = REPO_ROOT / "docs" / "version"
+RELEASE_CHANGELOG_DIR = VERSION_DIR / "changelog"
 ISSUE_TEMPLATE_DIR = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
 
 
@@ -171,3 +173,86 @@ def test_docs_req_ops_004_issue_templates_support_phase() -> None:
         }
         if "issue_type" not in ids or "phase" not in ids:
             _fail(f"{template_name} must include issue_type and phase fields")
+
+
+def test_docs_req_ops_026_release_channel_changelog_sources_exist() -> None:
+    """REQ-OPS-026: Stable/beta/alpha changelog sources and docs must exist."""
+    for channel in ("stable", "beta", "alpha"):
+        changelog_path = RELEASE_CHANGELOG_DIR / f"{channel}.yaml"
+        data = _load_version(changelog_path)
+        if str(data.get("channel") or "").strip() != channel:
+            _fail(
+                f"{changelog_path.relative_to(REPO_ROOT)} must declare "
+                f"channel={channel}",
+            )
+
+        doc_path = str(data.get("doc_path") or "").strip()
+        if not doc_path:
+            _fail(f"{changelog_path.relative_to(REPO_ROOT)} must define doc_path")
+        full_doc_path = REPO_ROOT / doc_path
+        if not full_doc_path.exists():
+            _fail(
+                f"{changelog_path.relative_to(REPO_ROOT)} doc_path not found: "
+                f"{doc_path}",
+            )
+
+        release_notes = data.get("release_notes")
+        if not isinstance(release_notes, dict):
+            _fail(f"{changelog_path.relative_to(REPO_ROOT)} must define release_notes")
+
+        intro = str(release_notes.get("intro") or "").strip()
+        if not intro:
+            _fail(
+                f"{changelog_path.relative_to(REPO_ROOT)} "
+                "release_notes.intro is required",
+            )
+
+        for key in ("expectations", "added", "changed", "planned"):
+            values = release_notes.get(key)
+            if not isinstance(values, list) or not values:
+                _fail(
+                    f"{changelog_path.relative_to(REPO_ROOT)} release_notes.{key} "
+                    "must be a non-empty list",
+                )
+            if any(not isinstance(value, str) or not value.strip() for value in values):
+                _fail(
+                    f"{changelog_path.relative_to(REPO_ROOT)} release_notes.{key} "
+                    "must only contain non-empty strings",
+                )
+
+
+def test_docs_req_ops_026_release_preparation_tracks_channel_drafting() -> None:
+    """REQ-OPS-026: Release preparation must track stable/beta/alpha drafting tasks."""
+    data = _load_version(VERSION_DIR / "v0.1" / "release-preparation.yaml")
+    phases = data.get("phases")
+    if not isinstance(phases, list):
+        _fail("docs/version/v0.1/release-preparation.yaml must define phases")
+
+    release_notes_phase = next(
+        (
+            phase
+            for phase in phases
+            if isinstance(phase, dict) and phase.get("id") == "release-notes-drafting"
+        ),
+        None,
+    )
+    if not isinstance(release_notes_phase, dict):
+        _fail("release-preparation must define a release-notes-drafting phase")
+
+    tasks = release_notes_phase.get("tasks")
+    if not isinstance(tasks, list):
+        _fail("release-notes-drafting must define tasks")
+
+    descriptions = {
+        str(task.get("description") or "").strip()
+        for task in tasks
+        if isinstance(task, dict)
+    }
+    required = {
+        "Prepare stable release notes and operator guidance",
+        "Prepare beta release notes and prerelease validation guidance",
+        "Prepare alpha release notes and experimental guidance",
+    }
+    missing = sorted(required.difference(descriptions))
+    if missing:
+        _fail("release-notes-drafting missing tasks: " + ", ".join(missing))

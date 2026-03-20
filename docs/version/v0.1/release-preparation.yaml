@@ -19,5 +19,9 @@ phases:
   - id: release-notes-drafting
     status: planned
     tasks:
-      - description: "Prepare changelog, known issues, and next-step guidance"
+      - description: "Prepare stable release notes and operator guidance"
+        done: false
+      - description: "Prepare beta release notes and prerelease validation guidance"
+        done: false
+      - description: "Prepare alpha release notes and experimental guidance"
         done: false
