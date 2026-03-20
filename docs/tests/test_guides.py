@@ -65,6 +65,8 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
+CODEQL_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
+CODEQL_CONFIG_PATH = REPO_ROOT / ".github" / "codeql" / "codeql-config.yml"
 RELEASE_PUBLISH_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
 )
@@ -2918,13 +2920,81 @@ def _collect_required_status_check_code_scanning_details(
     missing_tools = sorted(
         REQUIRED_NATIVE_CODE_SCANNING_TOOLS.difference(configured_tools),
     )
-    if not missing_tools:
-        return []
-    message = (
-        "required-status-checks.json missing native code-scanning tools: "
-        + ", ".join(missing_tools)
+    details: list[str] = []
+    if missing_tools:
+        details.append(
+            "required-status-checks.json missing native code-scanning tools: "
+            + ", ".join(missing_tools),
+        )
+
+    if not CODEQL_CONFIG_PATH.exists():
+        details.append(
+            ".github/codeql/codeql-config.yml must exist for CodeQL config",
+        )
+        return details
+
+    details.extend(_collect_codeql_workflow_config_details())
+
+    codeql_config = _load_yaml_base_mapping(CODEQL_CONFIG_PATH)
+    ignored_paths = codeql_config.get("paths-ignore", [])
+    if not isinstance(ignored_paths, list):
+        message = ".github/codeql/codeql-config.yml paths-ignore must be a list"
+        raise TypeError(message)
+    if "vendor/reqsign/**" not in ignored_paths:
+        details.append(
+            ".github/codeql/codeql-config.yml must ignore vendor/reqsign/** "
+            "to avoid third-party vendored alerts blocking native CodeQL status",
+        )
+
+    return details
+
+
+def _collect_codeql_workflow_config_details() -> list[str]:
+    codeql_workflow = _load_yaml_base_mapping(CODEQL_WORKFLOW_PATH)
+    jobs = codeql_workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = ".github/workflows/codeql.yml must define jobs"
+        raise TypeError(message)
+    analyze_job = jobs.get("analyze", {})
+    if not isinstance(analyze_job, dict):
+        message = ".github/workflows/codeql.yml must define analyze job"
+        raise TypeError(message)
+
+    initialize_step = _find_codeql_initialize_step(analyze_job)
+    if not isinstance(initialize_step, dict):
+        return [
+            "codeql.yml must initialize CodeQL with github/codeql-action/init@v4",
+        ]
+
+    with_block = initialize_step.get("with", {})
+    if not isinstance(with_block, dict):
+        return ["codeql.yml Initialize CodeQL step must define with block"]
+    if with_block.get("config-file") != "./.github/codeql/codeql-config.yml":
+        return [
+            "codeql.yml Initialize CodeQL step must use "
+            "./.github/codeql/codeql-config.yml",
+        ]
+    return []
+
+
+def _find_codeql_initialize_step(
+    analyze_job: dict[object, object],
+) -> dict[object, object] | None:
+    steps = analyze_job.get("steps", [])
+    if not isinstance(steps, list):
+        message = ".github/workflows/codeql.yml analyze job must define steps"
+        raise TypeError(message)
+
+    return next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("name") == "Initialize CodeQL"
+            and step.get("uses") == "github/codeql-action/init@v4"
+        ),
+        None,
     )
-    return [message]
 
 
 def _collect_required_status_check_ruleset_details(
