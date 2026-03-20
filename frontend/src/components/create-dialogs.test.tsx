@@ -76,6 +76,46 @@ describe("CreateFormDialog", () => {
 		expect(screen.getByRole("button", { name: "Create Form" })).toBeDisabled();
 	});
 
+	it("REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+			target: { value: "TestForm" },
+		});
+		fireEvent.click(screen.getByText("+ Add Column"));
+		const columnInput = screen.getByPlaceholderText("Column Name") as HTMLInputElement;
+
+		expect(
+			screen.queryByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).not.toBeInTheDocument();
+
+		fireEvent.input(columnInput, { target: { value: "title" } });
+		expect(
+			screen.getByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).toBeInTheDocument();
+
+		fireEvent.input(columnInput, { target: { value: "summary" } });
+		expect(
+			screen.queryByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).not.toBeInTheDocument();
+
+		fireEvent.input(columnInput, { target: { value: "title" } });
+		expect(
+			screen.getByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).toBeInTheDocument();
+	});
+
 	it("REQ-FE-055: keeps create-form column inputs readable on narrow layouts", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -1133,6 +1173,47 @@ describe("EditFormDialog", () => {
 
 		// New field should have default value input
 		expect(screen.getByPlaceholderText("(Optional) e.g. Pending")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByText("+ Add Column"));
+
+		const inputs = screen.getAllByPlaceholderText("Column Name") as HTMLInputElement[];
+		const newInput = inputs.find((input) => input.value === "");
+		if (!newInput) throw new Error("Could not find new edit-dialog column input");
+
+		expect(
+			screen.queryByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).not.toBeInTheDocument();
+
+		fireEvent.input(newInput, { target: { value: "title" } });
+		expect(
+			screen.getByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).toBeInTheDocument();
+
+		fireEvent.input(newInput, { target: { value: "summary" } });
+		expect(
+			screen.queryByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).not.toBeInTheDocument();
+
+		fireEvent.input(newInput, { target: { value: "title" } });
+		expect(
+			screen.getByText(/Reserved metadata columns are system-owned and cannot be used/),
+		).toBeInTheDocument();
 	});
 
 	it("REQ-FE-032: submits the edited form successfully", async () => {

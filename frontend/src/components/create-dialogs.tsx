@@ -125,6 +125,12 @@ const buildFieldIssues = (fields: FieldIssueSource[], context?: FieldIssueContex
 	return issues;
 };
 
+const hasReservedMetadataFieldName = (fields: FieldIssueSource[]) =>
+	fields.some((field) => {
+		const trimmed = field.name.trim();
+		return trimmed ? isReservedMetadataColumn(trimmed) : false;
+	});
+
 export interface CreateEntryDialogProps {
 	open: boolean;
 	forms: Form[];
@@ -809,6 +815,10 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 		/* v8 ignore stop */
 	);
 
+	const showReservedNameGuidance = createMemo(
+		() => hasReservedMetadataFieldName(fields()) || Boolean(nameIssue()),
+	);
+
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 
 	// Handle escape key
@@ -1008,20 +1018,22 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 									{t("createDialog.form.noColumnsDefined")}
 								</div>
 							</Show>
-							<div class="ui-alert ui-alert-warning text-xs space-y-1">
-								<p>
-									{t("createDialog.form.warning.reservedColumns", {
-										columns: RESERVED_METADATA_COLUMNS.join(", "),
-									})}
-								</p>
-								<p>
-									{t("createDialog.form.warning.reservedForms", {
-										forms: RESERVED_METADATA_CLASSES.join(", "),
-									})}
-								</p>
-								<p>{t("createDialog.form.warning.listFields")}</p>
-								<p>{t("createDialog.form.warning.booleanFields")}</p>
-							</div>
+							<Show when={showReservedNameGuidance()}>
+								<div class="ui-alert ui-alert-warning text-xs space-y-1">
+									<p>
+										{t("createDialog.form.warning.reservedColumns", {
+											columns: RESERVED_METADATA_COLUMNS.join(", "),
+										})}
+									</p>
+									<p>
+										{t("createDialog.form.warning.reservedForms", {
+											forms: RESERVED_METADATA_CLASSES.join(", "),
+										})}
+									</p>
+									<p>{t("createDialog.form.warning.listFields")}</p>
+									<p>{t("createDialog.form.warning.booleanFields")}</p>
+								</div>
+							</Show>
 						</div>
 
 						<div class="flex justify-end gap-3 pt-4">
@@ -1125,6 +1137,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
 			/* v8 ignore start */
 			props.entryForm ? isReservedMetadataForm(props.entryForm.name) : false,
 		/* v8 ignore stop */
+	);
+	const showReservedNameGuidance = createMemo(
+		() => hasReservedMetadataFieldName(fields()) || nameIssue(),
 	);
 
 	/* v8 ignore start */
@@ -1335,22 +1350,24 @@ export function EditFormDialog(props: EditFormDialogProps) {
 									{t("createDialog.form.noColumnsDefined")}
 								</div>
 							</Show>
-							<div class="ui-alert ui-alert-warning text-xs space-y-1">
-								<p>
-									{t("createDialog.form.warning.reservedColumns", {
-										columns: RESERVED_METADATA_COLUMNS.join(", "),
-									})}
-								</p>
-								<Show when={nameIssue()}>
+							<Show when={showReservedNameGuidance()}>
+								<div class="ui-alert ui-alert-warning text-xs space-y-1">
 									<p>
-										{t("createDialog.form.warning.reservedFormsEdit", {
-											forms: RESERVED_METADATA_CLASSES.join(", "),
+										{t("createDialog.form.warning.reservedColumns", {
+											columns: RESERVED_METADATA_COLUMNS.join(", "),
 										})}
 									</p>
-								</Show>
-								<p>{t("createDialog.form.warning.listFields")}</p>
-								<p>{t("createDialog.form.warning.booleanFields")}</p>
-							</div>
+									<Show when={nameIssue()}>
+										<p>
+											{t("createDialog.form.warning.reservedFormsEdit", {
+												forms: RESERVED_METADATA_CLASSES.join(", "),
+											})}
+										</p>
+									</Show>
+									<p>{t("createDialog.form.warning.listFields")}</p>
+									<p>{t("createDialog.form.warning.booleanFields")}</p>
+								</div>
+							</Show>
 						</div>
 
 						<div class="flex justify-end gap-3 pt-4">
