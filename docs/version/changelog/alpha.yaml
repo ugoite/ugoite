@@ -1,0 +1,25 @@
+channel: alpha
+title: Alpha Channel Changelog
+doc_path: docs/spec/versions/changelog-alpha.md
+summary: >
+  Alpha releases communicate the earliest validated preview slice of Ugoite so
+  experimentation stays explicit and reviewable.
+release_notes:
+  intro: >
+    Alpha releases use SemVer prerelease tags such as 0.0.1-alpha.1 and are the
+    fastest-moving channel for previewing validated changes before broader beta
+    review.
+  expectations:
+    - Use exact alpha versions or the alpha image alias only for preview and experimentation.
+    - Focus notes on explicit risk, experimental guidance, and what needs more validation.
+    - Keep stable promises out of the alpha narrative until behavior graduates through beta and stable review.
+  added:
+    - A dedicated alpha release-note source for early release-preparation and future-stream previews.
+    - Fast feedback loops for install paths, release docs, and experimental operator workflows.
+    - Channel-scoped alpha communication that does not pollute stable operator guidance.
+  changed:
+    - Alpha notes are maintained separately from beta and stable notes inside the repository.
+    - Repository-rendered release-note context keeps preview guidance reviewable in code review and CI.
+  planned:
+    - Additional alpha previews for future v0.1 and v0.2 work before broader beta validation.
+    - Continued refinement of experimental guidance as release-preparation matures.
