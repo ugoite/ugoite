@@ -22,15 +22,18 @@ REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queu
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-025: Published release quick-start verification must stay wired.
+REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import textwrap
 from dataclasses import dataclass
@@ -112,8 +115,12 @@ RELEASE_INSTALLER_RENDERER_PATH = (
 RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
+RELEASE_NOTES_RENDERER_PATH = REPO_ROOT / "scripts" / "render_release_notes.py"
 RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-container-quickstart.sh"
+)
+RELEASE_CHANGELOG_ENTRYPOINT_PATH = (
+    REPO_ROOT / "docs" / "spec" / "versions" / "changelog.md"
 )
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
@@ -435,7 +442,7 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
     "Verify released browser quick start",
     "actions/cache@v5",
     "actions/setup-node@v6",
-    "actions/upload-artifact@v8",
+    "actions/upload-artifact@v7",
     "bash scripts/verify-release-cli-quickstart.sh",
     "bash scripts/verify-release-container-quickstart.sh",
     "PLAYWRIGHT_JUNIT_OUTPUT_FILE",
@@ -463,6 +470,29 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
     "./.github/workflows/release-quickstart-verify.yml",
     "smoke.test.ts",
     "search-ui.test.ts",
+}
+REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS = {
+    "scripts/render_release_notes.py",
+    '--channel "$CHANNEL"',
+    '--version "$VERSION"',
+    (
+        'channel_notes="$(python3 scripts/render_release_notes.py '
+        '--channel "$CHANNEL" --version "$VERSION")"'
+    ),
+    '--notes "$channel_notes"',
+}
+REQUIRED_RELEASE_CHANGELOG_ENTRYPOINT_FRAGMENTS = {
+    "changelog-stable.md",
+    "changelog-beta.md",
+    "changelog-alpha.md",
+    "../../version/changelog/stable.yaml",
+    "../../version/changelog/beta.yaml",
+    "../../version/changelog/alpha.yaml",
+}
+REQUIRED_RELEASE_CHANGELOG_CICD_FRAGMENTS = {
+    "scripts/render_release_notes.py",
+    "docs/version/changelog/<channel>.yaml",
+    "stable/alpha/beta",
 }
 REQUIRED_DOCSITE_PRE_COMMIT_HOOKS = {
     "docsite-biome-ci",
@@ -1867,6 +1897,179 @@ def test_docs_req_ops_025_release_quickstart_verification_stays_wired() -> None:
     details = _collect_release_quickstart_verification_details()
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_026_release_publish_uses_channel_changelog_sources() -> None:
+    """REQ-OPS-026: Release Publish must render channel-scoped changelog notes."""
+    workflow_text = RELEASE_PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    changelog_entrypoint = RELEASE_CHANGELOG_ENTRYPOINT_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS,
+    )
+    missing_entrypoint_fragments = _missing_required_fragments(
+        changelog_entrypoint,
+        REQUIRED_RELEASE_CHANGELOG_ENTRYPOINT_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_RELEASE_CHANGELOG_CICD_FRAGMENTS,
+    )
+
+    details = [
+        message
+        for condition, message in (
+            (
+                not RELEASE_NOTES_RENDERER_PATH.exists(),
+                (
+                    "scripts/render_release_notes.py must exist for channel "
+                    "changelog rendering"
+                ),
+            ),
+            (
+                bool(missing_workflow_fragments),
+                "release-publish missing channel changelog fragments: "
+                + ", ".join(missing_workflow_fragments),
+            ),
+            (
+                bool(missing_entrypoint_fragments),
+                "versions/changelog.md missing channel changelog fragments: "
+                + ", ".join(missing_entrypoint_fragments),
+            ),
+            (
+                bool(missing_ci_cd_fragments),
+                "ci-cd guide missing channel changelog fragments: "
+                + ", ".join(missing_ci_cd_fragments),
+            ),
+        )
+        if condition
+    ]
+
+    version_by_channel = {
+        "stable": "0.0.1",
+        "beta": "0.0.1-beta.1",
+        "alpha": "0.0.1-alpha.1",
+    }
+    for channel, version in version_by_channel.items():
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(RELEASE_NOTES_RENDERER_PATH),
+                "--channel",
+                channel,
+                "--version",
+                version,
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            details.append(
+                (
+                    "render_release_notes.py failed for "
+                    f"{channel}: {result.stderr.strip()}"
+                ),
+            )
+            continue
+        expected_fragments = [
+            f"# v{version}",
+            f"`docs/version/changelog/{channel}.yaml`",
+            f"`docs/spec/versions/changelog-{channel}.md`",
+        ]
+        missing_rendered = [
+            fragment for fragment in expected_fragments if fragment not in result.stdout
+        ]
+        if missing_rendered:
+            details.append(
+                "render_release_notes.py missing fragments for "
+                f"{channel}: {', '.join(missing_rendered)}",
+            )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_026_release_renderer_accepts_yaml_comments(
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-026: Release note renderer must tolerate YAML comments."""
+    spec = importlib.util.spec_from_file_location(
+        "render_release_notes_module",
+        RELEASE_NOTES_RENDERER_PATH,
+    )
+    if spec is None or spec.loader is None:
+        message = "Unable to load scripts/render_release_notes.py"
+        raise AssertionError(message)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    temp_repo_root = tmp_path / "repo"
+    changelog_dir = temp_repo_root / "docs" / "version" / "changelog"
+    changelog_dir.mkdir(parents=True)
+    doc_path = temp_repo_root / "docs" / "spec" / "versions" / "changelog-stable.md"
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text("# Stable Channel Changelog\n", encoding="utf-8")
+    (changelog_dir / "stable.yaml").write_text(
+        textwrap.dedent(
+            """
+            # Leading comment
+            channel: stable
+            title: Stable Channel Changelog # inline comment
+            doc_path: docs/spec/versions/changelog-stable.md
+            summary: >
+              Stable releases communicate the supported slice.
+              # Comment-only folded line
+              With durable guidance.
+            release_notes:
+              # Nested comment
+              intro: >
+                Stable releases use exact versions.
+                # Another folded comment
+                Operators can trust these notes.
+              expectations:
+                - Use exact versions. # inline list comment
+                # Comment between list items
+                - Focus on deployable behavior.
+              added:
+                - Deployable release images.
+              changed:
+                - Channel notes stay separate.
+              planned:
+                - Future stable summaries.
+            """,
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    original_repo_root = module.REPO_ROOT
+    original_changelog_dir = module.CHANGELOG_DIR
+    module.REPO_ROOT = temp_repo_root
+    module.CHANGELOG_DIR = changelog_dir
+    try:
+        rendered = module.render_release_notes(channel="stable", version="0.0.1")
+    finally:
+        module.REPO_ROOT = original_repo_root
+        module.CHANGELOG_DIR = original_changelog_dir
+
+    for fragment in (
+        "# v0.0.1 Stable Channel Changelog",
+        "Stable releases communicate the supported slice. With durable guidance.",
+        "Stable releases use exact versions. Operators can trust these notes.",
+        "- Use exact versions.",
+        "- Focus on deployable behavior.",
+    ):
+        if fragment not in rendered:
+            message = (
+                "render_release_notes.py should preserve content when YAML "
+                f"comments are present: missing {fragment!r}"
+            )
+            raise AssertionError(message)
 
 
 def _assert_release_publish_job_checks_out_requested_target(
