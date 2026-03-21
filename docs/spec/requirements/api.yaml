@@ -37,6 +37,9 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_create_space
+      - test_create_space_req_api_001_requires_admin_space_admin
+      - test_create_space_req_api_001_rejects_reserved_admin_space_id
+      - test_create_space_req_api_001_propagates_http_exception
       - test_list_spaces
       - test_get_space
       - test_get_space_not_found

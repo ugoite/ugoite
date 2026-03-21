@@ -287,7 +287,7 @@ Tag conventions:
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into the backend container at `/data` |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port that exposes the frontend UI |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port that exposes the backend API |
-| `UGOITE_DEV_USER_ID` | `dev-local-user` | Mock OAuth user id used by the shipped quick-start login flow |
+| `UGOITE_DEV_USER_ID` | `dev-local-user` | Mock OAuth user id bootstrapped as the shipped quick-start admin-space admin |
 | `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token wiring between the frontend proxy and backend dev auth flow |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
