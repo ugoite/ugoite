@@ -104,7 +104,15 @@ cleanup() {
   fi
 
   if [ "$cleanup_mode" = "cleanup" ]; then
-    rm -rf "$WORK_ROOT"
+    if ! rm -rf "$WORK_ROOT" 2>/dev/null; then
+      log "Host cleanup hit permission issues; retrying inside a container."
+      docker run --rm \
+        -v "$WORK_ROOT:/work" \
+        --entrypoint /bin/sh \
+        "ghcr.io/ugoite/ugoite/backend:${VERSION_INPUT}" \
+        -c 'rm -rf /work/* /work/.[!.]* /work/..?*'
+      rm -rf "$WORK_ROOT"
+    fi
   else
     log "Retained quick-start workdir: $WORK_ROOT"
   fi
@@ -146,7 +154,7 @@ E2E_AUTH_BEARER_TOKEN="$(
 import json
 from urllib.request import Request, urlopen
 
-request = Request("http://127.0.0.1:8000/auth/dev/mock-oauth", method="POST")
+request = Request("http://127.0.0.1:3000/api/auth/dev/mock-oauth", method="POST")
 with urlopen(request) as response:
     print(json.load(response)["bearer_token"])
 PY
