@@ -19,7 +19,7 @@ pub struct SigningContext {
 }
 
 impl SigningContext {
-    pub fn path_percent_decoded(&self) -> Cow<str> {
+    pub fn path_percent_decoded(&self) -> Cow<'_, str> {
         percent_encoding::percent_decode_str(&self.path).decode_utf8_lossy()
     }
 
