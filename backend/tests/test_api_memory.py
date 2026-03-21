@@ -3,12 +3,15 @@
 REQ-STO-007: Backend IO separation & multi-backend coverage.
 """
 
+import asyncio
 import io
 from collections.abc import Generator
 
 import pytest
+import ugoite_core
 from fastapi.testclient import TestClient
 
+from app.core.storage import storage_config_from_root
 from app.main import app
 
 # We need to patch get_root_path or set env var before app startup?
@@ -26,6 +29,12 @@ def memory_client(
 
     # Patch environment variable
     monkeypatch.setenv("UGOITE_ROOT", memory_root)
+    asyncio.run(
+        ugoite_core.ensure_admin_space(
+            storage_config_from_root(memory_root),
+            "test-suite-user",
+        ),
+    )
 
     # We also need to make sure get_root_path returns this
     # (It reads env var, so it should be fine if patched before call)

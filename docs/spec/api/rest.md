@@ -74,6 +74,8 @@ Content-Type: application/json
 Authorization policy baseline:
 
 - Every request resolves an authenticated `user_id` in the target space.
+- `POST /spaces` additionally requires the caller to be an active admin of the
+  reserved `admin-space`.
 - Space creator is initial admin and can grant additional admins.
 - Form-level read/write policy can target `User` and `UserGroup` principals.
 
@@ -123,6 +125,9 @@ Content-Type: application/json
 ```
 
 **Response**: `201 Created`
+
+**Authorization**: caller must be an active admin of the reserved `admin-space`.
+The reserved `admin-space` id itself cannot be created through the public API.
 
 #### Get Space
 ```http

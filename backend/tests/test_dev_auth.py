@@ -12,6 +12,7 @@ import time
 from typing import TYPE_CHECKING
 
 import pytest
+import ugoite_core
 from fastapi.testclient import TestClient
 
 from app.core.auth import clear_auth_manager_cache
@@ -124,6 +125,15 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
     assert protected_response.status_code == 200
     assert isinstance(protected_response.json(), list)
 
+    admin_space_response = client.get(
+        f"/spaces/{ugoite_core.admin_space_id()}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert admin_space_response.status_code == 200
+    admin_settings = admin_space_response.json()["settings"]
+    assert admin_settings["members"]["dev-alice"]["role"] in {"owner", "admin"}
+    assert admin_settings["members"]["dev-alice"]["state"] == "active"
+
 
 def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
     monkeypatch: pytest.MonkeyPatch,
@@ -159,6 +169,43 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
     )
     assert protected_response.status_code == 200
     assert isinstance(protected_response.json(), list)
+
+    admin_space_response = client.get(
+        f"/spaces/{ugoite_core.admin_space_id()}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert admin_space_response.status_code == 200
+    admin_settings = admin_space_response.json()["settings"]
+    assert admin_settings["members"]["dev-oauth-user"]["role"] in {"owner", "admin"}
+    assert admin_settings["members"]["dev-oauth-user"]["state"] == "active"
+
+
+def test_dev_auth_req_ops_015_startup_bootstraps_admin_space(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: app startup bootstraps admin-space for the configured dev user."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+        overrides={"UGOITE_DEV_USER_ID": "dev-startup-user"},
+    )
+    clear_auth_manager_cache()
+
+    with TestClient(app) as client:
+        login_response = client.post("/auth/dev/mock-oauth")
+        assert login_response.status_code == 200
+        token = login_response.json()["bearer_token"]
+
+        admin_space_response = client.get(
+            f"/spaces/{ugoite_core.admin_space_id()}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert admin_space_response.status_code == 200
+    admin_settings = admin_space_response.json()["settings"]
+    assert admin_settings["members"]["dev-startup-user"]["state"] == "active"
 
 
 def test_dev_auth_req_ops_015_config_rejects_unsupported_mode(

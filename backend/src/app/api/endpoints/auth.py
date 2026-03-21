@@ -5,10 +5,13 @@ import secrets
 import time
 from typing import Literal
 
+import ugoite_core
 from fastapi import APIRouter, HTTPException, Request, status
 from ugoite_core.auth import mint_signed_bearer_token, validate_totp_code
 
+from app.core.config import get_root_path
 from app.core.security import is_local_host, resolve_client_host
+from app.core.storage import storage_config_from_root
 from app.models.payloads import DevAuthLogin
 
 router = APIRouter(prefix="/auth/dev", tags=["auth"])
@@ -141,11 +144,17 @@ def _issue_dev_bearer_token(user_id: str) -> dict[str, int | str]:
     }
 
 
+def _storage_config() -> dict[str, str]:
+    """Build storage config for local dev auth bootstrap operations."""
+    return storage_config_from_root(get_root_path())
+
+
 @router.get("/config")
 async def dev_auth_config_endpoint(request: Request) -> dict[str, object]:
     """Expose the current local development login mode to browser/CLI clients."""
     _ensure_local_dev_auth_request(request)
     mode = _resolve_dev_auth_mode()
+    await ugoite_core.ensure_admin_space(_storage_config(), _dev_user_id())
     return {
         "mode": mode,
         "username_hint": _dev_user_id(),
@@ -188,6 +197,7 @@ async def dev_login_endpoint(
             detail="Invalid username or 2FA code.",
         )
 
+    await ugoite_core.ensure_admin_space(_storage_config(), expected_username)
     return _issue_dev_bearer_token(expected_username)
 
 
@@ -202,4 +212,6 @@ async def dev_mock_oauth_login_endpoint(request: Request) -> dict[str, int | str
             detail=message,
         )
 
-    return _issue_dev_bearer_token(_dev_user_id())
+    user_id = _dev_user_id()
+    await ugoite_core.ensure_admin_space(_storage_config(), user_id)
+    return _issue_dev_bearer_token(user_id)

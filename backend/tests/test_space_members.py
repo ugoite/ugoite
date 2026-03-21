@@ -5,16 +5,28 @@ REQ-SEC-007: Space Membership Lifecycle and Invitation Collaboration.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import ugoite_core
 from fastapi.testclient import TestClient
 
 from app.core.auth import clear_auth_manager_cache
+from app.core.storage import storage_config_from_root
 from app.main import app
+
+
+def _bootstrap_admin_space_for_user(temp_space_root: Path, user_id: str) -> None:
+    asyncio.run(
+        ugoite_core.ensure_admin_space(
+            storage_config_from_root(temp_space_root),
+            user_id,
+        ),
+    )
 
 
 @pytest.fixture
@@ -23,7 +35,6 @@ def member_clients(
     temp_space_root: Path,
 ) -> Iterator[dict[str, TestClient]]:
     """Provide deterministic owner/member identities for membership tests."""
-    _ = temp_space_root
     monkeypatch.setenv(
         "UGOITE_AUTH_BEARER_TOKENS_JSON",
         json.dumps(
@@ -35,6 +46,7 @@ def member_clients(
         ),
     )
     monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
+    _bootstrap_admin_space_for_user(temp_space_root, "owner-user")
     clear_auth_manager_cache()
 
     yield {
@@ -161,8 +173,6 @@ def test_space_member_revoke_removes_access(
 
 from typing import Any
 from unittest.mock import AsyncMock, patch
-
-import ugoite_core
 
 
 def _amock(**kwargs: Any) -> AsyncMock:

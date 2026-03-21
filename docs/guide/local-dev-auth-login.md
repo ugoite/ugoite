@@ -18,8 +18,8 @@ the browser and CLI must sign in explicitly after startup.
 
 | Mode | How to enable | What it does |
 |---|---|---|
-| `manual-totp` (default) | `mise run dev` | Prompts for a local username and validates a current 2FA code in the terminal, then exposes a browser/CLI login flow at `/login` or `ugoite auth login`. |
-| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit mock OAuth browser/CLI login path after the stack is running. |
+| `manual-totp` (default) | `mise run dev` | Prompts for a local admin username and validates a current 2FA code in the terminal, then exposes a browser/CLI login flow at `/login` or `ugoite auth login`. |
+| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit mock OAuth browser/CLI login path after the stack is running as the configured local admin user. |
 
 Each backend/frontend dev process logs the active mode at startup, for example:
 
@@ -71,7 +71,7 @@ server starts, so `/api/*` requests do not race the backend startup.
 On the first run (or after `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`), the
 terminal prompts for:
 
-1. a local development username
+1. a local development admin username
 2. a current 2FA code
 
 The helper validates that code against `UGOITE_DEV_2FA_SECRET`, then stores the
@@ -79,6 +79,11 @@ resulting **login context** in `~/.ugoite/dev-auth.json` with owner-only
 permissions (`0600`). The file contains the selected mode, username, and local
 signing material for dev login sessions. It does **not** store an authenticated
 bearer token and it does **not** start the app already logged in.
+
+At backend startup, that configured user is also bootstrapped into the reserved
+`admin-space`. Only active admins of `admin-space` can create additional spaces,
+and each new space still makes its creator the initial owner/admin for that
+space.
 
 Force a fresh prompt:
 
@@ -103,7 +108,7 @@ http://localhost:3000/login
 
 Then:
 
-1. enter the same username you confirmed in the terminal
+1. enter the same admin username you confirmed in the terminal
 2. enter the current 2FA code from your authenticator (or from `oathtool`)
 3. submit the form
 
@@ -116,6 +121,8 @@ oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 The browser receives a signed bearer token only **after** the login form is
 submitted successfully. The frontend stores that token in a local session cookie
 for the `/api/*` proxy, so protected pages can render normally after login.
+That login also grants the configured user access to the reserved
+`admin-space`, which is what authorizes space creation in local development.
 
 ## 6) CLI login (`manual-totp`)
 
@@ -133,7 +140,7 @@ cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 1
 
 The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
 shell. That token is minted only after the backend validates the username + 2FA
-input.
+input, and the authenticated admin user can then create additional spaces.
 
 ## 7) Mock OAuth mode
 

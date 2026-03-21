@@ -128,6 +128,17 @@ def _space_uri(space_id: str) -> str:
     return space_uri(get_root_path(), space_id)
 
 
+def _reserved_admin_space_error(space_id: str) -> HTTPException:
+    """Return the reserved admin-space conflict error."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"Space id '{space_id}' is reserved for admin-space bootstrap "
+            "and cannot be created via the public API."
+        ),
+    )
+
+
 def _sanitize_space_meta(space_meta: dict[str, Any]) -> dict[str, Any]:
     """Redact sensitive membership secrets before API response serialization."""
     sanitized = dict(space_meta)
@@ -166,6 +177,8 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for space_id in space_ids:
+        if space_id == ugoite_core.admin_space_id():
+            continue
         try:
             await ugoite_core.require_space_action(
                 storage_config,
@@ -196,39 +209,22 @@ async def create_space_endpoint(
     identity = request_identity(request)
     _validate_path_id(payload.name, "space_id")
     space_id = payload.name  # Using name as ID for now per simple spec
+    if space_id == ugoite_core.admin_space_id():
+        raise _reserved_admin_space_error(space_id)
 
     try:
         storage_config = _storage_config()
+        await ugoite_core.require_space_creation_permission(storage_config, identity)
         await ugoite_core.create_space(storage_config, space_id)
-        await ugoite_core.patch_space(
+        await ugoite_core.bootstrap_space_owner(
             storage_config,
             space_id,
-            json.dumps(
-                {
-                    "owner_user_id": identity.user_id,
-                    "admin_user_ids": [identity.user_id],
-                    "member_roles": {},
-                    "settings": {
-                        "owner_user_id": identity.user_id,
-                        "admin_user_ids": [identity.user_id],
-                        "member_roles": {},
-                        "members": {
-                            identity.user_id: {
-                                "user_id": identity.user_id,
-                                "role": "owner",
-                                "state": "active",
-                                "activated_at": "bootstrap",
-                                "invited_by": identity.user_id,
-                                "invited_at": "bootstrap",
-                                "revoked_at": None,
-                            },
-                        },
-                        "invitations": {},
-                        "membership_version": 1,
-                    },
-                },
-            ),
+            identity.user_id,
         )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
+    except HTTPException:
+        raise
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise HTTPException(
