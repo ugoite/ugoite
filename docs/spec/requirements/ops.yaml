@@ -581,6 +581,7 @@ requirements:
       - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode
       - test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
+      - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
       - test_dev_auth_req_ops_015_allows_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token

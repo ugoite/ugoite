@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,7 @@ MemberRole = str
 MemberState = str
 _VALID_MEMBER_ROLES: set[str] = {"owner", "admin", "editor", "viewer"}
 _MUTABLE_MEMBER_ROLES: set[str] = {"admin", "editor", "viewer"}
+_DEFAULT_ADMIN_SPACE_ID = "admin-space"
 
 _space_locks: dict[str, asyncio.Lock] = {}
 _space_locks_guard = asyncio.Lock()
@@ -211,6 +213,15 @@ async def _patch_settings(
     await _core_any.patch_space(storage_config, space_id, json.dumps(patch))
 
 
+def admin_space_id() -> str:
+    """Return the reserved admin-space identifier."""
+    configured = os.environ.get(
+        "UGOITE_ADMIN_SPACE_ID",
+        _DEFAULT_ADMIN_SPACE_ID,
+    ).strip()
+    return configured or _DEFAULT_ADMIN_SPACE_ID
+
+
 def _audit_event(
     *,
     action: str,
@@ -257,6 +268,110 @@ def _build_member_record(
         "invited_at": invited_at,
         "revoked_at": None,
     }
+
+
+async def bootstrap_space_owner(
+    storage_config: dict[str, str],
+    space_id: str,
+    owner_user_id: str,
+) -> dict[str, Any]:
+    """Seed a space owner/admin membership record using the shared metadata model."""
+    normalized_owner = owner_user_id.strip()
+    if not normalized_owner:
+        msg = "owner_user_id must not be empty"
+        raise RuntimeError(msg)
+
+    lock = await _space_lock(space_id)
+    async with lock:
+        space_meta_obj = await _core_any.get_space(storage_config, space_id)
+        space_meta = cast("dict[str, Any]", space_meta_obj)
+        settings = _normalize_settings(space_meta)
+        members = settings["members"]
+        invited_at = _now_iso()
+        current = members.get(normalized_owner)
+        if isinstance(current, dict):
+            member = dict(current)
+        else:
+            member = _build_member_record(
+                user_id=normalized_owner,
+                role="owner",
+                invited_by=normalized_owner,
+                invited_at=invited_at,
+                state="active",
+            )
+
+        member["user_id"] = normalized_owner
+        member["role"] = "owner"
+        member["state"] = "active"
+        member["invited_by"] = normalized_owner
+        member["invited_at"] = member.get("invited_at") or invited_at
+        member["activated_at"] = member.get("activated_at") or "bootstrap"
+        member["revoked_at"] = None
+        members[normalized_owner] = member
+        settings["owner_user_id"] = normalized_owner
+        _increment_membership_version(settings)
+        await _patch_settings(storage_config, space_id, space_meta, settings)
+        return member
+
+
+async def ensure_admin_space(
+    storage_config: dict[str, str],
+    admin_user_id: str,
+) -> dict[str, Any]:
+    """Ensure the reserved admin space exists for the target admin user."""
+    normalized_user_id = admin_user_id.strip()
+    if not normalized_user_id:
+        msg = "admin_user_id must not be empty"
+        raise RuntimeError(msg)
+
+    space_id = admin_space_id()
+    try:
+        await _core_any.create_space(storage_config, space_id)
+    except RuntimeError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
+
+    lock = await _space_lock(space_id)
+    async with lock:
+        space_meta_obj = await _core_any.get_space(storage_config, space_id)
+        space_meta = cast("dict[str, Any]", space_meta_obj)
+        settings = _normalize_settings(space_meta)
+        owner_user = _owner_user_id(space_meta, settings)
+        desired_role = "owner" if owner_user in {None, normalized_user_id} else "admin"
+        current = settings["members"].get(normalized_user_id)
+        current_role = current.get("role") if isinstance(current, dict) else None
+        current_state = current.get("state") if isinstance(current, dict) else None
+
+        if (
+            owner_user == normalized_user_id
+            and isinstance(current, dict)
+            and current_role == "owner"
+            and current_state == "active"
+        ):
+            return current
+        if (
+            desired_role == "admin"
+            and isinstance(current, dict)
+            and current_role in {"admin", "owner"}
+            and current_state == "active"
+        ):
+            return current
+
+        invited_at = _now_iso()
+        member = dict(current) if isinstance(current, dict) else {}
+        member["user_id"] = normalized_user_id
+        member["role"] = desired_role
+        member["state"] = "active"
+        member["invited_by"] = normalized_user_id
+        member["invited_at"] = member.get("invited_at") or invited_at
+        member["activated_at"] = member.get("activated_at") or "bootstrap"
+        member["revoked_at"] = None
+        settings["members"][normalized_user_id] = member
+        if desired_role == "owner":
+            settings["owner_user_id"] = normalized_user_id
+        _increment_membership_version(settings)
+        await _patch_settings(storage_config, space_id, space_meta, settings)
+        return member
 
 
 def _token_hash(token: str) -> str:

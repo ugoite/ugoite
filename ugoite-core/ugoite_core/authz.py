@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from . import _ugoite_core as _core
+from .membership import admin_space_id
 
 if TYPE_CHECKING:
     from .auth import RequestIdentity
@@ -317,6 +318,43 @@ async def require_space_action(
             ),
         )
     return access
+
+
+async def require_space_creation_permission(
+    storage_config: dict[str, str],
+    identity: RequestIdentity,
+) -> AccessContext:
+    """Require admin permission in the reserved admin space before creating spaces."""
+    reserved_space_id = admin_space_id()
+    try:
+        return await require_space_action(
+            storage_config,
+            reserved_space_id,
+            identity,
+            "space_admin",
+        )
+    except AuthorizationError as exc:
+        if exc.action == "space_read":
+            _deny(
+                "space_admin",
+                (
+                    f"Space creation requires an active admin membership in "
+                    f"'{reserved_space_id}'."
+                ),
+            )
+        raise
+    except RuntimeError as exc:
+        lowered = str(exc).lower()
+        if "not found" in lowered:
+            _deny(
+                "space_admin",
+                (
+                    f"Space creation requires an active admin membership in "
+                    f"'{reserved_space_id}', but that admin space is not "
+                    "bootstrapped yet."
+                ),
+            )
+        raise
 
 
 def _form_name_from_markdown(markdown: str) -> str | None:

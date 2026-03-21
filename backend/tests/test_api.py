@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 import ugoite_core
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
+from app.core.auth import clear_auth_manager_cache
 from app.core.security import build_response_signature
 from app.core.storage import storage_config_from_root
 from app.main import app
@@ -36,7 +38,7 @@ def _create_form(
 
 
 def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
-    """Test creating a new space."""
+    """REQ-API-001: create space succeeds for an admin-space administrator."""
     response = test_client.post("/spaces", json={"name": "test-ws"})
     assert response.status_code == 201
     data = response.json()
@@ -61,6 +63,68 @@ def test_create_space_rejects_invalid_name(test_client: TestClient) -> None:
     response = test_client.post("/spaces", json={"name": "invalid space"})
     assert response.status_code == 400
     assert "Invalid space_id" in response.json()["detail"]
+
+
+def test_create_space_req_api_001_requires_admin_space_admin(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: create space rejects non-admin-space admins."""
+    _ = temp_space_root
+    monkeypatch.setenv(
+        "UGOITE_AUTH_BEARER_TOKENS_JSON",
+        json.dumps(
+            {
+                "viewer-token": {
+                    "user_id": "viewer-user",
+                    "principal_type": "user",
+                },
+            },
+        ),
+    )
+    monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
+    clear_auth_manager_cache()
+
+    response = TestClient(
+        app,
+        headers={"Authorization": "Bearer viewer-token"},
+    ).post("/spaces", json={"name": "viewer-space"})
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["action"] == "space_admin"
+    assert "admin-space" in response.json()["detail"]["message"]
+
+
+def test_create_space_req_api_001_rejects_reserved_admin_space_id(
+    test_client: TestClient,
+) -> None:
+    """REQ-API-001: create space reserves the admin-space identifier for bootstrap."""
+    response = test_client.post(
+        "/spaces",
+        json={"name": ugoite_core.admin_space_id()},
+    )
+    assert response.status_code == 409
+    assert "reserved" in response.json()["detail"]
+
+
+def test_create_space_req_api_001_propagates_http_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    test_client: TestClient,
+) -> None:
+    """REQ-API-001: create space preserves explicit HTTP errors from the adapter."""
+
+    async def _raise_http_exception(*_args: object, **_kwargs: object) -> None:
+        raise HTTPException(status_code=418, detail="teapot")
+
+    monkeypatch.setattr(
+        "ugoite_core.require_space_creation_permission",
+        _raise_http_exception,
+    )
+
+    response = test_client.post("/spaces", json={"name": "http-exception-space"})
+
+    assert response.status_code == 418
+    assert response.json()["detail"] == "teapot"
 
 
 def test_create_space_rejects_excessive_name_length(test_client: TestClient) -> None:
@@ -1244,7 +1308,6 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
-from fastapi import HTTPException
 from starlette.responses import Response
 
 from app.api.endpoints.search import _is_sql_error

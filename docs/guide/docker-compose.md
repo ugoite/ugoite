@@ -27,6 +27,11 @@ The stack exposes:
 The backend persists data in `./spaces` on the host. You can safely remove the
 folder to reset local data.
 
+The shipped Compose file enables explicit `mock-oauth` dev auth. On startup the
+backend bootstraps the configured `UGOITE_DEV_USER_ID` into the reserved
+`admin-space`, so that user becomes the local admin who can create new spaces
+after signing in at `http://localhost:3000/login`.
+
 ## Verify status and logs
 
 ```bash
@@ -57,5 +62,7 @@ rm -rf ./spaces
 
 - The backend container enables remote access internally so the frontend can
   reach it across the Compose network.
+- The configured `UGOITE_DEV_USER_ID` becomes the local `admin-space` admin for
+  this source-based Compose stack.
 - If you prefer to run services directly on the host, use the `mise` tasks
   instead of Docker Compose.
