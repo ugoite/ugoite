@@ -19,6 +19,10 @@ services:
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_DEV_AUTH_MODE=mock-oauth
+      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
+      - UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID:-dev-compose-local-v1}
+      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:-dev-compose-local-signing-secret}
       - UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy
     working_dir: /app
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

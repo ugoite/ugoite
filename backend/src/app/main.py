@@ -29,12 +29,21 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
+    root_path: Path | str = get_root_path()
+    storage_config = storage_config_from_root(root_path)
+    dev_auth_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", "").strip()
+    dev_user_id = os.environ.get("UGOITE_DEV_USER_ID", "").strip()
+    if dev_auth_mode in {"manual-totp", "mock-oauth"} and dev_user_id:
+        try:
+            await ugoite_core.ensure_admin_space(storage_config, dev_user_id)
+            logger.info("Created or updated admin-space bootstrap for %s", dev_user_id)
+        except (OSError, ValueError, RuntimeError) as exc:  # pragma: no cover
+            logger.warning("Failed to ensure admin-space bootstrap: %s", exc)
+
     should_bootstrap_default_space = (
         os.environ.get("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "false").lower() == "true"
     )
     if should_bootstrap_default_space:
-        root_path: Path | str = get_root_path()
-        storage_config = storage_config_from_root(root_path)
         try:
             await ugoite_core.create_space(storage_config, "default")
             logger.info("Created default space at startup")
