@@ -20,6 +20,7 @@ use crate::hash::base64_decode;
 #[derive(Clone, serde::Deserialize)]
 #[cfg_attr(test, derive(Debug))]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
 pub enum CredentialType {
     ImpersonatedServiceAccount,

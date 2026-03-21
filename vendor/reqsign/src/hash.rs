@@ -32,6 +32,7 @@ pub fn sha256(content: &[u8]) -> Vec<u8> {
 ///
 /// Use this function instead of `hex::encode(sha1(content))` can reduce
 /// extra copy.
+#[allow(dead_code)]
 pub fn hex_sha1(content: &[u8]) -> String {
     hex::encode(Sha1::digest(content).as_slice())
 }
@@ -64,6 +65,7 @@ pub fn base64_hmac_sha256(key: &[u8], content: &[u8]) -> String {
 ///
 /// Use this function instead of `hex::encode(hmac_sha1(key, content))` can
 /// reduce extra copy.
+#[allow(dead_code)]
 pub fn hex_hmac_sha1(key: &[u8], content: &[u8]) -> String {
     let mut h = Hmac::<Sha1>::new_from_slice(key).expect("invalid key length");
     h.update(content);
