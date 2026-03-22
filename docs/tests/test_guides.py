@@ -428,7 +428,10 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "docker-compose.release.yaml",
     "ugoite-backend-v<version>.docker.tar.gz",
     "ugoite-frontend-v<version>.docker.tar.gz",
-    "download the shipped compose file, prepare the documented env file, and pull/run",
+    (
+        "download the shipped compose file, prepare the documented env file, "
+        "and pull and run"
+    ),
     "Environment Variables",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
