@@ -122,7 +122,7 @@ safeMarked.use({
       if (depth <= 3 && raw.length > 0 && id.length > 0) {
         toc.push({ id, title: raw });
       }
-      return `<h${depth} id="${id}">${text}</h${depth}>`;
+      return `<h${depth} id="${id}"><a class="doc-heading-anchor" href="#${id}" aria-label="Link to ${escapeAttribute(raw)}">#</a><span class="doc-heading-text">${text}</span></h${depth}>`;
     },
   },
 });
@@ -359,8 +359,8 @@ async function getRelatedLinks(sourceFile: string): Promise<Array<{ href: string
 ---
 
 <BaseLayout title={`Docs: ${relativePath}`} description={`Repository source: /docs/${relativePath}`} toc={toc} related={related}>
-  <div class="doc-card" style="padding: 0.75rem 1rem; margin-bottom: 1rem;">
-    <nav style="font-size: 0.75rem; color: var(--doc-muted);">
+  <div class="doc-card doc-source-meta">
+    <nav class="doc-breadcrumbs">
       <a href={withBasePath("/")}>home</a>
       <span> / </span>
       <a href={withBasePath("/docs/spec/index")}>docs</a>
@@ -371,7 +371,7 @@ async function getRelatedLinks(sourceFile: string): Promise<Array<{ href: string
         </>
       ))}
     </nav>
-    <p style="font-size: 0.6875rem; color: var(--doc-muted); margin-top: 0.375rem;">
+    <p class="doc-source-note">
       Source: /docs/{relativePath}
     </p>
   </div>
