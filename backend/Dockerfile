@@ -1,8 +1,8 @@
-FROM python:3.14-slim-trixie
+FROM python:3.14.3-slim-trixie@sha256:fb83750094b46fd6b8adaa80f66e2302ecbe45d513f6cece637a841e1025b4ca
 
 WORKDIR /app
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /uvx /bin/
 
 # Build essentials and Rust toolchain for compiling ugoite-core (Rust native modules)
 RUN apt-get update \
