@@ -1,5 +1,5 @@
 [tasks.install]
-run = "bun install"
+run = "bun install --frozen-lockfile"
 
 [tasks.lint]
 run = "bun run lint"

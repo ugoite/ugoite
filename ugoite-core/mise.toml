@@ -4,7 +4,7 @@ UV_PYTHON = "3.13"
 CARGO_TARGET_DIR = "../target/rust"
 
 [tasks.install]
-run = "uv sync"
+run = "uv sync --locked"
 description = "Install dependencies"
 
 [tasks.build]

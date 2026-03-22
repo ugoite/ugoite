@@ -23,6 +23,7 @@ REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-025: Published release quick-start verification must stay wired.
 REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
+REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI.
 """
 
 from __future__ import annotations
@@ -100,6 +101,7 @@ PR_TEMPLATE_WORKFLOW_PATH = (
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
+BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
@@ -107,6 +109,7 @@ UGOITE_CORE_MISE_PATH = REPO_ROOT / "ugoite-core" / "mise.toml"
 UGOITE_CLI_MISE_PATH = REPO_ROOT / "ugoite-cli" / "mise.toml"
 FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 DOCSITE_MISE_PATH = REPO_ROOT / "docsite" / "mise.toml"
+E2E_MISE_PATH = REPO_ROOT / "e2e" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
 INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
 RELEASE_INSTALLER_RENDERER_PATH = (
@@ -704,6 +707,16 @@ REQUIRED_DOCSITE_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
 )
 REQUIRED_DOCSITE_COVERAGE_STEP_NAME = "Run docsite Vitest with 100% coverage gate"
+REQUIRED_STRICT_NPM_CI_COMMAND = "npm ci"
+REQUIRED_STRICT_ROOT_NPM_CI_COMMAND = "npm ci --no-fund --no-audit"
+REQUIRED_STRICT_BUN_INSTALL_COMMAND = "bun install --frozen-lockfile"
+REQUIRED_STRICT_UV_INSTALL_COMMAND = "uv sync --locked"
+REQUIRED_LOCKFILE_INSTALL_DOC_FRAGMENTS = {
+    "fail fast on dependency drift",
+    "`npm ci --no-fund --no-audit`",
+    "`bun install --frozen-lockfile`",
+    "`uv sync --locked`",
+}
 UV_SETUP_WORKFLOW_PATHS = (
     DEVCONTAINER_CI_WORKFLOW_PATH,
     PYTHON_CI_WORKFLOW_PATH,
@@ -2872,6 +2885,156 @@ def test_docs_req_ops_024_docsite_coverage_gate_is_explicit() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing docsite coverage fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_027_lockfile_installs_are_strict() -> None:
+    """REQ-OPS-027: lockfile-backed installs must stay strict across local and CI."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    docsite_mise = tomllib.loads(DOCSITE_MISE_PATH.read_text(encoding="utf-8"))
+    e2e_mise = tomllib.loads(E2E_MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    backend_readme_text = BACKEND_README_PATH.read_text(encoding="utf-8")
+
+    frontend_install = _load_task_run(
+        _load_mise_task_mapping(
+            frontend_mise,
+            task_name="install",
+            path_label="frontend/mise.toml",
+        ),
+        task_label="frontend/mise.toml [tasks.install]",
+    )
+    docsite_install = _load_task_run(
+        _load_mise_task_mapping(
+            docsite_mise,
+            task_name="install",
+            path_label="docsite/mise.toml",
+        ),
+        task_label="docsite/mise.toml [tasks.install]",
+    )
+    e2e_install = _load_task_run(
+        _load_mise_task_mapping(
+            e2e_mise,
+            task_name="install",
+            path_label="e2e/mise.toml",
+        ),
+        task_label="e2e/mise.toml [tasks.install]",
+    )
+    backend_install = _load_task_run(
+        _load_mise_task_mapping(
+            backend_mise,
+            task_name="install",
+            path_label="backend/mise.toml",
+        ),
+        task_label="backend/mise.toml [tasks.install]",
+    )
+    core_install = _load_task_run(
+        _load_mise_task_mapping(
+            core_mise,
+            task_name="install",
+            path_label="ugoite-core/mise.toml",
+        ),
+        task_label="ugoite-core/mise.toml [tasks.install]",
+    )
+
+    root_setup_runs = _get_task_run_commands(root_mise, "setup")
+    frontend_ci_install = _find_workflow_step_run(
+        FRONTEND_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Install dependencies",
+    )
+    docsite_ci_install = _find_workflow_step_run(
+        DOCSITE_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Install dependencies",
+    )
+    e2e_docsite_install = _find_workflow_step_run(
+        E2E_CI_WORKFLOW_PATH,
+        job_name="e2e",
+        step_name="Install docsite dependencies",
+    )
+    e2e_install_step = _find_workflow_step_run(
+        E2E_CI_WORKFLOW_PATH,
+        job_name="e2e",
+        step_name="Install e2e dependencies",
+    )
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_LOCKFILE_INSTALL_DOC_FRAGMENTS
+        if fragment not in ci_cd_text
+    )
+
+    detail_candidates = (
+        (
+            REQUIRED_STRICT_ROOT_NPM_CI_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must use npm ci --no-fund --no-audit",
+        ),
+        (
+            "npm install --no-fund --no-audit" in root_setup_runs,
+            "root mise.toml tasks.setup must not use npm install",
+        ),
+        (
+            frontend_install != REQUIRED_STRICT_BUN_INSTALL_COMMAND,
+            "frontend/mise.toml [tasks.install] must use bun install --frozen-lockfile",
+        ),
+        (
+            docsite_install != REQUIRED_STRICT_BUN_INSTALL_COMMAND,
+            "docsite/mise.toml [tasks.install] must use bun install --frozen-lockfile",
+        ),
+        (
+            e2e_install
+            != f"{REQUIRED_STRICT_NPM_CI_COMMAND} && npx playwright install",
+            "e2e/mise.toml [tasks.install] must use npm ci before Playwright install",
+        ),
+        (
+            backend_install != REQUIRED_STRICT_UV_INSTALL_COMMAND,
+            "backend/mise.toml [tasks.install] must use uv sync --locked",
+        ),
+        (
+            core_install != REQUIRED_STRICT_UV_INSTALL_COMMAND,
+            "ugoite-core/mise.toml [tasks.install] must use uv sync --locked",
+        ),
+        (
+            frontend_ci_install != REQUIRED_STRICT_BUN_INSTALL_COMMAND,
+            "frontend-ci.yml install step must use bun install --frozen-lockfile",
+        ),
+        (
+            docsite_ci_install != REQUIRED_STRICT_BUN_INSTALL_COMMAND,
+            "docsite-ci.yml install step must use bun install --frozen-lockfile",
+        ),
+        (
+            e2e_docsite_install != REQUIRED_STRICT_BUN_INSTALL_COMMAND,
+            "e2e-ci.yml docsite install step must use bun install --frozen-lockfile",
+        ),
+        (
+            e2e_install_step != REQUIRED_STRICT_NPM_CI_COMMAND,
+            "e2e-ci.yml e2e install step must use npm ci",
+        ),
+        (
+            REQUIRED_STRICT_UV_INSTALL_COMMAND
+            not in BACKEND_DOCKERFILE_PATH.read_text(encoding="utf-8"),
+            "backend/Dockerfile must keep uv sync --locked",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing strict lockfile fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+        (
+            REQUIRED_STRICT_BUN_INSTALL_COMMAND not in readme_text,
+            "README.md frontend example must use bun install --frozen-lockfile",
+        ),
+        (
+            REQUIRED_STRICT_UV_INSTALL_COMMAND not in backend_readme_text,
+            "backend/README.md install example must use uv sync --locked",
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
