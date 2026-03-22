@@ -1,5 +1,5 @@
 [tasks.install]
-run = "bun install"
+run = "bun install --frozen-lockfile"
 
 [tasks.dev]
 # Ensure development waits for the backend health check before starting the UI so

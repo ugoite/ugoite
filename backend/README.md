@@ -98,7 +98,7 @@ async def update_entry_endpoint(payload: EntryUpdate):
 
 ```bash
 cd backend
-uv sync
+uv sync --locked
 ```
 
 ### Development

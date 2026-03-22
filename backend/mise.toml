@@ -2,7 +2,7 @@
 _.python.venv = { path = ".venv" }
 
 [tasks.install]
-run = "uv sync"
+run = "uv sync --locked"
 
 [tasks.dev]
 # UGOITE_ALLOW_REMOTE=true allows remote connections in dev containers / Codespaces
