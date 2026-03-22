@@ -64,3 +64,8 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "daily"
+
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "daily"

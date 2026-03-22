@@ -41,7 +41,11 @@ Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 resolve inside the container build. Docker Build CI, E2E CI, SBOM CI, and
 Release Publish share the reusable `.github/workflows/docker-images.yml`
 image-definition contract so image build behavior cannot silently drift between
-CI validation, local-image artifact export, and release publishing.
+CI validation, local-image artifact export, and release publishing. Repository
+Dockerfiles pin external base/tool images to exact version tags, and
+base-image references should carry digests when public registries expose them,
+so local and CI builds stay reproducible under Dependabot-managed Docker update
+PRs.
 
 E2E CI selects a deterministic tier before running tests. `merge_group` and
 pushes to `main` always run the full compose-backed suite. Pull requests only
@@ -265,7 +269,11 @@ contracts. When no tracked input changed on a pull request or `push`, the smoke
 build is skipped but the summary check still reports success with an explicit
 selection reason. `merge_group` always runs the smoke build because GitHub does
 not support `paths` filtering there and branch health cannot depend on a
-disappearing required check.
+disappearing required check. The canonical devcontainer also uses exact version
+tags for its base image and public Features, and `.github/dependabot.yml`
+tracks `package-ecosystem: "devcontainers"` at `/` so Feature updates stay
+reviewable in normal PR flow while the base image tag stays explicitly pinned
+in `devcontainer.json`.
 
 ## Rust CI
 

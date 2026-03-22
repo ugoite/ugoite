@@ -69,6 +69,7 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_002_docker_build_ci_declared
+      - test_docs_req_ops_002_container_external_refs_are_pinned
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -452,6 +453,7 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_012_devcontainer_change_detection_covers_inputs
+      - test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

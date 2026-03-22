@@ -137,6 +137,9 @@ PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
+BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
+FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
+DEVCONTAINER_JSON_PATH = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 COLUMN_COUNT_THRESHOLD = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
     DOCKER_BUILD_WORKFLOW_PATH,
@@ -608,6 +611,16 @@ REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS = {
     "`DEVCONTAINER_INPUT_PATTERNS`",
     "summary check still reports success",
 }
+REQUIRED_DOCKER_PIN_DOC_FRAGMENTS = {
+    "Dockerfiles pin external base/tool images to exact version tags",
+    "base-image references should carry digests",
+    "Dependabot-managed Docker update",
+}
+REQUIRED_DEVCONTAINER_PIN_DOC_FRAGMENTS = {
+    "The canonical devcontainer also uses exact version",
+    '`package-ecosystem: "devcontainers"` at `/`',
+    "base image tag stays explicitly pinned",
+}
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_SEED_SPACE_ID",
@@ -720,6 +733,27 @@ REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     "**/bun.lock",
     "**/pyproject.toml",
     "**/uv.lock",
+}
+PINNED_FRONTEND_BASE_IMAGE_PATTERN = re.compile(
+    r"^FROM oven/bun:\d+\.\d+\.\d+@sha256:[0-9a-f]{64} AS base$",
+    re.MULTILINE,
+)
+PINNED_BACKEND_BASE_IMAGE_PATTERN = re.compile(
+    r"^FROM python:\d+\.\d+\.\d+-slim-trixie@sha256:[0-9a-f]{64}$",
+    re.MULTILINE,
+)
+PINNED_BACKEND_UV_IMAGE_PATTERN = re.compile(
+    r"^COPY --from=ghcr\.io/astral-sh/uv:\d+\.\d+\.\d+ /uv /uvx /bin/$",
+    re.MULTILINE,
+)
+PINNED_DEVCONTAINER_IMAGE_PATTERN = re.compile(
+    r"^mcr\.microsoft\.com/devcontainers/base:\d+\.\d+\.\d+-ubuntu24\.04$",
+)
+PINNED_DEVCONTAINER_FEATURE_PATTERNS = {
+    "mise": re.compile(r"^ghcr\.io/devcontainers-extra/features/mise:\d+\.\d+\.\d+$"),
+    "github-cli": re.compile(
+        r"^ghcr\.io/devcontainers/features/github-cli:\d+\.\d+\.\d+$",
+    ),
 }
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -925,6 +959,44 @@ def test_docs_req_ops_002_docker_build_ci_declared() -> None:
             missing_parts,
         )
     _raise_if_missing(missing_parts)
+
+
+def test_docs_req_ops_002_container_external_refs_are_pinned() -> None:
+    """REQ-OPS-002: Dockerfiles pin external image refs to exact versions."""
+    frontend_text = FRONTEND_DOCKERFILE_PATH.read_text(encoding="utf-8")
+    backend_text = BACKEND_DOCKERFILE_PATH.read_text(encoding="utf-8")
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    if not PINNED_FRONTEND_BASE_IMAGE_PATTERN.search(frontend_text):
+        details.append(
+            "frontend/Dockerfile must pin Bun to an exact version tag with "
+            "sha256 digest",
+        )
+    if not PINNED_BACKEND_BASE_IMAGE_PATTERN.search(backend_text):
+        details.append(
+            "backend/Dockerfile must pin Python slim-trixie to an exact version tag "
+            "with sha256 digest",
+        )
+    if not PINNED_BACKEND_UV_IMAGE_PATTERN.search(backend_text):
+        details.append(
+            "backend/Dockerfile must pin the copied uv tool image to an exact "
+            "version tag",
+        )
+
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_DOCKER_PIN_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing Docker pinning fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_005_yaml_workflow_lint_gates_declared() -> None:
@@ -1432,6 +1504,70 @@ def test_docs_req_ops_012_devcontainer_change_detection_covers_inputs() -> None:
     if missing_doc_fragments:
         details.append(
             "ci-cd guide missing devcontainer change-detection fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable() -> None:
+    """REQ-OPS-012: Devcontainer refs stay pinned and Dependabot-updatable."""
+    devcontainer = _load_json_mapping(DEVCONTAINER_JSON_PATH)
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    image = devcontainer.get("image")
+    if not isinstance(image, str) or not PINNED_DEVCONTAINER_IMAGE_PATTERN.fullmatch(
+        image,
+    ):
+        details.append(
+            ".devcontainer/devcontainer.json must pin the base image to an exact "
+            "version tag",
+        )
+
+    features = devcontainer.get("features")
+    if not isinstance(features, dict):
+        details.append(".devcontainer/devcontainer.json features must be a mapping")
+    else:
+        feature_refs = {key for key in features if isinstance(key, str)}
+        pinned_feature_checks = {
+            label: any(pattern.fullmatch(ref) for ref in feature_refs)
+            for label, pattern in PINNED_DEVCONTAINER_FEATURE_PATTERNS.items()
+        }
+        missing_feature_refs = sorted(
+            label
+            for label, is_present in pinned_feature_checks.items()
+            if not is_present
+        )
+        if missing_feature_refs:
+            details.append(
+                ".devcontainer/devcontainer.json must pin exact feature versions for: "
+                + ", ".join(missing_feature_refs),
+            )
+
+    updates = dependabot.get("updates", [])
+    has_devcontainers_update = isinstance(updates, list) and any(
+        isinstance(update, dict)
+        and update.get("package-ecosystem") == "devcontainers"
+        and update.get("directory") == "/"
+        for update in updates
+    )
+    if not has_devcontainers_update:
+        details.append(
+            ".github/dependabot.yml must track the root devcontainer with the "
+            "devcontainers ecosystem",
+        )
+
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_DEVCONTAINER_PIN_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing devcontainer pinning fragments: "
             + ", ".join(missing_doc_fragments),
         )
 
