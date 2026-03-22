@@ -621,6 +621,15 @@ REQUIRED_DEVCONTAINER_PIN_DOC_FRAGMENTS = {
     '`package-ecosystem: "devcontainers"` at `/`',
     "base image tag stays explicitly pinned",
 }
+REQUIRED_RUNTIME_PIN_DOC_FRAGMENTS = {
+    "root `mise.toml` `[tools]` table",
+    "exact patch versions",
+    "`setup-node`",
+    "`setup-bun`",
+    "`python-version`",
+    "`lts/*`",
+    "`latest`",
+}
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_SEED_SPACE_ID",
@@ -755,6 +764,7 @@ PINNED_DEVCONTAINER_FEATURE_PATTERNS = {
         r"^ghcr\.io/devcontainers/features/github-cli:\d+\.\d+\.\d+$",
     ),
 }
+EXACT_PATCH_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 CODE_BLOCK_PATTERN = re.compile(
     r"```(?:bash|sh|shell)\s*\n(.*?)\n```",
@@ -876,13 +886,14 @@ def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
 
 
 def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
-    """REQ-OPS-001: mise tool versions must match pinned versions in CI workflows."""
+    """REQ-OPS-001: mise tool versions must match exact runtime pins in CI."""
     mise_data = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     tools = mise_data.get("tools", {})
     if not isinstance(tools, dict):
         message = "mise.toml must define [tools]"
         raise TypeError(message)
 
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
     expected_tools = {
         "biome": _extract_single_workflow_pin_value(
             [FRONTEND_CI_WORKFLOW_PATH],
@@ -891,10 +902,20 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
             label="CI biome pins",
         ),
         "bun": _extract_single_workflow_pin_value(
-            [DOCSITE_CI_WORKFLOW_PATH, FRONTEND_CI_WORKFLOW_PATH],
+            [DOCSITE_CI_WORKFLOW_PATH, FRONTEND_CI_WORKFLOW_PATH, E2E_CI_WORKFLOW_PATH],
             uses_fragment="setup-bun",
             key="bun-version",
             label="CI bun-version pins",
+        ),
+        "node": _extract_single_workflow_pin_value(
+            [
+                DOCSITE_CI_WORKFLOW_PATH,
+                E2E_CI_WORKFLOW_PATH,
+                RELEASE_QUICKSTART_VERIFY_WORKFLOW_PATH,
+            ],
+            uses_fragment="setup-node",
+            key="node-version",
+            label="CI node-version pins",
         ),
         "python": _extract_single_workflow_pin_value(
             [SCANCODE_WORKFLOW_PATH],
@@ -916,14 +937,51 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
         ),
     }
 
+    details: list[str] = []
     mismatches = sorted(
         f"{tool}={tools.get(tool)!r} (expected {expected})"
         for tool, expected in expected_tools.items()
         if str(tools.get(tool)) != expected
     )
     if mismatches:
-        message = "mise.toml [tools] drift: " + "; ".join(mismatches)
-        raise AssertionError(message)
+        details.append("mise.toml [tools] drift: " + "; ".join(mismatches))
+
+    non_exact_mise_tools = sorted(
+        tool
+        for tool, value in tools.items()
+        if tool in expected_tools
+        and not EXACT_PATCH_VERSION_PATTERN.fullmatch(str(value))
+    )
+    if non_exact_mise_tools:
+        details.append(
+            "mise.toml [tools] must use exact patch versions for: "
+            + ", ".join(non_exact_mise_tools),
+        )
+
+    non_exact_ci_tools = sorted(
+        tool
+        for tool, value in expected_tools.items()
+        if not EXACT_PATCH_VERSION_PATTERN.fullmatch(value)
+    )
+    if non_exact_ci_tools:
+        details.append(
+            "CI runtime pins must use exact patch versions for: "
+            + ", ".join(non_exact_ci_tools),
+        )
+
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_RUNTIME_PIN_DOC_FRAGMENTS
+        if fragment not in guide_text
+    )
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing runtime pinning fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:

@@ -47,6 +47,12 @@ base-image references should carry digests when public registries expose them,
 so local and CI builds stay reproducible under Dependabot-managed Docker update
 PRs.
 
+The root `mise.toml` `[tools]` table and workflow bootstrap steps also pin
+exact patch versions for Node, Bun, Python, Biome, Rust, and uv. `setup-node`,
+`setup-bun`, and `python-version` inputs must not use floating aliases such as
+`lts`, `lts/*`, `latest`, or minor-only pins, because REQ-OPS-001 treats local
+and CI runtime drift as a docs-tested contract failure.
+
 E2E CI selects a deterministic tier before running tests. `merge_group` and
 pushes to `main` always run the full compose-backed suite. Pull requests only
 drop to the smoke tier when every changed file stays inside docs/docsite

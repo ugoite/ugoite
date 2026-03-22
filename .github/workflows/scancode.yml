@@ -48,7 +48,7 @@ jobs:
           check-compliance: true
           compliance-fail-level: "ERROR"
           compliance-fail-on-vulnerabilities: true
-          python-version: "3.12"
+          python-version: "3.12.13"
         env:
           VULNERABLECODE_URL: "https://public.vulnerablecode.io/"
 
