@@ -82,7 +82,7 @@ targets an **Authenticated Access by Default** model.
 
 ### Dependency Automation
 
-- Dependabot updates are enabled across GitHub Actions, Bun, npm, Docker, uv-managed Python workspaces (`backend`, `ugoite-core`), and Cargo manifests (`ugoite-core`, `ugoite-cli`).
+- Dependabot updates are enabled across GitHub Actions, Bun, npm, Docker, uv-managed Python workspaces (`backend`, `ugoite-core`), and the Rust Cargo workspace root (`/`, covering `ugoite-minimum`, `ugoite-core`, and `ugoite-cli`).
 - GitHub Dependency Graph and advisory alerts are expected to remain enabled for this repository.
 
 
