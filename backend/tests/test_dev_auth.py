@@ -79,7 +79,7 @@ def test_dev_auth_req_ops_015_config_exposes_manual_totp_mode(
     clear_auth_manager_cache()
 
     client = TestClient(app)
-    response = client.get("/auth/dev/config")
+    response = client.get("/auth/config")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -109,7 +109,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
 
     client = TestClient(app)
     login_response = client.post(
-        "/auth/dev/login",
+        "/auth/login",
         json={
             "username": "dev-alice",
             "totp_code": _totp_code(secret, timestamp),
@@ -131,7 +131,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
     )
     assert admin_space_response.status_code == 200
     admin_settings = admin_space_response.json()["settings"]
-    assert admin_settings["members"]["dev-alice"]["role"] in {"owner", "admin"}
+    assert admin_settings["members"]["dev-alice"]["role"] == "admin"
     assert admin_settings["members"]["dev-alice"]["state"] == "active"
 
 
@@ -159,7 +159,7 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
     clear_auth_manager_cache()
 
     client = TestClient(app)
-    login_response = client.post("/auth/dev/mock-oauth")
+    login_response = client.post("/auth/mock-oauth")
 
     assert login_response.status_code == 200
     token = login_response.json()["bearer_token"]
@@ -176,7 +176,7 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
     )
     assert admin_space_response.status_code == 200
     admin_settings = admin_space_response.json()["settings"]
-    assert admin_settings["members"]["dev-oauth-user"]["role"] in {"owner", "admin"}
+    assert admin_settings["members"]["dev-oauth-user"]["role"] == "admin"
     assert admin_settings["members"]["dev-oauth-user"]["state"] == "active"
 
 
@@ -194,7 +194,7 @@ def test_dev_auth_req_ops_015_startup_bootstraps_admin_space(
     clear_auth_manager_cache()
 
     with TestClient(app) as client:
-        login_response = client.post("/auth/dev/mock-oauth")
+        login_response = client.post("/auth/mock-oauth")
         assert login_response.status_code == 200
         token = login_response.json()["bearer_token"]
 
@@ -220,7 +220,7 @@ def test_dev_auth_req_ops_015_config_rejects_unsupported_mode(
     )
     clear_auth_manager_cache()
 
-    response = TestClient(app).get("/auth/dev/config")
+    response = TestClient(app).get("/auth/config")
 
     assert response.status_code == 503
 
@@ -238,7 +238,7 @@ def test_dev_auth_req_ops_015_config_requires_non_empty_user_id(
     )
     clear_auth_manager_cache()
 
-    response = TestClient(app).get("/auth/dev/config")
+    response = TestClient(app).get("/auth/config")
 
     assert response.status_code == 503
 
@@ -256,7 +256,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_non_manual_mode(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "dev-alice", "totp_code": "123456"},
     )
 
@@ -281,7 +281,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "other-user", "totp_code": _totp_code(secret, timestamp)},
     )
 
@@ -303,10 +303,13 @@ def test_dev_auth_req_ops_015_rejects_remote_clients(
     clear_auth_manager_cache()
 
     client = TestClient(app, client=("198.51.100.20", 50000))
-    response = client.get("/auth/dev/config")
+    response = client.get("/auth/config")
 
     assert response.status_code == 403
-    assert "loopback clients" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
 
 
 def test_dev_auth_req_ops_015_allows_trusted_proxy_token(
@@ -325,7 +328,7 @@ def test_dev_auth_req_ops_015_allows_trusted_proxy_token(
 
     client = TestClient(app, client=("198.51.100.20", 50000))
     response = client.get(
-        "/auth/dev/config",
+        "/auth/config",
         headers={"x-ugoite-dev-auth-proxy-token": "proxy-secret"},
     )
 
@@ -349,12 +352,15 @@ def test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token(
 
     client = TestClient(app, client=("198.51.100.20", 50000))
     response = client.get(
-        "/auth/dev/config",
+        "/auth/config",
         headers={"x-ugoite-dev-auth-proxy-token": "wrong-secret"},
     )
 
     assert response.status_code == 403
-    assert "loopback clients" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
 
 
 def test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token(
@@ -372,10 +378,13 @@ def test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token(
     clear_auth_manager_cache()
 
     client = TestClient(app, client=("198.51.100.20", 50000))
-    response = client.get("/auth/dev/config")
+    response = client.get("/auth/config")
 
     assert response.status_code == 403
-    assert "loopback clients" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
 
 
 def test_dev_auth_req_ops_015_rejects_unknown_client_host(
@@ -401,10 +410,13 @@ def test_dev_auth_req_ops_015_rejects_unknown_client_host(
     )
     clear_auth_manager_cache()
 
-    response = TestClient(app).get("/auth/dev/config")
+    response = TestClient(app).get("/auth/config")
 
     assert response.status_code == 403
-    assert "loopback clients" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
 
 
 def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
@@ -421,7 +433,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "dev-alice", "totp_code": "123456"},
     )
 
@@ -442,7 +454,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "dev-alice", "totp_code": "000000"},
     )
 
@@ -469,7 +481,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
     )
 
@@ -503,7 +515,7 @@ def test_dev_auth_req_ops_015_manual_login_validates_ttl(
     clear_auth_manager_cache()
 
     response = TestClient(app).post(
-        "/auth/dev/login",
+        "/auth/login",
         json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
     )
 
@@ -522,7 +534,7 @@ def test_dev_auth_req_ops_015_mock_oauth_rejects_manual_totp_mode(
     )
     clear_auth_manager_cache()
 
-    response = TestClient(app).post("/auth/dev/mock-oauth")
+    response = TestClient(app).post("/auth/mock-oauth")
 
     assert response.status_code == 409
     assert "mock-oauth login is not enabled" in response.json()["detail"]

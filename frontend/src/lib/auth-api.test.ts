@@ -20,7 +20,7 @@ describe("authApi", () => {
 			supports_mock_oauth: false,
 		});
 
-		await expect(authApi.getDevConfig()).resolves.toEqual({
+		await expect(authApi.getConfig()).resolves.toEqual({
 			mode: "manual-totp",
 			usernameHint: "dev-alice",
 			supportsManualTotp: true,
@@ -32,11 +32,11 @@ describe("authApi", () => {
 			expiresAt: 1_900_000_000,
 		});
 		await expect(authApi.loginWithMockOauth()).rejects.toThrow(
-			"mock-oauth login is not enabled for this local development session.",
+			"mock-oauth login is not enabled for this session.",
 		);
 
 		server.use(
-			http.get("http://localhost:3000/api/auth/dev/config", () =>
+			http.get("http://localhost:3000/api/auth/config", () =>
 				HttpResponse.json(
 					{
 						mode: "manual-totp",
@@ -48,36 +48,36 @@ describe("authApi", () => {
 				),
 			),
 		);
-		await expect(authApi.getDevConfig()).rejects.toThrow(
+		await expect(authApi.getConfig()).rejects.toThrow(
 			"Invalid auth response: supports_manual_totp must be a boolean.",
 		);
 
 		server.use(
 			http.get(
-				"http://localhost:3000/api/auth/dev/config",
+				"http://localhost:3000/api/auth/config",
 				() => new HttpResponse(null, { status: 500, statusText: "Internal Server Error" }),
 			),
 		);
-		await expect(authApi.getDevConfig()).rejects.toThrow(
-			"Failed to load local auth config: Internal Server Error",
+		await expect(authApi.getConfig()).rejects.toThrow(
+			"Failed to load auth config: Internal Server Error",
 		);
 
 		server.use(
-			http.get("http://localhost:3000/api/auth/dev/config", () =>
+			http.get("http://localhost:3000/api/auth/config", () =>
 				HttpResponse.json(
 					{
-						detail: "Local development auth endpoints are only available from loopback clients.",
+						detail: "Explicit login endpoints are only available from loopback clients.",
 					},
 					{ status: 403, statusText: "Forbidden" },
 				),
 			),
 		);
-		await expect(authApi.getDevConfig()).rejects.toThrow(
-			"Local development auth endpoints are only available from loopback clients.",
+		await expect(authApi.getConfig()).rejects.toThrow(
+			"Explicit login endpoints are only available from loopback clients.",
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/dev/login", () =>
+			http.post("http://localhost:3000/api/auth/login", () =>
 				HttpResponse.json(
 					{
 						bearer_token: 42,
@@ -94,7 +94,7 @@ describe("authApi", () => {
 
 		server.use(
 			http.post(
-				"http://localhost:3000/api/auth/dev/login",
+				"http://localhost:3000/api/auth/login",
 				() => new HttpResponse("backend down", { status: 502, statusText: "Bad Gateway" }),
 			),
 		);
@@ -103,14 +103,14 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/dev/mock-oauth", () =>
+			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
 				HttpResponse.json({ detail: { reason: "blocked" } }, { status: 409 }),
 			),
 		);
 		await expect(authApi.loginWithMockOauth()).rejects.toThrow('{"reason":"blocked"}');
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/dev/mock-oauth", () =>
+			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
 				HttpResponse.json({ detail: 123 }, { status: 409, statusText: "Conflict" }),
 			),
 		);
@@ -119,7 +119,7 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/dev/mock-oauth", () =>
+			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
 				HttpResponse.json(
 					{
 						bearer_token: "frontend-test-token",

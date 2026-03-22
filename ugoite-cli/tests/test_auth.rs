@@ -136,7 +136,7 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
     handle.join().unwrap();
 
-    assert!(request_text.starts_with("POST /auth/dev/login HTTP/1.1"));
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
     assert!(request_text.contains(r#""username":"dev-alice""#));
     assert!(request_text.contains(r#""totp_code":"123456""#));
 

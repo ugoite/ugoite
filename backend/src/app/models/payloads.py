@@ -29,8 +29,8 @@ class SpaceCreate(BaseModel):
     name: Identifier
 
 
-class DevAuthLogin(BaseModel):
-    """Local development username + TOTP login payload."""
+class AuthLogin(BaseModel):
+    """Username + TOTP login payload."""
 
     username: Identifier
     totp_code: TotpCode
