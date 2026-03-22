@@ -15,46 +15,60 @@ const toc = [
   description="A user-first path for understanding Ugoite and starting it locally."
   toc={toc}
 >
-  <section id="overview" class="doc-card-hero">
-    <div style="position: relative; z-index: 1;">
-      <span class="doc-pill">Getting Started</span>
-      <h1 style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;">
-        Start with Ugoite before diving into design docs
-      </h1>
-      <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 42rem; line-height: 1.6;">
-        Pick the shortest path for what you want to do right now, then move to the browser, auth guide, or deeper reference docs only when you actually need them.
-      </p>
-    </div>
-  </section>
+  <div class="doc-page-stack">
+    <section id="overview" class="doc-card-hero">
+      <div class="doc-hero-content">
+        <span class="doc-pill doc-kicker">Getting Started</span>
+        <h1 class="doc-section-title">Start with Ugoite before diving into design docs</h1>
+        <p class="doc-lead">
+          Pick the shortest path for what you want to do right now, then move to the browser, auth guide, or deeper reference docs only when you actually need them.
+        </p>
+      </div>
+    </section>
 
-  <section id="first-steps">
-    <div class="doc-grid">
-      {primaryStartCards.map((step) => (
-        <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
-          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
-          <h2 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h2>
-          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
-          <span class="doc-pill" style="margin-top: 0.75rem;">{step.badge}</span>
-        </a>
-      ))}
-    </div>
-  </section>
+    <section id="first-steps" class="doc-section-stack">
+      <div class="doc-section-copy">
+        <p class="doc-pill doc-kicker">Choose a Path</p>
+        <h2 class="doc-section-title">Start with the path that matches what you need today</h2>
+      </div>
 
-  <section id="next" class="doc-card">
-    <p class="doc-pill" style="margin-bottom: 0.75rem;">After You Start</p>
-    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.75rem;">Keep the next move simple</h2>
-    <p style="font-size: 0.875rem; color: var(--doc-muted); line-height: 1.7;">
-      Go straight to the surface or reference you need instead of reading the full spec tree front to back.
-    </p>
-    <div class="doc-grid">
-      {nextStepCards.map((step) => (
-        <a href={withBasePath(step.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
-          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{step.icon}</div>
-          <div class="doc-pill" style="margin-bottom: 0.5rem;">{step.badge}</div>
-          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{step.title}</h3>
-          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{step.description}</p>
-        </a>
-      ))}
-    </div>
-  </section>
+      <div class="doc-grid">
+        {primaryStartCards.map((step) => (
+          <a href={withBasePath(step.href)} class="doc-card doc-card-hover doc-link-card">
+            <div class="doc-link-card__icon" aria-hidden="true">{step.icon}</div>
+            <div class="doc-link-card__eyebrow">
+              <span class="doc-pill">{step.badge}</span>
+            </div>
+            <h2 class="doc-link-card__title">{step.title}</h2>
+            <p class="doc-link-card__body">{step.description}</p>
+            <div class="doc-link-card__footer">Open guide</div>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <section id="next" class="doc-card doc-section-stack">
+      <div class="doc-section-copy">
+        <p class="doc-pill doc-kicker">After You Start</p>
+        <h2 class="doc-section-title">Keep the next move simple</h2>
+        <p class="doc-lead">
+          Go straight to the surface or reference you need instead of reading the full spec tree front to back.
+        </p>
+      </div>
+
+      <div class="doc-grid">
+        {nextStepCards.map((step) => (
+          <a href={withBasePath(step.href)} class="doc-card doc-card-hover doc-link-card">
+            <div class="doc-link-card__icon" aria-hidden="true">{step.icon}</div>
+            <div class="doc-link-card__eyebrow">
+              <span class="doc-pill">{step.badge}</span>
+            </div>
+            <h3 class="doc-link-card__title">{step.title}</h3>
+            <p class="doc-link-card__body">{step.description}</p>
+            <div class="doc-link-card__footer">Open next step</div>
+          </a>
+        ))}
+      </div>
+    </section>
+  </div>
 </BaseLayout>
