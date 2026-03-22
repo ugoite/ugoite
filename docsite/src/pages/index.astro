@@ -5,77 +5,81 @@ import { nextStepCards, primaryStartCards } from "../lib/onboarding";
 ---
 
 <BaseLayout title="Ugoite — Local-First Knowledge Space" fullWidth={true}>
-  <section class="doc-card-hero" style="text-align: center; padding: 5rem 2rem 4rem;">
-    <div style="position: relative; z-index: 1;">
-      <p class="doc-pill" style="margin-bottom: 1.5rem;">Start Here &middot; Local-First &middot; AI-Native</p>
+  <div class="doc-page-stack">
+    <section class="doc-card-hero">
+      <div class="doc-hero-content doc-hero-content--center">
+        <p class="doc-pill doc-kicker">Start Here &middot; Local-First &middot; AI-Native</p>
 
-      <h1 style="font-size: clamp(3rem, 8vw, 5.5rem); font-weight: 900; letter-spacing: -0.04em; line-height: 1; margin: 0;">
-        <span style="background: var(--doc-accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Ugoite</span>
-      </h1>
+        <h1 class="doc-display-title">
+          <span class="doc-gradient-text">Ugoite</span>
+        </h1>
 
-      <p style="font-size: clamp(1rem, 2.5vw, 1.5rem); font-weight: 500; color: var(--doc-muted); margin-top: 1rem; letter-spacing: -0.01em;">
-        your private, portable knowledge space
-      </p>
+        <p class="doc-lead">
+          A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
+        </p>
 
-      <p style="max-width: 36rem; margin: 1.5rem auto 0; font-size: 0.9375rem; line-height: 1.7; color: var(--doc-muted);">
-        A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
-      </p>
+        <div class="doc-pill-row">
+          <span class="doc-pill">Local-first data</span>
+          <span class="doc-pill">Browser + CLI surfaces</span>
+          <span class="doc-pill">Design and specs one step deeper</span>
+        </div>
 
-      <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem;">
-        <span class="doc-pill">Local-first data</span>
-        <span class="doc-pill">Browser + CLI surfaces</span>
-        <span class="doc-pill">Design and specs one step deeper</span>
+        <div class="doc-cta-row">
+          <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-primary">Get Started</a>
+          <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">Browse Application</a>
+          <a href={withBasePath("/docs/spec/index")} class="doc-btn doc-btn-outline">Read Specs</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="start-paths" class="doc-card doc-section-stack">
+      <div class="doc-section-header">
+        <div class="doc-section-copy">
+          <p class="doc-pill doc-kicker">Choose Your Path</p>
+          <h2 class="doc-section-title">Most people only need one of these three entry points</h2>
+        </div>
+        <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-outline">Open the getting-started guide</a>
       </div>
 
-      <div style="display: flex; gap: 0.75rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap;">
-        <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-primary">Get Started</a>
-        <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">Browse Application</a>
-        <a href={withBasePath("/docs/spec/index")} class="doc-btn doc-btn-outline">Read Specs</a>
+      <div class="doc-grid doc-card-list">
+        {primaryStartCards.map((card) => (
+          <a href={withBasePath(card.href)} class="doc-card doc-card-hover doc-link-card">
+            <div class="doc-link-card__icon" aria-hidden="true">{card.icon}</div>
+            <div class="doc-link-card__eyebrow">
+              <span class="doc-pill">{card.badge}</span>
+            </div>
+            <h3 class="doc-link-card__title">{card.title}</h3>
+            <p class="doc-link-card__body">{card.description}</p>
+            <div class="doc-link-card__footer">Open guide</div>
+          </a>
+        ))}
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section id="start-paths" class="doc-card" style="margin-top: 2rem;">
-    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-      <div>
-        <p class="doc-pill" style="margin-bottom: 0.75rem;">Choose Your Path</p>
-        <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0;">Most people only need one of these three entry points</h2>
+    <section id="next-steps" class="doc-card doc-section-stack">
+      <div class="doc-section-copy">
+        <p class="doc-pill doc-kicker">Then Go Deeper Only Where It Helps</p>
+        <h2 class="doc-section-title">
+          Once you are running, jump straight to the browser, auth, or deeper docs
+        </h2>
+        <p class="doc-lead">
+          The main navigation keeps <strong>Application</strong>, <strong>Design</strong>, and <strong>Source Docs</strong> available without forcing first-time users through the whole spec tree.
+        </p>
       </div>
-      <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-outline">Open the getting-started guide</a>
-    </div>
 
-    <div class="doc-grid" style="margin-top: 1.5rem;">
-      {primaryStartCards.map((card) => (
-        <a href={withBasePath(card.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
-          <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">{card.icon}</div>
-          <div class="doc-pill" style="margin-bottom: 0.75rem;">{card.badge}</div>
-          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{card.title}</h3>
-          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{card.description}</p>
-        </a>
-      ))}
-    </div>
-  </section>
-
-  <section id="next-steps" class="doc-card" style="margin-top: 2rem;">
-    <div>
-      <p class="doc-pill" style="margin-bottom: 0.75rem;">Then Go Deeper Only Where It Helps</p>
-      <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0;">
-        Once you are running, jump straight to the browser, auth, or deeper docs
-      </h2>
-      <p style="font-size: 0.875rem; color: var(--doc-muted); margin-top: 0.75rem; line-height: 1.7;">
-        The main navigation keeps <strong>Application</strong>, <strong>Design</strong>, and <strong>Source Docs</strong> available without forcing first-time users through the whole spec tree.
-      </p>
-    </div>
-
-    <div class="doc-grid" style="margin-top: 1.5rem;">
-      {nextStepCards.map((card) => (
-        <a href={withBasePath(card.href)} class="doc-card doc-card-hover" style="text-decoration: none; color: inherit;">
-          <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">{card.icon}</div>
-          <div class="doc-pill" style="margin-bottom: 0.5rem;">{card.badge}</div>
-          <h3 style="font-size: 1rem; font-weight: 700; margin: 0;">{card.title}</h3>
-          <p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">{card.description}</p>
-        </a>
-      ))}
-    </div>
-  </section>
+      <div class="doc-grid doc-card-list">
+        {nextStepCards.map((card) => (
+          <a href={withBasePath(card.href)} class="doc-card doc-card-hover doc-link-card">
+            <div class="doc-link-card__icon" aria-hidden="true">{card.icon}</div>
+            <div class="doc-link-card__eyebrow">
+              <span class="doc-pill">{card.badge}</span>
+            </div>
+            <h3 class="doc-link-card__title">{card.title}</h3>
+            <p class="doc-link-card__body">{card.description}</p>
+            <div class="doc-link-card__footer">Open next step</div>
+          </a>
+        ))}
+      </div>
+    </section>
+  </div>
 </BaseLayout>
