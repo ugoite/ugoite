@@ -247,31 +247,37 @@ These two environments are separate and intended for different uses—use the De
 ## Container Quick Start (published images)
 
 Start here if you want the quickest way to try a published Ugoite release.
-This path uses pre-built release assets and does not require cloning the
-repository or building images from source.
+This path uses the shipped release compose file plus published GHCR images and
+does not require cloning the repository or building images from source.
 
-Download and run a published release image bundle:
+Prepare the compose file and `.env`, then pull and start the published stack:
 
 ```bash
-mkdir -p "${UGOITE_SPACES_DIR:-spaces}"
-UGOITE_VERSION=0.0.1
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml"
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz"
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz"
-gzip -dc "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
-gzip -dc "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
-UGOITE_VERSION="$UGOITE_VERSION" docker compose -f docker-compose.release.yaml up -d
+mkdir -p ugoite-release
+cd ugoite-release
+curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-compose.release.yaml"
+cat > .env <<EOF
+UGOITE_VERSION=stable
+UGOITE_SPACES_DIR=./spaces
+UGOITE_FRONTEND_PORT=3000
+UGOITE_BACKEND_PORT=8000
+UGOITE_DEV_USER_ID=dev-local-user
+UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
+EOF
+mkdir -p ./spaces
+docker compose -f docker-compose.release.yaml pull
+docker compose -f docker-compose.release.yaml up -d
 ```
 
 Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
 and you will land on `/spaces`. For more background on the explicit browser
 login flow, see [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
-The downloaded archives load the canonical release image names used by
+The compose file pulls the canonical release image names used by
 `docker-compose.release.yaml`:
 
-- `ghcr.io/ugoite/ugoite/backend`
-- `ghcr.io/ugoite/ugoite/frontend`
+- `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
+- `ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}`
 
 Tag conventions:
 
@@ -283,7 +289,7 @@ Tag conventions:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `UGOITE_VERSION` | required | Exact release version for the downloaded assets and release compose images |
+| `UGOITE_VERSION` | `required` | Published image tag selector; set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version to pin the stack |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into the backend container at `/data` |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port that exposes the frontend UI |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port that exposes the backend API |
