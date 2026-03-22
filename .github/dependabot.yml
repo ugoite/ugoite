@@ -36,12 +36,7 @@ updates:
       interval: "daily"
 
   - package-ecosystem: "cargo"
-    directory: "/ugoite-cli"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "cargo"
-    directory: "/ugoite-core"
+    directory: "/"
     schedule:
       interval: "daily"
     groups:
