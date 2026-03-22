@@ -5,6 +5,7 @@ const defaultProxyTimeoutMs = 15_000;
 const authCookieName = "ugoite_auth_bearer_token";
 const devAuthProxyToken = process.env.UGOITE_DEV_AUTH_PROXY_TOKEN;
 const devAuthProxyTokenHeader = "x-ugoite-dev-auth-proxy-token";
+const proxyTokenAuthPaths = new Set(["/auth/config", "/auth/login", "/auth/mock-oauth"]);
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -130,7 +131,7 @@ const applyProxyCredentials = (headers: Headers, cookieHeader: string | null): v
 };
 
 const applyDevAuthProxyToken = (headers: Headers, pathname: string): void => {
-	if (!pathname.startsWith("/auth/dev/")) {
+	if (!proxyTokenAuthPaths.has(pathname)) {
 		return;
 	}
 	if (!devAuthProxyToken?.trim()) {

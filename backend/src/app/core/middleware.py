@@ -36,6 +36,9 @@ _AUTH_EXEMPT_PATHS = {
     "/openapi.json",
     "/redoc",
     "/health",
+    "/auth/config",
+    "/auth/login",
+    "/auth/mock-oauth",
 }
 _DEFAULT_SIGNATURE_SPACE_ID = "default"
 
@@ -43,7 +46,7 @@ _DEFAULT_SIGNATURE_SPACE_ID = "default"
 def _is_auth_exempt(path: str) -> bool:
     if path in _AUTH_EXEMPT_PATHS:
         return True
-    return path.startswith(("/auth/dev/", "/docs/", "/redoc/"))
+    return path.startswith(("/docs/", "/redoc/"))
 
 
 def _space_id_from_path(path: str) -> str | None:

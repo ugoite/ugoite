@@ -1,16 +1,16 @@
-# Local Development Auth APIs
+# Explicit Login APIs
 
 version: "0.1"
 updated: "2026-03"
 kind: auth
 
 apis:
-  - id: auth.dev.config
+  - id: auth.config
     method: GET
     backend:
-      path: /auth/dev/config
+      path: /auth/config
       file: backend/src/app/api/endpoints/auth.py
-      function: dev_auth_config_endpoint
+      function: auth_config_endpoint
     frontend:
       path: /login
       file: frontend/src/routes/login.tsx
@@ -19,12 +19,12 @@ apis:
       file: ugoite-core/ugoite_core/auth.py
       function: validate_totp_code
 
-  - id: auth.dev.login
+  - id: auth.login
     method: POST
     backend:
-      path: /auth/dev/login
+      path: /auth/login
       file: backend/src/app/api/endpoints/auth.py
-      function: dev_login_endpoint
+      function: login_endpoint
     frontend:
       path: /login
       file: frontend/src/routes/login.tsx
@@ -37,12 +37,12 @@ apis:
       file: ugoite-cli/src/commands/auth.rs
       function: run
 
-  - id: auth.dev.mock-oauth
+  - id: auth.mock-oauth
     method: POST
     backend:
-      path: /auth/dev/mock-oauth
+      path: /auth/mock-oauth
       file: backend/src/app/api/endpoints/auth.py
-      function: dev_mock_oauth_login_endpoint
+      function: mock_oauth_login_endpoint
     frontend:
       path: /login
       file: frontend/src/routes/login.tsx
