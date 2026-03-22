@@ -22,8 +22,28 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _has_dependabot_update(
+    updates: object,
+    *,
+    ecosystem: str,
+    directory: str,
+) -> bool:
+    if not isinstance(updates, list):
+        return False
+    return any(
+        isinstance(update, dict)
+        and update.get("package-ecosystem") == ecosystem
+        and update.get("directory") == directory
+        for update in updates
+    )
+
+
 def test_docs_req_ops_014_cli_language_is_consistent() -> None:
-    """REQ-OPS-014: ugoite-cli stays classified as Rust in docs and SBOM metadata."""
+    """REQ-OPS-014: ugoite-cli stays classified as Rust and uses Cargo-root automation.
+
+    This also keeps Dependabot's Rust automation aligned to the shared workspace
+    root instead of individual workspace members.
+    """
     cargo_text = _read_text(CLI_CARGO_PATH)
     index_text = _read_text(INDEX_PATH)
     stack_text = _read_text(STACK_PATH)
@@ -62,7 +82,8 @@ def test_docs_req_ops_014_cli_language_is_consistent() -> None:
             (
                 "docs/spec/security/overview.md",
                 security_text,
-                "Cargo manifests (`ugoite-core`, `ugoite-cli`)",
+                "Rust Cargo workspace root (`/`, covering `ugoite-minimum`, "
+                "`ugoite-core`, and `ugoite-cli`)",
             ),
             (
                 ".github/workflows/sbom-ci.yml",
@@ -76,19 +97,24 @@ def test_docs_req_ops_014_cli_language_is_consistent() -> None:
         details.append(
             ".github/workflows/sbom-ci.yml must not classify ugoite-cli as Python",
         )
-    if not any(
-        isinstance(update, dict)
+    if not _has_dependabot_update(updates, ecosystem="cargo", directory="/"):
+        details.append(
+            ".github/dependabot.yml must track the Rust workspace root with cargo",
+        )
+    workspace_member_cargo_dirs = sorted(
+        update.get("directory")
+        for update in updates
+        if isinstance(update, dict)
         and update.get("package-ecosystem") == "cargo"
-        and update.get("directory") == "/ugoite-cli"
-        for update in updates
-    ):
-        details.append(".github/dependabot.yml must track /ugoite-cli with cargo")
-    if any(
-        isinstance(update, dict)
-        and update.get("package-ecosystem") == "uv"
-        and update.get("directory") == "/ugoite-cli"
-        for update in updates
-    ):
+        and update.get("directory")
+        in {"/ugoite-cli", "/ugoite-core", "/ugoite-minimum"}
+    )
+    if workspace_member_cargo_dirs:
+        details.append(
+            ".github/dependabot.yml must not target Rust workspace members directly "
+            "with cargo: " + ", ".join(workspace_member_cargo_dirs),
+        )
+    if _has_dependabot_update(updates, ecosystem="uv", directory="/ugoite-cli"):
         details.append(".github/dependabot.yml must not track /ugoite-cli with uv")
     if details:
         raise AssertionError("; ".join(details))
