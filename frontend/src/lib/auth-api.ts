@@ -1,13 +1,13 @@
 import { apiFetch } from "./api";
 
-export type DevAuthConfig = {
+export type AuthConfig = {
 	mode: "manual-totp" | "mock-oauth";
 	usernameHint: string;
 	supportsManualTotp: boolean;
 	supportsMockOauth: boolean;
 };
 
-export type DevAuthLoginResponse = {
+export type AuthLoginResponse = {
 	bearerToken: string;
 	userId: string;
 	expiresAt: number;
@@ -53,28 +53,28 @@ const readNumber = (payload: Record<string, unknown>, key: string): number => {
 };
 
 export const authApi = {
-	async getDevConfig(): Promise<DevAuthConfig> {
-		const response = await apiFetch("/auth/dev/config", { trackLoading: false });
+	async getConfig(): Promise<AuthConfig> {
+		const response = await apiFetch("/auth/config", { trackLoading: false });
 		if (!response.ok) {
 			throw new Error(
-				await formatAuthError(response, `Failed to load local auth config: ${response.statusText}`),
+				await formatAuthError(response, `Failed to load auth config: ${response.statusText}`),
 			);
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {
-			mode: readString(payload, "mode") as DevAuthConfig["mode"],
+			mode: readString(payload, "mode") as AuthConfig["mode"],
 			usernameHint: readString(payload, "username_hint"),
 			supportsManualTotp: readBoolean(payload, "supports_manual_totp"),
 			supportsMockOauth: readBoolean(payload, "supports_mock_oauth"),
 		};
 	},
 
-	async loginWithTotp(username: string, totpCode: string): Promise<DevAuthLoginResponse> {
+	async loginWithTotp(username: string, totpCode: string): Promise<AuthLoginResponse> {
 		const loginPayload = Object.fromEntries([
 			["username", username],
 			["totp_code", totpCode],
 		]);
-		const response = await apiFetch("/auth/dev/login", {
+		const response = await apiFetch("/auth/login", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(loginPayload),
@@ -90,8 +90,8 @@ export const authApi = {
 		};
 	},
 
-	async loginWithMockOauth(): Promise<DevAuthLoginResponse> {
-		const response = await apiFetch("/auth/dev/mock-oauth", {
+	async loginWithMockOauth(): Promise<AuthLoginResponse> {
+		const response = await apiFetch("/auth/mock-oauth", {
 			method: "POST",
 		});
 		if (!response.ok) {

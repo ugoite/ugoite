@@ -1,4 +1,4 @@
-"""Local development authentication endpoints."""
+"""Explicit passwordless login endpoints."""
 
 import os
 import secrets
@@ -12,9 +12,9 @@ from ugoite_core.auth import mint_signed_bearer_token, validate_totp_code
 from app.core.config import get_root_path
 from app.core.security import is_local_host, resolve_client_host
 from app.core.storage import storage_config_from_root
-from app.models.payloads import DevAuthLogin
+from app.models.payloads import AuthLogin
 
-router = APIRouter(prefix="/auth/dev", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 AuthMode = Literal["manual-totp", "mock-oauth"]
 DEFAULT_DEV_AUTH_MODE: AuthMode = "manual-totp"
@@ -42,7 +42,7 @@ def _resolve_dev_auth_mode() -> AuthMode:
 def _dev_user_id() -> str:
     user_id = os.environ.get("UGOITE_DEV_USER_ID", "dev-local-user").strip()
     if not user_id:
-        message = "UGOITE_DEV_USER_ID must be configured for local development login."
+        message = "UGOITE_DEV_USER_ID must be configured for explicit login."
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=message,
@@ -55,8 +55,7 @@ def _dev_signing_material() -> tuple[str, str]:
     secret = os.environ.get("UGOITE_DEV_SIGNING_SECRET", "").strip()
     if not key_id or not secret:
         message = (
-            "Local development login is unavailable because signing material "
-            "is missing."
+            "Passwordless login is unavailable because signing material is missing."
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -123,9 +122,7 @@ def _ensure_local_dev_auth_request(request: Request) -> None:
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=(
-            "Local development auth endpoints are only available from loopback clients."
-        ),
+        detail="Explicit login endpoints are only available from loopback clients.",
     )
 
 
@@ -145,13 +142,13 @@ def _issue_dev_bearer_token(user_id: str) -> dict[str, int | str]:
 
 
 def _storage_config() -> dict[str, str]:
-    """Build storage config for local dev auth bootstrap operations."""
+    """Build storage config for login bootstrap operations."""
     return storage_config_from_root(get_root_path())
 
 
 @router.get("/config")
-async def dev_auth_config_endpoint(request: Request) -> dict[str, object]:
-    """Expose the current local development login mode to browser/CLI clients."""
+async def auth_config_endpoint(request: Request) -> dict[str, object]:
+    """Expose the current passwordless login mode to browser/CLI clients."""
     _ensure_local_dev_auth_request(request)
     mode = _resolve_dev_auth_mode()
     await ugoite_core.ensure_admin_space(_storage_config(), _dev_user_id())
@@ -164,14 +161,14 @@ async def dev_auth_config_endpoint(request: Request) -> dict[str, object]:
 
 
 @router.post("/login")
-async def dev_login_endpoint(
-    payload: DevAuthLogin,
+async def login_endpoint(
+    payload: AuthLogin,
     request: Request,
 ) -> dict[str, int | str]:
-    """Validate local development username + TOTP and issue a signed bearer token."""
+    """Validate username + TOTP and issue a signed bearer token."""
     _ensure_local_dev_auth_request(request)
     if _resolve_dev_auth_mode() != "manual-totp":
-        message = "manual-totp login is not enabled for this local development session."
+        message = "manual-totp login is not enabled for this session."
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=message,
@@ -202,11 +199,11 @@ async def dev_login_endpoint(
 
 
 @router.post("/mock-oauth")
-async def dev_mock_oauth_login_endpoint(request: Request) -> dict[str, int | str]:
+async def mock_oauth_login_endpoint(request: Request) -> dict[str, int | str]:
     """Issue a signed bearer token for explicit mock OAuth login."""
     _ensure_local_dev_auth_request(request)
     if _resolve_dev_auth_mode() != "mock-oauth":
-        message = "mock-oauth login is not enabled for this local development session."
+        message = "mock-oauth login is not enabled for this session."
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=message,

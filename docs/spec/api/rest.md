@@ -39,20 +39,19 @@ Planned endpoint surface (exact payloads may evolve during implementation):
 - `POST /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}/rotate`
 - `DELETE /spaces/{space_id}/service-accounts/{service_account_id}/keys/{key_id}`
 
-### Local Development Login Endpoints
+### Explicit Login Endpoints
 
-These endpoints are intentionally limited to the local development workflow and
-are unauthenticated so the browser and CLI can complete an explicit sign-in
-step after startup.
+These endpoints expose the current explicit passwordless login flow and stay
+unauthenticated so the browser and CLI can complete sign-in after startup.
 
-- `GET /auth/dev/config`
-- `POST /auth/dev/login`
-- `POST /auth/dev/mock-oauth`
+- `GET /auth/config`
+- `POST /auth/login`
+- `POST /auth/mock-oauth`
 
 Example manual TOTP login:
 
 ```http
-POST /auth/dev/login
+POST /auth/login
 Content-Type: application/json
 
 {

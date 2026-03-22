@@ -150,7 +150,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("core mode request");
     handle.join().expect("join core mode server");
-    assert!(core_mode_request.starts_with("POST /auth/dev/login HTTP/1.1"));
+    assert!(core_mode_request.starts_with("POST /auth/login HTTP/1.1"));
     assert!(String::from_utf8_lossy(&core_mode_login.stdout)
         .contains("export UGOITE_AUTH_BEARER_TOKEN=core-mode-token"));
 
@@ -198,7 +198,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("interactive request");
     handle.join().expect("join interactive server");
-    assert!(interactive_request.starts_with("POST /auth/dev/login HTTP/1.1"));
+    assert!(interactive_request.starts_with("POST /auth/login HTTP/1.1"));
     assert!(interactive_request.contains(r#""username":"alice""#));
     assert!(interactive_request.contains(r#""totp_code":"123456""#));
 
@@ -234,7 +234,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("mock oauth request");
     handle.join().expect("join mock oauth server");
-    assert!(mock_oauth_request.starts_with("POST /auth/dev/mock-oauth HTTP/1.1"));
+    assert!(mock_oauth_request.starts_with("POST /auth/mock-oauth HTTP/1.1"));
 }
 
 /// REQ-OPS-006: auxiliary auth commands must keep masking, overview, and token clearing covered.

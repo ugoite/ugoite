@@ -121,11 +121,11 @@ export const seedDevAuthConfig = (
 export const getPreferencePatches = () => preferencePatches.slice();
 
 export const handlers = [
-	http.get("http://localhost:3000/api/auth/dev/config", () => {
+	http.get("http://localhost:3000/api/auth/config", () => {
 		return HttpResponse.json(mockDevAuthConfig);
 	}),
 
-	http.post("http://localhost:3000/api/auth/dev/login", async ({ request }) => {
+	http.post("http://localhost:3000/api/auth/login", async ({ request }) => {
 		const body = (await request.json()) as { username?: string; totp_code?: string };
 		if (
 			mockDevAuthConfig.mode !== "manual-totp" ||
@@ -141,10 +141,10 @@ export const handlers = [
 		});
 	}),
 
-	http.post("http://localhost:3000/api/auth/dev/mock-oauth", () => {
+	http.post("http://localhost:3000/api/auth/mock-oauth", () => {
 		if (mockDevAuthConfig.mode !== "mock-oauth") {
 			return HttpResponse.json(
-				{ detail: "mock-oauth login is not enabled for this local development session." },
+				{ detail: "mock-oauth login is not enabled for this session." },
 				{ status: 409 },
 			);
 		}

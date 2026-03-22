@@ -196,18 +196,6 @@ def _resolve_role(
     if identity.principal_type == "service":
         return _default_service_role()
 
-    owner_user_id = space_meta.get("owner_user_id")
-    if not isinstance(owner_user_id, str):
-        owner_user_id = settings_map.get("owner_user_id")
-    if isinstance(owner_user_id, str) and owner_user_id == identity.user_id:
-        return "owner"
-
-    admin_user_ids = space_meta.get("admin_user_ids")
-    if not isinstance(admin_user_ids, list):
-        admin_user_ids = settings_map.get("admin_user_ids")
-    if isinstance(admin_user_ids, list) and identity.user_id in admin_user_ids:
-        return "admin"
-
     membership_configured = any(
         key in space_meta or key in settings_map
         for key in ("members", "member_roles", "owner_user_id", "admin_user_ids")
@@ -242,6 +230,18 @@ def _resolve_role(
         explicit = settings_roles.get(identity.user_id)
         if isinstance(explicit, str) and explicit in _VALID_ROLES:
             return cast("RoleName", explicit)
+
+    owner_user_id = space_meta.get("owner_user_id")
+    if not isinstance(owner_user_id, str):
+        owner_user_id = settings_map.get("owner_user_id")
+    if isinstance(owner_user_id, str) and owner_user_id == identity.user_id:
+        return "owner"
+
+    admin_user_ids = space_meta.get("admin_user_ids")
+    if not isinstance(admin_user_ids, list):
+        admin_user_ids = settings_map.get("admin_user_ids")
+    if isinstance(admin_user_ids, list) and identity.user_id in admin_user_ids:
+        return "admin"
 
     if membership_configured:
         return None

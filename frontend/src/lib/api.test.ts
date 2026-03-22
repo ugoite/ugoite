@@ -23,7 +23,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = null;
 		let seenAuthorization: string | null = null;
 		server.use(
-			http.get("http://localhost:3000/api/auth/dev/config", ({ request }) => {
+			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -45,7 +45,7 @@ describe("apiFetch auth forwarding", () => {
 		});
 
 		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/dev/config", { trackLoading: false });
+		const response = await apiFetch("/auth/config", { trackLoading: false });
 
 		expect(response.status).toBe(200);
 		expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
@@ -56,7 +56,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = null;
 		let seenAuthorization: string | null = null;
 		server.use(
-			http.get("http://localhost:3000/api/auth/dev/config", ({ request }) => {
+			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -78,7 +78,7 @@ describe("apiFetch auth forwarding", () => {
 		});
 
 		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/dev/config", {
+		const response = await apiFetch("/auth/config", {
 			trackLoading: false,
 			headers: {
 				cookie: "ugoite_auth_bearer_token=explicit-token",
@@ -95,7 +95,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = "unexpected";
 		let seenAuthorization: string | null = "unexpected";
 		server.use(
-			http.get("http://localhost:3000/api/auth/dev/config", ({ request }) => {
+			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -110,7 +110,7 @@ describe("apiFetch auth forwarding", () => {
 		getRequestEventMock.mockReturnValue(undefined);
 
 		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/dev/config", { trackLoading: false });
+		const response = await apiFetch("/auth/config", { trackLoading: false });
 
 		expect(response.status).toBe(200);
 		expect(seenCookie).toBeNull();

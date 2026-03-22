@@ -76,7 +76,7 @@ E2E_AUTH_BEARER_TOKEN="$(
 import json
 from urllib.request import Request, urlopen
 
-request = Request("http://127.0.0.1:8000/auth/dev/mock-oauth", method="POST")
+request = Request("http://127.0.0.1:8000/auth/mock-oauth", method="POST")
 with urlopen(request) as response:
     print(json.load(response)["bearer_token"])
 '
