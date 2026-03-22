@@ -289,7 +289,7 @@ Tag conventions:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `UGOITE_VERSION` | `stable` | Published image tag selector; use `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version to pin the stack |
+| `UGOITE_VERSION` | `required` | Published image tag selector; set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version to pin the stack |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into the backend container at `/data` |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port that exposes the frontend UI |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port that exposes the backend API |

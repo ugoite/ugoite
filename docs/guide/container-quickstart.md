@@ -62,7 +62,7 @@ These are the supported release-compose environment variables for the shipped
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `UGOITE_VERSION` | `stable` | Published image tag selector. Use `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version such as `0.0.1` to pin the stack. |
+| `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version such as `0.0.1` to pin the stack. |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
