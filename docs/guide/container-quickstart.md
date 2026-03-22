@@ -1,82 +1,59 @@
 # Container Quick Start
 
-This guide covers the official release image archives attached to each GitHub
-Release. Use it when you want the quickest way to run a tagged Ugoite release
-without cloning the repository or rebuilding images locally.
+Use this guide when you want the simplest way to run the latest published
+Ugoite browser experience locally. It downloads the shipped
+`docker-compose.release.yaml`, prepares a small `.env` file, pulls the published
+GHCR images, and starts the stack without cloning the repository or rebuilding
+images from source.
 
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
 
-## Published release assets
+## Quick start
 
-Each release publishes these container quick-start assets:
-
-- `docker-compose.release.yaml`
-- `ugoite-backend-v<version>.docker.tar.gz`
-- `ugoite-frontend-v<version>.docker.tar.gz`
-
-Loading the archives restores these canonical image names locally so the
-Compose file works unchanged:
-
-- `ghcr.io/ugoite/ugoite/backend`
-- `ghcr.io/ugoite/ugoite/frontend`
-
-Each release also pushes the same images to GHCR with these tag conventions for
-authenticated pulls:
-
-- stable releases publish the exact SemVer tag, plus `latest` and `stable`
-- alpha releases publish the exact prerelease SemVer tag, plus `alpha`
-- beta releases publish the exact prerelease SemVer tag, plus `beta`
-
-Examples:
-
-- `ghcr.io/ugoite/ugoite/backend:0.0.1`
-- `ghcr.io/ugoite/ugoite/backend:latest`
-- `ghcr.io/ugoite/ugoite/frontend:0.0.1-beta.2`
-- `ghcr.io/ugoite/ugoite/frontend:beta`
-
-## Quick start with pre-built release assets
-
-Create the local-first data directory:
+Create a small working directory, download the release compose file, and add the
+runtime environment values:
 
 ```bash
-mkdir -p "${UGOITE_SPACES_DIR:-spaces}"
+mkdir -p ugoite-release
+cd ugoite-release
+curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-compose.release.yaml"
+cat > .env <<EOF
+UGOITE_VERSION=stable
+UGOITE_SPACES_DIR=./spaces
+UGOITE_FRONTEND_PORT=3000
+UGOITE_BACKEND_PORT=8000
+UGOITE_DEV_USER_ID=dev-local-user
+UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
+EOF
+mkdir -p ./spaces
 ```
 
-Download an exact release and start it:
+Pull and start the published stack:
 
 ```bash
-UGOITE_VERSION=0.0.1
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml"
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz"
-curl -fsSLO "https://github.com/ugoite/ugoite/releases/download/v${UGOITE_VERSION}/ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz"
-gzip -dc "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
-gzip -dc "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz" | docker load
-UGOITE_VERSION="$UGOITE_VERSION" docker compose -f docker-compose.release.yaml up -d
+docker compose -f docker-compose.release.yaml pull
+docker compose -f docker-compose.release.yaml up -d
 ```
+
+The compose file pulls these canonical published images:
+
+- `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
+- `ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}`
 
 Then open:
 
 - Frontend UI login: http://localhost:3000/login
 - Backend API: http://localhost:8000
 
-Then click **Continue with Mock OAuth** to reach `/spaces`. For more detail on
-the explicit browser login flow, see
-[Local Dev Auth Login](local-dev-auth-login.md).
+Click **Continue with Mock OAuth** to reach `/spaces`. For more detail on the
+explicit browser login flow, see [Local Dev Auth Login](local-dev-auth-login.md).
 
 To stop the stack:
 
 ```bash
-UGOITE_VERSION=0.0.1 docker compose -f docker-compose.release.yaml down --remove-orphans
+docker compose -f docker-compose.release.yaml down --remove-orphans
 ```
-
-The downloaded archives preserve the exact tags
-`ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}` and
-`ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}`, so no Compose edits are
-required after `docker load`.
-
-Use exact release versions such as `0.0.1`, `0.0.1-beta.7`, or
-`0.0.1-alpha.3` when downloading release assets.
 
 ## Environment Variables
 
@@ -85,7 +62,7 @@ These are the supported release-compose environment variables for the shipped
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `UGOITE_VERSION` | required | Exact release version for the downloaded assets and release compose images. Use exact versions like `0.0.1`, `0.0.1-beta.7`, or `0.0.1-alpha.3` for release asset downloads. |
+| `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version such as `0.0.1` to pin the stack. |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
@@ -94,24 +71,18 @@ These are the supported release-compose environment variables for the shipped
 
 The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
 the Compose network, and it pre-wires the signing/bearer settings needed for
-the explicit `mock-oauth` browser login flow. Most users only need the
-variables listed above.
+the explicit `mock-oauth` browser login flow. For a broader mode-by-mode
+reference, see [Environment Variable Matrix](env-matrix.md).
 
-## Authenticated GHCR pulls
+## Version selectors
 
-If you already have GHCR package access, you can pull the canonical image tags
-directly instead of downloading the release archives first.
+Choose the release channel that matches your goal:
 
-You can replace `0.0.1` with:
-
-- an exact stable release such as `0.0.1`
-- `latest` or `stable` for the newest stable channel
-- `alpha` or `beta` for the newest prerelease channel alias
-
-```bash
-docker pull ghcr.io/ugoite/ugoite/backend:0.0.1
-docker pull ghcr.io/ugoite/ugoite/frontend:0.0.1
-```
+- `stable` or `latest` for the newest stable release
+- `alpha` for the newest alpha prerelease
+- `beta` for the newest beta prerelease
+- an exact version such as `0.0.1`, `0.0.1-beta.7`, or `0.0.1-alpha.3` when
+  you need a specific published build
 
 ## Notes
 
@@ -119,11 +90,9 @@ docker pull ghcr.io/ugoite/ugoite/frontend:0.0.1
   to preserve the local-first storage model.
 - The published quick start binds both services to `127.0.0.1`, wires the dev
   auth proxy token between frontend and backend, and enables explicit
-  `mock-oauth` browser login so `/login` works without editing the Compose
+  `mock-oauth` browser login so `/login` works without editing the compose
   file.
 - The frontend container talks to the backend through the Compose network via
   `http://backend:8000`.
-- Release image archives are attached to every GitHub Release so the public
-  quick start does not depend on GHCR package visibility.
 - If you want source-mounted development containers instead, use
   `docker-compose.yaml` and build locally.

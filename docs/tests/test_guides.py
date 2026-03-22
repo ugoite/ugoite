@@ -367,16 +367,16 @@ REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
 }
 REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "docker-compose.release.yaml",
-    "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
-    "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz",
-    "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz",
-    "docker load",
-    "ghcr.io/ugoite/ugoite/backend",
-    "ghcr.io/ugoite/ugoite/frontend",
-    (
-        'UGOITE_VERSION="$UGOITE_VERSION" docker compose -f '
-        "docker-compose.release.yaml up -d"
-    ),
+    "releases/latest/download/docker-compose.release.yaml",
+    "UGOITE_VERSION=stable",
+    "docker compose -f docker-compose.release.yaml pull",
+    "docker compose -f docker-compose.release.yaml up -d",
+    "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}",
+    "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}",
+    "stable",
+    "latest",
+    "alpha",
+    "beta",
     "http://localhost:3000/login",
     "Continue with Mock OAuth",
     "Environment Variables",
@@ -387,16 +387,12 @@ REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_PROXY_TOKEN",
 }
 REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
-    "releases/download/v${UGOITE_VERSION}/docker-compose.release.yaml",
-    "ugoite-backend-v${UGOITE_VERSION}.docker.tar.gz",
-    "ugoite-frontend-v${UGOITE_VERSION}.docker.tar.gz",
-    "docker load",
-    "ghcr.io/ugoite/ugoite/backend",
-    "ghcr.io/ugoite/ugoite/frontend",
-    (
-        'UGOITE_VERSION="$UGOITE_VERSION" docker compose -f '
-        "docker-compose.release.yaml up -d"
-    ),
+    "releases/latest/download/docker-compose.release.yaml",
+    "UGOITE_VERSION=stable",
+    "docker compose -f docker-compose.release.yaml pull",
+    "docker compose -f docker-compose.release.yaml up -d",
+    "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}",
+    "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}",
     "latest",
     "stable",
     "alpha",
@@ -432,7 +428,10 @@ REQUIRED_RELEASE_QUICKSTART_CICD_FRAGMENTS = {
     "docker-compose.release.yaml",
     "ugoite-backend-v<version>.docker.tar.gz",
     "ugoite-frontend-v<version>.docker.tar.gz",
-    "download, load, and run",
+    (
+        "download the shipped compose file, prepare the documented env file, "
+        "and pull and run"
+    ),
     "Environment Variables",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
