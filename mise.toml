@@ -25,7 +25,7 @@ uv = "0.10.10"
 
 [tasks.setup]
 run = [
-	"npm install --no-fund --no-audit",
+	"npm ci --no-fund --no-audit",
 	"mise run //backend:install",
 	"mise run //docsite:install",
 	"mise run //frontend:install",

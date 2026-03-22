@@ -223,7 +223,7 @@ Frontend (dev) example:
 
 ```bash
 cd frontend
-bun install
+bun install --frozen-lockfile
 bun dev
 ```
 

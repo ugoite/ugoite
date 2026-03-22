@@ -47,7 +47,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./docsite
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Lint
         working-directory: ./docsite

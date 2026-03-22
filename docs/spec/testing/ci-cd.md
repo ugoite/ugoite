@@ -53,6 +53,13 @@ exact patch versions for Node, Bun, Python, Biome, Rust, and uv. `setup-node`,
 `lts`, `lts/*`, `latest`, or minor-only pins, because REQ-OPS-001 treats local
 and CI runtime drift as a docs-tested contract failure.
 
+Lockfile-backed installs must also fail fast on dependency drift. When the
+repository commits a lockfile, local tasks, CI workflows, and contributor-facing
+examples must use the strict install form instead of mutating dependency
+resolution in place: root Node tooling uses `npm ci --no-fund --no-audit`, Bun
+projects use `bun install --frozen-lockfile`, and Python `uv.lock` environments
+use `uv sync --locked`.
+
 E2E CI selects a deterministic tier before running tests. `merge_group` and
 pushes to `main` always run the full compose-backed suite. Pull requests only
 drop to the smoke tier when every changed file stays inside docs/docsite
@@ -149,7 +156,7 @@ jobs:
 jobs:
   ci:
     - cd frontend && biome ci .
-    - cd frontend && bun install
+    - cd frontend && bun install --frozen-lockfile
     - cd frontend && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 ```
 
@@ -162,6 +169,7 @@ fail for the same coverage regressions.
 ```yaml
 jobs:
   ci:
+    - cd docsite && bun install --frozen-lockfile
     - cd docsite && bun run lint
     - cd docsite && bun run format:check
     - cd docsite && bun run typecheck
@@ -184,6 +192,9 @@ jobs:
     - pull_request with docs/docsite-only paths => smoke
     - all other pull_request changes => full
   e2e:
+    - cd docsite && bun install --frozen-lockfile
+    - cd e2e && npm ci
+    - cd e2e && npx playwright install --with-deps chromium
     - download and load pre-built backend/frontend images
     - Start backend (background)
     - Start frontend (background)
@@ -356,7 +367,7 @@ Hooks configured in `.pre-commit-config.yaml`:
 Conventional Commit enforcement (local):
 
 ```bash
-npm install
+npm ci --no-fund --no-audit
 npm run prepare
 ```
 
