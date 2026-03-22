@@ -19,8 +19,8 @@ export default function LoginRoute() {
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
 	const redirectTarget = () => searchParams.next || "/spaces";
 
-	const [devConfig] = createResource(async () => {
-		const config = await authApi.getDevConfig();
+	const [authConfig] = createResource(async () => {
+		const config = await authApi.getConfig();
 		setUsername(config.usernameHint);
 		return config;
 	});
@@ -62,22 +62,21 @@ export default function LoginRoute() {
 				<div>
 					<h1 class="ui-page-title">Login</h1>
 					<p class="ui-page-subtitle mt-2">
-						Local development uses explicit login flows so browser and CLI authentication match the
-						production mental model.
+						Use the same explicit passwordless login flow that browser and CLI sessions share.
 					</p>
 				</div>
 
-				<Show when={devConfig.loading}>
-					<p class="text-sm ui-muted">Loading local auth mode...</p>
+				<Show when={authConfig.loading}>
+					<p class="text-sm ui-muted">Loading auth mode...</p>
 				</Show>
 
-				<Show when={devConfig.error}>
+				<Show when={authConfig.error}>
 					<p class="ui-alert ui-alert-error text-sm">
-						Failed to load local auth mode. Re-run <code>mise run dev</code> and try again.
+						Failed to load the current auth mode. Re-run <code>mise run dev</code> and try again.
 					</p>
 				</Show>
 
-				<Show when={devConfig()}>
+				<Show when={authConfig()}>
 					{(config) => (
 						<>
 							<Show when={config().mode === "manual-totp"}>

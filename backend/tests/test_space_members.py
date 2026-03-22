@@ -67,6 +67,49 @@ def _create_space(owner_client: TestClient) -> str:
     return response.json()["id"]
 
 
+def test_space_creator_is_bootstrapped_as_active_admin(
+    member_clients: dict[str, TestClient],
+) -> None:
+    """REQ-SEC-006: space creator becomes the initial active admin member."""
+    owner = member_clients["owner"]
+    space_id = _create_space(owner)
+
+    response = owner.get(f"/spaces/{space_id}")
+    assert response.status_code == 200
+    members = response.json()["settings"]["members"]
+    assert members["owner-user"]["role"] == "admin"
+    assert members["owner-user"]["state"] == "active"
+
+
+def test_space_rejects_demoting_last_active_admin(
+    member_clients: dict[str, TestClient],
+) -> None:
+    """REQ-SEC-006: a space must retain at least one active admin."""
+    owner = member_clients["owner"]
+    space_id = _create_space(owner)
+
+    response = owner.post(
+        f"/spaces/{space_id}/members/owner-user/role",
+        json={"role": "viewer"},
+    )
+
+    assert response.status_code == 409
+    assert "at least one active admin" in response.json()["detail"]
+
+
+def test_space_rejects_revoking_last_active_admin(
+    member_clients: dict[str, TestClient],
+) -> None:
+    """REQ-SEC-006: revocation cannot remove the last active admin."""
+    owner = member_clients["owner"]
+    space_id = _create_space(owner)
+
+    response = owner.delete(f"/spaces/{space_id}/members/owner-user")
+
+    assert response.status_code == 409
+    assert "at least one active admin" in response.json()["detail"]
+
+
 def test_space_member_invite_and_accept_transitions_to_active(
     member_clients: dict[str, TestClient],
 ) -> None:
@@ -403,6 +446,33 @@ def test_revoke_member_generic_runtime_error(test_client: TestClient) -> None:
             "/spaces/members-revoke-rt-ws/members/alice",
         )
     assert response.status_code == 400
+
+
+def test_update_member_role_last_admin_conflict(test_client: TestClient) -> None:
+    """REQ-SEC-006: role updates return 409 when removing the last admin."""
+    test_client.post("/spaces", json={"name": "members-role-admin-conflict-ws"})
+    with patch(
+        "ugoite_core.update_member_role",
+        _amock(side_effect=RuntimeError("space must retain at least one active admin")),
+    ):
+        response = test_client.post(
+            "/spaces/members-role-admin-conflict-ws/members/alice/role",
+            json={"role": "viewer"},
+        )
+    assert response.status_code == 409
+
+
+def test_revoke_member_last_admin_conflict(test_client: TestClient) -> None:
+    """REQ-SEC-006: revoke member returns 409 when it would remove the last admin."""
+    test_client.post("/spaces", json={"name": "members-revoke-admin-conflict-ws"})
+    with patch(
+        "ugoite_core.revoke_member",
+        _amock(side_effect=RuntimeError("space must retain at least one active admin")),
+    ):
+        response = test_client.delete(
+            "/spaces/members-revoke-admin-conflict-ws/members/alice",
+        )
+    assert response.status_code == 409
 
 
 def test_revoke_member_authorization_error(test_client: TestClient) -> None:

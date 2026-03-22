@@ -128,7 +128,7 @@ for i in {1..30}; do
 done
 
 E2E_AUTH_BEARER_TOKEN="$(
-  curl -fsS -X POST http://localhost:8000/auth/dev/mock-oauth | python -c 'import json, sys; print(json.load(sys.stdin)["bearer_token"])'
+  curl -fsS -X POST http://localhost:8000/auth/mock-oauth | python -c 'import json, sys; print(json.load(sys.stdin)["bearer_token"])'
 )"
 export E2E_AUTH_BEARER_TOKEN
 

@@ -23,7 +23,7 @@ targets an **Authenticated Access by Default** model.
   injecting an authenticated token before the app starts.
 - Space creation is further restricted to active admins of the reserved
   `admin-space`, and the creator of each non-admin space becomes that space's
-  initial owner/admin.
+  initial admin.
 
 ## Network Isolation
 
