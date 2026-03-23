@@ -3433,7 +3433,10 @@ def _collect_codeql_workflow_config_details() -> list[str]:
     initialize_step = _find_codeql_initialize_step(analyze_job)
     if not isinstance(initialize_step, dict):
         return [
-            "codeql.yml must initialize CodeQL with github/codeql-action/init pinned to a commit SHA",
+            (
+                "codeql.yml must initialize CodeQL with "
+                "github/codeql-action/init pinned to a commit SHA"
+            ),
         ]
 
     with_block = initialize_step.get("with", {})
@@ -4614,9 +4617,10 @@ def _collect_workflow_uses_refs(workflow_path: Path) -> list[str]:
 def _uses_pinned_action(value: object, action_prefix: str) -> bool:
     if not isinstance(value, str):
         return False
-    return value.startswith(f"{action_prefix}@") and PINNED_GITHUB_ACTION_REF_PATTERN.fullmatch(
-        value,
-    ) is not None
+    return (
+        value.startswith(f"{action_prefix}@")
+        and PINNED_GITHUB_ACTION_REF_PATTERN.fullmatch(value) is not None
+    )
 
 
 def _extract_workflow_pin_values(
