@@ -29,10 +29,10 @@ jobs:
           version: 0.10.10
 
       - name: Run yamllint
-        run: >
-          uvx --from yamllint yamllint --strict
-          -d "{extends: relaxed, rules: {line-length: disable}}"
-          .
+        run: |
+          git ls-files -- '*.yml' '*.yaml' ':(exclude)charts/*/templates/*.yaml' \
+            | xargs uvx --from yamllint yamllint --strict \
+              -d "{extends: relaxed, rules: {line-length: disable}}"
 
       - name: Run actionlint
         uses: reviewdog/action-actionlint@v1

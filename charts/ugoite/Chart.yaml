@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ugoite
+description: Minimal Helm chart for the published Ugoite frontend and backend topology
+type: application
+version: 0.0.1
+appVersion: "stable"
+home: https://github.com/ugoite/ugoite
+sources:
+  - https://github.com/ugoite/ugoite
+keywords:
+  - ugoite
+  - helm
+  - kubernetes
+  - local-first
