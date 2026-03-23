@@ -32,6 +32,7 @@ jobs:
         run: >
           uvx --from yamllint yamllint --strict
           -d "{extends: relaxed, rules: {line-length: disable}}"
+          --ignore "charts/*/templates/*.yaml"
           .
 
       - name: Run actionlint

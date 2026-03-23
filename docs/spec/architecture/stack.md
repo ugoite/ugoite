@@ -3,6 +3,12 @@
 ## Overview
 
 Ugoite uses a modern stack optimized for local-first operation and AI integration.
+Deployment packaging keeps the runtime topology portable across container
+interfaces. The repository-owned deployment artifacts are
+`docker-compose.release.yaml` for published Compose installs and `charts/ugoite`
+for Kubernetes installs; both package the same backend + frontend images, keep
+the backend storage contract rooted at `/data`, and preserve frontend-to-backend
+service wiring instead of hard-coding a host-specific endpoint.
 
 ## Core Technologies
 

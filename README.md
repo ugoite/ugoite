@@ -299,6 +299,12 @@ Tag conventions:
 For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).
 
+If you need the same published topology on Kubernetes, clone the repository and
+use the in-repo chart at `charts/ugoite` as described in
+[Helm Chart Guide](docs/guide/helm-chart.md). It mirrors the same
+frontend/backend image pair, keeps backend storage rooted at `/data`, and
+computes the chart-equivalent backend service URL for the frontend.
+
 ---
 
 ## Docker Compose from source

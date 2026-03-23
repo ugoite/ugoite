@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ugoite.backendFullname" . }}
+  labels:
+    {{- include "ugoite.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ugoite.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "ugoite.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+      annotations:
+        checksum/auth-secret: {{ include (print $.Template.BasePath "/auth-secret.yaml") . | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.containerPort }}
+              protocol: TCP
+          env:
+            - name: UGOITE_ROOT
+              value: {{ .Values.backend.persistence.mountPath | quote }}
+            - name: UGOITE_ALLOW_REMOTE
+              value: {{ ternary "true" "false" .Values.backend.allowRemote | quote }}
+            - name: UGOITE_DEV_AUTH_MODE
+              value: {{ .Values.auth.mode | quote }}
+            - name: UGOITE_DEV_USER_ID
+              value: {{ .Values.auth.devUserId | quote }}
+            - name: UGOITE_DEV_SIGNING_KID
+              value: {{ .Values.auth.signingKid | quote }}
+            - name: UGOITE_DEV_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ugoite.authSecretName" . }}
+                  key: UGOITE_DEV_SIGNING_SECRET
+            - name: UGOITE_AUTH_BEARER_SECRETS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ugoite.authSecretName" . }}
+                  key: UGOITE_AUTH_BEARER_SECRETS
+            - name: UGOITE_AUTH_BEARER_ACTIVE_KIDS
+              value: {{ include "ugoite.authBearerActiveKids" . | quote }}
+            - name: UGOITE_DEV_AUTH_PROXY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ugoite.authSecretName" . }}
+                  key: UGOITE_DEV_AUTH_PROXY_TOKEN
+            {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: storage
+              mountPath: {{ .Values.backend.persistence.mountPath | quote }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: storage
+          {{- if .Values.backend.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.backend.persistence.existingClaim }}
+          {{- else if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ugoite.backendPvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

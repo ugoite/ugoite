@@ -129,6 +129,11 @@ directories such as `node_modules/` and `target/`, and it rejects tracked
 files larger than `1 MiB` unless they are explicitly allowlisted in
 `scripts/check-root-artifact-hygiene.sh`.
 
+Helm chart template sources under `charts/*/templates/*.yaml` remain Go-template
+inputs rather than plain YAML documents, so repository `yamllint` invocations
+exclude those template paths while continuing to lint chart metadata such as
+`Chart.yaml` and `values.yaml`.
+
 ## Rust CI
 
 ```yaml

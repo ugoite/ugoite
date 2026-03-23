@@ -1087,3 +1087,54 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_027_lockfile_installs_are_strict
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-028
+  title: Repository-Owned Helm Deployment Chart
+  description: 'The repository MUST ship an in-repo Helm chart under `charts/ugoite`
+
+    that mirrors the published release-compose deployment topology without
+
+    introducing extra always-on services. The chart MUST package the canonical
+
+    backend + frontend GHCR images, keep the backend storage contract at
+
+    `UGOITE_ROOT=/data`, preserve the frontend-to-backend service wiring through
+
+    the chart equivalent of `http://backend:8000`, expose values for image tags,
+
+    service ports, persistence claim settings, and auth-related environment
+
+    variables used by `docker-compose.release.yaml`, and document local chart
+
+    installation without adding chart publication or automated cluster
+
+    deployment.
+
+    '
+  related_spec:
+  - architecture/stack.md
+  - ../guide/container-quickstart.md
+  - ../guide/helm-chart.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_helm_chart.py
+      tests:
+      - test_docs_req_ops_028_helm_chart_assets_exist
+      - test_docs_req_ops_028_helm_chart_defaults_match_release_topology
+      - test_docs_req_ops_028_helm_chart_docs_stay_wired

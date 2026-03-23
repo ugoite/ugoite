@@ -1,0 +1,14 @@
+The Ugoite Helm chart keeps the same backend + frontend runtime topology as
+docker-compose.release.yaml.
+
+Port-forward the services locally (for release name {{ .Release.Name }}):
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "ugoite.frontendServiceName" . }} 3000:{{ .Values.frontend.service.port }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "ugoite.backendServiceName" . }} 8000:{{ .Values.backend.service.port }}
+
+Then open:
+
+  Frontend UI login: http://127.0.0.1:3000/login
+  Backend API: http://127.0.0.1:8000
+
+Click "Continue with Mock OAuth" to reach /spaces.
