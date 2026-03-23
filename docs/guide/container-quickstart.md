@@ -8,6 +8,8 @@ images from source.
 
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
+If you want the same published two-service topology on Kubernetes, use
+[Helm Chart Guide](helm-chart.md).
 
 ## Quick start
 
