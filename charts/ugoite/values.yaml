@@ -1,0 +1,56 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  tag: stable
+  pullPolicy: IfNotPresent
+
+backend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ugoite/ugoite/backend
+  service:
+    type: ClusterIP
+    port: 8000
+  containerPort: 8000
+  allowRemote: true
+  persistence:
+    enabled: true
+    mountPath: /data
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+  extraEnv: []
+  podAnnotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ugoite/ugoite/frontend
+  service:
+    type: ClusterIP
+    port: 3000
+  containerPort: 3000
+  backendUrl: ""
+  extraEnv: []
+  podAnnotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+auth:
+  mode: mock-oauth
+  devUserId: dev-local-user
+  signingKid: release-compose-local-v1
+  signingSecret: release-compose-local-secret
+  bearerSecrets: ""
+  bearerActiveKids:
+    - release-compose-local-v1
+  proxyToken: release-compose-auth-proxy

@@ -1,0 +1,381 @@
+"""Helm chart topology tests.
+
+REQ-OPS-028: Repository-owned Helm chart must mirror the published release
+topology.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Never
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CHART_DIR = REPO_ROOT / "charts" / "ugoite"
+CHART_METADATA_PATH = CHART_DIR / "Chart.yaml"
+CHART_VALUES_PATH = CHART_DIR / "values.yaml"
+CHART_README_PATH = CHART_DIR / "README.md"
+CHART_HELPERS_PATH = CHART_DIR / "templates" / "_helpers.tpl"
+CHART_SECRET_PATH = CHART_DIR / "templates" / "auth-secret.yaml"
+CHART_BACKEND_DEPLOYMENT_PATH = CHART_DIR / "templates" / "backend-deployment.yaml"
+CHART_BACKEND_PVC_PATH = CHART_DIR / "templates" / "backend-pvc.yaml"
+CHART_BACKEND_SERVICE_PATH = CHART_DIR / "templates" / "backend-service.yaml"
+CHART_FRONTEND_DEPLOYMENT_PATH = CHART_DIR / "templates" / "frontend-deployment.yaml"
+CHART_FRONTEND_SERVICE_PATH = CHART_DIR / "templates" / "frontend-service.yaml"
+CHART_NOTES_PATH = CHART_DIR / "templates" / "NOTES.txt"
+HELM_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "helm-chart.md"
+CONTAINER_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "container-quickstart.md"
+STACK_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "architecture" / "stack.md"
+README_PATH = REPO_ROOT / "README.md"
+RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
+
+REQUIRED_CHART_PATHS = (
+    CHART_METADATA_PATH,
+    CHART_VALUES_PATH,
+    CHART_README_PATH,
+    CHART_HELPERS_PATH,
+    CHART_SECRET_PATH,
+    CHART_BACKEND_DEPLOYMENT_PATH,
+    CHART_BACKEND_PVC_PATH,
+    CHART_BACKEND_SERVICE_PATH,
+    CHART_FRONTEND_DEPLOYMENT_PATH,
+    CHART_FRONTEND_SERVICE_PATH,
+    CHART_NOTES_PATH,
+    HELM_GUIDE_PATH,
+)
+REQUIRED_HELPER_FRAGMENTS = {
+    'define "ugoite.backendFullname"',
+    'define "ugoite.frontendFullname"',
+    'define "ugoite.authBearerSecrets"',
+    'define "ugoite.frontendBackendUrl"',
+    'printf "http://%s:%v"',
+}
+REQUIRED_BACKEND_TEMPLATE_FRAGMENTS = {
+    ".Values.backend.image.repository",
+    ".Values.image.tag",
+    "name: UGOITE_ROOT",
+    ".Values.backend.persistence.mountPath",
+    "name: UGOITE_ALLOW_REMOTE",
+    "name: UGOITE_DEV_AUTH_MODE",
+    "name: UGOITE_DEV_USER_ID",
+    "name: UGOITE_DEV_SIGNING_KID",
+    "name: UGOITE_DEV_SIGNING_SECRET",
+    "name: UGOITE_AUTH_BEARER_SECRETS",
+    "name: UGOITE_AUTH_BEARER_ACTIVE_KIDS",
+    "name: UGOITE_DEV_AUTH_PROXY_TOKEN",
+    "persistentVolumeClaim:",
+    "emptyDir: {}",
+}
+REQUIRED_SECRET_TEMPLATE_FRAGMENTS = {
+    "kind: Secret",
+    "stringData:",
+    "UGOITE_DEV_SIGNING_SECRET",
+    "UGOITE_AUTH_BEARER_SECRETS",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN",
+    'include "ugoite.authBearerSecrets"',
+}
+REQUIRED_FRONTEND_TEMPLATE_FRAGMENTS = {
+    ".Values.frontend.image.repository",
+    ".Values.image.tag",
+    "name: BACKEND_URL",
+    'include "ugoite.frontendBackendUrl"',
+    "name: UGOITE_DEV_AUTH_PROXY_TOKEN",
+}
+REQUIRED_PVC_TEMPLATE_FRAGMENTS = {
+    "kind: PersistentVolumeClaim",
+    ".Values.backend.persistence.accessModes",
+    ".Values.backend.persistence.size",
+    ".Values.backend.persistence.storageClassName",
+}
+REQUIRED_SERVICE_TEMPLATE_FRAGMENTS = {
+    "kind: Service",
+    "targetPort: http",
+    "protocol: TCP",
+}
+REQUIRED_HELM_GUIDE_FRAGMENTS = {
+    "helm upgrade --install ugoite ./charts/ugoite",
+    "kubectl -n ugoite port-forward svc/ugoite-frontend 3000:3000",
+    "kubectl -n ugoite port-forward svc/ugoite-backend 8000:8000",
+    "http://127.0.0.1:3000/login",
+    "Continue with Mock OAuth",
+    "`/data`",
+    "UGOITE_DEV_AUTH_PROXY_TOKEN",
+    "backend.persistence.existingClaim",
+    "frontend.backendUrl",
+    "does not yet publish it to an OCI registry or install it from CI",
+    "backend + frontend",
+}
+REQUIRED_README_FRAGMENTS = {
+    "docs/guide/helm-chart.md",
+    "charts/ugoite",
+    "Kubernetes",
+    "`/data`",
+}
+REQUIRED_CONTAINER_GUIDE_FRAGMENTS = {
+    "[Helm Chart Guide](helm-chart.md)",
+}
+REQUIRED_CHART_README_FRAGMENTS = {
+    "../../docs/guide/helm-chart.md",
+    "docker-compose.release.yaml",
+    "`UGOITE_ROOT=/data`",
+}
+REQUIRED_STACK_SPEC_FRAGMENTS = {
+    "docker-compose.release.yaml",
+    "charts/ugoite",
+    "backend + frontend",
+    "`/data`",
+}
+
+
+def _fail(message: str) -> Never:
+    raise AssertionError(message)
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    loaded = yaml.safe_load(_read_text(path))
+    if not isinstance(loaded, dict):
+        _fail(f"{path.relative_to(REPO_ROOT)} must be a YAML mapping")
+    return loaded
+
+
+def _require_mapping(value: object, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        _fail(f"{label} must be a mapping")
+    return value
+
+
+def _missing_fragments(text: str, required_fragments: set[str]) -> list[str]:
+    return sorted(fragment for fragment in required_fragments if fragment not in text)
+
+
+def test_docs_req_ops_028_helm_chart_assets_exist() -> None:
+    """REQ-OPS-028: Helm chart assets and install docs must exist."""
+    missing_paths = [
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in REQUIRED_CHART_PATHS
+        if not path.exists()
+    ]
+    if missing_paths:
+        _fail("Missing Helm chart assets: " + ", ".join(missing_paths))
+
+    chart_metadata = _load_yaml_mapping(CHART_METADATA_PATH)
+    if str(chart_metadata.get("apiVersion")) != "v2":
+        _fail("charts/ugoite/Chart.yaml must declare apiVersion: v2")
+    if str(chart_metadata.get("name")) != "ugoite":
+        _fail("charts/ugoite/Chart.yaml must declare name: ugoite")
+    if str(chart_metadata.get("type")) != "application":
+        _fail("charts/ugoite/Chart.yaml must declare type: application")
+
+
+def test_docs_req_ops_028_helm_chart_defaults_match_release_topology() -> None:
+    """REQ-OPS-028: Helm chart defaults must mirror the release compose topology."""
+    values = _load_yaml_mapping(CHART_VALUES_PATH)
+    image = _require_mapping(values.get("image"), label="charts/ugoite values.image")
+    backend = _require_mapping(
+        values.get("backend"),
+        label="charts/ugoite values.backend",
+    )
+    frontend = _require_mapping(
+        values.get("frontend"),
+        label="charts/ugoite values.frontend",
+    )
+    auth = _require_mapping(values.get("auth"), label="charts/ugoite values.auth")
+    backend_image = _require_mapping(
+        backend.get("image"),
+        label="charts/ugoite values.backend.image",
+    )
+    frontend_image = _require_mapping(
+        frontend.get("image"),
+        label="charts/ugoite values.frontend.image",
+    )
+    backend_service = _require_mapping(
+        backend.get("service"),
+        label="charts/ugoite values.backend.service",
+    )
+    frontend_service = _require_mapping(
+        frontend.get("service"),
+        label="charts/ugoite values.frontend.service",
+    )
+    backend_persistence = _require_mapping(
+        backend.get("persistence"),
+        label="charts/ugoite values.backend.persistence",
+    )
+
+    expected_values = (
+        (str(image.get("tag")), "stable", "charts/ugoite values.image.tag"),
+        (
+            str(backend_image.get("repository")),
+            "ghcr.io/ugoite/ugoite/backend",
+            "charts/ugoite values.backend.image.repository",
+        ),
+        (
+            str(frontend_image.get("repository")),
+            "ghcr.io/ugoite/ugoite/frontend",
+            "charts/ugoite values.frontend.image.repository",
+        ),
+        (
+            str(backend_service.get("port")),
+            "8000",
+            "charts/ugoite values.backend.service.port",
+        ),
+        (
+            str(frontend_service.get("port")),
+            "3000",
+            "charts/ugoite values.frontend.service.port",
+        ),
+        (
+            str(backend_persistence.get("mountPath")),
+            "/data",
+            "charts/ugoite values.backend.persistence.mountPath",
+        ),
+        (str(auth.get("mode")), "mock-oauth", "charts/ugoite values.auth.mode"),
+        (
+            str(auth.get("devUserId")),
+            "dev-local-user",
+            "charts/ugoite values.auth.devUserId",
+        ),
+        (
+            str(auth.get("signingKid")),
+            "release-compose-local-v1",
+            "charts/ugoite values.auth.signingKid",
+        ),
+        (
+            str(auth.get("signingSecret")),
+            "release-compose-local-secret",
+            "charts/ugoite values.auth.signingSecret",
+        ),
+        (
+            str(auth.get("proxyToken")),
+            "release-compose-auth-proxy",
+            "charts/ugoite values.auth.proxyToken",
+        ),
+    )
+    for actual, expected, label in expected_values:
+        if actual != expected:
+            _fail(f"{label} must be {expected!r}, got {actual!r}")
+
+    bearer_active_kids = auth.get("bearerActiveKids")
+    if bearer_active_kids != ["release-compose-local-v1"]:
+        _fail(
+            "charts/ugoite values.auth.bearerActiveKids must default to "
+            "['release-compose-local-v1']",
+        )
+
+    compose_text = _read_text(RELEASE_COMPOSE_PATH)
+    required_compose_fragments = {
+        "ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}",
+        "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}",
+        "UGOITE_ROOT=/data",
+        "UGOITE_ALLOW_REMOTE=true",
+        "UGOITE_DEV_AUTH_MODE=mock-oauth",
+        "UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}",
+        "UGOITE_DEV_SIGNING_KID=release-compose-local-v1",
+        "UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret",
+        "UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret",
+        "UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1",
+        "UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}",
+        "BACKEND_URL=http://backend:8000",
+    }
+    missing_compose_fragments = _missing_fragments(
+        compose_text,
+        required_compose_fragments,
+    )
+    if missing_compose_fragments:
+        _fail(
+            "docker-compose.release.yaml lost required parity fragments: "
+            + ", ".join(missing_compose_fragments),
+        )
+
+    template_checks = (
+        (
+            CHART_HELPERS_PATH,
+            REQUIRED_HELPER_FRAGMENTS,
+            "charts/ugoite/templates/_helpers.tpl",
+        ),
+        (
+            CHART_BACKEND_DEPLOYMENT_PATH,
+            REQUIRED_BACKEND_TEMPLATE_FRAGMENTS,
+            "charts/ugoite/templates/backend-deployment.yaml",
+        ),
+        (
+            CHART_SECRET_PATH,
+            REQUIRED_SECRET_TEMPLATE_FRAGMENTS,
+            "charts/ugoite/templates/auth-secret.yaml",
+        ),
+        (
+            CHART_FRONTEND_DEPLOYMENT_PATH,
+            REQUIRED_FRONTEND_TEMPLATE_FRAGMENTS,
+            "charts/ugoite/templates/frontend-deployment.yaml",
+        ),
+        (
+            CHART_BACKEND_PVC_PATH,
+            REQUIRED_PVC_TEMPLATE_FRAGMENTS,
+            "charts/ugoite/templates/backend-pvc.yaml",
+        ),
+        (
+            CHART_BACKEND_SERVICE_PATH,
+            REQUIRED_SERVICE_TEMPLATE_FRAGMENTS
+            | {"port: {{ .Values.backend.service.port }}"},
+            "charts/ugoite/templates/backend-service.yaml",
+        ),
+        (
+            CHART_FRONTEND_SERVICE_PATH,
+            REQUIRED_SERVICE_TEMPLATE_FRAGMENTS
+            | {"port: {{ .Values.frontend.service.port }}"},
+            "charts/ugoite/templates/frontend-service.yaml",
+        ),
+    )
+    for path, fragments, label in template_checks:
+        missing = _missing_fragments(_read_text(path), fragments)
+        if missing:
+            _fail(f"{label} missing fragments: {', '.join(missing)}")
+
+
+def test_docs_req_ops_028_helm_chart_docs_stay_wired() -> None:
+    """REQ-OPS-028: Helm chart docs must stay discoverable and explicit."""
+    doc_checks = (
+        (
+            README_PATH,
+            REQUIRED_README_FRAGMENTS,
+            "README.md",
+        ),
+        (
+            HELM_GUIDE_PATH,
+            REQUIRED_HELM_GUIDE_FRAGMENTS,
+            "docs/guide/helm-chart.md",
+        ),
+        (
+            CONTAINER_GUIDE_PATH,
+            REQUIRED_CONTAINER_GUIDE_FRAGMENTS,
+            "docs/guide/container-quickstart.md",
+        ),
+        (
+            CHART_README_PATH,
+            REQUIRED_CHART_README_FRAGMENTS,
+            "charts/ugoite/README.md",
+        ),
+        (
+            STACK_SPEC_PATH,
+            REQUIRED_STACK_SPEC_FRAGMENTS,
+            "docs/spec/architecture/stack.md",
+        ),
+        (
+            CHART_NOTES_PATH,
+            {
+                "docker-compose.release.yaml",
+                "http://127.0.0.1:3000/login",
+                "Continue with Mock OAuth",
+                "port-forward",
+            },
+            "charts/ugoite/templates/NOTES.txt",
+        ),
+    )
+    for path, fragments, label in doc_checks:
+        missing = _missing_fragments(_read_text(path), fragments)
+        if missing:
+            _fail(f"{label} missing fragments: {', '.join(missing)}")
