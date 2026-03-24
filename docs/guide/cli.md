@@ -146,6 +146,9 @@ CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenario
 - In `core` mode, commands that touch local storage require an explicit
   `--root <LOCAL_ROOT>` flag. Use the same `./spaces` directory as the Docker
   Compose setup for consistency.
+- If `UGOITE_ROOT` is already exported for the local dev backend, `mise run seed`
+  reuses that same root automatically so the seeded dataset stays visible to the
+  local stack.
 - If you use another directory, ensure it is writable and backed by local
   storage.
 

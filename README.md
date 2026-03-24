@@ -171,7 +171,9 @@ The seed task wraps the existing Rust CLI sample-data command, keeps builds in
 the shared `target/rust` cache, and refuses to overwrite an existing local
 space, so repeated runs stay predictable. It also prints a terminal progress
 bar while entries are generated and verifies `./spaces/<space-id>` exists
-before returning success.
+before returning success. When `UGOITE_ROOT` is already set for the local dev
+stack, the seed task reuses that same root automatically so `mise run seed`
+and `mise run dev` keep pointing at the same local storage tree.
 
 Confirm the default dataset after a run:
 
