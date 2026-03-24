@@ -4,7 +4,7 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Lint, type check, pytest |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Lint, type check, pytest, and local dev seed runtime visibility |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR, merge queue | Lint, format check, typecheck, validation build, and tests with mandatory 100% coverage |
@@ -96,7 +96,7 @@ path-aware no-op.
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export, tier selection, and Playwright execution |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Biome + Vitest coverage |
 | Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for the full `.pre-commit-config.yaml` hook chain |
-| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, and docs tests |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, local dev seed runtime coverage, and docs tests |
 | Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for current-branch release quickstart coverage |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Direct summary check for canonical root commands |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for minimum/core/CLI Rust gates |
@@ -116,6 +116,12 @@ jobs:
     - cd backend && uv run pytest -W error
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
+
+Backend pytest also carries the focused local dev seed regression: it runs
+`scripts/dev-seed.sh` against the same `UGOITE_ROOT` and explicit dev-auth
+environment used by the local stack, then verifies the seeded space becomes
+visible through `/spaces` after login. That keeps root mismatches between
+`mise run seed` and local dev discoverable before merge.
 
 ## YAML / Workflow and Repository Artifact Hygiene
 

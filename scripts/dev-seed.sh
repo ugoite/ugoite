@@ -16,6 +16,7 @@ Defaults:
 
 Environment variable overrides:
   UGOITE_SEED_ROOT
+  UGOITE_ROOT (fallback root shared with local dev backend)
   UGOITE_SEED_SPACE_ID
   UGOITE_SEED_SCENARIO
   UGOITE_SEED_ENTRY_COUNT
@@ -23,7 +24,7 @@ Environment variable overrides:
 EOF
 }
 
-ROOT_PATH="${UGOITE_SEED_ROOT:-.}"
+ROOT_PATH="${UGOITE_SEED_ROOT:-${UGOITE_ROOT:-.}}"
 SPACE_ID="${UGOITE_SEED_SPACE_ID:-dev-seed}"
 SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"

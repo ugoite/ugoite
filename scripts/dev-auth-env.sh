@@ -125,15 +125,17 @@ emit_exports() {
   local user_id="$2"
   local signing_secret="$3"
   local signing_kid="$4"
-  python_ugoite - "$mode" "$user_id" "$signing_secret" "$signing_kid" "$AUTH_TTL_SECONDS" "$DEV_2FA_SECRET" <<'PY'
+  local root_path="${UGOITE_ROOT:-$REPO_ROOT}"
+  python_ugoite - "$mode" "$user_id" "$signing_secret" "$signing_kid" "$AUTH_TTL_SECONDS" "$DEV_2FA_SECRET" "$root_path" <<'PY'
 import shlex
 import sys
 
-mode, user_id, signing_secret, signing_kid, ttl_seconds, dev_2fa_secret = sys.argv[1:7]
+mode, user_id, signing_secret, signing_kid, ttl_seconds, dev_2fa_secret, root_path = sys.argv[1:8]
 print("unset UGOITE_AUTH_BEARER_TOKEN")
 print("unset UGOITE_BOOTSTRAP_BEARER_TOKEN")
 print(f"export UGOITE_DEV_AUTH_MODE={shlex.quote(mode)}")
 print(f"export UGOITE_DEV_USER_ID={shlex.quote(user_id)}")
+print(f"export UGOITE_ROOT={shlex.quote(root_path)}")
 print(f"export UGOITE_DEV_SIGNING_SECRET={shlex.quote(signing_secret)}")
 print(f"export UGOITE_DEV_SIGNING_KID={shlex.quote(signing_kid)}")
 print(f"export UGOITE_DEV_AUTH_TTL_SECONDS={shlex.quote(ttl_seconds)}")

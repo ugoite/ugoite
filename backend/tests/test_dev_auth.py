@@ -8,8 +8,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import os
+import subprocess
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 import ugoite_core
@@ -18,13 +20,12 @@ from fastapi.testclient import TestClient
 from app.core.auth import clear_auth_manager_cache
 from app.main import app
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 DEFAULT_TEST_USER_ID = "dev-alice"
 DEFAULT_TEST_SIGNING_KID = "{}-{}-{}".format("dev", "local", "v1")
 DEFAULT_TEST_SIGNING_SECRET = "{}-{}-{}".format("dev", "signing", "secret")
 TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 
 
 def _totp_code(secret: str, timestamp: int) -> str:
@@ -206,6 +207,88 @@ def test_dev_auth_req_ops_015_startup_bootstraps_admin_space(
     assert admin_space_response.status_code == 200
     admin_settings = admin_space_response.json()["settings"]
     assert admin_settings["members"]["dev-startup-user"]["state"] == "active"
+
+
+def test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+    tmp_path: Path,
+) -> None:
+    """REQ-OPS-016: seeded demo spaces stay visible to the local dev auth stack."""
+    space_id = "dev-seed-visible"
+    dev_user_id = "dev-seed-user"
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+        overrides={"UGOITE_DEV_USER_ID": dev_user_id},
+    )
+    clear_auth_manager_cache()
+
+    seed_env = os.environ.copy()
+    for key in list(seed_env):
+        if key.startswith("UGOITE_SEED_"):
+            del seed_env[key]
+    seed_env.update(
+        {
+            "HOME": str(tmp_path),
+            "CARGO_HOME": os.environ.get("CARGO_HOME", str(Path.home() / ".cargo")),
+            "RUSTUP_HOME": os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup")),
+            "UGOITE_CLI_CONFIG_PATH": str(tmp_path / "cli-config.json"),
+            "UGOITE_DEV_AUTH_MODE": "mock-oauth",
+            "UGOITE_DEV_USER_ID": dev_user_id,
+            "UGOITE_DEV_SIGNING_KID": DEFAULT_TEST_SIGNING_KID,
+            "UGOITE_DEV_SIGNING_SECRET": DEFAULT_TEST_SIGNING_SECRET,
+            "UGOITE_AUTH_BEARER_SECRETS": (
+                f"{DEFAULT_TEST_SIGNING_KID}:{DEFAULT_TEST_SIGNING_SECRET}"
+            ),
+            "UGOITE_AUTH_BEARER_ACTIVE_KIDS": DEFAULT_TEST_SIGNING_KID,
+            "UGOITE_ROOT": str(temp_space_root),
+        },
+    )
+
+    seed_result = subprocess.run(
+        [
+            "/bin/bash",
+            str(DEV_SEED_SCRIPT_PATH),
+            "--space-id",
+            space_id,
+            "--scenario",
+            "lab-qa",
+            "--entry-count",
+            "5",
+            "--seed",
+            "7",
+        ],
+        cwd=REPO_ROOT,
+        env=seed_env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+
+    assert seed_result.returncode == 0, seed_result.stderr
+    assert f"  root: {temp_space_root}" in seed_result.stderr
+    assert (
+        f"Verified seeded local sample space at {temp_space_root / 'spaces' / space_id}"
+    ) in seed_result.stderr
+
+    with TestClient(app) as client:
+        login_response = client.post("/auth/mock-oauth")
+        assert login_response.status_code == 200
+        token = login_response.json()["bearer_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        list_response = client.get("/spaces", headers=headers)
+        assert list_response.status_code == 200
+        assert any(space["id"] == space_id for space in list_response.json()), (
+            list_response.json()
+        )
+
+        space_response = client.get(f"/spaces/{space_id}", headers=headers)
+        assert space_response.status_code == 200
+        assert space_response.json()["id"] == space_id
 
 
 def test_dev_auth_req_ops_015_config_rejects_unsupported_mode(
