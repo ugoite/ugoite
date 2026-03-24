@@ -82,8 +82,9 @@ bearer token and it does **not** start the app already logged in.
 
 At backend startup, that configured user is also bootstrapped into the reserved
 `admin-space`. Only active admins of `admin-space` can create additional spaces,
-and each new space still makes its creator the initial admin for that
-space.
+and those same active admins can also see `admin-space` in `GET /spaces` and the
+browser spaces list before opening it explicitly. Each new space still makes its
+creator the initial admin for that space.
 
 Force a fresh prompt:
 
@@ -120,9 +121,11 @@ oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 
 The browser receives a signed bearer token only **after** the login form is
 submitted successfully. The frontend stores that token in a local session cookie
-for the `/api/*` proxy, so protected pages can render normally after login.
-That login also grants the configured user access to the reserved
-`admin-space`, which is what authorizes space creation in local development.
+for the `/api/*` proxy, so protected pages can render normally after login. That
+login also grants the configured user access to the reserved `admin-space`.
+After login, `GET /spaces` and the browser `/spaces` route include
+`admin-space` for that active admin, which is what authorizes space creation in
+local development.
 
 ## 6) CLI login (`manual-totp`)
 
@@ -140,7 +143,8 @@ cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 1
 
 The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
 shell. That token is minted only after the backend validates the username + 2FA
-input, and the authenticated admin user can then create additional spaces.
+input, and the authenticated admin user can then list `admin-space` with
+`ugoite space list` and create additional spaces.
 
 ## 7) Mock OAuth mode
 

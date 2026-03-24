@@ -25,7 +25,11 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-001
   title: Space CRUD
-  description: 'Create, retrieve, and list spaces.
+  description: 'Create, retrieve, and list spaces. `GET /spaces` MUST return the
+
+    spaces visible to the authenticated principal, including the reserved
+
+    `admin-space` for its active admins.
 
     '
   related_spec:
@@ -40,7 +44,7 @@ requirements:
       - test_create_space_req_api_001_requires_admin_space_admin
       - test_create_space_req_api_001_rejects_reserved_admin_space_id
       - test_create_space_req_api_001_propagates_http_exception
-      - test_list_spaces
+      - test_list_spaces_req_api_001_includes_admin_space_for_active_admin
       - test_get_space
       - test_get_space_not_found
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
@@ -55,6 +59,7 @@ requirements:
     e2e:
     - file: e2e/smoke.test.ts
       tests:
+      - 'REQ-API-001: active admin can open reserved admin-space from spaces list'
       - GET /spaces returns list
       - GET /spaces includes default space
 - set_id: REQCAT-API

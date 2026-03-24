@@ -147,11 +147,11 @@ def test_create_space_conflict(
     assert "already exists" in response.json()["detail"]
 
 
-def test_list_spaces(
+def test_list_spaces_req_api_001_includes_admin_space_for_active_admin(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test listing spaces."""
+    """REQ-API-001: list spaces includes admin-space for active admins."""
     # Create some spaces
     test_client.post("/spaces", json={"name": "ws1"})
     test_client.post("/spaces", json={"name": "ws2"})
@@ -160,7 +160,11 @@ def test_list_spaces(
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 2
+    assert {space["id"] for space in data} == {
+        ugoite_core.admin_space_id(),
+        "ws1",
+        "ws2",
+    }
 
 
 def test_list_spaces_redacts_hmac_key(test_client: TestClient) -> None:
@@ -2338,9 +2342,14 @@ def test_list_spaces_skips_unauthorized_space(test_client: TestClient) -> None:
     test_client.post("/spaces", json={"name": "hidden-ws"})
     call_count = {"n": 0}
 
-    async def _require_side_effect(*args: object, **kwargs: object) -> None:
+    async def _require_side_effect(
+        _storage_config: object,
+        space_id: str,
+        _identity: object,
+        _action: str,
+    ) -> None:
         call_count["n"] += 1
-        if call_count["n"] == 2:
+        if space_id == "hidden-ws":
             err_code = "forbidden"
             raise ugoite_core.AuthorizationError(err_code, "no access", "space_list")
 
@@ -2350,7 +2359,11 @@ def test_list_spaces_skips_unauthorized_space(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces")
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert call_count["n"] == 3
+    assert {space["id"] for space in response.json()} == {
+        ugoite_core.admin_space_id(),
+        "visible-ws",
+    }
 
 
 def test_create_space_generic_runtime_error(test_client: TestClient) -> None:

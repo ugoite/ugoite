@@ -112,6 +112,10 @@ GET /spaces
 ]
 ```
 
+Only spaces the authenticated principal is authorized to list are returned.
+Active admins of the reserved `admin-space` can observe it in this response,
+while unauthorized principals continue to be filtered out.
+
 #### Create Space
 ```http
 POST /spaces

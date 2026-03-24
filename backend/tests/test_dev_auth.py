@@ -123,7 +123,9 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert protected_response.status_code == 200
-    assert isinstance(protected_response.json(), list)
+    spaces = protected_response.json()
+    assert isinstance(spaces, list)
+    assert any(space["id"] == ugoite_core.admin_space_id() for space in spaces)
 
     admin_space_response = client.get(
         f"/spaces/{ugoite_core.admin_space_id()}",
@@ -168,7 +170,9 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert protected_response.status_code == 200
-    assert isinstance(protected_response.json(), list)
+    spaces = protected_response.json()
+    assert isinstance(spaces, list)
+    assert any(space["id"] == ugoite_core.admin_space_id() for space in spaces)
 
     admin_space_response = client.get(
         f"/spaces/{ugoite_core.admin_space_id()}",

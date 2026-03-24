@@ -22,8 +22,9 @@ targets an **Authenticated Access by Default** model.
   `manual-totp` or `mock-oauth` login endpoints after startup instead of
   injecting an authenticated token before the app starts.
 - Space creation is further restricted to active admins of the reserved
-  `admin-space`, and the creator of each non-admin space becomes that space's
-  initial admin.
+  `admin-space`, those same active admins can list/open that reserved space
+  through authorized `/spaces` responses, and the creator of each non-admin
+  space becomes that space's initial admin.
 
 ## Network Isolation
 
@@ -112,7 +113,7 @@ space-scoped and uses the following profile:
 
 ### Recovery & Administration
 
-- Active `admin-space` admins can create spaces.
+- Active `admin-space` admins can list/open that reserved space and create spaces.
 - Space creator becomes initial admin.
 - Admin can delegate admin role to other users.
 - Admin UI MUST support forced credential reset and backup code issuance.
