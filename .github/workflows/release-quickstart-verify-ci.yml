@@ -1,0 +1,218 @@
+name: Release Quickstart Verify CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  QUICKSTART_VERSION: ci-quickstart
+  CLI_RELEASE_TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  build-images:
+    name: Build release-like Docker images
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      push: false
+      export_artifacts: true
+      artifact_name: release-quickstart-images
+      backend_local_tag: ghcr.io/${{ github.repository }}/backend:ci-quickstart
+      frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:ci-quickstart
+
+  build-cli-assets:
+    name: Build release-like CLI archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        with:
+          toolchain: 1.93.0
+          targets: ${{ env.CLI_RELEASE_TARGET }}
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ugoite-minimum
+            ugoite-core
+            ugoite-cli
+
+      - name: Build CLI release binary
+        working-directory: ./ugoite-cli
+        run: cargo build --locked --release --bin ugoite --target "${{ env.CLI_RELEASE_TARGET }}"
+
+      - name: Package CLI release archive
+        env:
+          TARGET: ${{ env.CLI_RELEASE_TARGET }}
+          VERSION: ${{ env.QUICKSTART_VERSION }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release-quickstart-cli
+          asset_name="ugoite-v${VERSION}-${TARGET}.tar.gz"
+          cp "target/rust/${TARGET}/release/ugoite" dist/release-quickstart-cli/ugoite
+          tar -C dist/release-quickstart-cli -czf "dist/${asset_name}" ugoite
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum "${asset_name}" > "${asset_name}.sha256")
+          else
+            (cd dist && shasum -a 256 "${asset_name}" > "${asset_name}.sha256")
+          fi
+
+      - name: Upload CLI release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-quickstart-cli-assets
+          path: |
+            dist/ugoite-v${{ env.QUICKSTART_VERSION }}-${{ env.CLI_RELEASE_TARGET }}.tar.gz
+            dist/ugoite-v${{ env.QUICKSTART_VERSION }}-${{ env.CLI_RELEASE_TARGET }}.tar.gz.sha256
+          if-no-files-found: error
+
+  verify-cli-quickstart:
+    name: Verify release-like CLI quick start
+    needs:
+      - build-cli-assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download CLI release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-quickstart-cli-assets
+          path: release-assets
+
+      - name: Verify release-like CLI quick start
+        env:
+          UGOITE_DOWNLOAD_BASE_URL: file://${{ github.workspace }}/release-assets
+          UGOITE_VERSION: ${{ env.QUICKSTART_VERSION }}
+        run: bash scripts/verify-release-cli-quickstart.sh
+
+  verify-container-quickstart:
+    name: Verify release-like browser quick start
+    needs:
+      - build-images
+      - build-cli-assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Restore Playwright and e2e node cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            e2e/node_modules
+          key: >-
+            ${{ runner.os }}-release-quickstart-${{
+              hashFiles('e2e/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-release-quickstart-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+
+      - name: Download Docker image archives
+        uses: actions/download-artifact@v8
+        with:
+          name: release-quickstart-images
+          path: exported-images
+
+      - name: Download CLI release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-quickstart-cli-assets
+          path: release-assets
+
+      - name: Prepare release-like quick-start assets
+        env:
+          VERSION: ${{ env.QUICKSTART_VERSION }}
+        run: |
+          set -euo pipefail
+          cp docker-compose.release.yaml release-assets/docker-compose.release.yaml
+          cp exported-images/backend-image.tar.gz "release-assets/ugoite-backend-v${VERSION}.docker.tar.gz"
+          cp exported-images/frontend-image.tar.gz "release-assets/ugoite-frontend-v${VERSION}.docker.tar.gz"
+
+      - name: Verify release-like browser quick start
+        env:
+          PLAYWRIGHT_CI_REPORTER: junit
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/release-junit.xml
+          UGOITE_DOWNLOAD_BASE_URL: file://${{ github.workspace }}/release-assets
+          UGOITE_RELEASE_ASSET_BASE_URL: file://${{ github.workspace }}/release-assets
+          UGOITE_VERSION: ${{ env.QUICKSTART_VERSION }}
+        run: bash scripts/verify-release-container-quickstart.sh
+
+      - name: Upload Playwright test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-quickstart-playwright-results
+          path: e2e/test-results
+          if-no-files-found: ignore
+
+  required-check:
+    name: Release Quickstart Verify CI
+    if: ${{ always() }}
+    needs:
+      - build-images
+      - build-cli-assets
+      - verify-cli-quickstart
+      - verify-container-quickstart
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Check upstream job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: data.get("result", "missing")
+              for job, data in needs.items()
+              if data.get("result") not in {"success", "skipped"}
+          }
+          if failures:
+              details = ", ".join(
+                  f"{job}={result}" for job, result in sorted(failures.items())
+              )
+              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
+          print("Required CI jobs succeeded.")
+          PY

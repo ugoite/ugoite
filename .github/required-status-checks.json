@@ -55,6 +55,12 @@
       "events": ["push", "pull_request", "merge_group"]
     },
     {
+      "context": "Release Quickstart Verify CI",
+      "workflow": ".github/workflows/release-quickstart-verify-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
       "context": "README Command Guard",
       "workflow": ".github/workflows/readme-command-guard.yml",
       "job_id": "required-check",
