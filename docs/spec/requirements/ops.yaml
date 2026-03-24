@@ -1138,3 +1138,44 @@ requirements:
       - test_docs_req_ops_028_helm_chart_assets_exist
       - test_docs_req_ops_028_helm_chart_defaults_match_release_topology
       - test_docs_req_ops_028_helm_chart_docs_stay_wired
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-029
+  title: Required CI Validation of the Full Pre-commit Hook Chain
+  description: 'The repository MUST run a dedicated required workflow that executes
+
+    the full `.pre-commit-config.yaml` hook chain on pull requests, pushes to
+
+    `main`, and merge-queue events. That workflow MUST bootstrap the repository''s
+
+    pinned Rust, uv, Node, and Bun toolchains, use strict lockfile-backed install
+
+    commands for dependencies it prepares, run `uvx pre-commit run --all-files`,
+
+    and publish a direct summary check through `.github/required-status-checks.json`
+
+    so contributor hook orchestration stays continuously verifiable in CI.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_029_pre_commit_ci_is_required

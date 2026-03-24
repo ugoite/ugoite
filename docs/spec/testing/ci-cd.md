@@ -15,6 +15,7 @@
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue, manual | Run license/compliance and vulnerability scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
 | YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, yamllint, and actionlint |
+| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual | Native code scanning for Actions, JavaScript/TypeScript, Python, and Rust |
@@ -93,6 +94,7 @@ path-aware no-op.
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for docsite quality gates |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export, tier selection, and Playwright execution |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Biome + Vitest coverage |
+| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for the full `.pre-commit-config.yaml` hook chain |
 | Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, and docs tests |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Direct summary check for canonical root commands |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for minimum/core/CLI Rust gates |
@@ -377,6 +379,29 @@ npm run prepare
 ```
 
 This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+
+## Pre-commit CI
+
+```yaml
+jobs:
+  ci:
+    - Install shfmt + shellcheck
+    - Install Rust 1.93.0 with rustfmt, clippy, llvm-tools-preview
+    - Install uv 0.10.10
+    - Install Node.js 22.12.0 and Bun 1.3.8
+    - cd frontend && bun install --frozen-lockfile
+    - cd docsite && bun install --frozen-lockfile
+    - cd backend && uv sync --locked
+    - cd ugoite-core && uv sync --locked
+    - cargo install cargo-llvm-cov --locked
+    - uvx pre-commit run --all-files
+```
+
+Pre-commit CI keeps `.pre-commit-config.yaml` itself continuously executable in CI
+instead of only relying on the individual workflows behind each hook. The
+workflow bootstraps the same pinned toolchains used elsewhere in the repository,
+uses strict lockfile-backed installs for Bun and uv projects, and exposes a
+direct summary check through `.github/required-status-checks.json`.
 
 The root `mise.toml` also declares explicit `[monorepo].config_roots` for package-level task configs so top-level `mise run dev`, `mise run test`, and `mise run e2e` stay warning-free on current mise releases.
 
