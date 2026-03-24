@@ -270,8 +270,10 @@ docker compose -f docker-compose.release.yaml up -d
 ```
 
 Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
-and you will land on `/spaces`. For more background on the explicit browser
-login flow, see [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
+and you will land on `/spaces`. The shipped compose file bootstraps the `default` space
+at startup so the first browser and CLI session both have a ready workspace.
+For more background on the explicit browser login flow, see
+[Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
 The compose file pulls the canonical release image names used by
 `docker-compose.release.yaml`:

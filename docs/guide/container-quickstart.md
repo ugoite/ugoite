@@ -48,8 +48,10 @@ Then open:
 - Frontend UI login: http://localhost:3000/login
 - Backend API: http://localhost:8000
 
-Click **Continue with Mock OAuth** to reach `/spaces`. For more detail on the
-explicit browser login flow, see [Local Dev Auth Login](local-dev-auth-login.md).
+Click **Continue with Mock OAuth** to reach `/spaces`. The shipped compose file
+bootstraps the `default` space at startup so the first browser and CLI session
+both have a ready workspace. For more detail on the explicit browser login
+flow, see [Local Dev Auth Login](local-dev-auth-login.md).
 
 To stop the stack:
 
@@ -91,9 +93,9 @@ Choose the release channel that matches your goal:
 - By default, the release compose file keeps data on the host under `./spaces`
   to preserve the local-first storage model.
 - The published quick start binds both services to `127.0.0.1`, wires the dev
-  auth proxy token between frontend and backend, and enables explicit
-  `mock-oauth` browser login so `/login` works without editing the compose
-  file.
+  auth proxy token between frontend and backend, bootstraps the `default`
+  space, and enables explicit `mock-oauth` browser login so `/login` works
+  without editing the compose file.
 - The frontend container talks to the backend through the Compose network via
   `http://backend:8000`.
 - If you want source-mounted development containers instead, use
