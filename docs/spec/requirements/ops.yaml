@@ -1179,7 +1179,22 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_029_pre_commit_ci_is_required
-- id: REQ-OPS-030
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-030
   title: Pre-Merge Release Quick-Start Verification
   description: 'Repository automation MUST provide a required pre-merge workflow
 
