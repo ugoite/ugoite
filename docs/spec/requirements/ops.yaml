@@ -1179,3 +1179,29 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_029_pre_commit_ci_is_required
+- id: REQ-OPS-030
+  title: Pre-Merge Release Quick-Start Verification
+  description: 'Repository automation MUST provide a required pre-merge workflow
+
+    that builds current-branch release-like Docker and CLI assets, exercises the
+
+    documented release quick-start path before merge, verifies both browser and
+
+    CLI/auth flows against those assets, and keeps the post-publish
+
+    `Release Quickstart Verify` workflow as the exact published-release
+
+    validation path.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  - ../guide/container-quickstart.md
+  - ../guide/cli.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required

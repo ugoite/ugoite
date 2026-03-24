@@ -23,6 +23,7 @@
 | Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks, exclusions, and native code-scanning handoff |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
+| Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Push on `main`, PR, merge queue | Build current-branch release-like Docker and CLI assets, then verify browser and CLI quickstart paths before merge |
 | Release Quickstart Verify | `.github/workflows/release-quickstart-verify.yml` | Manual (`workflow_dispatch`), reusable (`workflow_call`) | Download published release assets, run the release compose stack, verify browser stories with Playwright, and verify released CLI install/auth flows |
 
 GitHub branch protection and merge queue now rely on GitHub-native required status
@@ -96,6 +97,7 @@ path-aware no-op.
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Biome + Vitest coverage |
 | Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for the full `.pre-commit-config.yaml` hook chain |
 | Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, and docs tests |
+| Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for current-branch release quickstart coverage |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Direct summary check for canonical root commands |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for minimum/core/CLI Rust gates |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export plus SBOM/signing/security gates |
@@ -243,6 +245,36 @@ the running release backend. The CLI job separately runs
 `scripts/verify-release-cli-quickstart.sh` so the generic installer path and
 local `space list` / `create-space` quick start remain validated for the same
 exact release version.
+
+## Release Quickstart Verify CI
+
+```yaml
+jobs:
+  build-images:
+    - uses ./.github/workflows/docker-images.yml with export_artifacts=true
+    - tag ghcr.io/<repo>/backend:ci-quickstart and ghcr.io/<repo>/frontend:ci-quickstart
+  build-cli-assets:
+    - cargo build --locked --release --bin ugoite --target x86_64-unknown-linux-gnu
+    - package ugoite-vci-quickstart-x86_64-unknown-linux-gnu.tar.gz + .sha256
+  verify-cli-quickstart:
+    - download the packaged CLI archive
+    - UGOITE_DOWNLOAD_BASE_URL=file://... bash scripts/verify-release-cli-quickstart.sh
+  verify-container-quickstart:
+    - download current-branch image archives and the packaged CLI archive
+    - copy docker-compose.release.yaml and rename image archives to release-style asset names
+    - UGOITE_RELEASE_ASSET_BASE_URL=file://...
+    - UGOITE_DOWNLOAD_BASE_URL=file://...
+    - bash scripts/verify-release-container-quickstart.sh
+```
+
+`Release Quickstart Verify CI` lives at
+`./.github/workflows/release-quickstart-verify-ci.yml`. It keeps the release
+quickstart continuously verifiable before merge by building current-branch
+release-like Docker and CLI assets, exposing them through `file://`-backed
+`UGOITE_RELEASE_ASSET_BASE_URL` and `UGOITE_DOWNLOAD_BASE_URL` paths, and then
+reusing the same container + CLI quickstart scripts that post-publish
+verification uses. `Release Quickstart Verify` stays the post-publish/manual
+check for exact published releases, so the pre-merge path adds coverage without replacing release verification.
 
 ## Devcontainer CI
 
