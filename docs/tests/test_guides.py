@@ -503,6 +503,7 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
 }
 REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "docker-compose.release.yaml",
+    'DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}"',
     "ugoite-backend-v${VERSION_INPUT}.docker.tar.gz",
     "ugoite-frontend-v${VERSION_INPUT}.docker.tar.gz",
     "docker load",
@@ -512,6 +513,7 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "search-ui.test.ts",
     "127.0.0.1:3000/api/auth/mock-oauth",
     "config set --mode backend --backend-url http://127.0.0.1:8000",
+    'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
     "space list",
     "create-space",

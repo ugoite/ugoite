@@ -198,3 +198,8 @@ cargo run -q -p ugoite-cli -- auth profile
 # Print unset commands
 cargo run -q -p ugoite-cli -- auth token-clear
 ```
+
+When the backend runs inside Docker/Compose and you target its published
+backend port directly, export the matching `UGOITE_DEV_AUTH_PROXY_TOKEN` value
+before `auth login` so the explicit local-login request stays trusted across the
+container boundary.
