@@ -24,6 +24,7 @@ REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-025: Published release quick-start verification must stay wired.
 REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI.
+REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 """
 
 from __future__ import annotations
@@ -65,6 +66,7 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
+PRE_COMMIT_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "pre-commit-ci.yml"
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 CODEQL_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
 CODEQL_CONFIG_PATH = REPO_ROOT / ".github" / "codeql" / "codeql-config.yml"
@@ -160,6 +162,46 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
+}
+REQUIRED_PRE_COMMIT_CI_STEPS = {
+    "Install shell tools",
+    "Install Rust toolchain",
+    "Install uv",
+    "Setup Node.js",
+    "Setup Bun",
+    "Install frontend dependencies",
+    "Install docsite dependencies",
+    "Install backend dependencies",
+    "Install core dependencies",
+    "Install cargo-llvm-cov",
+    "Run pre-commit",
+}
+REQUIRED_PRE_COMMIT_CI_WORKFLOW_FRAGMENTS = {
+    "toolchain: 1.93.0",
+    "version: 0.10.10",
+    "node-version: 22.12.0",
+    "bun-version: 1.3.8",
+    "sudo apt-get install -y shfmt shellcheck",
+    "cargo install cargo-llvm-cov --locked",
+    "uv sync --locked",
+    "bun install --frozen-lockfile",
+    "uvx pre-commit run --all-files",
+}
+REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
+    (
+        "| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, "
+        "PR, merge queue |"
+    ),
+    (
+        "Bootstrap pinned toolchains, perform strict lockfile installs, and run "
+        "the full `pre-commit` hook chain"
+    ),
+    "Direct summary check for the full `.pre-commit-config.yaml` hook chain",
+    (
+        "Pre-commit CI keeps `.pre-commit-config.yaml` itself continuously "
+        "executable in CI"
+    ),
+    "uvx pre-commit run --all-files",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -591,6 +633,7 @@ REQUIRED_NATIVE_REQUIRED_CHECKS = {
     "Docsite CI",
     "E2E Tests",
     "Frontend CI",
+    "Pre-commit CI",
     "Python CI",
     "README Command Guard",
     "Rust CI",
@@ -1881,6 +1924,81 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
 def test_docs_req_ops_013_native_required_checks_contract() -> None:
     """REQ-OPS-013: Native required checks must stay authoritative and verifiable."""
     details = _collect_native_required_checks_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_029_pre_commit_ci_is_required() -> None:
+    """REQ-OPS-029: Pre-commit hook orchestration must stay executable in CI."""
+    workflow_text = _read_required_text(
+        PRE_COMMIT_CI_WORKFLOW_PATH,
+        "pre-commit-ci.yml is missing at {path}; required by REQ-OPS-029.",
+    )
+    workflow = _load_yaml_base_mapping(PRE_COMMIT_CI_WORKFLOW_PATH)
+    permissions = _require_mapping(
+        workflow.get("permissions"),
+        message="pre-commit-ci.yml must define top-level permissions",
+    )
+    jobs = _require_mapping(
+        workflow.get("jobs", {}),
+        message="pre-commit-ci.yml must define jobs",
+    )
+    ci_job = _require_mapping(
+        jobs.get("ci"),
+        message="pre-commit-ci.yml must define jobs.ci",
+    )
+    ci_env = _require_mapping(
+        ci_job.get("env", {}),
+        message="pre-commit-ci.yml jobs.ci must define env",
+    )
+    missing_steps = sorted(
+        REQUIRED_PRE_COMMIT_CI_STEPS.difference(
+            _collect_workflow_step_names(PRE_COMMIT_CI_WORKFLOW_PATH),
+        ),
+    )
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_PRE_COMMIT_CI_WORKFLOW_FRAGMENTS,
+    )
+    missing_doc_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            str(workflow.get("name")) != "Pre-commit CI",
+            "pre-commit-ci.yml workflow name must stay Pre-commit CI",
+        ),
+        (
+            str(permissions.get("contents")) != "read",
+            "pre-commit-ci.yml permissions must allow contents: read",
+        ),
+        (
+            str(ci_job.get("runs-on")) != "ubuntu-24.04",
+            "pre-commit-ci.yml jobs.ci must run on ubuntu-24.04",
+        ),
+        (
+            str(ci_env.get("CARGO_TARGET_DIR"))
+            != "${{ github.workspace }}/target/rust",
+            "pre-commit-ci.yml jobs.ci must share the target/rust cargo cache",
+        ),
+        (
+            bool(missing_steps),
+            "pre-commit-ci.yml missing steps: " + ", ".join(missing_steps),
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "pre-commit-ci.yml missing fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing pre-commit CI fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
