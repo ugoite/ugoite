@@ -227,6 +227,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
     let mock_oauth_output = cli_command(&config_path)
         .args(["auth", "login", "--mock-oauth"])
+        .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
         .output()
         .expect("mock oauth login");
     assert_success(&mock_oauth_output, "mock oauth login");
@@ -235,6 +236,9 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .expect("mock oauth request");
     handle.join().expect("join mock oauth server");
     assert!(mock_oauth_request.starts_with("POST /auth/mock-oauth HTTP/1.1"));
+    assert!(mock_oauth_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret"));
 }
 
 /// REQ-OPS-006: auxiliary auth commands must keep masking, overview, and token clearing covered.

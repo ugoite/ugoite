@@ -636,11 +636,15 @@ requirements:
 
     local sample data without requiring contributors to memorize the lower-level
 
-    CLI invocation. The workflow MUST document safe defaults, override controls,
+    CLI invocation. The workflow MUST document safe defaults, reuse the same
 
-    and the underlying scenario-listing command so seeded dev spaces stay
+    `UGOITE_ROOT` storage root as the local dev backend when that root is
 
-    discoverable and predictable.
+    configured, expose override controls and the underlying scenario-listing
+
+    command, and runtime CI MUST prove the seeded space remains discoverable
+
+    through the local dev auth stack before merge.
 
     '
   related_spec:
@@ -652,6 +656,9 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_016_dev_seed_workflow_is_declared
+    - file: backend/tests/test_dev_auth.py
+      tests:
+      - test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack
 
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml

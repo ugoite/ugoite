@@ -10,6 +10,7 @@ ASSET_BASE_URL_INPUT="${UGOITE_RELEASE_ASSET_BASE_URL:-}"
 BACKEND_TIMEOUT_SECONDS="${UGOITE_BACKEND_START_TIMEOUT_SECONDS:-120}"
 FRONTEND_TIMEOUT_SECONDS="${UGOITE_FRONTEND_START_TIMEOUT_SECONDS:-120}"
 CLI_INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
+DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -202,7 +203,12 @@ log "Verified: installed CLI answers --help"
 HOME="$CLI_HOME" PATH="$CLI_PATH" "$CLI_BINARY" \
   config set --mode backend --backend-url http://127.0.0.1:8000 >/dev/null
 
-login_output="$(HOME="$CLI_HOME" PATH="$CLI_PATH" "$CLI_BINARY" auth login --mock-oauth)"
+login_output="$(
+  HOME="$CLI_HOME" \
+    PATH="$CLI_PATH" \
+    UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN" \
+    "$CLI_BINARY" auth login --mock-oauth
+)"
 case "$login_output" in
   export\ UGOITE_AUTH_BEARER_TOKEN=*)
     export UGOITE_AUTH_BEARER_TOKEN="${login_output#export UGOITE_AUTH_BEARER_TOKEN=}"

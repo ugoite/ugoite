@@ -7,7 +7,9 @@ use serde_json::json;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use support::spawn_recording_server;
-use ugoite_cli::http::{http_delete, http_get, http_patch, http_post, http_put};
+use ugoite_cli::http::{
+    http_delete, http_get, http_patch, http_post, http_post_with_dev_auth_proxy, http_put,
+};
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -17,6 +19,7 @@ fn env_lock() -> &'static Mutex<()> {
 struct EnvState {
     bearer: Option<String>,
     api_key: Option<String>,
+    dev_auth_proxy_token: Option<String>,
 }
 
 impl EnvState {
@@ -24,6 +27,7 @@ impl EnvState {
         Self {
             bearer: std::env::var("UGOITE_AUTH_BEARER_TOKEN").ok(),
             api_key: std::env::var("UGOITE_AUTH_API_KEY").ok(),
+            dev_auth_proxy_token: std::env::var("UGOITE_DEV_AUTH_PROXY_TOKEN").ok(),
         }
     }
 }
@@ -32,11 +36,15 @@ impl Drop for EnvState {
     fn drop(&mut self) {
         std::env::remove_var("UGOITE_AUTH_BEARER_TOKEN");
         std::env::remove_var("UGOITE_AUTH_API_KEY");
+        std::env::remove_var("UGOITE_DEV_AUTH_PROXY_TOKEN");
         if let Some(value) = &self.bearer {
             std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", value);
         }
         if let Some(value) = &self.api_key {
             std::env::set_var("UGOITE_AUTH_API_KEY", value);
+        }
+        if let Some(value) = &self.dev_auth_proxy_token {
+            std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", value);
         }
     }
 }
@@ -182,4 +190,60 @@ async fn test_cli_req_ops_006_http_helpers_apply_auth_headers() {
     assert!(api_key_request
         .to_ascii_lowercase()
         .contains("x-api-key: api-key-secret\r\n"));
+}
+
+/// REQ-OPS-006: explicit auth POST helpers must only send the dev proxy header when configured.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "   ");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
+    http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect("blank proxy token request should succeed");
+    let blank_proxy_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("blank proxy request text");
+    handle.join().expect("join blank proxy server");
+    assert!(!blank_proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token:"),);
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
+    http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect("proxy token request should succeed");
+    let proxy_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("proxy request text");
+    handle.join().expect("join proxy server");
+    assert!(proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+}
+
+/// REQ-OPS-006: explicit auth POST helpers must surface proxy-auth errors with response text.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_helpers_surface_dev_auth_proxy_error_bodies() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 403 Forbidden", "proxy auth failed");
+    let post_err = http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect_err("http_post_with_dev_auth_proxy should fail");
+    let proxy_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("proxy error request text");
+    handle.join().expect("join proxy error server");
+    assert!(proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(post_err.to_string().contains("HTTP 403"));
+    assert!(post_err.to_string().contains("proxy auth failed"));
 }
