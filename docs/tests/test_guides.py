@@ -503,6 +503,7 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
 }
 REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "docker-compose.release.yaml",
+    'DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}"',
     "ugoite-backend-v${VERSION_INPUT}.docker.tar.gz",
     "ugoite-frontend-v${VERSION_INPUT}.docker.tar.gz",
     "docker load",
@@ -512,6 +513,7 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "search-ui.test.ts",
     "127.0.0.1:3000/api/auth/mock-oauth",
     "config set --mode backend --backend-url http://127.0.0.1:8000",
+    'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
     "space list",
     "create-space",
@@ -610,6 +612,8 @@ REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "prepares the local auth context **once**",
     "single username + 2FA prompt sequence",
     "waits for `http://localhost:8000/health`",
+    "UGOITE_ROOT=<repo root>",
+    "`./spaces` tree",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
@@ -654,6 +658,7 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
     "UGOITE_DEV_USER_ID",
+    "export UGOITE_ROOT",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "UGOITE_DEV_SIGNING_SECRET",
     "UGOITE_DEV_SIGNING_KID",
@@ -717,6 +722,7 @@ REQUIRED_RUNTIME_PIN_DOC_FRAGMENTS = {
 }
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
+    "UGOITE_ROOT",
     "UGOITE_SEED_SPACE_ID",
     "UGOITE_SEED_SCENARIO",
     "UGOITE_SEED_ENTRY_COUNT",
@@ -731,6 +737,7 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
     "terminal progress",
+    "UGOITE_ROOT",
     "cargo run -q -p ugoite-cli -- space list --root .",
 }
 REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
@@ -818,6 +825,13 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
     "terminal progress",
     "space list --root .",
+    "UGOITE_ROOT",
+}
+REQUIRED_DEV_SEED_CICD_FRAGMENTS = {
+    "scripts/dev-seed.sh",
+    "same `UGOITE_ROOT`",
+    "local stack",
+    "visible through `/spaces` after login",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -1916,6 +1930,7 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
     )
     env.pop("UGOITE_DEV_USER_ID", None)
     env.pop("UGOITE_DEV_TOTP_CODE", None)
+    env.pop("UGOITE_ROOT", None)
 
     result = subprocess.run(
         ["/bin/bash", str(script_path)],
@@ -1949,6 +1964,9 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
         raise AssertionError(message)
     if "export UGOITE_DEV_USER_ID=dev-local-user" not in exports:
         message = "mock-oauth startup must default UGOITE_DEV_USER_ID"
+        raise AssertionError(message)
+    if f"export UGOITE_ROOT={REPO_ROOT}" not in exports:
+        message = "mock-oauth startup must export the default repository root"
         raise AssertionError(message)
 
     auth_payload = json.loads(auth_file.read_text(encoding="utf-8"))
@@ -2080,6 +2098,11 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
                     "docs/guide/cli.md must document seed task overrides "
                     "and direct CLI usage"
                 ),
+            ),
+            _require_file_contains(
+                CI_CD_SPEC_PATH,
+                sorted(REQUIRED_DEV_SEED_CICD_FRAGMENTS),
+                "ci-cd.md must describe runtime seed visibility coverage",
             ),
         ]
         if detail is not None
