@@ -8,6 +8,7 @@ services:
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
       - UGOITE_DEV_AUTH_MODE=mock-oauth
       - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
       - UGOITE_DEV_SIGNING_KID=release-compose-local-v1

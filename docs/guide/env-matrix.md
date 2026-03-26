@@ -18,7 +18,7 @@ refers to the CI-parity compose helper in `e2e/scripts/run-e2e-compose.sh`.
 | UGOITE_DEV_AUTH_TTL_SECONDS | optional | optional | optional | optional |
 | UGOITE_DEV_AUTH_FORCE_LOGIN | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_MODE | optional | required (`mock-oauth`) | required (`mock-oauth`) | optional |
-| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` flows | required for compose e2e | set by `docker-compose.yaml` | optional |
+| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` and direct CLI auth flows | required for compose e2e | set by `docker-compose.yaml` | optional |
 | UGOITE_DEV_USER_ID | optional | required | required | optional |
 | UGOITE_DEV_2FA_SECRET | optional | n/a | n/a | n/a |
 | UGOITE_DEV_SIGNING_SECRET | auto-managed by `dev-auth-env.sh` | required | required | optional |

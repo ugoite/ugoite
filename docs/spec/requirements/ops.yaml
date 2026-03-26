@@ -636,11 +636,15 @@ requirements:
 
     local sample data without requiring contributors to memorize the lower-level
 
-    CLI invocation. The workflow MUST document safe defaults, override controls,
+    CLI invocation. The workflow MUST document safe defaults, reuse the same
 
-    and the underlying scenario-listing command so seeded dev spaces stay
+    `UGOITE_ROOT` storage root as the local dev backend when that root is
 
-    discoverable and predictable.
+    configured, expose override controls and the underlying scenario-listing
+
+    command, and runtime CI MUST prove the seeded space remains discoverable
+
+    through the local dev auth stack before merge.
 
     '
   related_spec:
@@ -652,6 +656,9 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_016_dev_seed_workflow_is_declared
+    - file: backend/tests/test_dev_auth.py
+      tests:
+      - test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack
 
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
@@ -1154,6 +1161,88 @@ requirements:
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-029
+  title: Required CI Validation of the Full Pre-commit Hook Chain
+  description: 'The repository MUST run a dedicated required workflow that executes
+
+    the full `.pre-commit-config.yaml` hook chain on pull requests, pushes to
+
+    `main`, and merge-queue events. That workflow MUST bootstrap the repository''s
+
+    pinned Rust, uv, Node, and Bun toolchains, use strict lockfile-backed install
+
+    commands for dependencies it prepares, run `uvx pre-commit run --all-files`,
+
+    and publish a direct summary check through `.github/required-status-checks.json`
+
+    so contributor hook orchestration stays continuously verifiable in CI.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_029_pre_commit_ci_is_required
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-030
+  title: Pre-Merge Release Quick-Start Verification
+  description: 'Repository automation MUST provide a required pre-merge workflow
+
+    that builds current-branch release-like Docker and CLI assets, exercises the
+
+    documented release quick-start path before merge, verifies both browser and
+
+    CLI/auth flows against those assets, and keeps the post-publish
+
+    `Release Quickstart Verify` workflow as the exact published-release
+
+    validation path.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  - ../guide/container-quickstart.md
+  - ../guide/cli.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-031
   title: Immutable GitHub Action Pinning
   description: 'External GitHub Actions referenced from `.github/workflows/*.yml`
 
@@ -1174,4 +1263,4 @@ requirements:
     pytest:
     - file: docs/tests/test_guides.py
       tests:
-      - test_docs_req_ops_029_github_actions_are_sha_pinned_and_updatable
+      - test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable

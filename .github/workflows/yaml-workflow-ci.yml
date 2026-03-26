@@ -28,11 +28,11 @@ jobs:
         with:
           version: 0.10.10
 
-      - name: Check GitHub Action SHA pins (REQ-OPS-029)
+      - name: Check GitHub Action SHA pins (REQ-OPS-031)
         run: >
           uv run --with pytest --with pyyaml --with bashlex
           pytest -W error
-          docs/tests/test_guides.py::test_docs_req_ops_029_github_actions_are_sha_pinned_and_updatable -v
+          docs/tests/test_guides.py::test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable -v
 
       - name: Run yamllint
         run: |

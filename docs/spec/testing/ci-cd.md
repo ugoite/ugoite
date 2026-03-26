@@ -4,7 +4,7 @@
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Lint, type check, pytest |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Lint, type check, pytest, and local dev seed runtime visibility |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push, PR, merge queue | Minimum/core/CLI format, lint, test, and coverage |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push, PR, merge queue | Lint (biome), tests with mandatory 100% coverage |
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push, PR, merge queue | Lint, format check, typecheck, validation build, and tests with mandatory 100% coverage |
@@ -15,6 +15,7 @@
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue, manual | Run license/compliance and vulnerability scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
 | YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, GitHub Action SHA pinning checks, yamllint, and actionlint |
+| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual | Native code scanning for Actions, JavaScript/TypeScript, Python, and Rust |
@@ -22,6 +23,7 @@
 | Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks, exclusions, and native code-scanning handoff |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
+| Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Push on `main`, PR, merge queue | Build current-branch release-like Docker and CLI assets, then verify browser and CLI quickstart paths before merge |
 | Release Quickstart Verify | `.github/workflows/release-quickstart-verify.yml` | Manual (`workflow_dispatch`), reusable (`workflow_call`) | Download published release assets, run the release compose stack, verify browser stories with Playwright, and verify released CLI install/auth flows |
 
 GitHub branch protection and merge queue now rely on GitHub-native required status
@@ -58,7 +60,7 @@ full commit SHAs instead of floating tags or branches. Local reusable workflows 
 path-based (`./.github/workflows/...`), and the root `.github/dependabot.yml`
 must keep `package-ecosystem: "github-actions"` at `/` so SHA-pinned workflow
 dependencies stay automatically updatable. `YAML Workflow CI` runs
-`Check GitHub Action SHA pins (REQ-OPS-029)` so this trust boundary cannot
+`Check GitHub Action SHA pins (REQ-OPS-031)` so this trust boundary cannot
 silently drift.
 
 Lockfile-backed installs must also fail fast on dependency drift. When the
@@ -101,7 +103,9 @@ path-aware no-op.
 | Docsite CI | `.github/workflows/docsite-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for docsite quality gates |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export, tier selection, and Playwright execution |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Biome + Vitest coverage |
-| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, and docs tests |
+| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for the full `.pre-commit-config.yaml` hook chain |
+| Python CI | `.github/workflows/python-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for Ruff, ty, backend pytest, local dev seed runtime coverage, and docs tests |
+| Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for current-branch release quickstart coverage |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Direct summary check for canonical root commands |
 | Rust CI | `.github/workflows/rust-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for minimum/core/CLI Rust gates |
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export plus SBOM/signing/security gates |
@@ -121,13 +125,19 @@ jobs:
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
 
+Backend pytest also carries the focused local dev seed regression: it runs
+`scripts/dev-seed.sh` against the same `UGOITE_ROOT` and explicit dev-auth
+environment used by the local stack, then verifies the seeded space becomes
+visible through `/spaces` after login. That keeps root mismatches between
+`mise run seed` and local dev discoverable before merge.
+
 ## YAML / Workflow and Repository Artifact Hygiene
 
 ```yaml
 jobs:
   ci:
     - bash scripts/check-root-artifact-hygiene.sh
-    - uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_029_github_actions_are_sha_pinned_and_updatable -v
+    - uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable -v
     - yamllint ...
     - actionlint
 ```
@@ -250,6 +260,36 @@ the running release backend. The CLI job separately runs
 `scripts/verify-release-cli-quickstart.sh` so the generic installer path and
 local `space list` / `create-space` quick start remain validated for the same
 exact release version.
+
+## Release Quickstart Verify CI
+
+```yaml
+jobs:
+  build-images:
+    - uses ./.github/workflows/docker-images.yml with export_artifacts=true
+    - tag ghcr.io/<repo>/backend:ci-quickstart and ghcr.io/<repo>/frontend:ci-quickstart
+  build-cli-assets:
+    - cargo build --locked --release --bin ugoite --target x86_64-unknown-linux-gnu
+    - package ugoite-vci-quickstart-x86_64-unknown-linux-gnu.tar.gz + .sha256
+  verify-cli-quickstart:
+    - download the packaged CLI archive
+    - UGOITE_DOWNLOAD_BASE_URL=file://... bash scripts/verify-release-cli-quickstart.sh
+  verify-container-quickstart:
+    - download current-branch image archives and the packaged CLI archive
+    - copy docker-compose.release.yaml and rename image archives to release-style asset names
+    - UGOITE_RELEASE_ASSET_BASE_URL=file://...
+    - UGOITE_DOWNLOAD_BASE_URL=file://...
+    - bash scripts/verify-release-container-quickstart.sh
+```
+
+`Release Quickstart Verify CI` lives at
+`./.github/workflows/release-quickstart-verify-ci.yml`. It keeps the release
+quickstart continuously verifiable before merge by building current-branch
+release-like Docker and CLI assets, exposing them through `file://`-backed
+`UGOITE_RELEASE_ASSET_BASE_URL` and `UGOITE_DOWNLOAD_BASE_URL` paths, and then
+reusing the same container + CLI quickstart scripts that post-publish
+verification uses. `Release Quickstart Verify` stays the post-publish/manual
+check for exact published releases, so the pre-merge path adds coverage without replacing release verification.
 
 ## Devcontainer CI
 
@@ -386,6 +426,29 @@ npm run prepare
 ```
 
 This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+
+## Pre-commit CI
+
+```yaml
+jobs:
+  ci:
+    - Install shfmt + shellcheck
+    - Install Rust 1.93.0 with rustfmt, clippy, llvm-tools-preview
+    - Install uv 0.10.10
+    - Install Node.js 22.12.0 and Bun 1.3.8
+    - cd frontend && bun install --frozen-lockfile
+    - cd docsite && bun install --frozen-lockfile
+    - cd backend && uv sync --locked
+    - cd ugoite-core && uv sync --locked
+    - cargo install cargo-llvm-cov --locked
+    - uvx pre-commit run --all-files
+```
+
+Pre-commit CI keeps `.pre-commit-config.yaml` itself continuously executable in CI
+instead of only relying on the individual workflows behind each hook. The
+workflow bootstraps the same pinned toolchains used elsewhere in the repository,
+uses strict lockfile-backed installs for Bun and uv projects, and exposes a
+direct summary check through `.github/required-status-checks.json`.
 
 The root `mise.toml` also declares explicit `[monorepo].config_roots` for package-level task configs so top-level `mise run dev`, `mise run test`, and `mise run e2e` stay warning-free on current mise releases.
 
