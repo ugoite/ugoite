@@ -22,6 +22,7 @@ async fn test_sample_data_req_api_009_create_sample_space() -> anyhow::Result<()
         scenario: "renewable-ops".to_string(),
         entry_count: 120,
         seed: Some(7),
+        owner_user_id: None,
     };
 
     let summary = create_sample_space(&op, &root_uri, &options).await?;
@@ -59,6 +60,7 @@ async fn test_sample_data_req_api_009_respects_requested_small_entry_count() -> 
         scenario: "lab-qa".to_string(),
         entry_count: 6,
         seed: Some(9),
+        owner_user_id: None,
     };
 
     let summary = create_sample_space(&op, &root_uri, &options).await?;
@@ -83,6 +85,7 @@ async fn test_sample_data_req_api_010_job_lifecycle() -> anyhow::Result<()> {
         scenario: "renewable-ops".to_string(),
         entry_count: 100,
         seed: Some(10),
+        owner_user_id: None,
     };
 
     let job = create_sample_space_job(&op, &root_uri, &options).await?;
@@ -129,6 +132,7 @@ async fn test_sample_data_req_api_010_job_status_retries_transient_eof() -> anyh
         scenario: "renewable-ops".to_string(),
         entry_count: 6,
         seed: Some(2),
+        owner_user_id: None,
         status: SampleJobStatus::Queued,
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
