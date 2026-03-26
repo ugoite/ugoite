@@ -23,7 +23,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4,<0.11.0"]
+requires = ["uv_build>=0.9.4,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv]
@@ -36,7 +36,7 @@ ugoite-core = { path = "../ugoite-core", editable = true }
 [tool.ruff.lint]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**.py" = ["S101", "S105", "S106", "ARG001", "PLR2004", "ANN401", "E402", "TC003"]
+"tests/**.py" = ["S101", "S105", "S106", "ARG001", "PLR2004", "ANN401", "E402", "TC003", "S603"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/app --cov-report=term-missing --cov-fail-under=100"

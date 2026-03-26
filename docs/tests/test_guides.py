@@ -24,7 +24,9 @@ REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
 REQ-OPS-025: Published release quick-start verification must stay wired.
 REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI.
-REQ-OPS-029: GitHub Actions workflow refs must stay SHA-pinned and updatable.
+REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
+REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
+REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ PYTHON_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ci.yml"
 YAML_WORKFLOW_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "yaml-workflow-ci.yml"
 )
+PRE_COMMIT_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "pre-commit-ci.yml"
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
 CODEQL_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
 CODEQL_CONFIG_PATH = REPO_ROOT / ".github" / "codeql" / "codeql-config.yml"
@@ -74,6 +77,9 @@ RELEASE_PUBLISH_WORKFLOW_PATH = (
 )
 RELEASE_QUICKSTART_VERIFY_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "release-quickstart-verify.yml"
+)
+RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "release-quickstart-verify-ci.yml"
 )
 CLI_RELEASE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "cli-release-binaries.yml"
@@ -161,6 +167,46 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Check root artifact hygiene",
     "Run yamllint",
     "Run actionlint",
+}
+REQUIRED_PRE_COMMIT_CI_STEPS = {
+    "Install shell tools",
+    "Install Rust toolchain",
+    "Install uv",
+    "Setup Node.js",
+    "Setup Bun",
+    "Install frontend dependencies",
+    "Install docsite dependencies",
+    "Install backend dependencies",
+    "Install core dependencies",
+    "Install cargo-llvm-cov",
+    "Run pre-commit",
+}
+REQUIRED_PRE_COMMIT_CI_WORKFLOW_FRAGMENTS = {
+    "toolchain: 1.93.0",
+    "version: 0.10.10",
+    "node-version: 22.12.0",
+    "bun-version: 1.3.8",
+    "sudo apt-get install -y shfmt shellcheck",
+    "cargo install cargo-llvm-cov --locked",
+    "uv sync --locked",
+    "bun install --frozen-lockfile",
+    "uvx pre-commit run --all-files",
+}
+REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
+    (
+        "| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, "
+        "PR, merge queue |"
+    ),
+    (
+        "Bootstrap pinned toolchains, perform strict lockfile installs, and run "
+        "the full `pre-commit` hook chain"
+    ),
+    "Direct summary check for the full `.pre-commit-config.yaml` hook chain",
+    (
+        "Pre-commit CI keeps `.pre-commit-config.yaml` itself continuously "
+        "executable in CI"
+    ),
+    "uvx pre-commit run --all-files",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -386,6 +432,7 @@ REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "beta",
     "http://localhost:3000/login",
     "Continue with Mock OAuth",
+    "bootstraps the `default` space",
     "Environment Variables",
     "UGOITE_SPACES_DIR",
     "UGOITE_FRONTEND_PORT",
@@ -406,6 +453,7 @@ REQUIRED_RELEASE_QUICKSTART_GUIDE_FRAGMENTS = {
     "beta",
     "http://localhost:3000/login",
     "Continue with Mock OAuth",
+    "bootstraps the `default` space",
     "## Environment Variables",
     "UGOITE_SPACES_DIR",
     "UGOITE_FRONTEND_PORT",
@@ -421,6 +469,7 @@ REQUIRED_RELEASE_COMPOSE_FRAGMENTS = {
     "${UGOITE_SPACES_DIR:-./spaces}:/data",
     "UGOITE_ROOT=/data",
     "BACKEND_URL=http://backend:8000",
+    "UGOITE_BOOTSTRAP_DEFAULT_SPACE=true",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
     "UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}",
     "UGOITE_DEV_SIGNING_KID=release-compose-local-v1",
@@ -455,6 +504,7 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
 }
 REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "docker-compose.release.yaml",
+    'DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}"',
     "ugoite-backend-v${VERSION_INPUT}.docker.tar.gz",
     "ugoite-frontend-v${VERSION_INPUT}.docker.tar.gz",
     "docker load",
@@ -464,6 +514,7 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "search-ui.test.ts",
     "127.0.0.1:3000/api/auth/mock-oauth",
     "config set --mode backend --backend-url http://127.0.0.1:8000",
+    'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
     "space list",
     "create-space",
@@ -477,6 +528,37 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
     "./.github/workflows/release-quickstart-verify.yml",
     "smoke.test.ts",
     "search-ui.test.ts",
+}
+REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_FRAGMENTS = {
+    "push:",
+    "pull_request:",
+    "merge_group:",
+    "Build release-like Docker images",
+    "Build release-like CLI archive",
+    "Verify release-like CLI quick start",
+    "Verify release-like browser quick start",
+    "./.github/workflows/docker-images.yml",
+    "export_artifacts: true",
+    "artifact_name: release-quickstart-images",
+    "ghcr.io/${{ github.repository }}/backend:ci-quickstart",
+    "ghcr.io/${{ github.repository }}/frontend:ci-quickstart",
+    "ugoite-v${{ env.QUICKSTART_VERSION }}-${{ env.CLI_RELEASE_TARGET }}.tar.gz",
+    "UGOITE_DOWNLOAD_BASE_URL: file://${{ github.workspace }}/release-assets",
+    "UGOITE_RELEASE_ASSET_BASE_URL: file://${{ github.workspace }}/release-assets",
+    "bash scripts/verify-release-cli-quickstart.sh",
+    "bash scripts/verify-release-container-quickstart.sh",
+    "Release Quickstart Verify CI",
+}
+REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_DOC_FRAGMENTS = {
+    (
+        "| Release Quickstart Verify CI | "
+        "`.github/workflows/release-quickstart-verify-ci.yml` |"
+    ),
+    "./.github/workflows/release-quickstart-verify-ci.yml",
+    "Build current-branch release-like Docker and CLI assets",
+    "UGOITE_RELEASE_ASSET_BASE_URL",
+    "UGOITE_DOWNLOAD_BASE_URL",
+    "pre-merge path adds coverage without replacing release verification",
 }
 REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS = {
     "scripts/render_release_notes.py",
@@ -531,6 +613,8 @@ REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "prepares the local auth context **once**",
     "single username + 2FA prompt sequence",
     "waits for `http://localhost:8000/health`",
+    "UGOITE_ROOT=<repo root>",
+    "`./spaces` tree",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
@@ -575,6 +659,7 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
     'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
     "UGOITE_DEV_USER_ID",
+    "export UGOITE_ROOT",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "UGOITE_DEV_SIGNING_SECRET",
     "UGOITE_DEV_SIGNING_KID",
@@ -592,7 +677,9 @@ REQUIRED_NATIVE_REQUIRED_CHECKS = {
     "Docsite CI",
     "E2E Tests",
     "Frontend CI",
+    "Pre-commit CI",
     "Python CI",
+    "Release Quickstart Verify CI",
     "README Command Guard",
     "Rust CI",
     "SBOM CI",
@@ -644,6 +731,7 @@ REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
 REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-029)"
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
+    "UGOITE_ROOT",
     "UGOITE_SEED_SPACE_ID",
     "UGOITE_SEED_SCENARIO",
     "UGOITE_SEED_ENTRY_COUNT",
@@ -658,6 +746,7 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "UGOITE_SEED_SPACE_ID=ux-demo",
     "mise run seed:scenarios",
     "terminal progress",
+    "UGOITE_ROOT",
     "cargo run -q -p ugoite-cli -- space list --root .",
 }
 REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
@@ -745,6 +834,13 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
     "terminal progress",
     "space list --root .",
+    "UGOITE_ROOT",
+}
+REQUIRED_DEV_SEED_CICD_FRAGMENTS = {
+    "scripts/dev-seed.sh",
+    "same `UGOITE_ROOT`",
+    "local stack",
+    "visible through `/spaces` after login",
 }
 REQUIRED_DEVCONTAINER_TRIGGER_PATTERNS = {
     ".github/workflows/devcontainer-ci.yml",
@@ -1844,6 +1940,7 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
     )
     env.pop("UGOITE_DEV_USER_ID", None)
     env.pop("UGOITE_DEV_TOTP_CODE", None)
+    env.pop("UGOITE_ROOT", None)
 
     result = subprocess.run(
         ["/bin/bash", str(script_path)],
@@ -1878,6 +1975,9 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
     if "export UGOITE_DEV_USER_ID=dev-local-user" not in exports:
         message = "mock-oauth startup must default UGOITE_DEV_USER_ID"
         raise AssertionError(message)
+    if f"export UGOITE_ROOT={REPO_ROOT}" not in exports:
+        message = "mock-oauth startup must export the default repository root"
+        raise AssertionError(message)
 
     auth_payload = json.loads(auth_file.read_text(encoding="utf-8"))
     if auth_payload["mode"] != "mock-oauth":
@@ -1891,6 +1991,81 @@ def test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts(
 def test_docs_req_ops_013_native_required_checks_contract() -> None:
     """REQ-OPS-013: Native required checks must stay authoritative and verifiable."""
     details = _collect_native_required_checks_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_029_pre_commit_ci_is_required() -> None:
+    """REQ-OPS-029: Pre-commit hook orchestration must stay executable in CI."""
+    workflow_text = _read_required_text(
+        PRE_COMMIT_CI_WORKFLOW_PATH,
+        "pre-commit-ci.yml is missing at {path}; required by REQ-OPS-029.",
+    )
+    workflow = _load_yaml_base_mapping(PRE_COMMIT_CI_WORKFLOW_PATH)
+    permissions = _require_mapping(
+        workflow.get("permissions"),
+        message="pre-commit-ci.yml must define top-level permissions",
+    )
+    jobs = _require_mapping(
+        workflow.get("jobs", {}),
+        message="pre-commit-ci.yml must define jobs",
+    )
+    ci_job = _require_mapping(
+        jobs.get("ci"),
+        message="pre-commit-ci.yml must define jobs.ci",
+    )
+    ci_env = _require_mapping(
+        ci_job.get("env", {}),
+        message="pre-commit-ci.yml jobs.ci must define env",
+    )
+    missing_steps = sorted(
+        REQUIRED_PRE_COMMIT_CI_STEPS.difference(
+            _collect_workflow_step_names(PRE_COMMIT_CI_WORKFLOW_PATH),
+        ),
+    )
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_PRE_COMMIT_CI_WORKFLOW_FRAGMENTS,
+    )
+    missing_doc_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            str(workflow.get("name")) != "Pre-commit CI",
+            "pre-commit-ci.yml workflow name must stay Pre-commit CI",
+        ),
+        (
+            str(permissions.get("contents")) != "read",
+            "pre-commit-ci.yml permissions must allow contents: read",
+        ),
+        (
+            str(ci_job.get("runs-on")) != "ubuntu-24.04",
+            "pre-commit-ci.yml jobs.ci must run on ubuntu-24.04",
+        ),
+        (
+            str(ci_env.get("CARGO_TARGET_DIR"))
+            != "${{ github.workspace }}/target/rust",
+            "pre-commit-ci.yml jobs.ci must share the target/rust cargo cache",
+        ),
+        (
+            bool(missing_steps),
+            "pre-commit-ci.yml missing steps: " + ", ".join(missing_steps),
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "pre-commit-ci.yml missing fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing pre-commit CI fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
@@ -1933,6 +2108,11 @@ def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
                     "docs/guide/cli.md must document seed task overrides "
                     "and direct CLI usage"
                 ),
+            ),
+            _require_file_contains(
+                CI_CD_SPEC_PATH,
+                sorted(REQUIRED_DEV_SEED_CICD_FRAGMENTS),
+                "ci-cd.md must describe runtime seed visibility coverage",
             ),
         ]
         if detail is not None
@@ -2157,6 +2337,13 @@ def test_docs_req_ops_018_platform_installer_asset_validates_prerelease(
 def test_docs_req_ops_025_release_quickstart_verification_stays_wired() -> None:
     """REQ-OPS-025: published release quick-start verification stays wired."""
     details = _collect_release_quickstart_verification_details()
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required() -> None:
+    """REQ-OPS-030: pre-merge release quickstart CI stays required."""
+    details = _collect_release_quickstart_verify_ci_details()
     if details:
         raise AssertionError("; ".join(details))
 
@@ -3053,7 +3240,7 @@ def test_docs_req_ops_027_lockfile_installs_are_strict() -> None:
         raise AssertionError("; ".join(details))
 
 
-def test_docs_req_ops_029_github_actions_are_sha_pinned_and_updatable() -> None:
+def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
     """REQ-OPS-029: workflow actions must pin immutable SHAs and stay updatable."""
     workflow_paths = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
     dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
@@ -3910,6 +4097,64 @@ def _load_release_quickstart_verify_state() -> tuple[
     )
 
 
+def _load_release_quickstart_verify_ci_state() -> tuple[
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+    dict[object, object],
+]:
+    workflow = _load_yaml_base_mapping(RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_PATH)
+    permissions = _require_mapping(
+        workflow.get("permissions"),
+        message="release-quickstart-verify-ci.yml must define top-level permissions",
+    )
+    on_block = _require_mapping(
+        workflow.get("on", {}),
+        message="release-quickstart-verify-ci.yml must define an on mapping",
+    )
+    jobs = _require_mapping(
+        workflow.get("jobs", {}),
+        message="release-quickstart-verify-ci.yml must define jobs",
+    )
+    build_images_job = _require_mapping(
+        jobs.get("build-images"),
+        message="release-quickstart-verify-ci.yml must define jobs.build-images",
+    )
+    build_cli_assets_job = _require_mapping(
+        jobs.get("build-cli-assets"),
+        message="release-quickstart-verify-ci.yml must define jobs.build-cli-assets",
+    )
+    verify_cli_job = _require_mapping(
+        jobs.get("verify-cli-quickstart"),
+        message=(
+            "release-quickstart-verify-ci.yml must define jobs.verify-cli-quickstart"
+        ),
+    )
+    verify_container_job = _require_mapping(
+        jobs.get("verify-container-quickstart"),
+        message=(
+            "release-quickstart-verify-ci.yml must define "
+            "jobs.verify-container-quickstart"
+        ),
+    )
+    required_check_job = _require_mapping(
+        jobs.get("required-check"),
+        message="release-quickstart-verify-ci.yml must define jobs.required-check",
+    )
+    return (
+        permissions,
+        on_block,
+        build_images_job,
+        build_cli_assets_job,
+        verify_cli_job,
+        verify_container_job,
+        required_check_job,
+    )
+
+
 def _load_release_publish_verify_quickstart_job() -> tuple[
     dict[object, object],
     list[object],
@@ -4062,6 +4307,157 @@ def _collect_release_quickstart_verification_details() -> list[str]:
         ),
     )
     return [message for condition, message in detail_candidates if condition]
+
+
+def _collect_release_quickstart_verify_ci_details() -> list[str]:
+    workflow_text = _read_required_text(
+        RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_PATH,
+        (
+            "release-quickstart-verify-ci.yml is missing at {path}; "
+            "required by REQ-OPS-030."
+        ),
+    )
+    workflow = _load_yaml_base_mapping(RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_PATH)
+    (
+        permissions,
+        on_block,
+        build_images_job,
+        build_cli_assets_job,
+        verify_cli_job,
+        verify_container_job,
+        required_check_job,
+    ) = _load_release_quickstart_verify_ci_state()
+
+    build_images_with = _require_mapping(
+        build_images_job.get("with", {}),
+        message=(
+            "release-quickstart-verify-ci.yml jobs.build-images.with must be a mapping"
+        ),
+    )
+    required_check_needs = required_check_job.get("needs")
+    missing_workflow_fragments = _missing_required_fragments(
+        workflow_text,
+        REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_FRAGMENTS,
+    )
+    missing_ci_cd_fragments = _missing_required_fragments(
+        CI_CD_SPEC_PATH.read_text(encoding="utf-8"),
+        REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_DOC_FRAGMENTS,
+    )
+
+    details: list[str] = []
+    for event_name in ("push", "pull_request", "merge_group"):
+        details.extend(
+            _collect_required_status_check_event_details(
+                workflow,
+                workflow_text="release-quickstart-verify-ci.yml",
+                on_block=on_block,
+                event_name=event_name,
+            ),
+        )
+
+    detail_candidates = (
+        (
+            str(permissions.get("contents")) != "read",
+            "release-quickstart-verify-ci.yml permissions must allow contents: read",
+        ),
+        (
+            str(build_images_job.get("uses", "")).strip()
+            != "./.github/workflows/docker-images.yml",
+            (
+                "release-quickstart-verify-ci.yml build-images job "
+                "must reuse docker-images.yml"
+            ),
+        ),
+        (
+            build_images_with.get("export_artifacts") is not True,
+            "release-quickstart-verify-ci.yml build-images job must export artifacts",
+        ),
+        (
+            str(build_images_with.get("artifact_name")) != "release-quickstart-images",
+            (
+                "release-quickstart-verify-ci.yml build-images job must "
+                "publish the release-quickstart-images artifact"
+            ),
+        ),
+        (
+            str(build_images_with.get("backend_local_tag"))
+            != "ghcr.io/${{ github.repository }}/backend:ci-quickstart",
+            (
+                "release-quickstart-verify-ci.yml build-images job "
+                "must tag backend:ci-quickstart"
+            ),
+        ),
+        (
+            str(build_images_with.get("frontend_local_tag"))
+            != "ghcr.io/${{ github.repository }}/frontend:ci-quickstart",
+            (
+                "release-quickstart-verify-ci.yml build-images job "
+                "must tag frontend:ci-quickstart"
+            ),
+        ),
+        (
+            str(build_cli_assets_job.get("runs-on")) != "ubuntu-24.04",
+            (
+                "release-quickstart-verify-ci.yml build-cli-assets job "
+                "must run on ubuntu-24.04"
+            ),
+        ),
+        (
+            str(verify_cli_job.get("runs-on")) != "ubuntu-24.04",
+            (
+                "release-quickstart-verify-ci.yml verify-cli-quickstart job "
+                "must run on ubuntu-24.04"
+            ),
+        ),
+        (
+            str(verify_container_job.get("runs-on")) != "ubuntu-24.04",
+            (
+                "release-quickstart-verify-ci.yml "
+                "verify-container-quickstart job must run on ubuntu-24.04"
+            ),
+        ),
+        (
+            required_check_job.get("name") != "Release Quickstart Verify CI",
+            (
+                "release-quickstart-verify-ci.yml required-check job "
+                "name must be Release Quickstart Verify CI"
+            ),
+        ),
+        (
+            required_check_job.get("if") != "${{ always() }}",
+            (
+                "release-quickstart-verify-ci.yml required-check job "
+                "must use if: ${{ always() }}"
+            ),
+        ),
+        (
+            not isinstance(required_check_needs, list)
+            or set(required_check_needs)
+            != {
+                "build-images",
+                "build-cli-assets",
+                "verify-cli-quickstart",
+                "verify-container-quickstart",
+            },
+            (
+                "release-quickstart-verify-ci.yml required-check job "
+                "must depend on build-images, build-cli-assets, "
+                "verify-cli-quickstart, and verify-container-quickstart"
+            ),
+        ),
+        (
+            bool(missing_workflow_fragments),
+            "release-quickstart-verify-ci workflow missing fragments: "
+            + ", ".join(missing_workflow_fragments),
+        ),
+        (
+            bool(missing_ci_cd_fragments),
+            "ci-cd guide missing release quick-start CI fragments: "
+            + ", ".join(missing_ci_cd_fragments),
+        ),
+    )
+    details.extend(message for condition, message in detail_candidates if condition)
+    return details
 
 
 def _assert_release_quick_start_smoke(

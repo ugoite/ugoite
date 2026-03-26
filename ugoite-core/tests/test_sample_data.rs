@@ -3,7 +3,7 @@ mod common;
 use _ugoite_core::entry;
 use _ugoite_core::sample_data::{
     create_sample_space, create_sample_space_job, get_sample_space_job, list_sample_scenarios,
-    SampleDataOptions, SampleJobStatus,
+    SampleDataJob, SampleDataOptions, SampleJobStatus,
 };
 use common::setup_operator;
 use tempfile::TempDir;
@@ -110,6 +110,49 @@ async fn test_sample_data_req_api_010_job_lifecycle() -> anyhow::Result<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+/// REQ-API-010
+#[tokio::test]
+async fn test_sample_data_req_api_010_job_status_retries_transient_eof() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let job_id = Uuid::new_v4().to_string();
+    let path = format!("sample_jobs/{job_id}.json");
+    op.create_dir("sample_jobs/").await?;
+    op.write(&path, Vec::<u8>::new()).await?;
+
+    let delayed_job = SampleDataJob {
+        job_id: job_id.clone(),
+        space_id: unique_space_id("sample-job-race"),
+        scenario: "renewable-ops".to_string(),
+        entry_count: 6,
+        seed: Some(2),
+        status: SampleJobStatus::Queued,
+        status_message: Some("Queued".to_string()),
+        processed_entries: 0,
+        total_entries: 6,
+        started_at: None,
+        completed_at: None,
+        error: None,
+        summary: None,
+    };
+    let delayed_job_bytes = serde_json::to_vec_pretty(&delayed_job)?;
+    let delayed_op = op.clone();
+    let delayed_path = path.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(20)).await;
+        delayed_op
+            .write(&delayed_path, delayed_job_bytes)
+            .await
+            .expect("write delayed sample job");
+    });
+
+    let loaded = get_sample_space_job(&op, &job_id).await?;
+    assert_eq!(loaded.job_id, job_id);
+    assert_eq!(loaded.status, SampleJobStatus::Queued);
+    assert_eq!(loaded.total_entries, 6);
 
     Ok(())
 }

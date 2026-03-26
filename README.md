@@ -171,7 +171,9 @@ The seed task wraps the existing Rust CLI sample-data command, keeps builds in
 the shared `target/rust` cache, and refuses to overwrite an existing local
 space, so repeated runs stay predictable. It also prints a terminal progress
 bar while entries are generated and verifies `./spaces/<space-id>` exists
-before returning success.
+before returning success. When `UGOITE_ROOT` is already set for the local dev
+stack, the seed task reuses that same root automatically so `mise run seed`
+and `mise run dev` keep pointing at the same local storage tree.
 
 Confirm the default dataset after a run:
 
@@ -270,8 +272,10 @@ docker compose -f docker-compose.release.yaml up -d
 ```
 
 Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
-and you will land on `/spaces`. For more background on the explicit browser
-login flow, see [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
+and you will land on `/spaces`. The shipped compose file bootstraps the `default` space
+at startup so the first browser and CLI session both have a ready workspace.
+For more background on the explicit browser login flow, see
+[Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
 The compose file pulls the canonical release image names used by
 `docker-compose.release.yaml`:

@@ -68,6 +68,10 @@ single username + 2FA prompt sequence before the backend and frontend start.
 The helper waits for `http://localhost:8000/health` before the frontend dev
 server starts, so `/api/*` requests do not race the backend startup.
 
+Unless you already exported `UGOITE_ROOT`, the helper also exports
+`UGOITE_ROOT=<repo root>` so the dev backend reads the same `./spaces` tree
+that `mise run seed` targets by default.
+
 On the first run (or after `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`), the
 terminal prompts for:
 

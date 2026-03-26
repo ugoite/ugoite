@@ -49,11 +49,15 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                 .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
 
             let result = if mock_oauth {
-                http::http_post(&format!("{base}/auth/mock-oauth"), &serde_json::json!({})).await?
+                http::http_post_with_dev_auth_proxy(
+                    &format!("{base}/auth/mock-oauth"),
+                    &serde_json::json!({}),
+                )
+                .await?
             } else {
                 let resolved_username = prompt_non_empty_value("Username", username)?;
                 let resolved_totp_code = prompt_totp_code(totp_code)?;
-                http::http_post(
+                http::http_post_with_dev_auth_proxy(
                     &format!("{base}/auth/login"),
                     &serde_json::json!({
                         "username": resolved_username,

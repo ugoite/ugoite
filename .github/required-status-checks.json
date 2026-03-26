@@ -43,8 +43,20 @@
       "events": ["push", "pull_request", "merge_group"]
     },
     {
+      "context": "Pre-commit CI",
+      "workflow": ".github/workflows/pre-commit-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
       "context": "Python CI",
       "workflow": ".github/workflows/python-ci.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
+      "context": "Release Quickstart Verify CI",
+      "workflow": ".github/workflows/release-quickstart-verify-ci.yml",
       "job_id": "required-check",
       "events": ["push", "pull_request", "merge_group"]
     },

@@ -129,6 +129,7 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
             "123456",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
         .output()
         .expect("failed to execute");
     assert!(output.status.success());
@@ -137,6 +138,9 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     handle.join().unwrap();
 
     assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret"));
     assert!(request_text.contains(r#""username":"dev-alice""#));
     assert!(request_text.contains(r#""totp_code":"123456""#));
 
