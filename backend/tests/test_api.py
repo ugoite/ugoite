@@ -1,5 +1,6 @@
 """API tests."""
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -160,7 +161,56 @@ def test_list_spaces(
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 2
+    # admin-space is bootstrapped for the test user (conftest), so 3 total
+    space_ids = [s["id"] for s in data]
+    assert "ws1" in space_ids
+    assert "ws2" in space_ids
+    assert ugoite_core.admin_space_id() in space_ids
+
+
+def test_list_spaces_req_api_001_admin_sees_admin_space(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: active admin members can see admin-space in /spaces."""
+    response = test_client.get("/spaces")
+    assert response.status_code == 200
+    space_ids = [s["id"] for s in response.json()]
+    assert ugoite_core.admin_space_id() in space_ids
+
+
+def test_list_spaces_req_api_001_non_admin_cannot_see_admin_space(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """REQ-API-001: users without admin-space membership do not see it in /spaces."""
+    root = tmp_path / "no-admin-space-user"
+    monkeypatch.setenv("UGOITE_ROOT", str(root))
+    # Bootstrap a different user in admin-space (not "no-member-user")
+    from app.core.storage import storage_config_from_root
+
+    asyncio.run(
+        ugoite_core.ensure_admin_space(
+            storage_config_from_root(root),
+            "other-admin-user",
+        ),
+    )
+    # Authenticate as a user who is NOT a member of admin-space
+    monkeypatch.setenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", "no-member-token")
+    monkeypatch.setenv("UGOITE_BOOTSTRAP_USER_ID", "no-member-user")
+    from app.core.auth import clear_auth_manager_cache
+
+    clear_auth_manager_cache()
+
+    with TestClient(
+        app,
+        headers={"Authorization": "Bearer no-member-token"},
+    ) as client:
+        response = client.get("/spaces")
+
+    assert response.status_code == 200
+    space_ids = [s["id"] for s in response.json()]
+    assert ugoite_core.admin_space_id() not in space_ids
 
 
 def test_list_spaces_redacts_hmac_key(test_client: TestClient) -> None:
@@ -2336,11 +2386,14 @@ def test_list_spaces_skips_unauthorized_space(test_client: TestClient) -> None:
     """REQ-API-001: list spaces skips spaces the user cannot access."""
     test_client.post("/spaces", json={"name": "visible-ws"})
     test_client.post("/spaces", json={"name": "hidden-ws"})
-    call_count = {"n": 0}
 
-    async def _require_side_effect(*args: object, **kwargs: object) -> None:
-        call_count["n"] += 1
-        if call_count["n"] == 2:
+    async def _require_side_effect(
+        _config: object,
+        space_id: str,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        if space_id == "hidden-ws":
             err_code = "forbidden"
             raise ugoite_core.AuthorizationError(err_code, "no access", "space_list")
 
@@ -2350,7 +2403,9 @@ def test_list_spaces_skips_unauthorized_space(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces")
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    space_ids = [s["id"] for s in response.json()]
+    assert "visible-ws" in space_ids
+    assert "hidden-ws" not in space_ids
 
 
 def test_create_space_generic_runtime_error(test_client: TestClient) -> None:
