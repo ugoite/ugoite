@@ -66,7 +66,7 @@ app.mount("/mcp", mcp.sse_app())
 
 # Allow CORS for frontend development
 app.add_middleware(
-    CORSMiddleware,  # type: ignore[arg-type]
+    CORSMiddleware,  # type: ignore[invalid-argument-type]
     # ALLOW_ORIGIN (comma-separated) or fallback to localhost:3000 in development
     allow_origins=(os.environ.get("ALLOW_ORIGIN") or "http://localhost:3000").split(
         ",",

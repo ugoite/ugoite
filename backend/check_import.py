@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    import ugoite.utils  # type: ignore[import]
+    import ugoite.utils  # type: ignore[unresolved-import]
 
     logger.info("ugoite.utils found: %s", ugoite.utils)
     logger.info("resolve_existing_path: %s", ugoite.utils.resolve_existing_path)
