@@ -177,8 +177,6 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for space_id in space_ids:
-        if space_id == ugoite_core.admin_space_id():
-            continue
         try:
             await ugoite_core.require_space_action(
                 storage_config,
