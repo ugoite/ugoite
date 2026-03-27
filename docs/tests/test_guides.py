@@ -728,7 +728,7 @@ REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
     "path-based (`./.github/workflows/...`)",
     '`package-ecosystem: "github-actions"` at `/`',
 }
-REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-029)"
+REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-031)"
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_ROOT",
@@ -3241,7 +3241,7 @@ def test_docs_req_ops_027_lockfile_installs_are_strict() -> None:
 
 
 def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
-    """REQ-OPS-029: workflow actions must pin immutable SHAs and stay updatable."""
+    """REQ-OPS-031: workflow actions must pin immutable SHAs and stay updatable."""
     workflow_paths = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
     dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
@@ -3277,7 +3277,7 @@ def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
             "github-actions ecosystem at `/`",
         )
     if REQUIRED_GITHUB_ACTION_PIN_STEP_NAME not in ci_steps:
-        details.append("yaml-workflow-ci must validate REQ-OPS-029")
+        details.append("yaml-workflow-ci must validate REQ-OPS-031")
     if missing_doc_fragments:
         details.append(
             "ci-cd guide missing GitHub Action pinning fragments: "
