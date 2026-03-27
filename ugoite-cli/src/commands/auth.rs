@@ -86,7 +86,11 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                 eprintln!(
                     "# To apply: eval \"$(ugoite auth login{})\"\
                      \n# Or copy the export line above into your shell.",
-                    if mock_oauth { " --mock-oauth" } else { " --username USER --totp-code CODE" }
+                    if mock_oauth {
+                        " --mock-oauth"
+                    } else {
+                        " --username USER --totp-code CODE"
+                    }
                 );
             }
         }

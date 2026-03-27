@@ -133,7 +133,12 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
 
     let (_base, _requests, _handle) =
         spawn_recording_server("HTTP/1.1 200 OK", r#"{"bearer_token":"core-mode-token"}"#);
-    write_endpoint_config(&config_path, "core", "http://localhost:8000", "http://localhost:3000/api");
+    write_endpoint_config(
+        &config_path,
+        "core",
+        "http://localhost:8000",
+        "http://localhost:3000/api",
+    );
     let core_mode_login = cli_command(&config_path)
         .args([
             "auth",
@@ -155,8 +160,10 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         "core mode error should mention mode requirement"
     );
 
-    let (base, requests, handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"{"bearer_token":"backend-mode-token"}"#);
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"backend-mode-token"}"#,
+    );
     write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
     let backend_mode_login = cli_command(&config_path)
         .args([
@@ -294,6 +301,15 @@ fn test_cli_req_ops_006_auth_profile_token_clear_and_overview() {
     let clear_stdout = String::from_utf8_lossy(&token_clear_output.stdout);
     assert!(clear_stdout.contains("unset UGOITE_AUTH_BEARER_TOKEN"));
     assert!(clear_stdout.contains("unset UGOITE_AUTH_API_KEY"));
+
+    let logout_output = cli_command(&config_path)
+        .args(["auth", "logout"])
+        .output()
+        .expect("auth logout");
+    assert_success(&logout_output, "auth logout");
+    let logout_stdout = String::from_utf8_lossy(&logout_output.stdout);
+    assert!(logout_stdout.contains("unset UGOITE_AUTH_BEARER_TOKEN"));
+    assert!(logout_stdout.contains("unset UGOITE_AUTH_API_KEY"));
 
     let overview_output = cli_command(&config_path)
         .args(["auth", "overview"])
