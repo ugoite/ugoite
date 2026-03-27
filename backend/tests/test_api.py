@@ -6,19 +6,34 @@ import hashlib
 import hmac
 import io
 import json
-from collections.abc import AsyncIterator
+import json as _json
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
+from typing import Any
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 import ugoite_core
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
+from app.api.endpoints.search import _is_sql_error
+from app.api.endpoints.space import (
+    _sanitize_space_meta,
+    _validate_entry_markdown_against_form,
+)
 from app.core.auth import clear_auth_manager_cache
+from app.core.middleware import (
+    _AuditRequestEvent,
+    _capture_response_body,
+    _emit_audit_event,
+    security_middleware,
+)
 from app.core.security import build_response_signature
-from app.core.storage import storage_config_from_root
+from app.core.storage import _ensure_local_root, storage_config_from_root
 from app.main import app
+from app.mcp.server import _context_headers, list_entries
 
 
 def _create_form(
@@ -187,7 +202,6 @@ def test_list_spaces_req_api_001_non_admin_cannot_see_admin_space(
     root = tmp_path / "no-admin-space-user"
     monkeypatch.setenv("UGOITE_ROOT", str(root))
     # Bootstrap a different user in admin-space (not "no-member-user")
-    from app.core.storage import storage_config_from_root
 
     asyncio.run(
         ugoite_core.ensure_admin_space(
@@ -198,7 +212,6 @@ def test_list_spaces_req_api_001_non_admin_cannot_see_admin_space(
     # Authenticate as a user who is NOT a member of admin-space
     monkeypatch.setenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", "no-member-token")
     monkeypatch.setenv("UGOITE_BOOTSTRAP_USER_ID", "no-member-user")
-    from app.core.auth import clear_auth_manager_cache
 
     clear_auth_manager_cache()
 
@@ -1350,29 +1363,6 @@ def test_update_form_with_migration(
     content = entry_data["content"]
     assert "## priority" in content
     assert "High" in content
-
-
-import asyncio
-import json as _json
-from collections.abc import AsyncGenerator
-from typing import Any
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
-
-from starlette.responses import Response
-
-from app.api.endpoints.search import _is_sql_error
-from app.api.endpoints.space import (
-    _sanitize_space_meta,
-    _validate_entry_markdown_against_form,
-)
-from app.core.middleware import (
-    _AuditRequestEvent,
-    _capture_response_body,
-    _emit_audit_event,
-    security_middleware,
-)
-from app.core.storage import _ensure_local_root
-from app.mcp.server import _context_headers, list_entries
 
 
 def _amock(**kwargs: Any) -> AsyncMock:
