@@ -2178,17 +2178,13 @@ async fn bootstrap_sample_space_owner(
         .as_object_mut()
         .ok_or_else(|| anyhow!("Invalid settings.json format"))?;
 
-    let members = settings_obj
-        .entry("members")
-        .or_insert_with(|| json!({}));
+    let members = settings_obj.entry("members").or_insert_with(|| json!({}));
     members
         .as_object_mut()
         .ok_or_else(|| anyhow!("Invalid members format in settings.json"))?
         .insert(owner_user_id.to_string(), member);
 
-    let version = settings_obj
-        .entry("membership_version")
-        .or_insert(json!(0));
+    let version = settings_obj.entry("membership_version").or_insert(json!(0));
     if let Some(v) = version.as_i64() {
         *version = json!(v + 1);
     }
@@ -2208,7 +2204,11 @@ async fn create_sample_space_with_progress(
     progress.report(0, "Creating space").await?;
     space::create_space(op, &options.space_id, root_uri).await?;
 
-    if let Some(owner) = options.owner_user_id.as_deref().filter(|s| !s.trim().is_empty()) {
+    if let Some(owner) = options
+        .owner_user_id
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
         bootstrap_sample_space_owner(op, &options.space_id, owner).await?;
     }
 
