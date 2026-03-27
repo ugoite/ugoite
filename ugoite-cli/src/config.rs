@@ -199,10 +199,7 @@ pub fn print_list_table(header: &str, items: &[impl std::fmt::Display]) {
 
 /// Print a list of JSON objects as a table, selecting the given columns.
 /// Columns is a slice of `(header, json_key)` pairs.
-pub fn print_json_table(
-    rows: &[serde_json::Value],
-    columns: &[(&str, &str)],
-) {
+pub fn print_json_table(rows: &[serde_json::Value], columns: &[(&str, &str)]) {
     let mut widths: Vec<usize> = columns.iter().map(|(h, _)| h.len()).collect();
     let cell_matrix: Vec<Vec<String>> = rows
         .iter()
