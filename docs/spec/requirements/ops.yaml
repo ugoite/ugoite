@@ -1227,3 +1227,40 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-031
+  title: Immutable GitHub Action Pinning
+  description: 'External GitHub Actions referenced from `.github/workflows/*.yml`
+
+    MUST pin full commit SHAs instead of floating tags or branches. Local reusable
+
+    workflows MAY remain path-based, and root `.github/dependabot.yml` MUST keep
+
+    `package-ecosystem: "github-actions"` coverage so SHA-pinned actions stay
+
+    automatically updatable.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable

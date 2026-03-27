@@ -22,13 +22,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout source
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           path: scancode-inputs
           persist-credentials: false
 
       - name: Restore ScanCode caches
-        uses: actions/cache@v5
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5
         with:
           path: |
             ~/.cache/pip
@@ -39,7 +39,7 @@ jobs:
             ${{ runner.os }}-scancode-
 
       - name: Run ScanCode pipelines
-        uses: aboutcode-org/scancode-action@beta
+        uses: aboutcode-org/scancode-action@e46d127dfbe502ad2699fbbba8efedad1b2adbd1 # beta
         with:
           project-name: "ugoite"
           inputs-path: "scancode-inputs"
