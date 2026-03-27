@@ -131,9 +131,9 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         Some("http://backend.example.test")
     );
 
-    let (base, requests, handle) =
+    let (_base, _requests, _handle) =
         spawn_recording_server("HTTP/1.1 200 OK", r#"{"bearer_token":"core-mode-token"}"#);
-    write_endpoint_config(&config_path, "core", &base, &format!("{base}/api"));
+    write_endpoint_config(&config_path, "core", "http://localhost:8000", "http://localhost:3000/api");
     let core_mode_login = cli_command(&config_path)
         .args([
             "auth",
@@ -145,14 +145,38 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         ])
         .output()
         .expect("core mode auth login");
-    assert_success(&core_mode_login, "core mode auth login");
+    assert!(
+        !core_mode_login.status.success(),
+        "core mode auth login should fail with actionable error"
+    );
+    assert!(
+        String::from_utf8_lossy(&core_mode_login.stderr)
+            .contains("auth login requires backend or api mode"),
+        "core mode error should mention mode requirement"
+    );
+
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"bearer_token":"backend-mode-token"}"#);
+    write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
+    let backend_mode_login = cli_command(&config_path)
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "alice",
+            "--totp-code",
+            "123456",
+        ])
+        .output()
+        .expect("backend mode auth login");
+    assert_success(&backend_mode_login, "backend mode auth login");
     let core_mode_request = requests
         .recv_timeout(Duration::from_secs(5))
         .expect("core mode request");
     handle.join().expect("join core mode server");
     assert!(core_mode_request.starts_with("POST /auth/login HTTP/1.1"));
-    assert!(String::from_utf8_lossy(&core_mode_login.stdout)
-        .contains("export UGOITE_AUTH_BEARER_TOKEN=core-mode-token"));
+    assert!(String::from_utf8_lossy(&backend_mode_login.stdout)
+        .contains("export UGOITE_AUTH_BEARER_TOKEN=backend-mode-token"));
 
     write_endpoint_config(
         &config_path,
