@@ -31,7 +31,8 @@ enum Commands {
     Index(commands::index::IndexCmd),
     /// Link management commands (deprecated: use row_reference fields)
     Link(commands::link::LinkCmd),
-    /// Create a new space
+    /// Create a new space (deprecated: use `space create` instead)
+    #[command(hide = true)]
     CreateSpace {
         #[arg(long = "root", value_name = "LOCAL_ROOT")]
         root_path: Option<String>,

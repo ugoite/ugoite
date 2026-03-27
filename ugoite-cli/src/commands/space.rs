@@ -12,6 +12,13 @@ pub struct SpaceCmd {
 
 #[derive(Subcommand)]
 pub enum SpaceSubCmd {
+    /// Create a new space
+    Create {
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+        #[arg(value_name = "SPACE_ID")]
+        space_id: String,
+    },
     /// List spaces
     List {
         #[arg(long = "root", value_name = "LOCAL_ROOT")]
@@ -135,6 +142,12 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
 pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
+        SpaceSubCmd::Create {
+            root_path,
+            space_id,
+        } => {
+            create_space_cmd(root_path.as_deref(), &space_id).await?;
+        }
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces")).await?;
