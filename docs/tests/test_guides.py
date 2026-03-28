@@ -4601,8 +4601,14 @@ def _fake_quick_start_cli_script() -> str:
           exit 0
         fi
 
-        if [ "${1:-}" = "create-space" ]; then
-          shift
+        if \
+          { [ "${1:-}" = "space" ] && [ "${2:-}" = "create" ]; } || \
+          [ "${1:-}" = "create-space" ]; then
+          if [ "${1:-}" = "space" ]; then
+            shift 2
+          else
+            shift
+          fi
           root=""
           space_id=""
           while [ "$#" -gt 0 ]; do

@@ -31,8 +31,10 @@ enum Commands {
     Index(commands::index::IndexCmd),
     /// Link management commands (deprecated: use row_reference fields)
     Link(commands::link::LinkCmd),
+    /// Create a new space (deprecated: use `space create` instead)
     /// Create a new space
     #[command(
+        hide = true,
         long_about = "Create a new space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite create-space my-space --root /root/spaces\n\n  # Using UGOITE_ROOT env var\n  ugoite create-space my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space my-space"
     )]
     CreateSpace {
@@ -109,7 +111,9 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::CreateSpace {
             root_path,
             space_id,
-        } => commands::space::create_space_cmd(root_path.as_deref(), &space_id).await,
+        } => {
+            commands::space::create_space_cmd(root_path.as_deref(), &space_id, "create-space").await
+        }
         Commands::Query {
             space_path,
             sql,
