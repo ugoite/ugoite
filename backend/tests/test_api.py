@@ -1603,12 +1603,15 @@ def test_list_entries_mcp_req_api_012_rejects_invalid_space_id(
     ctx.request_context.request = request
 
     async def _run() -> None:
-        with patch(
-            "app.mcp.server.storage_config_from_root",
-        ) as mock_storage, patch(
-            "app.mcp.server.authenticate_headers_for_space",
-            _amock(return_value=MagicMock()),
-        ) as mock_auth:
+        with (
+            patch(
+                "app.mcp.server.storage_config_from_root",
+            ) as mock_storage,
+            patch(
+                "app.mcp.server.authenticate_headers_for_space",
+                _amock(return_value=MagicMock()),
+            ) as mock_auth,
+        ):
             with pytest.raises(ValueError, match=r"Invalid space_id"):
                 await list_entries(space_id, ctx)
             mock_storage.assert_not_called()
