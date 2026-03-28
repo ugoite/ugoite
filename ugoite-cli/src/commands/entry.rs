@@ -14,7 +14,9 @@ pub struct EntryCmd {
 #[derive(Subcommand)]
 pub enum EntrySubCmd {
     /// List entries in a space
-    #[command(long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (requires config set --mode backend first)\n  ugoite entry list my-space")]
+    #[command(
+        long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (requires config set --mode backend first)\n  ugoite entry list my-space"
+    )]
     List {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
@@ -23,29 +25,48 @@ pub enum EntrySubCmd {
         space_path: String,
     },
     /// Get an entry by ID
-    #[command(long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode\n  ugoite entry get my-space my-entry-id")]
+    #[command(
+        long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode\n  ugoite entry get my-space my-entry-id"
+    )]
     Get {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
-        #[arg(value_name = "ENTRY_ID", help = "Entry slug/ID (e.g. 'my-note', 'task-01')")]
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
     },
     /// Create an entry
-    #[command(long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string.\n\nExamples:\n  # Core mode - create a note\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # With custom author\n  ugoite entry create my-space my-note --content '# Note' --author alice")]
+    #[command(
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string.\n\nExamples:\n  # Core mode - create a note\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # With custom author\n  ugoite entry create my-space my-note --content '# Note' --author alice"
+    )]
     Create {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
-        #[arg(value_name = "ENTRY_ID", help = "Entry slug/ID (e.g. 'my-note', 'task-01')")]
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
-        #[arg(long, default_value = "# New Entry\n", allow_hyphen_values = true, help = "Entry content as a Markdown string (supports frontmatter for form/tags)")]
+        #[arg(
+            long,
+            default_value = "# New Entry\n",
+            allow_hyphen_values = true,
+            help = "Entry content as a Markdown string (supports frontmatter for form/tags)"
+        )]
         content: String,
-        #[arg(long, default_value = "cli", help = "Author name to record in the revision history")]
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history"
+        )]
         author: String,
     },
     /// Update an entry
