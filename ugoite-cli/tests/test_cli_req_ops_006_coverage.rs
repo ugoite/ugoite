@@ -1537,3 +1537,185 @@ fn test_cli_req_ops_006_sql_local_and_remote_paths() {
         remote_saved_delete_request.starts_with("DELETE /spaces/remote-space/sql/sql-1 HTTP/1.1")
     );
 }
+
+/// REQ-OPS-006: --format/-o table flag must produce table output for entry list (local and HTTP).
+#[test]
+fn test_cli_req_ops_006_entry_list_format_table_local() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_root, config_path, space_path) = setup_space_with_form(&dir, "entry-fmt-local");
+    create_entry(
+        &config_path,
+        &space_path,
+        "fmt-entry-1",
+        "---\nform: Entry\n---\n# Format Entry\n\n## Body\n\nBody text.",
+    );
+
+    // local mode: -o table → print_json_table path (entry.rs lines 132-141)
+    let table_output = cli_command(&config_path)
+        .args(["entry", "list", "-o", "table", &space_path])
+        .output()
+        .expect("entry list -o table local");
+    assert_success(&table_output, "entry list -o table local");
+    let stdout = String::from_utf8_lossy(&table_output.stdout);
+    assert!(stdout.contains("ID"), "expected ID header in table output");
+
+    // local mode: --format json → print_json path (entry.rs else branch, and config.rs line 176/179)
+    let json_output = cli_command(&config_path)
+        .args(["entry", "list", "--format", "json", &space_path])
+        .output()
+        .expect("entry list --format json local");
+    assert_success(&json_output, "entry list --format json local");
+    let json_val: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("json stdout");
+    assert!(
+        json_val.as_array().is_some(),
+        "expected JSON array for --format json"
+    );
+}
+
+/// REQ-OPS-006: --format/-o table flag must produce table output for entry list via HTTP.
+#[test]
+fn test_cli_req_ops_006_entry_list_format_table_http() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let remote_config_path = dir.path().join("remote-entry-fmt-config.json");
+
+    // HTTP mode: -o table with array response → print_json_table path (entry.rs lines 120-123)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"[{"id":"e-1","title":"Alpha"}]"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let table_output = cli_command(&remote_config_path)
+        .args(["entry", "list", "-o", "table", "remote-space"])
+        .output()
+        .expect("entry list -o table http");
+    assert_success(&table_output, "entry list -o table http");
+    let req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("entry list table request");
+    handle.join().expect("join entry list table server");
+    assert!(req.starts_with("GET /spaces/remote-space/entries HTTP/1.1"));
+    let stdout = String::from_utf8_lossy(&table_output.stdout);
+    assert!(
+        stdout.contains("ID"),
+        "expected ID header in HTTP table output"
+    );
+
+    // HTTP mode: explicit --format json → print_json path (entry.rs skips table branch)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"[{"id":"e-1","title":"Alpha"}]"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let json_output = cli_command(&remote_config_path)
+        .args(["entry", "list", "--format", "json", "remote-space"])
+        .output()
+        .expect("entry list --format json http");
+    assert_success(&json_output, "entry list --format json http");
+    let _req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("entry list json http request");
+    handle.join().expect("join entry list json http server");
+    let json_val: serde_json::Value =
+        serde_json::from_slice(&json_output.stdout).expect("json stdout http");
+    assert!(json_val.as_array().is_some(), "expected JSON array");
+
+    // HTTP mode: -o table with non-array response → fall back to print_json (entry.rs line 123)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"message":"not-an-array"}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let fallback_output = cli_command(&remote_config_path)
+        .args(["entry", "list", "-o", "table", "remote-space"])
+        .output()
+        .expect("entry list -o table http non-array");
+    assert_success(&fallback_output, "entry list -o table http non-array");
+    let _req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("entry list table http non-array request");
+    handle
+        .join()
+        .expect("join entry list table http non-array server");
+    let fallback_json: serde_json::Value =
+        serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout http");
+    assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
+}
+
+/// REQ-OPS-006: --format/-o table flag must produce table output for space list (local and HTTP).
+#[test]
+fn test_cli_req_ops_006_space_list_format_table() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (root, config_path, _space_path) = setup_space(&dir, "space-fmt-local");
+
+    // local mode: -o table → print_list_table path (space.rs line 161)
+    let table_output = cli_command(&config_path)
+        .args(["space", "list", "-o", "table", "--root", &root])
+        .output()
+        .expect("space list -o table local");
+    assert_success(&table_output, "space list -o table local");
+    let stdout = String::from_utf8_lossy(&table_output.stdout);
+    assert!(
+        stdout.contains("SPACE_ID"),
+        "expected SPACE_ID header in table output"
+    );
+
+    // HTTP mode: -o table with array response → print_json_table path (space.rs lines 149-152)
+    let remote_config_path = dir.path().join("remote-space-fmt-config.json");
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"[{"id":"s-1","name":"Space One"}]"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let http_table_output = cli_command(&remote_config_path)
+        .args(["space", "list", "-o", "table"])
+        .output()
+        .expect("space list -o table http");
+    assert_success(&http_table_output, "space list -o table http");
+    let req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("space list table http request");
+    handle.join().expect("join space list table http server");
+    assert!(req.starts_with("GET /spaces HTTP/1.1"));
+    let http_stdout = String::from_utf8_lossy(&http_table_output.stdout);
+    assert!(
+        http_stdout.contains("ID"),
+        "expected ID header in HTTP space table output"
+    );
+
+    // HTTP mode: -o table with non-array response → fall back to print_json (space.rs line 152)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"message":"not-an-array"}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let fallback_output = cli_command(&remote_config_path)
+        .args(["space", "list", "-o", "table"])
+        .output()
+        .expect("space list -o table http non-array");
+    assert_success(&fallback_output, "space list -o table http non-array");
+    let _req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("space list table http non-array request");
+    handle
+        .join()
+        .expect("join space list table http non-array server");
+    let fallback_json: serde_json::Value =
+        serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout");
+    assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
+}
