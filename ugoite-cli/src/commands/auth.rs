@@ -59,8 +59,7 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                      Run: ugoite config set --mode backend --backend-url http://localhost:8000"
                 ));
             }
-            let base = base_url(&config)
-                .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
+            let base = base_url(&config).expect("backend/api mode always has a base URL");
 
             let result = if mock_oauth {
                 http::http_post_with_dev_auth_proxy(
