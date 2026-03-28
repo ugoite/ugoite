@@ -357,19 +357,36 @@ fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
     let config_path = dir.path().join("config.json");
 
     let core_output = Command::new(ugoite_bin())
-        .args(["create-space", "local-space"])
+        .args(["space", "create", "local-space"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
 
     assert!(
         !core_output.status.success(),
-        "create-space should fail in core mode without --root"
+        "space create should fail in core mode without SPACE_ID_OR_PATH"
     );
     let stderr = String::from_utf8_lossy(&core_output.stderr);
     assert!(
-        stderr.contains("create-space requires --root <LOCAL_ROOT> in core mode"),
+        stderr.contains(
+            "space create requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        ),
         "{stderr}"
+    );
+
+    let legacy_output = Command::new(ugoite_bin())
+        .args(["create-space", "local-space"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !legacy_output.status.success(),
+        "create-space should still fail in core mode without --root"
+    );
+    let legacy_stderr = String::from_utf8_lossy(&legacy_output.stderr);
+    assert!(
+        legacy_stderr.contains("create-space requires --root <LOCAL_ROOT> in core mode"),
+        "{legacy_stderr}"
     );
 }
 
@@ -413,26 +430,38 @@ fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
     assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
 }
 
-/// REQ-STO-010: Entry and form help describe the shared space identifier argument.
+/// REQ-STO-010: space help describes the shared core-mode path convention with concrete examples.
 #[test]
 fn test_entry_and_form_list_req_sto_010_use_space_id_or_path_help() {
-    let entry_help = Command::new(ugoite_bin())
-        .args(["entry", "list", "--help"])
-        .output()
-        .expect("failed to execute");
-    assert!(entry_help.status.success());
-    let entry_stdout = String::from_utf8_lossy(&entry_help.stdout);
-    assert!(entry_stdout.contains("SPACE_ID_OR_PATH"), "{entry_stdout}");
-    assert!(!entry_stdout.contains("SPACE_PATH"), "{entry_stdout}");
+    for args in [
+        ["entry", "list", "--help"],
+        ["form", "list", "--help"],
+        ["asset", "list", "--help"],
+        ["index", "run", "--help"],
+        ["search", "keyword", "--help"],
+        ["space", "create", "--help"],
+        ["space", "get", "--help"],
+        ["space", "patch", "--help"],
+    ] {
+        let help = Command::new(ugoite_bin())
+            .args(args)
+            .output()
+            .expect("failed to execute");
+        assert!(help.status.success());
+        let stdout = String::from_utf8_lossy(&help.stdout);
+        assert!(stdout.contains("SPACE_ID_OR_PATH"), "{stdout}");
+        assert!(!stdout.contains("SPACE_PATH"), "{stdout}");
+        assert!(stdout.contains("/root/spaces/"), "{stdout}");
+    }
 
-    let form_help = Command::new(ugoite_bin())
-        .args(["form", "list", "--help"])
+    let list_help = Command::new(ugoite_bin())
+        .args(["space", "list", "--help"])
         .output()
         .expect("failed to execute");
-    assert!(form_help.status.success());
-    let form_stdout = String::from_utf8_lossy(&form_help.stdout);
-    assert!(form_stdout.contains("SPACE_ID_OR_PATH"), "{form_stdout}");
-    assert!(!form_stdout.contains("SPACE_PATH"), "{form_stdout}");
+    assert!(list_help.status.success());
+    let list_stdout = String::from_utf8_lossy(&list_help.stdout);
+    assert!(list_stdout.contains("ROOT_PATH"), "{list_stdout}");
+    assert!(list_stdout.contains("/root/spaces"), "{list_stdout}");
 }
 
 /// REQ-SEC-003: Service account create routes to backend when in backend mode.

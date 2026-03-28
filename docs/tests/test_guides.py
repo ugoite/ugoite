@@ -747,7 +747,7 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed:scenarios",
     "terminal progress",
     "UGOITE_ROOT",
-    "cargo run -q -p ugoite-cli -- space list --root .",
+    "cargo run -q -p ugoite-cli -- space list ./spaces",
 }
 REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
     "cargo-test-minimum",
@@ -833,7 +833,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     ),
     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
     "terminal progress",
-    "space list --root .",
+    "space list ./spaces",
     "UGOITE_ROOT",
 }
 REQUIRED_DEV_SEED_CICD_FRAGMENTS = {
