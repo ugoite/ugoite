@@ -172,10 +172,15 @@ pub enum Format {
 
 /// Return the effective format: use explicit override, or auto-detect TTY.
 pub fn effective_format(explicit: Option<Format>) -> Format {
+    effective_format_for_stdout(explicit, std::io::stdout().is_terminal())
+}
+
+#[doc(hidden)]
+pub fn effective_format_for_stdout(explicit: Option<Format>, stdout_is_terminal: bool) -> Format {
     if let Some(f) = explicit {
         return f;
     }
-    if std::io::stdout().is_terminal() {
+    if stdout_is_terminal {
         Format::Table
     } else {
         Format::Json
