@@ -213,8 +213,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let owner_user_id = owner
-                .or_else(|| std::env::var("UGOITE_DEV_USER_ID").ok().filter(|s| !s.trim().is_empty()));
+            let owner_user_id = owner.or_else(|| {
+                std::env::var("UGOITE_DEV_USER_ID")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            });
             let opts = SampleDataOptions {
                 space_id: space_id.clone(),
                 scenario: scenario.unwrap_or_default(),
@@ -242,8 +245,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let owner_user_id = owner
-                .or_else(|| std::env::var("UGOITE_DEV_USER_ID").ok().filter(|s| !s.trim().is_empty()));
+            let owner_user_id = owner.or_else(|| {
+                std::env::var("UGOITE_DEV_USER_ID")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            });
             let opts = SampleDataOptions {
                 space_id: space_id.clone(),
                 scenario: scenario.unwrap_or_default(),
