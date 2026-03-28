@@ -157,6 +157,8 @@ requirements:
       - test_sanitize_mcp_markdown_req_api_003_preserves_code_and_autolinks
       - test_sanitize_mcp_markdown_req_api_003_removes_scripts_and_comments
       - test_build_mcp_entry_list_response_req_api_003_labels_sanitized_content
+      - test_sanitize_mcp_markdown_req_api_003_handles_parser_edge_cases
+      - test_sanitize_mcp_markdown_req_api_003_handles_unclosed_backticks
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.

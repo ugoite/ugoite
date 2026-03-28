@@ -77,3 +77,31 @@ def test_build_mcp_entry_list_response_req_api_003_labels_sanitized_content() ->
             },
         ],
     }
+
+
+def test_sanitize_mcp_markdown_req_api_003_handles_parser_edge_cases() -> None:
+    """REQ-API-003: sanitizer preserves entities/code fences while stripping HTML."""
+    markdown = (
+        "  ```md\n"
+        "<b>keep fence literal</b>\n"
+        "  ```\n"
+        "Entity &amp; char &#35;.\n"
+        "<![CDATA[hidden]]>\n"
+        "<!DOCTYPE html>\n"
+        "<br />\n"
+    )
+
+    sanitized = sanitize_mcp_markdown(markdown)
+
+    assert "  ```md" in sanitized
+    assert "<b>keep fence literal</b>" in sanitized
+    assert "&amp;" in sanitized
+    assert "&#35;" in sanitized
+    assert "<![CDATA[hidden]]>" not in sanitized
+    assert "<!DOCTYPE html>" not in sanitized
+
+
+def test_sanitize_mcp_markdown_req_api_003_handles_unclosed_backticks() -> None:
+    """REQ-API-003: sanitizer falls back safely for unmatched inline or fenced code."""
+    assert sanitize_mcp_markdown("`<b>not inline</b>") == "`not inline"
+    assert sanitize_mcp_markdown("~~~html\n<b>literal</b>") == "~~~html\n<b>literal</b>"
