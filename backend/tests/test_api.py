@@ -1594,7 +1594,7 @@ def test_list_entries_mcp(
 def test_list_entries_mcp_req_api_012_rejects_invalid_space_id(
     space_id: str,
 ) -> None:
-    """REQ-API-012: MCP list_entries rejects path traversal and null bytes before auth."""
+    """REQ-API-012: MCP list_entries rejects invalid IDs before auth/storage."""
     ctx = MagicMock()
     request = MagicMock()
     request.headers = {"authorization": "Bearer test-token"}
@@ -1604,11 +1604,14 @@ def test_list_entries_mcp_req_api_012_rejects_invalid_space_id(
 
     async def _run() -> None:
         with patch(
+            "app.mcp.server.storage_config_from_root",
+        ) as mock_storage, patch(
             "app.mcp.server.authenticate_headers_for_space",
             _amock(return_value=MagicMock()),
         ) as mock_auth:
             with pytest.raises(ValueError, match=r"Invalid space_id"):
                 await list_entries(space_id, ctx)
+            mock_storage.assert_not_called()
             mock_auth.assert_not_awaited()
 
     asyncio.run(_run())
