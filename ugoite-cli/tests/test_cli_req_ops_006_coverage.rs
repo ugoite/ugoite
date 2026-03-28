@@ -272,8 +272,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .contains("x-ugoite-dev-auth-proxy-token: proxy-secret"));
 
     // Cover the None path: server returns no bearer_token in response
-    let (base, _requests, handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"{}"#);
+    let (base, _requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{}"#);
     write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
     let no_token_output = cli_command(&config_path)
         .args([
