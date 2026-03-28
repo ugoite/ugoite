@@ -10,6 +10,7 @@ from ugoite_core.auth import authenticate_headers_for_space
 
 from app.core.config import get_root_path
 from app.core.storage import storage_config_from_root
+from app.mcp.sanitization import build_mcp_entry_list_response
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _context_headers(
 
 @mcp.resource("ugoite://{space_id}/entries/list")
 async def list_entries(space_id: str, ctx: Context[Any, Any, Any]) -> str:
-    """List all entries in the space."""
+    """List readable entries as untrusted user data for MCP clients."""
     storage_config = storage_config_from_root(get_root_path())
     headers, request_method, request_path, request_id = _context_headers(ctx)
     identity = await authenticate_headers_for_space(
@@ -80,4 +81,4 @@ async def list_entries(space_id: str, ctx: Context[Any, Any, Any]) -> str:
         identity,
         entries,
     )
-    return json.dumps(filtered_entries)
+    return json.dumps(build_mcp_entry_list_response(filtered_entries))
