@@ -1154,10 +1154,33 @@ def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test that security headers are present."""
+    """REQ-SEC-002: middleware attaches standard security headers to non-SSE responses."""
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert (
+        response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    )
+    assert (
+        response.headers["Permissions-Policy"]
+        == "camera=(), microphone=(), geolocation=()"
+    )
+    assert response.headers["Content-Security-Policy"] == (
+        "default-src 'self'; script-src 'self'; object-src 'none'; "
+        "frame-ancestors 'none'"
+    )
+    assert "Strict-Transport-Security" not in response.headers
+
+
+def test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: middleware only adds HSTS when the effective request scheme is HTTPS."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    response = test_client.get("/", headers={"x-forwarded-proto": "https"})
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000"
 
 
 def test_middleware_hmac_signature(

@@ -57,6 +57,7 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_middleware_headers
+      - test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
