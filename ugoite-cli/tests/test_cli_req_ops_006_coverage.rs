@@ -989,6 +989,91 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         .starts_with("GET /spaces/remote-space/audit-events?offset=5&limit=10 HTTP/1.1"));
 }
 
+/// REQ-OPS-016: sample-data CLI owner flags must preserve discoverable seeded membership.
+#[test]
+fn test_cli_req_ops_016_sample_data_owner_flag_trims_bootstrap_membership() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+
+    let sample_data_output = cli_command(&config_path)
+        .args([
+            "space",
+            "sample-data",
+            &root,
+            "sample-space-owned",
+            "--scenario",
+            "renewable-ops",
+            "--entry-count",
+            "6",
+            "--seed",
+            "7",
+            "--owner",
+            "  local-dev-user  ",
+        ])
+        .output()
+        .expect("space sample-data with owner");
+    assert_success(&sample_data_output, "space sample-data with owner");
+    assert_eq!(
+        parse_stdout_json(&sample_data_output),
+        serde_json::json!({"created": true})
+    );
+
+    let settings_path = dir
+        .path()
+        .join("spaces")
+        .join("sample-space-owned")
+        .join("settings.json");
+    let settings_text = std::fs::read_to_string(&settings_path).expect("read settings");
+    let settings_json: Value = serde_json::from_str(&settings_text).expect("settings json");
+
+    assert!(
+        settings_text.contains('\n'),
+        "settings.json should stay pretty-printed after CLI owner bootstrap"
+    );
+    assert_eq!(settings_json["membership_version"].as_i64(), Some(1));
+    let owner_member = &settings_json["members"]["local-dev-user"];
+    assert_eq!(owner_member["user_id"].as_str(), Some("local-dev-user"));
+    assert_eq!(owner_member["role"].as_str(), Some("admin"));
+    assert_eq!(owner_member["state"].as_str(), Some("active"));
+
+    let env_owned_output = cli_command(&config_path)
+        .env("UGOITE_DEV_USER_ID", "  env-dev-user  ")
+        .args([
+            "space",
+            "sample-data",
+            &root,
+            "sample-space-env-owned",
+            "--scenario",
+            "renewable-ops",
+            "--entry-count",
+            "6",
+            "--seed",
+            "8",
+        ])
+        .output()
+        .expect("space sample-data with env owner");
+    assert_success(&env_owned_output, "space sample-data with env owner");
+    assert_eq!(
+        parse_stdout_json(&env_owned_output),
+        serde_json::json!({"created": true})
+    );
+
+    let env_settings_path = dir
+        .path()
+        .join("spaces")
+        .join("sample-space-env-owned")
+        .join("settings.json");
+    let env_settings_text =
+        std::fs::read_to_string(&env_settings_path).expect("read env settings");
+    let env_settings_json: Value =
+        serde_json::from_str(&env_settings_text).expect("env settings json");
+    let env_owner_member = &env_settings_json["members"]["env-dev-user"];
+    assert_eq!(env_owner_member["user_id"].as_str(), Some("env-dev-user"));
+    assert_eq!(env_owner_member["role"].as_str(), Some("admin"));
+    assert_eq!(env_owner_member["state"].as_str(), Some("active"));
+}
+
 /// REQ-OPS-006: entry commands must keep full local lifecycle and remote routing covered.
 #[test]
 fn test_cli_req_ops_006_entry_local_and_remote_paths() {
