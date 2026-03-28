@@ -263,6 +263,7 @@ async def _apply_security_headers(
     else:
         key_id, signature = await build_response_signature(body, root_path, space_id)
     response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
     response.headers["X-Ugoite-Key-Id"] = key_id
     response.headers["X-Ugoite-Signature"] = signature
     response.headers["Content-Length"] = str(len(body))

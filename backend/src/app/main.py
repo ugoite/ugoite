@@ -24,11 +24,38 @@ from app.mcp.server import mcp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ALLOWED_CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+ALLOWED_CORS_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "X-API-Key",
+    "X-Request-Id",
+    "X-Ugoite-Dev-Auth-Proxy-Token",
+]
+
+
+def _cors_allowed_origins() -> list[str]:
+    raw_origins = os.environ.get("ALLOW_ORIGIN") or "http://localhost:3000"
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+
+def _validate_cors_configuration(allowed_origins: list[str]) -> None:
+    if (
+        os.environ.get("UGOITE_ALLOW_REMOTE", "false").lower() == "true"
+        and "*" in allowed_origins
+    ):
+        message = (
+            "ALLOW_ORIGIN must not include '*' when UGOITE_ALLOW_REMOTE=true and "
+            "credentialed CORS is enabled."
+        )
+        raise RuntimeError(message)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
+    _validate_cors_configuration(_cors_allowed_origins())
     root_path: Path | str = get_root_path()
     storage_config = storage_config_from_root(root_path)
     dev_auth_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", "").strip()
@@ -68,12 +95,10 @@ app.mount("/mcp", mcp.sse_app())
 app.add_middleware(
     CORSMiddleware,  # ty: ignore[invalid-argument-type]
     # ALLOW_ORIGIN (comma-separated) or fallback to localhost:3000 in development
-    allow_origins=(os.environ.get("ALLOW_ORIGIN") or "http://localhost:3000").split(
-        ",",
-    ),
+    allow_origins=_cors_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=ALLOWED_CORS_METHODS,
+    allow_headers=ALLOWED_CORS_HEADERS,
 )
 
 app.middleware("http")(security_middleware)
