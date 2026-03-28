@@ -345,3 +345,34 @@ requirements:
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
       - test_space_service_account_create_routes_to_backend
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-010
+  title: Credentialed CORS Allowlist
+  description: 'Credentialed browser access MUST use explicit CORS origin, method,
+
+    and request-header allowlists. Preflight requests that ask for methods or
+
+    headers outside the allowlist MUST be rejected.
+
+    '
+  related_spec:
+  - security/overview.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists
+      - test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header
