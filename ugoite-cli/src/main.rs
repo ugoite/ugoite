@@ -49,7 +49,9 @@ enum Commands {
     ///
     ///   # Paginate results
     ///   ugoite query my-space --sql "SELECT id FROM entries" --limit 20 --offset 40
-    #[command(long_about = "Query the index using SQL.\n\nThe SQL dialect is SQLite. The queryable table is `entries` with columns: id, title, body, form, tags, created_at, updated_at.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM entries LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM entries WHERE form='note'\"\n\n  # Paginate results\n  ugoite query my-space --sql \"SELECT id FROM entries\" --limit 20 --offset 40")]
+    #[command(
+        long_about = "Query the index using SQL.\n\nThe SQL dialect is SQLite. The queryable table is `entries` with columns: id, title, body, form, tags, created_at, updated_at.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM entries LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM entries WHERE form='note'\"\n\n  # Paginate results\n  ugoite query my-space --sql \"SELECT id FROM entries\" --limit 20 --offset 40"
+    )]
     Query {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
