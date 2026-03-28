@@ -1514,8 +1514,7 @@ fn test_cli_req_ops_006_sql_local_and_remote_paths() {
 #[test]
 fn test_cli_req_ops_006_entry_list_format_table_local() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let (_root, config_path, space_path) =
-        setup_space_with_form(&dir, "entry-fmt-local");
+    let (_root, config_path, space_path) = setup_space_with_form(&dir, "entry-fmt-local");
     create_entry(
         &config_path,
         &space_path,
@@ -1572,7 +1571,10 @@ fn test_cli_req_ops_006_entry_list_format_table_http() {
     handle.join().expect("join entry list table server");
     assert!(req.starts_with("GET /spaces/remote-space/entries HTTP/1.1"));
     let stdout = String::from_utf8_lossy(&table_output.stdout);
-    assert!(stdout.contains("ID"), "expected ID header in HTTP table output");
+    assert!(
+        stdout.contains("ID"),
+        "expected ID header in HTTP table output"
+    );
 
     // HTTP mode: explicit --format json → print_json path (entry.rs skips table branch)
     let (base, requests, handle) =
