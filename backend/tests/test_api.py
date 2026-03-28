@@ -32,7 +32,13 @@ from app.core.middleware import (
 )
 from app.core.security import build_response_signature
 from app.core.storage import _ensure_local_root, storage_config_from_root
-from app.main import app
+from app.main import (
+    ALLOWED_CORS_HEADERS,
+    ALLOWED_CORS_METHODS,
+    _cors_allowed_origins,
+    _validate_cors_configuration,
+    app,
+)
 from app.mcp.server import _context_headers, list_entries
 
 
@@ -1154,10 +1160,58 @@ def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test that security headers are present."""
+    """REQ-SEC-002: middleware adds the baseline security headers for normal HTTP responses."""
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Content-Security-Policy"] == (
+        "default-src 'self'; frame-ancestors 'none'"
+    )
+
+
+def test_cors_req_sec_010_preflight_uses_explicit_method_and_header_lists(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-010: credentialed CORS preflight advertises explicit allowlists instead of wildcards."""
+    response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "Authorization, X-API-Key, X-Request-Id, X-Ugoite-Dev-Auth-Proxy-Token"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "*" not in response.headers["access-control-allow-methods"]
+    assert {
+        method.strip()
+        for method in response.headers["access-control-allow-methods"].split(",")
+    } == set(ALLOWED_CORS_METHODS)
+    allowed_headers = {
+        header.strip().lower()
+        for header in response.headers["access-control-allow-headers"].split(",")
+    }
+    assert "*" not in allowed_headers
+    assert {header.lower() for header in ALLOWED_CORS_HEADERS}.issubset(allowed_headers)
+
+
+def test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-010: startup validation rejects wildcard ALLOW_ORIGIN when remote access is enabled."""
+    monkeypatch.setenv("ALLOW_ORIGIN", "*")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+
+    assert _cors_allowed_origins() == ["*"]
+    with pytest.raises(
+        RuntimeError,
+        match="ALLOW_ORIGIN must not include '\\*' when UGOITE_ALLOW_REMOTE=true",
+    ):
+        _validate_cors_configuration(_cors_allowed_origins())
 
 
 def test_middleware_hmac_signature(
