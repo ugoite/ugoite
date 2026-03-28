@@ -32,10 +32,11 @@ enum Commands {
     /// Link management commands (deprecated: use row_reference fields)
     Link(commands::link::LinkCmd),
     /// Create a new space
+    #[command(long_about = "Create a new space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite create-space my-space --root /root/spaces\n\n  # Using UGOITE_ROOT env var\n  ugoite create-space my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space my-space")]
     CreateSpace {
-        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        #[arg(long = "root", value_name = "LOCAL_ROOT", help = "Local filesystem root for spaces (core mode). Falls back to UGOITE_ROOT env var.")]
         root_path: Option<String>,
-        #[arg(value_name = "SPACE_ID")]
+        #[arg(value_name = "SPACE_ID", help = "New space ID (alphanumeric + hyphens, e.g. 'my-project')")]
         space_id: String,
     },
     /// Query the index
