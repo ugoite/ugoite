@@ -121,7 +121,11 @@ fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Res
         .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
 }
 
-pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result<()> {
+pub async fn create_space_cmd(
+    root_path: Option<&str>,
+    space_id: &str,
+    command_name: &str,
+) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
         let result = http::http_post(
@@ -132,7 +136,7 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
         print_json(&result);
         return Ok(());
     }
-    let root_path = require_local_root(root_path, "create-space")?;
+    let root_path = require_local_root(root_path, command_name)?;
     let op = operator_for_path(root_path)?;
     ugoite_core::space::create_space(&op, space_id, root_path).await?;
     print_json(&serde_json::json!({"created": true, "id": space_id}));
@@ -146,7 +150,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             root_path,
             space_id,
         } => {
-            create_space_cmd(root_path.as_deref(), &space_id).await?;
+            create_space_cmd(root_path.as_deref(), &space_id, "space create").await?;
         }
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = base_url(&config) {

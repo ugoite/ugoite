@@ -84,7 +84,9 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::CreateSpace {
             root_path,
             space_id,
-        } => commands::space::create_space_cmd(root_path.as_deref(), &space_id).await,
+        } => {
+            commands::space::create_space_cmd(root_path.as_deref(), &space_id, "create-space").await
+        }
         Commands::Query {
             space_path,
             sql,
