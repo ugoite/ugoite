@@ -83,6 +83,13 @@ fn default_entry_count() -> usize {
     DEFAULT_ENTRY_COUNT
 }
 
+fn normalize_owner_user_id(owner_user_id: Option<&str>) -> Option<String> {
+    owner_user_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 fn normalize_entry_count(entry_count: usize, form_count: usize) -> usize {
     let mut count = entry_count.clamp(1, MAX_ENTRY_COUNT);
     if count < form_count {
@@ -2155,6 +2162,7 @@ async fn bootstrap_sample_space_owner(
     space_id: &str,
     owner_user_id: &str,
 ) -> Result<()> {
+    let owner_user_id = owner_user_id.trim();
     let settings_path = format!("spaces/{space_id}/settings.json");
     let mut settings: Value = if op.exists(&settings_path).await? {
         let data = op.read(&settings_path).await?;
@@ -2184,12 +2192,13 @@ async fn bootstrap_sample_space_owner(
         .ok_or_else(|| anyhow!("Invalid members format in settings.json"))?
         .insert(owner_user_id.to_string(), member);
 
-    let version = settings_obj.entry("membership_version").or_insert(json!(0));
-    if let Some(v) = version.as_i64() {
-        *version = json!(v + 1);
-    }
+    let current_version = settings_obj
+        .get("membership_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    settings_obj.insert("membership_version".to_string(), json!(current_version + 1));
 
-    let data = serde_json::to_vec(&settings)?;
+    let data = serde_json::to_vec_pretty(&settings)?;
     op.write(&settings_path, data).await?;
     Ok(())
 }
@@ -2204,12 +2213,8 @@ async fn create_sample_space_with_progress(
     progress.report(0, "Creating space").await?;
     space::create_space(op, &options.space_id, root_uri).await?;
 
-    if let Some(owner) = options
-        .owner_user_id
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-    {
-        bootstrap_sample_space_owner(op, &options.space_id, owner).await?;
+    if let Some(owner) = normalize_owner_user_id(options.owner_user_id.as_deref()) {
+        bootstrap_sample_space_owner(op, &options.space_id, &owner).await?;
     }
 
     let ws_path = format!("spaces/{}", options.space_id);
@@ -2306,7 +2311,7 @@ pub async fn create_sample_space_job(
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
         seed: options.seed,
-        owner_user_id: options.owner_user_id.clone(),
+        owner_user_id: normalize_owner_user_id(options.owner_user_id.as_deref()),
         status: SampleJobStatus::Queued,
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
@@ -2325,7 +2330,7 @@ pub async fn create_sample_space_job(
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
         seed: options.seed,
-        owner_user_id: options.owner_user_id.clone(),
+        owner_user_id: normalize_owner_user_id(options.owner_user_id.as_deref()),
     };
     let root_uri = root_uri.to_string();
     let plan_clone = plan.clone();
