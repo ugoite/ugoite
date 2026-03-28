@@ -61,7 +61,8 @@ async def list_entries(space_id: str, ctx: Context[Any, Any, Any]) -> str:
     try:
         validated_space_id = validate_id(space_id, "space_id")
     except ValueError as exc:
-        raise ValueError("Invalid space_id") from exc
+        message = "Invalid space_id"
+        raise ValueError(message) from exc
     storage_config = storage_config_from_root(get_root_path())
     headers, request_method, request_path, request_id = _context_headers(ctx)
     identity = await authenticate_headers_for_space(
