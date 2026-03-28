@@ -131,13 +131,11 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         Some("http://backend.example.test")
     );
 
-    let (_base, _requests, _handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"{"bearer_token":"core-mode-token"}"#);
     write_endpoint_config(
         &config_path,
         "core",
-        "http://localhost:8000",
-        "http://localhost:3000/api",
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let core_mode_login = cli_command(&config_path)
         .args([
@@ -177,11 +175,11 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .output()
         .expect("backend mode auth login");
     assert_success(&backend_mode_login, "backend mode auth login");
-    let core_mode_request = requests
+    let backend_mode_request = requests
         .recv_timeout(Duration::from_secs(5))
-        .expect("core mode request");
-    handle.join().expect("join core mode server");
-    assert!(core_mode_request.starts_with("POST /auth/login HTTP/1.1"));
+        .expect("backend mode request");
+    handle.join().expect("join backend mode server");
+    assert!(backend_mode_request.starts_with("POST /auth/login HTTP/1.1"));
     assert!(String::from_utf8_lossy(&backend_mode_login.stdout)
         .contains("export UGOITE_AUTH_BEARER_TOKEN=backend-mode-token"));
 

@@ -55,8 +55,7 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             let config = load_config();
             if config.mode == EndpointMode::Core {
                 return Err(anyhow!(
-                    "auth login requires backend or api mode.\n\
-                     Run: ugoite config set --mode backend --backend-url http://localhost:8000"
+                    "auth login requires backend or api mode.\nRun: ugoite config set --mode backend --backend-url http://localhost:8000"
                 ));
             }
             let base = base_url(&config).expect("backend/api mode always has a base URL");
@@ -81,15 +80,14 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             };
 
             if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
+                let apply_args = if mock_oauth {
+                    " --mock-oauth"
+                } else {
+                    " --username USER --totp-code CODE"
+                };
                 println!("export UGOITE_AUTH_BEARER_TOKEN={token}");
                 eprintln!(
-                    "# To apply: eval \"$(ugoite auth login{})\"\
-                     \n# Or copy the export line above into your shell.",
-                    if mock_oauth {
-                        " --mock-oauth"
-                    } else {
-                        " --username USER --totp-code CODE"
-                    }
+                    "# To apply: eval \"$(ugoite auth login{apply_args})\"\n# Or copy the export line above into your shell."
                 );
             }
         }
