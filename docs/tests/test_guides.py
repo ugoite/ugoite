@@ -26,6 +26,7 @@ REQ-OPS-026: Release changelog sources must stay channel-scoped and wired.
 REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI.
 REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
+REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 """
 
 from __future__ import annotations
@@ -355,13 +356,13 @@ REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
         "frontend_local_tag: ghcr.io/${{ github.repository }}/frontend:"
         "${{ inputs.version }}"
     ),
-    "actions/download-artifact@v8",
     "ugoite-backend-v${VERSION}.docker.tar.gz",
     "ugoite-frontend-v${VERSION}.docker.tar.gz",
     "docker-compose.release.yaml",
     "version: ${{ inputs.version }}",
     "channel: ${{ inputs.channel }}",
     "target: ${{ inputs.target }}",
+    "actions/download-artifact@",
 }
 REQUIRED_PUBLIC_PACKAGE_DOC_FRAGMENTS = {
     "packages/ugoite/package.json",
@@ -396,7 +397,7 @@ REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS = {
 }
 REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
     "workflow_call",
-    "docker/login-action@v4",
+    "docker/login-action@",
     "registry: ghcr.io",
     "ghcr.io/${{ github.repository }}/backend",
     "ghcr.io/${{ github.repository }}/frontend",
@@ -412,7 +413,7 @@ REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
         'docker image save "$FRONTEND_LOCAL_TAG" | gzip > '
         "exported-images/frontend-image.tar.gz"
     ),
-    "actions/upload-artifact@v7",
+    "actions/upload-artifact@",
     "$IMAGE:latest",
     "$IMAGE:stable",
     "$IMAGE:$CHANNEL",
@@ -494,9 +495,9 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_WORKFLOW_FRAGMENTS = {
     "workflow_dispatch",
     "Verify released CLI quick start",
     "Verify released browser quick start",
-    "actions/cache@v5",
-    "actions/setup-node@v6",
-    "actions/upload-artifact@v7",
+    "actions/cache@",
+    "actions/setup-node@",
+    "actions/upload-artifact@",
     "bash scripts/verify-release-cli-quickstart.sh",
     "bash scripts/verify-release-container-quickstart.sh",
     "PLAYWRIGHT_JUNIT_OUTPUT_FILE",
@@ -720,6 +721,14 @@ REQUIRED_RUNTIME_PIN_DOC_FRAGMENTS = {
     "`lts/*`",
     "`latest`",
 }
+REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
+    "full commit SHAs",
+    "floating tags or branches",
+    "Local reusable workflows",
+    "path-based (`./.github/workflows/...`)",
+    '`package-ecosystem: "github-actions"` at `/`',
+}
+REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-031)"
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_ROOT",
@@ -873,6 +882,7 @@ PINNED_DEVCONTAINER_FEATURE_PATTERNS = {
         r"^ghcr\.io/devcontainers/features/github-cli:\d+\.\d+\.\d+$",
     ),
 }
+PINNED_GITHUB_ACTION_REF_PATTERN = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 EXACT_PATCH_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -2537,7 +2547,8 @@ def _assert_release_publish_job_checks_out_requested_target(
         (
             index
             for index, step in enumerate(steps)
-            if isinstance(step, dict) and step.get("uses") == "actions/checkout@v6"
+            if isinstance(step, dict)
+            and _uses_pinned_action(step.get("uses"), "actions/checkout")
         ),
         None,
     )
@@ -3229,6 +3240,53 @@ def test_docs_req_ops_027_lockfile_installs_are_strict() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
+    """REQ-OPS-031: workflow actions must pin immutable SHAs and stay updatable."""
+    workflow_paths = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    ci_steps = _collect_workflow_step_names(YAML_WORKFLOW_CI_WORKFLOW_PATH)
+
+    floating_refs = sorted(
+        f"{workflow_path.name}: {ref}"
+        for workflow_path in workflow_paths
+        for ref in _collect_workflow_uses_refs(workflow_path)
+        if not ref.startswith("./")
+        and not PINNED_GITHUB_ACTION_REF_PATTERN.fullmatch(ref)
+    )
+    updates = dependabot.get("updates", [])
+    has_github_actions_update = isinstance(updates, list) and any(
+        isinstance(update, dict)
+        and update.get("package-ecosystem") == "github-actions"
+        and update.get("directory") == "/"
+        for update in updates
+    )
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS,
+    )
+
+    details: list[str] = []
+    if floating_refs:
+        details.append(
+            "workflow actions must pin full commit SHAs: " + ", ".join(floating_refs),
+        )
+    if not has_github_actions_update:
+        details.append(
+            ".github/dependabot.yml must track workflow actions with the "
+            "github-actions ecosystem at `/`",
+        )
+    if REQUIRED_GITHUB_ACTION_PIN_STEP_NAME not in ci_steps:
+        details.append("yaml-workflow-ci must validate REQ-OPS-031")
+    if missing_doc_fragments:
+        details.append(
+            "ci-cd guide missing GitHub Action pinning fragments: "
+            + ", ".join(missing_doc_fragments),
+        )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def _collect_native_required_checks_details() -> list[str]:
     if LEGACY_ALL_TESTS_WORKFLOW_PATH.exists():
         message = (
@@ -3562,7 +3620,10 @@ def _collect_codeql_workflow_config_details() -> list[str]:
     initialize_step = _find_codeql_initialize_step(analyze_job)
     if not isinstance(initialize_step, dict):
         return [
-            "codeql.yml must initialize CodeQL with github/codeql-action/init@v4",
+            (
+                "codeql.yml must initialize CodeQL with "
+                "github/codeql-action/init pinned to a commit SHA"
+            ),
         ]
 
     with_block = initialize_step.get("with", {})
@@ -3590,7 +3651,7 @@ def _find_codeql_initialize_step(
             for step in steps
             if isinstance(step, dict)
             and step.get("name") == "Initialize CodeQL"
-            and step.get("uses") == "github/codeql-action/init@v4"
+            and _uses_pinned_action(step.get("uses"), "github/codeql-action/init")
         ),
         None,
     )
@@ -4919,6 +4980,43 @@ def _collect_workflow_step_names(workflow_path: Path) -> set[str]:
             if isinstance(name, str) and name:
                 step_names.add(name)
     return step_names
+
+
+def _collect_workflow_uses_refs(workflow_path: Path) -> list[str]:
+    workflow = _load_yaml_base_mapping(workflow_path)
+    jobs = workflow.get("jobs", {})
+    if not isinstance(jobs, dict):
+        message = f"{workflow_path.name} must define jobs"
+        raise TypeError(message)
+
+    refs: list[str] = []
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+
+        job_uses = job.get("uses")
+        if isinstance(job_uses, str) and job_uses.strip():
+            refs.append(job_uses.strip())
+
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            step_uses = step.get("uses")
+            if isinstance(step_uses, str) and step_uses.strip():
+                refs.append(step_uses.strip())
+    return refs
+
+
+def _uses_pinned_action(value: object, action_prefix: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    return (
+        value.startswith(f"{action_prefix}@")
+        and PINNED_GITHUB_ACTION_REF_PATTERN.fullmatch(value) is not None
+    )
 
 
 def _extract_workflow_pin_values(
