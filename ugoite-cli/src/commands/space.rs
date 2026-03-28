@@ -69,6 +69,10 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long)]
         seed: Option<u64>,
+        /// Bootstrap this user ID as the active admin owner of the seeded space.
+        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        #[arg(long)]
+        owner: Option<String>,
     },
     /// List sample scenarios
     SampleScenarios,
@@ -84,6 +88,10 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long)]
         seed: Option<u64>,
+        /// Bootstrap this user ID as the active admin owner of the seeded space.
+        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        #[arg(long)]
+        owner: Option<String>,
     },
     /// Get sample data job status
     SampleJobStatus {
@@ -132,6 +140,19 @@ pub enum SpaceSubCmd {
 fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Result<&'a str> {
     root_path
         .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
+}
+
+fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
+    match owner {
+        Some(owner_user_id) => {
+            let owner_user_id = owner_user_id.trim().to_string();
+            (!owner_user_id.is_empty()).then_some(owner_user_id)
+        }
+        None => std::env::var("UGOITE_DEV_USER_ID")
+            .ok()
+            .map(|owner_user_id| owner_user_id.trim().to_string())
+            .filter(|owner_user_id| !owner_user_id.is_empty()),
+    }
 }
 
 pub async fn create_space_cmd(
@@ -242,6 +263,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             scenario,
             entry_count,
             seed,
+            owner,
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
@@ -250,6 +272,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             ugoite_core::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &opts,
@@ -267,6 +290,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             scenario,
             entry_count,
             seed,
+            owner,
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
@@ -275,6 +299,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             let job =
                 ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
