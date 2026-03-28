@@ -1,5 +1,6 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, effective_format, load_config, operator_for_path, parse_space_path, print_json,
+    print_json_table, space_ws_path, Format,
 };
 use crate::http;
 use anyhow::Result;
@@ -7,6 +8,9 @@ use clap::{Args, Subcommand};
 
 #[derive(Args)]
 pub struct EntryCmd {
+    /// Output format (default: table when TTY, json when piped)
+    #[arg(short = 'o', long, value_enum, global = true)]
+    pub format: Option<Format>,
     #[command(subcommand)]
     pub sub: EntrySubCmd,
 }
@@ -132,18 +136,38 @@ pub enum EntrySubCmd {
 
 pub async fn run(cmd: EntryCmd) -> Result<()> {
     let config = load_config();
+    let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/entries")).await?;
+                if fmt != Format::Json {
+                    if let Some(arr) = result.as_array() {
+                        print_json_table(arr, &[("ID", "id"), ("TITLE", "title")]);
+                        return Ok(());
+                    }
+                }
                 print_json(&result);
                 return Ok(());
             }
             let op = operator_for_path(&root)?;
             let ws = space_ws_path(&root, &space_id);
             let entries = ugoite_core::entry::list_entries(&op, &ws).await?;
-            print_json(&entries);
+            if fmt != Format::Json {
+                let rows: Vec<serde_json::Value> = entries
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                            "title": e.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                        })
+                    })
+                    .collect();
+                print_json_table(&rows, &[("ID", "id"), ("TITLE", "title")]);
+            } else {
+                print_json(&entries);
+            }
         }
         EntrySubCmd::Get {
             space_path,

@@ -4,8 +4,9 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use ugoite_cli::config::{
-    base_url, config_path, load_config, operator_for_path, parse_space_path, print_json,
-    save_config, space_ws_path, EndpointConfig, EndpointMode,
+    base_url, config_path, effective_format_for_stdout, load_config, operator_for_path,
+    parse_space_path, print_json, print_json_table, save_config, space_ws_path, EndpointConfig,
+    EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
@@ -256,6 +257,20 @@ fn test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path() {
         Some("http://frontend.example.test/api".to_string())
     );
 
+    assert_eq!(effective_format_for_stdout(None, false), Format::Json);
+    assert_eq!(effective_format_for_stdout(None, true), Format::Table);
+    assert_eq!(
+        effective_format_for_stdout(Some(Format::Plain), true),
+        Format::Plain
+    );
+
     print_json(&serde_json::json!({"ok": true}));
     print_json(&BrokenSerialize);
+    print_json_table(
+        &[serde_json::json!({
+            "name": serde_json::Value::Null,
+            "count": 1,
+        })],
+        &[("NAME", "name"), ("COUNT", "count")],
+    );
 }
