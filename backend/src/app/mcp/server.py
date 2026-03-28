@@ -11,6 +11,7 @@ from ugoite_core.auth import authenticate_headers_for_space
 from app.core.config import get_root_path
 from app.core.ids import validate_id
 from app.core.storage import storage_config_from_root
+from app.mcp.sanitization import build_mcp_entry_list_response
 
 logger = logging.getLogger(__name__)
 
@@ -86,4 +87,4 @@ async def list_entries(space_id: str, ctx: Context[Any, Any, Any]) -> str:
         identity,
         entries,
     )
-    return json.dumps(filtered_entries)
+    return json.dumps(build_mcp_entry_list_response(filtered_entries))
