@@ -1,4 +1,7 @@
-use crate::config::{base_url, load_config, operator_for_path, parse_space_path, print_json};
+use crate::config::{
+    base_url, effective_format, load_config, operator_for_path, parse_space_path, print_json,
+    print_json_table, print_list_table, Format,
+};
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
@@ -6,6 +9,9 @@ use ugoite_core::sample_data::SampleDataOptions;
 
 #[derive(Args)]
 pub struct SpaceCmd {
+    /// Output format (default: table when TTY, json when piped)
+    #[arg(short = 'o', long, value_enum, global = true)]
+    pub format: Option<Format>,
     #[command(subcommand)]
     pub sub: SpaceSubCmd,
 }
@@ -141,17 +147,28 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
 
 pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let config = load_config();
+    let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces")).await?;
+                if fmt != Format::Json {
+                    if let Some(arr) = result.as_array() {
+                        print_json_table(arr, &[("ID", "id"), ("NAME", "name")]);
+                        return Ok(());
+                    }
+                }
                 print_json(&result);
                 return Ok(());
             }
             let root_path = require_local_root(root_path.as_deref(), "space list")?;
             let op = operator_for_path(root_path)?;
             let spaces = ugoite_core::space::list_spaces(&op).await?;
-            print_json(&spaces);
+            if fmt != Format::Json {
+                print_list_table("SPACE_ID", &spaces);
+            } else {
+                print_json(&spaces);
+            }
         }
         SpaceSubCmd::Get {
             root_path,
