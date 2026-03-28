@@ -1064,8 +1064,7 @@ fn test_cli_req_ops_016_sample_data_owner_flag_trims_bootstrap_membership() {
         .join("spaces")
         .join("sample-space-env-owned")
         .join("settings.json");
-    let env_settings_text =
-        std::fs::read_to_string(&env_settings_path).expect("read env settings");
+    let env_settings_text = std::fs::read_to_string(&env_settings_path).expect("read env settings");
     let env_settings_json: Value =
         serde_json::from_str(&env_settings_text).expect("env settings json");
     let env_owner_member = &env_settings_json["members"]["env-dev-user"];
