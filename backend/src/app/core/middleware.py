@@ -247,7 +247,7 @@ async def _capture_response_body(response: Response) -> bytes:
         return bytes(response.body or b"")
 
     body = b"".join([bytes(chunk) async for chunk in body_iterator])
-    response.body_iterator = iterate_in_threadpool(iter([body]))  # type: ignore[attr-defined]
+    response.body_iterator = iterate_in_threadpool(iter([body]))  # ty: ignore[unresolved-attribute]
     return body
 
 

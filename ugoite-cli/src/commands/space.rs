@@ -18,6 +18,13 @@ pub struct SpaceCmd {
 
 #[derive(Subcommand)]
 pub enum SpaceSubCmd {
+    /// Create a new space
+    Create {
+        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        root_path: Option<String>,
+        #[arg(value_name = "SPACE_ID")]
+        space_id: String,
+    },
     /// List spaces
     #[command(
         long_about = "List all spaces.\n\nExamples:\n  # Core mode (local filesystem root)\n  ugoite space list --root /root/spaces\n\n  # Core mode using UGOITE_ROOT env var\n  ugoite space list\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
@@ -148,7 +155,11 @@ fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
     }
 }
 
-pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result<()> {
+pub async fn create_space_cmd(
+    root_path: Option<&str>,
+    space_id: &str,
+    command_name: &str,
+) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
         let result = http::http_post(
@@ -159,7 +170,7 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
         print_json(&result);
         return Ok(());
     }
-    let root_path = require_local_root(root_path, "create-space")?;
+    let root_path = require_local_root(root_path, command_name)?;
     let op = operator_for_path(root_path)?;
     ugoite_core::space::create_space(&op, space_id, root_path).await?;
     print_json(&serde_json::json!({"created": true, "id": space_id}));
@@ -170,6 +181,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let config = load_config();
     let fmt = effective_format(cmd.format);
     match cmd.sub {
+        SpaceSubCmd::Create {
+            root_path,
+            space_id,
+        } => {
+            create_space_cmd(root_path.as_deref(), &space_id, "space create").await?;
+        }
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces")).await?;

@@ -1,4 +1,4 @@
-use crate::config::{base_url, load_config, print_json};
+use crate::config::{base_url, load_config, print_json, EndpointMode};
 use crate::http;
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
@@ -14,7 +14,7 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show auth setup (env vars)
     Profile,
-    /// Authenticate via local backend/API login and print export commands
+    /// Authenticate via local backend/API login and print export commands.
     ///
     /// Prerequisite: configure backend or api mode first:
     ///   ugoite config set --mode backend --backend-url http://localhost:8000
@@ -44,6 +44,8 @@ pub enum AuthSubCmd {
     },
     /// Print unset commands for auth tokens
     TokenClear,
+    /// Clear auth tokens (alias for token-clear)
+    Logout,
     /// Print authentication capabilities
     Overview,
 }
@@ -64,8 +66,12 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             mock_oauth,
         } => {
             let config = load_config();
-            let base = base_url(&config)
-                .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
+            if config.mode == EndpointMode::Core {
+                return Err(anyhow!(
+                    "auth login requires backend or api mode.\nRun: ugoite config set --mode backend --backend-url http://localhost:8000"
+                ));
+            }
+            let base = base_url(&config).expect("backend/api mode always has a base URL");
 
             let result = if mock_oauth {
                 http::http_post_with_dev_auth_proxy(
@@ -87,10 +93,18 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             };
 
             if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
+                let apply_args = if mock_oauth {
+                    " --mock-oauth"
+                } else {
+                    " --username USER --totp-code CODE"
+                };
                 println!("export UGOITE_AUTH_BEARER_TOKEN={token}");
+                eprintln!(
+                    "# To apply: eval \"$(ugoite auth login{apply_args})\"\n# Or copy the export line above into your shell."
+                );
             }
         }
-        AuthSubCmd::TokenClear => {
+        AuthSubCmd::TokenClear | AuthSubCmd::Logout => {
             println!("unset UGOITE_AUTH_BEARER_TOKEN");
             println!("unset UGOITE_AUTH_API_KEY");
         }
