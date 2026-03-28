@@ -38,22 +38,36 @@ enum Commands {
         #[arg(value_name = "SPACE_ID")]
         space_id: String,
     },
-    /// Query the index
+    /// Query the index using SQL
+    ///
+    /// Examples:
+    ///   # List all entries in a space (core mode)
+    ///   ugoite query /root/spaces/my-space --sql "SELECT id, title FROM entries LIMIT 10"
+    ///
+    ///   # Filter by form type
+    ///   ugoite query /root/spaces/my-space --sql "SELECT id, title FROM entries WHERE form='note'"
+    ///
+    ///   # Paginate results
+    ///   ugoite query my-space --sql "SELECT id FROM entries" --limit 20 --offset 40
+    #[command(long_about = "Query the index using SQL.\n\nThe SQL dialect is SQLite. The queryable table is `entries` with columns: id, title, body, form, tags, created_at, updated_at.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM entries LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM entries WHERE form='note'\"\n\n  # Paginate results\n  ugoite query my-space --sql \"SELECT id FROM entries\" --limit 20 --offset 40")]
     Query {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "SQL query to run against the indexed entries (SQLite dialect). Table: entries. Columns: id, title, body, form, tags, created_at, updated_at.\n\nExample: \"SELECT id, title FROM entries LIMIT 10\""
+        )]
         sql: String,
-        #[arg(long, default_value_t = 100)]
+        #[arg(long, default_value_t = 100, help = "Maximum number of rows to return")]
         limit: u64,
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 0, help = "Row offset for pagination")]
         offset: u64,
-        #[arg(long)]
+        #[arg(long, help = "Filter entries by form type (e.g. 'note', 'task')")]
         form: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Filter entries by tag")]
         tag: Option<String>,
     },
 }
