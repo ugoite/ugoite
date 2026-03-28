@@ -245,7 +245,11 @@ requirements:
   title: Storage Connector Validation
   description: 'Spaces MUST accept storage connector updates and provide
 
-    a validation endpoint before committing changes.
+    a validation endpoint before committing changes. Unsafe connector endpoints
+
+    such as loopback or link-local hosts MUST be rejected before the core binding
+
+    attempts a connection test.
 
     '
   related_spec:
@@ -259,6 +263,10 @@ requirements:
       tests:
       - test_update_space_storage_connector
       - test_test_connection_endpoint
+      - test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core
+    - file: ugoite-core/tests/test_bindings.py
+      tests:
+      - test_test_storage_connection_req_sto_006_rejects_link_local_endpoint
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.

@@ -2532,6 +2532,31 @@ def test_test_connection_authorization_error(test_client: TestClient) -> None:
     assert response.status_code == 403
 
 
+def test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core(
+    test_client: TestClient,
+) -> None:
+    """REQ-STO-006: test-connection rejects link-local endpoints before calling the core binding."""
+    test_client.post("/spaces", json={"name": "conn-ssrf-ws"})
+    with patch(
+        "ugoite_core._core_any.test_storage_connection",
+        _amock(return_value={"status": "ok"}),
+    ) as mock_core:
+        response = test_client.post(
+            "/spaces/conn-ssrf-ws/test-connection",
+            json={
+                "storage_config": {
+                    "uri": "s3://bucket/path",
+                    "endpoint": "http://169.254.169.254/latest/meta-data/",
+                },
+            },
+        )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Storage endpoint host is not allowed: 169.254.169.254"
+    )
+    mock_core.assert_not_awaited()
+
+
 def test_validate_entry_form_not_found_non_error_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

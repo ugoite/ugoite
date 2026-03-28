@@ -78,6 +78,7 @@ from .sql_rules import (
     load_sql_rules,
     sql_completions,
 )
+from .storage_validation import validate_test_storage_config
 
 with suppress(ImportError):
     __doc__ = _core.__doc__
@@ -124,12 +125,20 @@ reindex_all = _core_any.reindex_all
 restore_entry = _core_any.restore_entry
 save_asset = _core_any.save_asset
 search_entries = _core_any.search_entries
-test_storage_connection = _core_any.test_storage_connection
 update_entry = _core_any.update_entry
 update_entry_index = _core_any.update_entry_index
 update_sql = _core_any.update_sql
 upsert_form = _core_any.upsert_form
 validate_properties = _core_any.validate_properties
+
+
+async def test_storage_connection(storage_config: dict[str, Any]) -> dict[str, object]:
+    """Validate user-supplied storage config before delegating to the core binding."""
+    validate_test_storage_config(storage_config)
+    return cast(
+        "dict[str, object]",
+        await _core_any.test_storage_connection(storage_config),
+    )
 
 __all__ = [
     "AcceptInvitationInput",

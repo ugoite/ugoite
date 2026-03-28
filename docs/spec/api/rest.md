@@ -155,12 +155,18 @@ POST /spaces/{id}/test-connection
 Content-Type: application/json
 
 {
-  "uri": "s3://bucket/path",
-  "credentials_profile": "default"
+  "storage_config": {
+    "uri": "s3://bucket/path",
+    "endpoint": "https://s3.example.com"
+  }
 }
 ```
 
 **Response**: `200 OK` or `400 Bad Request`
+
+Notes:
+- `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`.
+- `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
 
 ---
 
