@@ -1,5 +1,6 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, effective_format, load_config, operator_for_path, parse_space_path, print_json,
+    print_json_table, space_ws_path, Format,
 };
 use crate::http;
 use anyhow::Result;
@@ -7,6 +8,9 @@ use clap::{Args, Subcommand};
 
 #[derive(Args)]
 pub struct EntryCmd {
+    /// Output format (default: table when TTY, json when piped)
+    #[arg(short = 'o', long, value_enum, global = true)]
+    pub format: Option<Format>,
     #[command(subcommand)]
     pub sub: EntrySubCmd,
 }
@@ -14,6 +18,9 @@ pub struct EntryCmd {
 #[derive(Subcommand)]
 pub enum EntrySubCmd {
     /// List entries in a space
+    #[command(
+        long_about = "List entries in a space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite entry list /root/spaces/my-space\n\n  # Backend mode (requires config set --mode backend first)\n  ugoite entry list my-space"
+    )]
     List {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
@@ -21,26 +28,49 @@ pub enum EntrySubCmd {
         )]
         space_path: String,
     },
-    /// Get an entry
+    /// Get an entry by ID
+    #[command(
+        long_about = "Get an entry by ID.\n\nExamples:\n  # Core mode\n  ugoite entry get /root/spaces/my-space my-entry-id\n\n  # Backend mode\n  ugoite entry get my-space my-entry-id"
+    )]
     Get {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
     },
     /// Create an entry
+    #[command(
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string.\n\nExamples:\n  # Core mode - create a note\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # With custom author\n  ugoite entry create my-space my-note --content '# Note' --author alice"
+    )]
     Create {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
-        #[arg(long, default_value = "# New Entry\n", allow_hyphen_values = true)]
+        #[arg(
+            long,
+            default_value = "# New Entry\n",
+            allow_hyphen_values = true,
+            help = "Entry content as a Markdown string (supports frontmatter for form/tags)"
+        )]
         content: String,
-        #[arg(long, default_value = "cli")]
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history"
+        )]
         author: String,
     },
     /// Update an entry
@@ -106,18 +136,38 @@ pub enum EntrySubCmd {
 
 pub async fn run(cmd: EntryCmd) -> Result<()> {
     let config = load_config();
+    let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {
             let (root, space_id) = parse_space_path(&space_path);
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/entries")).await?;
+                if fmt != Format::Json {
+                    if let Some(arr) = result.as_array() {
+                        print_json_table(arr, &[("ID", "id"), ("TITLE", "title")]);
+                        return Ok(());
+                    }
+                }
                 print_json(&result);
                 return Ok(());
             }
             let op = operator_for_path(&root)?;
             let ws = space_ws_path(&root, &space_id);
             let entries = ugoite_core::entry::list_entries(&op, &ws).await?;
-            print_json(&entries);
+            if fmt != Format::Json {
+                let rows: Vec<serde_json::Value> = entries
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                            "title": e.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                        })
+                    })
+                    .collect();
+                print_json_table(&rows, &[("ID", "id"), ("TITLE", "title")]);
+            } else {
+                print_json(&entries);
+            }
         }
         EntrySubCmd::Get {
             space_path,
