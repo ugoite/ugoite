@@ -711,6 +711,26 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (root, config_path, space_path) = setup_space(&dir, "space-local");
 
+    let create_subcommand_output = cli_command(&config_path)
+        .args(["space", "create", "--root", &root, "space-subcommand"])
+        .output()
+        .expect("space create");
+    assert_success(&create_subcommand_output, "space create");
+    assert_eq!(
+        parse_stdout_json(&create_subcommand_output),
+        serde_json::json!({"created": true, "id": "space-subcommand"})
+    );
+
+    let create_legacy_output = cli_command(&config_path)
+        .args(["create-space", "--root", &root, "space-legacy"])
+        .output()
+        .expect("create-space");
+    assert_success(&create_legacy_output, "create-space");
+    assert_eq!(
+        parse_stdout_json(&create_legacy_output),
+        serde_json::json!({"created": true, "id": "space-legacy"})
+    );
+
     let list_output = cli_command(&config_path)
         .args(["space", "list", "--root", &root])
         .output()
@@ -849,6 +869,14 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     assert!(!missing_root_output.status.success());
     assert!(String::from_utf8_lossy(&missing_root_output.stderr)
         .contains("space list requires --root <LOCAL_ROOT> in core mode"));
+
+    let missing_root_create_output = cli_command(&config_path)
+        .args(["space", "create", "space-missing-root"])
+        .output()
+        .expect("space create missing root");
+    assert!(!missing_root_create_output.status.success());
+    assert!(String::from_utf8_lossy(&missing_root_create_output.stderr)
+        .contains("space create requires --root <LOCAL_ROOT> in core mode"));
 
     let service_account_list_core = cli_command(&config_path)
         .args(["space", "service-account-list", "space-local"])
