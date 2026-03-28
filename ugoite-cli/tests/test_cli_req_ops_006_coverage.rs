@@ -1597,6 +1597,30 @@ fn test_cli_req_ops_006_entry_list_format_table_http() {
     let json_val: serde_json::Value =
         serde_json::from_slice(&json_output.stdout).expect("json stdout http");
     assert!(json_val.as_array().is_some(), "expected JSON array");
+
+    // HTTP mode: -o table with non-array response → fall back to print_json (entry.rs line 123)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"message":"not-an-array"}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let fallback_output = cli_command(&remote_config_path)
+        .args(["entry", "list", "-o", "table", "remote-space"])
+        .output()
+        .expect("entry list -o table http non-array");
+    assert_success(&fallback_output, "entry list -o table http non-array");
+    let _req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("entry list table http non-array request");
+    handle
+        .join()
+        .expect("join entry list table http non-array server");
+    let fallback_json: serde_json::Value =
+        serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout http");
+    assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
 }
 
 /// REQ-OPS-006: --format/-o table flag must produce table output for space list (local and HTTP).
@@ -1642,4 +1666,28 @@ fn test_cli_req_ops_006_space_list_format_table() {
         http_stdout.contains("ID"),
         "expected ID header in HTTP space table output"
     );
+
+    // HTTP mode: -o table with non-array response → fall back to print_json (space.rs line 152)
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"message":"not-an-array"}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let fallback_output = cli_command(&remote_config_path)
+        .args(["space", "list", "-o", "table"])
+        .output()
+        .expect("space list -o table http non-array");
+    assert_success(&fallback_output, "space list -o table http non-array");
+    let _req = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("space list table http non-array request");
+    handle
+        .join()
+        .expect("join space list table http non-array server");
+    let fallback_json: serde_json::Value =
+        serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout");
+    assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
 }
