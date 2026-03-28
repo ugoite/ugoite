@@ -13,8 +13,9 @@ pub struct SpaceCmd {
 #[derive(Subcommand)]
 pub enum SpaceSubCmd {
     /// List spaces
+    #[command(long_about = "List all spaces.\n\nExamples:\n  # Core mode (local filesystem root)\n  ugoite space list --root /root/spaces\n\n  # Core mode using UGOITE_ROOT env var\n  ugoite space list\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list")]
     List {
-        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        #[arg(long = "root", value_name = "LOCAL_ROOT", help = "Local filesystem root containing space directories (core mode only). Falls back to UGOITE_ROOT env var.")]
         root_path: Option<String>,
     },
     /// Get space metadata
