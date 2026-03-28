@@ -252,25 +252,31 @@ PY
 log "Verified: remote CLI can list release backend spaces"
 
 remote_space="release-quickstart-remote-$(date +%s)"
+legacy_space="${remote_space}-legacy"
 HOME="$CLI_HOME" \
   PATH="$CLI_PATH" \
   UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
-  "$CLI_BINARY" create-space "$remote_space" >/dev/null
+  "$CLI_BINARY" space create "$remote_space" >/dev/null
+HOME="$CLI_HOME" \
+  PATH="$CLI_PATH" \
+  UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
+  "$CLI_BINARY" create-space "$legacy_space" >/dev/null
 space_list_after="$(
   HOME="$CLI_HOME" \
     PATH="$CLI_PATH" \
     UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
     "$CLI_BINARY" space list
 )"
-python3 - "$remote_space" "$space_list_after" <<'PY'
+python3 - "$remote_space" "$legacy_space" "$space_list_after" <<'PY'
 import json
 import sys
 
-space_name = sys.argv[1]
-spaces = json.loads(sys.argv[2])
-if not any(isinstance(item, dict) and item.get("name") == space_name for item in spaces):
-    raise SystemExit(f"{space_name} missing from remote CLI space list")
+space_names = sys.argv[1:3]
+spaces = json.loads(sys.argv[3])
+for space_name in space_names:
+    if not any(isinstance(item, dict) and item.get("name") == space_name for item in spaces):
+        raise SystemExit(f"{space_name} missing from remote CLI space list")
 PY
-log "Verified: remote CLI can create and observe a release backend space"
+log "Verified: remote CLI can create and observe release backend spaces via space create and create-space"
 
 log "Release container quick-start verification passed for ${VERSION_INPUT}"
