@@ -14,7 +14,7 @@
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue, manual | Run license/compliance and vulnerability scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, yamllint, and actionlint |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, GitHub Action SHA pinning checks, yamllint, and actionlint |
 | Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
@@ -54,6 +54,14 @@ exact patch versions for Node, Bun, Python, Biome, Rust, and uv. `setup-node`,
 `setup-bun`, and `python-version` inputs must not use floating aliases such as
 `lts`, `lts/*`, `latest`, or minor-only pins, because REQ-OPS-001 treats local
 and CI runtime drift as a docs-tested contract failure.
+
+External GitHub Actions referenced from `.github/workflows/*.yml` must also use
+full commit SHAs instead of floating tags or branches. Local reusable workflows stay
+path-based (`./.github/workflows/...`), and the root `.github/dependabot.yml`
+must keep `package-ecosystem: "github-actions"` at `/` so SHA-pinned workflow
+dependencies stay automatically updatable. `YAML Workflow CI` runs
+`Check GitHub Action SHA pins (REQ-OPS-031)` so this trust boundary cannot
+silently drift.
 
 Lockfile-backed installs must also fail fast on dependency drift. When the
 repository commits a lockfile, local tasks, CI workflows, and contributor-facing
@@ -103,7 +111,7 @@ path-aware no-op.
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export plus SBOM/signing/security gates |
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue | Direct summary check for compliance scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for shell quality gates |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for root hygiene and workflow linting |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for root hygiene, action SHA pinning, and workflow linting |
 
 ## Python CI
 
@@ -129,6 +137,7 @@ visible through `/spaces` after login. That keeps root mismatches between
 jobs:
   ci:
     - bash scripts/check-root-artifact-hygiene.sh
+    - uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable -v
     - yamllint ...
     - actionlint
 ```

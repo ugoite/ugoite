@@ -41,6 +41,8 @@ requirements:
       - test_create_space_req_api_001_rejects_reserved_admin_space_id
       - test_create_space_req_api_001_propagates_http_exception
       - test_list_spaces
+      - test_list_spaces_req_api_001_admin_sees_admin_space
+      - test_list_spaces_req_api_001_non_admin_cannot_see_admin_space
       - test_get_space
       - test_get_space_not_found
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
