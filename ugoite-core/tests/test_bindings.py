@@ -1,5 +1,7 @@
 """Tests for the Python bindings of ugoite-core."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 import ugoite_core
@@ -19,3 +21,29 @@ async def test_test_storage_connection_binding() -> None:
     # test_storage_connection now returns a future and requires storage_config
     result = await ugoite_core.test_storage_connection({"uri": "memory://"})
     assert result["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_test_storage_connection_req_sto_006_rejects_link_local_endpoint(
+) -> None:
+    """REQ-STO-006: reject link-local endpoints before calling the binding."""
+    with (
+        patch(
+            "ugoite_core._core_any.test_storage_connection",
+            AsyncMock(return_value={"status": "ok"}),
+        ) as mock_core,
+        pytest.raises(
+            ValueError,
+            match=(
+                r"Storage endpoint host is not allowed: "
+                r"169\.254\.169\.254"
+            ),
+        ),
+    ):
+        await ugoite_core.test_storage_connection(
+            {
+                "uri": "s3://bucket/path",
+                "endpoint": "http://169.254.169.254/latest/meta-data/",
+            },
+        )
+    mock_core.assert_not_awaited()
