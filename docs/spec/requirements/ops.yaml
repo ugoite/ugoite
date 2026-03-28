@@ -582,6 +582,7 @@ requirements:
       tests:
       - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode
       - test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token
+      - test_dev_auth_req_ops_015_manual_login_rejects_replayed_totp_code
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
       - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
       - test_dev_auth_req_ops_015_allows_trusted_proxy_token
@@ -592,6 +593,8 @@ requirements:
       tests:
       - test_validate_totp_code_req_ops_015_accepts_current_code
       - test_validate_totp_code_req_ops_015_accepts_unpadded_secret
+      - test_validate_totp_code_req_ops_015_rejects_replayed_code
+      - test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay
     vitest:
     - file: frontend/src/routes/login.test.tsx
       tests:
