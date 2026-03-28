@@ -122,6 +122,19 @@ fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Res
         .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
 }
 
+fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
+    match owner {
+        Some(owner_user_id) => {
+            let owner_user_id = owner_user_id.trim().to_string();
+            (!owner_user_id.is_empty()).then_some(owner_user_id)
+        }
+        None => std::env::var("UGOITE_DEV_USER_ID")
+            .ok()
+            .map(|owner_user_id| owner_user_id.trim().to_string())
+            .filter(|owner_user_id| !owner_user_id.is_empty()),
+    }
+}
+
 pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
@@ -213,17 +226,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let owner_user_id = owner.or_else(|| {
-                std::env::var("UGOITE_DEV_USER_ID")
-                    .ok()
-                    .filter(|s| !s.trim().is_empty())
-            });
             let opts = SampleDataOptions {
                 space_id: space_id.clone(),
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
-                owner_user_id,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             ugoite_core::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &opts,
@@ -245,17 +253,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
-            let owner_user_id = owner.or_else(|| {
-                std::env::var("UGOITE_DEV_USER_ID")
-                    .ok()
-                    .filter(|s| !s.trim().is_empty())
-            });
             let opts = SampleDataOptions {
                 space_id: space_id.clone(),
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
-                owner_user_id,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             let job =
                 ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
