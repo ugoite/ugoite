@@ -270,6 +270,29 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     assert!(mock_oauth_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-auth-proxy-token: proxy-secret"));
+
+    // Cover the None path: server returns no bearer_token in response
+    let (base, _requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{}"#);
+    write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
+    let no_token_output = cli_command(&config_path)
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "alice",
+            "--totp-code",
+            "123456",
+        ])
+        .output()
+        .expect("auth login no bearer token response");
+    assert_success(&no_token_output, "auth login no bearer token response");
+    assert!(
+        !String::from_utf8_lossy(&no_token_output.stdout)
+            .contains("export UGOITE_AUTH_BEARER_TOKEN"),
+        "should not print export when no bearer_token returned"
+    );
+    handle.join().expect("join no-token server");
 }
 
 /// REQ-OPS-006: auxiliary auth commands must keep masking, overview, and token clearing covered.
