@@ -49,6 +49,12 @@ def _is_auth_exempt(path: str) -> bool:
     return path.startswith(("/docs/", "/redoc/"))
 
 
+def _is_docs_path(path: str) -> bool:
+    if path in {"/docs", "/redoc"}:
+        return True
+    return path.startswith(("/docs/", "/redoc/"))
+
+
 def _space_id_from_path(path: str) -> str | None:
     marker = "/spaces/"
     if marker not in path:
@@ -150,6 +156,7 @@ async def security_middleware(
             body,
             root_path,
             signature_space_id,
+            request_path=request.url.path,
             uses_https=_request_uses_https(
                 request,
                 trust_proxy_headers=trust_proxy_headers,
@@ -203,6 +210,7 @@ async def security_middleware(
                 body,
                 root_path,
                 signature_space_id,
+                request_path=request.url.path,
                 uses_https=_request_uses_https(
                     request,
                     trust_proxy_headers=trust_proxy_headers,
@@ -267,6 +275,7 @@ async def security_middleware(
         body,
         root_path,
         signature_space_id,
+        request_path=request.url.path,
         uses_https=uses_https,
     )
 
@@ -289,6 +298,7 @@ async def _apply_security_headers(
     root_path: Path | str,
     space_id: str,
     *,
+    request_path: str,
     uses_https: bool,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
@@ -299,13 +309,12 @@ async def _apply_security_headers(
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = (
-        "camera=(), microphone=(), geolocation=()"
-    )
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; object-src 'none'; "
-        "frame-ancestors 'none'"
-    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if not _is_docs_path(request_path):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; object-src 'none'; "
+            "frame-ancestors 'none'"
+        )
     if uses_https:
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["X-Ugoite-Key-Id"] = key_id
