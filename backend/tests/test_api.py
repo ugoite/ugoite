@@ -2535,7 +2535,7 @@ def test_test_connection_authorization_error(test_client: TestClient) -> None:
 def test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core(
     test_client: TestClient,
 ) -> None:
-    """REQ-STO-006: test-connection rejects link-local endpoints before calling the core binding."""
+    """REQ-STO-006: reject link-local endpoints before the core binding."""
     test_client.post("/spaces", json={"name": "conn-ssrf-ws"})
     with patch(
         "ugoite_core._core_any.test_storage_connection",
