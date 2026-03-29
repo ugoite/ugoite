@@ -107,11 +107,13 @@ def test_get_auth_manager_req_sec_003_refreshes_bootstrap_token_after_ttl(
     assert third.bootstrap_token == second_token
 
 
-def test_get_auth_manager_req_sec_003_keeps_generated_bootstrap_token_stable_until_clear(
+def test_get_auth_manager_req_sec_003_keeps_generated_token_until_clear(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-SEC-003: generated bootstrap tokens stay stable across TTL refresh until explicit clear."""
-    generated_tokens = iter(["generated-first", "generated-second"])
+    """REQ-SEC-003: generated bootstrap tokens stay stable until explicit clear."""
+    first_generated = os.urandom(8).hex()
+    second_generated = os.urandom(8).hex()
+    generated_tokens = iter([first_generated, second_generated])
     monkeypatch.delenv("UGOITE_AUTH_BEARER_TOKENS_JSON", raising=False)
     monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
     monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
@@ -128,15 +130,15 @@ def test_get_auth_manager_req_sec_003_keeps_generated_bootstrap_token_stable_unt
     )
 
     first = get_auth_manager()
-    assert first.bootstrap_token == "generated-first"
+    assert first.bootstrap_token == first_generated
 
     monotonic_now["value"] += 61.0
     second = get_auth_manager()
-    assert second.bootstrap_token == "generated-first"
+    assert second.bootstrap_token == first_generated
 
     clear_auth_manager_cache()
     third = get_auth_manager()
-    assert third.bootstrap_token == "generated-second"
+    assert third.bootstrap_token == second_generated
 
 
 def test_authenticate_headers_req_sec_003_rejects_revoked_key_after_cache_expiry(
