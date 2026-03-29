@@ -131,6 +131,41 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         Some("http://backend.example.test")
     );
 
+    let current_core = cli_command(&config_path)
+        .args(["config", "current"])
+        .output()
+        .expect("config current core");
+    assert_success(&current_core, "config current core");
+    let current_core_stdout = String::from_utf8_lossy(&current_core.stdout);
+    assert!(current_core_stdout.contains("Current endpoint mode: core"));
+    assert!(current_core_stdout.contains("local filesystem"));
+
+    let switch_to_backend = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://backend.example.test",
+        ])
+        .output()
+        .expect("config switch to backend");
+    assert_success(&switch_to_backend, "config switch to backend");
+    let switch_to_backend_stderr = String::from_utf8_lossy(&switch_to_backend.stderr);
+    assert!(switch_to_backend_stderr.contains("switching from core mode to backend mode"));
+    assert!(switch_to_backend_stderr.contains("ugoite config set --mode core"));
+
+    let current_backend = cli_command(&config_path)
+        .args(["config", "current"])
+        .output()
+        .expect("config current backend");
+    assert_success(&current_backend, "config current backend");
+    let current_backend_stdout = String::from_utf8_lossy(&current_backend.stdout);
+    assert!(current_backend_stdout.contains("Current endpoint mode: backend"));
+    assert!(current_backend_stdout.contains("http://backend.example.test"));
+    assert!(current_backend_stdout.contains("server instead of your local filesystem"));
+
     write_endpoint_config(
         &config_path,
         "core",
