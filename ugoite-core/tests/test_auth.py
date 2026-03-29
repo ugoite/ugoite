@@ -107,6 +107,38 @@ def test_get_auth_manager_req_sec_003_refreshes_bootstrap_token_after_ttl(
     assert third.bootstrap_token == second_token
 
 
+def test_get_auth_manager_req_sec_003_keeps_generated_bootstrap_token_stable_until_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-003: generated bootstrap tokens stay stable across TTL refresh until explicit clear."""
+    generated_tokens = iter(["generated-first", "generated-second"])
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_TOKENS_JSON", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "ugoite_core.auth.secrets.token_urlsafe",
+        lambda _: next(generated_tokens),
+    )
+    clear_auth_manager_cache()
+
+    monotonic_now = {"value": 300.0}
+    monkeypatch.setattr(
+        "ugoite_core.auth.time.monotonic",
+        lambda: monotonic_now["value"],
+    )
+
+    first = get_auth_manager()
+    assert first.bootstrap_token == "generated-first"
+
+    monotonic_now["value"] += 61.0
+    second = get_auth_manager()
+    assert second.bootstrap_token == "generated-first"
+
+    clear_auth_manager_cache()
+    third = get_auth_manager()
+    assert third.bootstrap_token == "generated-second"
+
+
 def test_authenticate_headers_req_sec_003_rejects_revoked_key_after_cache_expiry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

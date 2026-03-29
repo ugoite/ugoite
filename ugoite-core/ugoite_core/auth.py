@@ -26,6 +26,7 @@ TOTP_STEP_SECONDS = 30
 TOTP_DIGITS = 6
 DEFAULT_SIGNED_BEARER_VERSION = "v1"
 _AUTH_MANAGER_CACHE: dict[str, tuple[float, AuthManager] | None] = {"entry": None}
+_GENERATED_BOOTSTRAP_TOKEN: str | None = None
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -314,18 +315,21 @@ def mint_signed_bearer_token(
 
 def _build_auth_manager() -> AuthManager:
     """Create authentication manager from the current environment settings."""
+    global _GENERATED_BOOTSTRAP_TOKEN
     bootstrap_token: str | None = None
     if not _has_configured_bearer_credentials():
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
         if bootstrap_token is None:
-            bootstrap_token = secrets.token_urlsafe(32)
-            logger.warning(
-                "No bearer credentials configured. "
-                "Generated one-time bootstrap token fingerprint=%s; "
-                "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
-                "for deterministic startup credentials.",
-                _token_fingerprint(bootstrap_token),
-            )
+            if _GENERATED_BOOTSTRAP_TOKEN is None:
+                _GENERATED_BOOTSTRAP_TOKEN = secrets.token_urlsafe(32)
+                logger.warning(
+                    "No bearer credentials configured. "
+                    "Generated one-time bootstrap token fingerprint=%s; "
+                    "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
+                    "for deterministic startup credentials.",
+                    _token_fingerprint(_GENERATED_BOOTSTRAP_TOKEN),
+                )
+            bootstrap_token = _GENERATED_BOOTSTRAP_TOKEN
 
     return AuthManager(
         bootstrap_token=bootstrap_token,
@@ -350,7 +354,9 @@ def get_auth_manager() -> AuthManager:
 
 def clear_auth_manager_cache() -> None:
     """Clear cached auth manager for tests and dynamic config updates."""
+    global _GENERATED_BOOTSTRAP_TOKEN
     _AUTH_MANAGER_CACHE["entry"] = None
+    _GENERATED_BOOTSTRAP_TOKEN = None
 
 
 def authenticate_headers(headers: dict[str, str] | object) -> RequestIdentity:
