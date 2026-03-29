@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use ugoite_cli::config::{
-    base_url, config_path, effective_format_for_stdout, load_config, operator_for_path,
-    parse_space_path, print_json, print_json_table, save_config, space_ws_path, EndpointConfig,
-    EndpointMode, Format,
+    base_url, config_path, effective_format_for_stdout, load_config, normalize_space_root,
+    operator_for_path, parse_space_path, print_json, print_json_table, resolve_space_reference,
+    save_config, space_ws_path, EndpointConfig, EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
@@ -206,9 +206,37 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
     assert_eq!(root, "/tmp/demo");
     assert_eq!(space_id, "my-space");
 
+    let core = EndpointConfig {
+        mode: EndpointMode::Core,
+        backend_url: "http://backend.example.test".to_string(),
+        api_url: "http://frontend.example.test/api".to_string(),
+    };
+    let (resolved_root, resolved_space_id) =
+        resolve_space_reference(&core, "/tmp/demo/spaces/my-space", "entry list")
+            .expect("full core path should resolve");
+    assert_eq!(resolved_root, "/tmp/demo");
+    assert_eq!(resolved_space_id, "my-space");
+
     let (root, space_id) = parse_space_path("backend-space");
     assert_eq!(root, "");
     assert_eq!(space_id, "backend-space");
+
+    let err =
+        resolve_space_reference(&core, "backend-space", "entry list").expect_err("bare core ID");
+    assert!(err.to_string().contains(
+        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+    ));
+
+    let malformed = resolve_space_reference(&core, "/tmp/demo/spaces//nested", "entry list")
+        .expect_err("malformed core path");
+    assert!(malformed.to_string().contains(
+        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+    ));
+
+    assert_eq!(normalize_space_root("/"), "/");
+    assert_eq!(normalize_space_root("/spaces"), "/");
+    assert_eq!(normalize_space_root("/tmp/demo/spaces"), "/tmp/demo");
+    assert_eq!(normalize_space_root("/tmp/demo"), "/tmp/demo");
 }
 
 /// REQ-OPS-006: endpoint helpers must stay covered for path, URL, and JSON output handling.

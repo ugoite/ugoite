@@ -35,13 +35,13 @@ enum Commands {
     /// Create a new space
     #[command(
         hide = true,
-        long_about = "Create a new space.\n\nExamples:\n  # Core mode (local filesystem)\n  ugoite create-space my-space --root /root/spaces\n\n  # Using UGOITE_ROOT env var\n  ugoite create-space my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space my-space"
+        long_about = "Create a new space.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite create-space my-space --root /root\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite create-space my-space"
     )]
     CreateSpace {
         #[arg(
             long = "root",
             value_name = "LOCAL_ROOT",
-            help = "Local filesystem root for spaces (core mode). Falls back to UGOITE_ROOT env var."
+            help = "Workspace root that contains the spaces/ directory in core mode."
         )]
         root_path: Option<String>,
         #[arg(
