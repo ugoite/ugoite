@@ -1,5 +1,5 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
 };
 use crate::http;
 use anyhow::Result;
@@ -14,14 +14,24 @@ pub struct SearchCmd {
 #[derive(Subcommand)]
 pub enum SearchSubCmd {
     /// Keyword search
-    Keyword { space_path: String, query: String },
+    #[command(
+        long_about = "Run keyword search.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode\n  ugoite search keyword my-space invoice"
+    )]
+    Keyword {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+        query: String,
+    },
 }
 
 pub async fn run(cmd: SearchCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
         SearchSubCmd::Keyword { space_path, query } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "search keyword")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/search?q={query}")).await?;

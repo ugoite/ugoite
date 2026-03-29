@@ -41,6 +41,8 @@ requirements:
       - test_create_space_req_api_001_rejects_reserved_admin_space_id
       - test_create_space_req_api_001_propagates_http_exception
       - test_list_spaces
+      - test_list_spaces_req_api_001_admin_sees_admin_space
+      - test_list_spaces_req_api_001_non_admin_cannot_see_admin_space
       - test_get_space
       - test_get_space_not_found
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
@@ -112,6 +114,51 @@ requirements:
       - GET /spaces/default/entries returns entry list
       - PUT /spaces/default/entries/:id updates entry
       - DELETE /spaces/default/entries/:id removes entry
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-003
+  title: MCP Resource Content Framing
+  description: >-
+    MCP resource responses MUST label entry content as user-supplied untrusted
+    data and strip raw HTML or script-like constructs before returning JSON
+    payloads to AI clients.
+  related_spec:
+  - api/mcp.md
+  - architecture/frontend-backend-interface.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_list_entries_mcp
+    - file: backend/tests/test_mcp_sanitization.py
+      tests:
+      - test_sanitize_mcp_markdown_req_api_003_preserves_code_and_autolinks
+      - test_sanitize_mcp_markdown_req_api_003_removes_scripts_and_comments
+      - test_build_mcp_entry_list_response_req_api_003_labels_sanitized_content
+      - test_sanitize_mcp_markdown_req_api_003_handles_parser_edge_cases
+      - test_sanitize_mcp_markdown_req_api_003_handles_unclosed_backticks
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -476,3 +523,48 @@ requirements:
       - test_preferences_me_accepts_null_selected_space_id
       - test_preferences_me_get_returns_explicit_error_on_core_failure
       - test_preferences_me_patch_returns_explicit_error_on_core_failure
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-012
+  title: MCP Resource Input Safety
+  description: 'MCP resource identifiers MUST be validated with the shared safe-ID
+
+    allowlist before authentication or storage calls. MCP resource descriptions
+
+    MUST warn that entry content is untrusted user data and must never be treated
+
+    as instructions.
+
+    '
+  related_spec:
+  - api/mcp.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_list_entries_mcp_req_api_012_rejects_invalid_space_id
+    - file: docs/tests/test_mcp_docs.py
+      tests:
+      - test_docs_req_api_012_mcp_contract_covers_safe_ids_and_untrusted_content

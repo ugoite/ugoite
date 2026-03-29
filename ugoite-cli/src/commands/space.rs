@@ -1,4 +1,8 @@
-use crate::config::{base_url, load_config, operator_for_path, parse_space_path, print_json};
+use crate::config::{
+    base_url, effective_format, load_config, normalize_space_root, operator_for_path,
+    parse_space_path, print_json, print_json_table, print_list_table, resolve_space_reference,
+    Format,
+};
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
@@ -6,30 +10,58 @@ use ugoite_core::sample_data::SampleDataOptions;
 
 #[derive(Args)]
 pub struct SpaceCmd {
+    /// Output format (default: table when TTY, json when piped)
+    #[arg(short = 'o', long, value_enum, global = true)]
+    pub format: Option<Format>,
     #[command(subcommand)]
     pub sub: SpaceSubCmd,
 }
 
 #[derive(Subcommand)]
 pub enum SpaceSubCmd {
+    /// Create a new space
+    #[command(
+        long_about = "Create a new space.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
+    )]
+    Create {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// List spaces
+    #[command(
+        long_about = "List all spaces.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
+    )]
     List {
-        #[arg(long = "root", value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "ROOT_PATH",
+            help = "Workspace root in core mode (for example /root or /root/spaces). Omit in backend/api mode."
+        )]
         root_path: Option<String>,
     },
     /// Get space metadata
+    #[command(
+        long_about = "Get space metadata.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
+    )]
     Get {
-        #[arg(long = "root", value_name = "LOCAL_ROOT")]
-        root_path: Option<String>,
-        #[arg(value_name = "SPACE_ID")]
-        space_id: String,
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
     },
     /// Patch space metadata
+    #[command(
+        long_about = "Patch space metadata.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
+    )]
     Patch {
-        #[arg(long = "root", value_name = "LOCAL_ROOT")]
-        root_path: Option<String>,
-        #[arg(value_name = "SPACE_ID")]
-        space_id: String,
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
@@ -49,6 +81,10 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long)]
         seed: Option<u64>,
+        /// Bootstrap this user ID as the active admin owner of the seeded space.
+        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        #[arg(long)]
+        owner: Option<String>,
     },
     /// List sample scenarios
     SampleScenarios,
@@ -64,6 +100,10 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long)]
         seed: Option<u64>,
+        /// Bootstrap this user ID as the active admin owner of the seeded space.
+        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        #[arg(long)]
+        owner: Option<String>,
     },
     /// Get sample data job status
     SampleJobStatus {
@@ -114,7 +154,35 @@ fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Res
         .ok_or_else(|| anyhow::anyhow!("{command_name} requires --root <LOCAL_ROOT> in core mode"))
 }
 
-pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result<()> {
+fn require_space_list_root(root_path: Option<&str>) -> Result<String> {
+    root_path
+        .map(normalize_space_root)
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "space list requires ROOT_PATH as /path/to/root or /path/to/root/spaces in core mode"
+            )
+        })
+}
+
+fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
+    match owner {
+        Some(owner_user_id) => {
+            let owner_user_id = owner_user_id.trim().to_string();
+            (!owner_user_id.is_empty()).then_some(owner_user_id)
+        }
+        None => std::env::var("UGOITE_DEV_USER_ID")
+            .ok()
+            .map(|owner_user_id| owner_user_id.trim().to_string())
+            .filter(|owner_user_id| !owner_user_id.is_empty()),
+    }
+}
+
+pub async fn create_space_cmd(
+    root_path: Option<&str>,
+    space_id: &str,
+    command_name: &str,
+) -> Result<()> {
     let config = load_config();
     if let Some(base) = base_url(&config) {
         let result = http::http_post(
@@ -125,7 +193,7 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
         print_json(&result);
         return Ok(());
     }
-    let root_path = require_local_root(root_path, "create-space")?;
+    let root_path = require_local_root(root_path, command_name)?;
     let op = operator_for_path(root_path)?;
     ugoite_core::space::create_space(&op, space_id, root_path).await?;
     print_json(&serde_json::json!({"created": true, "id": space_id}));
@@ -134,39 +202,62 @@ pub async fn create_space_cmd(root_path: Option<&str>, space_id: &str) -> Result
 
 pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let config = load_config();
+    let fmt = effective_format(cmd.format);
     match cmd.sub {
-        SpaceSubCmd::List { root_path } => {
+        SpaceSubCmd::Create { space_path } => {
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "space create")?;
             if let Some(base) = base_url(&config) {
-                let result = http::http_get(&format!("{base}/spaces")).await?;
+                let result = http::http_post(
+                    &format!("{base}/spaces"),
+                    &serde_json::json!({"name": space_id}),
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let root_path = require_local_root(root_path.as_deref(), "space list")?;
-            let op = operator_for_path(root_path)?;
-            let spaces = ugoite_core::space::list_spaces(&op).await?;
-            print_json(&spaces);
+            let op = operator_for_path(&root)?;
+            ugoite_core::space::create_space(&op, &space_id, &root).await?;
+            print_json(&serde_json::json!({"created": true, "id": space_id}));
         }
-        SpaceSubCmd::Get {
-            root_path,
-            space_id,
-        } => {
+        SpaceSubCmd::List { root_path } => {
+            if let Some(base) = base_url(&config) {
+                let result = http::http_get(&format!("{base}/spaces")).await?;
+                if fmt != Format::Json {
+                    if let Some(arr) = result.as_array() {
+                        print_json_table(arr, &[("ID", "id"), ("NAME", "name")]);
+                        return Ok(());
+                    }
+                }
+                print_json(&result);
+                return Ok(());
+            }
+            let root_path = require_space_list_root(root_path.as_deref())?;
+            let op = operator_for_path(&root_path)?;
+            let spaces = ugoite_core::space::list_spaces(&op).await?;
+            if fmt != Format::Json {
+                print_list_table("SPACE_ID", &spaces);
+            } else {
+                print_json(&spaces);
+            }
+        }
+        SpaceSubCmd::Get { space_path } => {
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "space get")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}")).await?;
                 print_json(&result);
                 return Ok(());
             }
-            let root_path = require_local_root(root_path.as_deref(), "space get")?;
-            let op = operator_for_path(root_path)?;
+            let op = operator_for_path(&root)?;
             let space = ugoite_core::space::get_space_raw(&op, &space_id).await?;
             print_json(&space);
         }
         SpaceSubCmd::Patch {
-            root_path,
-            space_id,
+            space_path,
             name,
             storage_config,
             settings,
         } => {
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "space patch")?;
             let mut patch = serde_json::Map::new();
             if let Some(n) = name {
                 patch.insert("name".to_string(), serde_json::json!(n));
@@ -188,8 +279,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let root_path = require_local_root(root_path.as_deref(), "space patch")?;
-            let op = operator_for_path(root_path)?;
+            let op = operator_for_path(&root)?;
             let result =
                 ugoite_core::space::patch_space(&op, &space_id, &serde_json::Value::Object(patch))
                     .await?;
@@ -201,6 +291,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             scenario,
             entry_count,
             seed,
+            owner,
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
@@ -209,6 +300,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             ugoite_core::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &opts,
@@ -226,6 +318,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             scenario,
             entry_count,
             seed,
+            owner,
         } => {
             let op = operator_for_path(&root_path)?;
             let root_uri = format!("file://{}/", root_path.trim_end_matches('/'));
@@ -234,6 +327,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
+                owner_user_id: resolve_sample_owner_user_id(owner),
             };
             let job =
                 ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;

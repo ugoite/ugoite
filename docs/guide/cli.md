@@ -98,8 +98,8 @@ If you installed a released binary, use `ugoite` directly:
 
 ```bash
 mkdir -p ./spaces
-ugoite space list --root ./spaces
-ugoite create-space --root ./spaces demo
+ugoite space list ./spaces
+ugoite space create ./spaces/demo
 ```
 
 If you are actively developing inside the repository, you can swap those for
@@ -128,7 +128,7 @@ The seed flow prints a terminal progress bar while entries are generated. After
 it finishes, confirm the seeded space:
 
 ```bash
-cargo run -q -p ugoite-cli -- space list --root .
+cargo run -q -p ugoite-cli -- space list ./spaces
 ls "./spaces/${UGOITE_SEED_SPACE_ID:-dev-seed}"
 ```
 
@@ -143,14 +143,38 @@ CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenario
 
 ## Notes
 
-- In `core` mode, commands that touch local storage require an explicit
-  `--root <LOCAL_ROOT>` flag. Use the same `./spaces` directory as the Docker
-  Compose setup for consistency.
+- In `core` mode, commands that target a specific space now take a positional
+  `SPACE_ID_OR_PATH`. Pass the full local path such as
+  `./spaces/dev-seed` or `/root/spaces/dev-seed`.
+- `ugoite space list` takes the local root as a positional argument. Both
+  `ugoite space list .` and `ugoite space list ./spaces` resolve to the same
+  local workspace root.
 - If `UGOITE_ROOT` is already exported for the local dev backend, `mise run seed`
   reuses that same root automatically so the seeded dataset stays visible to the
   local stack.
 - If you use another directory, ensure it is writable and backed by local
   storage.
+
+## Migration: core-mode space paths
+
+Older examples used `--root <LOCAL_ROOT>` for visible `space` subcommands.
+Those flows now use positional paths instead:
+
+```bash
+# Before
+ugoite space create --root . demo
+ugoite space get --root . demo
+ugoite space patch --root . demo --name "Renamed"
+ugoite space list --root .
+
+# After
+ugoite space create ./spaces/demo
+ugoite space get ./spaces/demo
+ugoite space patch ./spaces/demo --name "Renamed"
+ugoite space list .
+```
+
+Backend and API modes still accept bare space IDs such as `demo`.
 
 ## Endpoint routing mode
 

@@ -1,5 +1,5 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
 };
 use crate::http;
 use anyhow::Result;
@@ -50,7 +50,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
         FormSubCmd::List { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "form list")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/forms")).await?;
                 print_json(&result);
@@ -65,7 +65,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             space_path,
             form_name,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "form get")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/forms/{form_name}")).await?;
@@ -82,7 +82,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             form_file,
             strategies,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "form update")?;
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
             if let Some(base) = base_url(&config) {

@@ -14,7 +14,7 @@
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push, PR, merge queue | Generate CycloneDX SBOMs, sign/attest, and run vulnerability gate |
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue, manual | Run license/compliance and vulnerability scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, yamllint, and actionlint |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, GitHub Action SHA pinning checks, yamllint, and actionlint |
 | Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, PR, merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
@@ -54,6 +54,14 @@ exact patch versions for Node, Bun, Python, Biome, Rust, and uv. `setup-node`,
 `setup-bun`, and `python-version` inputs must not use floating aliases such as
 `lts`, `lts/*`, `latest`, or minor-only pins, because REQ-OPS-001 treats local
 and CI runtime drift as a docs-tested contract failure.
+
+External GitHub Actions referenced from `.github/workflows/*.yml` must also use
+full commit SHAs instead of floating tags or branches. Local reusable workflows stay
+path-based (`./.github/workflows/...`), and the root `.github/dependabot.yml`
+must keep `package-ecosystem: "github-actions"` at `/` so SHA-pinned workflow
+dependencies stay automatically updatable. `YAML Workflow CI` runs
+`Check GitHub Action SHA pins (REQ-OPS-031)` so this trust boundary cannot
+silently drift.
 
 Lockfile-backed installs must also fail fast on dependency drift. When the
 repository commits a lockfile, local tasks, CI workflows, and contributor-facing
@@ -103,7 +111,7 @@ path-aware no-op.
 | SBOM CI | `.github/workflows/sbom-ci.yml` | Push on `main`, PR, merge queue | Summary check covers image export plus SBOM/signing/security gates |
 | ScanCode | `.github/workflows/scancode.yml` | Push on `main`, PR, merge queue | Direct summary check for compliance scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for shell quality gates |
-| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for root hygiene and workflow linting |
+| YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Direct summary check for root hygiene, action SHA pinning, and workflow linting |
 
 ## Python CI
 
@@ -129,6 +137,7 @@ visible through `/spaces` after login. That keeps root mismatches between
 jobs:
   ci:
     - bash scripts/check-root-artifact-hygiene.sh
+    - uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable -v
     - yamllint ...
     - actionlint
 ```
@@ -236,7 +245,7 @@ jobs:
     - docker load the published images
     - UGOITE_VERSION=<version> docker compose -f docker-compose.release.yaml up -d
     - npx playwright test smoke.test.ts search-ui.test.ts
-    - install the released CLI and verify backend-mode auth + create-space
+    - install the released CLI and verify backend-mode auth + `space create`
 ```
 
 `Release Quickstart Verify` lives at
@@ -246,10 +255,10 @@ browser job runs `scripts/verify-release-container-quickstart.sh`, which
 downloads the exact release assets, starts `docker-compose.release.yaml`, waits
 for `/health` and `/login`, runs the published browser stories with
 `smoke.test.ts` and `search-ui.test.ts`, then installs the released CLI and
-verifies `auth login --mock-oauth`, `space list`, and `create-space` against
+verifies `auth login --mock-oauth`, `space list`, and `space create` against
 the running release backend. The CLI job separately runs
 `scripts/verify-release-cli-quickstart.sh` so the generic installer path and
-local `space list` / `create-space` quick start remain validated for the same
+local `space list` / `space create` quick start remain validated for the same
 exact release version.
 
 ## Release Quickstart Verify CI
@@ -457,7 +466,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 10. **Release Publish** authenticates to GHCR with `GITHUB_TOKEN`, pushes `ghcr.io/ugoite/ugoite/backend` and `ghcr.io/ugoite/ugoite/frontend`, keeps tags aligned to the requested version (`<semver>` plus `latest`/`stable` for stable releases, or `<channel>` for alpha/beta), checks out the requested target before generating notes, prepends channel-scoped repository notes rendered by `scripts/render_release_notes.py` from `docs/version/changelog/<channel>.yaml`, creates the draft GitHub Release, exports exact-version container image archives, and finalizes that release, delegates release image archive export to `.github/workflows/docker-images.yml` with `export_artifacts: true`, uploads `ugoite-backend-v<version>.docker.tar.gz`, `ugoite-frontend-v<version>.docker.tar.gz`, and `docker-compose.release.yaml` as GitHub Release assets alongside matching `.sha256` checksum files, commits the workspace `Cargo.lock` so clean checkouts can honor `cargo build --locked`, builds CLI archives for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, and `aarch64-apple-darwin` through `.github/workflows/cli-release-binaries.yml`, uses `scripts/render-cli-release-installer.sh` to generate matching `ugoite-v<version>-<target>.install.sh` assets, uses the standard `macos-15` runner for the Intel macOS cross-build and `macos-14` for the Apple Silicon build, uploads those assets plus `.sha256` checksum files, and then finalizes the release.
 11. **Container quick start** must stay documented in `README.md`, `docs/guide/container-quickstart.md`, and `docker-compose.release.yaml` so users can download the shipped compose file, prepare the documented env file, and pull and run published images without rebuilding from source, and those docs must keep a dedicated `Environment Variables` section aligned with the shipped release-compose overrides.
 12. **CLI installation** must stay documented in `README.md`, `docs/guide/cli.md`, and `scripts/install-ugoite-cli.sh` so users can install the released CLI and run `ugoite --help` without cloning the repository; the docs must also expose exact per-target one-liners for the `ugoite-v<version>-<target>.install.sh` release assets.
-13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep both the generic installer path and the per-target `.install.sh` asset path aligned with the documented `space list` and `create-space` workflow for an exact release version.
+13. **Release quick-start smoke validation** may be exercised with `scripts/verify-release-cli-quickstart.sh`, which must keep both the generic installer path and the per-target `.install.sh` asset path aligned with the documented `space list` and `space create` workflow for an exact release version.
 14. **Published release verification** must stay wired through `.github/workflows/release-quickstart-verify.yml`, which downloads exact release assets, starts `docker-compose.release.yaml`, runs `smoke.test.ts` plus `search-ui.test.ts`, and verifies a released CLI install can authenticate to and operate against the running release backend; `Release Publish` must delegate to that reusable workflow after finalizing the GitHub Release.
 15. **Public installer package** metadata lives in `packages/ugoite/package.json`, must stay non-private with `publishConfig.access=public`, must remain packable via `npm pack --dry-run`, must expose `ugoite-install` as the package-managed bootstrap to the canonical `scripts/install-ugoite-cli.sh` flow, and `README.md` plus `docs/guide/cli.md` must make the split between the public package and the private root tooling package explicit.
 

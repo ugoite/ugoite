@@ -1,5 +1,5 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
 };
 use crate::http;
 use anyhow::Result;
@@ -14,16 +14,34 @@ pub struct IndexCmd {
 #[derive(Subcommand)]
 pub enum IndexSubCmd {
     /// Reindex a space
-    Run { space_path: String },
+    #[command(
+        long_about = "Reindex a space.\n\nExamples:\n  # Core mode\n  ugoite index run /root/spaces/my-space\n\n  # Backend mode\n  ugoite index run my-space"
+    )]
+    Run {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// Show aggregated stats for a space
-    Stats { space_path: String },
+    #[command(
+        long_about = "Show aggregated stats for a space.\n\nExamples:\n  # Core mode\n  ugoite index stats /root/spaces/my-space\n\n  # Backend mode\n  ugoite index stats my-space"
+    )]
+    Stats {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
 }
 
 pub async fn run(cmd: IndexCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
         IndexSubCmd::Run { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "index run")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/index"),
@@ -39,7 +57,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "index stats")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/stats")).await?;
                 print_json(&result);
@@ -56,7 +74,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
 
 pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
     let config = load_config();
-    let (root, space_id) = parse_space_path(space_path);
+    let (root, space_id) = resolve_space_reference(&config, space_path, "query")?;
     if let Some(base) = base_url(&config) {
         let result = http::http_get(&format!("{base}/spaces/{space_id}/query?sql={sql}")).await?;
         print_json(&result);
