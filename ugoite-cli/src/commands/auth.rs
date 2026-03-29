@@ -1,4 +1,4 @@
-use crate::config::{base_url, load_config, print_json};
+use crate::config::{base_url, load_config, print_json, EndpointMode};
 use crate::http;
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
@@ -14,17 +14,38 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show auth setup (env vars)
     Profile,
-    /// Authenticate via the local backend/API passkey + 2FA flow and print export shell commands
+    /// Authenticate via local backend/API passkey + 2FA login and print export commands.
+    ///
+    /// Prerequisite: configure backend or api mode first:
+    ///   ugoite config set --mode backend --backend-url http://localhost:8000
+    ///
+    /// Apply the printed export with:
+    ///   eval "$(ugoite auth login --username USER --totp-code CODE)"
+    #[command(
+        long_about = "Authenticate via backend/API passkey + 2FA login and print shell export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, also export UGOITE_DEV_PASSKEY_CONTEXT before logging in.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the token in one step\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
+    )]
     Login {
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Username to authenticate with (prompted interactively if omitted)"
+        )]
         username: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "6-digit TOTP code from your authenticator app (prompted interactively if omitted)"
+        )]
         totp_code: Option<String>,
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Use mock OAuth flow (development only, requires UGOITE_DEV_AUTH_PROXY_TOKEN)"
+        )]
         mock_oauth: bool,
     },
     /// Print unset commands for auth tokens
     TokenClear,
+    /// Clear auth tokens (alias for token-clear)
+    Logout,
     /// Print authentication capabilities
     Overview,
 }
@@ -45,8 +66,12 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             mock_oauth,
         } => {
             let config = load_config();
-            let base = base_url(&config)
-                .unwrap_or_else(|| config.backend_url.trim_end_matches('/').to_string());
+            if config.mode == EndpointMode::Core {
+                return Err(anyhow!(
+                    "auth login requires backend or api mode.\nRun: ugoite config set --mode backend --backend-url http://localhost:8000"
+                ));
+            }
+            let base = base_url(&config).expect("backend/api mode always has a base URL");
 
             let result = if mock_oauth {
                 http::http_post_with_dev_auth_proxy(
@@ -68,10 +93,18 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             };
 
             if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
+                let apply_args = if mock_oauth {
+                    " --mock-oauth"
+                } else {
+                    " --username USER --totp-code CODE"
+                };
                 println!("export UGOITE_AUTH_BEARER_TOKEN={token}");
+                eprintln!(
+                    "# To apply: eval \"$(ugoite auth login{apply_args})\"\n# Or copy the export line above into your shell."
+                );
             }
         }
-        AuthSubCmd::TokenClear => {
+        AuthSubCmd::TokenClear | AuthSubCmd::Logout => {
             println!("unset UGOITE_AUTH_BEARER_TOKEN");
             println!("unset UGOITE_AUTH_API_KEY");
         }

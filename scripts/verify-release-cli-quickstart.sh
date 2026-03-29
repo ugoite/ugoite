@@ -140,24 +140,24 @@ mkdir -p "$WORK_DIR/spaces"
 
 list_before_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" space list --root "$SPACE_ROOT"
+    "$INSTALLED_BINARY" space list "$SPACE_ROOT"
 )"
 assert_json_equals "initial space list" '[]' "$list_before_output"
 log "Verified: space list starts empty"
 
 create_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" create-space --root "$SPACE_ROOT" "$SPACE_ID"
+    "$INSTALLED_BINARY" space create "${SPACE_ROOT}/${SPACE_ID}"
 )"
 assert_json_equals \
-  "create-space output" \
+  "space create output" \
   "{\"created\": true, \"id\": \"${SPACE_ID}\"}" \
   "$create_output"
-log "Verified: create-space creates the expected demo space"
+log "Verified: space create creates the expected demo space"
 
 list_after_output="$(
   cd "$WORK_DIR" &&
-    "$INSTALLED_BINARY" space list --root "$SPACE_ROOT"
+    "$INSTALLED_BINARY" space list "$SPACE_ROOT"
 )"
 assert_json_equals \
   "final space list" \

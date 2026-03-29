@@ -178,7 +178,7 @@ and `mise run dev` keep pointing at the same local storage tree.
 Confirm the default dataset after a run:
 
 ```bash
-cargo run -q -p ugoite-cli -- space list --root .
+cargo run -q -p ugoite-cli -- space list ./spaces
 ls "./spaces/${UGOITE_SEED_SPACE_ID:-dev-seed}"
 ```
 

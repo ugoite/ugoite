@@ -1,5 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -123,23 +125,62 @@ pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
     format!("spaces/{}", space_id)
 }
 
-pub fn parse_space_path(space_path: &str) -> (String, String) {
+fn explicit_core_space_path(space_path: &str) -> Option<(String, String)> {
     let text = space_path.trim_end_matches('/');
-    if let Some(pos) = text.rfind("/spaces/") {
-        let root = &text[..pos];
-        let rest = &text[pos + 8..];
-        let space_id = rest.split('/').next().unwrap_or(rest);
-        (root.to_string(), space_id.to_string())
-    } else {
-        (
-            "".to_string(),
-            std::path::Path::new(text)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(text)
-                .to_string(),
-        )
+    let pos = text.rfind("/spaces/")?;
+    let root = if pos == 0 { "/" } else { &text[..pos] };
+    let rest = &text[pos + 8..];
+    let space_id = rest.split('/').next().unwrap_or(rest);
+    if root.is_empty() || space_id.is_empty() {
+        return None;
     }
+    Some((root.to_string(), space_id.to_string()))
+}
+
+pub fn parse_space_path(space_path: &str) -> (String, String) {
+    if let Some(explicit) = explicit_core_space_path(space_path) {
+        return explicit;
+    }
+    let text = space_path.trim_end_matches('/');
+    (
+        "".to_string(),
+        std::path::Path::new(text)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(text)
+            .to_string(),
+    )
+}
+
+pub fn resolve_space_reference(
+    config: &EndpointConfig,
+    space_path: &str,
+    command_name: &str,
+) -> Result<(String, String)> {
+    let parsed = parse_space_path(space_path);
+    if base_url(config).is_some() {
+        return Ok(parsed);
+    }
+    explicit_core_space_path(space_path).ok_or_else(|| {
+        anyhow!(
+            "{command_name} requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        )
+    })
+}
+
+pub fn normalize_space_root(root_path: &str) -> String {
+    let trimmed = if root_path == "/" {
+        "/"
+    } else {
+        root_path.trim_end_matches('/')
+    };
+    if let Some(parent) = trimmed.strip_suffix("/spaces") {
+        if parent.is_empty() {
+            return "/".to_string();
+        }
+        return parent.to_string();
+    }
+    trimmed.to_string()
 }
 
 pub fn base_url(config: &EndpointConfig) -> Option<String> {
@@ -154,4 +195,88 @@ pub fn print_json<T: serde::Serialize>(value: &T) {
     let pretty_json = serde_json::to_string_pretty(value);
     let rendered = pretty_json.unwrap_or_default();
     println!("{rendered}");
+}
+
+/// Output format for CLI commands.
+#[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
+pub enum Format {
+    /// Pretty-printed JSON (default when piped)
+    #[default]
+    Json,
+    /// Human-readable table (default when stdout is a TTY)
+    Table,
+    /// Key: value lines for single objects
+    Plain,
+}
+
+/// Return the effective format: use explicit override, or auto-detect TTY.
+pub fn effective_format(explicit: Option<Format>) -> Format {
+    effective_format_for_stdout(explicit, std::io::stdout().is_terminal())
+}
+
+#[doc(hidden)]
+pub fn effective_format_for_stdout(explicit: Option<Format>, stdout_is_terminal: bool) -> Format {
+    if let Some(f) = explicit {
+        return f;
+    }
+    if stdout_is_terminal {
+        Format::Table
+    } else {
+        Format::Json
+    }
+}
+
+/// Print a list of string IDs as a single-column table.
+pub fn print_list_table(header: &str, items: &[impl std::fmt::Display]) {
+    let col_width = items
+        .iter()
+        .map(|s| s.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max(header.len());
+    println!("{:<col_width$}", header, col_width = col_width);
+    println!("{}", "-".repeat(col_width));
+    for item in items {
+        println!("{item}");
+    }
+}
+
+/// Print a list of JSON objects as a table, selecting the given columns.
+/// Columns is a slice of `(header, json_key)` pairs.
+pub fn print_json_table(rows: &[serde_json::Value], columns: &[(&str, &str)]) {
+    let mut widths: Vec<usize> = columns.iter().map(|(h, _)| h.len()).collect();
+    let cell_matrix: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(i, (_, key))| {
+                    let cell = match &row[key] {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Null => String::new(),
+                        other => other.to_string(),
+                    };
+                    widths[i] = widths[i].max(cell.len());
+                    cell
+                })
+                .collect()
+        })
+        .collect();
+    let header: Vec<String> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, (h, _))| format!("{:<width$}", h, width = widths[i]))
+        .collect();
+    println!("{}", header.join("  "));
+    let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
+    println!("{}", sep.join("  "));
+    for row_cells in &cell_matrix {
+        let row: Vec<String> = row_cells
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("{:<width$}", c, width = widths[i]))
+            .collect();
+        println!("{}", row.join("  "));
+    }
 }
