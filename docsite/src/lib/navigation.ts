@@ -78,6 +78,12 @@ export const navSections: NavSection[] = [
 	},
 ];
 
+export function getNewcomerNavSections(): NavSection[] {
+	return structuredClone(
+		navSections.filter((section) => section.title === "Getting Started"),
+	);
+}
+
 export function titleFromSegment(segment: string): string {
 	return segment
 		.replaceAll("-", " ")
