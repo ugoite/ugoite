@@ -1,5 +1,5 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
 };
 use crate::http;
 use anyhow::Result;
@@ -62,7 +62,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&serde_json::json!({"valid": valid, "sql": sql_text}));
         }
         SqlSubCmd::SavedList { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/sql")).await?;
                 print_json(&result);
@@ -74,7 +74,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&sqls);
         }
         SqlSubCmd::SavedGet { space_path, sql_id } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-get")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
@@ -94,7 +94,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             variables,
             author,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) =
+                resolve_space_reference(&config, &space_path, "sql saved-create")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
@@ -130,7 +131,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             parent_revision_id,
             author,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) =
+                resolve_space_reference(&config, &space_path, "sql saved-update")?;
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
@@ -164,7 +166,8 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             print_json(&result);
         }
         SqlSubCmd::SavedDelete { space_path, sql_id } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) =
+                resolve_space_reference(&config, &space_path, "sql saved-delete")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
