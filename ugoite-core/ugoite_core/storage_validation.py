@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ipaddress import ip_address
+import socket
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Any
 from urllib.parse import urlparse
 
@@ -16,6 +17,7 @@ def validate_test_storage_config(storage_config: dict[str, Any]) -> None:
     if not isinstance(uri, str) or not uri.strip():
         message = "Missing 'uri' in storage config"
         raise ValueError(message)
+    uri = uri.strip()
     _validate_storage_uri(uri)
 
     endpoint = storage_config.get("endpoint")
@@ -24,6 +26,7 @@ def validate_test_storage_config(storage_config: dict[str, Any]) -> None:
     if not isinstance(endpoint, str) or not endpoint.strip():
         message = "Storage endpoint must be a non-empty string"
         raise ValueError(message)
+    endpoint = endpoint.strip()
     _validate_storage_endpoint(endpoint)
 
 
@@ -52,14 +55,39 @@ def _validate_storage_endpoint(endpoint: str) -> None:
         message = f"Storage endpoint host is not allowed: {host}"
         raise ValueError(message)
 
-    try:
-        address = ip_address(host)
-    except ValueError:
-        return
+    if _is_blocked_host(host):
+        message = f"Storage endpoint host is not allowed: {host}"
+        raise ValueError(message)
 
-    if address.is_loopback:
-        message = f"Storage endpoint host is not allowed: {host}"
-        raise ValueError(message)
-    if address.is_link_local:
-        message = f"Storage endpoint host is not allowed: {host}"
-        raise ValueError(message)
+
+def _is_blocked_host(host: str) -> bool:
+    address = _parse_ip_address(host)
+    if address is not None:
+        return address.is_loopback or address.is_link_local
+
+    for resolved_address in _resolve_host_addresses(host):
+        if resolved_address.is_loopback or resolved_address.is_link_local:
+            return True
+    return False
+
+
+def _parse_ip_address(host: str) -> IPv4Address | IPv6Address | None:
+    normalized_host = host.split("%", 1)[0]
+    try:
+        return ip_address(normalized_host)
+    except ValueError:
+        return None
+
+
+def _resolve_host_addresses(host: str) -> set[IPv4Address | IPv6Address]:
+    try:
+        addr_info = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return set()
+
+    resolved = set()
+    for _family, _socktype, _proto, _canonname, sockaddr in addr_info:
+        address = _parse_ip_address(sockaddr[0])
+        if address is not None:
+            resolved.add(address)
+    return resolved
