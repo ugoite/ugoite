@@ -117,13 +117,12 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									<h4 class="text-sm font-semibold">Choose the storage model deliberately</h4>
 									<ul class="mt-2 list-disc pl-5 text-sm ui-muted space-y-1">
 										<li>
-											<code>file://</code> keeps the space local-first on this machine with no
-											cloud storage bill.
+											<code>file://</code> keeps the space local-first on this machine with no cloud
+											storage bill.
 										</li>
 										<li>
-											<code>s3://</code> moves the data location to object storage, which can
-											help with team access and backups but adds cloud credentials and usage
-											costs.
+											<code>s3://</code> moves the data location to object storage, which can help
+											with team access and backups but adds cloud credentials and usage costs.
 										</li>
 									</ul>
 								</div>
