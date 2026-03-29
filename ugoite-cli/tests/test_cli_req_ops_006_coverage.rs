@@ -828,6 +828,40 @@ fn test_cli_req_ops_006_search_index_query_and_link_paths() {
         .contains("Link commands removed. Use row_reference fields instead."));
 }
 
+/// REQ-OPS-006: query CLI help must only advertise implemented flags and reject removed filters.
+#[test]
+fn test_cli_req_ops_006_query_help_rejects_removed_flags() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_root, config_path, space_path) = setup_space_with_form(&dir, "query-space");
+
+    let help_output = cli_command(&config_path)
+        .args(["query", "--help"])
+        .output()
+        .expect("query help");
+    assert_success(&help_output, "query help");
+    let help_text = String::from_utf8_lossy(&help_output.stdout);
+    assert!(!help_text.contains("--limit"));
+    assert!(!help_text.contains("--offset"));
+    assert!(!help_text.contains("--form"));
+    assert!(!help_text.contains("--tag"));
+
+    let removed_flag_output = cli_command(&config_path)
+        .args([
+            "query",
+            &space_path,
+            "--sql",
+            "SELECT id FROM entries",
+            "--limit",
+            "10",
+        ])
+        .output()
+        .expect("query with removed limit flag");
+    assert!(!removed_flag_output.status.success());
+    let stderr = String::from_utf8_lossy(&removed_flag_output.stderr);
+    assert!(stderr.contains("--limit"));
+    assert!(stderr.contains("unexpected argument"));
+}
+
 /// REQ-OPS-006: space commands must keep local sample/test flows and remote-only routes covered.
 #[test]
 fn test_cli_req_ops_006_space_local_and_remote_paths() {
