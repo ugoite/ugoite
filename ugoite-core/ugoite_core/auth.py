@@ -221,7 +221,7 @@ def _hotp_value(secret: bytes, counter: int, *, digits: int) -> str:
 
 
 def _totp_secret_fingerprint(secret: bytes) -> str:
-    return hashlib.sha256(secret).hexdigest()[:16]
+    return hashlib.sha256(secret).hexdigest()
 
 
 def validate_totp_code(
