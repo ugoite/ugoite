@@ -364,9 +364,13 @@ requirements:
   title: Credentialed CORS Allowlist
   description: 'Credentialed browser access MUST use explicit CORS origin, method,
 
+    and request-header allowlists. Wildcard origin configuration MUST be rejected
+
     and request-header allowlists. Preflight requests that ask for methods or
 
-    headers outside the allowlist MUST be rejected.
+    headers outside the allowlist MUST be rejected. Wildcard origin configuration
+
+    MUST be rejected when remote access is enabled.
 
     '
   related_spec:
@@ -378,4 +382,5 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists
+      - test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled
       - test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header
