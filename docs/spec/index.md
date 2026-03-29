@@ -20,6 +20,12 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Quick Navigation
 
+### Getting Started & Concepts
+- [Core Concepts](../guide/concepts.md) - Plain-language introduction to spaces, entries, forms, and search
+- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path
+- [CLI Guide](../guide/cli.md) - Terminal-first install and usage path
+- [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow
+
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
 - [Technology Stack](architecture/stack.md) - Frontend, backend, and storage technologies
