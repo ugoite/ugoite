@@ -1160,7 +1160,7 @@ def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-SEC-002: middleware adds the baseline security headers for normal HTTP responses."""
+    """REQ-SEC-002: middleware adds baseline security headers for HTTP responses."""
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
@@ -1172,7 +1172,7 @@ def test_middleware_headers(
 def test_cors_req_sec_010_preflight_uses_explicit_method_and_header_lists(
     test_client: TestClient,
 ) -> None:
-    """REQ-SEC-010: credentialed CORS preflight advertises explicit allowlists instead of wildcards."""
+    """REQ-SEC-010: credentialed CORS preflight advertises explicit allowlists."""
     response = test_client.options(
         "/health",
         headers={
@@ -1196,13 +1196,15 @@ def test_cors_req_sec_010_preflight_uses_explicit_method_and_header_lists(
         for header in response.headers["access-control-allow-headers"].split(",")
     }
     assert "*" not in allowed_headers
-    assert {header.lower() for header in ALLOWED_CORS_HEADERS}.issubset(allowed_headers)
+    assert {header.lower() for header in ALLOWED_CORS_HEADERS}.issubset(
+        allowed_headers,
+    )
 
 
 def test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-SEC-010: startup validation rejects wildcard ALLOW_ORIGIN when remote access is enabled."""
+    """REQ-SEC-010: startup validation rejects wildcard origins for remote mode."""
     monkeypatch.setenv("ALLOW_ORIGIN", "*")
     monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
 
