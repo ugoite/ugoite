@@ -659,7 +659,10 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+    assert (
+        response.json()["detail"]
+        == "Passkey-bound local context is missing or invalid."
+    )
 
 
 def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context(
@@ -685,7 +688,10 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+    assert (
+        response.json()["detail"]
+        == "Passkey-bound local context is missing or invalid."
+    )
 
 
 def test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context(
