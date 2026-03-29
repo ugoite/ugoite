@@ -12,6 +12,8 @@ pub struct ConfigCmd {
 pub enum ConfigSubCmd {
     /// Show saved endpoint config
     Show,
+    /// Show the active endpoint mode in plain language
+    Current,
     /// Save endpoint config (mode, backend URL, API URL)
     #[command(
         long_about = "Save endpoint configuration.\n\nThree modes are supported:\n  core     - Direct local filesystem access (no backend needed)\n  backend  - Connect to a running ugoite backend server\n  api      - Connect to a remote API endpoint\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (connect to remote API)\n  ugoite config set --mode api --api-url https://api.example.com\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
@@ -38,12 +40,17 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
             let config = load_config();
             print_json(&config);
         }
+        ConfigSubCmd::Current => {
+            let config = load_config();
+            print_current_config(&config);
+        }
         ConfigSubCmd::Set {
             mode,
             backend_url,
             api_url,
         } => {
             let mut config = load_config();
+            let previous_mode = config.mode.clone();
             if let Some(m) = mode {
                 config.mode = match m.as_str() {
                     "core" => EndpointMode::Core,
@@ -58,6 +65,7 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
             if let Some(u) = api_url {
                 config.api_url = u;
             }
+            print_mode_transition_notice(&previous_mode, &config.mode, &config);
             let path = save_config(&config)?;
             print_json(&serde_json::json!({
                 "saved": true,
@@ -67,4 +75,74 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_current_config(config: &crate::config::EndpointConfig) {
+    match config.mode {
+        EndpointMode::Core => {
+            println!("Current endpoint mode: core");
+            println!("Topology: local filesystem via ugoite-core.");
+            println!("Future commands read and write your local workspace directly.");
+            println!("To switch to a server-backed mode:");
+            println!("  ugoite config set --mode backend --backend-url http://localhost:8000");
+        }
+        EndpointMode::Backend => {
+            println!("Current endpoint mode: backend");
+            println!("Topology: direct backend server at {}", config.backend_url);
+            println!("Future commands use the server instead of your local filesystem.");
+            println!("To return to local-first mode:");
+            println!("  ugoite config set --mode core");
+        }
+        EndpointMode::Api => {
+            println!("Current endpoint mode: api");
+            println!("Topology: API endpoint at {}", config.api_url);
+            println!("Future commands use the remote API instead of your local filesystem.");
+            println!("To return to local-first mode:");
+            println!("  ugoite config set --mode core");
+        }
+    }
+}
+
+fn print_mode_transition_notice(
+    previous_mode: &EndpointMode,
+    next_mode: &EndpointMode,
+    config: &crate::config::EndpointConfig,
+) {
+    if previous_mode == next_mode {
+        return;
+    }
+
+    match (previous_mode, next_mode) {
+        (EndpointMode::Core, EndpointMode::Backend) => {
+            eprintln!(
+                "Warning: switching from core mode to backend mode. Future commands will use {} instead of your local filesystem.",
+                config.backend_url
+            );
+            eprintln!("To return to local-first mode: ugoite config set --mode core");
+        }
+        (EndpointMode::Core, EndpointMode::Api) => {
+            eprintln!(
+                "Warning: switching from core mode to api mode. Future commands will use {} instead of your local filesystem.",
+                config.api_url
+            );
+            eprintln!("To return to local-first mode: ugoite config set --mode core");
+        }
+        (_, EndpointMode::Core) => {
+            eprintln!("Switched back to core mode. Future commands will use your local filesystem directly.");
+        }
+        (_, EndpointMode::Backend) => {
+            eprintln!(
+                "Switched to backend mode. Future commands will use {}.",
+                config.backend_url
+            );
+            eprintln!("To return to local-first mode: ugoite config set --mode core");
+        }
+        (_, EndpointMode::Api) => {
+            eprintln!(
+                "Switched to api mode. Future commands will use {}.",
+                config.api_url
+            );
+            eprintln!("To return to local-first mode: ugoite config set --mode core");
+        }
+    }
 }
