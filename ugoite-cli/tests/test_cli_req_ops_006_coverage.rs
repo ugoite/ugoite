@@ -140,6 +140,43 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     assert!(current_core_stdout.contains("Current endpoint mode: core"));
     assert!(current_core_stdout.contains("local filesystem"));
 
+    let switch_to_api_from_core = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "api",
+            "--api-url",
+            "http://api.example.test/api",
+        ])
+        .output()
+        .expect("config switch to api from core");
+    assert_success(&switch_to_api_from_core, "config switch to api from core");
+    let switch_to_api_from_core_stderr = String::from_utf8_lossy(&switch_to_api_from_core.stderr);
+    assert!(switch_to_api_from_core_stderr.contains("switching from core mode to api mode"));
+    assert!(switch_to_api_from_core_stderr.contains("ugoite config set --mode core"));
+
+    let current_api = cli_command(&config_path)
+        .args(["config", "current"])
+        .output()
+        .expect("config current api");
+    assert_success(&current_api, "config current api");
+    let current_api_stdout = String::from_utf8_lossy(&current_api.stdout);
+    assert!(current_api_stdout.contains("Current endpoint mode: api"));
+    assert!(current_api_stdout.contains("http://api.example.test/api"));
+    assert!(current_api_stdout.contains("remote API instead of your local filesystem"));
+
+    let switch_to_core_from_api = cli_command(&config_path)
+        .args(["config", "set", "--mode", "core"])
+        .output()
+        .expect("config switch back to core from api");
+    assert_success(
+        &switch_to_core_from_api,
+        "config switch back to core from api",
+    );
+    let switch_to_core_from_api_stderr = String::from_utf8_lossy(&switch_to_core_from_api.stderr);
+    assert!(switch_to_core_from_api_stderr.contains("Switched back to core mode"));
+
     let switch_to_backend = cli_command(&config_path)
         .args([
             "config",
@@ -165,6 +202,48 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     assert!(current_backend_stdout.contains("Current endpoint mode: backend"));
     assert!(current_backend_stdout.contains("http://backend.example.test"));
     assert!(current_backend_stdout.contains("server instead of your local filesystem"));
+
+    let switch_to_api_from_backend = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "api",
+            "--api-url",
+            "http://api.example.test/v2",
+        ])
+        .output()
+        .expect("config switch to api from backend");
+    assert_success(
+        &switch_to_api_from_backend,
+        "config switch to api from backend",
+    );
+    let switch_to_api_from_backend_stderr =
+        String::from_utf8_lossy(&switch_to_api_from_backend.stderr);
+    assert!(switch_to_api_from_backend_stderr.contains("Switched to api mode"));
+    assert!(switch_to_api_from_backend_stderr.contains("http://api.example.test/v2"));
+    assert!(switch_to_api_from_backend_stderr.contains("ugoite config set --mode core"));
+
+    let switch_to_backend_from_api = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://backend-two.example.test",
+        ])
+        .output()
+        .expect("config switch to backend from api");
+    assert_success(
+        &switch_to_backend_from_api,
+        "config switch to backend from api",
+    );
+    let switch_to_backend_from_api_stderr =
+        String::from_utf8_lossy(&switch_to_backend_from_api.stderr);
+    assert!(switch_to_backend_from_api_stderr.contains("Switched to backend mode"));
+    assert!(switch_to_backend_from_api_stderr.contains("http://backend-two.example.test"));
+    assert!(switch_to_backend_from_api_stderr.contains("ugoite config set --mode core"));
 
     write_endpoint_config(
         &config_path,
