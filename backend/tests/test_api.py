@@ -1216,12 +1216,18 @@ def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
     )
 
     assert method_response.status_code == 400
-    assert "TRACE" not in method_response.headers.get("access-control-allow-methods", "")
-    assert header_response.status_code == 400
-    assert "x-not-allowed" not in header_response.headers.get(
-        "access-control-allow-headers",
+    assert "TRACE" not in method_response.headers.get(
+        "access-control-allow-methods",
         "",
-    ).lower()
+    )
+    assert header_response.status_code == 400
+    assert (
+        "x-not-allowed"
+        not in header_response.headers.get(
+            "access-control-allow-headers",
+            "",
+        ).lower()
+    )
 
 
 def test_middleware_hmac_signature(
