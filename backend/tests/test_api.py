@@ -32,7 +32,13 @@ from app.core.middleware import (
 )
 from app.core.security import build_response_signature
 from app.core.storage import _ensure_local_root, storage_config_from_root
-from app.main import app
+from app.main import (
+    ALLOWED_CORS_HEADERS,
+    ALLOWED_CORS_METHODS,
+    _cors_allowed_origins,
+    _validate_cors_configuration,
+    app,
+)
 from app.mcp.server import _context_headers, list_entries
 
 
@@ -1224,19 +1230,28 @@ def test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists(
     assert {
         method.strip()
         for method in response.headers["access-control-allow-methods"].split(",")
-    } == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+    } == set(ALLOWED_CORS_METHODS)
     allowed_headers = {
         header.strip().lower()
         for header in response.headers["access-control-allow-headers"].split(",")
     }
     assert "*" not in allowed_headers
-    assert {
-        "authorization",
-        "content-type",
-        "x-api-key",
-        "x-request-id",
-        "x-ugoite-dev-auth-proxy-token",
-    }.issubset(allowed_headers)
+    assert {header.lower() for header in ALLOWED_CORS_HEADERS}.issubset(allowed_headers)
+
+
+def test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-010: startup validation rejects wildcard origins for remote mode."""
+    monkeypatch.setenv("ALLOW_ORIGIN", "*")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+
+    assert _cors_allowed_origins() == ["*"]
+    with pytest.raises(
+        RuntimeError,
+        match="ALLOW_ORIGIN must not include '\\*' when UGOITE_ALLOW_REMOTE=true",
+    ):
+        _validate_cors_configuration(_cors_allowed_origins())
 
 
 def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
