@@ -27,9 +27,9 @@ describe("apiFetch auth forwarding", () => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
-					mode: "manual-totp",
+					mode: "passkey-totp",
 					username_hint: "dev-alice",
-					supports_manual_totp: true,
+					supports_passkey_totp: true,
 					supports_mock_oauth: false,
 				});
 			}),
@@ -60,9 +60,9 @@ describe("apiFetch auth forwarding", () => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
-					mode: "manual-totp",
+					mode: "passkey-totp",
 					username_hint: "dev-alice",
-					supports_manual_totp: true,
+					supports_passkey_totp: true,
 					supports_mock_oauth: false,
 				});
 			}),
@@ -99,9 +99,9 @@ describe("apiFetch auth forwarding", () => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
-					mode: "manual-totp",
+					mode: "passkey-totp",
 					username_hint: "dev-alice",
-					supports_manual_totp: true,
+					supports_passkey_totp: true,
 					supports_mock_oauth: false,
 				});
 			}),

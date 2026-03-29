@@ -16,10 +16,12 @@ from app.models.payloads import AuthLogin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-AuthMode = Literal["manual-totp", "mock-oauth"]
-DEFAULT_DEV_AUTH_MODE: AuthMode = "manual-totp"
+AuthMode = Literal["passkey-totp", "mock-oauth"]
+DEFAULT_DEV_AUTH_MODE: AuthMode = "passkey-totp"
 DEFAULT_DEV_AUTH_TTL_SECONDS = 43_200
 DEV_AUTH_PROXY_HEADER_NAME = "x-ugoite-dev-auth-proxy-token"
+DEV_PASSKEY_CONTEXT_HEADER_NAME = "x-ugoite-dev-passkey-context"
+DEV_PASSKEY_CONTEXT_ENV_NAME = "UGOITE_DEV_PASSKEY_CONTEXT"
 
 
 def _default_dev_token_kid() -> str:
@@ -28,11 +30,11 @@ def _default_dev_token_kid() -> str:
 
 def _resolve_dev_auth_mode() -> AuthMode:
     raw_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", DEFAULT_DEV_AUTH_MODE).strip()
-    if raw_mode == "manual-totp":
-        return "manual-totp"
+    if raw_mode == "passkey-totp":
+        return "passkey-totp"
     if raw_mode == "mock-oauth":
         return "mock-oauth"
-    message = "Unsupported UGOITE_DEV_AUTH_MODE. Expected manual-totp or mock-oauth."
+    message = "Unsupported UGOITE_DEV_AUTH_MODE. Expected passkey-totp or mock-oauth."
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail=message,
@@ -94,6 +96,19 @@ def _trusted_dev_auth_proxy_token() -> str | None:
     return normalized or None
 
 
+def _required_dev_passkey_context() -> str:
+    context = os.environ.get(DEV_PASSKEY_CONTEXT_ENV_NAME, "").strip()
+    if context:
+        return context
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            "Failed to configure passkey-totp login: "
+            f"{DEV_PASSKEY_CONTEXT_ENV_NAME} must be configured."
+        ),
+    )
+
+
 def _is_trusted_dev_auth_proxy(request: Request) -> bool:
     configured_token = _trusted_dev_auth_proxy_token()
     if configured_token is None:
@@ -146,6 +161,27 @@ def _storage_config() -> dict[str, str]:
     return storage_config_from_root(get_root_path())
 
 
+def _ensure_dev_passkey_context(request: Request) -> None:
+    provided_context = request.headers.get(DEV_PASSKEY_CONTEXT_HEADER_NAME)
+    if provided_context is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Passkey-bound local context is missing or invalid.",
+        )
+    normalized_context = provided_context.strip()
+    if not normalized_context:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Passkey-bound local context is missing or invalid.",
+        )
+    expected_context = _required_dev_passkey_context()
+    if not secrets.compare_digest(normalized_context, expected_context):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Passkey-bound local context is missing or invalid.",
+        )
+
+
 @router.get("/config")
 async def auth_config_endpoint(request: Request) -> dict[str, object]:
     """Expose the current passwordless login mode to browser/CLI clients."""
@@ -155,7 +191,7 @@ async def auth_config_endpoint(request: Request) -> dict[str, object]:
     return {
         "mode": mode,
         "username_hint": _dev_user_id(),
-        "supports_manual_totp": mode == "manual-totp",
+        "supports_passkey_totp": mode == "passkey-totp",
         "supports_mock_oauth": mode == "mock-oauth",
     }
 
@@ -165,14 +201,15 @@ async def login_endpoint(
     payload: AuthLogin,
     request: Request,
 ) -> dict[str, int | str]:
-    """Validate username + TOTP and issue a signed bearer token."""
+    """Validate passkey-bound local context + TOTP and issue a signed bearer token."""
     _ensure_local_dev_auth_request(request)
-    if _resolve_dev_auth_mode() != "manual-totp":
-        message = "manual-totp login is not enabled for this session."
+    if _resolve_dev_auth_mode() != "passkey-totp":
+        message = "passkey-totp login is not enabled for this session."
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=message,
         )
+    _ensure_dev_passkey_context(request)
 
     expected_username = _dev_user_id()
     if payload.username != expected_username:
@@ -185,7 +222,7 @@ async def login_endpoint(
     if not dev_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="UGOITE_DEV_2FA_SECRET must be configured for manual-totp login.",
+            detail="UGOITE_DEV_2FA_SECRET must be configured for passkey-totp login.",
         )
 
     if not validate_totp_code(payload.totp_code, dev_secret):

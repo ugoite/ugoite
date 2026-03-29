@@ -23,6 +23,7 @@ from app.main import app
 DEFAULT_TEST_USER_ID = "dev-alice"
 DEFAULT_TEST_SIGNING_KID = "{}-{}-{}".format("dev", "local", "v1")
 DEFAULT_TEST_SIGNING_SECRET = "{}-{}-{}".format("dev", "signing", "secret")
+DEFAULT_TEST_PASSKEY_CONTEXT = "{}-{}-{}".format("dev", "passkey", "context")
 TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
@@ -53,6 +54,7 @@ def _configure_dev_auth_env(
         "UGOITE_DEV_USER_ID": DEFAULT_TEST_USER_ID,
         "UGOITE_DEV_SIGNING_SECRET": DEFAULT_TEST_SIGNING_SECRET,
         "UGOITE_DEV_SIGNING_KID": DEFAULT_TEST_SIGNING_KID,
+        "UGOITE_DEV_PASSKEY_CONTEXT": DEFAULT_TEST_PASSKEY_CONTEXT,
     }
     if overrides:
         env.update(overrides)
@@ -67,15 +69,21 @@ def _configure_dev_auth_env(
     monkeypatch.setenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", env["UGOITE_DEV_SIGNING_KID"])
 
 
-def test_dev_auth_req_ops_015_config_exposes_manual_totp_mode(
+def _passkey_headers(
+    context: str = DEFAULT_TEST_PASSKEY_CONTEXT,
+) -> dict[str, str]:
+    return {"x-ugoite-dev-passkey-context": context}
+
+
+def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: local browser/CLI login can discover manual-totp mode."""
+    """REQ-OPS-015: local browser/CLI login can discover passkey-totp mode."""
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     clear_auth_manager_cache()
 
@@ -84,24 +92,24 @@ def test_dev_auth_req_ops_015_config_exposes_manual_totp_mode(
 
     assert response.status_code == 200
     assert response.json() == {
-        "mode": "manual-totp",
+        "mode": "passkey-totp",
         "username_hint": "dev-alice",
-        "supports_manual_totp": True,
+        "supports_passkey_totp": True,
         "supports_mock_oauth": False,
     }
 
 
-def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
+def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: manual-totp login issues a bearer token for protected APIs."""
+    """REQ-OPS-015: passkey-totp login issues a bearer token for protected APIs."""
     timestamp = int(time.time())
     secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
@@ -115,6 +123,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
             "username": "dev-alice",
             "totp_code": _totp_code(secret, timestamp),
         },
+        headers=_passkey_headers(),
     )
 
     assert login_response.status_code == 200
@@ -316,7 +325,7 @@ def test_dev_auth_req_ops_015_config_requires_non_empty_user_id(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
         overrides={"UGOITE_DEV_USER_ID": "   "},
     )
     clear_auth_manager_cache()
@@ -326,7 +335,7 @@ def test_dev_auth_req_ops_015_config_requires_non_empty_user_id(
     assert response.status_code == 503
 
 
-def test_dev_auth_req_ops_015_manual_login_rejects_non_manual_mode(
+def test_dev_auth_req_ops_015_passkey_login_rejects_non_passkey_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
@@ -344,10 +353,10 @@ def test_dev_auth_req_ops_015_manual_login_rejects_non_manual_mode(
     )
 
     assert response.status_code == 409
-    assert "manual-totp login is not enabled" in response.json()["detail"]
+    assert "passkey-totp login is not enabled" in response.json()["detail"]
 
 
-def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
+def test_dev_auth_req_ops_015_passkey_login_rejects_wrong_username(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
@@ -357,7 +366,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
@@ -366,6 +375,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_wrong_username(
     response = TestClient(app).post(
         "/auth/login",
         json={"username": "other-user", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers(),
     )
 
     assert response.status_code == 401
@@ -502,7 +512,7 @@ def test_dev_auth_req_ops_015_rejects_unknown_client_host(
     )
 
 
-def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
+def test_dev_auth_req_ops_015_passkey_login_requires_totp_secret(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
@@ -510,7 +520,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.delenv("UGOITE_DEV_2FA_SECRET", raising=False)
     clear_auth_manager_cache()
@@ -518,12 +528,13 @@ def test_dev_auth_req_ops_015_manual_login_requires_totp_secret(
     response = TestClient(app).post(
         "/auth/login",
         json={"username": "dev-alice", "totp_code": "123456"},
+        headers=_passkey_headers(),
     )
 
     assert response.status_code == 503
 
 
-def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
+def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_totp_code(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
@@ -531,7 +542,7 @@ def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", TEST_TOTP_SECRET)
     clear_auth_manager_cache()
@@ -539,13 +550,14 @@ def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
     response = TestClient(app).post(
         "/auth/login",
         json={"username": "dev-alice", "totp_code": "000000"},
+        headers=_passkey_headers(),
     )
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or 2FA code."
 
 
-def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
+def test_dev_auth_req_ops_015_passkey_login_requires_signing_material(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
@@ -555,7 +567,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", " ")
@@ -566,6 +578,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
     response = TestClient(app).post(
         "/auth/login",
         json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers(),
     )
 
     assert response.status_code == 503
@@ -578,7 +591,7 @@ def test_dev_auth_req_ops_015_manual_login_requires_signing_material(
         ("0", "UGOITE_DEV_AUTH_TTL_SECONDS must be positive."),
     ],
 )
-def test_dev_auth_req_ops_015_manual_login_validates_ttl(
+def test_dev_auth_req_ops_015_passkey_login_validates_ttl(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
     ttl_value: str,
@@ -590,7 +603,7 @@ def test_dev_auth_req_ops_015_manual_login_validates_ttl(
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", ttl_value)
@@ -600,6 +613,7 @@ def test_dev_auth_req_ops_015_manual_login_validates_ttl(
     response = TestClient(app).post(
         "/auth/login",
         json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers(),
     )
 
     assert response.status_code == 503
@@ -609,11 +623,11 @@ def test_dev_auth_req_ops_015_mock_oauth_rejects_manual_totp_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: mock-oauth endpoint rejects sessions running in manual-totp mode."""
+    """REQ-OPS-015: mock-oauth endpoint rejects sessions running in passkey-totp mode."""
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
-        mode="manual-totp",
+        mode="passkey-totp",
     )
     clear_auth_manager_cache()
 
@@ -621,3 +635,110 @@ def test_dev_auth_req_ops_015_mock_oauth_rejects_manual_totp_mode(
 
     assert response.status_code == 409
     assert "mock-oauth login is not enabled" in response.json()["detail"]
+
+
+def test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login rejects requests without the local context."""
+    timestamp = int(time.time())
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+
+
+def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login rejects requests with the wrong local context."""
+    timestamp = int(time.time())
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers("wrong-context"),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+
+
+def test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login rejects blank local passkey context headers."""
+    timestamp = int(time.time())
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers("   "),
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+
+
+def test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login requires configured local passkey context."""
+    timestamp = int(time.time())
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.delenv("UGOITE_DEV_PASSKEY_CONTEXT", raising=False)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    response = TestClient(app).post(
+        "/auth/login",
+        json={"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)},
+        headers=_passkey_headers(),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Failed to configure passkey-totp login: "
+        "UGOITE_DEV_PASSKEY_CONTEXT must be configured."
+    )

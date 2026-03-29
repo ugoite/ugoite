@@ -21,9 +21,9 @@ let mockForms: Map<string, Map<string, Form>> = new Map();
 let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> = new Map();
 let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> = new Map();
 let mockDevAuthConfig = {
-	mode: "manual-totp" as "manual-totp" | "mock-oauth",
+	mode: "passkey-totp" as "passkey-totp" | "mock-oauth",
 	username_hint: "dev-local-user",
-	supports_manual_totp: true,
+	supports_passkey_totp: true,
 	supports_mock_oauth: false,
 };
 let mockPreferences: UserPreferences = {
@@ -48,9 +48,9 @@ export const resetMockData = () => {
 	mockSqlEntries = new Map();
 	mockSqlSessions = new Map();
 	mockDevAuthConfig = {
-		mode: "manual-totp",
+		mode: "passkey-totp",
 		username_hint: "dev-local-user",
-		supports_manual_totp: true,
+		supports_passkey_totp: true,
 		supports_mock_oauth: false,
 	};
 	mockPreferences = {
@@ -106,9 +106,9 @@ export const seedPreferences = (preferences: Partial<UserPreferences>) => {
 
 export const seedDevAuthConfig = (
 	config: Partial<{
-		mode: "manual-totp" | "mock-oauth";
+		mode: "passkey-totp" | "mock-oauth";
 		username_hint: string;
-		supports_manual_totp: boolean;
+		supports_passkey_totp: boolean;
 		supports_mock_oauth: boolean;
 	}>,
 ) => {
@@ -128,7 +128,7 @@ export const handlers = [
 	http.post("http://localhost:3000/api/auth/login", async ({ request }) => {
 		const body = (await request.json()) as { username?: string; totp_code?: string };
 		if (
-			mockDevAuthConfig.mode !== "manual-totp" ||
+			mockDevAuthConfig.mode !== "passkey-totp" ||
 			body.username !== mockDevAuthConfig.username_hint ||
 			body.totp_code !== "123456"
 		) {
