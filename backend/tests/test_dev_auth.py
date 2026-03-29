@@ -145,6 +145,38 @@ def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
     assert admin_settings["members"]["dev-alice"]["state"] == "active"
 
 
+def test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login rejects replaying the same current 2FA code."""
+    timestamp = 1_700_000_000
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    payload = {
+        "username": "dev-alice",
+        "totp_code": _totp_code(secret, timestamp),
+    }
+
+    first_response = client.post("/auth/login", json=payload, headers=_passkey_headers())
+    second_response = client.post("/auth/login", json=payload, headers=_passkey_headers())
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 401
+    assert second_response.json()["detail"] == "Invalid username or 2FA code."
+
+
 def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
