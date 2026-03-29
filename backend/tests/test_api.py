@@ -1204,6 +1204,76 @@ def test_middleware_headers_req_sec_002_skips_csp_for_docs_ui(
     assert response.headers["X-Frame-Options"] == "DENY"
 
 
+def test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-010: credentialed CORS preflight exposes only the explicit allowlists."""
+    response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "Authorization, X-API-Key, X-Request-Id, X-Ugoite-Dev-Auth-Proxy-Token"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert {
+        method.strip()
+        for method in response.headers["access-control-allow-methods"].split(",")
+    } == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+    allowed_headers = {
+        header.strip().lower()
+        for header in response.headers["access-control-allow-headers"].split(",")
+    }
+    assert "*" not in allowed_headers
+    assert {
+        "authorization",
+        "content-type",
+        "x-api-key",
+        "x-request-id",
+        "x-ugoite-dev-auth-proxy-token",
+    }.issubset(allowed_headers)
+
+
+def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-010: credentialed CORS preflight rejects values outside the allowlist."""
+    method_response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "TRACE",
+        },
+    )
+    header_response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-Not-Allowed",
+        },
+    )
+
+    assert method_response.status_code == 400
+    assert "TRACE" not in method_response.headers.get(
+        "access-control-allow-methods",
+        "",
+    )
+    assert header_response.status_code == 400
+    assert (
+        "x-not-allowed"
+        not in header_response.headers.get(
+            "access-control-allow-headers",
+            "",
+        ).lower()
+    )
+
+
 def test_middleware_hmac_signature(
     test_client: TestClient,
     temp_space_root: Path,

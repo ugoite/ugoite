@@ -39,8 +39,8 @@ targets an **Authenticated Access by Default** model.
 - Automatically configured in `mise run dev`
 
 ### CORS
-- Restricted to specific frontend origin
-- Configured via environment variable `FRONTEND_URL`
+- Restricted to explicit frontend origins from `ALLOW_ORIGIN`
+- Credentialed requests use explicit method and request-header allowlists
 
 ## Data Protection
 
