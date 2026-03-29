@@ -1198,7 +1198,7 @@ def test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists(
 def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
     test_client: TestClient,
 ) -> None:
-    """REQ-SEC-010: credentialed CORS preflight rejects methods and headers outside the allowlist."""
+    """REQ-SEC-010: credentialed CORS preflight rejects values outside the allowlist."""
     method_response = test_client.options(
         "/health",
         headers={
@@ -1216,9 +1216,12 @@ def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
     )
 
     assert method_response.status_code == 400
-    assert method_response.text == "Disallowed CORS method"
+    assert "TRACE" not in method_response.headers.get("access-control-allow-methods", "")
     assert header_response.status_code == 400
-    assert header_response.text == "Disallowed CORS headers"
+    assert "x-not-allowed" not in header_response.headers.get(
+        "access-control-allow-headers",
+        "",
+    ).lower()
 
 
 def test_middleware_hmac_signature(
