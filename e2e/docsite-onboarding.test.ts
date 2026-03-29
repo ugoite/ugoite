@@ -74,23 +74,24 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Design",
 			"Source Docs",
 		]);
-	await expect(
-		page.locator(".site-nav-menu").nth(1).locator(".site-nav-submenu a"),
-	).toHaveText([
-		"Container Quickstart",
-		"Docker Compose",
-		"Auth Overview",
-		"CLI Guide",
-	]);
-	await expect(
-		page.locator(".site-nav-menu").nth(2).locator(".site-nav-submenu a"),
-	).toHaveCount(0);
-	await expect(
-		page.locator(".site-nav-menu").nth(3).locator(".site-nav-submenu a"),
-	).toHaveCount(0);
-	await expect(
-		page.locator(".site-nav-menu").nth(4).locator(".site-nav-submenu a"),
-	).toHaveCount(0);
+		await expect(
+			page.locator(".site-nav-menu").nth(1).locator(".site-nav-submenu a"),
+		).toHaveText([
+			"Core Concepts",
+			"Container Quickstart",
+			"Docker Compose",
+			"Auth Overview",
+			"CLI Guide",
+		]);
+		await expect(
+			page.locator(".site-nav-menu").nth(2).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
+		await expect(
+			page.locator(".site-nav-menu").nth(3).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
+		await expect(
+			page.locator(".site-nav-menu").nth(4).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
 	});
 
 	test("REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content", async ({
@@ -112,10 +113,10 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Source Docs",
 			"GitHub",
 		]);
-	await expect(
-		page.locator("#mobile-doc-nav .doc-sidebar-title"),
-	).toHaveText(["Getting Started"]);
-});
+		await expect(
+			page.locator("#mobile-doc-nav .doc-sidebar-title"),
+		).toHaveText(["Getting Started"]);
+	});
 });
 
 function buildDocsiteUrl(path: string): string {
