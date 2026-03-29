@@ -87,7 +87,10 @@ def _resolve_host_addresses(host: str) -> set[IPv4Address | IPv6Address]:
 
     resolved = set()
     for _family, _socktype, _proto, _canonname, sockaddr in addr_info:
-        address = _parse_ip_address(sockaddr[0])
+        host_value = sockaddr[0]
+        if not isinstance(host_value, str):
+            continue
+        address = _parse_ip_address(host_value)
         if address is not None:
             resolved.add(address)
     return resolved

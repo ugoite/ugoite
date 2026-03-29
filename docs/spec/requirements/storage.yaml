@@ -266,7 +266,8 @@ requirements:
       - test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core
     - file: ugoite-core/tests/test_bindings.py
       tests:
-      - test_test_storage_connection_req_sto_006_rejects_link_local_endpoint
+      - test_storage_req_sto_006_rejects_link_local_endpoint
+      - test_storage_req_sto_006_strips_inputs_before_validation
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
