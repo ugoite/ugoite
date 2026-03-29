@@ -14,12 +14,18 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Start Here
 
-Pick the shortest path for what you want to do right now:
+The docsite's getting-started flow is the canonical newcomer decision tree once
+you are in the browser docs. This README stays intentionally lighter so you do
+not have to compare two near-identical onboarding checklists before you can
+move forward.
 
-- **Try the published release** — use [Container Quick Start](docs/guide/container-quickstart.md) to run the released browser experience without cloning the repository.
-- **Use the CLI** — use the [CLI Guide](docs/guide/cli.md) to install the released CLI or run it from source.
-- **Develop from source** — run `mise run setup`, then `mise run dev`, when you want the current backend, frontend, and docsite together.
-- **Need sign-in details?** — see [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) for the canonical `mise run dev` workflow and explicit `/login` flow.
+If you are browsing on GitHub and already know the surface you need, jump
+straight to the guide that fits:
+
+- [Container Quick Start](docs/guide/container-quickstart.md) for the released browser experience without cloning the repository.
+- [CLI Guide](docs/guide/cli.md) for terminal-first workflows and scripting.
+- `mise run setup`, then `mise run dev`, for the current backend, frontend, and docsite together from source.
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the canonical sign-in and `/login` workflow details.
 
 ## Key Features
 
