@@ -105,7 +105,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
@@ -156,7 +156,7 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
         },
     )
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
@@ -543,6 +543,33 @@ def test_dev_auth_req_ops_015_manual_login_rejects_invalid_totp_code(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or 2FA code."
+
+
+def test_dev_auth_req_ops_015_manual_login_rejects_replayed_totp_code(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: manual login rejects replaying a TOTP code within the same step."""
+    timestamp = int(time.time())
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="manual-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    payload = {"username": "dev-alice", "totp_code": _totp_code(secret, timestamp)}
+
+    first_response = client.post("/auth/login", json=payload)
+    second_response = client.post("/auth/login", json=payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 401
+    assert second_response.json()["detail"] == "Invalid username or 2FA code."
 
 
 def test_dev_auth_req_ops_015_manual_login_requires_signing_material(

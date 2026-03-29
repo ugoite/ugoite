@@ -196,7 +196,9 @@ def test_validate_totp_code_req_ops_015_accepts_current_code() -> None:
     secret = TEST_TOTP_SECRET
     timestamp = 1_700_000_000
     code = _totp_code(secret, timestamp)
+    clear_auth_manager_cache()
     assert validate_totp_code(code, secret, now=timestamp)
+    clear_auth_manager_cache()
 
 
 def test_validate_totp_code_req_ops_015_accepts_unpadded_secret() -> None:
@@ -204,4 +206,31 @@ def test_validate_totp_code_req_ops_015_accepts_unpadded_secret() -> None:
     secret = TEST_TOTP_SECRET.rstrip("=")
     timestamp = 1_700_000_000
     code = _totp_code(TEST_TOTP_SECRET, timestamp)
+    clear_auth_manager_cache()
     assert validate_totp_code(code, secret, now=timestamp)
+    clear_auth_manager_cache()
+
+
+def test_validate_totp_code_req_ops_015_rejects_replayed_code() -> None:
+    """REQ-OPS-015: local manual-totp mode rejects replaying the same TOTP code."""
+    secret = TEST_TOTP_SECRET
+    timestamp = 1_700_000_000
+    code = _totp_code(secret, timestamp)
+    clear_auth_manager_cache()
+    assert validate_totp_code(code, secret, now=timestamp)
+    assert not validate_totp_code(code, secret, now=timestamp)
+    clear_auth_manager_cache()
+
+
+def test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay() -> None:
+    """REQ-OPS-015: local manual-totp mode still accepts the next valid TOTP step."""
+    secret = TEST_TOTP_SECRET
+    timestamp = 1_700_000_000
+    next_timestamp = timestamp + 30
+    current_code = _totp_code(secret, timestamp)
+    next_code = _totp_code(secret, next_timestamp)
+    clear_auth_manager_cache()
+    assert validate_totp_code(current_code, secret, now=timestamp)
+    assert not validate_totp_code(current_code, secret, now=timestamp)
+    assert validate_totp_code(next_code, secret, now=next_timestamp)
+    clear_auth_manager_cache()
