@@ -189,15 +189,26 @@ shared `SPACE_ID_OR_PATH` argument for commands that also work in `core` mode)
 and perform filesystem I/O on the remote server instead of the local machine.
 
 ```bash
-# Show current setting
+# Show the saved JSON config
 cargo run -q -p ugoite-cli -- config show
+
+# Show the active mode in plain language
+cargo run -q -p ugoite-cli -- config current
 
 # Route commands to backend directly
 cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 
 # Route commands to API endpoint
 cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3000/api
+
+# Return to direct local filesystem access
+cargo run -q -p ugoite-cli -- config set --mode core
 ```
+
+When you switch away from `core`, the CLI now prints a reminder that future
+commands will run against the configured server or API instead of your local
+filesystem. Use `ugoite config current` whenever you want a quick plain-language
+summary of the active topology and the command to return to `core`.
 
 ## Auth profile commands
 
