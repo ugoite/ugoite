@@ -1,6 +1,10 @@
 import { expect, test } from "vitest";
 
-import { nextStepCards, primaryStartCards } from "./onboarding";
+import {
+	conceptPrimerCard,
+	nextStepCards,
+	primaryStartCards,
+} from "./onboarding";
 
 test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the first entry choices", () => {
 	expect(primaryStartCards.map((card) => card.title)).toEqual([
@@ -36,4 +40,15 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 		"Access",
 		"Reference",
 	]);
+});
+
+test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
+	expect(conceptPrimerCard).toEqual({
+		badge: "Learn First",
+		description:
+			"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+		href: "/docs/guide/concepts",
+		icon: "💡",
+		title: "Understand core concepts",
+	});
 });

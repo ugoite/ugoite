@@ -16,6 +16,7 @@ Ugoite is a knowledge management system built on three core principles:
 
 Pick the shortest path for what you want to do right now:
 
+- **Need the mental model first?** — read [Core Concepts](docs/guide/concepts.md) for spaces, entries, forms, and search in plain language.
 - **Try the published release** — use [Container Quick Start](docs/guide/container-quickstart.md) to run the released browser experience without cloning the repository.
 - **Use the CLI** — use the [CLI Guide](docs/guide/cli.md) to install the released CLI or run it from source.
 - **Develop from source** — run `mise run setup`, then `mise run dev`, when you want the current backend, frontend, and docsite together.
@@ -65,6 +66,7 @@ e2e/                # End-to-end tests (Bun)
 
 Start with the user-facing guides:
 
+- [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
 - [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth

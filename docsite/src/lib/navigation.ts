@@ -27,6 +27,10 @@ export const navSections: NavSection[] = [
 		items: [
 			{ title: "Overview", href: "/getting-started" },
 			{
+				title: "Core Concepts",
+				href: "/docs/guide/concepts",
+			},
+			{
 				title: "Container Quickstart",
 				href: "/docs/guide/container-quickstart",
 			},
