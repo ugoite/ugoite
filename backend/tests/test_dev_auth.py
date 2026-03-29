@@ -105,7 +105,7 @@ def test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token(
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
@@ -156,7 +156,7 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
         },
     )
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
