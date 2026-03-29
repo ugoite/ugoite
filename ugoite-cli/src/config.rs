@@ -174,9 +174,6 @@ pub fn normalize_space_root(root_path: &str) -> String {
     } else {
         root_path.trim_end_matches('/')
     };
-    if trimmed == "/spaces" {
-        return "/".to_string();
-    }
     if let Some(parent) = trimmed.strip_suffix("/spaces") {
         if parent.is_empty() {
             return "/".to_string();
