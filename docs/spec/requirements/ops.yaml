@@ -598,6 +598,8 @@ requirements:
       tests:
       - test_validate_totp_code_req_ops_015_accepts_current_code
       - test_validate_totp_code_req_ops_015_accepts_unpadded_secret
+      - test_validate_totp_code_req_ops_015_rejects_replayed_code
+      - test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay
     vitest:
     - file: frontend/src/routes/login.test.tsx
       tests:

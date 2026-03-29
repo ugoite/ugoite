@@ -32,7 +32,13 @@ from app.core.middleware import (
 )
 from app.core.security import build_response_signature
 from app.core.storage import _ensure_local_root, storage_config_from_root
-from app.main import app
+from app.main import (
+    ALLOWED_CORS_HEADERS,
+    ALLOWED_CORS_METHODS,
+    _cors_allowed_origins,
+    _validate_cors_configuration,
+    app,
+)
 from app.mcp.server import _context_headers, list_entries
 
 
@@ -1154,10 +1160,133 @@ def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """Test that security headers are present."""
+    """REQ-SEC-002: middleware attaches standard security headers.
+
+    The contract applies to non-SSE responses.
+    """
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert (
+        response.headers["Permissions-Policy"]
+        == "camera=(), microphone=(), geolocation=()"
+    )
+    assert response.headers["Content-Security-Policy"] == (
+        "default-src 'self'; script-src 'self'; object-src 'none'; "
+        "frame-ancestors 'none'"
+    )
+    assert "Strict-Transport-Security" not in response.headers
+
+
+def test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: middleware only adds HSTS for effective HTTPS requests."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    response = test_client.get("/", headers={"x-forwarded-proto": "https"})
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000"
+
+
+def test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: untrusted forwarded proto headers must not enable HSTS."""
+    monkeypatch.delenv("UGOITE_TRUST_PROXY_HEADERS", raising=False)
+    response = test_client.get("/", headers={"x-forwarded-proto": "https"})
+    assert "Strict-Transport-Security" not in response.headers
+
+
+def test_middleware_headers_req_sec_002_skips_csp_for_docs_ui(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-002: docs UI responses skip API CSP so FastAPI docs remain usable."""
+    response = test_client.get("/docs")
+    assert response.status_code == 200
+    assert "Content-Security-Policy" not in response.headers
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
+def test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-010: credentialed CORS preflight exposes only the explicit allowlists."""
+    response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "Authorization, X-API-Key, X-Request-Id, X-Ugoite-Dev-Auth-Proxy-Token"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert {
+        method.strip()
+        for method in response.headers["access-control-allow-methods"].split(",")
+    } == set(ALLOWED_CORS_METHODS)
+    allowed_headers = {
+        header.strip().lower()
+        for header in response.headers["access-control-allow-headers"].split(",")
+    }
+    assert "*" not in allowed_headers
+    assert {header.lower() for header in ALLOWED_CORS_HEADERS}.issubset(allowed_headers)
+
+
+def test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-010: startup validation rejects wildcard origins for remote mode."""
+    monkeypatch.setenv("ALLOW_ORIGIN", "*")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+
+    assert _cors_allowed_origins() == ["*"]
+    with pytest.raises(
+        RuntimeError,
+        match="ALLOW_ORIGIN must not include '\\*' when UGOITE_ALLOW_REMOTE=true",
+    ):
+        _validate_cors_configuration(_cors_allowed_origins())
+
+
+def test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-010: credentialed CORS preflight rejects values outside the allowlist."""
+    method_response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "TRACE",
+        },
+    )
+    header_response = test_client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-Not-Allowed",
+        },
+    )
+
+    assert method_response.status_code == 400
+    assert "TRACE" not in method_response.headers.get(
+        "access-control-allow-methods",
+        "",
+    )
+    assert header_response.status_code == 400
+    assert (
+        "x-not-allowed"
+        not in header_response.headers.get(
+            "access-control-allow-headers",
+            "",
+        ).lower()
+    )
 
 
 def test_middleware_hmac_signature(
@@ -2589,6 +2718,31 @@ def test_test_connection_authorization_error(test_client: TestClient) -> None:
             json={"storage_config": {"uri": "s3://bucket"}},
         )
     assert response.status_code == 403
+
+
+def test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core(
+    test_client: TestClient,
+) -> None:
+    """REQ-STO-006: reject link-local endpoints before the core binding."""
+    test_client.post("/spaces", json={"name": "conn-ssrf-ws"})
+    with patch(
+        "ugoite_core._core_any.test_storage_connection",
+        _amock(return_value={"status": "ok"}),
+    ) as mock_core:
+        response = test_client.post(
+            "/spaces/conn-ssrf-ws/test-connection",
+            json={
+                "storage_config": {
+                    "uri": "s3://bucket/path",
+                    "endpoint": "http://169.254.169.254/latest/meta-data/",
+                },
+            },
+        )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Storage endpoint host is not allowed: 169.254.169.254"
+    )
+    mock_core.assert_not_awaited()
 
 
 def test_validate_entry_form_not_found_non_error_runtime(
