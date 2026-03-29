@@ -587,6 +587,15 @@ fn test_cli_req_ops_006_search_index_query_and_link_paths() {
         "---\nform: Entry\n---\n# Alpha Entry\n\n## Body\n\nalpha keyword here.",
     );
 
+    let help_output = cli_command(&config_path)
+        .arg("--help")
+        .output()
+        .expect("top-level help");
+    assert_success(&help_output, "top-level help");
+    let help_stdout = String::from_utf8_lossy(&help_output.stdout);
+    assert!(!help_stdout.contains("Link management commands"));
+    assert!(!help_stdout.contains("\n  link"));
+
     let local_search_output = cli_command(&config_path)
         .args(["search", "keyword", &space_path, "alpha"])
         .output()
