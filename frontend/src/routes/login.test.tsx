@@ -24,11 +24,11 @@ describe("/login", () => {
 		clearAuthTokenCookie();
 	});
 
-	it("REQ-OPS-015: signs in with manual-totp and stores a browser auth cookie", async () => {
+	it("REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie", async () => {
 		seedDevAuthConfig({
-			mode: "manual-totp",
+			mode: "passkey-totp",
 			username_hint: "dev-alice",
-			supports_manual_totp: true,
+			supports_passkey_totp: true,
 			supports_mock_oauth: false,
 		});
 
@@ -38,7 +38,7 @@ describe("/login", () => {
 		fireEvent.input(screen.getByLabelText("2FA code"), {
 			target: { value: "123456" },
 		});
-		const form = screen.getByRole("button", { name: "Sign in with 2FA" }).closest("form");
+		const form = screen.getByRole("button", { name: "Sign in with passkey + 2FA" }).closest("form");
 		expect(form).not.toBeNull();
 		if (form === null) {
 			throw new Error("Manual login form should exist.");
@@ -55,7 +55,7 @@ describe("/login", () => {
 		seedDevAuthConfig({
 			mode: "mock-oauth",
 			username_hint: "dev-oauth-user",
-			supports_manual_totp: false,
+			supports_passkey_totp: false,
 			supports_mock_oauth: true,
 		});
 

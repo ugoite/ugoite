@@ -1,9 +1,9 @@
 import { apiFetch } from "./api";
 
 export type AuthConfig = {
-	mode: "manual-totp" | "mock-oauth";
+	mode: "passkey-totp" | "mock-oauth";
 	usernameHint: string;
-	supportsManualTotp: boolean;
+	supportsPasskeyTotp: boolean;
 	supportsMockOauth: boolean;
 };
 
@@ -64,12 +64,12 @@ export const authApi = {
 		return {
 			mode: readString(payload, "mode") as AuthConfig["mode"],
 			usernameHint: readString(payload, "username_hint"),
-			supportsManualTotp: readBoolean(payload, "supports_manual_totp"),
+			supportsPasskeyTotp: readBoolean(payload, "supports_passkey_totp"),
 			supportsMockOauth: readBoolean(payload, "supports_mock_oauth"),
 		};
 	},
 
-	async loginWithTotp(username: string, totpCode: string): Promise<AuthLoginResponse> {
+	async loginWithPasskeyTotp(username: string, totpCode: string): Promise<AuthLoginResponse> {
 		const loginPayload = Object.fromEntries([
 			["username", username],
 			["totp_code", totpCode],

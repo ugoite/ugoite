@@ -5,7 +5,10 @@ const defaultProxyTimeoutMs = 15_000;
 const authCookieName = "ugoite_auth_bearer_token";
 const devAuthProxyToken = process.env.UGOITE_DEV_AUTH_PROXY_TOKEN;
 const devAuthProxyTokenHeader = "x-ugoite-dev-auth-proxy-token";
+const devPasskeyContext = process.env.UGOITE_DEV_PASSKEY_CONTEXT;
+const devPasskeyContextHeader = "x-ugoite-dev-passkey-context";
 const proxyTokenAuthPaths = new Set(["/auth/config", "/auth/login", "/auth/mock-oauth"]);
+const passkeyContextAuthPaths = new Set(["/auth/login"]);
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -140,6 +143,16 @@ const applyDevAuthProxyToken = (headers: Headers, pathname: string): void => {
 	headers.set(devAuthProxyTokenHeader, devAuthProxyToken);
 };
 
+const applyDevPasskeyContext = (headers: Headers, pathname: string): void => {
+	if (!passkeyContextAuthPaths.has(pathname)) {
+		return;
+	}
+	if (!devPasskeyContext?.trim()) {
+		return;
+	}
+	headers.set(devPasskeyContextHeader, devPasskeyContext);
+};
+
 const handleProxyError = (
 	error: unknown,
 	requestMethod: string,
@@ -170,6 +183,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	const requestId = ensureRequestId(headers);
 	applyProxyCredentials(headers, request.headers.get("cookie"));
 	applyDevAuthProxyToken(headers, targetUrl.pathname);
+	applyDevPasskeyContext(headers, targetUrl.pathname);
 
 	const timeoutMs = resolveProxyTimeoutMs();
 	const controller = new AbortController();

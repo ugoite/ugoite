@@ -46,7 +46,7 @@ export default function LoginRoute() {
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
 		await completeLogin(async () => {
-			return await authApi.loginWithTotp(username().trim(), totpCode().trim());
+			return await authApi.loginWithPasskeyTotp(username().trim(), totpCode().trim());
 		});
 	};
 
@@ -79,11 +79,12 @@ export default function LoginRoute() {
 				<Show when={authConfig()}>
 					{(config) => (
 						<>
-							<Show when={config().mode === "manual-totp"}>
+							<Show when={config().mode === "passkey-totp"}>
 								<form class="ui-stack-sm" onSubmit={handleSubmit}>
 									<p class="text-sm ui-muted">
 										Use the username you confirmed in the terminal and the current 2FA code from
-										your local development authenticator.
+										your local development authenticator. This browser must also be using the
+										passkey-bound local context prepared during startup.
 									</p>
 									<label class="ui-stack-sm">
 										<span class="text-sm font-medium">Username</span>
@@ -115,7 +116,7 @@ export default function LoginRoute() {
 											!username().trim() || totpCode().trim().length !== 6 || isSubmitting()
 										}
 									>
-										{isSubmitting() ? "Signing in..." : "Sign in with 2FA"}
+										{isSubmitting() ? "Signing in..." : "Sign in with passkey + 2FA"}
 									</button>
 								</form>
 							</Show>
