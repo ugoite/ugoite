@@ -134,7 +134,10 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 			overviewHref: "/getting-started",
 			items: [
 				{ title: "Overview", href: "/getting-started" },
-				{ title: "Container Quickstart", href: "/docs/guide/container-quickstart" },
+				{
+					title: "Container Quickstart",
+					href: "/docs/guide/container-quickstart",
+				},
 				{ title: "Docker Compose", href: "/docs/guide/docker-compose" },
 				{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
 				{ title: "CLI Guide", href: "/docs/guide/cli" },
