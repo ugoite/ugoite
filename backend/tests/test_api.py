@@ -1162,9 +1162,7 @@ def test_middleware_headers(
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
-    assert (
-        response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
-    )
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert (
         response.headers["Permissions-Policy"]
         == "camera=(), microphone=(), geolocation=()"
@@ -1184,6 +1182,26 @@ def test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy(
     monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
     response = test_client.get("/", headers={"x-forwarded-proto": "https"})
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000"
+
+
+def test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: untrusted forwarded proto headers must not enable HSTS."""
+    monkeypatch.delenv("UGOITE_TRUST_PROXY_HEADERS", raising=False)
+    response = test_client.get("/", headers={"x-forwarded-proto": "https"})
+    assert "Strict-Transport-Security" not in response.headers
+
+
+def test_middleware_headers_req_sec_002_skips_csp_for_docs_ui(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-002: docs UI responses skip API CSP so FastAPI docs remain usable."""
+    response = test_client.get("/docs")
+    assert response.status_code == 200
+    assert "Content-Security-Policy" not in response.headers
+    assert response.headers["X-Frame-Options"] == "DENY"
 
 
 def test_middleware_hmac_signature(
