@@ -623,7 +623,7 @@ def test_dev_auth_req_ops_015_mock_oauth_rejects_manual_totp_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: mock-oauth endpoint rejects sessions running in passkey-totp mode."""
+    """REQ-OPS-015: mock-oauth endpoint rejects passkey-totp sessions."""
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
