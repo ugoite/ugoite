@@ -1,10 +1,15 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
-import { nextStepCards, primaryStartCards } from "../../lib/onboarding";
+import {
+  conceptPrimerCard,
+  nextStepCards,
+  primaryStartCards,
+} from "../../lib/onboarding";
 
 const toc = [
   { id: "overview", title: "Overview" },
+  { id: "concepts", title: "Core Concepts" },
   { id: "first-steps", title: "Choose a Path" },
   { id: "next", title: "Next" },
 ];
@@ -23,6 +28,28 @@ const toc = [
         <p class="doc-lead">
           Pick the shortest path for what you want to do right now, then move to the browser, auth guide, or deeper reference docs only when you actually need them.
         </p>
+      </div>
+    </section>
+
+    <section id="concepts" class="doc-card doc-section-stack">
+      <div class="doc-section-copy">
+        <p class="doc-pill doc-kicker">Core Concepts</p>
+        <h2 class="doc-section-title">Learn the mental model before you pick a tool</h2>
+        <p class="doc-lead">
+          Spend a few minutes on spaces, entries, forms, and search first. It makes the browser, CLI, and design docs easier to understand later.
+        </p>
+      </div>
+
+      <div class="doc-grid">
+        <a href={withBasePath(conceptPrimerCard.href)} class="doc-card doc-card-hover doc-link-card">
+          <div class="doc-link-card__icon" aria-hidden="true">{conceptPrimerCard.icon}</div>
+          <div class="doc-link-card__eyebrow">
+            <span class="doc-pill">{conceptPrimerCard.badge}</span>
+          </div>
+          <h2 class="doc-link-card__title">{conceptPrimerCard.title}</h2>
+          <p class="doc-link-card__body">{conceptPrimerCard.description}</p>
+          <div class="doc-link-card__footer">Open primer</div>
+        </a>
       </div>
     </section>
 

@@ -6,6 +6,15 @@ export type OnboardingCard = {
 	title: string;
 };
 
+export const conceptPrimerCard = {
+	badge: "Learn First",
+	description:
+		"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+	href: "/docs/guide/concepts",
+	icon: "💡",
+	title: "Understand core concepts",
+} as const satisfies OnboardingCard;
+
 export const primaryStartCards = [
 	{
 		badge: "Fastest path",
