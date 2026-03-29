@@ -22,6 +22,7 @@ async fn test_sample_data_req_api_009_create_sample_space() -> anyhow::Result<()
         scenario: "renewable-ops".to_string(),
         entry_count: 120,
         seed: Some(7),
+        owner_user_id: None,
     };
 
     let summary = create_sample_space(&op, &root_uri, &options).await?;
@@ -59,6 +60,7 @@ async fn test_sample_data_req_api_009_respects_requested_small_entry_count() -> 
         scenario: "lab-qa".to_string(),
         entry_count: 6,
         seed: Some(9),
+        owner_user_id: None,
     };
 
     let summary = create_sample_space(&op, &root_uri, &options).await?;
@@ -67,6 +69,45 @@ async fn test_sample_data_req_api_009_respects_requested_small_entry_count() -> 
 
     let entries = entry::list_entries(&op, &format!("spaces/{}", options.space_id)).await?;
     assert_eq!(entries.len(), 6);
+
+    Ok(())
+}
+
+/// REQ-OPS-016
+#[tokio::test]
+async fn test_sample_data_req_ops_016_bootstraps_trimmed_owner_membership() -> anyhow::Result<()> {
+    let tempdir = tempfile::tempdir()?;
+    let root_uri = temp_root_uri(&tempdir);
+    let space_id = unique_space_id("sample-space-owner");
+    let op = setup_operator()?;
+    let options = SampleDataOptions {
+        space_id: space_id.clone(),
+        scenario: "renewable-ops".to_string(),
+        entry_count: 6,
+        seed: Some(11),
+        owner_user_id: Some("  local-dev-user  ".to_string()),
+    };
+
+    create_sample_space(&op, &root_uri, &options).await?;
+
+    let settings_path = format!("spaces/{space_id}/settings.json");
+    let settings_bytes = op.read(&settings_path).await?;
+    let settings_text = String::from_utf8(settings_bytes.to_bytes().to_vec())?;
+    assert!(
+        settings_text.contains('\n'),
+        "settings.json should stay pretty-printed after owner bootstrap"
+    );
+    let settings_json: serde_json::Value = serde_json::from_str(&settings_text)?;
+
+    assert_eq!(
+        settings_json["membership_version"].as_i64(),
+        Some(1),
+        "owner bootstrap should initialize membership_version as an integer"
+    );
+    let owner_member = &settings_json["members"]["local-dev-user"];
+    assert_eq!(owner_member["user_id"].as_str(), Some("local-dev-user"));
+    assert_eq!(owner_member["role"].as_str(), Some("admin"));
+    assert_eq!(owner_member["state"].as_str(), Some("active"));
 
     Ok(())
 }
@@ -83,6 +124,7 @@ async fn test_sample_data_req_api_010_job_lifecycle() -> anyhow::Result<()> {
         scenario: "renewable-ops".to_string(),
         entry_count: 100,
         seed: Some(10),
+        owner_user_id: None,
     };
 
     let job = create_sample_space_job(&op, &root_uri, &options).await?;
@@ -129,6 +171,7 @@ async fn test_sample_data_req_api_010_job_status_retries_transient_eof() -> anyh
         scenario: "renewable-ops".to_string(),
         entry_count: 6,
         seed: Some(2),
+        owner_user_id: None,
         status: SampleJobStatus::Queued,
         status_message: Some("Queued".to_string()),
         processed_entries: 0,

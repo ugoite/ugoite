@@ -49,6 +49,12 @@ def _is_auth_exempt(path: str) -> bool:
     return path.startswith(("/docs/", "/redoc/"))
 
 
+def _is_docs_path(path: str) -> bool:
+    if path in {"/docs", "/redoc"}:
+        return True
+    return path.startswith(("/docs/", "/redoc/"))
+
+
 def _space_id_from_path(path: str) -> str | None:
     marker = "/spaces/"
     if marker not in path:
@@ -56,6 +62,20 @@ def _space_id_from_path(path: str) -> str | None:
     fragment = path.split(marker, 1)[1]
     space_id = fragment.split("/", 1)[0].strip()
     return space_id or None
+
+
+def _request_uses_https(
+    request: Request,
+    *,
+    trust_proxy_headers: bool,
+) -> bool:
+    """Determine whether the effective request scheme is HTTPS."""
+    if trust_proxy_headers:
+        forwarded_proto = request.headers.get("x-forwarded-proto", "")
+        effective_proto = forwarded_proto.split(",", 1)[0].strip().lower()
+        if effective_proto:
+            return effective_proto == "https"
+    return request.url.scheme.lower() == "https"
 
 
 @dataclass(frozen=True)
@@ -66,6 +86,12 @@ class _AuditRequestEvent:
     target_type: str | None = None
     target_id: str | None = None
     metadata: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class _SecurityHeaderContext:
+    request_path: str
+    uses_https: bool
 
 
 async def _emit_audit_event(
@@ -136,6 +162,13 @@ async def security_middleware(
             body,
             root_path,
             signature_space_id,
+            _SecurityHeaderContext(
+                request_path=request.url.path,
+                uses_https=_request_uses_https(
+                    request,
+                    trust_proxy_headers=trust_proxy_headers,
+                ),
+            ),
         )
 
     if not _is_auth_exempt(request.url.path):
@@ -185,6 +218,13 @@ async def security_middleware(
                 body,
                 root_path,
                 signature_space_id,
+                _SecurityHeaderContext(
+                    request_path=request.url.path,
+                    uses_https=_request_uses_https(
+                        request,
+                        trust_proxy_headers=trust_proxy_headers,
+                    ),
+                ),
             )
 
     response = await call_next(request)
@@ -236,7 +276,20 @@ async def security_middleware(
             ),
         )
 
-    return await _apply_security_headers(response, body, root_path, signature_space_id)
+    uses_https = _request_uses_https(
+        request,
+        trust_proxy_headers=trust_proxy_headers,
+    )
+    return await _apply_security_headers(
+        response,
+        body,
+        root_path,
+        signature_space_id,
+        _SecurityHeaderContext(
+            request_path=request.url.path,
+            uses_https=uses_https,
+        ),
+    )
 
 
 async def _capture_response_body(response: Response) -> bytes:
@@ -256,6 +309,7 @@ async def _apply_security_headers(
     body: bytes,
     root_path: Path | str,
     space_id: str,
+    context: _SecurityHeaderContext,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
     if space_id == "default":
@@ -263,9 +317,16 @@ async def _apply_security_headers(
     else:
         key_id, signature = await build_response_signature(body, root_path, space_id)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; frame-ancestors 'none'"
-    )
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if not _is_docs_path(context.request_path):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; object-src 'none'; "
+            "frame-ancestors 'none'"
+        )
+    if context.uses_https:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["X-Ugoite-Key-Id"] = key_id
     response.headers["X-Ugoite-Signature"] = signature
     response.headers["Content-Length"] = str(len(body))

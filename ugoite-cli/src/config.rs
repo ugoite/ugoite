@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
@@ -125,23 +125,62 @@ pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
     format!("spaces/{}", space_id)
 }
 
-pub fn parse_space_path(space_path: &str) -> (String, String) {
+fn explicit_core_space_path(space_path: &str) -> Option<(String, String)> {
     let text = space_path.trim_end_matches('/');
-    if let Some(pos) = text.rfind("/spaces/") {
-        let root = &text[..pos];
-        let rest = &text[pos + 8..];
-        let space_id = rest.split('/').next().unwrap_or(rest);
-        (root.to_string(), space_id.to_string())
-    } else {
-        (
-            "".to_string(),
-            std::path::Path::new(text)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(text)
-                .to_string(),
-        )
+    let pos = text.rfind("/spaces/")?;
+    let root = if pos == 0 { "/" } else { &text[..pos] };
+    let rest = &text[pos + 8..];
+    let space_id = rest.split('/').next().unwrap_or(rest);
+    if root.is_empty() || space_id.is_empty() {
+        return None;
     }
+    Some((root.to_string(), space_id.to_string()))
+}
+
+pub fn parse_space_path(space_path: &str) -> (String, String) {
+    if let Some(explicit) = explicit_core_space_path(space_path) {
+        return explicit;
+    }
+    let text = space_path.trim_end_matches('/');
+    (
+        "".to_string(),
+        std::path::Path::new(text)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(text)
+            .to_string(),
+    )
+}
+
+pub fn resolve_space_reference(
+    config: &EndpointConfig,
+    space_path: &str,
+    command_name: &str,
+) -> Result<(String, String)> {
+    let parsed = parse_space_path(space_path);
+    if base_url(config).is_some() {
+        return Ok(parsed);
+    }
+    explicit_core_space_path(space_path).ok_or_else(|| {
+        anyhow!(
+            "{command_name} requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        )
+    })
+}
+
+pub fn normalize_space_root(root_path: &str) -> String {
+    let trimmed = if root_path == "/" {
+        "/"
+    } else {
+        root_path.trim_end_matches('/')
+    };
+    if let Some(parent) = trimmed.strip_suffix("/spaces") {
+        if parent.is_empty() {
+            return "/".to_string();
+        }
+        return parent.to_string();
+    }
+    trimmed.to_string()
 }
 
 pub fn base_url(config: &EndpointConfig) -> Option<String> {
