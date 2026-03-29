@@ -20,8 +20,6 @@ The frontend implementation and this spec set are validated by tests to ensure r
 - space-home
 - space-assets
 - space-asset-detail
-- space-links
-- space-link-detail
 - space-query-legacy
 - space-sql
 - space-sql-detail
