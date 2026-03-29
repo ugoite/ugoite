@@ -192,7 +192,7 @@ async fn test_cli_req_ops_006_http_helpers_apply_auth_headers() {
         .contains("x-api-key: api-key-secret\r\n"));
 }
 
-/// REQ-OPS-006: explicit auth POST helpers must only send the dev proxy header when configured.
+/// REQ-OPS-006: explicit auth POST helpers must only send dev local-auth headers when configured.
 #[tokio::test]
 async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     let _guard = env_lock().lock().expect("env lock");
@@ -212,6 +212,7 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
         .contains("x-ugoite-dev-auth-proxy-token:"),);
 
     std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
     http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
         .await
@@ -223,6 +224,9 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     assert!(proxy_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: passkey-context\r\n"));
 }
 
 /// REQ-OPS-006: explicit auth POST helpers must surface proxy-auth errors with response text.
@@ -232,6 +236,7 @@ async fn test_cli_req_ops_006_http_helpers_surface_dev_auth_proxy_error_bodies()
     let _env = EnvState::capture();
 
     std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
     let (base, requests, handle) =
         spawn_recording_server("HTTP/1.1 403 Forbidden", "proxy auth failed");
     let post_err = http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
@@ -244,6 +249,9 @@ async fn test_cli_req_ops_006_http_helpers_surface_dev_auth_proxy_error_bodies()
     assert!(proxy_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: passkey-context\r\n"));
     assert!(post_err.to_string().contains("HTTP 403"));
     assert!(post_err.to_string().contains("proxy auth failed"));
 }

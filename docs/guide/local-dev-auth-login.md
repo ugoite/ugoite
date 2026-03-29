@@ -10,7 +10,7 @@ session. The browser and CLI must sign in explicitly after startup, so local
 development follows the same mental model as production: authenticate first,
 receive a bearer token second.
 
-The default path remains `manual-totp`, and you can opt into `mock-oauth`
+The default path remains `passkey-totp`, and you can opt into `mock-oauth`
 when you want to exercise an explicit OAuth-style login flow. In every case,
 the browser and CLI must sign in explicitly after startup.
 
@@ -18,16 +18,16 @@ the browser and CLI must sign in explicitly after startup.
 
 | Mode | How to enable | What it does |
 |---|---|---|
-| `manual-totp` (default) | `mise run dev` | Prompts for a local admin username and validates a current 2FA code in the terminal, then exposes a browser/CLI login flow at `/login` or `ugoite auth login`. |
+| `passkey-totp` (default) | `mise run dev` | Prompts for a local admin username and validates a current 2FA code in the terminal, then creates a passkey-bound local context that browser/CLI login requests must present alongside the 2FA step. |
 | `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit mock OAuth browser/CLI login path after the stack is running as the configured local admin user. |
 
 Each backend/frontend dev process logs the active mode at startup, for example:
 
 ```text
-Local dev auth mode: manual-totp (explicit username + 2FA login)
+Local dev auth mode: passkey-totp (passkey-bound username + 2FA login)
 ```
 
-## 2) Install `oathtool` for manual TOTP flows
+## 2) Install `oathtool` for passkey + TOTP flows
 
 If you open the repository in the standard devcontainer, this step is already
 handled for you during container setup.
@@ -62,7 +62,7 @@ mise run dev
 ```
 
 The root task prepares the local auth context **once** before it fans out to the
-backend, frontend, and docsite dev tasks. On a first `manual-totp` run, expect a
+backend, frontend, and docsite dev tasks. On a first `passkey-totp` run, expect a
 single username + 2FA prompt sequence before the backend and frontend start.
 
 The helper waits for `http://localhost:8000/health` before the frontend dev
@@ -80,8 +80,10 @@ terminal prompts for:
 
 The helper validates that code against `UGOITE_DEV_2FA_SECRET`, then stores the
 resulting **login context** in `~/.ugoite/dev-auth.json` with owner-only
-permissions (`0600`). The file contains the selected mode, username, and local
-signing material for dev login sessions. It does **not** store an authenticated
+permissions (`0600`). The file contains the selected mode, username, signing
+material, and a reusable `UGOITE_DEV_PASSKEY_CONTEXT` value. The frontend proxy
+and CLI forward that passkey-bound local context automatically during
+`passkey-totp` login requests. The file does **not** store an authenticated
 bearer token and it does **not** start the app already logged in.
 
 At backend startup, that configured user is also bootstrapped into the reserved
@@ -100,9 +102,10 @@ Optional startup overrides:
 ```bash
 export UGOITE_DEV_USER_ID="dev-local-user"
 export UGOITE_DEV_AUTH_TTL_SECONDS=43200
+export UGOITE_DEV_PASSKEY_CONTEXT="optional-local-passkey-context"
 ```
 
-## 5) Browser login (`manual-totp`)
+## 5) Browser login (`passkey-totp`)
 
 After the stack is running, open:
 
@@ -114,7 +117,7 @@ Then:
 
 1. enter the same admin username you confirmed in the terminal
 2. enter the current 2FA code from your authenticator (or from `oathtool`)
-3. submit the form
+3. submit the form from the same local dev session that prepared the passkey context
 
 Example TOTP generation:
 
@@ -123,12 +126,14 @@ oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 ```
 
 The browser receives a signed bearer token only **after** the login form is
-submitted successfully. The frontend stores that token in a local session cookie
-for the `/api/*` proxy, so protected pages can render normally after login.
+submitted successfully. The frontend proxy attaches the local
+`UGOITE_DEV_PASSKEY_CONTEXT` automatically, then stores the resulting bearer
+token in a local session cookie for `/api/*`, so protected pages can render
+normally after login.
 That login also grants the configured user access to the reserved
 `admin-space`, which is what authorizes space creation in local development.
 
-## 6) CLI login (`manual-totp`)
+## 6) CLI login (`passkey-totp`)
 
 Configure the CLI to target the backend directly:
 
@@ -142,9 +147,13 @@ Then log in explicitly:
 cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
 ```
 
+If you installed the published CLI, run the equivalent `ugoite auth login`
+command with the same flags.
+
 The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
 shell. That token is minted only after the backend validates the username + 2FA
-input, and the authenticated admin user can then create additional spaces.
+input together with the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the
+authenticated admin user can then create additional spaces.
 
 ## 7) Mock OAuth mode
 
@@ -171,7 +180,7 @@ cargo run -q -p ugoite-cli -- auth login --mock-oauth
 ## 8) Verify auth locally
 
 1. Open `http://localhost:3000/login`.
-2. Complete either the username + 2FA form or the mock OAuth button.
+2. Complete either the passkey-bound username + 2FA form or the mock OAuth button.
 3. Confirm protected pages such as `/spaces` load successfully.
 4. Check backend health (`/health` is intentionally unauthenticated):
 

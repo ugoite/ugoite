@@ -617,10 +617,11 @@ REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
-    "manual-totp",
+    "passkey-totp",
     "mock-oauth",
     "UGOITE_DEV_USER_ID",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
+    "UGOITE_DEV_PASSKEY_CONTEXT",
     "oathtool",
     "/login",
     "ugoite auth login",
@@ -643,7 +644,7 @@ REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS = {
 }
 FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev",
-    "UGOITE_DEV_AUTH_MODE=manual-totp",
+    "UGOITE_DEV_AUTH_MODE=passkey-totp",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
 }
 LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL = (
@@ -653,17 +654,19 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
     "| UGOITE_DEV_USER_ID |",
     "| UGOITE_DEV_AUTH_FORCE_LOGIN |",
+    "| UGOITE_DEV_PASSKEY_CONTEXT |",
     "| UGOITE_DEV_2FA_SECRET |",
 }
 REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
-    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-manual-totp}"',
+    'AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-passkey-totp}"',
     "UGOITE_DEV_USER_ID",
     "export UGOITE_ROOT",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "UGOITE_DEV_SIGNING_SECRET",
     "UGOITE_DEV_SIGNING_KID",
+    "UGOITE_DEV_PASSKEY_CONTEXT",
     "path.chmod(0o600)",
-    'announce_mode "manual-totp"',
+    'announce_mode "passkey-totp"',
     'announce_mode "mock-oauth"',
     "Local dev username:",
     "Current 2FA code:",

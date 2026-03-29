@@ -146,7 +146,7 @@ Install dependencies:
 mise run setup
 ```
 
-Start development (backend + frontend + docsite — `manual-totp` is the default local auth mode):
+Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
 
 ```bash
 mise run dev

@@ -14,7 +14,7 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show auth setup (env vars)
     Profile,
-    /// Authenticate via local backend/API login flow and print export shell commands
+    /// Authenticate via the local backend/API passkey + 2FA flow and print export shell commands
     Login {
         #[arg(long)]
         username: Option<String>,

@@ -91,7 +91,7 @@ def _totp_code(secret: str, timestamp: int) -> str:
 
 
 def test_validate_totp_code_req_ops_015_accepts_current_code() -> None:
-    """REQ-OPS-015: local manual-totp mode validates a current six-digit code."""
+    """REQ-OPS-015: local passkey-totp mode validates a current six-digit code."""
     secret = TEST_TOTP_SECRET
     timestamp = 1_700_000_000
     code = _totp_code(secret, timestamp)
@@ -99,7 +99,7 @@ def test_validate_totp_code_req_ops_015_accepts_current_code() -> None:
 
 
 def test_validate_totp_code_req_ops_015_accepts_unpadded_secret() -> None:
-    """REQ-OPS-015: local manual-totp mode accepts unpadded Base32 secrets."""
+    """REQ-OPS-015: local passkey-totp mode accepts unpadded Base32 secrets."""
     secret = TEST_TOTP_SECRET.rstrip("=")
     timestamp = 1_700_000_000
     code = _totp_code(TEST_TOTP_SECRET, timestamp)
