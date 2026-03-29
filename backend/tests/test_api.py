@@ -1154,7 +1154,10 @@ def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-SEC-002: middleware attaches standard security headers to non-SSE responses."""
+    """REQ-SEC-002: middleware attaches standard security headers.
+
+    The contract applies to non-SSE responses.
+    """
     response = test_client.get("/")
     assert "X-Content-Type-Options" in response.headers
     assert response.headers["X-Content-Type-Options"] == "nosniff"
@@ -1177,7 +1180,7 @@ def test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-SEC-002: middleware only adds HSTS when the effective request scheme is HTTPS."""
+    """REQ-SEC-002: middleware only adds HSTS for effective HTTPS requests."""
     monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
     response = test_client.get("/", headers={"x-forwarded-proto": "https"})
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000"

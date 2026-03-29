@@ -150,8 +150,10 @@ async def security_middleware(
             body,
             root_path,
             signature_space_id,
-            request,
-            trust_proxy_headers=trust_proxy_headers,
+            uses_https=_request_uses_https(
+                request,
+                trust_proxy_headers=trust_proxy_headers,
+            ),
         )
 
     if not _is_auth_exempt(request.url.path):
@@ -201,8 +203,10 @@ async def security_middleware(
                 body,
                 root_path,
                 signature_space_id,
-                request,
-                trust_proxy_headers=trust_proxy_headers,
+                uses_https=_request_uses_https(
+                    request,
+                    trust_proxy_headers=trust_proxy_headers,
+                ),
             )
 
     response = await call_next(request)
@@ -254,13 +258,16 @@ async def security_middleware(
             ),
         )
 
+    uses_https = _request_uses_https(
+        request,
+        trust_proxy_headers=trust_proxy_headers,
+    )
     return await _apply_security_headers(
         response,
         body,
         root_path,
         signature_space_id,
-        request,
-        trust_proxy_headers=trust_proxy_headers,
+        uses_https=uses_https,
     )
 
 
@@ -281,9 +288,8 @@ async def _apply_security_headers(
     body: bytes,
     root_path: Path | str,
     space_id: str,
-    request: Request,
     *,
-    trust_proxy_headers: bool,
+    uses_https: bool,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
     if space_id == "default":
@@ -300,7 +306,7 @@ async def _apply_security_headers(
         "default-src 'self'; script-src 'self'; object-src 'none'; "
         "frame-ancestors 'none'"
     )
-    if _request_uses_https(request, trust_proxy_headers=trust_proxy_headers):
+    if uses_https:
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["X-Ugoite-Key-Id"] = key_id
     response.headers["X-Ugoite-Signature"] = signature
