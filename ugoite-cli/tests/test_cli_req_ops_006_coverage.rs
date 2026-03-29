@@ -1861,3 +1861,30 @@ fn test_cli_req_ops_006_space_list_format_table() {
         serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout");
     assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
 }
+
+/// REQ-OPS-006: backend-mode `space create` must post the space ID and print the remote JSON result.
+#[test]
+fn test_cli_req_ops_006_space_create_backend_roundtrip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("remote-space-create-config.json");
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"remote-space","name":"Remote Space"}"#);
+    write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
+
+    let output = cli_command(&config_path)
+        .args(["space", "create", "remote-space"])
+        .output()
+        .expect("space create backend");
+    assert_success(&output, "space create backend");
+
+    let request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("space create backend request");
+    handle.join().expect("join space create backend server");
+    assert!(request.starts_with("POST /spaces HTTP/1.1"));
+    assert!(request.contains(r#""name":"remote-space""#));
+
+    let stdout_json = parse_stdout_json(&output);
+    assert_eq!(stdout_json["id"].as_str(), Some("remote-space"));
+    assert_eq!(stdout_json["name"].as_str(), Some("Remote Space"));
+}

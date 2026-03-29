@@ -227,6 +227,14 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
         "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
     ));
 
+    let malformed = resolve_space_reference(&core, "/tmp/demo/spaces//nested", "entry list")
+        .expect_err("malformed core path");
+    assert!(malformed.to_string().contains(
+        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+    ));
+
+    assert_eq!(normalize_space_root("/"), "/");
+    assert_eq!(normalize_space_root("/spaces"), "/");
     assert_eq!(normalize_space_root("/tmp/demo/spaces"), "/tmp/demo");
     assert_eq!(normalize_space_root("/tmp/demo"), "/tmp/demo");
 }
