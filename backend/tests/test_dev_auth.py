@@ -169,8 +169,12 @@ def test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code(
         "totp_code": _totp_code(secret, timestamp),
     }
 
-    first_response = client.post("/auth/login", json=payload, headers=_passkey_headers())
-    second_response = client.post("/auth/login", json=payload, headers=_passkey_headers())
+    first_response = client.post(
+        "/auth/login", json=payload, headers=_passkey_headers()
+    )
+    second_response = client.post(
+        "/auth/login", json=payload, headers=_passkey_headers()
+    )
 
     assert first_response.status_code == 200
     assert second_response.status_code == 401
