@@ -83,6 +83,15 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Auth Overview",
 			"CLI Guide",
 		]);
+		await expect(
+			page.locator(".site-nav-menu").nth(2).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
+		await expect(
+			page.locator(".site-nav-menu").nth(3).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
+		await expect(
+			page.locator(".site-nav-menu").nth(4).locator(".site-nav-submenu a"),
+		).toHaveCount(0);
 	});
 
 	test("REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content", async ({
@@ -106,12 +115,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		]);
 		await expect(
 			page.locator("#mobile-doc-nav .doc-sidebar-title"),
-		).toHaveText([
-			"Getting Started",
-			"Application",
-			"Design Principles",
-			"Source Docs",
-		]);
+		).toHaveText(["Getting Started"]);
 	});
 });
 
