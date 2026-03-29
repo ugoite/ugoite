@@ -113,7 +113,7 @@ def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
@@ -165,7 +165,7 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
         },
     )
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
-    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
     clear_auth_manager_cache()
 
     client = TestClient(app)
@@ -561,7 +561,7 @@ def test_dev_auth_req_ops_015_passkey_login_requires_signing_material(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-OPS-015: manual login cannot issue a token without signing material."""
+    """REQ-OPS-015: passkey login cannot issue a token without signing material."""
     timestamp = int(time.time())
     secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
@@ -717,7 +717,10 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Passkey-bound local context is missing or invalid."
+    assert (
+        response.json()["detail"]
+        == "Passkey-bound local context is missing or invalid."
+    )
 
 
 def test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context(
