@@ -1,6 +1,9 @@
 import { createSignal, Show } from "solid-js";
 import type { Space, SpacePatchPayload } from "~/lib/types";
 
+const storageMigrationGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/storage-migration.md";
+
 export interface SpaceSettingsProps {
 	space: Space;
 	onSave: (payload: SpacePatchPayload) => Promise<void>;
@@ -87,6 +90,10 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 				{/* Storage Configuration */}
 				<div class="border-t pt-6">
 					<h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
+					<p class="text-sm ui-muted">
+						Choose where this space lives. Local paths keep control and offline access on this
+						machine, while object storage changes the cost, credential, and sharing model.
+					</p>
 
 					<div class="space-y-4">
 						<div class="ui-field">
@@ -105,6 +112,38 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 							<p class="text-sm ui-muted">
 								Supported: <code>file://</code> (local), <code>s3://</code> (S3 bucket)
 							</p>
+							<div class="ui-card mt-3 space-y-3">
+								<div>
+									<h4 class="text-sm font-semibold">Choose the storage model deliberately</h4>
+									<ul class="mt-2 list-disc pl-5 text-sm ui-muted space-y-1">
+										<li>
+											<code>file://</code> keeps the space local-first on this machine with no
+											cloud storage bill.
+										</li>
+										<li>
+											<code>s3://</code> moves the data location to object storage, which can
+											help with team access and backups but adds cloud credentials and usage
+											costs.
+										</li>
+									</ul>
+								</div>
+								<p class="text-sm ui-muted">
+									Changing the storage URI updates this space&apos;s saved connector settings. It
+									does not migrate existing entries or assets to the new location for you.
+								</p>
+								<p class="text-sm ui-muted">
+									Before switching, review the{" "}
+									<a
+										href={storageMigrationGuideUrl}
+										target="_blank"
+										rel="noopener"
+										class="hover:underline"
+									>
+										storage migration guide
+									</a>{" "}
+									and use Test Connection to validate the target first.
+								</p>
+							</div>
 						</div>
 
 						{/* Test Connection Button */}
