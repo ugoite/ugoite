@@ -77,6 +77,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		await expect(
 			page.locator(".site-nav-menu").nth(1).locator(".site-nav-submenu a"),
 		).toHaveText([
+			"Core Concepts",
 			"Container Quickstart",
 			"Docker Compose",
 			"Auth Overview",
