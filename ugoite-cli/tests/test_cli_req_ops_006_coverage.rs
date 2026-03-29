@@ -1867,8 +1867,10 @@ fn test_cli_req_ops_006_space_list_format_table() {
 fn test_cli_req_ops_006_space_create_backend_roundtrip() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("remote-space-create-config.json");
-    let (base, requests, handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"remote-space","name":"Remote Space"}"#);
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"id":"remote-space","name":"Remote Space"}"#,
+    );
     write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
 
     let output = cli_command(&config_path)
