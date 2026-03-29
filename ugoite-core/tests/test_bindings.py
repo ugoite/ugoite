@@ -25,9 +25,7 @@ async def test_test_storage_connection_binding() -> None:
 
 
 @pytest.mark.asyncio
-async def test_test_storage_connection_req_sto_006_rejects_link_local_endpoint() -> (
-    None
-):
+async def test_storage_req_sto_006_rejects_link_local_endpoint() -> None:
     """REQ-STO-006: reject link-local endpoints before calling the binding."""
     with (
         patch(
@@ -52,8 +50,7 @@ async def test_test_storage_connection_req_sto_006_rejects_link_local_endpoint()
 
 
 @pytest.mark.asyncio
-async def test_test_storage_connection_req_sto_006_strips_inputs_before_validation(
-) -> None:
+async def test_storage_req_sto_006_strips_inputs_before_validation() -> None:
     """REQ-STO-006: storage validation trims uri and endpoint before validation."""
     with patch(
         "ugoite_core._core_any.test_storage_connection",
