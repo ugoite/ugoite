@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from typing import Literal, NoReturn, cast
@@ -20,6 +21,7 @@ from .service_accounts import resolve_service_api_key
 DEFAULT_UNAUTHORIZED_STATUS_CODE = 401
 AUTH_HEADER_PARTS = 2
 AUTH_MANAGER_TTL_SECONDS = 60.0
+_AUTH_MANAGER_CACHE_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 TOTP_STEP_SECONDS = 30
@@ -359,24 +361,26 @@ def _build_auth_manager() -> AuthManager:
 
 def get_auth_manager() -> AuthManager:
     """Create and cache authentication manager from environment settings."""
-    now = time.monotonic()
-    cache_entry = _AUTH_MANAGER_CACHE.entry
-    if cache_entry is None:
-        manager = _build_auth_manager()
-        _AUTH_MANAGER_CACHE.entry = (now, manager)
-        return manager
+    with _AUTH_MANAGER_CACHE_LOCK:
+        now = time.monotonic()
+        cache_entry = _AUTH_MANAGER_CACHE.entry
+        if cache_entry is None:
+            manager = _build_auth_manager()
+            _AUTH_MANAGER_CACHE.entry = (now, manager)
+            return manager
 
-    cached_at, manager = cache_entry
-    if now - cached_at >= AUTH_MANAGER_TTL_SECONDS:
-        manager = _build_auth_manager()
-        _AUTH_MANAGER_CACHE.entry = (now, manager)
-    return manager
+        cached_at, manager = cache_entry
+        if now - cached_at >= AUTH_MANAGER_TTL_SECONDS:
+            manager = _build_auth_manager()
+            _AUTH_MANAGER_CACHE.entry = (now, manager)
+        return manager
 
 
 def clear_auth_manager_cache() -> None:
     """Clear cached auth runtime state for tests and dynamic config updates."""
-    _AUTH_MANAGER_CACHE.entry = None
-    _AUTH_MANAGER_CACHE.generated_bootstrap_token = None
+    with _AUTH_MANAGER_CACHE_LOCK:
+        _AUTH_MANAGER_CACHE.entry = None
+        _AUTH_MANAGER_CACHE.generated_bootstrap_token = None
     _LAST_ACCEPTED_TOTP_COUNTERS.clear()
 
 
