@@ -30,6 +30,7 @@ enum Commands {
     /// Indexer operations
     Index(commands::index::IndexCmd),
     /// Link management commands (deprecated: use row_reference fields)
+    #[command(hide = true)]
     Link(commands::link::LinkCmd),
     /// Create a new space (deprecated: use `space create` instead)
     /// Create a new space
