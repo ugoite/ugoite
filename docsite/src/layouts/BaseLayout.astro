@@ -1,7 +1,11 @@
 ---
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
 import DocNavTree from "../components/DocNavTree.astro";
-import { getNavSectionsWithChildren, topLinks } from "../lib/navigation";
+import {
+  getNavSectionsWithChildren,
+  getNewcomerNavSections,
+  topLinks,
+} from "../lib/navigation";
 import { withBasePath } from "../lib/base-path";
 import "../styles.css";
 
@@ -11,11 +15,21 @@ export interface Props {
   toc?: Array<{ id: string; title: string }>;
   related?: Array<{ href: string; label: string }>;
   fullWidth?: boolean;
+  newcomerMode?: boolean;
 }
 
-const { title, description, toc = [], related = [], fullWidth = false } = Astro.props;
+const {
+  title,
+  description,
+  toc = [],
+  related = [],
+  fullWidth = false,
+  newcomerMode = false,
+} = Astro.props;
 const hasRight = toc.length > 0 || related.length > 0;
-const navSections = await getNavSectionsWithChildren();
+const navSections = newcomerMode
+  ? getNewcomerNavSections()
+  : await getNavSectionsWithChildren();
 const searchIndexUrl = withBasePath("/search-index.json");
 const subNavByHref = new Map(
   navSections.flatMap((section) => {
