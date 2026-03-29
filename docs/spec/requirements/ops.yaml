@@ -542,11 +542,13 @@ requirements:
   title: Local Dev Auth Mode Selection
   description: 'Local development tooling MUST expose explicit login flows instead
 
-    of starting the stack already authenticated. `manual-totp` MUST prompt for
+    of starting the stack already authenticated. `passkey-totp` MUST prompt for
 
     a local username plus current 2FA code during setup, store only the reusable
 
-    login context with owner-only permissions, and require the browser or CLI to
+    login context with owner-only permissions, require a passkey-bound local
+
+    context in addition to the 2FA code during explicit browser/CLI login, and
 
     complete an explicit login step before a bearer token is issued. `mock-oauth`
 
@@ -554,7 +556,7 @@ requirements:
 
     mode may pre-inject a bearer token into the running stack. The standard
 
-    devcontainer setup MUST include `oathtool` so manual-totp flows remain
+    devcontainer setup MUST include `oathtool` so passkey-totp flows remain
 
     reproducible inside the canonical contributor environment. README, docsite
 
@@ -580,11 +582,15 @@ requirements:
       - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
       tests:
-      - test_dev_auth_req_ops_015_config_exposes_manual_totp_mode
-      - test_dev_auth_req_ops_015_manual_totp_login_issues_signed_token
-      - test_dev_auth_req_ops_015_manual_login_rejects_replayed_totp_code
+      - test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode
+      - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
+      - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
       - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
+      - test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context
+      - test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context
+      - test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context
+      - test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context
       - test_dev_auth_req_ops_015_allows_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token
@@ -598,7 +604,7 @@ requirements:
     vitest:
     - file: frontend/src/routes/login.test.tsx
       tests:
-      - 'REQ-OPS-015: signs in with manual-totp and stores a browser auth cookie'
+      - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
     - file: frontend/src/lib/api.test.ts
       tests:

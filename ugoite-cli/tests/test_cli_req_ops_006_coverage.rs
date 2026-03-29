@@ -260,6 +260,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--totp-code",
             "123456",
         ])
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
         .output()
         .expect("core mode auth login");
     assert!(
@@ -286,6 +287,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--totp-code",
             "123456",
         ])
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
         .output()
         .expect("backend mode auth login");
     assert_success(&backend_mode_login, "backend mode auth login");
@@ -294,6 +296,9 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .expect("backend mode request");
     handle.join().expect("join backend mode server");
     assert!(backend_mode_request.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(backend_mode_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: passkey-context"));
     assert!(String::from_utf8_lossy(&backend_mode_login.stdout)
         .contains("export UGOITE_AUTH_BEARER_TOKEN=backend-mode-token"));
 
@@ -324,6 +329,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
     let mut child = cli_command(&config_path)
         .args(["auth", "login"])
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "interactive-passkey")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -342,6 +348,9 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .expect("interactive request");
     handle.join().expect("join interactive server");
     assert!(interactive_request.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(interactive_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: interactive-passkey"));
     assert!(interactive_request.contains(r#""username":"alice""#));
     assert!(interactive_request.contains(r#""totp_code":"123456""#));
 

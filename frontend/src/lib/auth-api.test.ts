@@ -14,19 +14,19 @@ describe("authApi", () => {
 
 	it("REQ-OPS-015: surfaces local auth config and login response errors clearly", async () => {
 		seedDevAuthConfig({
-			mode: "manual-totp",
+			mode: "passkey-totp",
 			username_hint: "dev-alice",
-			supports_manual_totp: true,
+			supports_passkey_totp: true,
 			supports_mock_oauth: false,
 		});
 
 		await expect(authApi.getConfig()).resolves.toEqual({
-			mode: "manual-totp",
+			mode: "passkey-totp",
 			usernameHint: "dev-alice",
-			supportsManualTotp: true,
+			supportsPasskeyTotp: true,
 			supportsMockOauth: false,
 		});
-		await expect(authApi.loginWithTotp("dev-alice", "123456")).resolves.toEqual({
+		await expect(authApi.loginWithPasskeyTotp("dev-alice", "123456")).resolves.toEqual({
 			bearerToken: "frontend-test-token",
 			userId: "dev-alice",
 			expiresAt: 1_900_000_000,
@@ -39,9 +39,9 @@ describe("authApi", () => {
 			http.get("http://localhost:3000/api/auth/config", () =>
 				HttpResponse.json(
 					{
-						mode: "manual-totp",
+						mode: "passkey-totp",
 						username_hint: "dev-alice",
-						supports_manual_totp: "yes",
+						supports_passkey_totp: "yes",
 						supports_mock_oauth: false,
 					},
 					{ status: 200 },
@@ -49,7 +49,7 @@ describe("authApi", () => {
 			),
 		);
 		await expect(authApi.getConfig()).rejects.toThrow(
-			"Invalid auth response: supports_manual_totp must be a boolean.",
+			"Invalid auth response: supports_passkey_totp must be a boolean.",
 		);
 
 		server.use(
@@ -88,7 +88,7 @@ describe("authApi", () => {
 				),
 			),
 		);
-		await expect(authApi.loginWithTotp("dev-alice", "123456")).rejects.toThrow(
+		await expect(authApi.loginWithPasskeyTotp("dev-alice", "123456")).rejects.toThrow(
 			"Invalid auth response: bearer_token must be a string.",
 		);
 
@@ -98,7 +98,7 @@ describe("authApi", () => {
 				() => new HttpResponse("backend down", { status: 502, statusText: "Bad Gateway" }),
 			),
 		);
-		await expect(authApi.loginWithTotp("dev-alice", "123456")).rejects.toThrow(
+		await expect(authApi.loginWithPasskeyTotp("dev-alice", "123456")).rejects.toThrow(
 			"Failed to log in: Bad Gateway",
 		);
 

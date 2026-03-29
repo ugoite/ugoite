@@ -14,7 +14,7 @@ pub struct AuthCmd {
 pub enum AuthSubCmd {
     /// Show auth setup (env vars)
     Profile,
-    /// Authenticate via local backend/API login and print export commands.
+    /// Authenticate via local backend/API passkey + 2FA login and print export commands.
     ///
     /// Prerequisite: configure backend or api mode first:
     ///   ugoite config set --mode backend --backend-url http://localhost:8000
@@ -22,7 +22,7 @@ pub enum AuthSubCmd {
     /// Apply the printed export with:
     ///   eval "$(ugoite auth login --username USER --totp-code CODE)"
     #[command(
-        long_about = "Authenticate via backend/API login and print shell export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the token in one step\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
+        long_about = "Authenticate via backend/API passkey + 2FA login and print shell export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, also export UGOITE_DEV_PASSKEY_CONTEXT before logging in.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the token in one step\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
     )]
     Login {
         #[arg(

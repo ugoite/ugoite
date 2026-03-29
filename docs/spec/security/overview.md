@@ -19,7 +19,7 @@ targets an **Authenticated Access by Default** model.
 - Protected API/MCP routes require authenticated identity.
 - Phase 1 providers support bearer token and API key authentication.
 - Local development obtains browser/CLI bearer tokens through explicit
-  `manual-totp` or `mock-oauth` login endpoints after startup instead of
+  `passkey-totp` or `mock-oauth` login endpoints after startup instead of
   injecting an authenticated token before the app starts.
 - Space creation is further restricted to active admins of the reserved
   `admin-space`, and the creator of each non-admin space becomes that space's

@@ -130,6 +130,7 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
         .output()
         .expect("failed to execute");
     assert!(output.status.success());
@@ -141,6 +142,9 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     assert!(request_text
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-auth-proxy-token: proxy-secret"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: passkey-context"));
     assert!(request_text.contains(r#""username":"dev-alice""#));
     assert!(request_text.contains(r#""totp_code":"123456""#));
 

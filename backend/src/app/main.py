@@ -60,7 +60,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     storage_config = storage_config_from_root(root_path)
     dev_auth_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", "").strip()
     dev_user_id = os.environ.get("UGOITE_DEV_USER_ID", "").strip()
-    if dev_auth_mode in {"manual-totp", "mock-oauth"} and dev_user_id:
+    if dev_auth_mode in {"passkey-totp", "mock-oauth"} and dev_user_id:
         try:
             await ugoite_core.ensure_admin_space(storage_config, dev_user_id)
             logger.info("Created or updated admin-space bootstrap for %s", dev_user_id)

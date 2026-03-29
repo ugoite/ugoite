@@ -221,7 +221,7 @@ In `backend` / `api` modes, CLI and frontend share the same bearer token env con
 # Route auth commands to the backend
 cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 
-# Exchange username + 2FA for a bearer token in manual-totp mode
+# Exchange username + 2FA for a bearer token in passkey-totp mode
 cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 123456
 
 # Or use the explicit mock OAuth login path
