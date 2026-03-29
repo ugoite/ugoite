@@ -122,6 +122,27 @@ describe("SpaceSettings", () => {
 
 	it("test connection button not shown when onTestConnection not provided", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
-		expect(screen.queryByText(/test connection/i)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /test connection/i })).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-017: explains storage trade-offs before changing the URI", () => {
+		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
+		expect(
+			screen.getByText(/local paths keep control and offline access on this machine/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/team access and backups but adds cloud credentials and usage costs/i),
+		).toBeInTheDocument();
+	});
+
+	it("REQ-FE-017: warns that changing the URI does not migrate existing data automatically", () => {
+		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
+		expect(
+			screen.getByText(/does not migrate existing entries or assets to the new location/i),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: /storage migration guide/i })).toHaveAttribute(
+			"href",
+			expect.stringContaining("docs/guide/storage-migration.md"),
+		);
 	});
 });
