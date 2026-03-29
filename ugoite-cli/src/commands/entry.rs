@@ -1,6 +1,6 @@
 use crate::config::{
-    base_url, effective_format, load_config, operator_for_path, parse_space_path, print_json,
-    print_json_table, space_ws_path, Format,
+    base_url, effective_format, load_config, operator_for_path, print_json, print_json_table,
+    resolve_space_reference, space_ws_path, Format,
 };
 use crate::http;
 use anyhow::Result;
@@ -139,7 +139,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         EntrySubCmd::List { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry list")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/entries")).await?;
                 if fmt != Format::Json {
@@ -173,7 +173,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             space_path,
             entry_id,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry get")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/entries/{entry_id}")).await?;
@@ -191,7 +191,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             content,
             author,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry create")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
@@ -219,7 +219,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             assets,
             author,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry update")?;
             if let Some(base) = base_url(&config) {
                 let mut body = serde_json::json!({"markdown": markdown, "author": author});
                 if let Some(p) = &parent_revision_id {
@@ -264,7 +264,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             entry_id,
             hard_delete,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry delete")?;
             if let Some(base) = base_url(&config) {
                 let url = if hard_delete {
                     format!("{base}/spaces/{space_id}/entries/{entry_id}?hard_delete=true")
@@ -284,7 +284,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             space_path,
             entry_id,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry history")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!(
                     "{base}/spaces/{space_id}/entries/{entry_id}/history"
@@ -303,7 +303,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             entry_id,
             revision_id,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry revision")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!(
                     "{base}/spaces/{space_id}/entries/{entry_id}/revisions/{revision_id}"
@@ -324,7 +324,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             revision_id,
             author,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "entry restore")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/entries/{entry_id}/restore/{revision_id}"),
