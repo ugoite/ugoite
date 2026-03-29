@@ -12,7 +12,6 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Literal, NoReturn, cast
 
 from . import _ugoite_core as _core
@@ -20,11 +19,13 @@ from .service_accounts import resolve_service_api_key
 
 DEFAULT_UNAUTHORIZED_STATUS_CODE = 401
 AUTH_HEADER_PARTS = 2
+AUTH_MANAGER_TTL_SECONDS = 60.0
 
 logger = logging.getLogger(__name__)
 TOTP_STEP_SECONDS = 30
 TOTP_DIGITS = 6
 DEFAULT_SIGNED_BEARER_VERSION = "v1"
+_AUTH_MANAGER_CACHE: dict[str, tuple[float, AuthManager] | None] = {"entry": None}
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -311,9 +312,8 @@ def mint_signed_bearer_token(
     )
 
 
-@lru_cache(maxsize=1)
-def get_auth_manager() -> AuthManager:
-    """Create and cache authentication manager from environment settings."""
+def _build_auth_manager() -> AuthManager:
+    """Create authentication manager from the current environment settings."""
     bootstrap_token: str | None = None
     if not _has_configured_bearer_credentials():
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
@@ -333,9 +333,24 @@ def get_auth_manager() -> AuthManager:
     )
 
 
+def get_auth_manager() -> AuthManager:
+    """Create and cache authentication manager from environment settings."""
+    now = time.monotonic()
+    cache_entry = _AUTH_MANAGER_CACHE["entry"]
+    if cache_entry is None:
+        _AUTH_MANAGER_CACHE["entry"] = (now, _build_auth_manager())
+    else:
+        cached_at, manager = cache_entry
+        if now - cached_at >= AUTH_MANAGER_TTL_SECONDS:
+            _AUTH_MANAGER_CACHE["entry"] = (now, _build_auth_manager())
+        else:
+            return manager
+    return _AUTH_MANAGER_CACHE["entry"][1]
+
+
 def clear_auth_manager_cache() -> None:
     """Clear cached auth manager for tests and dynamic config updates."""
-    get_auth_manager.cache_clear()
+    _AUTH_MANAGER_CACHE["entry"] = None
 
 
 def authenticate_headers(headers: dict[str, str] | object) -> RequestIdentity:

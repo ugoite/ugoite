@@ -10,16 +10,17 @@ import base64
 import hmac
 import logging
 import os
-from typing import TYPE_CHECKING
+
+import pytest
 
 from ugoite_core.auth import (
+    AuthError,
+    authenticate_headers,
     clear_auth_manager_cache,
     get_auth_manager,
+    mint_signed_bearer_token,
     validate_totp_code,
 )
-
-if TYPE_CHECKING:
-    import pytest
 
 TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
 
@@ -75,6 +76,72 @@ def test_bearer_secrets_config_skips_bootstrap_warning(
 
     assert manager.bootstrap_token is None
     assert not caplog.records
+
+
+def test_get_auth_manager_req_sec_003_refreshes_bootstrap_token_after_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-003: auth manager reloads bootstrap token after the TTL expires."""
+    first_token = os.urandom(8).hex()
+    second_token = os.urandom(8).hex()
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_TOKENS_JSON", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.setenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", first_token)
+    clear_auth_manager_cache()
+
+    monotonic_now = {"value": 100.0}
+    monkeypatch.setattr(
+        "ugoite_core.auth.time.monotonic",
+        lambda: monotonic_now["value"],
+    )
+
+    first = get_auth_manager()
+    assert first.bootstrap_token == first_token
+
+    monkeypatch.setenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", second_token)
+    second = get_auth_manager()
+    assert second.bootstrap_token == first_token
+
+    monotonic_now["value"] += 61.0
+    third = get_auth_manager()
+    assert third.bootstrap_token == second_token
+
+
+def test_authenticate_headers_req_sec_003_rejects_revoked_key_after_cache_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-003: revoked bearer signing keys fail after TTL refresh."""
+    secret = "test-" + "secret"
+    monkeypatch.setenv("UGOITE_AUTH_BEARER_SECRETS", f"dev-local-v1:{secret}")
+    monkeypatch.setenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", "dev-local-v1")
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_TOKENS_JSON", raising=False)
+    monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_REVOKED_KEY_IDS", raising=False)
+    clear_auth_manager_cache()
+
+    monotonic_now = {"value": 200.0}
+    monkeypatch.setattr(
+        "ugoite_core.auth.time.monotonic",
+        lambda: monotonic_now["value"],
+    )
+
+    token = mint_signed_bearer_token(
+        user_id="dev-user",
+        key_id="dev-local-v1",
+        secret=secret,
+        expires_at=2_000_000_000,
+    )
+
+    identity = authenticate_headers({"authorization": f"Bearer {token}"})
+    assert identity.user_id == "dev-user"
+
+    monkeypatch.setenv("UGOITE_AUTH_REVOKED_KEY_IDS", "dev-local-v1")
+    monotonic_now["value"] += 61.0
+
+    with pytest.raises(AuthError) as excinfo:
+        authenticate_headers({"authorization": f"Bearer {token}"})
+
+    assert excinfo.value.code == "revoked_key"
 
 
 def _totp_code(secret: str, timestamp: int) -> str:
