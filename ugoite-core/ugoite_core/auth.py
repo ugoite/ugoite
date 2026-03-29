@@ -10,9 +10,9 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Literal, NoReturn, cast
 
 from . import _ugoite_core as _core
@@ -20,12 +20,23 @@ from .service_accounts import resolve_service_api_key
 
 DEFAULT_UNAUTHORIZED_STATUS_CODE = 401
 AUTH_HEADER_PARTS = 2
+AUTH_MANAGER_TTL_SECONDS = 60.0
+_AUTH_MANAGER_CACHE_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 TOTP_STEP_SECONDS = 30
 TOTP_DIGITS = 6
 DEFAULT_SIGNED_BEARER_VERSION = "v1"
 _LAST_ACCEPTED_TOTP_COUNTERS: dict[str, int] = {}
+
+
+@dataclass
+class _AuthManagerCacheState:
+    entry: tuple[float, AuthManager] | None = None
+    generated_bootstrap_token: str | None = None
+
+
+_AUTH_MANAGER_CACHE = _AuthManagerCacheState()
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -322,21 +333,25 @@ def mint_signed_bearer_token(
     )
 
 
-@lru_cache(maxsize=1)
-def get_auth_manager() -> AuthManager:
-    """Create and cache authentication manager from environment settings."""
+def _build_auth_manager() -> AuthManager:
+    """Create authentication manager from the current environment settings."""
     bootstrap_token: str | None = None
     if not _has_configured_bearer_credentials():
         bootstrap_token = os.environ.get("UGOITE_BOOTSTRAP_BEARER_TOKEN")
         if bootstrap_token is None:
-            bootstrap_token = secrets.token_urlsafe(32)
-            logger.warning(
-                "No bearer credentials configured. "
-                "Generated one-time bootstrap token fingerprint=%s; "
-                "set UGOITE_BOOTSTRAP_BEARER_TOKEN or UGOITE_AUTH_BEARER_TOKENS_JSON "
-                "for deterministic startup credentials.",
-                _token_fingerprint(bootstrap_token),
-            )
+            if _AUTH_MANAGER_CACHE.generated_bootstrap_token is None:
+                _AUTH_MANAGER_CACHE.generated_bootstrap_token = secrets.token_urlsafe(
+                    32,
+                )
+                logger.warning(
+                    "No bearer credentials configured. "
+                    "Generated one-time bootstrap token fingerprint=%s; "
+                    "set UGOITE_BOOTSTRAP_BEARER_TOKEN or "
+                    "UGOITE_AUTH_BEARER_TOKENS_JSON "
+                    "for deterministic startup credentials.",
+                    _token_fingerprint(_AUTH_MANAGER_CACHE.generated_bootstrap_token),
+                )
+            bootstrap_token = _AUTH_MANAGER_CACHE.generated_bootstrap_token
 
     return AuthManager(
         bootstrap_token=bootstrap_token,
@@ -344,10 +359,29 @@ def get_auth_manager() -> AuthManager:
     )
 
 
+def get_auth_manager() -> AuthManager:
+    """Create and cache authentication manager from environment settings."""
+    with _AUTH_MANAGER_CACHE_LOCK:
+        now = time.monotonic()
+        cache_entry = _AUTH_MANAGER_CACHE.entry
+        if cache_entry is None:
+            manager = _build_auth_manager()
+            _AUTH_MANAGER_CACHE.entry = (now, manager)
+            return manager
+
+        cached_at, manager = cache_entry
+        if now - cached_at >= AUTH_MANAGER_TTL_SECONDS:
+            manager = _build_auth_manager()
+            _AUTH_MANAGER_CACHE.entry = (now, manager)
+        return manager
+
+
 def clear_auth_manager_cache() -> None:
     """Clear cached auth runtime state for tests and dynamic config updates."""
+    with _AUTH_MANAGER_CACHE_LOCK:
+        _AUTH_MANAGER_CACHE.entry = None
+        _AUTH_MANAGER_CACHE.generated_bootstrap_token = None
     _LAST_ACCEPTED_TOTP_COUNTERS.clear()
-    get_auth_manager.cache_clear()
 
 
 def authenticate_headers(headers: dict[str, str] | object) -> RequestIdentity:
