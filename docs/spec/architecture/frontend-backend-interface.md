@@ -70,3 +70,9 @@ and responsibility boundaries.
 | 409 | Keep the current draft visible and prompt an explicit refresh | "Changed on server. Refresh to load the latest version." |
 | 422 | Highlight invalid fields | Field-level error |
 | 5xx | Retry/backoff or show offline mode | "Server error" |
+
+## MCP Content Boundary
+
+- `ugoite-core` remains the source of entry data and ACL filtering for MCP resources.
+- The backend MCP adapter is responsible for the final agent-facing framing of that data.
+- MCP responses MUST label entry `content`/`markdown` fields as untrusted user input and strip raw HTML or `<script>`-style constructs before serialization.

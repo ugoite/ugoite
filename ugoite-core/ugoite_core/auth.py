@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 TOTP_STEP_SECONDS = 30
 TOTP_DIGITS = 6
 DEFAULT_SIGNED_BEARER_VERSION = "v1"
+_LAST_ACCEPTED_TOTP_COUNTERS: dict[str, int] = {}
 
 
 def _raise_auth(code: str, detail: str) -> NoReturn:
@@ -219,6 +220,10 @@ def _hotp_value(secret: bytes, counter: int, *, digits: int) -> str:
     return f"{binary % (10**digits):0{digits}d}"
 
 
+def _totp_secret_fingerprint(secret: bytes) -> str:
+    return hashlib.sha256(secret).hexdigest()
+
+
 def validate_totp_code(
     code: str,
     secret: str,
@@ -251,13 +256,19 @@ def validate_totp_code(
 
     timestamp = int(time.time() if now is None else now)
     counter = _totp_counter(timestamp, step_seconds=step_seconds)
+    secret_fingerprint = _totp_secret_fingerprint(decoded_secret)
+    last_counter_used = _LAST_ACCEPTED_TOTP_COUNTERS.get(secret_fingerprint)
     for delta in range(-window, window + 1):
+        candidate_counter = counter + delta
+        if last_counter_used is not None and candidate_counter <= last_counter_used:
+            continue
         candidate = _hotp_value(
             decoded_secret,
-            counter + delta,
+            candidate_counter,
             digits=digits,
         )
         if hmac.compare_digest(candidate, normalized_code):
+            _LAST_ACCEPTED_TOTP_COUNTERS[secret_fingerprint] = candidate_counter
             return True
     return False
 
@@ -334,7 +345,8 @@ def get_auth_manager() -> AuthManager:
 
 
 def clear_auth_manager_cache() -> None:
-    """Clear cached auth manager for tests and dynamic config updates."""
+    """Clear cached auth runtime state for tests and dynamic config updates."""
+    _LAST_ACCEPTED_TOTP_COUNTERS.clear()
     get_auth_manager.cache_clear()
 
 

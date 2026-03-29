@@ -1,5 +1,5 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, parse_space_path, print_json, space_ws_path,
+    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
 };
 use crate::http;
 use anyhow::Result;
@@ -14,16 +14,39 @@ pub struct AssetCmd {
 #[derive(Subcommand)]
 pub enum AssetSubCmd {
     /// List assets in a space
-    List { space_path: String },
+    #[command(
+        long_about = "List assets in a space.\n\nExamples:\n  # Core mode\n  ugoite asset list /root/spaces/my-space\n\n  # Backend mode\n  ugoite asset list my-space"
+    )]
+    List {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
+        space_path: String,
+    },
     /// Upload an asset
+    #[command(
+        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode\n  ugoite asset upload my-space ./logo.png"
+    )]
     Upload {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         file_path: String,
         #[arg(long)]
         filename: Option<String>,
     },
     /// Delete an asset
+    #[command(
+        long_about = "Delete an asset.\n\nExamples:\n  # Core mode\n  ugoite asset delete /root/spaces/my-space asset-123\n\n  # Backend mode\n  ugoite asset delete my-space asset-123"
+    )]
     Delete {
+        #[arg(
+            value_name = "SPACE_ID_OR_PATH",
+            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
+        )]
         space_path: String,
         asset_id: String,
     },
@@ -33,7 +56,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
         AssetSubCmd::List { space_path } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset list")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/assets")).await?;
                 print_json(&result);
@@ -49,7 +72,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             file_path,
             filename,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
             if base_url(&config).is_some() {
                 anyhow::bail!("asset upload in remote mode not yet supported via CLI");
             }
@@ -70,7 +93,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             space_path,
             asset_id,
         } => {
-            let (root, space_id) = parse_space_path(&space_path);
+            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset delete")?;
             if let Some(base) = base_url(&config) {
                 let result =
                     http::http_delete(&format!("{base}/spaces/{space_id}/assets/{asset_id}"))

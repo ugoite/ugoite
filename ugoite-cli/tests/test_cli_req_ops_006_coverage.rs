@@ -57,12 +57,12 @@ fn write_endpoint_config(config_path: &Path, mode: &str, backend_url: &str, api_
 fn setup_space(dir: &tempfile::TempDir, space_id: &str) -> (String, PathBuf, String) {
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
+    let space_path = format!("{root}/spaces/{space_id}");
     let output = cli_command(&config_path)
-        .args(["create-space", "--root", &root, space_id])
+        .args(["space", "create", &space_path])
         .output()
         .expect("create space");
-    assert_success(&output, "create-space");
-    let space_path = format!("{root}/spaces/{space_id}");
+    assert_success(&output, "space create");
     (root, config_path, space_path)
 }
 
@@ -710,9 +710,11 @@ fn test_cli_req_ops_006_search_index_query_and_link_paths() {
 fn test_cli_req_ops_006_space_local_and_remote_paths() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (root, config_path, space_path) = setup_space(&dir, "space-local");
+    let subcommand_path = format!("{root}/spaces/space-subcommand");
+    let list_root = format!("{root}/spaces");
 
     let create_subcommand_output = cli_command(&config_path)
-        .args(["space", "create", "--root", &root, "space-subcommand"])
+        .args(["space", "create", &subcommand_path])
         .output()
         .expect("space create");
     assert_success(&create_subcommand_output, "space create");
@@ -732,14 +734,14 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     );
 
     let list_output = cli_command(&config_path)
-        .args(["space", "list", "--root", &root])
+        .args(["space", "list", &list_root])
         .output()
         .expect("space list");
     assert_success(&list_output, "space list");
     assert!(String::from_utf8_lossy(&list_output.stdout).contains("space-local"));
 
     let get_output = cli_command(&config_path)
-        .args(["space", "get", "--root", &root, "space-local"])
+        .args(["space", "get", &space_path])
         .output()
         .expect("space get");
     assert_success(&get_output, "space get");
@@ -752,9 +754,7 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         .args([
             "space",
             "patch",
-            "--root",
-            &root,
-            "space-local",
+            &space_path,
             "--name",
             "Renamed Space",
             "--storage-config",
@@ -769,15 +769,7 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     assert_eq!(patch_json["name"].as_str(), Some("Renamed Space"));
 
     let name_only_patch_output = cli_command(&config_path)
-        .args([
-            "space",
-            "patch",
-            "--root",
-            &root,
-            "space-local",
-            "--name",
-            "Name Only",
-        ])
+        .args(["space", "patch", &space_path, "--name", "Name Only"])
         .output()
         .expect("space patch name only");
     assert_success(&name_only_patch_output, "space patch name only");
@@ -867,16 +859,22 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         .output()
         .expect("space list missing root");
     assert!(!missing_root_output.status.success());
-    assert!(String::from_utf8_lossy(&missing_root_output.stderr)
-        .contains("space list requires --root <LOCAL_ROOT> in core mode"));
+    assert!(
+        String::from_utf8_lossy(&missing_root_output.stderr).contains(
+            "space list requires ROOT_PATH as /path/to/root or /path/to/root/spaces in core mode"
+        )
+    );
 
     let missing_root_create_output = cli_command(&config_path)
         .args(["space", "create", "space-missing-root"])
         .output()
         .expect("space create missing root");
     assert!(!missing_root_create_output.status.success());
-    assert!(String::from_utf8_lossy(&missing_root_create_output.stderr)
-        .contains("space create requires --root <LOCAL_ROOT> in core mode"));
+    assert!(
+        String::from_utf8_lossy(&missing_root_create_output.stderr).contains(
+            "space create requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+        )
+    );
 
     let service_account_list_core = cli_command(&config_path)
         .args(["space", "service-account-list", "space-local"])
@@ -1075,6 +1073,90 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     handle.join().expect("join remote audit-events server");
     assert!(remote_audit_events_request
         .starts_with("GET /spaces/remote-space/audit-events?offset=5&limit=10 HTTP/1.1"));
+}
+
+/// REQ-OPS-016: sample-data CLI owner flags must preserve discoverable seeded membership.
+#[test]
+fn test_cli_req_ops_016_sample_data_owner_flag_trims_bootstrap_membership() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_string_lossy().to_string();
+    let config_path = dir.path().join("cli-config.json");
+
+    let sample_data_output = cli_command(&config_path)
+        .args([
+            "space",
+            "sample-data",
+            &root,
+            "sample-space-owned",
+            "--scenario",
+            "renewable-ops",
+            "--entry-count",
+            "6",
+            "--seed",
+            "7",
+            "--owner",
+            "  local-dev-user  ",
+        ])
+        .output()
+        .expect("space sample-data with owner");
+    assert_success(&sample_data_output, "space sample-data with owner");
+    assert_eq!(
+        parse_stdout_json(&sample_data_output),
+        serde_json::json!({"created": true})
+    );
+
+    let settings_path = dir
+        .path()
+        .join("spaces")
+        .join("sample-space-owned")
+        .join("settings.json");
+    let settings_text = std::fs::read_to_string(&settings_path).expect("read settings");
+    let settings_json: Value = serde_json::from_str(&settings_text).expect("settings json");
+
+    assert!(
+        settings_text.contains('\n'),
+        "settings.json should stay pretty-printed after CLI owner bootstrap"
+    );
+    assert_eq!(settings_json["membership_version"].as_i64(), Some(1));
+    let owner_member = &settings_json["members"]["local-dev-user"];
+    assert_eq!(owner_member["user_id"].as_str(), Some("local-dev-user"));
+    assert_eq!(owner_member["role"].as_str(), Some("admin"));
+    assert_eq!(owner_member["state"].as_str(), Some("active"));
+
+    let env_owned_output = cli_command(&config_path)
+        .env("UGOITE_DEV_USER_ID", "  env-dev-user  ")
+        .args([
+            "space",
+            "sample-data",
+            &root,
+            "sample-space-env-owned",
+            "--scenario",
+            "renewable-ops",
+            "--entry-count",
+            "6",
+            "--seed",
+            "8",
+        ])
+        .output()
+        .expect("space sample-data with env owner");
+    assert_success(&env_owned_output, "space sample-data with env owner");
+    assert_eq!(
+        parse_stdout_json(&env_owned_output),
+        serde_json::json!({"created": true})
+    );
+
+    let env_settings_path = dir
+        .path()
+        .join("spaces")
+        .join("sample-space-env-owned")
+        .join("settings.json");
+    let env_settings_text = std::fs::read_to_string(&env_settings_path).expect("read env settings");
+    let env_settings_json: Value =
+        serde_json::from_str(&env_settings_text).expect("env settings json");
+    let env_owner_member = &env_settings_json["members"]["env-dev-user"];
+    assert_eq!(env_owner_member["user_id"].as_str(), Some("env-dev-user"));
+    assert_eq!(env_owner_member["role"].as_str(), Some("admin"));
+    assert_eq!(env_owner_member["state"].as_str(), Some("active"));
 }
 
 /// REQ-OPS-006: entry commands must keep full local lifecycle and remote routing covered.
@@ -1719,7 +1801,7 @@ fn test_cli_req_ops_006_space_list_format_table() {
 
     // local mode: -o table → print_list_table path (space.rs line 161)
     let table_output = cli_command(&config_path)
-        .args(["space", "list", "-o", "table", "--root", &root])
+        .args(["space", "list", "-o", "table", &root])
         .output()
         .expect("space list -o table local");
     assert_success(&table_output, "space list -o table local");
@@ -1778,4 +1860,33 @@ fn test_cli_req_ops_006_space_list_format_table() {
     let fallback_json: serde_json::Value =
         serde_json::from_slice(&fallback_output.stdout).expect("fallback json stdout");
     assert_eq!(fallback_json["message"].as_str(), Some("not-an-array"));
+}
+
+/// REQ-OPS-006: backend-mode `space create` must post the space ID and print the remote JSON result.
+#[test]
+fn test_cli_req_ops_006_space_create_backend_roundtrip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("remote-space-create-config.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"id":"remote-space","name":"Remote Space"}"#,
+    );
+    write_endpoint_config(&config_path, "backend", &base, &format!("{base}/api"));
+
+    let output = cli_command(&config_path)
+        .args(["space", "create", "remote-space"])
+        .output()
+        .expect("space create backend");
+    assert_success(&output, "space create backend");
+
+    let request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("space create backend request");
+    handle.join().expect("join space create backend server");
+    assert!(request.starts_with("POST /spaces HTTP/1.1"));
+    assert!(request.contains(r#""name":"remote-space""#));
+
+    let stdout_json = parse_stdout_json(&output);
+    assert_eq!(stdout_json["id"].as_str(), Some("remote-space"));
+    assert_eq!(stdout_json["name"].as_str(), Some("Remote Space"));
 }

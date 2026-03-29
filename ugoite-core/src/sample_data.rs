@@ -37,6 +37,11 @@ pub struct SampleDataOptions {
     pub entry_count: usize,
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Optional user ID to bootstrap as the space owner (active admin member).
+    /// When set, the user is added to the space settings as an active admin immediately
+    /// after the space is created, making the space visible via the /spaces API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -62,6 +67,8 @@ pub struct SampleDataJob {
     pub scenario: String,
     pub entry_count: usize,
     pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_user_id: Option<String>,
     pub status: SampleJobStatus,
     pub status_message: Option<String>,
     pub processed_entries: usize,
@@ -74,6 +81,13 @@ pub struct SampleDataJob {
 
 fn default_entry_count() -> usize {
     DEFAULT_ENTRY_COUNT
+}
+
+fn normalize_owner_user_id(owner_user_id: Option<&str>) -> Option<String> {
+    owner_user_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn normalize_entry_count(entry_count: usize, form_count: usize) -> usize {
@@ -2143,6 +2157,52 @@ async fn generate_entries_for_scenario(
     }
 }
 
+async fn bootstrap_sample_space_owner(
+    op: &Operator,
+    space_id: &str,
+    owner_user_id: &str,
+) -> Result<()> {
+    let owner_user_id = owner_user_id.trim();
+    let settings_path = format!("spaces/{space_id}/settings.json");
+    let mut settings: Value = if op.exists(&settings_path).await? {
+        let data = op.read(&settings_path).await?;
+        serde_json::from_slice(data.to_bytes().as_ref())?
+    } else {
+        json!({})
+    };
+
+    let now_iso = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let member = json!({
+        "user_id": owner_user_id,
+        "role": "admin",
+        "state": "active",
+        "invited_by": owner_user_id,
+        "invited_at": now_iso,
+        "activated_at": "bootstrap",
+        "revoked_at": null
+    });
+
+    let settings_obj = settings
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("Invalid settings.json format"))?;
+
+    let members = settings_obj.entry("members").or_insert_with(|| json!({}));
+    members
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("Invalid members format in settings.json"))?
+        .insert(owner_user_id.to_string(), member);
+
+    let current_version = settings_obj
+        .get("membership_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    settings_obj.insert("membership_version".to_string(), json!(current_version + 1));
+
+    let data = serde_json::to_vec_pretty(&settings)?;
+    op.write(&settings_path, data).await?;
+    Ok(())
+}
+
 async fn create_sample_space_with_progress(
     op: &Operator,
     root_uri: &str,
@@ -2152,6 +2212,11 @@ async fn create_sample_space_with_progress(
 ) -> Result<SampleDataSummary> {
     progress.report(0, "Creating space").await?;
     space::create_space(op, &options.space_id, root_uri).await?;
+
+    if let Some(owner) = normalize_owner_user_id(options.owner_user_id.as_deref()) {
+        bootstrap_sample_space_owner(op, &options.space_id, &owner).await?;
+    }
+
     let ws_path = format!("spaces/{}", options.space_id);
 
     progress.report(0, "Installing forms").await?;
@@ -2246,6 +2311,7 @@ pub async fn create_sample_space_job(
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
         seed: options.seed,
+        owner_user_id: normalize_owner_user_id(options.owner_user_id.as_deref()),
         status: SampleJobStatus::Queued,
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
@@ -2264,6 +2330,7 @@ pub async fn create_sample_space_job(
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
         seed: options.seed,
+        owner_user_id: normalize_owner_user_id(options.owner_user_id.as_deref()),
     };
     let root_uri = root_uri.to_string();
     let plan_clone = plan.clone();

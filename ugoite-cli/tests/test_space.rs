@@ -24,11 +24,13 @@ fn mode(path: &std::path::Path) -> u32 {
 #[test]
 fn test_create_space_scaffolding() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("my-space");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "my-space"])
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -40,7 +42,7 @@ fn test_create_space_scaffolding() {
     );
 
     // Verify the space directory was created
-    let space_dir = dir.path().join("spaces").join("my-space");
+    let space_dir = space_path;
     assert!(space_dir.exists(), "Space directory should be created");
 }
 
@@ -49,11 +51,13 @@ fn test_create_space_scaffolding() {
 #[test]
 fn test_create_space_req_sto_003_permissions() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("private-space");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "private-space"])
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -102,19 +106,23 @@ fn test_create_space_s3_unimplemented() {
 #[test]
 fn test_create_space_idempotency() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("idempotent-space");
 
     // Create space first time
     Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "idempotent-space"])
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
 
     // Second creation should fail with "already exists" error
     let output2 = Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "idempotent-space"])
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");
@@ -134,11 +142,13 @@ fn test_create_space_idempotency() {
 #[test]
 fn test_create_sample_space_req_api_009() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
+    let space_path = dir.path().join("spaces").join("sample-space");
 
     let output = Command::new(ugoite_bin())
-        .args(["create-space", "--root", &root, "sample-space"])
+        .arg("space")
+        .arg("create")
+        .arg(&space_path)
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("failed to execute");

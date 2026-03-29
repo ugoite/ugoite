@@ -57,6 +57,9 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_middleware_headers
+      - test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy
+      - test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https
+      - test_middleware_headers_req_sec_002_skips_csp_for_docs_ui
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -363,7 +366,11 @@ requirements:
 
     and request-header allowlists. Wildcard origin configuration MUST be rejected
 
-    when remote access is enabled.
+    and request-header allowlists. Preflight requests that ask for methods or
+
+    headers outside the allowlist MUST be rejected. Wildcard origin configuration
+
+    MUST be rejected when remote access is enabled.
 
     '
   related_spec:
@@ -374,5 +381,6 @@ requirements:
     pytest:
     - file: backend/tests/test_api.py
       tests:
-      - test_cors_req_sec_010_preflight_uses_explicit_method_and_header_lists
+      - test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists
       - test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled
+      - test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header

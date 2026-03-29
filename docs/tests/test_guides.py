@@ -747,7 +747,7 @@ REQUIRED_DEV_SEED_README_FRAGMENTS = {
     "mise run seed:scenarios",
     "terminal progress",
     "UGOITE_ROOT",
-    "cargo run -q -p ugoite-cli -- space list --root .",
+    "cargo run -q -p ugoite-cli -- space list ./spaces",
 }
 REQUIRED_MINIMUM_WASM_PRE_COMMIT_HOOKS = {
     "cargo-test-minimum",
@@ -833,7 +833,7 @@ REQUIRED_DEV_SEED_CLI_GUIDE_FRAGMENTS = {
     ),
     "CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenarios",
     "terminal progress",
-    "space list --root .",
+    "space list ./spaces",
     "UGOITE_ROOT",
 }
 REQUIRED_DEV_SEED_CICD_FRAGMENTS = {
@@ -2217,7 +2217,7 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
     spaces_dir = work_dir / "spaces"
     spaces_dir.mkdir()
     list_before_result = subprocess.run(
-        [str(installed_binary), "space", "list", "--root", "./spaces"],
+        [str(installed_binary), "space", "list", "./spaces"],
         cwd=work_dir,
         env=env,
         text=True,
@@ -2227,7 +2227,7 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
     )
     if list_before_result.returncode != 0:
         message = (
-            "installed prerelease CLI should list spaces before create-space; "
+            "installed prerelease CLI should list spaces before space create; "
             f"stdout={list_before_result.stdout!r} "
             f"stderr={list_before_result.stderr!r}"
         )
@@ -2237,7 +2237,7 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
         raise AssertionError(message)
 
     create_result = subprocess.run(
-        [str(installed_binary), "create-space", "--root", "./spaces", "demo"],
+        [str(installed_binary), "space", "create", "./spaces/demo"],
         cwd=work_dir,
         env=env,
         text=True,
@@ -2252,11 +2252,11 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
         )
         raise AssertionError(message)
     if json.loads(create_result.stdout) != {"created": True, "id": "demo"}:
-        message = "create-space should report the created demo space"
+        message = "space create should report the created demo space"
         raise AssertionError(message)
 
     list_after_result = subprocess.run(
-        [str(installed_binary), "space", "list", "--root", "./spaces"],
+        [str(installed_binary), "space", "list", "./spaces"],
         cwd=work_dir,
         env=env,
         text=True,
@@ -4574,19 +4574,7 @@ def _fake_quick_start_cli_script() -> str:
 
         if [ "${1:-}" = "space" ] && [ "${2:-}" = "list" ]; then
           shift 2
-          root=""
-          while [ "$#" -gt 0 ]; do
-            case "$1" in
-              --root)
-                root="$2"
-                shift 2
-                ;;
-              *)
-                printf 'unsupported argument: %s\\n' "$1" >&2
-                exit 1
-                ;;
-            esac
-          done
+          root="${1:-}"
           python - "$root" <<'PY'
         import json
         import sys
@@ -4601,37 +4589,18 @@ def _fake_quick_start_cli_script() -> str:
           exit 0
         fi
 
-        if \
-          { [ "${1:-}" = "space" ] && [ "${2:-}" = "create" ]; } || \
-          [ "${1:-}" = "create-space" ]; then
-          if [ "${1:-}" = "space" ]; then
-            shift 2
-          else
-            shift
-          fi
-          root=""
-          space_id=""
-          while [ "$#" -gt 0 ]; do
-            case "$1" in
-              --root)
-                root="$2"
-                shift 2
-                ;;
-              *)
-                space_id="$1"
-                shift
-                ;;
-            esac
-          done
-          python - "$root" "$space_id" <<'PY'
+        if [ "${1:-}" = "space" ] && [ "${2:-}" = "create" ]; then
+          shift 2
+          space_path="${1:-}"
+          python - "$space_path" <<'PY'
         import json
         import sys
         from pathlib import Path
 
-        root = Path(sys.argv[1])
-        space_id = sys.argv[2]
-        root.mkdir(parents=True, exist_ok=True)
-        (root / space_id).mkdir(parents=True, exist_ok=True)
+        space_path = Path(sys.argv[1])
+        space_path.parent.mkdir(parents=True, exist_ok=True)
+        space_path.mkdir(parents=True, exist_ok=True)
+        space_id = space_path.name
         json.dump({"created": True, "id": space_id}, sys.stdout, indent=2)
         sys.stdout.write("\\n")
         PY

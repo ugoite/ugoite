@@ -233,6 +233,7 @@ fn create_sample_space<'a>(
             scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
             entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
             seed,
+            owner_user_id: None,
         };
         let summary = sample_data::create_sample_space(&op, &uri, &options)
             .await
@@ -272,6 +273,7 @@ fn create_sample_space_job<'a>(
             scenario: scenario.unwrap_or_else(|| sample_data::DEFAULT_SCENARIO.to_string()),
             entry_count: entry_count.unwrap_or(sample_data::DEFAULT_ENTRY_COUNT),
             seed,
+            owner_user_id: None,
         };
         let job = sample_data::create_sample_space_job(&op, &uri, &options)
             .await
