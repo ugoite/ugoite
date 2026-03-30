@@ -56,7 +56,7 @@ describe("/spaces", () => {
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: "Create space" }));
-		fireEvent.input(screen.getByLabelText("Space name"), {
+		fireEvent.input(screen.getByLabelText("Space ID"), {
 			target: { value: "my-space" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Create space" }));
@@ -64,6 +64,50 @@ describe("/spaces", () => {
 		await waitFor(() => {
 			expect(spaceApi.create).toHaveBeenCalledWith("my-space");
 			expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
+		});
+	});
+
+	it("REQ-FE-002: labels the create-space field as a space ID and explains allowed characters", async () => {
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("No spaces available.")).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+
+		expect(screen.getByLabelText("Space ID")).toBeInTheDocument();
+		expect(screen.getByPlaceholderText("e.g. team-notes")).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Use letters, numbers, hyphens, or underscores. This becomes the space URL and storage ID.",
+			),
+		).toBeInTheDocument();
+	});
+
+	it("REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance", async () => {
+		(spaceApi.create as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("Invalid space_id: My Space. Must be alphanumeric, hyphens, or underscores."),
+		);
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("No spaces available.")).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+		fireEvent.input(screen.getByLabelText("Space ID"), {
+			target: { value: "My Space" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+
+		await waitFor(() => {
+			expect(
+				screen.getByText(
+					"Space IDs can use only letters, numbers, hyphens, and underscores.",
+				),
+			).toBeInTheDocument();
 		});
 	});
 
