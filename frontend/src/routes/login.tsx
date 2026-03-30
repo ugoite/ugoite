@@ -3,6 +3,9 @@ import { createResource, createSignal, onMount, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {
 		return error.message;
@@ -81,6 +84,35 @@ export default function LoginRoute() {
 						<>
 							<Show when={config().mode === "passkey-totp"}>
 								<form class="ui-stack-sm" onSubmit={handleSubmit}>
+									<section class="ui-card ui-stack-sm" aria-labelledby="login-first-time-heading">
+										<div class="ui-stack-sm">
+											<h2 id="login-first-time-heading" class="text-base font-semibold">
+												First time here?
+											</h2>
+											<ol class="list-decimal space-y-1 pl-5 text-sm ui-muted">
+												<li>
+													Start the local stack with <code>mise run dev</code>.
+												</li>
+												<li>Reuse the username you confirmed in that terminal.</li>
+												<li>
+													Generate the current 2FA code from your authenticator or the guide&apos;s{" "}
+													<code>oathtool</code> example.
+												</li>
+											</ol>
+										</div>
+										<p class="text-sm ui-muted">
+											Need the full walkthrough? Open{" "}
+											<a
+												href={localDevAuthGuideUrl}
+												target="_blank"
+												rel="noopener"
+												class="hover:underline"
+											>
+												Local Dev Auth/Login
+											</a>
+											.
+										</p>
+									</section>
 									<p class="text-sm ui-muted">
 										Use the username you confirmed in the terminal and the current 2FA code from
 										your local development authenticator. This browser must also be using the
