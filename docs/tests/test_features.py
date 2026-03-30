@@ -13,6 +13,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FEATURES_DIR = REPO_ROOT / "docs" / "spec" / "features"
+POLICIES_README = REPO_ROOT / "docs" / "spec" / "policies" / "README.md"
 ENDPOINTS_DIR = REPO_ROOT / "backend" / "src" / "app" / "api" / "endpoints"
 ROUTES_DIR = REPO_ROOT / "frontend" / "src" / "routes"
 
@@ -228,3 +229,20 @@ def test_frontend_paths_match_routes() -> None:
                 f"expected {expected_path}, got {path_value}"
             )
             raise AssertionError(message)
+
+
+def test_docs_req_api_004_policy_traceability_docs_describe_manifest_links() -> None:
+    """REQ-API-004: Policy traceability docs must describe manifest-backed feature links."""
+    readme = _read_text(POLICIES_README)
+    required_snippets = (
+        "linked_requirements",
+        "docs/spec/features/features.yaml",
+        "Feature-area badges",
+    )
+    missing = [snippet for snippet in required_snippets if snippet not in readme]
+    if missing:
+        message = (
+            "docs/spec/policies/README.md must explain manifest-backed feature traceability: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
