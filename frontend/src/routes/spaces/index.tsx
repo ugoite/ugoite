@@ -12,6 +12,14 @@ const toMessage = (value: unknown): string => {
 	return "";
 };
 
+const normalizeCreateError = (value: unknown): string => {
+	const message = toMessage(value);
+	if (/invalid space_id:/i.test(message)) {
+		return "Space IDs can use only letters, numbers, hyphens, and underscores.";
+	}
+	return message || "Failed to create space.";
+};
+
 export default function SpacesIndexRoute() {
 	const navigate = useNavigate();
 	const [spacesError, setSpacesError] = createSignal("");
@@ -26,7 +34,7 @@ export default function SpacesIndexRoute() {
 	});
 	const [redirected, setRedirected] = createSignal(false);
 	const [showCreateForm, setShowCreateForm] = createSignal(false);
-	const [newSpaceName, setNewSpaceName] = createSignal("");
+	const [newSpaceId, setNewSpaceId] = createSignal("");
 	const [createError, setCreateError] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
 
@@ -66,26 +74,26 @@ export default function SpacesIndexRoute() {
 
 	const closeCreateForm = () => {
 		setShowCreateForm(false);
-		setNewSpaceName("");
+		setNewSpaceId("");
 		setCreateError(null);
 	};
 
 	const handleCreateSpace = async (event: Event) => {
 		event.preventDefault();
-		const spaceName = newSpaceName().trim();
-		if (!spaceName) {
-			setCreateError("Please provide a space name.");
+		const spaceId = newSpaceId().trim();
+		if (!spaceId) {
+			setCreateError("Please provide a space ID.");
 			return;
 		}
 		setIsCreating(true);
 		setCreateError(null);
 		try {
-			const created = await spaceApi.create(spaceName);
+			const created = await spaceApi.create(spaceId);
 			await refetchSpaces();
 			closeCreateForm();
 			navigate(`/spaces/${created.id}/dashboard`);
 		} catch (error) {
-			setCreateError(toMessage(error) || "Failed to create space.");
+			setCreateError(normalizeCreateError(error));
 		} finally {
 			setIsCreating(false);
 		}
@@ -133,21 +141,26 @@ export default function SpacesIndexRoute() {
 						<div>
 							<h3 class="text-base font-semibold">Create space</h3>
 							<p class="text-sm ui-muted">
-								Spaces are never created automatically. Choose a name to create one explicitly.
+								Spaces are never created automatically. Choose a space ID to create one
+								explicitly.
 							</p>
 						</div>
 						<div class="ui-field">
 							<label class="ui-label" for="space-name">
-								Space name
+								Space ID
 							</label>
 							<input
 								id="space-name"
 								type="text"
 								class="ui-input"
-								value={newSpaceName()}
-								onInput={(event) => setNewSpaceName(event.currentTarget.value)}
-								placeholder="Enter space name..."
+								value={newSpaceId()}
+								onInput={(event) => setNewSpaceId(event.currentTarget.value)}
+								placeholder="e.g. team-notes"
 							/>
+							<p class="mt-2 text-xs ui-muted">
+								Use letters, numbers, hyphens, or underscores. This becomes the space URL
+								and storage ID.
+							</p>
 						</div>
 						<Show when={createError()}>
 							<p class="ui-alert ui-alert-error text-sm">{createError()}</p>
@@ -164,7 +177,7 @@ export default function SpacesIndexRoute() {
 							<button
 								type="submit"
 								class="ui-button ui-button-primary text-sm"
-								disabled={!newSpaceName().trim() || isCreating()}
+								disabled={!newSpaceId().trim() || isCreating()}
 							>
 								{isCreating() ? "Creating..." : "Create space"}
 							</button>
