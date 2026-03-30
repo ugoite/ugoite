@@ -16,6 +16,11 @@ FEATURES_DIR = REPO_ROOT / "docs" / "spec" / "features"
 POLICIES_README = REPO_ROOT / "docs" / "spec" / "policies" / "README.md"
 ENDPOINTS_DIR = REPO_ROOT / "backend" / "src" / "app" / "api" / "endpoints"
 ROUTES_DIR = REPO_ROOT / "frontend" / "src" / "routes"
+DOCSITE_SPEC_DATA = REPO_ROOT / "docsite" / "src" / "lib" / "spec-data.ts"
+DOCSITE_FEATURES_PAGE = REPO_ROOT / "docsite" / "src" / "pages" / "design" / "features.astro"
+DOCSITE_RELATIONS_PAGE = (
+    REPO_ROOT / "docsite" / "src" / "pages" / "design" / "relations.astro"
+)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -29,6 +34,45 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _extract_heading_section(
+    contents: str,
+    *,
+    heading: str,
+    next_heading: str | None,
+) -> str:
+    start = contents.find(heading)
+    if start < 0:
+        message = f"Missing heading {heading!r}"
+        raise AssertionError(message)
+    start += len(heading)
+    if next_heading is None:
+        return contents[start:]
+    end = contents.find(next_heading, start)
+    if end < 0:
+        message = f"Missing heading {next_heading!r}"
+        raise AssertionError(message)
+    return contents[start:end]
+
+
+def _load_feature_manifest_files() -> tuple[str, ...]:
+    manifest = _load_yaml(FEATURES_DIR / "features.yaml")
+    entries = manifest.get("files", [])
+    if not isinstance(entries, list):
+        message = "Expected list of files in docs/spec/features/features.yaml"
+        raise AssertionError(message)
+    files: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            message = "Feature manifest entries must be mappings"
+            raise AssertionError(message)
+        file_name = str(entry.get("file") or "").strip()
+        if not file_name:
+            message = "Feature manifest entries must declare a file"
+            raise AssertionError(message)
+        files.append(file_name)
+    return tuple(files)
 
 
 def _function_exists_python(contents: str, name: str) -> bool:
@@ -198,6 +242,59 @@ def test_no_undeclared_feature_modules() -> None:
     if extras:
         extras_list = ", ".join(str(path.relative_to(REPO_ROOT)) for path in extras)
         message = f"Undeclared endpoint modules: {extras_list}"
+        raise AssertionError(message)
+
+
+def test_docs_req_api_004_feature_readme_inventory_matches_manifest() -> None:
+    """REQ-API-004: Feature README inventory must mirror the manifest source of truth."""
+    readme = _read_text(FEATURES_DIR / "README.md")
+    inventory_section = _extract_heading_section(
+        readme,
+        heading="## Inventory",
+        next_heading="## Supplemental References",
+    )
+    expected_files = ("features.yaml", *_load_feature_manifest_files())
+    missing = [file_name for file_name in expected_files if file_name not in inventory_section]
+    unexpected = [
+        file_name for file_name in ("links.yaml", "sql.md") if file_name in inventory_section
+    ]
+    if missing or unexpected:
+        details: list[str] = []
+        if missing:
+            details.append("missing inventory entries: " + ", ".join(missing))
+        if unexpected:
+            details.append(
+                "supplemental references listed as inventory: " + ", ".join(unexpected)
+            )
+        message = (
+            "docs/spec/features/README.md inventory is out of sync with "
+            "docs/spec/features/features.yaml: "
+            + "; ".join(details)
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_api_004_docsite_feature_pages_use_manifest_loader() -> None:
+    """REQ-API-004: Docsite feature surfaces must load groups from the manifest-backed helper."""
+    spec_data = _read_text(DOCSITE_SPEC_DATA)
+    if 'path.join(specRoot, "features/features.yaml")' not in spec_data:
+        message = "docsite/src/lib/spec-data.ts must load docs/spec/features/features.yaml"
+        raise AssertionError(message)
+
+    missing_calls: list[str] = []
+    expected_calls = {
+        DOCSITE_FEATURES_PAGE: "await getFeatureGroups()",
+        DOCSITE_RELATIONS_PAGE: "await getFeatureGroups()",
+    }
+    for path, marker in expected_calls.items():
+        contents = _read_text(path)
+        if "getFeatureGroups" not in contents or marker not in contents:
+            missing_calls.append(str(path.relative_to(REPO_ROOT)))
+    if missing_calls:
+        message = (
+            "Docsite feature pages must read feature groups via getFeatureGroups(): "
+            + ", ".join(missing_calls)
+        )
         raise AssertionError(message)
 
 
