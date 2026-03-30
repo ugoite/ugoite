@@ -10,6 +10,7 @@ import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/form-api";
 import { spaceApi } from "~/lib/space-api";
+import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type { FormCreatePayload } from "~/lib/types";
 import type { Asset } from "~/lib/types";
 
@@ -53,6 +54,10 @@ export default function SpaceDashboardRoute() {
 	const safeForms = createMemo(() => forms() || []);
 	const entryForms = createMemo(() => filterCreatableEntryForms(safeForms()));
 	const displaySpaceName = createMemo(() => space()?.name || spaceId());
+	const storageSummary = createMemo(() => {
+		const currentSpace = space();
+		return currentSpace ? summarizeSpaceStorage(currentSpace) : null;
+	});
 
 	const handleCreateForm = async (payload: FormCreatePayload) => {
 		try {
@@ -118,6 +123,31 @@ export default function SpaceDashboardRoute() {
 						<p class="text-sm ui-text-danger">{t("dashboard.error.failedLoadSpace")}</p>
 					</Show>
 				</div>
+
+				<Show when={storageSummary()}>
+					{(summary) => (
+						<section class="ui-card ui-stack-sm">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div class="ui-stack-sm">
+									<h2 class="text-lg font-semibold">{t("storageSummary.heading")}</h2>
+									<p class="text-sm ui-muted">{summary().description}</p>
+								</div>
+								<A
+									href={`/spaces/${spaceId()}/settings`}
+									class="ui-button ui-button-secondary text-sm"
+								>
+									{t("storageSummary.settingsLink")}
+								</A>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="ui-pill">{summary().label}</span>
+							</div>
+							<Show when={summary().uri}>
+								<p class="font-mono text-xs break-all">{summary().uri}</p>
+							</Show>
+						</section>
+					)}
+				</Show>
 
 				<div class="grid gap-4 sm:grid-cols-2">
 					<section class="ui-card ui-stack-sm">
