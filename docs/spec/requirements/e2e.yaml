@@ -191,6 +191,7 @@ requirements:
     - file: e2e/docsite-links.test.ts
       tests:
       - 'REQ-E2E-006: docsite internal page links resolve without 404s'
+      - 'REQ-E2E-006: design relations specification pills navigate to docsite specs'
     vitest:
     - file: docsite/src/lib/base-path.test.ts
       tests:
