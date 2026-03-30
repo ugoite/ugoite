@@ -41,10 +41,10 @@ components:
       position: bottom-center-floating
       tabs:
         - id: object
-          label: object
+          label: Entries
           target_page: space-entries-object
         - id: grid
-          label: grid
+          label: Forms
           target_page: space-form-grid
     - id: entries-grid-list
       type: grid-list
