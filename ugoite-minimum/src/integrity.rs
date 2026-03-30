@@ -1,5 +1,6 @@
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
+use sha2_hmac::Sha256 as HmacSha256Digest;
 
 pub trait IntegrityProvider {
     fn checksum(&self, content: &str) -> String;
@@ -30,7 +31,7 @@ impl HmacIntegrityProvider {
     }
 
     pub fn signature_bytes(&self, content: &[u8]) -> String {
-        type HmacSha256 = Hmac<Sha256>;
+        type HmacSha256 = Hmac<HmacSha256Digest>;
         let mut mac =
             HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
         mac.update(content);
