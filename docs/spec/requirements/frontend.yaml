@@ -1113,7 +1113,10 @@ requirements:
       - 'REQ-FE-040: validates page links'
       - 'REQ-FE-040: validates component types'
       - 'REQ-FE-040: validates shared space chrome'
-      - 'REQ-FE-040: validates object/grid tabs'
+      - 'REQ-FE-040: validates entries/forms bottom tabs use product labels'
+    - file: frontend/src/components/SpaceShell.test.tsx
+      tests:
+      - 'REQ-FE-040: renders entries/forms bottom tabs with product labels'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.

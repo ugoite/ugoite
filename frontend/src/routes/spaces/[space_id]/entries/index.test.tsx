@@ -116,8 +116,8 @@ describe("/spaces/:space_id/entries", () => {
 			);
 		});
 
-		const gridTab = await screen.findByRole("link", { name: "grid" });
-		expect(gridTab).toHaveAttribute("href", "/spaces/default/forms");
+		const formsTab = await screen.findByRole("link", { name: "Forms" });
+		expect(formsTab).toHaveAttribute("href", "/spaces/default/forms");
 	});
 
 	it("REQ-FE-054: renders human-readable updated dates for query result cards", async () => {
