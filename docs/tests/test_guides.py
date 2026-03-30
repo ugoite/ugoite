@@ -975,6 +975,47 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
+    """REQ-E2E-008: README start-here mirrors the docsite getting-started taxonomy."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
+    if match is None:
+        message = "README must keep a Start Here section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "docsite getting-started flow is the canonical newcomer decision tree",
+        "Understand core concepts",
+        "Try the published release",
+        "Run from source",
+        "Use the CLI",
+        "Explore the browser app",
+        "Understand auth and access",
+        "Read design and source docs",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Start Here section is missing onboarding taxonomy fragments: "
+            + ", ".join(
+                missing,
+            )
+        )
+        raise AssertionError(message)
+
+    positions = [section.index(fragment) for fragment in required_fragments]
+    if positions != sorted(positions):
+        message = (
+            "README Start Here section must keep the docsite onboarding taxonomy order"
+        )
+        raise AssertionError(message)
+
+    if "Local Dev Auth/Login" in section:
+        message = "README Start Here section must not introduce a competing auth-specific top-level path"
+        raise AssertionError(message)
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
