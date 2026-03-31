@@ -149,5 +149,101 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     assert!(request_text.contains(r#""totp_code":"123456""#));
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=issued-token"));
+    assert!(stdout.contains("export UGOITE_AUTH_BEARER_TOKEN='issued-token'"));
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"unsafe' $(touch /tmp/ugoite-pwned) $HOME","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "export UGOITE_AUTH_BEARER_TOKEN='unsafe'\\'' $(touch /tmp/ugoite-pwned) $HOME'"
+        ),
+        "stdout was {stdout}"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("POSIX shell quoting"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=''"),
+        "stdout was {stdout}"
+    );
 }

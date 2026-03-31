@@ -300,7 +300,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-passkey-context: passkey-context"));
     assert!(String::from_utf8_lossy(&backend_mode_login.stdout)
-        .contains("export UGOITE_AUTH_BEARER_TOKEN=backend-mode-token"));
+        .contains("export UGOITE_AUTH_BEARER_TOKEN='backend-mode-token'"));
 
     write_endpoint_config(
         &config_path,
