@@ -86,7 +86,7 @@ def test_preferences_me_get_returns_explicit_error_on_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-API-011: /preferences/me GET returns explicit errors on core failure."""
+    """REQ-API-011: /preferences/me GET sanitizes unexpected 500 details."""
 
     async def _raise(*_args: object, **_kwargs: object) -> dict[str, object]:
         msg = "boom"
@@ -96,14 +96,17 @@ def test_preferences_me_get_returns_explicit_error_on_core_failure(
 
     response = test_client.get("/preferences/me")
     assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to load preferences"
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_preferences_me_patch_returns_explicit_error_on_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-API-011: /preferences/me PATCH returns explicit errors on core failure."""
+    """REQ-API-011: /preferences/me PATCH sanitizes unexpected 500 details."""
 
     async def _raise(*_args: object, **_kwargs: object) -> dict[str, object]:
         msg = "boom"
@@ -113,4 +116,7 @@ def test_preferences_me_patch_returns_explicit_error_on_core_failure(
 
     response = test_client.patch("/preferences/me", json={"locale": "ja"})
     assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to update preferences"
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }

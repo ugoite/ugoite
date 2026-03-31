@@ -293,7 +293,7 @@ def test_list_spaces_handles_core_failure(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-STO-009: /spaces returns explicit error on core failure."""
+    """REQ-STO-009: /spaces sanitizes unexpected 500 details on core failure."""
 
     async def _raise(_config: dict[str, str]) -> list[str]:
         msg = "boom"
@@ -303,14 +303,17 @@ def test_list_spaces_handles_core_failure(
 
     response = test_client.get("/spaces")
     assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to list spaces"
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_list_spaces_fails_when_space_meta_read_errors(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """REQ-STO-009: /spaces fails explicitly when per-space metadata read fails."""
+    """REQ-STO-009: /spaces sanitizes 500 detail when space metadata read fails."""
 
     async def _list_spaces(_config: dict[str, str]) -> list[str]:
         return ["ws-a"]
@@ -328,7 +331,10 @@ def test_list_spaces_fails_when_space_meta_read_errors(
 
     response = test_client.get("/spaces")
     assert response.status_code == 500
-    assert response.json()["detail"] == "Failed to read space metadata"
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_get_space(
