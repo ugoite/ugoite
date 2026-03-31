@@ -307,6 +307,7 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_upload_asset_and_link_to_entry
+      - test_upload_asset_strips_traversal_segments_from_filename
     rust:
     - file: ugoite-core/tests/test_entry.rs
       tests:
