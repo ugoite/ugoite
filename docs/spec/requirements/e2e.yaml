@@ -131,6 +131,11 @@ requirements:
     - file: e2e/public-pages.test.ts
       tests:
       - 'REQ-E2E-004: public pages avoid auth-only portable preference requests'
+      - 'REQ-E2E-004: unknown routes show Ugoite recovery guidance instead of scaffold copy'
+    vitest:
+    - file: frontend/src/routes/[...404].test.tsx
+      tests:
+      - 'REQ-E2E-004: unknown routes keep users inside Ugoite recovery paths'
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
