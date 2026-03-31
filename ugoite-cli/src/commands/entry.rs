@@ -211,8 +211,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry create")?;
             if let Some(base) = base_url(&config) {
                 let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
-                    &serde_json::json!({"content": content, "author": author}),
+                    &format!("{base}/spaces/{space_id}/entries"),
+                    &serde_json::json!({"id": entry_id, "content": content, "author": author}),
                 )
                 .await?;
                 print_json(&result);
