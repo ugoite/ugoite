@@ -1452,7 +1452,8 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("remote entry create request");
     handle.join().expect("join remote entry create server");
-    assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries/entry-1 HTTP/1.1"));
+    assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries HTTP/1.1"));
+    assert!(remote_create_request.contains(r#""id":"entry-1""#));
     assert!(remote_create_request.contains("\"content\":\"# Remote Entry\""));
     assert!(remote_create_request.contains(r#""author":"remote-author""#));
 
