@@ -464,6 +464,56 @@ fn test_entry_and_form_list_req_sto_010_use_space_id_or_path_help() {
     assert!(list_stdout.contains("/root/spaces"), "{list_stdout}");
 }
 
+/// REQ-OPS-006: entry update help must describe its required IDs and Markdown payload flags.
+#[test]
+fn test_entry_update_req_ops_006_help_describes_required_inputs() {
+    let help = Command::new(ugoite_bin())
+        .args(["entry", "update", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(help.status.success());
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    for needle in [
+        "ENTRY_ID",
+        "Entry slug/ID",
+        "--markdown <MARKDOWN>",
+        "Updated entry content as a Markdown string",
+        "--parent-revision-id <PARENT_REVISION_ID>",
+        "optimistic concurrency checks",
+        "--assets <ASSETS>",
+        "JSON array of asset objects",
+        "--author <AUTHOR>",
+        "Author name to record in the revision history",
+    ] {
+        assert!(stdout.contains(needle), "{stdout}");
+    }
+}
+
+/// REQ-API-009: sample-data help must describe the local root, target space, scenario, and seed inputs.
+#[test]
+fn test_space_sample_data_req_api_009_help_describes_inputs() {
+    let help = Command::new(ugoite_bin())
+        .args(["space", "sample-data", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(help.status.success());
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    for needle in [
+        "LOCAL_ROOT",
+        "Local workspace root",
+        "SPACE_ID",
+        "Space ID for the generated sample-data space",
+        "--scenario <SCENARIO>",
+        "Sample-data scenario ID",
+        "--entry-count <ENTRY_COUNT>",
+        "Approximate number of generated entries",
+        "--seed <SEED>",
+        "Deterministic random seed for reproducible sample data",
+    ] {
+        assert!(stdout.contains(needle), "{stdout}");
+    }
+}
+
 /// REQ-SEC-003: Service account create routes to backend when in backend mode.
 #[test]
 fn test_space_service_account_create_routes_to_backend() {

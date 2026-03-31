@@ -80,14 +80,31 @@ pub enum EntrySubCmd {
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Updated entry content as a Markdown string (must keep the same form frontmatter)"
+        )]
         markdown: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Expected current revision ID to enforce optimistic concurrency checks"
+        )]
         parent_revision_id: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "JSON array of asset objects to persist with the updated entry revision"
+        )]
         assets: Option<String>,
-        #[arg(long, default_value = "cli")]
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history"
+        )]
         author: String,
     },
     /// Delete an entry
