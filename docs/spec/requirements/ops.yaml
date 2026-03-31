@@ -233,6 +233,10 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_006_rust_precommit_parity
+    rust:
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
+      tests:
+      - test_entry_update_req_ops_006_help_describes_required_inputs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
