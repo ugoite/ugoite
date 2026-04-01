@@ -71,15 +71,28 @@ pub enum SpaceSubCmd {
     },
     /// Create sample data
     SampleData {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+        )]
         root_path: String,
-        #[arg(value_name = "SPACE_ID")]
+        #[arg(
+            value_name = "SPACE_ID",
+            help = "Space ID for the generated sample-data space"
+        )]
         space_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
+        )]
         scenario: Option<String>,
-        #[arg(long, default_value_t = 50)]
+        #[arg(
+            long,
+            default_value_t = 50,
+            help = "Approximate number of generated entries for the seeded space"
+        )]
         entry_count: usize,
-        #[arg(long)]
+        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
         /// Bootstrap this user ID as the active admin owner of the seeded space.
         /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
@@ -90,15 +103,28 @@ pub enum SpaceSubCmd {
     SampleScenarios,
     /// Create a sample data job
     SampleJob {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+        )]
         root_path: String,
-        #[arg(value_name = "SPACE_ID")]
+        #[arg(
+            value_name = "SPACE_ID",
+            help = "Space ID for the generated sample-data space"
+        )]
         space_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
+        )]
         scenario: Option<String>,
-        #[arg(long, default_value_t = 50)]
+        #[arg(
+            long,
+            default_value_t = 50,
+            help = "Approximate number of generated entries for the seeded space"
+        )]
         entry_count: usize,
-        #[arg(long)]
+        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
         /// Bootstrap this user ID as the active admin owner of the seeded space.
         /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
@@ -107,8 +133,12 @@ pub enum SpaceSubCmd {
     },
     /// Get sample data job status
     SampleJobStatus {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root that stores sample-data job state"
+        )]
         root_path: String,
+        #[arg(help = "Job ID returned by `ugoite space sample-job`")]
         job_id: String,
     },
     /// Test storage connection

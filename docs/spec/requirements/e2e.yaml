@@ -131,6 +131,11 @@ requirements:
     - file: e2e/public-pages.test.ts
       tests:
       - 'REQ-E2E-004: public pages avoid auth-only portable preference requests'
+      - 'REQ-E2E-004: unknown routes show Ugoite recovery guidance instead of scaffold copy'
+    vitest:
+    - file: frontend/src/routes/[...404].test.tsx
+      tests:
+      - 'REQ-E2E-004: unknown routes keep users inside Ugoite recovery paths'
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -191,6 +196,7 @@ requirements:
     - file: e2e/docsite-links.test.ts
       tests:
       - 'REQ-E2E-006: docsite internal page links resolve without 404s'
+      - 'REQ-E2E-006: design relations specification pills navigate to docsite specs'
     vitest:
     - file: docsite/src/lib/base-path.test.ts
       tests:
@@ -266,6 +272,7 @@ requirements:
       tests:
       - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
       - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
+      - 'REQ-E2E-008: run from source card opens the canonical host-dev workflow'
       - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
     pytest:
     - file: docs/tests/test_guides.py
