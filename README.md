@@ -60,7 +60,7 @@ the `v0.2` roadmap.
 | Component    | Technology                           |
 | ------------ | ------------------------------------ |
 | Frontend     | Bun + SolidStart + TailwindCSS       |
-| Backend      | Python 3.12+ (FastAPI)               |
+| Backend      | Python 3.13+ (FastAPI)               |
 | Core         | Rust (ugoite-core via pyo3 bindings) |
 | Storage      | OpenDAL + Apache Iceberg             |
 | AI Interface | MCP (resource-first integration today) |
