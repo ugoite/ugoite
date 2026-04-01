@@ -25,7 +25,10 @@ FORBIDDEN_README_ROADMAP_FRAGMENTS = {
     "docs/tasks/roadmap.md",
     "- **Milestone 2** (Completed): Codebase unification, Rust core library",
     "- **Milestone 3**: Full AI integration, vector search",
-    "- **Milestone 4** (Phase 1/2 completed): User management, authentication hardening and follow-up tasks",
+    (
+        "- **Milestone 4** (Phase 1/2 completed): User management, authentication "
+        "hardening and follow-up tasks"
+    ),
     "- **Milestone 5**: Native desktop app (Tauri)",
 }
 
@@ -210,8 +213,7 @@ def test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs() -> N
     )
     if forbidden:
         _fail(
-            "README.md still includes stale roadmap fragments: "
-            + ", ".join(forbidden),
+            "README.md still includes stale roadmap fragments: " + ", ".join(forbidden),
         )
 
 
