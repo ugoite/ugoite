@@ -1012,7 +1012,10 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         raise AssertionError(message)
 
     if "Local Dev Auth/Login" in section:
-        message = "README Start Here section must not introduce a competing auth-specific top-level path"
+        message = (
+            "README Start Here section must not introduce a competing "
+            "auth-specific top-level path"
+        )
         raise AssertionError(message)
 
 
