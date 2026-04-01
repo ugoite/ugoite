@@ -19,6 +19,11 @@ directory structure that can live on local disk today and move to other storage
 backends later. That is the "local-first" part of the philosophy: your data is
 not trapped behind a hosted database or a proprietary SaaS account.
 
+Today, that local-first promise is strongest in the storage layer and in CLI
+`core` mode, where commands talk to the local filesystem directly. The current
+browser UI still depends on a running backend/proxy and explicit login; it uses
+local-first storage underneath, but it is not yet a backend-free browser mode.
+
 If you are evaluating Ugoite, a good first question is: "What should be its own
 space?" A team wiki, a research notebook, or a project knowledge base are all
 reasonable examples.
@@ -54,6 +59,10 @@ That makes forms the bridge between free-form writing and reliable structure.
 They help people enter consistent information, and they help the browser, CLI,
 and automation flows understand what each entry is supposed to contain.
 
+You can absolutely start with a lightweight note, but as soon as you want
+stable extracted fields, validation, or reliable queries, the Form becomes the
+contract Ugoite uses to interpret that Markdown.
+
 ## Markdown becomes structured data
 
 One of Ugoite's key ideas is **Markdown as Table**.
@@ -62,9 +71,11 @@ When you write an entry, Markdown headings and frontmatter can map onto the
 fields defined by a form. That means you keep a writing-friendly editing model
 without giving up typed fields, validation, or queryability.
 
-For a newcomer, the important takeaway is this: you are not filling out a rigid
-web form first and exporting later. The Markdown content is part of the real
-data model, and Ugoite extracts structure from it in a predictable way.
+For a newcomer, the important takeaway is this: Markdown remains the authoring
+surface, but the structure is still governed by the active Form definition when
+you want typed fields. You are not filling out a rigid web form first and
+exporting later, but you also are not bypassing schema contracts entirely once
+you ask Ugoite to extract predictable structure.
 
 ## Search and indexes are derived, not primary
 
@@ -83,9 +94,10 @@ That design matters because it keeps the system easier to reason about:
 Once the concepts make sense, choose the surface that matches your task:
 
 - Use the [Container Quick Start](container-quickstart.md) when you want the
-  fastest browser-based evaluation.
+  fastest browser-based evaluation and you are comfortable running the backend
+  + frontend stack locally.
 - Use the [CLI Guide](cli.md) when you prefer terminal-first workflows or
-  scripting.
+  scripting, or when you want the thinnest local-first workflow today.
 - Use the [Docker Compose Guide](docker-compose.md) when you want the full
   contributor stack from source.
 - Use the [Specification Index](../spec/index.md) when you need the formal
