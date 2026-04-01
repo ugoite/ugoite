@@ -3,8 +3,7 @@ import { createResource, createSignal, onMount, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 
-const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+const localDevAuthGuideUrl = "/docs/guide/local-dev-auth-login";
 
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {
@@ -102,12 +101,7 @@ export default function LoginRoute() {
 										</div>
 										<p class="text-sm ui-muted">
 											Need the full walkthrough? Open{" "}
-											<a
-												href={localDevAuthGuideUrl}
-												target="_blank"
-												rel="noopener"
-												class="hover:underline"
-											>
+											<a href={localDevAuthGuideUrl} class="hover:underline">
 												Local Dev Auth/Login
 											</a>
 											.
