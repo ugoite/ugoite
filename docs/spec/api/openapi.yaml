@@ -228,6 +228,32 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        description: Entry creation payload
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                id:
+                  type: string
+                  maxLength: 128
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 200000
+            example:
+              content: |-
+                ---
+                form: Entry
+                ---
+                # My Entry
+
+                ## Body
+                Value
       responses:
         "201":
           description: Created

@@ -13,7 +13,7 @@ export const getBackendBase = (): string => {
 	// Default to the frontend dev server origin used in e2e/dev.
 	if (typeof window === "undefined") {
 		const env = process.env ?? {};
-		const origin = env.FRONTEND_ORIGIN || env.ORIGIN || "http://localhost:3000";
+		const origin = env.FRONTEND_ORIGIN || env.ORIGIN || env.FRONTEND_URL || "http://localhost:3000";
 		return `${origin.replace(/\/$/, "")}/api`;
 	}
 	// Always use /api which is proxied to the backend in development
