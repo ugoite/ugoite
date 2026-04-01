@@ -102,3 +102,75 @@ def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_form_001_list_column_types_response_contract() -> None:
+    """REQ-FORM-001: list-column-types docs describe the array response."""
+    rest_text = _read_text(API_REST_PATH)
+    details: list[str] = []
+
+    list_column_types_section = rest_text.split("#### List Column Types", maxsplit=1)[1]
+    list_column_types_section = list_column_types_section.split("\n---", maxsplit=1)[0]
+    rest_fragments = (
+        "**Response**: `200 OK`",
+        '"string"',
+        '"number"',
+        '"row_reference"',
+    )
+    details.extend(
+        f"api/rest.md list-column-types section missing fragment: {fragment!r}"
+        for fragment in rest_fragments
+        if fragment not in list_column_types_section
+    )
+
+    openapi = _require_mapping(
+        yaml.safe_load(_read_text(OPENAPI_PATH)),
+        "openapi root",
+    )
+    paths = _require_mapping(openapi.get("paths"), "openapi paths")
+    form_types_get = _require_mapping(
+        _require_mapping(
+            paths.get("/spaces/{space_id}/forms/types"),
+            "list-column-types path",
+        ).get("get"),
+        "list-column-types get operation",
+    )
+    responses = _require_mapping(
+        form_types_get.get("responses"),
+        "list-column-types responses",
+    )
+    ok_response = _require_mapping(
+        responses.get("200"),
+        "list-column-types 200 response",
+    )
+    content = _require_mapping(ok_response.get("content"), "list-column-types content")
+    app_json = _require_mapping(
+        content.get("application/json"),
+        "list-column-types application/json response",
+    )
+    schema = _require_mapping(app_json.get("schema"), "list-column-types schema")
+    items = _require_mapping(schema.get("items"), "list-column-types schema items")
+    example = app_json.get("example")
+
+    if schema.get("type") != "array":
+        details.append("api/openapi.yaml list-column-types response must be an array")
+    if items.get("type") != "string":
+        details.append(
+            "api/openapi.yaml list-column-types array items must be strings",
+        )
+    if not isinstance(example, list):
+        details.append("api/openapi.yaml list-column-types example must be a list")
+    else:
+        missing_types = [
+            column_type
+            for column_type in ("string", "number", "row_reference")
+            if column_type not in example
+        ]
+        if missing_types:
+            details.append(
+                "api/openapi.yaml list-column-types example missing types: "
+                + ", ".join(missing_types),
+            )
+
+    if details:
+        raise AssertionError("; ".join(details))

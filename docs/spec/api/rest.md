@@ -371,6 +371,15 @@ DELETE /spaces/{space_id}/forms/{name}
 GET /spaces/{space_id}/forms/types
 ```
 
+**Response**: `200 OK`
+```json
+[
+  "string",
+  "number",
+  "row_reference"
+]
+```
+
 ---
 
 ### SQL (Saved Queries)
