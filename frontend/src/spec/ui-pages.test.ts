@@ -240,9 +240,7 @@ describe("UI spec YAML registry", () => {
 			expect(labelsById.get("object"), `${filePath} should label object tab as Entries`).toBe(
 				"Entries",
 			);
-			expect(labelsById.get("grid"), `${filePath} should label grid tab as Forms`).toBe(
-				"Forms",
-			);
+			expect(labelsById.get("grid"), `${filePath} should label grid tab as Forms`).toBe("Forms");
 		}
 	});
 });
