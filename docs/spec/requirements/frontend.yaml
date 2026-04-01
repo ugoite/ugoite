@@ -71,6 +71,8 @@ requirements:
       tests:
       - 'REQ-FE-002: shows a create-space action when no spaces exist'
       - 'REQ-FE-002: creates a space only after explicit user submission'
+      - 'REQ-FE-002: labels the create-space field as a space ID and explains allowed characters'
+      - 'REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1621,3 +1623,45 @@ requirements:
       - switches UI theme
       - switches color mode
       - switches primary color
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-060
+  title: Space Storage Topology Visibility
+  description: 'Authenticated frontend surfaces MUST show the effective storage topology
+
+    for the current space using user-facing labels and the configured URI when
+
+    available. The dashboard MUST provide a direct path to space settings so
+
+    users can verify or change where the space is writing data.
+
+    '
+  related_spec:
+  - architecture/overview.md
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/lib/storage-topology.test.ts
+      tests:
+      - 'REQ-FE-060: summarizes file-backed spaces as local filesystem'
+      - 'REQ-FE-060: summarizes s3-backed spaces as remote object store'
+      - 'REQ-FE-060: falls back to backend API when no storage URI is present'
+      - 'REQ-FE-060: ignores blank storage URIs when summarizing topology'
+      - 'REQ-FE-060: treats unrecognized storage URIs as backend-managed topology'
+    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+      tests:
+      - 'REQ-FE-060: dashboard surfaces the active storage topology with a settings link'
+    - file: frontend/src/components/SpaceSettings.test.tsx
+      tests:
+      - 'REQ-FE-060: settings show the current storage topology before editing'

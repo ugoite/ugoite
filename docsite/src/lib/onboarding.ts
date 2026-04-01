@@ -27,8 +27,8 @@ export const primaryStartCards = [
 	{
 		badge: "Contributor path",
 		description:
-			"Run the current workspace when you want the latest backend, frontend, and docsite together.",
-		href: "/docs/guide/docker-compose",
+			"Run the current workspace with mise run dev when you want the latest backend, frontend, and docsite together.",
+		href: "/docs/guide/local-dev-auth-login",
 		icon: "🛠️",
 		title: "Run from source",
 	},
