@@ -14,23 +14,29 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Start Here
 
-The docsite's getting-started flow is the canonical newcomer decision tree once
-you are in the browser docs. This README stays intentionally lighter so you do
-not have to compare two near-identical onboarding checklists before you can
-move forward.
+The docsite getting-started flow is the canonical newcomer decision tree. This
+README mirrors the same top-level path names so you can choose a first step on
+GitHub without comparing two different onboarding maps.
 
-If you are browsing on GitHub and already know the surface you need, jump
-straight to the guide that fits:
+### Choose your first step
 
-- [Core Concepts](docs/guide/concepts.md) if you want the mental model for
-  spaces, entries, forms, and search before choosing a surface.
-- [Container Quick Start](docs/guide/container-quickstart.md) for the released
-  browser experience without cloning the repository (`mock-oauth` by default).
-- [CLI Guide](docs/guide/cli.md) for terminal-first workflows and scripting.
-- `mise run setup`, then `mise run dev`, for the current backend, frontend, and
-  docsite together from source (`passkey-totp` by default).
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
-  canonical sign-in and `/login` workflow details.
+- [Understand core concepts](docs/guide/concepts.md) before you choose a
+  surface.
+- [Try the published release](docs/guide/container-quickstart.md) for the
+  fastest browser-based evaluation path.
+- [Run from source](docs/guide/docker-compose.md) when you want the current
+  backend, frontend, and docsite together; the shortest contributor path is
+  `mise run setup`, then `mise run dev`.
+- [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
+
+### After your first step
+
+- **Explore the browser app** by opening `/login` from the published quick
+  start or source workflow, then continuing to `/spaces`.
+- [Understand auth and access](docs/guide/auth-overview.md) before rollout or
+  scripting across the browser, CLI, and API.
+- [Read design and source docs](docs/spec/index.md) when you need philosophy,
+  requirements, APIs, or machine-readable specs.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
