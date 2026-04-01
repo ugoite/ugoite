@@ -19,6 +19,11 @@ directory structure that can live on local disk today and move to other storage
 backends later. That is the "local-first" part of the philosophy: your data is
 not trapped behind a hosted database or a proprietary SaaS account.
 
+Today, that local-first promise is strongest in the storage layer and in CLI
+`core` mode, where commands talk to the local filesystem directly. The current
+browser UI still depends on a running backend/proxy and explicit login; it uses
+local-first storage underneath, but it is not yet a backend-free browser mode.
+
 If you are evaluating Ugoite, a good first question is: "What should be its own
 space?" A team wiki, a research notebook, or a project knowledge base are all
 reasonable examples.
@@ -89,9 +94,10 @@ That design matters because it keeps the system easier to reason about:
 Once the concepts make sense, choose the surface that matches your task:
 
 - Use the [Container Quick Start](container-quickstart.md) when you want the
-  fastest browser-based evaluation.
+  fastest browser-based evaluation and you are comfortable running the backend
+  + frontend stack locally.
 - Use the [CLI Guide](cli.md) when you prefer terminal-first workflows or
-  scripting.
+  scripting, or when you want the thinnest local-first workflow today.
 - Use the [Docker Compose Guide](docker-compose.md) when you want the full
   contributor stack from source.
 - Use the [Specification Index](../spec/index.md) when you need the formal
