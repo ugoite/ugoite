@@ -32,6 +32,11 @@ straight to the guide that fits:
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
   canonical sign-in and `/login` workflow details.
 
+Local-first applies most directly to Ugoite's storage model and the CLI's
+`core` mode today. The current browser path still needs a running backend +
+frontend stack and an explicit login flow, even though the data remains in
+user-controlled local storage.
+
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
 the `v0.2` roadmap.
