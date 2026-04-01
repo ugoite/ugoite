@@ -32,6 +32,14 @@ straight to the guide that fits:
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
   canonical sign-in and `/login` workflow details.
 
+### Which entry path should you choose?
+
+| Path | Best when | Trade-off |
+| --- | --- | --- |
+| [Container Quick Start](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
+| [CLI Guide](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
+| `mise run dev` from source | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+
 ## Key Features
 
 - **Markdown as Table**: Markdown sections map to Form-defined fields stored in Iceberg tables
