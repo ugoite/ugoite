@@ -14,7 +14,7 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 	]);
 	expect(primaryStartCards.map((card) => card.href)).toEqual([
 		"/docs/guide/container-quickstart",
-		"/docs/guide/docker-compose",
+		"/docs/guide/local-dev-auth-login",
 		"/docs/guide/cli",
 	]);
 	expect(primaryStartCards.map((card) => card.badge)).toEqual([
