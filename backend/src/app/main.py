@@ -32,6 +32,10 @@ ALLOWED_CORS_HEADERS = [
     "X-Request-Id",
     "X-Ugoite-Dev-Auth-Proxy-Token",
 ]
+INTERNAL_SERVER_ERROR_DETAIL = {
+    "code": "internal_error",
+    "message": "Internal server error",
+}
 
 
 def _cors_allowed_origins() -> list[str]:
@@ -49,6 +53,20 @@ def _validate_cors_configuration(allowed_origins: list[str]) -> None:
             "credentialed CORS is enabled."
         )
         raise RuntimeError(message)
+
+
+def _public_http_error_detail(exc: HTTPException) -> object:
+    """Return a client-safe HTTP error detail payload."""
+    detail = exc.detail
+    if exc.status_code != status.HTTP_500_INTERNAL_SERVER_ERROR:
+        return detail
+    if detail != INTERNAL_SERVER_ERROR_DETAIL:
+        logger.error(
+            "Sanitized HTTP %s detail for client response: %r",
+            exc.status_code,
+            detail,
+        )
+    return dict(INTERNAL_SERVER_ERROR_DETAIL)
 
 
 @asynccontextmanager
@@ -107,19 +125,9 @@ app.middleware("http")(security_middleware)
 @app.exception_handler(HTTPException)
 async def handle_http_exception(_request: Request, exc: HTTPException) -> JSONResponse:
     """Sanitize server-side HTTP error details before returning to clients."""
-    detail = exc.detail
-    if (
-        exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
-        and isinstance(detail, str)
-        and not detail.startswith("Failed to ")
-    ):
-        detail = {
-            "code": "internal_error",
-            "message": "Internal server error",
-        }
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": detail},
+        content={"detail": _public_http_error_detail(exc)},
         headers=exc.headers,
     )
 

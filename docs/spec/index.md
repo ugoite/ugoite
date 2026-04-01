@@ -94,7 +94,7 @@ Ugoite is a knowledge management system built on three core principles:
 ## Key Concepts
 
 ### Form
-A **Form** defines the structure of an entry type. Forms specify:
+A **Form** defines the canonical field contract for an entry type. Forms specify:
 - Required and optional fields (H2 headers)
 - Field types (string, number, date, list, markdown)
 - Fixed global template for new entries
@@ -104,6 +104,9 @@ An **Entry** is stored as a row in an Iceberg table and can be reconstructed as 
 - H2 sections map to Form-defined fields
 - YAML frontmatter carries metadata (form, tags)
 - Revision history is stored in the Form `revisions` table
+
+Markdown remains the authoring surface, but once an entry is associated with a
+Form, that Form governs which fields become canonical structured data.
 
 ### Space
 A **Space** is a self-contained data directory with:
