@@ -22,9 +22,17 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### Getting Started & Concepts
 - [Core Concepts](../guide/concepts.md) - Plain-language introduction to spaces, entries, forms, and search
-- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path
-- [CLI Guide](../guide/cli.md) - Terminal-first install and usage path
-- [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow
+- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path, with backend + frontend runtime and explicit login
+- [CLI Guide](../guide/cli.md) - Lightest local-first path when you want direct filesystem access in `core` mode
+- [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow for source development
+
+### Entry-Path Trade-offs
+
+| Path | Best for | Trade-off |
+| --- | --- | --- |
+| Browser quick start | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
+| CLI `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
+| Source dev stack | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
