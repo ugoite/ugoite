@@ -611,6 +611,8 @@ requirements:
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
+      - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
+      - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
     - file: frontend/src/lib/api.test.ts
       tests:
       - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
