@@ -1,6 +1,8 @@
 //! CLI auth login tests.
 //! REQ-OPS-015
+//! REQ-SEC-003
 
+use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
@@ -150,4 +152,35 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=issued-token"));
+}
+
+/// REQ-SEC-003: auth overview includes the canonical channels field.
+#[test]
+fn test_cli_auth_overview_req_sec_003_includes_channels() {
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "overview"])
+        .output()
+        .expect("failed to execute auth overview");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: Value = serde_json::from_str(&stdout).expect("auth overview JSON");
+    let channels = payload
+        .get("channels")
+        .and_then(Value::as_array)
+        .expect("channels array");
+    let channel_names: Vec<_> = channels
+        .iter()
+        .map(|value| value.as_str().expect("channel string"))
+        .collect();
+
+    assert_eq!(
+        channel_names,
+        vec![
+            "backend(rest)",
+            "backend(mcp)",
+            "cli(via backend)",
+            "frontend(via backend)",
+        ],
+    );
 }
