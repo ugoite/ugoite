@@ -94,6 +94,30 @@ test.describe("Docsite onboarding-first navigation", () => {
 		).toHaveCount(0);
 	});
 
+	test("REQ-E2E-008: run from source card opens the canonical host-dev workflow", async ({
+		page,
+	}) => {
+		await page.goto(buildDocsiteUrl("/getting-started"), {
+			waitUntil: "networkidle",
+		});
+
+		const card = page.locator("#first-steps a", { hasText: "Run from source" });
+		await expect(card).toHaveAttribute(
+			"href",
+			/\/docs\/guide\/local-dev-auth-login$/,
+		);
+
+		await card.click();
+
+		await expect(page).toHaveURL(/\/docs\/guide\/local-dev-auth-login$/);
+		await expect(
+			page.getByRole("heading", {
+				level: 1,
+				name: /local development authentication and login/i,
+			}),
+		).toBeVisible();
+	});
+
 	test("REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content", async ({
 		page,
 	}) => {

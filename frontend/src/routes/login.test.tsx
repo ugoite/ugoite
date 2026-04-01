@@ -6,6 +6,8 @@ import { clearAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 
 const navigateMock = vi.fn();
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
@@ -67,5 +69,43 @@ describe("/login", () => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
 		});
 		expect(document.cookie).toContain("ugoite_auth_bearer_token=frontend-test-token");
+	});
+
+	it("REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide", async () => {
+		seedDevAuthConfig({
+			mode: "passkey-totp",
+			username_hint: "dev-alice",
+			supports_passkey_totp: true,
+			supports_mock_oauth: false,
+		});
+
+		render(() => <LoginRoute />);
+
+		expect(await screen.findByRole("heading", { name: "First time here?" })).toBeInTheDocument();
+		expect(screen.getByText(/Start the local stack with/i)).toBeInTheDocument();
+		expect(screen.getByText("mise run dev")).toBeInTheDocument();
+		expect(
+			screen.getByText(/Generate the current 2FA code from your authenticator or the guide's/i),
+		).toBeInTheDocument();
+		expect(screen.getByText("oathtool")).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Local Dev Auth/Login" })).toHaveAttribute(
+			"href",
+			localDevAuthGuideUrl,
+		);
+	});
+
+	it("REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login", async () => {
+		seedDevAuthConfig({
+			mode: "mock-oauth",
+			username_hint: "dev-oauth-user",
+			supports_passkey_totp: false,
+			supports_mock_oauth: true,
+		});
+
+		render(() => <LoginRoute />);
+
+		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		expect(screen.queryByRole("heading", { name: "First time here?" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: "Local Dev Auth/Login" })).not.toBeInTheDocument();
 	});
 });
