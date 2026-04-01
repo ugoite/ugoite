@@ -15,6 +15,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION_DIR = REPO_ROOT / "docs" / "version"
 RELEASE_CHANGELOG_DIR = VERSION_DIR / "changelog"
 ISSUE_TEMPLATE_DIR = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+README_PATH = REPO_ROOT / "README.md"
+REQUIRED_README_VERSION_DOC_FRAGMENTS = {
+    "[Versions Overview](docs/spec/versions/index.md)",
+    "[v0.1 release stream](docs/spec/versions/v0.1.md)",
+    "[v0.2 roadmap](docs/spec/versions/v0.2.md)",
+}
+FORBIDDEN_README_ROADMAP_FRAGMENTS = {
+    "docs/tasks/roadmap.md",
+    "- **Milestone 2** (Completed): Codebase unification, Rust core library",
+    "- **Milestone 3**: Full AI integration, vector search",
+    (
+        "- **Milestone 4** (Phase 1/2 completed): User management, authentication "
+        "hardening and follow-up tasks"
+    ),
+    "- **Milestone 5**: Native desktop app (Tauri)",
+}
 
 
 def _fail(message: str) -> Never:
@@ -173,6 +189,32 @@ def test_docs_req_ops_004_issue_templates_support_phase() -> None:
         }
         if "issue_type" not in ids or "phase" not in ids:
             _fail(f"{template_name} must include issue_type and phase fields")
+
+
+def test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs() -> None:
+    """REQ-OPS-004: README roadmap pointers must use canonical version docs."""
+    readme_text = README_PATH.read_text(encoding="utf-8")
+
+    missing = sorted(
+        fragment
+        for fragment in REQUIRED_README_VERSION_DOC_FRAGMENTS
+        if fragment not in readme_text
+    )
+    if missing:
+        _fail(
+            "README.md missing canonical version roadmap references: "
+            + ", ".join(missing),
+        )
+
+    forbidden = sorted(
+        fragment
+        for fragment in FORBIDDEN_README_ROADMAP_FRAGMENTS
+        if fragment in readme_text
+    )
+    if forbidden:
+        _fail(
+            "README.md still includes stale roadmap fragments: " + ", ".join(forbidden),
+        )
 
 
 def test_docs_req_ops_026_release_channel_changelog_sources_exist() -> None:

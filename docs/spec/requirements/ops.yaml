@@ -155,6 +155,7 @@ requirements:
       - test_docs_req_ops_004_v02_contains_target_milestones
       - test_docs_req_ops_004_milestone_yaml_files_exist
       - test_docs_req_ops_004_issue_templates_support_phase
+      - test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
