@@ -67,6 +67,27 @@ test.describe("Docsite internal links", () => {
 			"Expected to crawl a substantial set of docsite pages",
 		).toBeGreaterThan(20);
 	});
+
+	test("REQ-E2E-006: design relations specification pills navigate to docsite specs", async ({
+		page,
+	}) => {
+		await page.goto(buildDocsiteUrl("/design/relations"), {
+			waitUntil: "networkidle",
+		});
+
+		const specLink = page.locator('#policy-detail a[href*="/docs/spec/"]').first();
+		await expect(specLink).toBeVisible();
+
+		const href = await specLink.getAttribute("href");
+		expect(href, "Expected a concrete spec href").toBeTruthy();
+
+		await Promise.all([
+			page.waitForURL((url) => url.pathname.includes("/docs/spec/")),
+			specLink.click(),
+		]);
+
+		await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+	});
 });
 
 function buildDocsiteUrl(path: string): string {
