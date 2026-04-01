@@ -14,6 +14,14 @@ The default path remains `passkey-totp`, and you can opt into `mock-oauth`
 when you want to exercise an explicit OAuth-style login flow. In every case,
 the browser and CLI must sign in explicitly after startup.
 
+That default intentionally differs from the published
+[`docker-compose.release.yaml` quick start](container-quickstart.md), which
+uses `mock-oauth` so newcomers can evaluate the browser flow faster. Source
+development keeps `passkey-totp` on by default so contributors exercise the
+explicit passkey + 2FA login path that `mise run dev` wires through
+`scripts/dev-auth-env.sh`. If you want source development to mirror the release
+quick start instead, set `UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
+
 ## 1) Auth modes at a glance
 
 | Mode | How to enable | What it does |
