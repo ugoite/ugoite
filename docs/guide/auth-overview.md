@@ -25,7 +25,7 @@ MCP access. The implemented authentication building blocks are:
 
 - signed or static **bearer tokens** for interactive user sessions
 - **API keys** for service-style access
-- explicit local development login flows for `manual-totp` and `mock-oauth`
+- explicit local development login flows for `passkey-totp` and `mock-oauth`
 
 Some security specifications also describe future passkey/WebAuthn directions.
 Treat those as planned work unless a guide explicitly tells you they are already
@@ -54,7 +54,7 @@ experiences:
 
 | Mode | What it is for | How login happens |
 | --- | --- | --- |
-| `manual-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
+| `passkey-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
 | `mock-oauth` | Development-only OAuth-style exercise path | You still sign in explicitly after startup, but the backend issues a bearer token through the mock OAuth route instead of username + TOTP |
 
 Both modes are intentionally **explicit login** flows. Startup prepares login
@@ -69,7 +69,7 @@ The browser experience is meant to feel like a real application session:
 3. complete that login flow
 4. receive a bearer token only after successful authentication
 
-In `manual-totp`, the form asks for the same username and current 2FA code that
+In `passkey-totp`, the form asks for the same username and current 2FA code that
 match your local development setup.
 
 In `mock-oauth`, the page offers an explicit mock OAuth action instead.

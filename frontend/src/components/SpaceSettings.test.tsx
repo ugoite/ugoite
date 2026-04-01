@@ -145,4 +145,11 @@ describe("SpaceSettings", () => {
 			expect.stringContaining("docs/guide/storage-migration.md"),
 		);
 	});
+
+	it("REQ-FE-060: settings show the current storage topology before editing", () => {
+		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
+		expect(screen.getByText("Storage topology")).toBeInTheDocument();
+		expect(screen.getByText("Local filesystem")).toBeInTheDocument();
+		expect(screen.getByText("file:///local/path")).toBeInTheDocument();
+	});
 });
