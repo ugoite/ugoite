@@ -611,9 +611,9 @@ requirements:
       - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
       - 'REQ-OPS-015: preserves explicit request auth headers during SSR'
       - 'REQ-OPS-015: skips SSR auth forwarding without a request event'
-      - 'REQ-OPS-015: derives the SSR API origin from the incoming request when FRONTEND_ORIGIN is unset'
-      - 'REQ-OPS-015: falls back to the default SSR origin when no request event is available'
-      - 'REQ-OPS-015: ignores malformed SSR request URLs when deriving the API origin'
+      - 'REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset'
+      - 'REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured'
+      - 'REQ-OPS-015: does not derive the SSR API origin from the incoming request'
     - file: frontend/src/lib/auth-api.test.ts
       tests:
       - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'

@@ -1,19 +1,6 @@
 import { loadingState } from "./loading";
 import { getRequestEvent } from "solid-js/web";
 
-const getServerRequestOrigin = (): string | null => {
-	const event = getRequestEvent();
-	if (!event) {
-		return null;
-	}
-
-	try {
-		return new URL(event.request.url).origin;
-	} catch {
-		return null;
-	}
-};
-
 export const getBackendBase = (): string => {
 	// In test environment, use absolute URL for MSW to intercept
 	/* v8 ignore start */
@@ -26,8 +13,7 @@ export const getBackendBase = (): string => {
 	// Default to the frontend dev server origin used in e2e/dev.
 	if (typeof window === "undefined") {
 		const env = process.env ?? {};
-		const origin =
-			env.FRONTEND_ORIGIN || env.ORIGIN || getServerRequestOrigin() || "http://localhost:3000";
+		const origin = env.FRONTEND_ORIGIN || env.ORIGIN || env.FRONTEND_URL || "http://localhost:3000";
 		return `${origin.replace(/\/$/, "")}/api`;
 	}
 	// Always use /api which is proxied to the backend in development
