@@ -1,6 +1,6 @@
 # Ugoite
 
-**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
 ## Vision
 
@@ -9,7 +9,7 @@ Ugoite is a knowledge management system built on three core principles:
 | Principle    | Description                                                 |
 | ------------ | ----------------------------------------------------------- |
 | **Low Cost** | No expensive cloud services required; runs on local storage |
-| **Easy**     | Markdown-first with automatic structure extraction          |
+| **Easy**     | Markdown-first authoring with Form-defined structure when you need queryable fields |
 | **Freedom**  | Your data, your storage, your AI - no vendor lock-in        |
 
 ## Start Here
@@ -25,18 +25,33 @@ straight to the guide that fits:
 - [Core Concepts](docs/guide/concepts.md) if you want the mental model for
   spaces, entries, forms, and search before choosing a surface.
 - [Container Quick Start](docs/guide/container-quickstart.md) for the released
-  browser experience without cloning the repository.
+  browser experience without cloning the repository (`mock-oauth` by default).
 - [CLI Guide](docs/guide/cli.md) for terminal-first workflows and scripting.
 - `mise run setup`, then `mise run dev`, for the current backend, frontend, and
-  docsite together from source.
+  docsite together from source (`passkey-totp` by default).
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
   canonical sign-in and `/login` workflow details.
 
+Local-first applies most directly to Ugoite's storage model and the CLI's
+`core` mode today. The current browser path still needs a running backend +
+frontend stack and an explicit login flow, even though the data remains in
+user-controlled local storage.
+
+Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
+default so source contributors exercise the explicit local passkey + 2FA flow,
+while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
+by default so browser evaluators can reach `/login` and `/spaces` with fewer
+setup steps.
+
+Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
+resources are available now; broader tool-driven AI workflows remain part of
+the `v0.2` roadmap.
+
 ## Key Features
 
-- **Markdown as Table**: Markdown sections map to Form-defined fields stored in Iceberg tables
+- **Markdown as Table**: Markdown stays the authoring surface, while Forms define the canonical fields extracted into Iceberg tables
 - **Form Definitions**: Define entry types (Meeting, Task, etc.) with typed fields and templates
-- **AI-Programmable**: MCP protocol with resource-first integration for AI agents
+- **Resource-First AI Integration**: MCP currently exposes read-oriented resources, with broader AI workflow tooling planned for `v0.2`
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
 - **Version History**: Every save creates an immutable revision; time travel through your entries
 
@@ -48,7 +63,7 @@ straight to the guide that fits:
 | Backend      | Python 3.12+ (FastAPI)               |
 | Core         | Rust (ugoite-core via pyo3 bindings) |
 | Storage      | OpenDAL + Apache Iceberg             |
-| AI Interface | MCP (resource-first integration)     |
+| AI Interface | MCP (resource-first integration today) |
 
 ---
 
@@ -90,8 +105,10 @@ Go deeper when you need architecture or implementation contracts:
 
 Track ongoing work:
 
-- [Roadmap](docs/tasks/roadmap.md) - Future milestones
-- [Current Tasks](docs/tasks/tasks.md) - Active development
+- [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
+  and planned milestones
+- [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone
+  and phase status
 
 ---
 
@@ -384,12 +401,15 @@ Frontend tests: check `frontend/package.json`.
 
 ## Known Issues & Future Work
 
-See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
+Use the canonical version docs for current roadmap status instead of relying on a
+copied milestone list:
 
-- **Milestone 2** (Completed): Codebase unification, Rust core library
-- **Milestone 3**: Full AI integration, vector search
-- **Milestone 4** (Phase 1/2 completed): User management, authentication hardening and follow-up tasks
-- **Milestone 5**: Native desktop app (Tauri)
+- [Versions Overview](docs/spec/versions/index.md) for the current `v0.1` / `v0.2`
+  release-stream split
+- [v0.1 release stream](docs/spec/versions/v0.1.md) for foundational milestones,
+  user-management work, and release preparation
+- [v0.2 roadmap](docs/spec/versions/v0.2.md) for user-controlled views and
+  AI-enabled / native-app planning
 
 ---
 

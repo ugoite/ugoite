@@ -98,6 +98,9 @@ If you are new to Ugoite, start with the
 so the specification index can stay easy to scan before you jump into the deeper
 data-model documents.
 
+Markdown remains the authoring surface, but once an entry is associated with a
+Form, that Form governs which fields become canonical structured data.
+
 ### Space
 A **Space** is the portable top-level container for your knowledge. It owns its
 entries, forms, settings, assets, and derived indexes while keeping the source
