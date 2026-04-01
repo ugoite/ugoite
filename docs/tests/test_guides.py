@@ -1764,7 +1764,7 @@ def test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable() -> None:
 
 
 def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
-    """REQ-OPS-015: Local dev auth docs stay canonical and cover supported auth modes."""
+    """REQ-OPS-015: Local dev auth docs stay canonical for supported modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
@@ -1794,91 +1794,57 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
 
     details: list[str] = []
 
-    missing_guide = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS
-        if fragment not in guide_text
+    _append_missing_fragment_detail(
+        details,
+        text=guide_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS,
+        prefix="local-dev-auth-login.md missing auth mode fragments: ",
     )
-    if missing_guide:
-        details.append(
-            "local-dev-auth-login.md missing auth mode fragments: "
-            + ", ".join(missing_guide),
-        )
-
-    missing_auth_overview = sorted(
-        fragment
-        for fragment in REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS
-        if fragment not in auth_overview_text
+    _append_missing_fragment_detail(
+        details,
+        text=auth_overview_text,
+        required_fragments=REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md missing current auth mode fragments: ",
     )
-    if missing_auth_overview:
-        details.append(
-            "auth-overview.md missing current auth mode fragments: "
-            + ", ".join(missing_auth_overview),
-        )
-
-    forbidden_auth_overview = sorted(
-        fragment
-        for fragment in FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS
-        if fragment in auth_overview_text
+    _append_forbidden_fragment_detail(
+        details,
+        text=auth_overview_text,
+        forbidden_fragments=FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md still references obsolete auth mode names: ",
     )
-    if forbidden_auth_overview:
-        details.append(
-            "auth-overview.md still references obsolete auth mode names: "
-            + ", ".join(forbidden_auth_overview),
-        )
-
-    missing_readme = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
-        if fragment not in readme_text
+    _append_missing_fragment_detail(
+        details,
+        text=readme_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS,
+        prefix="README missing auth mode fragments: ",
     )
-    if missing_readme:
-        details.append(
-            "README missing auth mode fragments: " + ", ".join(missing_readme),
-        )
-
-    duplicated_readme = sorted(
-        fragment
-        for fragment in FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
-        if fragment in readme_text
-    )
-    if duplicated_readme:
-        details.append(
+    _append_forbidden_fragment_detail(
+        details,
+        text=readme_text,
+        forbidden_fragments=FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS,
+        prefix=(
             "README must point to the canonical guide instead of duplicating auth "
-            "commands: " + ", ".join(duplicated_readme),
-        )
-
-    missing_env_matrix = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS
-        if fragment not in env_matrix_text
+            "commands: "
+        ),
     )
-    if missing_env_matrix:
-        details.append(
-            "env-matrix.md missing auth mode vars: " + ", ".join(missing_env_matrix),
-        )
-
-    missing_devcontainer_install = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS
-        if fragment not in devcontainer_text
+    _append_missing_fragment_detail(
+        details,
+        text=env_matrix_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS,
+        prefix="env-matrix.md missing auth mode vars: ",
     )
-    if missing_devcontainer_install:
-        details.append(
-            "devcontainer setup missing auth mode install fragments: "
-            + ", ".join(missing_devcontainer_install),
-        )
-
-    missing_devcontainer_ci = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS
-        if fragment not in devcontainer_ci_text
+    _append_missing_fragment_detail(
+        details,
+        text=devcontainer_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS,
+        prefix="devcontainer setup missing auth mode install fragments: ",
     )
-    if missing_devcontainer_ci:
-        details.append(
-            "devcontainer CI missing manual auth smoke fragments: "
-            + ", ".join(missing_devcontainer_ci),
-        )
+    _append_missing_fragment_detail(
+        details,
+        text=devcontainer_ci_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS,
+        prefix="devcontainer CI missing manual auth smoke fragments: ",
+    )
 
     canonical_pointer_sources = {
         "docsite api-storage page": api_storage_text,
@@ -4702,6 +4668,30 @@ def _collect_release_publish_jobs(
 
 def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
     return sorted(fragment for fragment in required_fragments if fragment not in text)
+
+
+def _append_missing_fragment_detail(
+    details: list[str],
+    *,
+    text: str,
+    required_fragments: set[str],
+    prefix: str,
+) -> None:
+    missing = _missing_required_fragments(text, required_fragments)
+    if missing:
+        details.append(prefix + ", ".join(missing))
+
+
+def _append_forbidden_fragment_detail(
+    details: list[str],
+    *,
+    text: str,
+    forbidden_fragments: set[str],
+    prefix: str,
+) -> None:
+    present = sorted(fragment for fragment in forbidden_fragments if fragment in text)
+    if present:
+        details.append(prefix + ", ".join(present))
 
 
 def _load_workflow(workflow_path: Path) -> dict[str, object]:
