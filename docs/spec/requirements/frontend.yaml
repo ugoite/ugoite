@@ -71,6 +71,8 @@ requirements:
       tests:
       - 'REQ-FE-002: shows a create-space action when no spaces exist'
       - 'REQ-FE-002: creates a space only after explicit user submission'
+      - 'REQ-FE-002: labels the create-space field as a space ID and explains allowed characters'
+      - 'REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
