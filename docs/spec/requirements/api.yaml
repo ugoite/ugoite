@@ -426,6 +426,9 @@ requirements:
     - file: ugoite-cli/tests/test_space.rs
       tests:
       - test_create_sample_space_req_api_009
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
+      tests:
+      - test_space_sample_data_req_api_009_help_describes_inputs
     rust:
     - file: ugoite-core/tests/test_sample_data.rs
       tests:

@@ -7,6 +7,7 @@ refers to the CI-parity compose helper in `e2e/scripts/run-e2e-compose.sh`.
 | Variable | Local dev | E2E runner | Docker Compose | CI |
 |---|---|---|---|---|
 | BACKEND_URL | required for frontend proxy | set by runner | set to backend service URL | required in frontend jobs |
+| FRONTEND_URL | optional explicit frontend origin for SSR `/api` fetches when framework origin envs are unavailable | set by runner | optional | optional |
 | UGOITE_ROOT | optional | required | volume-backed path | test workspace path |
 | UGOITE_ALLOW_REMOTE | optional | required | required | required for API tests |
 | UGOITE_AUTH_API_KEY | optional | optional | optional | optional |
