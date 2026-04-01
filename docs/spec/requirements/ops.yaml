@@ -155,6 +155,7 @@ requirements:
       - test_docs_req_ops_004_v02_contains_target_milestones
       - test_docs_req_ops_004_milestone_yaml_files_exist
       - test_docs_req_ops_004_issue_templates_support_phase
+      - test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -233,6 +234,10 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_006_rust_precommit_parity
+    rust:
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
+      tests:
+      - test_entry_update_req_ops_006_help_describes_required_inputs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -606,11 +611,16 @@ requirements:
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
+      - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
+      - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
     - file: frontend/src/lib/api.test.ts
       tests:
       - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
       - 'REQ-OPS-015: preserves explicit request auth headers during SSR'
       - 'REQ-OPS-015: skips SSR auth forwarding without a request event'
+      - 'REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset'
+      - 'REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured'
+      - 'REQ-OPS-015: does not derive the SSR API origin from the incoming request'
     - file: frontend/src/lib/auth-api.test.ts
       tests:
       - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'
