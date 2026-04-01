@@ -337,8 +337,6 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
             "entry-1",
             "--content",
             "# Remote Entry",
-            "--author",
-            "remote-author",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -365,6 +363,7 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
         request.contains("\"content\":\"# Remote Entry\""),
         "{request}"
     );
+    assert!(!request.contains(r#""author":"#), "{request}");
 }
 
 /// REQ-STO-004: Backend mode returns remote space JSON without Tokio runtime panic.
