@@ -9,7 +9,7 @@ Ugoite is a knowledge management system built on three core principles:
 | Principle    | Description                                                 |
 | ------------ | ----------------------------------------------------------- |
 | **Low Cost** | No expensive cloud services required; runs on local storage |
-| **Easy**     | Markdown-first with automatic structure extraction          |
+| **Easy**     | Markdown-first authoring with Form-defined structure when you need queryable fields |
 | **Freedom**  | Your data, your storage, your AI - no vendor lock-in        |
 
 ## Start Here
@@ -34,7 +34,7 @@ straight to the guide that fits:
 
 ## Key Features
 
-- **Markdown as Table**: Markdown sections map to Form-defined fields stored in Iceberg tables
+- **Markdown as Table**: Markdown stays the authoring surface, while Forms define the canonical fields extracted into Iceberg tables
 - **Form Definitions**: Define entry types (Meeting, Task, etc.) with typed fields and templates
 - **AI-Programmable**: MCP protocol with resource-first integration for AI agents
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)

@@ -9,6 +9,9 @@ To ensure clarity, Ugoite distinguishes between the **System Data Model** and us
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
 - **Entry Forms**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
+Markdown remains the primary authoring surface, but Forms are the canonical
+contract that turns that Markdown into typed, queryable fields.
+
 ## Principles
 
 Ugoite's data model is built on these principles:
@@ -46,6 +49,10 @@ Forms define entry types with:
 - **Fields**: Content columns derived from the Iceberg table schema
 - **Types**: Iceberg column types mapped to entry fields
 - **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
+
+Forms are optional when you are still writing an unstructured note. Once you
+want stable field extraction, validation, or queryable columns, define the Form
+first because it becomes the field contract for that entry type.
 
 ### Metadata vs Content Columns
 
