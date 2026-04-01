@@ -25,10 +25,10 @@ straight to the guide that fits:
 - [Core Concepts](docs/guide/concepts.md) if you want the mental model for
   spaces, entries, forms, and search before choosing a surface.
 - [Container Quick Start](docs/guide/container-quickstart.md) for the released
-  browser experience without cloning the repository.
+  browser experience without cloning the repository (`mock-oauth` by default).
 - [CLI Guide](docs/guide/cli.md) for terminal-first workflows and scripting.
 - `mise run setup`, then `mise run dev`, for the current backend, frontend, and
-  docsite together from source.
+  docsite together from source (`passkey-totp` by default).
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
   canonical sign-in and `/login` workflow details.
 
@@ -36,6 +36,12 @@ Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
 frontend stack and an explicit login flow, even though the data remains in
 user-controlled local storage.
+
+Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
+default so source contributors exercise the explicit local passkey + 2FA flow,
+while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
+by default so browser evaluators can reach `/login` and `/spaces` with fewer
+setup steps.
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
