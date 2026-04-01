@@ -6,8 +6,7 @@ import { clearAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 
 const navigateMock = vi.fn();
-const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+const localDevAuthGuideUrl = "/docs/guide/local-dev-auth-login";
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
