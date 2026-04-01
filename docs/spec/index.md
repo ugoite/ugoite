@@ -30,9 +30,9 @@ Ugoite is a knowledge management system built on three core principles:
 
 | Path | Best for | Trade-off |
 | --- | --- | --- |
-| Browser quick start | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
-| CLI `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
-| Source dev stack | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
+| [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
+| [CLI Guide](../guide/cli.md) in `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
+| [Run from source](../guide/docker-compose.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
@@ -102,7 +102,7 @@ Ugoite is a knowledge management system built on three core principles:
 ## Key Concepts
 
 ### Form
-A **Form** defines the structure of an entry type. Forms specify:
+A **Form** defines the canonical field contract for an entry type. Forms specify:
 - Required and optional fields (H2 headers)
 - Field types (string, number, date, list, markdown)
 - Fixed global template for new entries
@@ -112,6 +112,9 @@ An **Entry** is stored as a row in an Iceberg table and can be reconstructed as 
 - H2 sections map to Form-defined fields
 - YAML frontmatter carries metadata (form, tags)
 - Revision history is stored in the Form `revisions` table
+
+Markdown remains the authoring surface, but once an entry is associated with a
+Form, that Form governs which fields become canonical structured data.
 
 ### Space
 A **Space** is a self-contained data directory with:
