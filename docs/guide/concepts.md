@@ -54,6 +54,10 @@ That makes forms the bridge between free-form writing and reliable structure.
 They help people enter consistent information, and they help the browser, CLI,
 and automation flows understand what each entry is supposed to contain.
 
+You can absolutely start with a lightweight note, but as soon as you want
+stable extracted fields, validation, or reliable queries, the Form becomes the
+contract Ugoite uses to interpret that Markdown.
+
 ## Markdown becomes structured data
 
 One of Ugoite's key ideas is **Markdown as Table**.
@@ -62,9 +66,11 @@ When you write an entry, Markdown headings and frontmatter can map onto the
 fields defined by a form. That means you keep a writing-friendly editing model
 without giving up typed fields, validation, or queryability.
 
-For a newcomer, the important takeaway is this: you are not filling out a rigid
-web form first and exporting later. The Markdown content is part of the real
-data model, and Ugoite extracts structure from it in a predictable way.
+For a newcomer, the important takeaway is this: Markdown remains the authoring
+surface, but the structure is still governed by the active Form definition when
+you want typed fields. You are not filling out a rigid web form first and
+exporting later, but you also are not bypassing schema contracts entirely once
+you ask Ugoite to extract predictable structure.
 
 ## Search and indexes are derived, not primary
 
