@@ -141,8 +141,7 @@ export default function SpacesIndexRoute() {
 						<div>
 							<h3 class="text-base font-semibold">Create space</h3>
 							<p class="text-sm ui-muted">
-								Spaces are never created automatically. Choose a space ID to create one
-								explicitly.
+								Spaces are never created automatically. Choose a space ID to create one explicitly.
 							</p>
 						</div>
 						<div class="ui-field">
@@ -158,8 +157,8 @@ export default function SpacesIndexRoute() {
 								placeholder="e.g. team-notes"
 							/>
 							<p class="mt-2 text-xs ui-muted">
-								Use letters, numbers, hyphens, or underscores. This becomes the space URL
-								and storage ID.
+								Use letters, numbers, hyphens, or underscores. This becomes the space URL and
+								storage ID.
 							</p>
 						</div>
 						<Show when={createError()}>

@@ -104,9 +104,7 @@ describe("/spaces", () => {
 
 		await waitFor(() => {
 			expect(
-				screen.getByText(
-					"Space IDs can use only letters, numbers, hyphens, and underscores.",
-				),
+				screen.getByText("Space IDs can use only letters, numbers, hyphens, and underscores."),
 			).toBeInTheDocument();
 		});
 	});
