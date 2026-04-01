@@ -53,6 +53,18 @@ bootstraps the `default` space at startup so the first browser and CLI session
 both have a ready workspace. For more detail on the explicit browser login
 flow, see [Local Dev Auth Login](local-dev-auth-login.md).
 
+## Next steps
+
+- The `default` space is the starter workspace that the published quick start
+  bootstraps for you after login.
+- Try creating one plain Markdown entry in that space first. You do **not** need
+  to define a Form before the first note.
+- Read [Core Concepts](concepts.md) next if you want the mental model for
+  spaces, entries, forms, and search before exploring more of the UI.
+- Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
+  workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
+  the full contributor stack from source.
+
 To stop the stack:
 
 ```bash
