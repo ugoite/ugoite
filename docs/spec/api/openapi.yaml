@@ -391,6 +391,16 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example:
+                - string
+                - number
+                - row_reference
 
   /spaces/{space_id}/assets:
     get:
