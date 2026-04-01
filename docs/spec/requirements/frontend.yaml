@@ -1654,6 +1654,7 @@ requirements:
       tests:
       - 'REQ-FE-060: summarizes file-backed spaces as local filesystem'
       - 'REQ-FE-060: summarizes s3-backed spaces as remote object store'
+      - 'REQ-FE-060: summarizes documented object-store schemes as remote object store'
       - 'REQ-FE-060: falls back to backend API when no storage URI is present'
       - 'REQ-FE-060: ignores blank storage URIs when summarizing topology'
       - 'REQ-FE-060: treats unrecognized storage URIs as backend-managed topology'

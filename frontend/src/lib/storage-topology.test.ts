@@ -40,6 +40,31 @@ describe("summarizeSpaceStorage", () => {
 		});
 	});
 
+	it("REQ-FE-060: summarizes documented object-store schemes as remote object store", () => {
+		const uris = [
+			"gcs://ugoite-prod/spaces/demo",
+			"gs://ugoite-prod/spaces/demo",
+			"azblob://ugoite-prod/spaces/demo",
+			"azdls://ugoite-prod/spaces/demo",
+			"abfs://ugoite-prod/spaces/demo",
+			"abfss://ugoite-prod/spaces/demo",
+			"oss://ugoite-prod/spaces/demo",
+		];
+
+		for (const uri of uris) {
+			expect(
+				summarizeSpaceStorage({
+					...baseSpace,
+					storage_config: { uri },
+				}),
+			).toEqual({
+				label: "Remote object store",
+				description: "This space writes to object storage through its configured connector.",
+				uri,
+			});
+		}
+	});
+
 	it("REQ-FE-060: falls back to backend API when no storage URI is present", () => {
 		expect(summarizeSpaceStorage(baseSpace)).toEqual({
 			label: "Backend API",

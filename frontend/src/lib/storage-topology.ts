@@ -7,11 +7,28 @@ export type StorageTopologySummary = {
 	uri: string | null;
 };
 
+const LOCAL_FILESYSTEM_SCHEMES = ["file", "fs"] as const;
+const REMOTE_OBJECT_STORE_SCHEMES = [
+	"s3",
+	"gcs",
+	"gs",
+	"azblob",
+	"azdls",
+	"abfs",
+	"abfss",
+	"oss",
+] as const;
+
 const readStorageUri = (space: Space): string | null => {
 	const value = space.storage_config?.uri;
 	if (typeof value !== "string") return null;
 	const uri = value.trim();
 	return uri ? uri : null;
+};
+
+const hasKnownScheme = (uri: string, schemes: readonly string[]): boolean => {
+	const [scheme = ""] = uri.split("://", 1);
+	return schemes.includes(scheme.toLowerCase());
 };
 
 export const summarizeSpaceStorage = (space: Space): StorageTopologySummary => {
@@ -24,7 +41,7 @@ export const summarizeSpaceStorage = (space: Space): StorageTopologySummary => {
 		};
 	}
 
-	if (/^(file|fs):\/\//i.test(uri)) {
+	if (hasKnownScheme(uri, LOCAL_FILESYSTEM_SCHEMES)) {
 		return {
 			label: t("storageSummary.localFilesystem.label"),
 			description: t("storageSummary.localFilesystem.description"),
@@ -32,7 +49,7 @@ export const summarizeSpaceStorage = (space: Space): StorageTopologySummary => {
 		};
 	}
 
-	if (/^s3:\/\//i.test(uri)) {
+	if (hasKnownScheme(uri, REMOTE_OBJECT_STORE_SCHEMES)) {
 		return {
 			label: t("storageSummary.remoteObjectStore.label"),
 			description: t("storageSummary.remoteObjectStore.description"),
