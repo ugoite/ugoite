@@ -1,6 +1,6 @@
 # Ugoite
 
-**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
 ## Vision
 
@@ -32,11 +32,15 @@ straight to the guide that fits:
 - [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
   canonical sign-in and `/login` workflow details.
 
+Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
+resources are available now; broader tool-driven AI workflows remain part of
+the `v0.2` roadmap.
+
 ## Key Features
 
 - **Markdown as Table**: Markdown stays the authoring surface, while Forms define the canonical fields extracted into Iceberg tables
 - **Form Definitions**: Define entry types (Meeting, Task, etc.) with typed fields and templates
-- **AI-Programmable**: MCP protocol with resource-first integration for AI agents
+- **Resource-First AI Integration**: MCP currently exposes read-oriented resources, with broader AI workflow tooling planned for `v0.2`
 - **Local-First Storage**: Your data stays on your device or cloud storage (S3, etc.)
 - **Version History**: Every save creates an immutable revision; time travel through your entries
 
@@ -48,7 +52,7 @@ straight to the guide that fits:
 | Backend      | Python 3.12+ (FastAPI)               |
 | Core         | Rust (ugoite-core via pyo3 bindings) |
 | Storage      | OpenDAL + Apache Iceberg             |
-| AI Interface | MCP (resource-first integration)     |
+| AI Interface | MCP (resource-first integration today) |
 
 ---
 
