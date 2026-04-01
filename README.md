@@ -90,8 +90,10 @@ Go deeper when you need architecture or implementation contracts:
 
 Track ongoing work:
 
-- [Roadmap](docs/tasks/roadmap.md) - Future milestones
-- [Current Tasks](docs/tasks/tasks.md) - Active development
+- [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
+  and planned milestones
+- [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone
+  and phase status
 
 ---
 
@@ -384,12 +386,15 @@ Frontend tests: check `frontend/package.json`.
 
 ## Known Issues & Future Work
 
-See [Roadmap](docs/tasks/roadmap.md) for planned milestones:
+Use the canonical version docs for current roadmap status instead of relying on a
+copied milestone list:
 
-- **Milestone 2** (Completed): Codebase unification, Rust core library
-- **Milestone 3**: Full AI integration, vector search
-- **Milestone 4** (Phase 1/2 completed): User management, authentication hardening and follow-up tasks
-- **Milestone 5**: Native desktop app (Tauri)
+- [Versions Overview](docs/spec/versions/index.md) for the current `v0.1` / `v0.2`
+  release-stream split
+- [v0.1 release stream](docs/spec/versions/v0.1.md) for foundational milestones,
+  user-management work, and release preparation
+- [v0.2 roadmap](docs/spec/versions/v0.2.md) for user-controlled views and
+  AI-enabled / native-app planning
 
 ---
 
