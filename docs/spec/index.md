@@ -93,26 +93,35 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Key Concepts
 
-### Form
-A **Form** defines the canonical field contract for an entry type. Forms specify:
-- Required and optional fields (H2 headers)
-- Field types (string, number, date, list, markdown)
-- Fixed global template for new entries
-
-### Entry
-An **Entry** is stored as a row in an Iceberg table and can be reconstructed as Markdown:
-- H2 sections map to Form-defined fields
-- YAML frontmatter carries metadata (form, tags)
-- Revision history is stored in the Form `revisions` table
+If you are new to Ugoite, start with the
+[Core Concepts guide](../guide/concepts.md). This section is only a quick glossary
+so the specification index can stay easy to scan before you jump into the deeper
+data-model documents.
 
 Markdown remains the authoring surface, but once an entry is associated with a
 Form, that Form governs which fields become canonical structured data.
 
 ### Space
-A **Space** is a self-contained data directory with:
-- Iceberg-managed Form tables and assets
-- Derived indexes regenerated from Iceberg tables
-- Portable across storage backends (local, S3, etc.)
+A **Space** is the portable top-level container for your knowledge. It owns its
+entries, forms, settings, assets, and derived indexes while keeping the source
+data under your control. For the concrete on-disk layout, continue to
+[Directory Structure](data-model/directory-structure.md).
+
+### Entry
+An **Entry** is one record inside a space. You edit it as Markdown, but Ugoite
+also stores it as structured form-backed data so it stays queryable, versioned,
+and reconstructable. For the exact storage model, continue to
+[Data Model Overview](data-model/overview.md).
+
+### Form
+A **Form** defines the expected shape of an entry type: which fields exist,
+which ones are required, and how Markdown content maps onto structured data.
+Forms are the bridge between writing-friendly editing and reliable automation.
+
+### Search and indexes
+Search and indexes are derived from entries and forms; they are not the primary
+source of truth. That keeps the system local-first and easier to reason about,
+because the canonical data stays in the space itself.
 
 ---
 
