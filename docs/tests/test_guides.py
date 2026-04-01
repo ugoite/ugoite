@@ -136,6 +136,7 @@ CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
+AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
@@ -628,6 +629,13 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "ugoite auth login",
     "signed bearer token",
     "0600",
+}
+REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
+    "passkey-totp",
+    "mock-oauth",
+}
+FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
+    "manual-totp",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "Local Dev Auth/Login",
@@ -1756,8 +1764,9 @@ def test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable() -> None:
 
 
 def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
-    """REQ-OPS-015: Local dev auth docs stay canonical and cover manual modes."""
+    """REQ-OPS-015: Local dev auth docs stay canonical and cover supported auth modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+    auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
     devcontainer_text = (REPO_ROOT / ".devcontainer" / "devcontainer.json").read_text(
@@ -1792,8 +1801,30 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     )
     if missing_guide:
         details.append(
-            "local-dev-auth-login.md missing manual auth fragments: "
+            "local-dev-auth-login.md missing auth mode fragments: "
             + ", ".join(missing_guide),
+        )
+
+    missing_auth_overview = sorted(
+        fragment
+        for fragment in REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS
+        if fragment not in auth_overview_text
+    )
+    if missing_auth_overview:
+        details.append(
+            "auth-overview.md missing current auth mode fragments: "
+            + ", ".join(missing_auth_overview),
+        )
+
+    forbidden_auth_overview = sorted(
+        fragment
+        for fragment in FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS
+        if fragment in auth_overview_text
+    )
+    if forbidden_auth_overview:
+        details.append(
+            "auth-overview.md still references obsolete auth mode names: "
+            + ", ".join(forbidden_auth_overview),
         )
 
     missing_readme = sorted(
@@ -1803,7 +1834,7 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     )
     if missing_readme:
         details.append(
-            "README missing manual auth fragments: " + ", ".join(missing_readme),
+            "README missing auth mode fragments: " + ", ".join(missing_readme),
         )
 
     duplicated_readme = sorted(
@@ -1824,7 +1855,7 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     )
     if missing_env_matrix:
         details.append(
-            "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
+            "env-matrix.md missing auth mode vars: " + ", ".join(missing_env_matrix),
         )
 
     missing_devcontainer_install = sorted(
@@ -1834,7 +1865,7 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     )
     if missing_devcontainer_install:
         details.append(
-            "devcontainer setup missing manual auth install fragments: "
+            "devcontainer setup missing auth mode install fragments: "
             + ", ".join(missing_devcontainer_install),
         )
 
