@@ -1,4 +1,6 @@
-import { createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
+import { t } from "~/lib/i18n";
+import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type { Space, SpacePatchPayload } from "~/lib/types";
 
 const storageMigrationGuideUrl =
@@ -22,6 +24,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 	const [testStatus, setTestStatus] = createSignal<"success" | "error" | null>(null);
 	const [testMessage, setTestMessage] = createSignal<string>("");
 	const [saveError, setSaveError] = createSignal<string | null>(null);
+	const storageSummary = createMemo(() => summarizeSpaceStorage(props.space));
 
 	const handleSave = async (e: Event) => {
 		e.preventDefault();
@@ -96,6 +99,21 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 					</p>
 
 					<div class="space-y-4">
+						<section class="ui-card ui-stack-sm">
+							<div class="ui-stack-sm">
+								<h4 class="text-lg font-semibold">{t("storageSummary.heading")}</h4>
+								<p class="text-sm ui-muted">{storageSummary().description}</p>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="ui-pill">{storageSummary().label}</span>
+							</div>
+							{storageSummary().uri ? (
+								<div class="ui-stack-sm">
+									<p class="text-xs ui-muted">{t("storageSummary.uriLabel")}</p>
+									<p class="font-mono text-xs break-all">{storageSummary().uri}</p>
+								</div>
+							) : null}
+						</section>
 						<div class="ui-field">
 							<label for="storage-uri" class="ui-label">
 								Storage URI
