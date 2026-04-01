@@ -211,7 +211,13 @@ login_output="$(
 )"
 case "$login_output" in
   export\ UGOITE_AUTH_BEARER_TOKEN=*)
-    export UGOITE_AUTH_BEARER_TOKEN="${login_output#export UGOITE_AUTH_BEARER_TOKEN=}"
+    UGOITE_AUTH_BEARER_TOKEN="$(
+      env -i EXPORT_LINE="$login_output" /bin/sh -c '
+        eval "$EXPORT_LINE"
+        printf %s "$UGOITE_AUTH_BEARER_TOKEN"
+      '
+    )"
+    export UGOITE_AUTH_BEARER_TOKEN
     ;;
   *)
     fail "auth login --mock-oauth did not print a bearer token export"

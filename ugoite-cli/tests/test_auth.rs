@@ -247,3 +247,76 @@ fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
         "stdout was {stdout}"
     );
 }
+
+#[test]
+fn test_cli_auth_login_req_ops_015_shell_eval_restores_raw_bearer_token() {
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker_path = marker_dir.path().join("should-not-run");
+    let marker = marker_path.display().to_string();
+    let body = format!(
+        r#"{{"bearer_token":"unsafe' $(touch {marker}) $HOME","user_id":"dev-alice","expires_at":1900000000}}"#
+    );
+    let body = Box::leak(body.into_boxed_str());
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", body);
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let export_line = stdout
+        .lines()
+        .find(|line| line.starts_with("export UGOITE_AUTH_BEARER_TOKEN="))
+        .expect("missing export line")
+        .to_string();
+
+    let shell_output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(
+            r#"
+            eval "$EXPORT_LINE"
+            printf '%s' "$UGOITE_AUTH_BEARER_TOKEN"
+            "#,
+        )
+        .env("EXPORT_LINE", export_line)
+        .output()
+        .expect("failed to execute shell eval");
+    assert!(
+        shell_output.status.success(),
+        "shell eval failed: {}",
+        String::from_utf8_lossy(&shell_output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&shell_output.stdout),
+        format!("unsafe' $(touch {marker}) $HOME")
+    );
+    assert!(
+        !marker_path.exists(),
+        "shell eval unexpectedly executed command substitution"
+    );
+}
