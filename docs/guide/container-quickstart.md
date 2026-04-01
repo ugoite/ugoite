@@ -53,6 +53,11 @@ bootstraps the `default` space at startup so the first browser and CLI session
 both have a ready workspace. For more detail on the explicit browser login
 flow, see [Local Dev Auth Login](local-dev-auth-login.md).
 
+This published quick start intentionally differs from `mise run dev`: it
+defaults to `mock-oauth` so first-time browser evaluators can reach `/spaces`
+with fewer steps, while source development keeps `passkey-totp` as the default
+so contributors exercise the explicit passkey + 2FA flow.
+
 ## Next steps
 
 - The `default` space is the starter workspace that the published quick start
