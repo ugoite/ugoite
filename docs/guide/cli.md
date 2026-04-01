@@ -105,7 +105,27 @@ ugoite space create ./spaces/demo
 If you are actively developing inside the repository, you can swap those for
 `cargo run -q -p ugoite-cli -- ...` instead.
 
-## Seed local sample data
+## Next steps after your first command
+
+`./spaces/demo` is now your local workspace example. A good next step is to add
+one plain Markdown entry there:
+
+```bash
+ugoite entry create ./spaces/demo first-note --content '# First note'
+ugoite entry get ./spaces/demo first-note
+```
+
+You do **not** need Forms or sample data before this first note. Read
+[Core Concepts](concepts.md) next if you want the mental model for spaces,
+entries, forms, and search, or jump to
+[Endpoint routing mode](#endpoint-routing-mode) when you want the CLI to talk to
+a backend or API instead of the local filesystem.
+
+## Contributor-only shortcut: seed local sample data
+
+If you installed a released CLI and only want the basic local workflow, you can
+skip this section. `mise run seed` is a repository task for contributors and
+repeatable demos, not a required first step for end users.
 
 Use the root developer task when you want a quick local dataset without
 remembering the lower-level CLI arguments:
