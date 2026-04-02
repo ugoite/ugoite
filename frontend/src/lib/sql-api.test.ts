@@ -5,6 +5,7 @@ import { sqlApi } from "./sql-api";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = { id: "sql-ws", name: "SQL Space", created_at: "2025-01-01T00:00:00Z" };
 
@@ -21,7 +22,7 @@ describe("sqlApi", () => {
 
 	it("REQ-FE-054: sqlApi normalizes unix-second timestamps for saved queries", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sql-ws/sql", () =>
+			http.get(testApiUrl("/spaces/sql-ws/sql"), () =>
 				HttpResponse.json([
 					{
 						id: "query-1",
@@ -68,7 +69,7 @@ describe("sqlApi", () => {
 
 	it("throws on list failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sql-ws/sql", () =>
+			http.get(testApiUrl("/spaces/sql-ws/sql"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);
@@ -77,7 +78,7 @@ describe("sqlApi", () => {
 
 	it("throws on get failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sql-ws/sql/bad-id", () =>
+			http.get(testApiUrl("/spaces/sql-ws/sql/bad-id"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -86,7 +87,7 @@ describe("sqlApi", () => {
 
 	it("throws on create failure with detail", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/sql-ws/sql", () =>
+			http.post(testApiUrl("/spaces/sql-ws/sql"), () =>
 				HttpResponse.json({ detail: "Invalid SQL" }, { status: 422 }),
 			),
 		);
@@ -97,7 +98,7 @@ describe("sqlApi", () => {
 
 	it("throws on update failure with detail", async () => {
 		server.use(
-			http.put("http://localhost:3000/api/spaces/sql-ws/sql/bad-id", () =>
+			http.put(testApiUrl("/spaces/sql-ws/sql/bad-id"), () =>
 				HttpResponse.json({ detail: "Update failed" }, { status: 500 }),
 			),
 		);
@@ -106,7 +107,7 @@ describe("sqlApi", () => {
 
 	it("throws on delete failure", async () => {
 		server.use(
-			http.delete("http://localhost:3000/api/spaces/sql-ws/sql/bad-id", () =>
+			http.delete(testApiUrl("/spaces/sql-ws/sql/bad-id"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);

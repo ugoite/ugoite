@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "~/test/mocks/server";
+import { testApiUrl } from "~/test/http-origin";
 
 const getRequestEventMock = vi.fn();
 
@@ -24,7 +25,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = null;
 		let seenAuthorization: string | null = null;
 		server.use(
-			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
+			http.get(testApiUrl("/auth/config"), ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -57,7 +58,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = null;
 		let seenAuthorization: string | null = null;
 		server.use(
-			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
+			http.get(testApiUrl("/auth/config"), ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -96,7 +97,7 @@ describe("apiFetch auth forwarding", () => {
 		let seenCookie: string | null = "unexpected";
 		let seenAuthorization: string | null = "unexpected";
 		server.use(
-			http.get("http://localhost:3000/api/auth/config", ({ request }) => {
+			http.get(testApiUrl("/auth/config"), ({ request }) => {
 				seenCookie = request.headers.get("cookie");
 				seenAuthorization = request.headers.get("authorization");
 				return HttpResponse.json({
@@ -152,6 +153,30 @@ describe("apiFetch auth forwarding", () => {
 		expect(response.status).toBe(200);
 		expect(seenOrigin).toBe("http://localhost:13000");
 		expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
+	});
+
+	it("REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base", async () => {
+		let seenOrigin: string | null = null;
+		vi.stubEnv("NODE_ENV", "test");
+		vi.stubEnv("FRONTEND_TEST_ORIGIN", "http://127.0.0.1:4310");
+		server.use(
+			http.get(testApiUrl("/auth/config"), ({ request }) => {
+				seenOrigin = new URL(request.url).origin;
+				return HttpResponse.json({
+					mode: "passkey-totp",
+					username_hint: "dev-alice",
+					supports_passkey_totp: true,
+					supports_mock_oauth: false,
+				});
+			}),
+		);
+
+		const { apiFetch, getBackendBase } = await import("./api");
+		const response = await apiFetch("/auth/config", { trackLoading: false });
+
+		expect(getBackendBase()).toBe("http://127.0.0.1:4310/api");
+		expect(response.status).toBe(200);
+		expect(seenOrigin).toBe("http://127.0.0.1:4310");
 	});
 
 	it("REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured", async () => {

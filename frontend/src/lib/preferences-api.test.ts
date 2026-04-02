@@ -5,6 +5,7 @@ import { http, HttpResponse } from "msw";
 import { preferencesApi } from "./preferences-api";
 import { resetMockData } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
+import { testApiUrl } from "~/test/http-origin";
 
 describe("preferencesApi", () => {
 	beforeEach(() => {
@@ -13,7 +14,7 @@ describe("preferencesApi", () => {
 
 	it("REQ-FE-044: surfaces string detail on portable preference load failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/preferences/me", () =>
+			http.get(testApiUrl("/preferences/me"), () =>
 				HttpResponse.json({ detail: "Load failed" }, { status: 500 }),
 			),
 		);
@@ -23,7 +24,7 @@ describe("preferencesApi", () => {
 
 	it("REQ-FE-059: stringifies structured detail on portable preference update failure", async () => {
 		server.use(
-			http.patch("http://localhost:3000/api/preferences/me", () =>
+			http.patch(testApiUrl("/preferences/me"), () =>
 				HttpResponse.json({ detail: { field: "ui_theme" } }, { status: 422 }),
 			),
 		);
@@ -36,7 +37,7 @@ describe("preferencesApi", () => {
 	it("REQ-FE-059: falls back to status text when portable preference errors are not JSON", async () => {
 		server.use(
 			http.patch(
-				"http://localhost:3000/api/preferences/me",
+				testApiUrl("/preferences/me"),
 				() => new HttpResponse("boom", { status: 500, statusText: "Server Error" }),
 			),
 		);
@@ -48,7 +49,7 @@ describe("preferencesApi", () => {
 
 	it("REQ-FE-059: falls back to status text when portable preference detail is empty", async () => {
 		server.use(
-			http.patch("http://localhost:3000/api/preferences/me", () =>
+			http.patch(testApiUrl("/preferences/me"), () =>
 				HttpResponse.json({ detail: "" }, { status: 500, statusText: "Server Error" }),
 			),
 		);

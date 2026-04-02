@@ -1,4 +1,11 @@
-import { http, HttpResponse } from "msw";
+import {
+	http,
+	HttpResponse,
+	matchRequestUrl,
+	type HttpResponseResolver,
+	type PathParams,
+} from "msw";
+import { testApiPath } from "~/test/http-origin";
 import type {
 	Asset,
 	Entry,
@@ -37,6 +44,41 @@ let preferencePatches: UserPreferencesPatchPayload[] = [];
 let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
+
+const createTestApiPredicate = <Params extends PathParams = PathParams>(path: string) => {
+	const testApiPathname = testApiPath(path);
+	return ({ request }: { request: Request }) => {
+		const requestUrl = new URL(request.url);
+		const match = matchRequestUrl(requestUrl, testApiPathname, requestUrl.origin);
+		return {
+			matches: match.matches,
+			params: match.params as Params,
+		};
+	};
+};
+
+const testHttp = {
+	get: <Params extends PathParams = PathParams>(
+		path: string,
+		resolver: HttpResponseResolver<Params>,
+	) => http.get<Params>(createTestApiPredicate<Params>(path), resolver),
+	post: <Params extends PathParams = PathParams>(
+		path: string,
+		resolver: HttpResponseResolver<Params>,
+	) => http.post<Params>(createTestApiPredicate<Params>(path), resolver),
+	put: <Params extends PathParams = PathParams>(
+		path: string,
+		resolver: HttpResponseResolver<Params>,
+	) => http.put<Params>(createTestApiPredicate<Params>(path), resolver),
+	patch: <Params extends PathParams = PathParams>(
+		path: string,
+		resolver: HttpResponseResolver<Params>,
+	) => http.patch<Params>(createTestApiPredicate<Params>(path), resolver),
+	delete: <Params extends PathParams = PathParams>(
+		path: string,
+		resolver: HttpResponseResolver<Params>,
+	) => http.delete<Params>(createTestApiPredicate<Params>(path), resolver),
+};
 
 // Reset function for tests
 export const resetMockData = () => {
@@ -121,11 +163,11 @@ export const seedDevAuthConfig = (
 export const getPreferencePatches = () => preferencePatches.slice();
 
 export const handlers = [
-	http.get("http://localhost:3000/api/auth/config", () => {
+	testHttp.get("/auth/config", () => {
 		return HttpResponse.json(mockDevAuthConfig);
 	}),
 
-	http.post("http://localhost:3000/api/auth/login", async ({ request }) => {
+	testHttp.post("/auth/login", async ({ request }) => {
 		const body = (await request.json()) as { username?: string; totp_code?: string };
 		if (
 			mockDevAuthConfig.mode !== "passkey-totp" ||
@@ -141,7 +183,7 @@ export const handlers = [
 		});
 	}),
 
-	http.post("http://localhost:3000/api/auth/mock-oauth", () => {
+	testHttp.post("/auth/mock-oauth", () => {
 		if (mockDevAuthConfig.mode !== "mock-oauth") {
 			return HttpResponse.json(
 				{ detail: "mock-oauth login is not enabled for this session." },
@@ -155,11 +197,11 @@ export const handlers = [
 		});
 	}),
 
-	http.get("http://localhost:3000/api/preferences/me", () => {
+	testHttp.get("/preferences/me", () => {
 		return HttpResponse.json(mockPreferences);
 	}),
 
-	http.patch("http://localhost:3000/api/preferences/me", async ({ request }) => {
+	testHttp.patch("/preferences/me", async ({ request }) => {
 		const body = (await request.json()) as UserPreferencesPatchPayload;
 		preferencePatches.push(body);
 		mockPreferences = {
@@ -170,13 +212,13 @@ export const handlers = [
 	}),
 
 	// List spaces
-	http.get("http://localhost:3000/api/spaces", () => {
+	testHttp.get("/spaces", () => {
 		const spaces = Array.from(mockSpaces.values());
 		return HttpResponse.json(spaces);
 	}),
 
 	// Create space
-	http.post("http://localhost:3000/api/spaces", async ({ request }) => {
+	testHttp.post("/spaces", async ({ request }) => {
 		const body = (await request.json()) as { name: string };
 		const id = body.name;
 
@@ -199,7 +241,7 @@ export const handlers = [
 	}),
 
 	// List forms
-	http.get("http://localhost:3000/api/spaces/:spaceId/forms", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/forms", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -209,7 +251,7 @@ export const handlers = [
 	}),
 
 	// List form types (must be before forms/:formName to avoid capture)
-	http.get("http://localhost:3000/api/spaces/:spaceId/forms/types", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/forms/types", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -218,7 +260,7 @@ export const handlers = [
 	}),
 
 	// Get form
-	http.get("http://localhost:3000/api/spaces/:spaceId/forms/:formName", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/forms/:formName", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const formName = params.formName as string;
 		if (!mockSpaces.has(spaceId)) {
@@ -232,7 +274,7 @@ export const handlers = [
 	}),
 
 	// Create form
-	http.post("http://localhost:3000/api/spaces/:spaceId/forms", async ({ params, request }) => {
+	testHttp.post("/spaces/:spaceId/forms", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -250,7 +292,7 @@ export const handlers = [
 	}),
 
 	// Get space
-	http.get("http://localhost:3000/api/spaces/:spaceId", ({ params }) => {
+	testHttp.get("/spaces/:spaceId", ({ params }) => {
 		const space = mockSpaces.get(params.spaceId as string);
 		if (!space) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -259,7 +301,7 @@ export const handlers = [
 	}),
 
 	// Patch space
-	http.patch("http://localhost:3000/api/spaces/:spaceId", async ({ params, request }) => {
+	testHttp.patch("/spaces/:spaceId", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		const space = mockSpaces.get(spaceId);
 		if (!space) {
@@ -277,23 +319,20 @@ export const handlers = [
 	}),
 
 	// Test connection
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/test-connection",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			if (!mockSpaces.has(spaceId)) {
-				return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
-			}
-			const body = (await request.json()) as { storage_config?: { uri?: string } };
-			if (!body.storage_config?.uri) {
-				return HttpResponse.json({ detail: "Missing uri" }, { status: 400 });
-			}
-			return HttpResponse.json({ status: "ok" });
-		},
-	),
+	testHttp.post("/spaces/:spaceId/test-connection", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId)) {
+			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
+		}
+		const body = (await request.json()) as { storage_config?: { uri?: string } };
+		if (!body.storage_config?.uri) {
+			return HttpResponse.json({ detail: "Missing uri" }, { status: 400 });
+		}
+		return HttpResponse.json({ status: "ok" });
+	}),
 
 	// List entries in space
-	http.get("http://localhost:3000/api/spaces/:spaceId/entries", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/entries", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -303,7 +342,7 @@ export const handlers = [
 	}),
 
 	// Create entry
-	http.post("http://localhost:3000/api/spaces/:spaceId/entries", async ({ params, request }) => {
+	testHttp.post("/spaces/:spaceId/entries", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -354,7 +393,7 @@ export const handlers = [
 	}),
 
 	// Get entry
-	http.get("http://localhost:3000/api/spaces/:spaceId/entries/:entryId", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/entries/:entryId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const entryId = params.entryId as string;
 
@@ -366,75 +405,72 @@ export const handlers = [
 	}),
 
 	// Update entry
-	http.put(
-		"http://localhost:3000/api/spaces/:spaceId/entries/:entryId",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			const entryId = params.entryId as string;
+	testHttp.put("/spaces/:spaceId/entries/:entryId", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const entryId = params.entryId as string;
 
-			const entry = mockEntries.get(spaceId)?.get(entryId);
-			if (!entry) {
-				return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
+		const entry = mockEntries.get(spaceId)?.get(entryId);
+		if (!entry) {
+			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
+		}
+
+		const body = (await request.json()) as EntryUpdatePayload;
+
+		// Check revision (optimistic concurrency)
+		if (body.parent_revision_id !== entry.revision_id) {
+			return HttpResponse.json(
+				{
+					detail: "Revision mismatch",
+					current_revision_id: entry.revision_id,
+				},
+				{ status: 409 },
+			);
+		}
+
+		const newRevisionId = generateRevisionId();
+		const now = new Date().toISOString();
+
+		// Extract title from markdown
+		const titleMatch = body.markdown.match(/^#\s+(.+)$/m);
+		const title = titleMatch ? titleMatch[1] : body.markdown.split("\n")[0] || "Untitled";
+
+		// Extract properties from H2 headers
+		const properties: Record<string, string> = {};
+		const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
+		for (const match of body.markdown.matchAll(h2Regex)) {
+			const key = match[1].trim();
+			const value = match[2].trim();
+			properties[key] = value;
+		}
+
+		// Update entry
+		entry.content = body.markdown;
+		entry.revision_id = newRevisionId;
+		entry.updated_at = now;
+		entry.assets = body.assets ?? entry.assets ?? [];
+
+		// Update index
+		const record = mockEntryIndex.get(spaceId)?.get(entryId);
+		if (record) {
+			record.title = title;
+			record.updated_at = now;
+			record.properties = properties;
+			if (body.canvas_position) {
+				record.canvas_position = body.canvas_position;
 			}
-
-			const body = (await request.json()) as EntryUpdatePayload;
-
-			// Check revision (optimistic concurrency)
-			if (body.parent_revision_id !== entry.revision_id) {
-				return HttpResponse.json(
-					{
-						detail: "Revision mismatch",
-						current_revision_id: entry.revision_id,
-					},
-					{ status: 409 },
-				);
+			if (body.assets) {
+				record.assets = body.assets;
 			}
+		}
 
-			const newRevisionId = generateRevisionId();
-			const now = new Date().toISOString();
-
-			// Extract title from markdown
-			const titleMatch = body.markdown.match(/^#\s+(.+)$/m);
-			const title = titleMatch ? titleMatch[1] : body.markdown.split("\n")[0] || "Untitled";
-
-			// Extract properties from H2 headers
-			const properties: Record<string, string> = {};
-			const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-			for (const match of body.markdown.matchAll(h2Regex)) {
-				const key = match[1].trim();
-				const value = match[2].trim();
-				properties[key] = value;
-			}
-
-			// Update entry
-			entry.content = body.markdown;
-			entry.revision_id = newRevisionId;
-			entry.updated_at = now;
-			entry.assets = body.assets ?? entry.assets ?? [];
-
-			// Update index
-			const record = mockEntryIndex.get(spaceId)?.get(entryId);
-			if (record) {
-				record.title = title;
-				record.updated_at = now;
-				record.properties = properties;
-				if (body.canvas_position) {
-					record.canvas_position = body.canvas_position;
-				}
-				if (body.assets) {
-					record.assets = body.assets;
-				}
-			}
-
-			return HttpResponse.json({
-				id: entryId,
-				revision_id: newRevisionId,
-			});
-		},
-	),
+		return HttpResponse.json({
+			id: entryId,
+			revision_id: newRevisionId,
+		});
+	}),
 
 	// Delete entry
-	http.delete("http://localhost:3000/api/spaces/:spaceId/entries/:entryId", ({ params }) => {
+	testHttp.delete("/spaces/:spaceId/entries/:entryId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const entryId = params.entryId as string;
 
@@ -449,7 +485,7 @@ export const handlers = [
 	}),
 
 	// Query entries
-	http.post("http://localhost:3000/api/spaces/:spaceId/query", async ({ params, request }) => {
+	testHttp.post("/spaces/:spaceId/query", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -471,7 +507,7 @@ export const handlers = [
 	}),
 
 	// Search entries
-	http.get("http://localhost:3000/api/spaces/:spaceId/search", ({ params, request }) => {
+	testHttp.get("/spaces/:spaceId/search", ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -490,7 +526,7 @@ export const handlers = [
 	}),
 
 	// Upload asset
-	http.post("http://localhost:3000/api/spaces/:spaceId/assets", async ({ params }) => {
+	testHttp.post("/spaces/:spaceId/assets", async ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -506,7 +542,7 @@ export const handlers = [
 	}),
 
 	// Delete asset
-	http.delete("http://localhost:3000/api/spaces/:spaceId/assets/:assetId", ({ params }) => {
+	testHttp.delete("/spaces/:spaceId/assets/:assetId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const assetId = params.assetId as string;
 		const store = mockAssets.get(spaceId);
@@ -527,7 +563,7 @@ export const handlers = [
 	}),
 
 	// List assets
-	http.get("http://localhost:3000/api/spaces/:spaceId/assets", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/assets", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId)) {
 			return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
@@ -537,7 +573,7 @@ export const handlers = [
 	}),
 
 	// Entry history
-	http.get("http://localhost:3000/api/spaces/:spaceId/entries/:entryId/history", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/entries/:entryId/history", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const entryId = params.entryId as string;
 		const entry = mockEntries.get(spaceId)?.get(entryId);
@@ -550,51 +586,45 @@ export const handlers = [
 	}),
 
 	// Get specific revision
-	http.get(
-		"http://localhost:3000/api/spaces/:spaceId/entries/:entryId/history/:revisionId",
-		({ params }) => {
-			const spaceId = params.spaceId as string;
-			const entryId = params.entryId as string;
-			const revisionId = params.revisionId as string;
-			const entry = mockEntries.get(spaceId)?.get(entryId);
-			if (!entry || entry.revision_id !== revisionId) {
-				return HttpResponse.json({ detail: "Revision not found" }, { status: 404 });
-			}
-			return HttpResponse.json(entry);
-		},
-	),
+	testHttp.get("/spaces/:spaceId/entries/:entryId/history/:revisionId", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const entryId = params.entryId as string;
+		const revisionId = params.revisionId as string;
+		const entry = mockEntries.get(spaceId)?.get(entryId);
+		if (!entry || entry.revision_id !== revisionId) {
+			return HttpResponse.json({ detail: "Revision not found" }, { status: 404 });
+		}
+		return HttpResponse.json(entry);
+	}),
 
 	// Restore entry
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/entries/:entryId/restore",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			const entryId = params.entryId as string;
-			const entry = mockEntries.get(spaceId)?.get(entryId);
-			if (!entry) {
-				return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
-			}
-			const _body = (await request.json()) as { revision_id: string };
-			const newRevisionId = generateRevisionId();
-			entry.revision_id = newRevisionId;
-			return HttpResponse.json({ ...entry, revision_id: newRevisionId });
-		},
-	),
+	testHttp.post("/spaces/:spaceId/entries/:entryId/restore", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const entryId = params.entryId as string;
+		const entry = mockEntries.get(spaceId)?.get(entryId);
+		if (!entry) {
+			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
+		}
+		const _body = (await request.json()) as { revision_id: string };
+		const newRevisionId = generateRevisionId();
+		entry.revision_id = newRevisionId;
+		return HttpResponse.json({ ...entry, revision_id: newRevisionId });
+	}),
 
 	// SQL CRUD
-	http.get("http://localhost:3000/api/spaces/:spaceId/sql", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/sql", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const entries = Array.from(mockSqlEntries.get(spaceId)?.values() || []);
 		return HttpResponse.json(entries);
 	}),
-	http.get("http://localhost:3000/api/spaces/:spaceId/sql/:sqlId", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/sql/:sqlId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const sqlId = params.sqlId as string;
 		const entry = mockSqlEntries.get(spaceId)?.get(sqlId);
 		if (!entry) return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 		return HttpResponse.json(entry);
 	}),
-	http.post("http://localhost:3000/api/spaces/:spaceId/sql", async ({ params, request }) => {
+	testHttp.post("/spaces/:spaceId/sql", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		const body = (await request.json()) as { name: string; sql: string; variables?: string[] };
 		const id = crypto.randomUUID();
@@ -610,7 +640,7 @@ export const handlers = [
 		mockSqlEntries.get(spaceId)?.set(id, entry);
 		return HttpResponse.json({ id, revision_id: revisionId }, { status: 201 });
 	}),
-	http.put("http://localhost:3000/api/spaces/:spaceId/sql/:sqlId", async ({ params, request }) => {
+	testHttp.put("/spaces/:spaceId/sql/:sqlId", async ({ params, request }) => {
 		const spaceId = params.spaceId as string;
 		const sqlId = params.sqlId as string;
 		const entry = mockSqlEntries.get(spaceId)?.get(sqlId);
@@ -620,7 +650,7 @@ export const handlers = [
 		const revisionId = generateRevisionId();
 		return HttpResponse.json({ id: sqlId, revision_id: revisionId });
 	}),
-	http.delete("http://localhost:3000/api/spaces/:spaceId/sql/:sqlId", ({ params }) => {
+	testHttp.delete("/spaces/:spaceId/sql/:sqlId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const sqlId = params.sqlId as string;
 		const store = mockSqlEntries.get(spaceId);
@@ -631,107 +661,89 @@ export const handlers = [
 	}),
 
 	// SQL Sessions
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/sql-sessions",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			const body = (await request.json()) as { sql: string };
-			const id = crypto.randomUUID();
-			const session = {
-				id,
-				sql: body.sql,
-				status: "ready",
-				error: null,
-				created_at: new Date().toISOString(),
-			};
-			if (!mockSqlSessions.has(spaceId)) mockSqlSessions.set(spaceId, new Map());
-			mockSqlSessions.get(spaceId)?.set(id, session);
-			return HttpResponse.json(session, { status: 201 });
-		},
-	),
-	http.get("http://localhost:3000/api/spaces/:spaceId/sql-sessions/:sessionId", ({ params }) => {
+	testHttp.post("/spaces/:spaceId/sql-sessions", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const body = (await request.json()) as { sql: string };
+		const id = crypto.randomUUID();
+		const session = {
+			id,
+			sql: body.sql,
+			status: "ready",
+			error: null,
+			created_at: new Date().toISOString(),
+		};
+		if (!mockSqlSessions.has(spaceId)) mockSqlSessions.set(spaceId, new Map());
+		mockSqlSessions.get(spaceId)?.set(id, session);
+		return HttpResponse.json(session, { status: 201 });
+	}),
+	testHttp.get("/spaces/:spaceId/sql-sessions/:sessionId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		const sessionId = params.sessionId as string;
 		const session = mockSqlSessions.get(spaceId)?.get(sessionId);
 		if (!session) return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 		return HttpResponse.json(session);
 	}),
-	http.get(
-		"http://localhost:3000/api/spaces/:spaceId/sql-sessions/:sessionId/count",
-		({ params }) => {
-			const spaceId = params.spaceId as string;
-			const sessionId = params.sessionId as string;
-			if (!mockSqlSessions.get(spaceId)?.has(sessionId))
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			return HttpResponse.json({ count: 3 });
-		},
-	),
-	http.get(
-		"http://localhost:3000/api/spaces/:spaceId/sql-sessions/:sessionId/rows",
-		({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			const sessionId = params.sessionId as string;
-			if (!mockSqlSessions.get(spaceId)?.has(sessionId))
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			const url = new URL(request.url);
-			const offset = Number(url.searchParams.get("offset") || 0);
-			const limit = Number(url.searchParams.get("limit") || 25);
-			return HttpResponse.json({ rows: [], offset, limit, total_count: 3 });
-		},
-	),
+	testHttp.get("/spaces/:spaceId/sql-sessions/:sessionId/count", ({ params }) => {
+		const spaceId = params.spaceId as string;
+		const sessionId = params.sessionId as string;
+		if (!mockSqlSessions.get(spaceId)?.has(sessionId))
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		return HttpResponse.json({ count: 3 });
+	}),
+	testHttp.get("/spaces/:spaceId/sql-sessions/:sessionId/rows", ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		const sessionId = params.sessionId as string;
+		if (!mockSqlSessions.get(spaceId)?.has(sessionId))
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		const url = new URL(request.url);
+		const offset = Number(url.searchParams.get("offset") || 0);
+		const limit = Number(url.searchParams.get("limit") || 25);
+		return HttpResponse.json({ rows: [], offset, limit, total_count: 3 });
+	}),
 
 	// Space Members
-	http.get("http://localhost:3000/api/spaces/:spaceId/members", ({ params }) => {
+	testHttp.get("/spaces/:spaceId/members", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId))
 			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 		return HttpResponse.json([]);
 	}),
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/members/invitations",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			if (!mockSpaces.has(spaceId))
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			const body = (await request.json()) as { user_id: string; role: string };
-			return HttpResponse.json(
-				{
-					invitation: {
-						token: "test-token",
-						user_id: body.user_id,
-						role: body.role,
-						state: "pending",
-					},
+	testHttp.post("/spaces/:spaceId/members/invitations", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId))
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		const body = (await request.json()) as { user_id: string; role: string };
+		return HttpResponse.json(
+			{
+				invitation: {
+					token: "test-token",
+					user_id: body.user_id,
+					role: body.role,
+					state: "pending",
 				},
-				{ status: 201 },
-			);
-		},
-	),
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/members/accept",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			if (!mockSpaces.has(spaceId))
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			const body = (await request.json()) as { token: string; user_id: string };
-			return HttpResponse.json({
-				member: { user_id: body.user_id, role: "editor", state: "active" },
-			});
-		},
-	),
-	http.post(
-		"http://localhost:3000/api/spaces/:spaceId/members/:userId/role",
-		async ({ params, request }) => {
-			const spaceId = params.spaceId as string;
-			if (!mockSpaces.has(spaceId))
-				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-			const body = (await request.json()) as { role: string };
-			return HttpResponse.json({
-				member: { user_id: params.userId, role: body.role, state: "active" },
-			});
-		},
-	),
-	http.delete("http://localhost:3000/api/spaces/:spaceId/members/:userId", ({ params }) => {
+			},
+			{ status: 201 },
+		);
+	}),
+	testHttp.post("/spaces/:spaceId/members/accept", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId))
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		const body = (await request.json()) as { token: string; user_id: string };
+		return HttpResponse.json({
+			member: { user_id: body.user_id, role: "editor", state: "active" },
+		});
+	}),
+	testHttp.post("/spaces/:spaceId/members/:userId/role", async ({ params, request }) => {
+		const spaceId = params.spaceId as string;
+		if (!mockSpaces.has(spaceId))
+			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		const body = (await request.json()) as { role: string };
+		return HttpResponse.json({
+			member: { user_id: params.userId, role: body.role, state: "active" },
+		});
+	}),
+	testHttp.delete("/spaces/:spaceId/members/:userId", ({ params }) => {
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId))
 			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
@@ -739,7 +751,7 @@ export const handlers = [
 	}),
 
 	// Root API endpoint (used by HelloWorld)
-	http.get("http://localhost:3000/api/", () => {
+	testHttp.get("/", () => {
 		return HttpResponse.json({ message: "Hello from mock backend!" });
 	}),
 ];
