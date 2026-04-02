@@ -127,6 +127,7 @@ RELEASE_CLI_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-cli-quickstart.sh"
 )
 RELEASE_NOTES_RENDERER_PATH = REPO_ROOT / "scripts" / "render_release_notes.py"
+PYTEST_SKIP_GUARD_PATH = REPO_ROOT / "scripts" / "fail_on_skipped_tests.py"
 RELEASE_CONTAINER_QUICKSTART_SCRIPT_PATH = (
     REPO_ROOT / "scripts" / "verify-release-container-quickstart.sh"
 )
@@ -209,6 +210,28 @@ REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
         "executable in CI"
     ),
     "uvx pre-commit run --all-files",
+}
+REQUIRED_LOCAL_BACKEND_PYTEST_COMMAND = (
+    'report="${TMPDIR:-/tmp}/ugoite-backend-pytest.xml" && uv run pytest -W error '
+    '--junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py '
+    '"$report" "backend tests"'
+)
+REQUIRED_LOCAL_CORE_PYTEST_COMMAND = (
+    'if [ -d tests ]; then report="${TMPDIR:-/tmp}/ugoite-core-pytest.xml" && '
+    "uv run --with pytest --with pytest-asyncio python -m pytest -W error "
+    '--junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py '
+    '"$report" "ugoite-core tests"; fi'
+)
+REQUIRED_LOCAL_DOCS_PYTEST_COMMAND = (
+    'report="${TMPDIR:-/tmp}/ugoite-docs-pytest.xml" && uv run --with pytest '
+    "--with pyyaml --with bashlex pytest docs/tests -v -W error "
+    '--junitxml="$report" && python3 scripts/fail_on_skipped_tests.py "$report" '
+    '"docs tests"'
+)
+REQUIRED_LOCAL_PYTHON_PARITY_DOC_FRAGMENTS = {
+    "Backend, `ugoite-core`, and `mise run test:docs` also run `pytest -W error`",
+    "fail on skipped tests before reporting",
+    "That keeps root `mise run test` aligned with Python CI",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -1537,10 +1560,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "test:no-build",
                 [
                     "cargo test -j 1",
-                    (
-                        "if [ -d tests ]; then uv run --with pytest --with "
-                        "pytest-asyncio python -m pytest; fi"
-                    ),
+                    REQUIRED_LOCAL_CORE_PYTEST_COMMAND,
                 ],
                 (
                     "ugoite-core test:no-build task must run crate and Python "
@@ -1556,7 +1576,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_exact_task_run(
                 backend_mise,
                 "test:no-build",
-                ["uv run pytest"],
+                [REQUIRED_LOCAL_BACKEND_PYTEST_COMMAND],
                 "backend test:no-build task must run backend pytest directly",
             ),
             _require_exact_task_depends(
@@ -3371,6 +3391,98 @@ def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
             "ci-cd guide missing GitHub Action pinning fragments: "
             + ", ".join(missing_doc_fragments),
         )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_033_local_python_test_strictness_matches_ci() -> None:
+    """REQ-OPS-033: local Python test entrypoints must match CI strictness."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_exact_task_run(
+                backend_mise,
+                "test",
+                [REQUIRED_LOCAL_BACKEND_PYTEST_COMMAND],
+                "backend test task must fail on warnings and skipped tests",
+            ),
+            _require_exact_task_run(
+                backend_mise,
+                "test:no-build",
+                [REQUIRED_LOCAL_BACKEND_PYTEST_COMMAND],
+                "backend test:no-build task must fail on warnings and skipped tests",
+            ),
+            _require_exact_task_run(
+                core_mise,
+                "test",
+                ["cargo test -j 1", REQUIRED_LOCAL_CORE_PYTEST_COMMAND],
+                "ugoite-core test task must fail on warnings and skipped tests",
+            ),
+            _require_exact_task_run(
+                core_mise,
+                "test:no-build",
+                ["cargo test -j 1", REQUIRED_LOCAL_CORE_PYTEST_COMMAND],
+                (
+                    "ugoite-core test:no-build task must fail on warnings "
+                    "and skipped tests"
+                ),
+            ),
+            _require_exact_task_run(
+                root_mise,
+                "test:docs",
+                [REQUIRED_LOCAL_DOCS_PYTEST_COMMAND],
+                "root test:docs task must fail on warnings and skipped docs tests",
+            ),
+            _require_file_contains(
+                PYTHON_CI_WORKFLOW_PATH,
+                [
+                    "uv run pytest -W error --junitxml=../backend-pytest.xml",
+                    "backend tests: skipped={skipped} is not allowed",
+                    (
+                        "uv run --with pytest --with pyyaml --with bashlex "
+                        "pytest docs/tests -v -W error "
+                        "--junitxml=docs-pytest.xml"
+                    ),
+                    "docs tests: skipped={skipped} is not allowed",
+                ],
+                (
+                    "python-ci.yml must remain the strictness baseline for "
+                    "backend/docs pytest"
+                ),
+            ),
+            _require_file_contains(
+                RUST_CI_WORKFLOW_PATH,
+                [
+                    "uv run pytest -W error --junitxml=../core-pytest.xml",
+                    "ugoite-core tests: skipped={skipped} is not allowed",
+                ],
+                (
+                    "rust-ci.yml must remain the strictness baseline for "
+                    "ugoite-core pytest"
+                ),
+            ),
+            _require_file_contains(
+                PYTEST_SKIP_GUARD_PATH,
+                [
+                    "def count_skipped_tests",
+                    "skipped={skipped} is not allowed",
+                ],
+                "fail_on_skipped_tests.py must expose the skipped-test guard",
+            ),
+            None
+            if all(
+                fragment in ci_cd_text
+                for fragment in REQUIRED_LOCAL_PYTHON_PARITY_DOC_FRAGMENTS
+            )
+            else "ci-cd guide must describe local Python strictness parity",
+        ]
+        if detail
+    ]
     if details:
         raise AssertionError("; ".join(details))
 
