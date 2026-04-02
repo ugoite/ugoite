@@ -6,7 +6,11 @@
 
 ## Vision
 
-**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space for the Post-SaaS Era"**
+
+`v0.1` ships the local-first core plus a resource-first MCP baseline. Broader
+AI-native workflows, including wider MCP resource coverage and tool exposure,
+remain planned for `v0.2`.
 
 Ugoite is a knowledge management system built on three core principles:
 
