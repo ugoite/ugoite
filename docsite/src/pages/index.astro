@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { withBasePath } from "../lib/base-path";
 import {
+  browserPathCaveat,
   conceptPrimerCard,
   nextStepCards,
   primaryStartCards,
@@ -20,6 +21,18 @@ import {
 
         <p class="doc-lead">
           A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
+        </p>
+
+        <div class="doc-pill-row">
+          <span class="doc-pill doc-pill-warning">{browserPathCaveat.badge}</span>
+        </div>
+
+        <p class="doc-lead">
+          {browserPathCaveat.headline}
+        </p>
+
+        <p>
+          {browserPathCaveat.description}
         </p>
 
         <div class="doc-pill-row">

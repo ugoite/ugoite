@@ -26,6 +26,17 @@ test.describe("Docsite onboarding-first navigation", () => {
 				/a private, portable knowledge space you can run with docker/i,
 			),
 		).toBeVisible();
+		await expect(page.getByText("Browser caveat today")).toBeVisible();
+		await expect(
+			page.getByText(
+				/the browser path is still server-backed and login-gated, even though the data stays local-first/i,
+			),
+		).toBeVisible();
+		await expect(
+			page.getByText(
+				/the current browser route still needs a running backend \+ frontend stack and an explicit login flow/i,
+			),
+		).toBeVisible();
 		await expect(page.locator("#start-paths a h3")).toHaveText([
 			"Try the published release",
 			"Run from source",
