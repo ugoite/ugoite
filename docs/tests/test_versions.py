@@ -21,8 +21,20 @@ REQUIRED_README_VERSION_DOC_FRAGMENTS = {
     "[v0.1 release stream](docs/spec/versions/v0.1.md)",
     "[v0.2 roadmap](docs/spec/versions/v0.2.md)",
 }
+REQUIRED_README_DOCS_TREE_FRAGMENTS = {
+    "docs/",
+    "  ├─ guide/",
+    "  ├─ spec/",
+    "  ├─ tests/",
+    "  └─ version/",
+}
+REQUIRED_README_CONTRIBUTING_WORK_ITEM_FRAGMENTS = {
+    "[open issues](https://github.com/ugoite/ugoite/issues)",
+    "[pull requests](https://github.com/ugoite/ugoite/pulls)",
+}
 FORBIDDEN_README_ROADMAP_FRAGMENTS = {
     "docs/tasks/roadmap.md",
+    "docs/tasks/tasks.md",
     "- **Milestone 2** (Completed): Codebase unification, Rust core library",
     "- **Milestone 3**: Full AI integration, vector search",
     (
@@ -214,6 +226,36 @@ def test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs() -> N
     if forbidden:
         _fail(
             "README.md still includes stale roadmap fragments: " + ", ".join(forbidden),
+        )
+
+
+def test_docs_req_ops_004_readme_docs_tree_and_work_item_links_match_repo() -> None:
+    """REQ-OPS-004: README docs tree and work-item links must match the shipped repo layout."""
+    readme_text = README_PATH.read_text(encoding="utf-8")
+
+    missing = sorted(
+        fragment
+        for fragment in (
+            REQUIRED_README_DOCS_TREE_FRAGMENTS
+            | REQUIRED_README_CONTRIBUTING_WORK_ITEM_FRAGMENTS
+        )
+        if fragment not in readme_text
+    )
+    if missing:
+        _fail(
+            "README.md missing current docs tree or contributing fragments: "
+            + ", ".join(missing),
+        )
+
+    forbidden = sorted(
+        fragment
+        for fragment in {"  └─ tasks/", "docs/tasks/tasks.md"}
+        if fragment in readme_text
+    )
+    if forbidden:
+        _fail(
+            "README.md still includes stale docs/task references: "
+            + ", ".join(forbidden),
         )
 
 

@@ -94,8 +94,10 @@ ugoite-cli/         # Command-line interface for power users
 ugoite-core/        # Rust core logic + Python bindings
   └─ src/
 docs/
+  ├─ guide/         # User-facing guides and operator workflows
   ├─ spec/          # Technical specifications (YAML + Markdown)
-  └─ tasks/         # Milestone tracking and roadmap
+  ├─ tests/         # Documentation consistency tests
+  └─ version/       # Versioned roadmap YAML + release metadata
 e2e/                # End-to-end tests (Bun)
 ```
 
@@ -440,6 +442,6 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
 
-1. Check [docs/tasks/tasks.md](docs/tasks/tasks.md) for current work items
+1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes
 3. Submit PR with tests
