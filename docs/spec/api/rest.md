@@ -375,8 +375,25 @@ GET /spaces/{space_id}/forms/types
 ```json
 [
   "string",
+  "sql",
+  "markdown",
   "number",
-  "row_reference"
+  "double",
+  "float",
+  "integer",
+  "long",
+  "boolean",
+  "date",
+  "time",
+  "timestamp",
+  "timestamp_tz",
+  "timestamp_ns",
+  "timestamp_tz_ns",
+  "uuid",
+  "row_reference",
+  "binary",
+  "list",
+  "object_list"
 ]
 ```
 

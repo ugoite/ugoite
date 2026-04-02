@@ -397,10 +397,48 @@ paths:
                 type: array
                 items:
                   type: string
+                  enum:
+                    - string
+                    - sql
+                    - markdown
+                    - number
+                    - double
+                    - float
+                    - integer
+                    - long
+                    - boolean
+                    - date
+                    - time
+                    - timestamp
+                    - timestamp_tz
+                    - timestamp_ns
+                    - timestamp_tz_ns
+                    - uuid
+                    - row_reference
+                    - binary
+                    - list
+                    - object_list
               example:
                 - string
+                - sql
+                - markdown
                 - number
+                - double
+                - float
+                - integer
+                - long
+                - boolean
+                - date
+                - time
+                - timestamp
+                - timestamp_tz
+                - timestamp_ns
+                - timestamp_tz_ns
+                - uuid
                 - row_reference
+                - binary
+                - list
+                - object_list
 
   /spaces/{space_id}/assets:
     get:
