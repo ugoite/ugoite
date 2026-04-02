@@ -221,7 +221,7 @@ describe("UI spec YAML registry", () => {
 		}
 	});
 
-	it("REQ-FE-040: validates object/grid tabs", () => {
+	it("REQ-FE-040: validates entries/forms bottom tabs use product labels", () => {
 		const pages = loadPages();
 		const targetPages = new Set(["space-entries-object", "space-form-grid"]);
 		for (const { spec, filePath } of pages) {
@@ -234,6 +234,13 @@ describe("UI spec YAML registry", () => {
 			const tabIds = tabs.map((tab: { id?: string }) => tab.id);
 			expect(tabIds).toContain("object");
 			expect(tabIds).toContain("grid");
+			const labelsById = new Map(
+				tabs.map((tab: { id?: string; label?: string }) => [tab.id, tab.label]),
+			);
+			expect(labelsById.get("object"), `${filePath} should label object tab as Entries`).toBe(
+				"Entries",
+			);
+			expect(labelsById.get("grid"), `${filePath} should label grid tab as Forms`).toBe("Forms");
 		}
 	});
 });
