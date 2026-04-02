@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import LoginRoute from "./login";
-import { clearAuthTokenCookie } from "~/lib/auth-session";
+import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 
 const navigateMock = vi.fn();
@@ -69,6 +69,22 @@ describe("/login", () => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
 		});
 		expect(document.cookie).toContain("ugoite_auth_bearer_token=frontend-test-token");
+	});
+
+	it("REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes", async () => {
+		seedDevAuthConfig({
+			mode: "mock-oauth",
+			username_hint: "dev-oauth-user",
+			supports_passkey_totp: false,
+			supports_mock_oauth: true,
+		});
+		setAuthTokenCookie("existing-browser-session", 1_900_000_000);
+
+		render(() => <LoginRoute />);
+
+		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		expect(document.cookie).toContain("ugoite_auth_bearer_token=existing-browser-session");
+		expect(navigateMock).not.toHaveBeenCalled();
 	});
 
 	it("REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide", async () => {

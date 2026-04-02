@@ -1,7 +1,7 @@
 import { A, useNavigate, useSearchParams } from "@solidjs/router";
-import { createResource, createSignal, onMount, Show } from "solid-js";
+import { createResource, createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
-import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
+import { setAuthTokenCookie } from "~/lib/auth-session";
 
 const localDevAuthGuideUrl =
 	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
@@ -26,10 +26,6 @@ export default function LoginRoute() {
 		const config = await authApi.getConfig();
 		setUsername(config.usernameHint);
 		return config;
-	});
-
-	onMount(() => {
-		clearAuthTokenCookie();
 	});
 
 	const completeLogin = async (action: () => Promise<{ bearerToken: string }>) => {
