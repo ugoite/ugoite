@@ -211,7 +211,25 @@ login_output="$(
 )"
 case "$login_output" in
   export\ UGOITE_AUTH_BEARER_TOKEN=*)
-    export UGOITE_AUTH_BEARER_TOKEN="${login_output#export UGOITE_AUTH_BEARER_TOKEN=}"
+    # `ugoite auth login` prints a POSIX-shell-quoted export; parse it back to the raw token.
+    UGOITE_AUTH_BEARER_TOKEN="$(
+      python3 - "$login_output" <<'PY'
+import shlex
+import sys
+
+command = sys.argv[1]
+parts = shlex.split(command, posix=True)
+if len(parts) != 2 or parts[0] != "export":
+    raise SystemExit("unexpected export command")
+
+name, separator, value = parts[1].partition("=")
+if name != "UGOITE_AUTH_BEARER_TOKEN" or separator != "=":
+    raise SystemExit("unexpected bearer token export format")
+
+sys.stdout.write(value)
+PY
+    )" || fail "auth login --mock-oauth did not print a parseable bearer token export"
+    export UGOITE_AUTH_BEARER_TOKEN
     ;;
   *)
     fail "auth login --mock-oauth did not print a bearer token export"
