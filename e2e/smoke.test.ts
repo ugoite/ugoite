@@ -79,6 +79,39 @@ test.describe("Smoke Tests", () => {
 		}
 	});
 
+	test("REQ-OPS-015: visiting login does not clear an existing browser auth cookie", async ({
+		browser,
+	}) => {
+		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
+		const frontendOrigin = new URL(frontendUrl);
+		const context = await browser.newContext();
+		await context.addCookies([
+			{
+				name: "ugoite_auth_bearer_token",
+				value: "existing-browser-session",
+				domain: frontendOrigin.hostname,
+				path: "/",
+				httpOnly: false,
+				secure: frontendOrigin.protocol === "https:",
+				sameSite: "Lax",
+				expires: Math.floor(Date.now() / 1000) + 3_600,
+			},
+		]);
+		const page = await context.newPage();
+
+		try {
+			await page.goto("/login");
+			await page.waitForLoadState("networkidle");
+			await expect(page.getByRole("button", { name: "Continue with Mock OAuth" })).toBeVisible();
+			const cookies = await context.cookies(frontendUrl);
+			expect(
+				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")?.value,
+			).toBe("existing-browser-session");
+		} finally {
+			await context.close();
+		}
+	});
+
 	test("GET /spaces returns list", async ({ request }) => {
 		const res = await request.get(getBackendUrl("/spaces"));
 		expect(res.ok()).toBeTruthy();

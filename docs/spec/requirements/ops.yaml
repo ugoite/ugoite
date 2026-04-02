@@ -611,6 +611,7 @@ requirements:
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
+      - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
       - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
       - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
     - file: frontend/src/lib/api.test.ts
@@ -636,6 +637,10 @@ requirements:
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
