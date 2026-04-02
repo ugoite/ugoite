@@ -518,6 +518,8 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "config set --mode backend --backend-url http://127.0.0.1:8000",
     'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
+    'python3 - "$login_output"',
+    "shlex.split(command, posix=True)",
     "space list",
     "create-space",
     "Host cleanup hit permission issues; retrying inside a container.",
