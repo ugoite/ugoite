@@ -5,6 +5,7 @@ REQ-ENTRY-001: create-entry docs must use the implemented content payload field.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -14,6 +15,28 @@ API_REST_PATH = REPO_ROOT / "docs" / "spec" / "api" / "rest.md"
 OPENAPI_PATH = REPO_ROOT / "docs" / "spec" / "api" / "openapi.yaml"
 
 YAMLMapping = dict[str, object]
+EXPECTED_FORM_COLUMN_TYPES = [
+    "string",
+    "sql",
+    "markdown",
+    "number",
+    "double",
+    "float",
+    "integer",
+    "long",
+    "boolean",
+    "date",
+    "time",
+    "timestamp",
+    "timestamp_tz",
+    "timestamp_ns",
+    "timestamp_tz_ns",
+    "uuid",
+    "row_reference",
+    "binary",
+    "list",
+    "object_list",
+]
 
 
 def _read_text(path: Path) -> str:
@@ -25,6 +48,17 @@ def _require_mapping(value: object, context: str) -> YAMLMapping:
         message = f"{context} must be a mapping"
         raise TypeError(message)
     return value
+
+
+def _extract_json_code_block(section: str, context: str) -> object:
+    if "```json" not in section:
+        message = f"{context} must include a JSON code block"
+        raise AssertionError(message)
+
+    json_block = (
+        section.split("```json", maxsplit=1)[1].split("```", maxsplit=1)[0].strip()
+    )
+    return json.loads(json_block)
 
 
 def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
@@ -105,23 +139,31 @@ def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
 
 
 def test_docs_req_form_001_list_column_types_response_contract() -> None:
-    """REQ-FORM-001: list-column-types docs describe the array response."""
+    """REQ-FORM-001: list-column-types docs describe the full array response."""
     rest_text = _read_text(API_REST_PATH)
     details: list[str] = []
 
     list_column_types_section = rest_text.split("#### List Column Types", maxsplit=1)[1]
     list_column_types_section = list_column_types_section.split("\n---", maxsplit=1)[0]
-    rest_fragments = (
-        "**Response**: `200 OK`",
-        '"string"',
-        '"number"',
-        '"row_reference"',
-    )
+    rest_fragments = ("**Response**: `200 OK`",)
     details.extend(
         f"api/rest.md list-column-types section missing fragment: {fragment!r}"
         for fragment in rest_fragments
         if fragment not in list_column_types_section
     )
+    try:
+        rest_example = _extract_json_code_block(
+            list_column_types_section,
+            "api/rest.md list-column-types section",
+        )
+    except (AssertionError, json.JSONDecodeError) as exc:
+        details.append(str(exc))
+    else:
+        if rest_example != EXPECTED_FORM_COLUMN_TYPES:
+            details.append(
+                "api/rest.md list-column-types example must match the full implemented "
+                "column type list",
+            )
 
     openapi = _require_mapping(
         yaml.safe_load(_read_text(OPENAPI_PATH)),
@@ -158,19 +200,16 @@ def test_docs_req_form_001_list_column_types_response_contract() -> None:
         details.append(
             "api/openapi.yaml list-column-types array items must be strings",
         )
-    if not isinstance(example, list):
-        details.append("api/openapi.yaml list-column-types example must be a list")
-    else:
-        missing_types = [
-            column_type
-            for column_type in ("string", "number", "row_reference")
-            if column_type not in example
-        ]
-        if missing_types:
-            details.append(
-                "api/openapi.yaml list-column-types example missing types: "
-                + ", ".join(missing_types),
-            )
+    if items.get("enum") != EXPECTED_FORM_COLUMN_TYPES:
+        details.append(
+            "api/openapi.yaml list-column-types item enum must match the full "
+            "implemented column type list",
+        )
+    if example != EXPECTED_FORM_COLUMN_TYPES:
+        details.append(
+            "api/openapi.yaml list-column-types example must match the full "
+            "implemented column type list",
+        )
 
     if details:
         raise AssertionError("; ".join(details))
