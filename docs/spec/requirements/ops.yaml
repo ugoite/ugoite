@@ -637,6 +637,7 @@ requirements:
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
+      - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
