@@ -776,6 +776,10 @@ requirements:
       - test_docs_req_ops_018_platform_installer_asset_validates_prerelease
       - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
       - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
+    rust:
+    - file: ugoite-cli/tests/integration_test.rs
+      tests:
+      - test_help_req_ops_018_shows_task_oriented_quick_start
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
