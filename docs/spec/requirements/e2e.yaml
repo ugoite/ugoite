@@ -271,6 +271,7 @@ requirements:
     - file: e2e/docsite-onboarding.test.ts
       tests:
       - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
+      - 'REQ-E2E-008: landing page labels the application overview CTA as documentation'
       - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
       - 'REQ-E2E-008: run from source card opens the canonical host-dev workflow'
       - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
