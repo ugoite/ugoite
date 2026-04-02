@@ -18,15 +18,21 @@ The docsite getting-started flow is the canonical newcomer decision tree. This
 README mirrors the same top-level path names so you can choose a first step on
 GitHub without comparing two different onboarding maps.
 
+> **Browser path today:** the current browser route still needs a running
+> backend + frontend stack and an explicit `/login` flow. If you want the
+> thinnest local-first path, start with the CLI in `core` mode.
+
 ### Choose your first step
 
 - [Understand core concepts](docs/guide/concepts.md) before you choose a
   surface.
 - [Try the published release](docs/guide/container-quickstart.md) for the
-  fastest browser-based evaluation path.
+  fastest browser-based evaluation path, while still running the browser stack
+  with an explicit login step.
 - [Run from source](docs/guide/local-dev-auth-login.md) when you want the current
   backend, frontend, and docsite together; the shortest contributor path is
-  `mise run setup` (dependencies + repo hooks), then `mise run dev`.
+  `mise run setup` (dependencies + repo hooks), then `mise run dev`, followed
+  by the explicit `/login` flow.
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 ### After your first step
