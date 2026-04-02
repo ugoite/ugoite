@@ -3,7 +3,11 @@ use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
 
 #[derive(Parser)]
-#[command(name = "ugoite", about = "Ugoite CLI - Knowledge base management")]
+#[command(
+    name = "ugoite",
+    about = "Ugoite CLI - Knowledge base management",
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start:\n  # Local-first: inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space\n  ugoite space create ./spaces/demo\n\n  # Switch to backend mode\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate with the backend\n  ugoite auth login"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
