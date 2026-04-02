@@ -521,6 +521,7 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "space list",
     "create-space",
     "Host cleanup hit permission issues; retrying inside a container.",
+    "--user 0:0",
     "Release container quick-start verification passed",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
