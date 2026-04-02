@@ -371,6 +371,32 @@ DELETE /spaces/{space_id}/forms/{name}
 GET /spaces/{space_id}/forms/types
 ```
 
+**Response**: `200 OK`
+```json
+[
+  "string",
+  "sql",
+  "markdown",
+  "number",
+  "double",
+  "float",
+  "integer",
+  "long",
+  "boolean",
+  "date",
+  "time",
+  "timestamp",
+  "timestamp_tz",
+  "timestamp_ns",
+  "timestamp_tz_ns",
+  "uuid",
+  "row_reference",
+  "binary",
+  "list",
+  "object_list"
+]
+```
+
 ---
 
 ### SQL (Saved Queries)
