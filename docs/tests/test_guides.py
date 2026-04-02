@@ -109,6 +109,7 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
+BACKEND_PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
@@ -1156,6 +1157,47 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_001_readme_backend_python_version_matches_metadata() -> None:
+    """REQ-OPS-001: README backend stack version must match package metadata."""
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    backend_pyproject = tomllib.loads(
+        BACKEND_PYPROJECT_PATH.read_text(encoding="utf-8"),
+    )
+    project = backend_pyproject.get("project")
+    if not isinstance(project, dict):
+        message = "backend/pyproject.toml must define a [project] table"
+        raise TypeError(message)
+
+    requires_python = project.get("requires-python")
+    if not isinstance(requires_python, str) or not requires_python.strip():
+        message = "backend/pyproject.toml must define project.requires-python"
+        raise AssertionError(message)
+
+    backend_stack_match = re.search(
+        r"^\| Backend\s+\|\s+(Python [^|]+)\s+\|$",
+        readme_text,
+        re.MULTILINE,
+    )
+    if backend_stack_match is None:
+        message = "README.md must include a Backend stack-overview row"
+        raise AssertionError(message)
+
+    if requires_python.startswith(">="):
+        expected_version = requires_python.removeprefix(">=").strip()
+        expected_backend_stack = f"Python {expected_version}+ (FastAPI)"
+    else:
+        expected_backend_stack = f"Python {requires_python.strip()} (FastAPI)"
+
+    documented_backend_stack = backend_stack_match.group(1).strip()
+    if documented_backend_stack != expected_backend_stack:
+        message = (
+            "README.md Backend stack row must match backend/pyproject.toml "
+            f"requires-python: expected {expected_backend_stack!r}, got "
+            f"{documented_backend_stack!r}"
+        )
+        raise AssertionError(message)
 
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
