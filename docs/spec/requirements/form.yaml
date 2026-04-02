@@ -31,6 +31,9 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_get_form_types
+    - file: docs/tests/test_api_docs.py
+      tests:
+      - test_docs_req_form_001_list_column_types_response_contract
     rust:
     - file: ugoite-core/tests/test_form.rs
       tests:

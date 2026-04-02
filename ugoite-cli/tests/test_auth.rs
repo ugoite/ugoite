@@ -1,6 +1,8 @@
 //! CLI auth login tests.
 //! REQ-OPS-015
+//! REQ-SEC-003
 
+use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
@@ -245,5 +247,63 @@ fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
     assert!(
         stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=''"),
         "stdout was {stdout}"
+    );
+}
+
+/// REQ-OPS-015: auth login help scopes proxy-token guidance to proxied mock-oauth flows.
+#[test]
+fn test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement() {
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .contains("Direct loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("proxied/container flows require UGOITE_DEV_AUTH_PROXY_TOKEN"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains(
+            "Use mock OAuth flow (development only, requires UGOITE_DEV_AUTH_PROXY_TOKEN)",
+        ),
+        "{stdout}"
+    );
+}
+
+/// REQ-SEC-003: auth overview includes the canonical channels field.
+#[test]
+fn test_cli_auth_overview_req_sec_003_includes_channels() {
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "overview"])
+        .output()
+        .expect("failed to execute auth overview");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: Value = serde_json::from_str(&stdout).expect("auth overview JSON");
+    let channels = payload
+        .get("channels")
+        .and_then(Value::as_array)
+        .expect("channels array");
+    let channel_names: Vec<_> = channels
+        .iter()
+        .map(|value| value.as_str().expect("channel string"))
+        .collect();
+
+    assert_eq!(
+        channel_names,
+        vec![
+            "backend(rest)",
+            "backend(mcp)",
+            "cli(via backend)",
+            "frontend(via backend)",
+        ],
     );
 }
