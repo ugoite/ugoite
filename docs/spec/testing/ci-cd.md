@@ -382,6 +382,10 @@ test` runs `//ugoite-core:build` before `//backend:test:no-build` and
 `//ugoite-core:test:no-build` so one editable extension build is reused across
 that local test workflow. `mise run //ugoite-core:build:clean` provides a
 package-local destructive rebuild when the editable extension is stale.
+Backend, `ugoite-core`, and `mise run test:docs` also run `pytest -W error`
+through temporary JUnit XML reports and fail on skipped tests before reporting
+success. That keeps root `mise run test` aligned with Python CI instead of
+letting warnings or newly skipped tests surface only after push.
 The default `mise run //ugoite-cli:test` path stays incremental (`cargo test`),
 while `mise run //ugoite-cli:test:clean` provides a package-local destructive
 rerun when CLI artifacts are stale. `mise run cleanup:rust-targets` removes
@@ -494,16 +498,16 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="${TMPDIR:-/tmp}/ugoite-core-pytest.xml" && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "ugoite-core tests"
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 
 # Python
 cd .. && uvx ruff format --check .
 uvx ruff check --select ALL --ignore-noqa .
-cd backend && uv run ty check . && uv run pytest -W error
+cd backend && uv run ty check . && report="${TMPDIR:-/tmp}/ugoite-backend-pytest.xml" && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "backend tests"
 
 # Docs
-cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+cd .. && report="${TMPDIR:-/tmp}/ugoite-docs-pytest.xml" && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml="$report" && python3 scripts/fail_on_skipped_tests.py "$report" "docs tests"
 cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 
 # Frontend

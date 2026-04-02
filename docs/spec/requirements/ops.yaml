@@ -1296,3 +1296,42 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-033
+  title: Local Python Test Strictness Matches CI
+  description: 'Local developer entrypoints for backend, ugoite-core, and docs
+
+    consistency tests MUST preserve the same Python warning strictness and
+    skipped-test failures that CI enforces. Root `mise run test` and package-level
+    `mise` test tasks MUST run pytest with `-W error` and reject JUnit reports
+    that contain skipped tests, so local green remains a trustworthy proxy for
+    Python CI.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_033_local_python_test_strictness_matches_ci
+    - file: docs/tests/test_pytest_skip_guard.py
+      tests:
+      - test_req_ops_033_skip_guard_accepts_clean_report
+      - test_req_ops_033_skip_guard_rejects_skipped_report
