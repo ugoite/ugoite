@@ -141,6 +141,8 @@ WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
+FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
@@ -2709,7 +2711,11 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
-    frontend_package = _load_json_mapping(REPO_ROOT / "frontend" / "package.json")
+    frontend_package = _load_json_mapping(FRONTEND_PACKAGE_JSON_PATH)
+    frontend_bun_lock = _read_required_text(
+        FRONTEND_BUN_LOCK_PATH,
+        missing_message="{path} is missing",
+    )
     dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
@@ -2743,6 +2749,22 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         )
         vitest_spec = vitest_value if isinstance(vitest_value, str) else None
         coverage_spec = coverage_value if isinstance(coverage_value, str) else None
+
+    vitest_lock_pattern = re.compile(
+        r'^\s+"(?P<name>vitest|@vitest/coverage-v8)": '
+        r'\["(?:vitest|@vitest/coverage-v8)@(?P<version>[^"]+)"',
+        re.MULTILINE,
+    )
+    vitest_lock_versions = {
+        match.group("name"): match.group("version")
+        for match in vitest_lock_pattern.finditer(frontend_bun_lock)
+    }
+    vitest_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+    )
+    coverage_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+    )
 
     frontend_bun_update: dict[str, object] | None = None
     updates = dependabot.get("updates", [])
@@ -2812,6 +2834,23 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
             (
                 "frontend/package.json must keep vitest and "
                 "@vitest/coverage-v8 version ranges aligned"
+            ),
+        ),
+        (
+            vitest_lock_version is None,
+            "frontend/bun.lock must resolve vitest",
+        ),
+        (
+            coverage_lock_version is None,
+            "frontend/bun.lock must resolve @vitest/coverage-v8",
+        ),
+        (
+            vitest_lock_version is not None
+            and coverage_lock_version is not None
+            and vitest_lock_version != coverage_lock_version,
+            (
+                "frontend/bun.lock must keep resolved vitest and "
+                "@vitest/coverage-v8 versions aligned"
             ),
         ),
         (
