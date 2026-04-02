@@ -1027,6 +1027,20 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         )
         raise AssertionError(message)
 
+    if section.count("(docs/guide/local-dev-auth-login.md)") < 2:
+        message = (
+            "README Start Here section must point both Run from source entries at "
+            "docs/guide/local-dev-auth-login.md"
+        )
+        raise AssertionError(message)
+
+    if "Run from source](docs/guide/docker-compose.md)" in section:
+        message = (
+            "README Start Here section must not keep the outdated Run from source "
+            "docker-compose guide link"
+        )
+        raise AssertionError(message)
+
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
