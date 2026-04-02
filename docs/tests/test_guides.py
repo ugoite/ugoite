@@ -27,6 +27,7 @@ REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI
 REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
+REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
 """
 
 from __future__ import annotations
@@ -143,6 +144,7 @@ WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
@@ -763,6 +765,20 @@ REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
     '`package-ecosystem: "github-actions"` at `/`',
 }
 REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-031)"
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS = {
+    "Conventional Commits",
+    "required locally",
+    "`commitlint-ci`",
+    "npm run prepare",
+    "Husky v9-compatible `commit-msg` hook",
+    "runs `commitlint`",
+    "before commit is accepted.",
+}
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND = 'npm run commitlint:edit -- "$1"'
+FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS = {
+    "#!/usr/bin/env sh",
+    "_/husky.sh",
+}
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_ROOT",
@@ -3559,6 +3575,61 @@ def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing setup hook fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
+    """REQ-OPS-032: local Conventional Commit hook stays current and warning-free."""
+    root_package = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    scripts = _require_mapping(
+        root_package.get("scripts", {}),
+        message="root package.json scripts must be a mapping",
+    )
+    hook_text = _read_required_text(
+        HUSKY_COMMIT_MSG_PATH,
+        ".husky/commit-msg is missing at {path}; required by REQ-OPS-032.",
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        guide_text,
+        REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS,
+    )
+    legacy_fragments = sorted(
+        fragment
+        for fragment in FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS
+        if fragment in hook_text
+    )
+
+    detail_candidates = (
+        (
+            root_package.get("private") is not True,
+            "root package.json must stay private tooling for local commit hooks",
+        ),
+        (
+            str(scripts.get("prepare", "")).strip() != "husky",
+            "root package.json scripts.prepare must stay `husky`",
+        ),
+        (
+            str(scripts.get("commitlint:edit", "")).strip() != "commitlint --edit",
+            'root package.json scripts."commitlint:edit" must stay `commitlint --edit`',
+        ),
+        (
+            hook_text.strip() != REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND,
+            ".husky/commit-msg must stay a single current Husky command",
+        ),
+        (
+            bool(legacy_fragments),
+            ".husky/commit-msg must not include deprecated Husky bootstrap fragments: "
+            + ", ".join(legacy_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local Conventional Commit fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )

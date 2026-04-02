@@ -1317,14 +1317,18 @@ requirements:
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-032
-  title: Canonical Contributor Setup Installs Repository Hooks
+  title: Contributor Setup and Local Conventional Commit Hooks Stay Current
   description: 'The canonical contributor bootstrap path MUST install repository
 
     dependencies and enable the repo-local pre-commit hook chain by default.
     Root `mise run setup` MUST clear any repo-local `core.hooksPath` override
     before running `uvx pre-commit install`, and contributor-facing setup docs
     MUST describe that `mise run setup` prepares the same pre-commit gate that
-    CI enforces.
+    CI enforces. The repository MUST also keep local Conventional Commit
+    enforcement wired through the private root tooling package and a Husky
+    `commit-msg` hook that runs `commitlint --edit` without deprecated bootstrap
+    lines, so contributor commits stay warning-free on current Husky releases
+    instead of drifting toward known v10 breakage.
 
     '
   related_spec:
@@ -1336,3 +1340,4 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_032_setup_installs_pre_commit_hooks
+      - test_docs_req_ops_032_local_conventional_commit_hook_is_current
