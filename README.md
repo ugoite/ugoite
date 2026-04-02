@@ -20,8 +20,6 @@ GitHub without comparing two different onboarding maps.
 
 ### Choose your first step
 
-- [Understand core concepts](docs/guide/concepts.md) before you choose a
-  surface.
 - [Try the published release](docs/guide/container-quickstart.md) for the
   fastest browser-based evaluation path.
 - [Run from source](docs/guide/docker-compose.md) when you want the current
@@ -31,6 +29,9 @@ GitHub without comparing two different onboarding maps.
 
 ### After your first step
 
+- [Understand core concepts](docs/guide/concepts.md) when you want the mental
+  model behind spaces, entries, forms, and search before you go deeper into
+  auth or the specs.
 - **Explore the browser app** by opening `/login` from the published quick
   start or source workflow, then continuing to `/spaces`.
 - [Understand auth and access](docs/guide/auth-overview.md) before rollout or
