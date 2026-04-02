@@ -32,11 +32,13 @@ fn test_help_req_ops_018_shows_task_oriented_quick_start() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     for expected in [
-        "Quick start:",
+        "Quick start (local-first / core mode):",
         "ugoite space list .",
-        "ugoite space create ./spaces/demo",
+        "ugoite space create /path/to/workspace/spaces/demo",
+        "Quick start (backend / API mode):",
         "ugoite config set --mode backend --backend-url http://localhost:8000",
         "ugoite auth login",
+        "ugoite space list",
     ] {
         assert!(
             stdout.contains(expected),
