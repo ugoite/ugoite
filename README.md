@@ -49,6 +49,14 @@ while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
 by default so browser evaluators can reach `/login` and `/spaces` with fewer
 setup steps.
 
+### Which entry path should you choose?
+
+| Path | Best when | Trade-off |
+| --- | --- | --- |
+| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
+| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Run from source](docs/guide/docker-compose.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
 the `v0.2` roadmap.
