@@ -17,7 +17,7 @@ REQ-OPS-017: Release publish must ship container quick-start assets and document
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
-REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-021: Frontend 100% coverage and Vitest drift prevention must stay explicit.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
@@ -802,11 +802,14 @@ REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//frontend:test:coverage",
     "node ./node_modules/vitest/vitest.mjs run --coverage",
+    "Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together",
 }
 REQUIRED_FRONTEND_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage"
 )
 REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS = {"vitest", "@vitest/*"}
+REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES = ("vitest", "@vitest/coverage-v8")
 REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//docsite:test:coverage",
@@ -2702,10 +2705,12 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
 
 
 def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
-    """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
+    """REQ-OPS-021: Frontend coverage and Vitest alignment must stay explicit."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    frontend_package = _load_json_mapping(REPO_ROOT / "frontend" / "package.json")
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
         task_name="test:coverage",
@@ -2726,6 +2731,44 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
         if fragment not in guide_text
     )
+    frontend_dev_dependencies = frontend_package.get("devDependencies")
+    vitest_spec: str | None = None
+    coverage_spec: str | None = None
+    if isinstance(frontend_dev_dependencies, dict):
+        vitest_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+        )
+        coverage_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+        )
+        vitest_spec = vitest_value if isinstance(vitest_value, str) else None
+        coverage_spec = coverage_value if isinstance(coverage_value, str) else None
+
+    frontend_bun_update: dict[str, object] | None = None
+    updates = dependabot.get("updates", [])
+    if isinstance(updates, list):
+        frontend_bun_update = next(
+            (
+                update
+                for update in updates
+                if isinstance(update, dict)
+                and update.get("package-ecosystem") == "bun"
+                and update.get("directory") == "/frontend"
+            ),
+            None,
+        )
+
+    vitest_group_patterns: list[set[str]] = []
+    if frontend_bun_update is not None:
+        groups = frontend_bun_update.get("groups")
+        if isinstance(groups, dict):
+            vitest_group_patterns = [
+                {pattern for pattern in patterns if isinstance(pattern, str)}
+                for group in groups.values()
+                if isinstance(group, dict)
+                for patterns in [group.get("patterns", [])]
+                if isinstance(patterns, list)
+            ]
 
     detail_candidates = (
         (
@@ -2749,6 +2792,42 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing frontend coverage fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+        (
+            not isinstance(frontend_dev_dependencies, dict),
+            "frontend/package.json devDependencies must be a mapping",
+        ),
+        (
+            vitest_spec is None,
+            "frontend/package.json must declare devDependencies.vitest",
+        ),
+        (
+            coverage_spec is None,
+            "frontend/package.json must declare devDependencies.@vitest/coverage-v8",
+        ),
+        (
+            vitest_spec is not None
+            and coverage_spec is not None
+            and vitest_spec != coverage_spec,
+            (
+                "frontend/package.json must keep vitest and "
+                "@vitest/coverage-v8 version ranges aligned"
+            ),
+        ),
+        (
+            frontend_bun_update is None,
+            ".github/dependabot.yml must track /frontend with the bun ecosystem",
+        ),
+        (
+            frontend_bun_update is not None
+            and not any(
+                REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS.issubset(patterns)
+                for patterns in vitest_group_patterns
+            ),
+            (
+                ".github/dependabot.yml /frontend bun updates must group "
+                "vitest and @vitest/* together"
+            ),
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
