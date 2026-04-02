@@ -210,6 +210,22 @@ REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
     ),
     "uvx pre-commit run --all-files",
 }
+REQUIRED_PRE_COMMIT_SETUP_COMMAND = "uvx pre-commit install"
+REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
+    "if git config --get core.hooksPath >/dev/null; then git config --unset-all "
+    "core.hooksPath; fi"
+)
+REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS = {
+    "Install dependencies and repository pre-commit hooks:",
+    "The setup task also runs `uvx pre-commit install` so local commits use the same",
+    "hook chain as CI by default.",
+}
+REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
+    "The canonical contributor bootstrap is:",
+    "mise run setup",
+    "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
+    "local commits use the same hook chain as CI by default.",
+}
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
     "tracked paths that still match repository",
@@ -3371,6 +3387,68 @@ def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
             "ci-cd guide missing GitHub Action pinning fragments: "
             + ", ".join(missing_doc_fragments),
         )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
+    """REQ-OPS-032: contributor setup must install repo-local pre-commit hooks."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    devcontainer = _load_json_mapping(DEVCONTAINER_JSON_PATH)
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    root_setup_runs = _get_task_run_commands(root_mise, "setup")
+    on_create_command = devcontainer.get("onCreateCommand")
+    missing_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS
+        if fragment not in readme_text
+    )
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS
+        if fragment not in ci_cd_text
+    )
+
+    detail_candidates = (
+        (
+            REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must clear repo-local core.hooksPath "
+            "before hook install",
+        ),
+        (
+            REQUIRED_PRE_COMMIT_SETUP_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must install pre-commit hooks",
+        ),
+        (
+            not isinstance(on_create_command, str),
+            ".devcontainer/devcontainer.json must define onCreateCommand",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and "mise run setup" not in on_create_command,
+            ".devcontainer/devcontainer.json onCreateCommand must bootstrap "
+            "through mise run setup",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and REQUIRED_PRE_COMMIT_SETUP_COMMAND in on_create_command,
+            ".devcontainer/devcontainer.json should rely on mise run setup for "
+            "pre-commit installation",
+        ),
+        (
+            bool(missing_readme_fragments),
+            "README.md missing setup hook fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing setup hook fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
