@@ -2,11 +2,17 @@
 
 ## Overview
 
-Ugoite implements the Model Context Protocol (MCP) to enable AI agents to interact with the knowledge base. MCP requests are sent as HTTP POST to `/mcp`.
+Ugoite implements the Model Context Protocol (MCP) as a resource-first
+integration that lets AI clients read knowledge-base data through explicit
+trust boundaries. MCP requests are sent as HTTP POST to `/mcp`.
+
+In `v0.1`, the shipped MCP server exposes a single read-only resource. Broader
+resource coverage, prompts, and tools are planned for `v0.2`; they are not part
+of the current server surface.
 
 ## Resources
 
-Resources provide read-only access to data:
+Resources provide read-only access to data. The currently exposed resource is:
 
 ### `ugoite://{space_id}/entries/list`
 
@@ -34,28 +40,16 @@ Resource parameter and content-safety notes:
 }
 ```
 
-### `ugoite://{space_id}/entries/{entry_id}`
+---
 
-Returns Markdown content of a specific entry.
+## Current Scope vs Planned Expansion
 
-```markdown
-# Weekly Sync
+Additional resource coverage, such as per-entry, history, and forms resources,
+is not currently exposed in the shipped server. Pre-defined prompts and MCP
+tools are also planned rather than shipped.
 
-## Date
-2025-11-29
-
-## Attendees
-- Alice
-- Bob
-```
-
-### `ugoite://{space_id}/entries/{entry_id}/history`
-
-Returns revision history summaries.
-
-### `ugoite://{space_id}/forms`
-
-Returns available form definitions and their fields.
+Broader MCP coverage belongs to the planned `v0.2` work described in
+[`docs/spec/versions/v0.2.md`](../versions/v0.2.md).
 
 ---
 
@@ -67,15 +61,7 @@ No MCP tools are currently exposed. The deprecated `run_script` tool has been re
 
 ## Prompts
 
-Pre-defined prompts help AI understand the context:
-
-### `summarize_space`
-
-> "Read the index of the space and provide a high-level summary of the topics covered."
-
-### `analyze_meetings`
-
-> "Find all entries with form='Meeting' and summarize the key decisions."
+No MCP prompts are currently exposed in the shipped server.
 
 ---
 
