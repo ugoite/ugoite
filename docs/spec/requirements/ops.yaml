@@ -200,6 +200,7 @@ requirements:
       - test_req_ops_005_root_artifact_hygiene_rejects_tracked_ignored_paths
       - test_req_ops_005_root_artifact_hygiene_rejects_generated_dirs
       - test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files
+      - test_req_ops_005_root_gitignore_covers_validation_artifacts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
