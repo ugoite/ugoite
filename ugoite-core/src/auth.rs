@@ -488,6 +488,12 @@ pub fn auth_capabilities_snapshot(
                 "scope_enforced",
                 "service_account_id"
             ]
-        }
+        },
+        "channels": [
+            "backend(rest)",
+            "backend(mcp)",
+            "cli(via backend)",
+            "frontend(via backend)"
+        ]
     })
 }
