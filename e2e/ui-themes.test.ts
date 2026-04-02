@@ -87,7 +87,7 @@ test.describe("UI theme flows", () => {
 				await page.getByRole("button", { name: "Clear query" }).click();
 				await page.getByRole("heading", { name: "Entries" }).waitFor();
 
-				await page.getByRole("link", { name: "grid" }).click();
+				await page.getByRole("link", { name: "Forms" }).click();
 				await page.getByRole("heading", { name: /Query Results|Form Grid/ }).waitFor();
 				await page.getByPlaceholder("Global Search...").fill(entryTitle.slice(0, 6));
 				await page.getByRole("button", { name: "Sort menu" }).click();
@@ -96,7 +96,7 @@ test.describe("UI theme flows", () => {
 				await page.keyboard.press("Escape");
 				await page.getByRole("button", { name: "Filter" }).click();
 
-				await page.getByRole("link", { name: "object" }).click();
+				await page.getByRole("link", { name: "Entries" }).click();
 				await page.getByRole("heading", { name: /Query Results|Entries/ }).waitFor();
 				await page.getByRole("button", { name: entryTitle }).waitFor();
 				await page.getByRole("button", { name: entryTitle }).click();

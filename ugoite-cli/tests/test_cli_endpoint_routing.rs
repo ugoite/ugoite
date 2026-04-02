@@ -1,5 +1,5 @@
 //! Integration tests for CLI endpoint routing configuration.
-//! REQ-API-001, REQ-STO-001, REQ-STO-004, REQ-SEC-003
+//! REQ-API-001, REQ-API-002, REQ-STO-001, REQ-STO-004, REQ-SEC-003
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -303,6 +303,67 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
         "{request}"
     );
     assert!(request.contains(r#"{"name":"api-space"}"#), "{request}");
+}
+
+/// REQ-API-002: entry create routes to POST /spaces/{space_id}/entries in backend mode.
+#[test]
+fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 201 Created",
+        r#"{"id":"entry-1","revision_id":"rev-1"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "remote-space",
+            "entry-1",
+            "--content",
+            "# Remote Entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("POST /spaces/remote-space/entries HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        !request.contains("POST /spaces/remote-space/entries/entry-1 HTTP/1.1"),
+        "{request}"
+    );
+    assert!(request.contains(r#""id":"entry-1""#), "{request}");
+    assert!(
+        request.contains("\"content\":\"# Remote Entry\""),
+        "{request}"
+    );
+    assert!(!request.contains(r#""author":"#), "{request}");
 }
 
 /// REQ-STO-004: Backend mode returns remote space JSON without Tokio runtime panic.
