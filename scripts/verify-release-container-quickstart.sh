@@ -108,6 +108,7 @@ cleanup() {
     if ! rm -rf "$WORK_ROOT" 2>/dev/null; then
       log "Host cleanup hit permission issues; retrying inside a container."
       docker run --rm \
+        --user 0:0 \
         -v "$WORK_ROOT:/work" \
         --entrypoint /bin/sh \
         "ghcr.io/ugoite/ugoite/backend:${VERSION_INPUT}" \

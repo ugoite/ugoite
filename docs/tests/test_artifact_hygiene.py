@@ -11,6 +11,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_HYGIENE_SCRIPT = REPO_ROOT / "scripts" / "check-root-artifact-hygiene.sh"
 PLACEHOLDER_SCRIPT = REPO_ROOT / "scripts" / "check-placeholder-artifacts.sh"
+ROOT_GITIGNORE_PATH = REPO_ROOT / ".gitignore"
 
 
 def _init_temp_repo(tmp_path: Path) -> Path:
@@ -111,3 +112,26 @@ def test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files(
     assert completed.returncode != 0
     assert "Tracked files larger than 1 MiB" in output
     assert "large.bin" in output
+
+
+def test_req_ops_005_root_gitignore_covers_validation_artifacts() -> None:
+    """REQ-OPS-005: Root ignore rules must cover validation-generated artifacts."""
+    gitignore_text = ROOT_GITIGNORE_PATH.read_text(encoding="utf-8")
+    required_pattern_sets = {
+        "root uv lockfile": {"/uv.lock", "uv.lock"},
+        "Python bytecode caches": {"__pycache__/", "scripts/__pycache__/"},
+        "docsite coverage output": {"docsite/coverage/", "/docsite/coverage/"},
+    }
+
+    missing = [
+        label
+        for label, patterns in required_pattern_sets.items()
+        if not any(pattern in gitignore_text for pattern in patterns)
+    ]
+    if missing:
+        details = ", ".join(missing)
+        message = (
+            "root .gitignore must ignore validation-generated artifacts for clean "
+            f"worktrees: missing {details}"
+        )
+        raise AssertionError(message)
