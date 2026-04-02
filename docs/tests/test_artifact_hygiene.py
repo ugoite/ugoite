@@ -120,7 +120,11 @@ def test_req_ops_005_root_gitignore_covers_validation_artifacts() -> None:
     required_pattern_sets = {
         "root uv lockfile": {"/uv.lock", "uv.lock"},
         "Python bytecode caches": {"__pycache__/", "scripts/__pycache__/"},
+        "frontend vinxi output": {"frontend/.vinxi/", "/frontend/.vinxi/"},
+        "frontend output bundle": {"frontend/.output/", "/frontend/.output/"},
+        "frontend dist bundle": {"frontend/dist/", "/frontend/dist/"},
         "docsite coverage output": {"docsite/coverage/", "/docsite/coverage/"},
+        "e2e test results": {"e2e/test-results/", "/e2e/test-results/"},
     }
 
     missing = [
