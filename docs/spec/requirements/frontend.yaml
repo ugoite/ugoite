@@ -1676,3 +1676,39 @@ requirements:
     - file: frontend/src/components/SpaceSettings.test.tsx
       tests:
       - 'REQ-FE-060: settings show the current storage topology before editing'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-061
+  title: Saved SQL Placeholder Recovery Guidance
+  description: 'The `/spaces/{space_id}/sql` route MUST explain that named-query
+
+    management is not available there yet, link users to the working query flow
+
+    from Search, and provide a clear route back to the dashboard or other useful
+
+    space pages instead of acting as a dead end.
+
+    '
+  related_spec:
+  - ui/pages/space-sql.yaml
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/saved-sql-route.test.ts
+      tests:
+      - 'REQ-FE-061: saved SQL route provides recovery links instead of a dead end'
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+      tests:
+      - 'REQ-FE-061: saved SQL route explains the missing UI and links to working recovery paths'
