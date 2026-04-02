@@ -64,8 +64,8 @@ so contributors exercise the explicit passkey + 2FA flow.
   bootstraps for you after login.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
-- Read [Core Concepts](concepts.md) next if you want the mental model for
-  spaces, entries, forms, and search before exploring more of the UI.
+- Read [Core Concepts](concepts.md) once you want the mental model for spaces,
+  entries, forms, and search behind the browser workflow you just started.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
   workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
   the full contributor stack from source.

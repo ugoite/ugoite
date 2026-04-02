@@ -44,9 +44,9 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
 	expect(conceptPrimerCard).toEqual({
-		badge: "Learn First",
+		badge: "Concept primer",
 		description:
-			"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+			"Get the plain-language mental model for spaces, entries, forms, and search after you pick a path and before you go deeper into auth or specs.",
 		href: "/docs/guide/concepts",
 		icon: "💡",
 		title: "Understand core concepts",

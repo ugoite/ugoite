@@ -1,7 +1,7 @@
 # Core Concepts: Spaces, Entries, Forms, and Search
 
-Use this guide when you want the plain-language mental model before choosing
-the browser, CLI, or deeper specification docs.
+Use this guide when you want the plain-language mental model behind the path
+you already picked, or before you go deeper into auth and specification docs.
 
 Ugoite is built to keep your knowledge local-first, portable, and easy to
 understand. The core idea is simple: you keep information in a **space**,
@@ -89,9 +89,10 @@ That design matters because it keeps the system easier to reason about:
 - indexes can be rebuilt when needed
 - automation can trust that search results come from local-first source data
 
-## Which surface should you use?
+## Which surface should you use next?
 
-Once the concepts make sense, choose the surface that matches your task:
+Once the concepts make sense, continue with the surface that matches your
+task, or return to the one you already started:
 
 - Use the [Container Quick Start](container-quickstart.md) when you want the
   fastest browser-based evaluation and you are comfortable running the backend
