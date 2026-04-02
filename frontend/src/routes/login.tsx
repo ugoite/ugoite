@@ -3,6 +3,8 @@ import { createResource, createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { setAuthTokenCookie } from "~/lib/auth-session";
 
+const containerQuickStartGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
 const localDevAuthGuideUrl =
 	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
 
@@ -18,14 +20,21 @@ export default function LoginRoute() {
 	const [searchParams] = useSearchParams();
 	const [username, setUsername] = createSignal("");
 	const [totpCode, setTotpCode] = createSignal("");
+	const [authConfigError, setAuthConfigError] = createSignal("");
 	const [submitError, setSubmitError] = createSignal("");
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
 	const redirectTarget = () => searchParams.next || "/spaces";
 
 	const [authConfig] = createResource(async () => {
-		const config = await authApi.getConfig();
-		setUsername(config.usernameHint);
-		return config;
+		setAuthConfigError("");
+		try {
+			const config = await authApi.getConfig();
+			setUsername(config.usernameHint);
+			return config;
+		} catch (error) {
+			setAuthConfigError(toMessage(error));
+			return null;
+		}
 	});
 
 	const completeLogin = async (action: () => Promise<{ bearerToken: string }>) => {
@@ -69,10 +78,39 @@ export default function LoginRoute() {
 					<p class="text-sm ui-muted">Loading auth mode...</p>
 				</Show>
 
-				<Show when={authConfig.error}>
-					<p class="ui-alert ui-alert-error text-sm">
-						Failed to load the current auth mode. Re-run <code>mise run dev</code> and try again.
-					</p>
+				<Show when={authConfigError()}>
+					<div class="ui-alert ui-alert-error ui-stack-sm text-sm">
+						<p>
+							Failed to load the current auth mode. Confirm the Ugoite stack you started
+							is still running, then refresh this page.
+						</p>
+						<p>
+							Started from source? Re-run <code>mise run dev</code>. Using the published
+							stack? Restart your Docker Compose services and reopen <code>/login</code>.
+						</p>
+						<p>
+							Need the browser setup guide? Open{" "}
+							<a
+								href={containerQuickStartGuideUrl}
+								target="_blank"
+								rel="noopener"
+								class="hover:underline"
+							>
+								Container Quick Start
+							</a>{" "}
+							for the published stack or{" "}
+							<a
+								href={localDevAuthGuideUrl}
+								target="_blank"
+								rel="noopener"
+								class="hover:underline"
+							>
+								Local Dev Auth/Login
+							</a>{" "}
+							for source development.
+						</p>
+						<p class="ui-muted">Details: {authConfigError()}</p>
+					</div>
 				</Show>
 
 				<Show when={authConfig()}>
