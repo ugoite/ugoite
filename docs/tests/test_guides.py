@@ -659,6 +659,17 @@ REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "passkey-totp",
     "mock-oauth",
 }
+REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
+    "Inspect active auth setup, endpoint mode, and the next useful auth action",
+    "`ugoite auth profile` distinguishes `core` mode",
+    "`ugoite auth login`",
+    "`ugoite auth token-clear`",
+}
+REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
+    "`ugoite config current`",
+    "`ugoite auth profile`",
+    "whether the current mode needs backend credentials",
+}
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
 }
@@ -2098,6 +2109,28 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
             + ", ".join(missing_canonical_pointers),
         )
 
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step() -> None:
+    """REQ-OPS-015: auth profile docs distinguish topology from credential state."""
+    cli_guide_text = CLI_GUIDE_PATH.read_text(encoding="utf-8")
+    auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=cli_guide_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS,
+        prefix="cli.md missing auth profile guidance fragments: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=auth_overview_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md missing auth profile guidance fragments: ",
+    )
     if details:
         raise AssertionError("; ".join(details))
 

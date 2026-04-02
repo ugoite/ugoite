@@ -105,6 +105,10 @@ fn spawn_recording_server(
     (format!("http://{}", addr), rx, handle)
 }
 
+fn parse_stdout_json(output: &std::process::Output) -> Value {
+    serde_json::from_slice(&output.stdout).expect("stdout JSON")
+}
+
 #[test]
 fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
     let dir = tempfile::tempdir().unwrap();
@@ -248,6 +252,167 @@ fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
         stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=''"),
         "stdout was {stdout}"
     );
+}
+
+/// REQ-OPS-015: auth profile distinguishes local-first core mode from backend auth states.
+#[test]
+fn test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_AUTH_BEARER_TOKEN")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let payload = parse_stdout_json(&output);
+    assert_eq!(
+        payload.get("endpoint_mode").and_then(Value::as_str),
+        Some("core")
+    );
+    assert_eq!(
+        payload.get("topology").and_then(Value::as_str),
+        Some("local filesystem via ugoite-core")
+    );
+    assert!(payload.get("endpoint_url").is_some_and(Value::is_null));
+    assert_eq!(
+        payload
+            .get("backend_auth_required")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        payload.get("credential_state").and_then(Value::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        payload.get("status").and_then(Value::as_str),
+        Some("Core mode does not require backend authentication.")
+    );
+    assert!(payload
+        .get("next_action")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.contains("ugoite config set --mode backend")));
+    assert!(payload
+        .get("UGOITE_AUTH_BEARER_TOKEN")
+        .is_some_and(Value::is_null));
+    assert!(payload
+        .get("UGOITE_AUTH_API_KEY")
+        .is_some_and(Value::is_null));
+}
+
+/// REQ-OPS-015: auth profile shows server-backed modes still need credentials before login.
+#[test]
+fn test_cli_auth_profile_req_ops_015_reports_backend_mode_without_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://localhost:9000",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_AUTH_BEARER_TOKEN")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let payload = parse_stdout_json(&output);
+    assert_eq!(
+        payload.get("endpoint_mode").and_then(Value::as_str),
+        Some("backend")
+    );
+    assert_eq!(
+        payload.get("endpoint_url").and_then(Value::as_str),
+        Some("http://localhost:9000")
+    );
+    assert_eq!(
+        payload
+            .get("backend_auth_required")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        payload.get("credential_state").and_then(Value::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        payload.get("status").and_then(Value::as_str),
+        Some("Backend mode is configured, but no bearer token or API key is currently set.")
+    );
+    let next_action = payload
+        .get("next_action")
+        .and_then(Value::as_str)
+        .expect("next_action string");
+    assert!(next_action.contains("ugoite auth login"), "{next_action}");
+    assert!(next_action.contains("UGOITE_AUTH_API_KEY"), "{next_action}");
+}
+
+/// REQ-OPS-015: auth profile keeps masked credential state visible once server auth is configured.
+#[test]
+fn test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://localhost:9000",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_AUTH_BEARER_TOKEN", "issued-token")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let payload = parse_stdout_json(&output);
+    assert_eq!(
+        payload.get("credential_state").and_then(Value::as_str),
+        Some("bearer_token")
+    );
+    assert_eq!(
+        payload.get("status").and_then(Value::as_str),
+        Some("Backend mode is configured and a server credential is available.")
+    );
+    assert_eq!(
+        payload
+            .get("UGOITE_AUTH_BEARER_TOKEN")
+            .and_then(Value::as_str),
+        Some("issu...")
+    );
+    assert!(payload
+        .get("next_action")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.contains("ugoite auth token-clear")));
 }
 
 /// REQ-OPS-015: auth login help scopes proxy-token guidance to proxied mock-oauth flows.
