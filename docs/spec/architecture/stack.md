@@ -44,7 +44,7 @@ service wiring instead of hard-coding a host-specific endpoint.
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Python | 3.12+ | Runtime |
+| Python | 3.13+ | Runtime |
 | FastAPI | Latest | Web framework |
 | uvicorn | Latest | ASGI server |
 | Pydantic | v2 | Request/response validation |

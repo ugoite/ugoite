@@ -18,14 +18,16 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-001
   title: Developer Guides for Local Runs
-  description: 'Provide English documentation for Docker Compose and CLI usage. Shell
-
-    command snippets must remain syntactically valid for bash.
+  description: 'Provide English documentation for Docker Compose, CLI usage, and
+    backend local-run prerequisites. Shell command snippets must remain syntactically
+    valid for bash. Backend runtime prerequisites in local-run documentation
+    must stay aligned with backend package metadata and stack documentation.
 
     '
   related_spec:
   - ../guide/docker-compose.md
   - ../guide/cli.md
+  - ../architecture/stack.md
   priority: medium
   status: implemented
   tests:
@@ -34,9 +36,9 @@ requirements:
       tests:
       - test_docs_req_ops_001_guides_exist
       - test_docs_req_ops_001_shell_blocks_parse
+      - test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack
       - test_docs_req_ops_001_env_matrix_matches_runtime_usage
       - test_docs_req_ops_001_mise_versions_match_ci_pins
-      - test_docs_req_ops_001_readme_backend_python_version_matches_metadata
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
