@@ -55,12 +55,17 @@ mise run test
 ```bash
 mise run //ugoite-minimum:test # Portable Rust core tests with 100% coverage enforcement
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
-mise run //backend:test    # Backend pytest
+mise run //backend:test    # Backend pytest with the default coverage gate
+mise run //backend:test:targeted:no-build # Backend pytest without the coverage gate for focused iteration
 mise run //frontend:test   # Frontend vitest
 mise run //docsite:test    # Docsite Vitest unit tests
 mise run //ugoite-cli:test # Incremental CLI Rust tests
 mise run //ugoite-cli:test:clean # Clean package-local CLI artifacts and rerun tests
 ```
+
+Use `mise run //backend:test:targeted:no-build -- tests/test_config.py -q`
+for focused backend iteration without having to remember the raw `--no-cov`
+escape hatch.
 
 CLI 100% line coverage remains enforced in pre-commit and Rust CI via
 `cargo llvm-cov`.

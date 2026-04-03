@@ -155,6 +155,7 @@ RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
 DEVCONTAINER_JSON_PATH = REPO_ROOT / ".devcontainer" / "devcontainer.json"
+TESTING_STRATEGY_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "strategy.md"
 COLUMN_COUNT_THRESHOLD = 2
 RUN_FROM_SOURCE_LINK_COUNT = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
@@ -1032,6 +1033,54 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
     if "bash e2e/scripts/run-e2e-compose.sh" not in e2e_ci_workflow:
         message = "E2E CI workflow must use the shared docker-compose E2E runner"
         raise AssertionError(message)
+
+
+def test_docs_req_ops_001_backend_targeted_pytest_path_is_documented() -> None:
+    """REQ-OPS-001: backend docs must advertise the targeted pytest fast path."""
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
+
+    details = [
+        detail
+        for detail in [
+            _require_exact_task_run(
+                backend_mise,
+                "test:targeted",
+                ["uv run pytest --no-cov"],
+                (
+                    "backend test:targeted task must disable coverage for focused "
+                    "iteration"
+                ),
+            ),
+            _require_exact_task_depends(
+                backend_mise,
+                "test:targeted",
+                ["//ugoite-core:build"],
+                "backend test:targeted task must depend on ugoite-core:build",
+            ),
+            _require_exact_task_run(
+                backend_mise,
+                "test:targeted:no-build",
+                ["uv run pytest --no-cov"],
+                (
+                    "backend test:targeted:no-build task must disable coverage for "
+                    "focused iteration"
+                ),
+            ),
+            _require_file_contains(
+                BACKEND_README_PATH,
+                ["mise run test:targeted:no-build -- tests/test_config.py -q"],
+                "backend/README.md must document the targeted pytest fast path",
+            ),
+            _require_file_contains(
+                TESTING_STRATEGY_PATH,
+                ["mise run //backend:test:targeted:no-build -- tests/test_config.py -q"],
+                "testing strategy must document the targeted backend pytest fast path",
+            ),
+        ]
+        if detail
+    ]
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack() -> None:
