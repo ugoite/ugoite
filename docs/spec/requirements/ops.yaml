@@ -589,6 +589,7 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
+      - test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
       - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
@@ -640,6 +641,10 @@ requirements:
     rust:
     - file: ugoite-cli/tests/test_auth.rs
       tests:
+      - test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentials
+      - test_cli_auth_profile_req_ops_015_reports_backend_mode_without_credentials
+      - test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials
+      - test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports

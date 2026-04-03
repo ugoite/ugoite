@@ -47,6 +47,10 @@ The important mental model is that Ugoite separates **where you run** from
 - `backend` / `api` modes send requests to a server and therefore need
   authentication
 
+For CLI troubleshooting, pair `ugoite config current` with `ugoite auth profile`:
+the first command tells you which topology is active, and the second tells you
+whether the current mode needs backend credentials or already has one available.
+
 ## Local development modes at a glance
 
 When you run `mise run dev`, the backend exposes one of two explicit login
