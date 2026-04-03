@@ -75,4 +75,12 @@ export const nextStepCards = [
 		icon: "📚",
 		title: "Read design and source docs",
 	},
+	{
+		badge: "Ops",
+		description:
+			"Open the operational guide hub for health checks, env vars, deployment, log redaction, storage cleanup, migration, and unauthorized-space fixes.",
+		href: "/docs/guide/operations",
+		icon: "🧭",
+		title: "Run and troubleshoot the stack",
+	},
 ] as const satisfies readonly OnboardingCard[];

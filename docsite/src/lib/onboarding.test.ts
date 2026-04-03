@@ -30,16 +30,19 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 		"Explore the browser app",
 		"Understand auth and access",
 		"Read design and source docs",
+		"Run and troubleshoot the stack",
 	]);
 	expect(nextStepCards.map((card) => card.href)).toEqual([
 		"/app/frontend",
 		"/docs/guide/auth-overview",
 		"/docs/spec/index",
+		"/docs/guide/operations",
 	]);
 	expect(nextStepCards.map((card) => card.badge)).toEqual([
 		"Browser",
 		"Access",
 		"Reference",
+		"Ops",
 	]);
 });
 
@@ -58,6 +61,7 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(primaryStartCards[1]?.description).toContain("mise run dev");
 	expect(primaryStartCards[1]?.description).toContain("/login");
 	expect(nextStepCards[0]?.description).toContain("completed login");
+	expect(nextStepCards[3]?.description).toContain("health checks");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
