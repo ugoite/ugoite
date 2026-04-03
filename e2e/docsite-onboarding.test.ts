@@ -70,6 +70,32 @@ test.describe("Docsite onboarding-first navigation", () => {
 		]);
 	});
 
+	test("REQ-E2E-008: landing page labels the application overview CTA as documentation", async ({
+		page,
+	}) => {
+		await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
+
+		const applicationDocsLink = page.getByRole("link", {
+			name: "Explore Application Docs",
+		});
+		await expect(applicationDocsLink).toBeVisible();
+		await expect(applicationDocsLink).toHaveAttribute("href", /\/app$/);
+		await expect(
+			page.getByRole("link", { name: "Browse Application" }),
+		).toHaveCount(0);
+
+		await applicationDocsLink.click();
+
+		await expect(page).toHaveURL(/\/app$/);
+		await expect(
+			page.getByRole("heading", {
+				level: 1,
+				name: /run your knowledge space from anywhere/i,
+			}),
+		).toBeVisible();
+		await expect(page.getByText("Application Docs")).toBeVisible();
+	});
+
 	test("REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs", async ({
 		page,
 	}) => {
