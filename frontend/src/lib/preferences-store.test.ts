@@ -161,7 +161,9 @@ describe("preferencesStore", () => {
 
 		const { initializePortablePreferencesForPath } = await import("./preferences-store");
 		const { colorMode, primaryColor, uiTheme } = await import("./ui-theme");
-		await initializePortablePreferencesForPath("/about/");
+		for (const pathname of ["/about/", "/does-not-exist"]) {
+			await initializePortablePreferencesForPath(pathname);
+		}
 
 		expect(requestCount).toBe(0);
 		expect(uiTheme()).toBe("pop");
