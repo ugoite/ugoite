@@ -4,7 +4,8 @@ status: completed
 title: "Minimum Viable Product (MVP)"
 goal: >
   A working local-first knowledge management app with core features operational.
-  Establish foundational architecture proving the "Local-First, AI-Native Knowledge Space" concept.
+  Establish foundational architecture proving the local-first knowledge-space
+  design with a resource-first MCP baseline.
 phases:
   - id: design
     status: completed
@@ -28,7 +29,7 @@ phases:
         done: true
       - description: "Wasm sandbox (wasmtime + QuickJS) with host.call() and fuel limits"
         done: true
-      - description: "MCP server endpoints (resources, tools)"
+      - description: "MCP server resource baseline (`entries/list` discovery)"
         done: true
   - id: testing
     status: completed
