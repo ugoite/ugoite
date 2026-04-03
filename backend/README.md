@@ -111,11 +111,17 @@ uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ### Testing
 
 ```bash
-# Run all tests
-uv run pytest
+# Run the full backend suite with the default coverage gate
+mise run test
 
-# Run with coverage
-uv run pytest --cov=app --cov-report=html
+# Skip the rebuild when ugoite-core is already up to date
+mise run test:no-build
+
+# Run a focused file without the global coverage gate
+mise run test:targeted:no-build -- tests/test_config.py -q
+
+# Raw pytest equivalent when you need full CLI control
+uv run pytest --no-cov tests/test_config.py -q
 ```
 
 ### Linting

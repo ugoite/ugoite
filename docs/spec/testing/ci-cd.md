@@ -125,6 +125,12 @@ jobs:
     - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
 ```
 
+Local backend iteration can use
+`mise run //backend:test:targeted:no-build -- tests/test_config.py -q` to skip
+the global coverage gate for a focused file run, while the default
+`//backend:test:no-build` path and Python CI continue to exercise the strict
+backend pytest configuration.
+
 Backend pytest also carries the focused local dev seed regression: it runs
 `scripts/dev-seed.sh` against the same `UGOITE_ROOT` and explicit dev-auth
 environment used by the local stack, then verifies the seeded space becomes
