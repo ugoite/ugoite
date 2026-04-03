@@ -153,6 +153,7 @@ BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
 DEVCONTAINER_JSON_PATH = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 COLUMN_COUNT_THRESHOLD = 2
+RUN_FROM_SOURCE_LINK_COUNT = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
     DOCKER_BUILD_WORKFLOW_PATH,
     E2E_CI_WORKFLOW_PATH,
@@ -1044,6 +1045,23 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         message = (
             "README Start Here section must not introduce a competing "
             "auth-specific top-level path"
+        )
+        raise AssertionError(message)
+
+    if (
+        section.count("(docs/guide/local-dev-auth-login.md)")
+        < RUN_FROM_SOURCE_LINK_COUNT
+    ):
+        message = (
+            "README Start Here section must point both Run from source entries at "
+            "docs/guide/local-dev-auth-login.md"
+        )
+        raise AssertionError(message)
+
+    if "Run from source](docs/guide/docker-compose.md)" in section:
+        message = (
+            "README Start Here section must not keep the outdated Run from source "
+            "docker-compose guide link"
         )
         raise AssertionError(message)
 
