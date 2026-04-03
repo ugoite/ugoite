@@ -116,7 +116,7 @@ Start with the user-facing guides:
 - [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
 - [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` contributor path
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 
 Go deeper when you need architecture or implementation contracts:
@@ -446,7 +446,10 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
+Contributions welcome! Start with [Run from source](docs/guide/local-dev-auth-login.md)
+for the canonical `mise run setup` -> `mise run dev` -> `/login` workflow. If
+you are using an AI coding agent in this repository, also read
+[AGENTS.md](AGENTS.md).
 
 1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes
