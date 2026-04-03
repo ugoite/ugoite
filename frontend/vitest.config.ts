@@ -1,15 +1,21 @@
 import { defineConfig } from "vitest/config";
 import solidPlugin from "vite-plugin-solid";
 
+const frontendTestOrigin = process.env.FRONTEND_TEST_ORIGIN ?? "http://localhost:3000";
+
 export default defineConfig({
 	plugins: [solidPlugin() as never],
 	define: {
 		"process.env.NODE_ENV": JSON.stringify("test"),
+		"process.env.FRONTEND_TEST_ORIGIN": JSON.stringify(frontendTestOrigin),
 	},
 	test: {
 		environment: "jsdom",
 		globals: true,
 		setupFiles: ["./src/test/setup.ts"],
+		env: {
+			FRONTEND_TEST_ORIGIN: frontendTestOrigin,
+		},
 		include: ["src/**/*.{test,spec}.{js,ts,tsx}"],
 		testTimeout: 10000,
 		coverage: {

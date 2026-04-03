@@ -5,6 +5,7 @@ import { authApi } from "./auth-api";
 import { clearAuthTokenCookie, setAuthTokenCookie } from "./auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
+import { testApiUrl } from "~/test/http-origin";
 
 describe("authApi", () => {
 	beforeEach(() => {
@@ -36,7 +37,7 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.get("http://localhost:3000/api/auth/config", () =>
+			http.get(testApiUrl("/auth/config"), () =>
 				HttpResponse.json(
 					{
 						mode: "passkey-totp",
@@ -54,7 +55,7 @@ describe("authApi", () => {
 
 		server.use(
 			http.get(
-				"http://localhost:3000/api/auth/config",
+				testApiUrl("/auth/config"),
 				() => new HttpResponse(null, { status: 500, statusText: "Internal Server Error" }),
 			),
 		);
@@ -63,7 +64,7 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.get("http://localhost:3000/api/auth/config", () =>
+			http.get(testApiUrl("/auth/config"), () =>
 				HttpResponse.json(
 					{
 						detail: "Explicit login endpoints are only available from loopback clients.",
@@ -77,7 +78,7 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/login", () =>
+			http.post(testApiUrl("/auth/login"), () =>
 				HttpResponse.json(
 					{
 						bearer_token: 42,
@@ -94,7 +95,7 @@ describe("authApi", () => {
 
 		server.use(
 			http.post(
-				"http://localhost:3000/api/auth/login",
+				testApiUrl("/auth/login"),
 				() => new HttpResponse("backend down", { status: 502, statusText: "Bad Gateway" }),
 			),
 		);
@@ -103,14 +104,14 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
+			http.post(testApiUrl("/auth/mock-oauth"), () =>
 				HttpResponse.json({ detail: { reason: "blocked" } }, { status: 409 }),
 			),
 		);
 		await expect(authApi.loginWithMockOauth()).rejects.toThrow('{"reason":"blocked"}');
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
+			http.post(testApiUrl("/auth/mock-oauth"), () =>
 				HttpResponse.json({ detail: 123 }, { status: 409, statusText: "Conflict" }),
 			),
 		);
@@ -119,7 +120,7 @@ describe("authApi", () => {
 		);
 
 		server.use(
-			http.post("http://localhost:3000/api/auth/mock-oauth", () =>
+			http.post(testApiUrl("/auth/mock-oauth"), () =>
 				HttpResponse.json(
 					{
 						bearer_token: "frontend-test-token",

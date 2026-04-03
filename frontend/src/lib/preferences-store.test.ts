@@ -3,6 +3,7 @@
 // REQ-FE-059: Portable theme preferences with local fallback
 import { beforeEach, describe, expect, it } from "vitest";
 import { getPreferencePatches, resetMockData, seedPreferences } from "~/test/mocks/handlers";
+import { testApiUrl } from "~/test/http-origin";
 
 const resetUiState = async () => {
 	const { setLocale } = await import("./i18n");
@@ -124,7 +125,7 @@ describe("preferencesStore", () => {
 		const { server } = await import("~/test/mocks/server");
 		const { http, HttpResponse } = await import("msw");
 		server.use(
-			http.get("http://localhost:3000/api/preferences/me", () => {
+			http.get(testApiUrl("/preferences/me"), () => {
 				requestCount += 1;
 				return HttpResponse.json({ locale: "ja" });
 			}),
@@ -146,7 +147,7 @@ describe("preferencesStore", () => {
 		const { server } = await import("~/test/mocks/server");
 		const { http, HttpResponse } = await import("msw");
 		server.use(
-			http.get("http://localhost:3000/api/preferences/me", () => {
+			http.get(testApiUrl("/preferences/me"), () => {
 				requestCount += 1;
 				return HttpResponse.json({
 					ui_theme: "classic",
@@ -205,7 +206,7 @@ describe("preferencesStore", () => {
 		const { server } = await import("~/test/mocks/server");
 		const { http, HttpResponse, delay } = await import("msw");
 		server.use(
-			http.get("http://localhost:3000/api/preferences/me", async () => {
+			http.get(testApiUrl("/preferences/me"), async () => {
 				requestCount += 1;
 				await delay(50);
 				return HttpResponse.json({ selected_space_id: "space-remote" });
