@@ -260,6 +260,27 @@ fn test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentia
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
 
+    let set_backend_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://localhost:9000",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_backend_output.status.success());
+
+    let set_core_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "core"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_core_output.status.success());
+
     let output = Command::new(ugoite_bin())
         .args(["auth", "profile"])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
@@ -293,10 +314,19 @@ fn test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentia
         payload.get("status").and_then(Value::as_str),
         Some("Core mode does not require backend authentication.")
     );
-    assert!(payload
+    let next_action = payload
         .get("next_action")
         .and_then(Value::as_str)
-        .is_some_and(|value| value.contains("ugoite config set --mode backend")));
+        .expect("next_action string");
+    assert!(
+        next_action
+            .contains("ugoite config set --mode backend --backend-url http://localhost:9000"),
+        "{next_action}"
+    );
+    assert!(
+        !next_action.contains("http://localhost:8000"),
+        "{next_action}"
+    );
     assert!(payload
         .get("UGOITE_AUTH_BEARER_TOKEN")
         .is_some_and(Value::is_null));
@@ -409,10 +439,87 @@ fn test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials() {
             .and_then(Value::as_str),
         Some("issu...")
     );
-    assert!(payload
+    let next_action = payload
         .get("next_action")
         .and_then(Value::as_str)
-        .is_some_and(|value| value.contains("ugoite auth token-clear")));
+        .expect("next_action string");
+    assert!(
+        next_action.contains(r#"eval "$(ugoite auth token-clear)""#),
+        "{next_action}"
+    );
+}
+
+/// REQ-OPS-015: auth profile distinguishes API mode and ignores blank bearer tokens when an API key is set.
+#[test]
+fn test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "api",
+            "--api-url",
+            "https://api.example.com",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_AUTH_BEARER_TOKEN", "   ")
+        .env("UGOITE_AUTH_API_KEY", "issued-api-key")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let payload = parse_stdout_json(&output);
+    assert_eq!(
+        payload.get("endpoint_mode").and_then(Value::as_str),
+        Some("api")
+    );
+    assert_eq!(
+        payload.get("topology").and_then(Value::as_str),
+        Some("API endpoint at https://api.example.com")
+    );
+    assert_eq!(
+        payload.get("endpoint_url").and_then(Value::as_str),
+        Some("https://api.example.com")
+    );
+    assert_eq!(
+        payload
+            .get("backend_auth_required")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        payload.get("credential_state").and_then(Value::as_str),
+        Some("api_key")
+    );
+    assert_eq!(
+        payload.get("status").and_then(Value::as_str),
+        Some("API mode is configured and a server credential is available.")
+    );
+    let next_action = payload
+        .get("next_action")
+        .and_then(Value::as_str)
+        .expect("next_action string");
+    assert!(
+        next_action.contains(r#"eval "$(ugoite auth token-clear)""#),
+        "{next_action}"
+    );
+    assert!(payload
+        .get("UGOITE_AUTH_BEARER_TOKEN")
+        .is_some_and(Value::is_null));
+    assert_eq!(
+        payload.get("UGOITE_AUTH_API_KEY").and_then(Value::as_str),
+        Some("issu...")
+    );
 }
 
 /// REQ-OPS-015: auth login help scopes proxy-token guidance to proxied mock-oauth flows.

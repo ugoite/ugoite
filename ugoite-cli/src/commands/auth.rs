@@ -145,7 +145,7 @@ fn auth_profile_snapshot(config: &EndpointConfig) -> serde_json::Value {
         "backend_auth_required": config.mode != EndpointMode::Core,
         "credential_state": credential_state,
         "status": auth_profile_status(&config.mode, credential_state),
-        "next_action": auth_profile_next_action(&config.mode, credential_state),
+        "next_action": auth_profile_next_action(config, credential_state),
         "UGOITE_AUTH_BEARER_TOKEN": bearer.as_deref().map(mask_token),
         "UGOITE_AUTH_API_KEY": api_key.as_deref().map(mask_token),
     })
@@ -190,14 +190,17 @@ fn server_auth_status(mode_label: &str, credential_state: &str) -> String {
     }
 }
 
-fn auth_profile_next_action(mode: &EndpointMode, credential_state: &str) -> String {
-    match mode {
-        EndpointMode::Core => "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url http://localhost:8000`.".to_string(),
+fn auth_profile_next_action(config: &EndpointConfig, credential_state: &str) -> String {
+    match &config.mode {
+        EndpointMode::Core => format!(
+            "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url {}`.",
+            config.backend_url
+        ),
         EndpointMode::Backend | EndpointMode::Api => {
             if credential_state == "none" {
                 "Run `ugoite auth login` for a bearer token, or export `UGOITE_AUTH_API_KEY` before using server-backed commands.".to_string()
             } else {
-                "Continue with server-backed commands, or run `ugoite auth token-clear` to clear CLI credentials.".to_string()
+                "Continue with server-backed commands, or run `eval \"$(ugoite auth token-clear)\"` to print and apply credential unsets in your current shell.".to_string()
             }
         }
     }

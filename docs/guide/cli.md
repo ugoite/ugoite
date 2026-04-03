@@ -257,7 +257,8 @@ cargo run -q -p ugoite-cli -- auth token-clear
 `ugoite auth profile` distinguishes `core` mode (no backend credential required)
 from `backend` / `api` modes. In server-backed modes it tells you whether a
 bearer token or API key is already present, and whether the next step is
-`ugoite auth login` or `ugoite auth token-clear`.
+`ugoite auth login` or `eval "$(ugoite auth token-clear)"` to apply the printed
+credential unsets from `ugoite auth token-clear` in your current shell.
 
 When the backend runs inside Docker/Compose and you target its published
 backend port directly, export the matching `UGOITE_DEV_AUTH_PROXY_TOKEN` value
