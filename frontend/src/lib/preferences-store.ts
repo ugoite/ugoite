@@ -71,9 +71,13 @@ const normalizePathname = (pathname: string): string => {
 	return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 };
 
+const AUTHENTICATED_PORTABLE_PREFERENCES_PREFIXES = ["/entries", "/spaces"] as const;
+
 const isPublicPortablePreferencesPath = (pathname: string): boolean => {
 	const normalized = normalizePathname(pathname);
-	return normalized === "/" || normalized === "/about" || normalized === "/login";
+	return !AUTHENTICATED_PORTABLE_PREFERENCES_PREFIXES.some(
+		(prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
+	);
 };
 
 const applyUiPreferences = (preferences: UserPreferences): void => {
