@@ -1136,6 +1136,30 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
+    """REQ-E2E-008: README start-here keeps the browser caveat prominent."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
+    if match is None:
+        message = "README must keep a Start Here section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "**Browser path today:**",
+        "backend + frontend stack",
+        "explicit `/login` flow",
+        "CLI in `core` mode",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Start Here browser caveat is missing required fragments: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
