@@ -1,20 +1,19 @@
 import { loadingState } from "./loading";
 import { getRequestEvent } from "solid-js/web";
+import { getFrontendTestApiBase, getRuntimeFrontendApiBase } from "./frontend-origin";
 
 export const getBackendBase = (): string => {
 	// In test environment, use absolute URL for MSW to intercept
 	/* v8 ignore start */
 	if (typeof process !== "undefined" && process.env?.NODE_ENV === "test") {
-		return "http://localhost:3000/api";
+		return getFrontendTestApiBase();
 	}
 	/* v8 ignore stop */
 	/* v8 ignore start */
 	// In SSR, Node's fetch requires an absolute URL.
 	// Default to the frontend dev server origin used in e2e/dev.
 	if (typeof window === "undefined") {
-		const env = process.env ?? {};
-		const origin = env.FRONTEND_ORIGIN || env.ORIGIN || env.FRONTEND_URL || "http://localhost:3000";
-		return `${origin.replace(/\/$/, "")}/api`;
+		return getRuntimeFrontendApiBase();
 	}
 	// Always use /api which is proxied to the backend in development
 	// and should be served by the backend or a reverse proxy in production.

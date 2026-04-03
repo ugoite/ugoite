@@ -6,6 +6,7 @@ import { createEntryStore } from "./entry-store";
 import { resetMockData, seedSpace, seedEntry } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const space = { id: "es-ws", name: "Entry Store Space", created_at: "2025-01-01T00:00:00Z" };
 
@@ -27,7 +28,7 @@ describe("createEntryStore", () => {
 
 	it("sets error on load failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/es-ws/entries", () =>
+			http.get(testApiUrl("/spaces/es-ws/entries"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -51,7 +52,7 @@ describe("createEntryStore", () => {
 
 	it("sets error on create failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/es-ws/entries", () =>
+			http.post(testApiUrl("/spaces/es-ws/entries"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -83,7 +84,7 @@ describe("createEntryStore", () => {
 			await store.createEntry("# Entry To Fail");
 			const entry = store.entries()[0];
 			server.use(
-				http.put(`http://localhost:3000/api/spaces/es-ws/entries/${entry.id}`, () =>
+				http.put(testApiUrl(`/spaces/es-ws/entries/${entry.id}`), () =>
 					HttpResponse.json({ detail: "Error" }, { status: 500 }),
 				),
 			);
@@ -114,7 +115,7 @@ describe("createEntryStore", () => {
 			await store.createEntry("# Entry");
 			const entry = store.entries()[0];
 			server.use(
-				http.delete(`http://localhost:3000/api/spaces/es-ws/entries/${entry.id}`, () =>
+				http.delete(testApiUrl(`/spaces/es-ws/entries/${entry.id}`), () =>
 					HttpResponse.json({ detail: "Error" }, { status: 500 }),
 				),
 			);
@@ -163,7 +164,7 @@ describe("createEntryStore", () => {
 
 	it("throws on search failure and sets error", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/es-ws/search", () =>
+			http.get(testApiUrl("/spaces/es-ws/search"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -195,7 +196,7 @@ describe("createEntryStore", () => {
 			const entry = store.entries()[0];
 			store.selectEntry(entry.id);
 			server.use(
-				http.put(`http://localhost:3000/api/spaces/es-ws/entries/${entry.id}`, () =>
+				http.put(testApiUrl(`/spaces/es-ws/entries/${entry.id}`), () =>
 					HttpResponse.json(
 						{ detail: "Revision conflict", revision_id: "server-rev" },
 						{ status: 409 },
@@ -247,7 +248,7 @@ describe("createEntryStore", () => {
 			const r2 = await store.createEntry("# Entry Two");
 			store.selectEntry(r2.id);
 			server.use(
-				http.put(`http://localhost:3000/api/spaces/es-ws/entries/${r1.id}`, () =>
+				http.put(testApiUrl(`/spaces/es-ws/entries/${r1.id}`), () =>
 					HttpResponse.json({ detail: "Conflict", revision_id: "server-rev" }, { status: 409 }),
 				),
 			);

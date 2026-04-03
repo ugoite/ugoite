@@ -6,6 +6,7 @@ import { createSearchStore } from "./search-store";
 import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
 	id: "search-store-ws",
@@ -58,7 +59,7 @@ describe("createSearchStore", () => {
 
 	it("sets error on keyword search failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/search-store-ws/search", () =>
+			http.get(testApiUrl("/spaces/search-store-ws/search"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);
@@ -72,7 +73,7 @@ describe("createSearchStore", () => {
 
 	it("sets error on query index failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/search-store-ws/query", () =>
+			http.post(testApiUrl("/spaces/search-store-ws/query"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);

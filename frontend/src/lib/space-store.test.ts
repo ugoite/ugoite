@@ -14,6 +14,7 @@ import {
 } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -208,7 +209,7 @@ describe("createSpaceStore", () => {
 
 	it("should throw and set error on loadSpaces failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces", () =>
+			http.get(testApiUrl("/spaces"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);
