@@ -9,10 +9,14 @@ run = "uv sync --locked"
 run = "eval \"$(bash ../scripts/dev-auth-env.sh)\" && UGOITE_ALLOW_REMOTE=true uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir . --reload-dir ../ugoite-core/ugoite_core"
 
 [tasks.test]
-run = "uv run pytest"
+run = [
+	"report=\"$(mktemp)\" && trap 'rm -f \"$report\"' EXIT && uv run pytest -W error --junitxml=\"$report\" && python3 ../scripts/check_pytest_no_skips.py \"$report\" \"backend tests\"",
+]
 description = "Run backend pytest suite"
 depends = ["//ugoite-core:build"]
 
 [tasks."test:no-build"]
-run = "uv run pytest"
+run = [
+	"report=\"$(mktemp)\" && trap 'rm -f \"$report\"' EXIT && uv run pytest -W error --junitxml=\"$report\" && python3 ../scripts/check_pytest_no_skips.py \"$report\" \"backend tests\"",
+]
 description = "Run backend pytest suite assuming ugoite-core is already built"

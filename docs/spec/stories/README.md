@@ -58,8 +58,14 @@ Stories are used to:
 ## Verification
 
 The repository's active documentation consistency suite lives in `docs/tests/` and
-runs via `mise run test:docs`. The equivalent direct CI command is
-`uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error`.
+runs via `mise run test:docs`. The matching strict pytest invocation is:
+
+```bash
+report="$(mktemp)"
+trap 'rm -f "$report"' EXIT
+uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error --junitxml="$report"
+python3 scripts/check_pytest_no_skips.py "$report" "docs tests"
+```
 
 That suite currently focuses on requirement traceability plus targeted API, guide,
 storage, MCP, version, and governance contracts. A dedicated
