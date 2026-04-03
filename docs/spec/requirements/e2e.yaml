@@ -272,6 +272,7 @@ requirements:
       tests:
       - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
       - 'REQ-E2E-008: landing page labels the application overview CTA as documentation'
+      - 'REQ-E2E-008: landing and getting-started pages keep the concepts primer ahead of path selection'
       - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
       - 'REQ-E2E-008: run from source card opens the canonical host-dev workflow'
       - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
@@ -289,6 +290,7 @@ requirements:
       - test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat
       - test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs
       - test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs
+      - test_docs_req_e2e_008_concepts_primer_order_stays_consistent
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
