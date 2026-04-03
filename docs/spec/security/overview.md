@@ -102,6 +102,10 @@ space-scoped and uses the following profile:
 | One-time Invite Token | First-time bootstrap enrollment for admin-distributed invites |
 | Service Account API Key | Non-interactive automation with scoped least-privilege actions |
 
+- CLI server-backed endpoints MUST use `https://` for non-loopback hosts.
+  Cleartext `http://` remains acceptable only for loopback local-development
+  endpoints such as `http://localhost:8000`.
+
 ### Identity Source
 
 - Default identity store is metadata Form `User` per space.
