@@ -1,12 +1,12 @@
 import { createRoot, createSignal } from "solid-js";
-import { initializeLocale, setLocale } from "./i18n";
-import { preferencesApi } from "./preferences-api";
+import { initializeLocale, setLocale } from "~/lib/i18n";
+import { preferencesApi } from "~/lib/preferences-api";
 import {
 	emptyUserPreferences,
 	readLocalPreferences,
 	writeLocalPreferences,
 } from "./preferences-local";
-import { initializeUiTheme, setColorMode, setPrimaryColor, setUiTheme } from "./ui-theme";
+import { initializeUiTheme, setColorMode, setPrimaryColor, setUiTheme } from "~/lib/ui-theme";
 import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const mergePreferences = (
