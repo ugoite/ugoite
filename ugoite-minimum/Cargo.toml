@@ -16,4 +16,4 @@ sha2_hmac = { package = "sha2", version = "0.11" }
 url = "2.5.0"
 
 [dev-dependencies]
-tokio = { version = "1.50", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.51", features = ["macros", "rt-multi-thread"] }
