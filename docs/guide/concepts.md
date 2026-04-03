@@ -59,6 +59,11 @@ That makes forms the bridge between free-form writing and reliable structure.
 They help people enter consistent information, and they help the browser, CLI,
 and automation flows understand what each entry is supposed to contain.
 
+For browser-first users, that makes the first-run workflow concrete: create or
+open a space, create a form, then create entries that use it. A new space
+becomes meaningfully authorable once at least one form exists, because the form
+is what tells Ugoite how new structured entries should start.
+
 You can absolutely start with a lightweight note, but as soon as you want
 stable extracted fields, validation, or reliable queries, the Form becomes the
 contract Ugoite uses to interpret that Markdown.
