@@ -664,6 +664,7 @@ REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "`ugoite auth profile` distinguishes `core` mode",
     "`ugoite auth login`",
     "`ugoite auth token-clear`",
+    '`eval "$(ugoite auth token-clear)"`',
 }
 REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
