@@ -37,6 +37,40 @@ export const navSections: NavSection[] = [
 			{ title: "Docker Compose", href: "/docs/guide/docker-compose" },
 			{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
 			{ title: "CLI Guide", href: "/docs/guide/cli" },
+			{
+				title: "Operations & Troubleshooting",
+				href: "/docs/guide/operations",
+				items: [
+					{
+						title: "Backend Healthcheck",
+						href: "/docs/guide/backend-healthcheck",
+					},
+					{
+						title: "Environment Matrix",
+						href: "/docs/guide/env-matrix",
+					},
+					{
+						title: "Helm Chart",
+						href: "/docs/guide/helm-chart",
+					},
+					{
+						title: "Log Redaction",
+						href: "/docs/guide/log-redaction",
+					},
+					{
+						title: "Storage Cleanup",
+						href: "/docs/guide/storage-cleanup",
+					},
+					{
+						title: "Storage Migration",
+						href: "/docs/guide/storage-migration",
+					},
+					{
+						title: "Unauthorized Spaces Troubleshooting",
+						href: "/docs/guide/troubleshooting-unauthorized-spaces",
+					},
+				],
+			},
 		],
 	},
 	{
