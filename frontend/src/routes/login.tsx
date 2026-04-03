@@ -1,6 +1,6 @@
 import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
-import { authApi } from "~/lib/auth-api";
+import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
 import { setAuthTokenCookie } from "~/lib/auth-session";
 
 const containerQuickStartGuideUrl =
@@ -37,7 +37,7 @@ export default function LoginRoute() {
 		}
 	});
 
-	const completeLogin = async (action: () => Promise<{ bearerToken: string }>) => {
+	const completeLogin = async (action: () => Promise<AuthLoginResponse>) => {
 		setIsSubmitting(true);
 		setSubmitError("");
 		try {
@@ -53,15 +53,11 @@ export default function LoginRoute() {
 
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
-		await completeLogin(async () => {
-			return await authApi.loginWithPasskeyTotp(username().trim(), totpCode().trim());
-		});
+		await completeLogin(() => authApi.loginWithPasskeyTotp(username().trim(), totpCode().trim()));
 	};
 
 	const handleMockOAuth = async () => {
-		await completeLogin(async () => {
-			return await authApi.loginWithMockOauth();
-		});
+		await completeLogin(() => authApi.loginWithMockOauth());
 	};
 
 	return (
@@ -81,12 +77,12 @@ export default function LoginRoute() {
 				<Show when={authConfigError()}>
 					<div class="ui-alert ui-alert-error ui-stack-sm text-sm">
 						<p>
-							Failed to load the current auth mode. Confirm the Ugoite stack you started
-							is still running, then refresh this page.
+							Failed to load the current auth mode. Confirm the Ugoite stack you started is still
+							running, then refresh this page.
 						</p>
 						<p>
-							Started from source? Re-run <code>mise run dev</code>. Using the published
-							stack? Restart your Docker Compose services and reopen <code>/login</code>.
+							Started from source? Re-run <code>mise run dev</code>. Using the published stack?
+							Restart your Docker Compose services and reopen <code>/login</code>.
 						</p>
 						<p>
 							Need the browser setup guide? Open{" "}
@@ -99,12 +95,7 @@ export default function LoginRoute() {
 								Container Quick Start
 							</a>{" "}
 							for the published stack or{" "}
-							<a
-								href={localDevAuthGuideUrl}
-								target="_blank"
-								rel="noopener"
-								class="hover:underline"
-							>
+							<a href={localDevAuthGuideUrl} target="_blank" rel="noopener" class="hover:underline">
 								Local Dev Auth/Login
 							</a>{" "}
 							for source development.
