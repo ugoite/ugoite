@@ -1,11 +1,15 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { http, HttpResponse } from "msw";
 import LoginRoute from "./login";
 import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
+import { server } from "~/test/mocks/server";
 
 const navigateMock = vi.fn();
+const containerQuickStartGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
 const localDevAuthGuideUrl =
 	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
 
@@ -123,5 +127,35 @@ describe("/login", () => {
 		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
 		expect(screen.queryByRole("heading", { name: "First time here?" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: "Local Dev Auth/Login" })).not.toBeInTheDocument();
+	});
+
+	it("REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows", async () => {
+		server.use(
+			http.get(
+				"http://localhost:3000/api/auth/config",
+				() => new HttpResponse(null, { status: 500, statusText: "Internal Server Error" }),
+			),
+		);
+
+		render(() => <LoginRoute />);
+
+		expect(
+			await screen.findByText(/Confirm the Ugoite stack you started is still running/i),
+		).toBeInTheDocument();
+		expect(screen.getByText("mise run dev")).toBeInTheDocument();
+		expect(
+			screen.getByText(/Restart your Docker Compose services and reopen/i),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Container Quick Start" })).toHaveAttribute(
+			"href",
+			containerQuickStartGuideUrl,
+		);
+		expect(screen.getByRole("link", { name: "Local Dev Auth/Login" })).toHaveAttribute(
+			"href",
+			localDevAuthGuideUrl,
+		);
+		expect(
+			screen.queryByText("Failed to load the current auth mode. Re-run"),
+		).not.toBeInTheDocument();
 	});
 });
