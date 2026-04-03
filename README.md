@@ -44,6 +44,9 @@ GitHub without comparing two different onboarding maps.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
 
+For a brand-new browser space, the first productive in-app sequence is:
+**open the space, create a form, then create entries from that form**.
+
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
 frontend stack and an explicit login flow, even though the data remains in
