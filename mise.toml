@@ -33,7 +33,7 @@ run = [
 	"mise run //ugoite-core:install",
 	"mise run //ugoite-minimum:install",
 	"mise run //e2e:install",
-	"if git config --get core.hooksPath >/dev/null; then git config --unset-all core.hooksPath; fi",
+	"if git config --local --get core.hooksPath >/dev/null; then git config --local --unset-all core.hooksPath; fi",
 	"uvx pre-commit install",
 ]
 

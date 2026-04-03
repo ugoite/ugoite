@@ -212,7 +212,8 @@ REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
 }
 REQUIRED_PRE_COMMIT_SETUP_COMMAND = "uvx pre-commit install"
 REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
-    "if git config --get core.hooksPath >/dev/null; then git config --unset-all "
+    "if git config --local --get core.hooksPath >/dev/null; "
+    "then git config --local --unset-all "
     "core.hooksPath; fi"
 )
 REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS = {
