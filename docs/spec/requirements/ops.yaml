@@ -240,6 +240,7 @@ requirements:
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
       - test_entry_update_req_ops_006_help_describes_required_inputs
+      - test_form_and_search_req_ops_006_help_describes_required_inputs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

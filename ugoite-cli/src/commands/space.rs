@@ -21,7 +21,7 @@ pub struct SpaceCmd {
 pub enum SpaceSubCmd {
     /// Create a new space
     #[command(
-        long_about = "Create a new space.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
+        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
     )]
     Create {
         #[arg(
@@ -32,7 +32,7 @@ pub enum SpaceSubCmd {
     },
     /// List spaces
     #[command(
-        long_about = "List all spaces.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
+        long_about = "List all spaces.\n\nRun `ugoite config current` to check whether you should pass a local `ROOT_PATH` or omit it entirely.\nUse `ROOT_PATH` in core mode and omit it in backend/api mode.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
     )]
     List {
         #[arg(
@@ -43,7 +43,7 @@ pub enum SpaceSubCmd {
     },
     /// Get space metadata
     #[command(
-        long_about = "Get space metadata.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
+        long_about = "Get space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
     )]
     Get {
         #[arg(
@@ -54,7 +54,7 @@ pub enum SpaceSubCmd {
     },
     /// Patch space metadata
     #[command(
-        long_about = "Patch space metadata.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
+        long_about = "Patch space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
     )]
     Patch {
         #[arg(
