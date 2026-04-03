@@ -2,7 +2,11 @@
 
 ## Overview
 
-Ugoite implements the Model Context Protocol (MCP) to enable AI agents to interact with the knowledge base. MCP requests are sent as HTTP POST to `/mcp`.
+Ugoite currently implements a resource-first Model Context Protocol (MCP)
+surface so AI agents can inspect the knowledge base over HTTP POST `/mcp`.
+Today's shipped backend registers one read-only MCP resource and exposes no MCP
+tools or prompts. Broader resource coverage and tool- or prompt-driven
+workflows remain planned `v0.2` work.
 
 ## Resources
 
@@ -34,28 +38,14 @@ Resource parameter and content-safety notes:
 }
 ```
 
-### `ugoite://{space_id}/entries/{entry_id}`
+## Planned Resource Expansion
 
-Returns Markdown content of a specific entry.
+The following MCP surfaces are roadmap items rather than already-shipped
+behavior:
 
-```markdown
-# Weekly Sync
-
-## Date
-2025-11-29
-
-## Attendees
-- Alice
-- Bob
-```
-
-### `ugoite://{space_id}/entries/{entry_id}/history`
-
-Returns revision history summaries.
-
-### `ugoite://{space_id}/forms`
-
-Returns available form definitions and their fields.
+- `ugoite://{space_id}/entries/{entry_id}` for individual entry reads
+- `ugoite://{space_id}/entries/{entry_id}/history` for revision summaries
+- `ugoite://{space_id}/forms` for form-definition discovery
 
 ---
 
@@ -67,15 +57,8 @@ No MCP tools are currently exposed. The deprecated `run_script` tool has been re
 
 ## Prompts
 
-Pre-defined prompts help AI understand the context:
-
-### `summarize_space`
-
-> "Read the index of the space and provide a high-level summary of the topics covered."
-
-### `analyze_meetings`
-
-> "Find all entries with form='Meeting' and summarize the key decisions."
+No MCP prompts are currently exposed. Prompt templates can ship later alongside
+the broader MCP surface planned for `v0.2`.
 
 ---
 

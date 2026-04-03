@@ -6,7 +6,7 @@
 
 ## Vision
 
-**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space with a Resource-First MCP Surface for the Post-SaaS Era"**
 
 Ugoite is a knowledge management system built on three core principles:
 
@@ -57,7 +57,7 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
-- [MCP Protocol](api/mcp.md) - AI agent interface via Model Context Protocol
+- [MCP Protocol](api/mcp.md) - Current resource-first MCP interface for AI agents
 - [OpenAPI Spec](api/openapi.yaml) - Machine-readable API definition
 
 ### Requirements
