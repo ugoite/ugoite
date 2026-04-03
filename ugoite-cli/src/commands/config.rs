@@ -1,4 +1,7 @@
-use crate::config::{load_config, print_json, save_config, EndpointMode};
+use crate::config::{
+    endpoint_transport_warning, load_config, print_json, save_config, validate_server_endpoint_url,
+    EndpointMode,
+};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
@@ -60,10 +63,21 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
                 };
             }
             if let Some(u) = backend_url {
+                validate_server_endpoint_url(&u, "Backend endpoint")?;
                 config.backend_url = u;
             }
             if let Some(u) = api_url {
+                validate_server_endpoint_url(&u, "API endpoint")?;
                 config.api_url = u;
+            }
+            match config.mode {
+                EndpointMode::Backend => {
+                    validate_server_endpoint_url(&config.backend_url, "Backend endpoint")?;
+                }
+                EndpointMode::Api => {
+                    validate_server_endpoint_url(&config.api_url, "API endpoint")?;
+                }
+                EndpointMode::Core => {}
             }
             print_mode_transition_notice(&previous_mode, &config.mode, &config);
             let path = save_config(&config)?;
@@ -89,6 +103,11 @@ fn print_current_config(config: &crate::config::EndpointConfig) {
         EndpointMode::Backend => {
             println!("Current endpoint mode: backend");
             println!("Topology: direct backend server at {}", config.backend_url);
+            if let Some(warning) =
+                endpoint_transport_warning(&config.backend_url, "Backend endpoint")
+            {
+                println!("Warning: {warning}");
+            }
             println!("Future commands use the server instead of your local filesystem.");
             println!("To return to local-first mode:");
             println!("  ugoite config set --mode core");
@@ -96,6 +115,9 @@ fn print_current_config(config: &crate::config::EndpointConfig) {
         EndpointMode::Api => {
             println!("Current endpoint mode: api");
             println!("Topology: API endpoint at {}", config.api_url);
+            if let Some(warning) = endpoint_transport_warning(&config.api_url, "API endpoint") {
+                println!("Warning: {warning}");
+            }
             println!("Future commands use the remote API instead of your local filesystem.");
             println!("To return to local-first mode:");
             println!("  ugoite config set --mode core");

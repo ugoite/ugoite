@@ -1,5 +1,6 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    validated_base_url,
 };
 use crate::http;
 use anyhow::Result;
@@ -57,7 +58,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
     match cmd.sub {
         AssetSubCmd::List { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset list")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/assets")).await?;
                 print_json(&result);
                 return Ok(());
@@ -73,7 +74,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             filename,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
-            if base_url(&config).is_some() {
+            if validated_base_url(&config)?.is_some() {
                 anyhow::bail!("asset upload in remote mode not yet supported via CLI");
             }
             let op = operator_for_path(&root)?;
@@ -94,7 +95,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             asset_id,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset delete")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result =
                     http::http_delete(&format!("{base}/spaces/{space_id}/assets/{asset_id}"))
                         .await?;

@@ -1,5 +1,6 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    validated_base_url,
 };
 use crate::http;
 use anyhow::Result;
@@ -36,7 +37,7 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
     match cmd.sub {
         SearchSubCmd::Keyword { space_path, query } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "search keyword")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/search?q={query}")).await?;
                 print_json(&result);
