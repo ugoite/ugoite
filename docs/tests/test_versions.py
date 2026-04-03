@@ -230,7 +230,7 @@ def test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs() -> N
 
 
 def test_docs_req_ops_004_readme_docs_tree_and_work_item_links_match_repo() -> None:
-    """REQ-OPS-004: README docs tree and work-item links must match the shipped repo layout."""
+    """REQ-OPS-004: README docs tree and work-item links match the repo."""
     readme_text = README_PATH.read_text(encoding="utf-8")
 
     missing = sorted(
@@ -249,7 +249,7 @@ def test_docs_req_ops_004_readme_docs_tree_and_work_item_links_match_repo() -> N
 
     forbidden = sorted(
         fragment
-        for fragment in {"  └─ tasks/", "docs/tasks/tasks.md"}
+        for fragment in ("  └─ tasks/", "docs/tasks/tasks.md")
         if fragment in readme_text
     )
     if forbidden:
