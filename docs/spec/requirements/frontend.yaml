@@ -446,6 +446,7 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-044: dashboard localizes main workflow copy in Japanese'
+      - 'REQ-FE-044: dashboard localizes first-run onboarding copy in Japanese'
     - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
       tests:
       - 'REQ-FE-044: localizes entries route CTA copy in Japanese'
@@ -1143,7 +1144,9 @@ requirements:
 
     Dashboard-style onboarding MUST count only user-creatable forms when guiding
 
-    the user to create a first entry.
+    the user to create a first entry, and when none exist it MUST explicitly
+
+    direct the user to create a form before attempting entry creation.
 
     '
   related_spec:
@@ -1175,10 +1178,15 @@ requirements:
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
+      - 'REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
       - 'REQ-FE-037: form grid shows empty state when only reserved metadata forms exist'
+    e2e:
+    - file: e2e/dashboard-first-form.test.ts
+      tests:
+      - 'REQ-FE-037: dashboard guides first-run spaces toward form creation'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
