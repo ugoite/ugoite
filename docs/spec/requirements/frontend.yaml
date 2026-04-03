@@ -1101,7 +1101,9 @@ requirements:
   title: UI Spec YAML Registry Validation
   description: 'Frontend tests MUST load all UI page YAML specs under docs/spec/ui/pages
 
-    and validate page links, shared chrome, and component type registry.
+    and validate page links, shared chrome, component type registry, and that
+
+    pages marked `implemented` do not still render obvious placeholder route copy.
 
     '
   related_spec:
@@ -1115,6 +1117,9 @@ requirements:
       - 'REQ-FE-040: loads UI page specs'
       - 'REQ-FE-040: validates page links'
       - 'REQ-FE-040: validates component types'
+      - 'REQ-FE-040: validates docs pages map to implemented routes'
+      - 'REQ-FE-040: validates implemented routes are documented'
+      - 'REQ-FE-040: implemented page specs reject placeholder route content'
       - 'REQ-FE-040: validates shared space chrome'
       - 'REQ-FE-040: validates entries/forms bottom tabs use product labels'
     - file: frontend/src/components/SpaceShell.test.tsx
