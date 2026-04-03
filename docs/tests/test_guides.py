@@ -1324,6 +1324,46 @@ def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() 
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_e2e_008_concepts_primer_order_stays_consistent() -> None:
+    """REQ-E2E-008: concepts primer guidance stays consistent across newcomer docs."""
+    quick_start = (GUIDE_DIR / "container-quickstart.md").read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                GUIDE_DIR / "container-quickstart.md",
+                [
+                    "If you skipped the primer earlier",
+                    "[Core Concepts](concepts.md)",
+                    "before exploring more of the UI or the deeper docs",
+                ],
+                (
+                    "container-quickstart.md must keep concepts ahead of "
+                    "deeper exploration"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "concepts.md",
+                ["before choosing", "Once the concepts make sense, choose the surface"],
+                "concepts.md must keep the concepts-first route into surface guides",
+            ),
+        ]
+        if detail
+    ]
+
+    if "Read [Core Concepts](concepts.md) next" in quick_start:
+        details.append(
+            (
+                "container-quickstart.md must not tell newcomers to defer "
+                "concepts until after deeper UI exploration"
+            ),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
