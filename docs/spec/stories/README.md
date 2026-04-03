@@ -57,7 +57,11 @@ Stories are used to:
 
 ## Verification
 
-Tests in `docs/tests/test_stories.py` verify:
-- All stories have valid format
-- Referenced requirements exist
-- Acceptance criteria are testable
+The repository's active documentation consistency suite lives in `docs/tests/` and
+runs via `mise run test:docs`. The equivalent direct CI command is
+`uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error`.
+
+That suite currently focuses on requirement traceability plus targeted API, guide,
+storage, MCP, version, and governance contracts. A dedicated
+`docs/tests/test_stories.py` file does not ship today, so story-specific validation
+should be added there when the suite grows.
