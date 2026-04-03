@@ -36,7 +36,7 @@ Ugoite is a knowledge management system built on three core principles:
 | --- | --- | --- |
 | [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
 | [CLI Guide](../guide/cli.md) in `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
-| [Run from source](../guide/docker-compose.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
+| [Run from source](../guide/local-dev-auth-login.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
@@ -142,7 +142,7 @@ because the canonical data stays in the space itself.
 - [Machine-readable v0.1 tracker](../version/v0.1.yaml) - Current milestone/phase/task state for the v0.1 stream
 - [Machine-readable v0.2 tracker](../version/v0.2.yaml) - Planned milestone/phase/task state for the v0.2 stream
 - [Versions & Release Notes](versions/index.md) - Human-readable summary of what each version adds or changes
-- [Contributing](../../AGENTS.md) - Development guidelines
+- [Contributor onboarding](../guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` workflow for human contributors
 
 ---
 
