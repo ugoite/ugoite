@@ -111,22 +111,14 @@ e2e/                # End-to-end tests (Bun)
 
 ## Documentation Map
 
-Start with the user-facing guides:
+The Start Here section above is the canonical newcomer map. Use the deeper
+references below once you want implementation details, contributor diagnostics,
+or release planning:
 
-- [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
-- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
-- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
-
-Go deeper when you need architecture or implementation contracts:
-
 - [Specification Index](docs/spec/index.md) - Technical specifications
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
 - [API Reference](docs/spec/api/rest.md) - REST API documentation
-
-Track ongoing work:
-
 - [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
   and planned milestones
 - [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone

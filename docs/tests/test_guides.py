@@ -1193,6 +1193,51 @@ def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs() -> None:
+    """REQ-E2E-008: README documentation map stays focused on deeper references."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        r"## Documentation Map\n(?P<section>.*?)(?:\n## |\Z)",
+        readme,
+        re.DOTALL,
+    )
+    if match is None:
+        message = "README must keep a Documentation Map section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "Start Here section above is the canonical newcomer map",
+        "Backend Healthcheck",
+        "Specification Index",
+        "Architecture Overview",
+        "API Reference",
+        "Versions Overview",
+        "Machine-readable roadmap",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Documentation Map is missing deeper-reference fragments: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+    forbidden_fragments = [
+        "[Core Concepts](docs/guide/concepts.md)",
+        "[Container Quick Start](docs/guide/container-quickstart.md)",
+        "[CLI Guide](docs/guide/cli.md)",
+        "[Local Dev Auth/Login](docs/guide/local-dev-auth-login.md)",
+    ]
+    duplicated = [fragment for fragment in forbidden_fragments if fragment in section]
+    if duplicated:
+        message = (
+            "README Documentation Map must not duplicate Start Here newcomer links: "
+            + ", ".join(duplicated)
+        )
+        raise AssertionError(message)
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
