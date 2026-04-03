@@ -26,7 +26,7 @@ GitHub without comparing two different onboarding maps.
   fastest browser-based evaluation path.
 - [Run from source](docs/guide/docker-compose.md) when you want the current
   backend, frontend, and docsite together; the shortest contributor path is
-  `mise run setup`, then `mise run dev`.
+  `mise run setup` (dependencies + repo hooks), then `mise run dev`.
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 ### After your first step
@@ -183,11 +183,14 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
-Install dependencies:
+Install dependencies and repository pre-commit hooks:
 
 ```bash
 mise run setup
 ```
+
+The setup task also runs `uvx pre-commit install` so local commits use the same
+hook chain as CI by default.
 
 Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
 
