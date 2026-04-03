@@ -15,6 +15,15 @@ components:
       position: top-right-floating
       icon: settings
   body:
-    - id: sql-list
-      type: list
+    - id: sql-empty-state
+      type: heading
       title: Saved SQL
+    - id: search-recovery-action
+      type: button
+      title: Open search
+    - id: dashboard-recovery-action
+      type: button
+      title: Back to dashboard
+    - id: entries-recovery-action
+      type: button
+      title: Browse entries
