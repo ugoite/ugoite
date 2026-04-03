@@ -110,6 +110,7 @@ PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
 BACKEND_PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
+STACK_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "architecture" / "stack.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
@@ -1002,6 +1003,75 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
     e2e_ci_workflow = E2E_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     if "bash e2e/scripts/run-e2e-compose.sh" not in e2e_ci_workflow:
         message = "E2E CI workflow must use the shared docker-compose E2E runner"
+        raise AssertionError(message)
+
+
+def test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack() -> None:
+    """REQ-OPS-001: backend Python prerequisites must match metadata and stack docs."""
+    backend_pyproject = tomllib.loads(
+        BACKEND_PYPROJECT_PATH.read_text(encoding="utf-8"),
+    )
+    project = backend_pyproject.get("project", {})
+    if not isinstance(project, dict):
+        message = "backend/pyproject.toml must define a [project] table"
+        raise TypeError(message)
+
+    requires_python = project.get("requires-python")
+    if not isinstance(requires_python, str):
+        message = (
+            "backend/pyproject.toml must define project.requires-python as a string"
+        )
+        raise TypeError(message)
+
+    version_match = re.search(r">=\s*(\d+\.\d+)", requires_python)
+    if version_match is None:
+        message = (
+            "backend/pyproject.toml project.requires-python must declare a "
+            "minimum major.minor version"
+        )
+        raise AssertionError(message)
+
+    expected_fragment = f"Python {version_match.group(1)}+"
+    backend_readme = BACKEND_README_PATH.read_text(encoding="utf-8")
+    prerequisites_match = re.search(
+        r"### Prerequisites\n(?P<section>.*?)(?:\n### |\Z)",
+        backend_readme,
+        re.DOTALL,
+    )
+    if prerequisites_match is None:
+        message = "backend/README.md must keep a `### Prerequisites` section"
+        raise AssertionError(message)
+
+    prerequisites_section = prerequisites_match.group("section")
+    expected_bullet = f"- {expected_fragment}"
+    if expected_bullet not in prerequisites_section:
+        message = (
+            "backend/README.md `### Prerequisites` must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_bullet}` "
+            f"from `{requires_python}`"
+        )
+        raise AssertionError(message)
+
+    stack_spec = STACK_SPEC_PATH.read_text(encoding="utf-8")
+    backend_stack_match = re.search(
+        r"### Backend \(Python/FastAPI\)\n(?P<section>.*?)(?:\n### |\Z)",
+        stack_spec,
+        re.DOTALL,
+    )
+    if backend_stack_match is None:
+        message = "docs/spec/architecture/stack.md must keep a backend stack section"
+        raise AssertionError(message)
+
+    backend_stack_section = backend_stack_match.group("section")
+    expected_stack_row = (
+        rf"\|\s*Python\s*\|\s*{re.escape(version_match.group(1))}\+\s*\|\s*Runtime\s*\|"
+    )
+    if not re.search(expected_stack_row, backend_stack_section):
+        message = (
+            "docs/spec/architecture/stack.md backend stack table must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_fragment}` "
+            f"from `{requires_python}`"
+        )
         raise AssertionError(message)
 
 
