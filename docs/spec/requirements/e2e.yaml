@@ -287,6 +287,7 @@ requirements:
       tests:
       - test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy
       - test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat
+      - test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
