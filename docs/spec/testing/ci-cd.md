@@ -429,7 +429,8 @@ npm ci --no-fund --no-audit
 npm run prepare
 ```
 
-This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+This enables a Husky v9-compatible `commit-msg` hook and runs `commitlint`
+before commit is accepted.
 
 ## Pre-commit CI
 
