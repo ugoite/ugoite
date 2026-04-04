@@ -11,7 +11,7 @@
 		"test:screenshot": "playwright test ui-pages-screenshots.test.ts"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.59.0",
+		"@playwright/test": "^1.59.1",
 		"@types/node": "^25.5.0",
 		"typescript": "^6.0.2"
 	}

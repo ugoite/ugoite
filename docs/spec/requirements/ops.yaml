@@ -18,14 +18,16 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-001
   title: Developer Guides for Local Runs
-  description: 'Provide English documentation for Docker Compose and CLI usage. Shell
-
-    command snippets must remain syntactically valid for bash.
+  description: 'Provide English documentation for Docker Compose, CLI usage, and
+    backend local-run prerequisites. Shell command snippets must remain syntactically
+    valid for bash. Backend runtime prerequisites in local-run documentation
+    must stay aligned with backend package metadata and stack documentation.
 
     '
   related_spec:
   - ../guide/docker-compose.md
   - ../guide/cli.md
+  - ../architecture/stack.md
   priority: medium
   status: implemented
   tests:
@@ -34,9 +36,9 @@ requirements:
       tests:
       - test_docs_req_ops_001_guides_exist
       - test_docs_req_ops_001_shell_blocks_parse
+      - test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack
       - test_docs_req_ops_001_env_matrix_matches_runtime_usage
       - test_docs_req_ops_001_mise_versions_match_ci_pins
-      - test_docs_req_ops_001_readme_backend_python_version_matches_metadata
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -157,6 +159,7 @@ requirements:
       - test_docs_req_ops_004_milestone_yaml_files_exist
       - test_docs_req_ops_004_issue_templates_support_phase
       - test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs
+      - test_docs_req_ops_004_readme_docs_tree_and_work_item_links_match_repo
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -200,6 +203,7 @@ requirements:
       - test_req_ops_005_root_artifact_hygiene_rejects_tracked_ignored_paths
       - test_req_ops_005_root_artifact_hygiene_rejects_generated_dirs
       - test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files
+      - test_req_ops_005_root_gitignore_covers_validation_artifacts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -239,6 +243,7 @@ requirements:
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
       - test_entry_update_req_ops_006_help_describes_required_inputs
+      - test_form_and_search_req_ops_006_help_describes_required_inputs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -584,6 +589,7 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
+      - test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step
       - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
       - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
     - file: backend/tests/test_dev_auth.py
@@ -612,16 +618,27 @@ requirements:
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
+      - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
       - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
       - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
+      - 'REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows'
     - file: frontend/src/lib/api.test.ts
       tests:
       - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
       - 'REQ-OPS-015: preserves explicit request auth headers during SSR'
       - 'REQ-OPS-015: skips SSR auth forwarding without a request event'
+      - 'REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base'
       - 'REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset'
       - 'REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured'
       - 'REQ-OPS-015: does not derive the SSR API origin from the incoming request'
+    - file: frontend/src/lib/frontend-origin.test.ts
+      tests:
+      - 'REQ-OPS-015: falls back to the default frontend test origin when process env is unavailable'
+      - 'REQ-OPS-015: trims and applies FRONTEND_TEST_ORIGIN overrides'
+      - 'REQ-OPS-015: prefers runtime frontend origin env vars in documented order'
+    - file: frontend/src/test/mocks/handlers.test.ts
+      tests:
+      - 'REQ-OPS-015: MSW handlers honor FRONTEND_TEST_ORIGIN'
     - file: frontend/src/lib/auth-api.test.ts
       tests:
       - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'
@@ -634,10 +651,18 @@ requirements:
     rust:
     - file: ugoite-cli/tests/test_auth.rs
       tests:
+      - test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentials
+      - test_cli_auth_profile_req_ops_015_reports_backend_mode_without_credentials
+      - test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials
+      - test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
       - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -776,6 +801,10 @@ requirements:
       - test_docs_req_ops_018_platform_installer_asset_validates_prerelease
       - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
       - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
+    rust:
+    - file: ugoite-cli/tests/integration_test.rs
+      tests:
+      - test_help_req_ops_018_shows_task_oriented_quick_start
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -1293,3 +1322,43 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-032
+  title: Contributor Setup and Local Conventional Commit Hooks Stay Current
+  description: 'The canonical contributor bootstrap path MUST install repository
+
+    dependencies and enable the repo-local pre-commit hook chain by default.
+    Root `mise run setup` MUST clear any repo-local `core.hooksPath` override
+    before running `uvx pre-commit install`, and contributor-facing setup docs
+    MUST describe that `mise run setup` prepares the same pre-commit gate that
+    CI enforces. The repository MUST also keep local Conventional Commit
+    enforcement wired through the private root tooling package and a Husky
+    `commit-msg` hook that runs `commitlint --edit` without deprecated bootstrap
+    lines, so contributor commits stay warning-free on current Husky releases
+    instead of drifting toward known v10 breakage.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_032_setup_installs_pre_commit_hooks
+      - test_docs_req_ops_032_local_conventional_commit_hook_is_current

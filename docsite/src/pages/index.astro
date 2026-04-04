@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { withBasePath } from "../lib/base-path";
 import {
+  browserPathCaveat,
   conceptPrimerCard,
   nextStepCards,
   primaryStartCards,
@@ -23,6 +24,18 @@ import {
         </p>
 
         <div class="doc-pill-row">
+          <span class="doc-pill doc-pill-warning">{browserPathCaveat.badge}</span>
+        </div>
+
+        <p class="doc-lead">
+          {browserPathCaveat.headline}
+        </p>
+
+        <p>
+          {browserPathCaveat.description}
+        </p>
+
+        <div class="doc-pill-row">
           <span class="doc-pill">Local-first data</span>
           <span class="doc-pill">Browser + CLI surfaces</span>
           <span class="doc-pill">Design and specs one step deeper</span>
@@ -30,7 +43,7 @@ import {
 
         <div class="doc-cta-row">
           <a href={withBasePath("/getting-started")} class="doc-btn doc-btn-primary">Get Started</a>
-          <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">Browse Application</a>
+          <a href={withBasePath("/app")} class="doc-btn doc-btn-outline">Explore Application Docs</a>
           <a href={withBasePath("/docs/spec/index")} class="doc-btn doc-btn-outline">Read Specs</a>
         </div>
       </div>

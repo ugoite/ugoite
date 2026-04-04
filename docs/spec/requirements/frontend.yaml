@@ -446,6 +446,7 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-044: dashboard localizes main workflow copy in Japanese'
+      - 'REQ-FE-044: dashboard localizes first-run onboarding copy in Japanese'
     - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
       tests:
       - 'REQ-FE-044: localizes entries route CTA copy in Japanese'
@@ -1143,7 +1144,9 @@ requirements:
 
     Dashboard-style onboarding MUST count only user-creatable forms when guiding
 
-    the user to create a first entry.
+    the user to create a first entry, and when none exist it MUST explicitly
+
+    direct the user to create a form before attempting entry creation.
 
     '
   related_spec:
@@ -1175,10 +1178,15 @@ requirements:
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
+      - 'REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
       - 'REQ-FE-037: form grid shows empty state when only reserved metadata forms exist'
+    e2e:
+    - file: e2e/dashboard-first-form.test.ts
+      tests:
+      - 'REQ-FE-037: dashboard guides first-run spaces toward form creation'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1668,3 +1676,39 @@ requirements:
     - file: frontend/src/components/SpaceSettings.test.tsx
       tests:
       - 'REQ-FE-060: settings show the current storage topology before editing'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-061
+  title: Saved SQL Placeholder Recovery Guidance
+  description: 'The `/spaces/{space_id}/sql` route MUST explain that named-query
+
+    management is not available there yet, link users to the working query flow
+
+    from Search, and provide a clear route back to the dashboard or other useful
+
+    space pages instead of acting as a dead end.
+
+    '
+  related_spec:
+  - ui/pages/space-sql.yaml
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/saved-sql-route.test.ts
+      tests:
+      - 'REQ-FE-061: saved SQL route provides recovery links instead of a dead end'
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
+      tests:
+      - 'REQ-FE-061: saved SQL route explains the missing UI and links to working recovery paths'

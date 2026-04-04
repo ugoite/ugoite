@@ -3,7 +3,11 @@ use clap::{Parser, Subcommand};
 use ugoite_cli::commands;
 
 #[derive(Parser)]
-#[command(name = "ugoite", about = "Ugoite CLI - Knowledge base management")]
+#[command(
+    name = "ugoite",
+    about = "Ugoite CLI - Knowledge base management",
+    long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -15,15 +19,24 @@ enum Commands {
     Auth(commands::auth::AuthCmd),
     /// CLI endpoint routing settings
     Config(commands::config::ConfigCmd),
-    /// Space management commands
+    /// Space management commands.
+    ///
+    /// Run `ugoite config current` to check whether you are in core, backend, or api mode before choosing positional arguments.
+    /// Use `/root/spaces/<id>` for `SPACE_ID_OR_PATH` arguments in core mode.
+    /// Use a bare `SPACE_ID` in backend/api mode.
+    /// For `ugoite space list`, pass `ROOT_PATH` in core mode and omit it in backend/api mode.
     Space(commands::space::SpaceCmd),
     /// Entry management commands
     Entry(commands::entry::EntryCmd),
-    /// Form management commands
+    /// Form management commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
-    /// Search commands
+    /// Search commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Search(commands::search::SearchCmd),
     /// SQL linting and completion commands
     Sql(commands::sql::SqlCmd),

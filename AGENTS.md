@@ -23,7 +23,7 @@
 
 ```bash
 # Setup & run
-mise run setup            # Install all dependencies
+mise run setup            # Install all dependencies and pre-commit hooks
 mise run dev              # Start frontend + backend
 mise run test             # Run all tests
 mise run e2e              # Run E2E tests

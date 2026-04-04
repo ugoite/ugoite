@@ -91,7 +91,7 @@ async def update_entry_endpoint(payload: EntryUpdate):
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - uv (package manager)
 
 ### Installation

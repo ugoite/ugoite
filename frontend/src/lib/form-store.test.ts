@@ -6,6 +6,7 @@ import { createFormStore } from "./form-store";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
 	id: "form-store-ws",
@@ -66,7 +67,7 @@ describe("createFormStore", () => {
 
 	it("sets error on load failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/form-store-ws/forms", () =>
+			http.get(testApiUrl("/spaces/form-store-ws/forms"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);
