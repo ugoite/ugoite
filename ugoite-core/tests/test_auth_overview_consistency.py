@@ -11,8 +11,6 @@ from typing import cast
 
 from ugoite_core.auth import export_authentication_overview
 
-DOC_ONLY_PROVIDER_FIELDS = {"active_kids_source", "revocation_source"}
-
 
 def _as_map(value: object) -> dict[str, object]:
     assert isinstance(value, dict)
@@ -23,16 +21,12 @@ def _assert_provider_contract(
     expected_provider: dict[str, object],
     actual_provider: dict[str, object],
 ) -> None:
-    expected_keys = set(expected_provider.keys()) - DOC_ONLY_PROVIDER_FIELDS
+    expected_keys = set(expected_provider.keys())
     actual_keys = set(actual_provider.keys())
     assert actual_keys == expected_keys
 
     for key in expected_keys:
         assert actual_provider[key] == expected_provider[key]
-
-    for key in DOC_ONLY_PROVIDER_FIELDS:
-        if key in expected_provider:
-            assert key not in actual_provider
 
 
 def test_auth_overview_matches_security_yaml_contract() -> None:
