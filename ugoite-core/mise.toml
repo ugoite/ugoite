@@ -25,7 +25,7 @@ description = "Clean package-local artifacts and rebuild the Rust extension"
 [tasks.test]
 run = [
 	"cargo test -j 1",
-	"if [ -d tests ]; then report=\"${TMPDIR:-/tmp}/ugoite-core-pytest.xml\" && uv run --with pytest --with pytest-asyncio python -m pytest -W error --junitxml=\"$report\" && python3 ../scripts/fail_on_skipped_tests.py \"$report\" \"ugoite-core tests\"; fi",
+	"if [ -d tests ]; then report=\"${TMPDIR:-/tmp}/ugoite-core-pytest.$$.xml\" && trap 'rm -f \"$report\"' EXIT && uv run --with pytest --with pytest-asyncio python -m pytest -W error --junitxml=\"$report\" && python3 ../scripts/fail_on_skipped_tests.py \"$report\" \"ugoite-core tests\"; fi",
 ]
 description = "Run Rust crate tests and Python binding tests"
 depends = ["build"]
@@ -33,7 +33,7 @@ depends = ["build"]
 [tasks."test:no-build"]
 run = [
 	"cargo test -j 1",
-	"if [ -d tests ]; then report=\"${TMPDIR:-/tmp}/ugoite-core-pytest.xml\" && uv run --with pytest --with pytest-asyncio python -m pytest -W error --junitxml=\"$report\" && python3 ../scripts/fail_on_skipped_tests.py \"$report\" \"ugoite-core tests\"; fi",
+	"if [ -d tests ]; then report=\"${TMPDIR:-/tmp}/ugoite-core-pytest.$$.xml\" && trap 'rm -f \"$report\"' EXIT && uv run --with pytest --with pytest-asyncio python -m pytest -W error --junitxml=\"$report\" && python3 ../scripts/fail_on_skipped_tests.py \"$report\" \"ugoite-core tests\"; fi",
 ]
 description = "Run Rust crate tests and Python binding tests without rebuilding the editable extension"
 

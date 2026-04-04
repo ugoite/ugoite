@@ -15,6 +15,9 @@ pub struct FormCmd {
 #[derive(Subcommand)]
 pub enum FormSubCmd {
     /// List forms
+    #[command(
+        long_about = "List forms for a space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form list /root/spaces/my-space\n\n  # Backend mode\n  ugoite form list my-space"
+    )]
     List {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
@@ -23,21 +26,35 @@ pub enum FormSubCmd {
         space_path: String,
     },
     /// Get a form
+    #[command(
+        long_about = "Get a form.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form get /root/spaces/my-space Note\n\n  # Backend mode\n  ugoite form get my-space Note"
+    )]
     Get {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "FORM_NAME",
+            help = "Form name from the form definition (for example Note or Task)."
+        )]
         form_name: String,
     },
     /// Upsert a form from a JSON file
+    #[command(
+        long_about = "Upsert a form from a JSON file.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite form update /root/spaces/my-space ./note-form.json\n\n  # Backend mode\n  ugoite form update my-space ./note-form.json"
+    )]
     Update {
         #[arg(
             value_name = "SPACE_ID_OR_PATH",
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "FORM_FILE",
+            help = "Path to a JSON form definition file."
+        )]
         form_file: String,
         #[arg(long)]
         strategies: Option<String>,

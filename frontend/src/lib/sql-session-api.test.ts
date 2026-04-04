@@ -5,6 +5,7 @@ import { sqlSessionApi } from "./sql-session-api";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
 	id: "sess-ws",
@@ -47,7 +48,7 @@ describe("sqlSessionApi", () => {
 
 	it("REQ-FE-054: sqlSessionApi normalizes unix-second timestamps for session rows", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sess-ws/sql-sessions/sess-1/rows", () =>
+			http.get(testApiUrl("/spaces/sess-ws/sql-sessions/sess-1/rows"), () =>
 				HttpResponse.json({
 					rows: [
 						{
@@ -73,7 +74,7 @@ describe("sqlSessionApi", () => {
 
 	it("throws on create failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/sess-ws/sql-sessions", () =>
+			http.post(testApiUrl("/spaces/sess-ws/sql-sessions"), () =>
 				HttpResponse.json({ detail: "Failed" }, { status: 500 }),
 			),
 		);
@@ -84,7 +85,7 @@ describe("sqlSessionApi", () => {
 
 	it("throws on get failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sess-ws/sql-sessions/bad", () =>
+			http.get(testApiUrl("/spaces/sess-ws/sql-sessions/bad"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -93,7 +94,7 @@ describe("sqlSessionApi", () => {
 
 	it("throws on count failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sess-ws/sql-sessions/bad/count", () =>
+			http.get(testApiUrl("/spaces/sess-ws/sql-sessions/bad/count"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -104,7 +105,7 @@ describe("sqlSessionApi", () => {
 
 	it("throws on rows failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/sess-ws/sql-sessions/bad/rows", () =>
+			http.get(testApiUrl("/spaces/sess-ws/sql-sessions/bad/rows"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);

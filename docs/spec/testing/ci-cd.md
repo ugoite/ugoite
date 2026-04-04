@@ -187,6 +187,9 @@ jobs:
 The root `mise run test` contract must enforce the same frontend 100% coverage
 gate by depending on `//frontend:test:coverage`, so local verification and CI
 fail for the same coverage regressions.
+Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together so the
+coverage runner packages stay aligned and cannot quietly drift into mixed-version
+warnings during that enforced coverage path.
 
 ## Docsite CI
 
@@ -407,11 +410,15 @@ jobs:
 
 ## Pre-commit Hooks
 
-Install and enable:
+The canonical contributor bootstrap is:
 ```bash
-uvx pre-commit install
+mise run setup
 uvx pre-commit run --all-files
 ```
+
+`mise run setup` installs dependencies and runs `uvx pre-commit install`, so
+local commits use the same hook chain as CI by default. Re-run
+`uvx pre-commit install` manually only if the hooks need repair.
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
@@ -429,7 +436,8 @@ npm ci --no-fund --no-audit
 npm run prepare
 ```
 
-This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+This enables a Husky v9-compatible `commit-msg` hook and runs `commitlint`
+before commit is accepted.
 
 ## Pre-commit CI
 
@@ -498,16 +506,16 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="${TMPDIR:-/tmp}/ugoite-core-pytest.xml" && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "ugoite-core tests"
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="${TMPDIR:-/tmp}/ugoite-core-pytest.$$.xml" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "ugoite-core tests"
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
 
 # Python
 cd .. && uvx ruff format --check .
 uvx ruff check --select ALL --ignore-noqa .
-cd backend && uv run ty check . && report="${TMPDIR:-/tmp}/ugoite-backend-pytest.xml" && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "backend tests"
+cd backend && uv run ty check . && report="${TMPDIR:-/tmp}/ugoite-backend-pytest.$$.xml" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/fail_on_skipped_tests.py "$report" "backend tests"
 
 # Docs
-cd .. && report="${TMPDIR:-/tmp}/ugoite-docs-pytest.xml" && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml="$report" && python3 scripts/fail_on_skipped_tests.py "$report" "docs tests"
+cd .. && report="${TMPDIR:-/tmp}/ugoite-docs-pytest.$$.xml" && trap 'rm -f "$report"' EXIT && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml="$report" && python3 scripts/fail_on_skipped_tests.py "$report" "docs tests"
 cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 
 # Frontend
