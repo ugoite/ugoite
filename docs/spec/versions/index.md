@@ -31,7 +31,7 @@ changes, or prepares meaningful product behavior for users and operators.
 
 | Capability Area | `v0.1` | `v0.2` |
 |-----------------|--------|--------|
-| Local-first core app, storage abstraction, REST/MCP baseline | Added | Continues |
+| Local-first core app, storage abstraction, REST/resource-first MCP baseline | Added | Continues |
 | Form-first terminology and shared `ugoite-core` architecture | Added | Continues |
 | Iceberg-backed entries and Ugoite SQL workflows | Added | Continues |
 | New space UI, responsive layout, theme switching, sample data | Added | Continues |
