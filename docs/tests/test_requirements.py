@@ -327,8 +327,11 @@ def test_no_orphan_tests() -> None:
         raise AssertionError(message)
 
 
-def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog() -> None:
-    """REQ-API-005: requirements README must list every current requirement file and prefix."""
+def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog() -> (
+    None
+):
+    """REQ-API-005: requirements README must list every current requirement file
+    and prefix."""
     readme = _read_text(REQUIREMENTS_DIR / "README.md")
     missing: list[str] = []
     for filename, prefix in _load_requirement_catalog():
@@ -347,7 +350,8 @@ def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog(
 
 
 def test_docs_req_api_005_requirements_readme_covers_declared_test_kinds() -> None:
-    """REQ-API-005: requirements README must describe every declared test mapping kind."""
+    """REQ-API-005: requirements README must describe every declared test mapping
+    kind."""
     readme = _read_text(REQUIREMENTS_DIR / "README.md")
     declared_kinds = sorted(
         {
