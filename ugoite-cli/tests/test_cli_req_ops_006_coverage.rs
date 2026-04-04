@@ -87,6 +87,28 @@ fn setup_space_with_form(dir: &tempfile::TempDir, space_id: &str) -> (String, Pa
     (root, config_path, space_path)
 }
 
+/// REQ-SEC-007: CLI space patch must reject membership-managed settings keys.
+#[test]
+fn test_cli_req_sec_007_space_patch_rejects_membership_managed_settings() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_root, config_path, space_path) = setup_space(&dir, "space-membership-guard");
+
+    let patch_output = cli_command(&config_path)
+        .args([
+            "space",
+            "patch",
+            &space_path,
+            "--settings",
+            r#"{"members":{"ghost-user":{"user_id":"ghost-user","role":"admin","state":"active"}}}"#,
+        ])
+        .output()
+        .expect("space patch membership guard");
+
+    assert!(!patch_output.status.success());
+    assert!(String::from_utf8_lossy(&patch_output.stderr)
+        .contains("membership-managed settings keys: members"));
+}
+
 fn create_entry(config_path: &Path, space_path: &str, entry_id: &str, content: &str) {
     let output = cli_command(config_path)
         .args([
