@@ -132,6 +132,7 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 		{
 			title: "Getting Started",
 			overviewHref: "/getting-started",
+			expandAll: true,
 			items: [
 				{ title: "Overview", href: "/getting-started" },
 				{

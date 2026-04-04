@@ -10,6 +10,8 @@ export type NavSection = {
 	title: string;
 	overviewHref: string;
 	items: NavItem[];
+	/** When true, the submenu shows all items instead of capping at 5. */
+	expandAll?: boolean;
 };
 
 export const topLinks: NavItem[] = [
@@ -24,6 +26,7 @@ export const navSections: NavSection[] = [
 	{
 		title: "Getting Started",
 		overviewHref: "/getting-started",
+		expandAll: true,
 		items: [
 			{ title: "Overview", href: "/getting-started" },
 			{

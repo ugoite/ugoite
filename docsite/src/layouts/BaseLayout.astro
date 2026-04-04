@@ -40,7 +40,7 @@ const subNavByHref = new Map(
     const children = section.items.filter(
       (item) => item.href !== section.overviewHref,
     );
-    return [[overview.href, section.title === "Getting Started" ? children : children.slice(0, 5)]];
+    return [[overview.href, section.expandAll ? children : children.slice(0, 5)]];
   }),
 );
 ---
