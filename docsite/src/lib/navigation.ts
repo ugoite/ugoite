@@ -37,9 +37,9 @@ export const navSections: NavSection[] = [
 				title: "Container Quickstart",
 				href: "/docs/guide/container-quickstart",
 			},
-			{ title: "Docker Compose", href: "/docs/guide/docker-compose" },
-			{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
+			{ title: "Run from source", href: "/docs/guide/local-dev-auth-login" },
 			{ title: "CLI Guide", href: "/docs/guide/cli" },
+			{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
 			{
 				title: "Operations & Troubleshooting",
 				href: "/docs/guide/operations",

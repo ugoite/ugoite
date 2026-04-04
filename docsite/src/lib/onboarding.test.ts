@@ -62,6 +62,7 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(primaryStartCards[1]?.description).toContain("/login");
 	expect(nextStepCards[0]?.description).toContain("completed login");
 	expect(nextStepCards[3]?.description).toContain("health checks");
+	expect(nextStepCards[0]?.description).toContain("create a form first");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
