@@ -81,9 +81,13 @@ test("REQ-E2E-008: onboarding content defines core concepts before asking newcom
 		"Browser, CLI, and API",
 	]);
 	expect(coreConceptSummaries[0]?.description).toContain("portable workspace");
-	expect(coreConceptSummaries[1]?.description).toContain("Markdown-backed record");
+	expect(coreConceptSummaries[1]?.description).toContain(
+		"Markdown-backed record",
+	);
 	expect(coreConceptSummaries[2]?.description).toContain("schema and template");
-	expect(coreConceptSummaries[3]?.description).toContain("search/indexes are derived");
+	expect(coreConceptSummaries[3]?.description).toContain(
+		"search/indexes are derived",
+	);
 	expect(coreConceptSummaries[4]?.description).toContain(
 		"thinnest local-first automation path",
 	);
