@@ -2,11 +2,12 @@ import { useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { SpaceSettings } from "~/components/SpaceSettings";
+import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/space-api";
 import type { SpaceMember, SpacePatchPayload } from "~/lib/types";
 
 const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+	getDocsiteHref("/docs/guide/local-dev-auth-login", "docs/guide/local-dev-auth-login.md");
 
 const managedRoles = ["admin", "editor", "viewer"] as const;
 type ManagedRole = (typeof managedRoles)[number];
