@@ -2,7 +2,9 @@
 
 ## Overview
 
-Ugoite implements the Model Context Protocol (MCP) to enable AI agents to interact with the knowledge base. MCP requests are sent as HTTP POST to `/mcp`.
+Ugoite implements the Model Context Protocol (MCP) so AI agents can read and
+reason over the knowledge base through resources and prompts today. MCP
+requests are sent as HTTP POST to `/mcp`.
 
 ## Resources
 
@@ -61,7 +63,9 @@ Returns available form definitions and their fields.
 
 ## Tools
 
-No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
+No MCP tools are currently exposed. The shipped MCP surface is resource-first
+today (resources + prompts), and the deprecated `run_script` tool has been
+removed.
 
 ---
 

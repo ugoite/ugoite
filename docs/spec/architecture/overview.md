@@ -149,6 +149,6 @@ Frontend                 Backend              ugoite-core           Storage
 |-----------|----------------|
 | **Local-First** | All data in user-controlled storage; no required cloud services |
 | **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
-| **AI-Native** | MCP protocol + MCP integration for AI agents |
+| **Resource-First AI** | MCP resources and prompts today; broader tool-driven workflows land later |
 | **Layered** | Clear separation: ugoite-minimum → ugoite-core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |
