@@ -85,9 +85,13 @@ source of truth.
 
 That design matters because it keeps the system easier to reason about:
 
-- entries and forms are the canonical data
+- entries and forms are the canonical domain data
 - indexes can be rebuilt when needed
 - automation can trust that search results come from local-first source data
+
+In other words: Markdown stays the authoring surface, entries plus Forms define
+the logical contract, and storage/index internals exist to persist or accelerate
+that contract rather than replace it.
 
 ## Which surface should you use?
 
