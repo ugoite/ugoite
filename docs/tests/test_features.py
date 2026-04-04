@@ -17,7 +17,9 @@ POLICIES_README = REPO_ROOT / "docs" / "spec" / "policies" / "README.md"
 ENDPOINTS_DIR = REPO_ROOT / "backend" / "src" / "app" / "api" / "endpoints"
 ROUTES_DIR = REPO_ROOT / "frontend" / "src" / "routes"
 DOCSITE_SPEC_DATA = REPO_ROOT / "docsite" / "src" / "lib" / "spec-data.ts"
-DOCSITE_FEATURES_PAGE = REPO_ROOT / "docsite" / "src" / "pages" / "design" / "features.astro"
+DOCSITE_FEATURES_PAGE = (
+    REPO_ROOT / "docsite" / "src" / "pages" / "design" / "features.astro"
+)
 DOCSITE_RELATIONS_PAGE = (
     REPO_ROOT / "docsite" / "src" / "pages" / "design" / "relations.astro"
 )
@@ -61,12 +63,12 @@ def _load_feature_manifest_files() -> tuple[str, ...]:
     entries = manifest.get("files", [])
     if not isinstance(entries, list):
         message = "Expected list of files in docs/spec/features/features.yaml"
-        raise AssertionError(message)
+        raise TypeError(message)
     files: list[str] = []
     for entry in entries:
         if not isinstance(entry, dict):
             message = "Feature manifest entries must be mappings"
-            raise AssertionError(message)
+            raise TypeError(message)
         file_name = str(entry.get("file") or "").strip()
         if not file_name:
             message = "Feature manifest entries must declare a file"
@@ -246,7 +248,7 @@ def test_no_undeclared_feature_modules() -> None:
 
 
 def test_docs_req_api_004_feature_readme_inventory_matches_manifest() -> None:
-    """REQ-API-004: Feature README inventory must mirror the manifest source of truth."""
+    """REQ-API-004: Feature README inventory must mirror the manifest."""
     readme = _read_text(FEATURES_DIR / "README.md")
     inventory_section = _extract_heading_section(
         readme,
@@ -254,9 +256,13 @@ def test_docs_req_api_004_feature_readme_inventory_matches_manifest() -> None:
         next_heading="## Supplemental References",
     )
     expected_files = ("features.yaml", *_load_feature_manifest_files())
-    missing = [file_name for file_name in expected_files if file_name not in inventory_section]
+    missing = [
+        file_name for file_name in expected_files if file_name not in inventory_section
+    ]
     unexpected = [
-        file_name for file_name in ("links.yaml", "sql.md") if file_name in inventory_section
+        file_name
+        for file_name in ("links.yaml", "sql.md")
+        if file_name in inventory_section
     ]
     if missing or unexpected:
         details: list[str] = []
@@ -264,21 +270,22 @@ def test_docs_req_api_004_feature_readme_inventory_matches_manifest() -> None:
             details.append("missing inventory entries: " + ", ".join(missing))
         if unexpected:
             details.append(
-                "supplemental references listed as inventory: " + ", ".join(unexpected)
+                "supplemental references listed as inventory: " + ", ".join(unexpected),
             )
         message = (
             "docs/spec/features/README.md inventory is out of sync with "
-            "docs/spec/features/features.yaml: "
-            + "; ".join(details)
+            "docs/spec/features/features.yaml: " + "; ".join(details)
         )
         raise AssertionError(message)
 
 
 def test_docs_req_api_004_docsite_feature_pages_use_manifest_loader() -> None:
-    """REQ-API-004: Docsite feature surfaces must load groups from the manifest-backed helper."""
+    """REQ-API-004: Docsite feature pages must use the manifest-backed loader."""
     spec_data = _read_text(DOCSITE_SPEC_DATA)
     if 'path.join(specRoot, "features/features.yaml")' not in spec_data:
-        message = "docsite/src/lib/spec-data.ts must load docs/spec/features/features.yaml"
+        message = (
+            "docsite/src/lib/spec-data.ts must load docs/spec/features/features.yaml"
+        )
         raise AssertionError(message)
 
     missing_calls: list[str] = []
