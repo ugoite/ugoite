@@ -2,6 +2,11 @@
 
 Astro + Bun + Tailwind based documentation site.
 
+For the canonical auth-aware contributor workflow that starts backend,
+frontend, and docsite together, return to the repository root and run
+`mise run dev` as described in the main [README](../README.md#setup--development-mise).
+Use the commands below when you intentionally want docsite-only iteration.
+
 ## Commands
 
 ```bash

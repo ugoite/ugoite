@@ -7,9 +7,9 @@ run = "bun install --frozen-lockfile"
 run = "eval \"$(bash ../scripts/dev-auth-env.sh)\" && bash ../scripts/wait-for-http.sh http://localhost:8000/health 30 && BACKEND_URL=http://localhost:8000 bun run dev"
 
 [tasks.test]
-run = "bun run test:run"
+run = "bash ../scripts/ensure-bun-package-install.sh && bun run test:run"
 description = "Run frontend unit/component tests with Vitest"
 
 [tasks."test:coverage"]
-run = "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
+run = "bash ../scripts/ensure-bun-package-install.sh && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
 description = "Run frontend unit/component tests with 100% coverage enforcement"
