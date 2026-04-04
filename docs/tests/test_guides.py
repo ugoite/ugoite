@@ -713,9 +713,7 @@ FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE=passkey-totp",
     "UGOITE_DEV_AUTH_MODE=mock-oauth",
 }
-LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL = (
-    "https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md"
-)
+LOCAL_DEV_AUTH_GUIDE_DOCSITE_PATH = "/docs/guide/local-dev-auth-login"
 REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS = {
     "| UGOITE_DEV_AUTH_MODE |",
     "| UGOITE_DEV_USER_ID |",
@@ -2279,7 +2277,7 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
         name
         for name, text in canonical_pointer_sources.items()
         if "Local Dev Auth/Login" not in text
-        or LOCAL_DEV_AUTH_GUIDE_EXTERNAL_URL not in text
+        or LOCAL_DEV_AUTH_GUIDE_DOCSITE_PATH not in text
     )
     if missing_canonical_pointers:
         details.append(

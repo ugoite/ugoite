@@ -2,11 +2,12 @@ import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
 import { setAuthTokenCookie } from "~/lib/auth-session";
+import { getDocsiteHref } from "~/lib/docsite-links";
 
 const containerQuickStartGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
+	getDocsiteHref("/docs/guide/container-quickstart", "docs/guide/container-quickstart.md");
 const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+	getDocsiteHref("/docs/guide/local-dev-auth-login", "docs/guide/local-dev-auth-login.md");
 
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {

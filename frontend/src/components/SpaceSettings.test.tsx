@@ -142,7 +142,7 @@ describe("SpaceSettings", () => {
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /storage migration guide/i })).toHaveAttribute(
 			"href",
-			expect.stringContaining("docs/guide/storage-migration.md"),
+			expect.stringContaining("/docs/guide/storage-migration"),
 		);
 	});
 

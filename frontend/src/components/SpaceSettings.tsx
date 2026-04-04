@@ -1,10 +1,11 @@
 import { createMemo, createSignal, Show } from "solid-js";
+import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type { Space, SpacePatchPayload } from "~/lib/types";
 
 const storageMigrationGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/storage-migration.md";
+	getDocsiteHref("/docs/guide/storage-migration", "docs/guide/storage-migration.md");
 
 export interface SpaceSettingsProps {
 	space: Space;
