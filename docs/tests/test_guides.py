@@ -3822,14 +3822,16 @@ def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> N
                     "mise run cleanup:ports",
                 )
             ),
-            "run-e2e.sh must fail fast on occupied ports and point users to cleanup:ports",
+            "run-e2e.sh must fail fast on occupied ports and point"
+            " users to cleanup:ports",
         ),
         (
             _require_exact_task_run(
                 root_mise,
                 "cleanup:ports",
                 ["bash scripts/cleanup-dev-ports.sh"],
-                "root mise must expose cleanup:ports as the explicit destructive option",
+                "root mise must expose cleanup:ports as the explicit"
+                " destructive option",
             )
             is not None,
             "root mise must expose cleanup:ports as the explicit destructive option",
@@ -3838,10 +3840,12 @@ def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> N
             _require_file_contains(
                 CLEANUP_DEV_PORTS_PATH,
                 ["fuser -k", "port", "Cleaned stale servers"],
-                "cleanup-dev-ports.sh must remain the explicit destructive port cleanup helper",
+                "cleanup-dev-ports.sh must remain the explicit"
+                " destructive port cleanup helper",
             )
             is not None,
-            "cleanup-dev-ports.sh must remain the explicit destructive port cleanup helper",
+            "cleanup-dev-ports.sh must remain the explicit"
+            " destructive port cleanup helper",
         ),
         (
             bool(missing_doc_fragments),
