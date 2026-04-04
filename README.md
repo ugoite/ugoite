@@ -196,6 +196,11 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 Install dependencies and repository pre-commit hooks:
 
+The repository root `mise.toml` is the contributor-facing source of truth for
+managed tool versions. Use that shared toolchain story first, then treat
+package README prerequisites as workflow notes on top of the same managed
+environment.
+
 ```bash
 mise run setup
 ```

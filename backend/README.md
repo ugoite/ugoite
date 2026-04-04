@@ -92,7 +92,9 @@ async def update_entry_endpoint(payload: EntryUpdate):
 ### Prerequisites
 
 - Python 3.13+
-- uv (package manager)
+- For contributor-managed tool versions, use the repository root `mise.toml`
+  via `mise run setup`; backend-local commands below assume that shared Python
+  + `uv` toolchain.
 
 ### Installation
 
