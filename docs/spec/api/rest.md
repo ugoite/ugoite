@@ -206,9 +206,7 @@ Content-Type: application/json
 ```json
 {
   "id": "entry-new-uuid",
-  "title": "My Entry",
-  "revision_id": "rev-0001",
-  "properties": { "Field": "Value" }
+  "revision_id": "rev-0001"
 }
 ```
 
@@ -218,6 +216,8 @@ write ACL before mutating storage; otherwise it falls back to the space-level
 `entry_write` permission.
 
 Create request bodies submit entry Markdown via the `content` field.
+Create responses return only the generated `id` and `revision_id`; fetch the
+entry afterward if a client needs extracted title or properties.
 
 **Error**: `403 Forbidden` when space or form write authorization fails.
 
