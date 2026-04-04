@@ -330,8 +330,10 @@ def test_no_orphan_tests() -> None:
 def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog() -> (
     None
 ):
-    """REQ-API-005: requirements README must list every current requirement file
-    and prefix."""
+    """REQ-API-005: requirements README must list every current requirement file and prefix.
+
+    Checks that every catalog file and prefix appears in the README.
+    """
     readme = _read_text(REQUIREMENTS_DIR / "README.md")
     missing: list[str] = []
     for filename, prefix in _load_requirement_catalog():
@@ -350,8 +352,10 @@ def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog(
 
 
 def test_docs_req_api_005_requirements_readme_covers_declared_test_kinds() -> None:
-    """REQ-API-005: requirements README must describe every declared test mapping
-    kind."""
+    """REQ-API-005: requirements README must describe every declared test mapping kind.
+
+    Checks that every kind referenced in YAML test entries appears in the README.
+    """
     readme = _read_text(REQUIREMENTS_DIR / "README.md")
     declared_kinds = sorted(
         {
