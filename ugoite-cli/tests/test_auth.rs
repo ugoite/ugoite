@@ -549,7 +549,7 @@ fn test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requiremen
     );
 }
 
-/// REQ-SEC-003: auth overview includes the canonical channels field.
+/// REQ-SEC-003: auth overview includes canonical channels and provider provenance fields.
 #[test]
 fn test_cli_auth_overview_req_sec_003_includes_channels() {
     let output = Command::new(ugoite_bin())
@@ -577,5 +577,27 @@ fn test_cli_auth_overview_req_sec_003_includes_channels() {
             "cli(via backend)",
             "frontend(via backend)",
         ],
+    );
+
+    let providers = payload
+        .get("providers")
+        .and_then(Value::as_object)
+        .expect("providers object");
+    let bearer = providers
+        .get("bearer")
+        .and_then(Value::as_object)
+        .expect("bearer provider");
+    let api_key = providers
+        .get("api_key")
+        .and_then(Value::as_object)
+        .expect("api_key provider");
+
+    assert_eq!(
+        bearer.get("active_kids_source").and_then(Value::as_str),
+        Some("UGOITE_AUTH_BEARER_ACTIVE_KIDS"),
+    );
+    assert_eq!(
+        api_key.get("revocation_source").and_then(Value::as_str),
+        Some("UGOITE_AUTH_REVOKED_KEY_IDS"),
     );
 }
