@@ -8,6 +8,10 @@ understand. The core idea is simple: you keep information in a **space**,
 organize it as **entries**, define predictable structure with **forms**, and
 then let Ugoite derive **search and indexes** from that source data.
 
+In one sentence: a space groups entries, forms define their structure, Markdown
+stays the authoring surface, and search is derived from the typed fields Ugoite
+extracts when you want schema-aware behavior.
+
 ## Start with a space
 
 A **space** is the top-level container for your knowledge. Think of it as a
@@ -98,6 +102,9 @@ Once the concepts make sense, choose the surface that matches your task:
   + frontend stack locally.
 - Use the [CLI Guide](cli.md) when you prefer terminal-first workflows or
   scripting, or when you want the thinnest local-first workflow today.
+- Use the [REST API](../spec/api/rest.md) when you are integrating another
+  client or intentionally want server-backed automation instead of direct local
+  filesystem access.
 - Use the [Docker Compose Guide](docker-compose.md) when you want the full
   contributor stack from source.
 - Use the [Specification Index](../spec/index.md) when you need the formal
