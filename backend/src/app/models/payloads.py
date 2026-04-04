@@ -73,7 +73,7 @@ class QueryRequest(BaseModel):
 class SqlSessionCreate(BaseModel):
     """SQL session creation payload."""
 
-    sql: str
+    sql: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
 
 
 class SqlVariable(BaseModel):

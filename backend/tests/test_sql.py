@@ -471,6 +471,21 @@ def test_create_sql_session_validation_error(test_client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_create_sql_session_rejects_oversized_sql(test_client: TestClient) -> None:
+    """REQ-API-008: create SQL session rejects oversized SQL payloads before core."""
+    with patch("ugoite_core.create_sql_session", _amock()) as create_sql_session:
+        response = test_client.post(
+            "/spaces/sess-too-large-ws/sql-sessions",
+            json={"sql": "S" * 100_001},
+        )
+    assert response.status_code == 422
+    assert any(
+        item["loc"][-1] == "sql" and item["type"] == "string_too_long"
+        for item in response.json()["detail"]
+    )
+    create_sql_session.assert_not_awaited()
+
+
 def test_create_sql_session_generic_runtime_error(test_client: TestClient) -> None:
     """REQ-API-008: create SQL session returns 500 for generic runtime error."""
     test_client.post("/spaces", json={"name": "sess-rt-ws"})
