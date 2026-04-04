@@ -139,6 +139,18 @@ def _load_requirements() -> tuple[Requirement, ...]:
     return tuple(requirements)
 
 
+def _load_requirement_catalog() -> tuple[tuple[str, str], ...]:
+    catalog: list[tuple[str, str]] = []
+    for path in _iter_requirement_files():
+        data = _load_yaml(path)
+        prefix = str(data.get("prefix") or "").strip()
+        if not prefix:
+            message = f"Expected prefix in {path}"
+            raise AssertionError(message)
+        catalog.append((path.name, prefix))
+    return tuple(catalog)
+
+
 def _load_user_management_milestone() -> dict[str, Any]:
     return _load_yaml(USER_MANAGEMENT_MILESTONE)
 
@@ -312,6 +324,68 @@ def test_no_orphan_tests() -> None:
             missing.append(str(test_file.relative_to(REPO_ROOT)))
     if missing:
         message = "Test files missing requirement references: " + ", ".join(missing)
+        raise AssertionError(message)
+
+
+def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog() -> (
+    None
+):
+    """REQ-API-005: requirements README must list current requirement files.
+
+    Checks that every catalog file and prefix appears in the README.
+    """
+    readme = _read_text(REQUIREMENTS_DIR / "README.md")
+    missing: list[str] = []
+    for filename, prefix in _load_requirement_catalog():
+        if filename not in readme:
+            missing.append(filename)
+        if f"{prefix}-*" not in readme:
+            missing.append(f"{prefix}-*")
+        if f"`{prefix}-###`" not in readme:
+            missing.append(f"{prefix}-###")
+    if missing:
+        message = (
+            "docs/spec/requirements/README.md is missing requirement catalog entries: "
+            + ", ".join(sorted(set(missing)))
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_api_005_requirements_readme_covers_declared_test_kinds() -> None:
+    """REQ-API-005: requirements README must describe every declared test mapping kind.
+
+    Checks that every kind referenced in YAML test entries appears in the README.
+    """
+    readme = _read_text(REQUIREMENTS_DIR / "README.md")
+    declared_kinds = sorted(
+        {
+            test_entry.kind
+            for requirement in _load_requirements()
+            for test_entry in requirement.tests
+        },
+    )
+    missing = [kind for kind in declared_kinds if f"**{kind}**" not in readme]
+    if missing:
+        message = (
+            "docs/spec/requirements/README.md is missing test mapping kinds: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_api_005_spec_index_lists_current_requirement_catalog() -> None:
+    """REQ-API-005: spec index must link every current requirement category."""
+    spec_index = _read_text(REPO_ROOT / "docs" / "spec" / "index.md")
+    missing = [
+        filename
+        for filename, _prefix in _load_requirement_catalog()
+        if f"requirements/{filename}" not in spec_index
+    ]
+    if missing:
+        message = (
+            "docs/spec/index.md is missing requirement category links: "
+            + ", ".join(missing)
+        )
         raise AssertionError(message)
 
 
