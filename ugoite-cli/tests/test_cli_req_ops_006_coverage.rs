@@ -853,6 +853,10 @@ fn test_cli_req_ops_006_query_help_rejects_removed_flags() {
     assert!(!help_text.contains("--offset"));
     assert!(!help_text.contains("--form"));
     assert!(!help_text.contains("--tag"));
+    assert!(!help_text.contains("body"));
+    assert!(help_text.contains("word_count"));
+    assert!(help_text.contains("space_id"));
+    assert!(help_text.contains("properties.<field>"));
 
     let removed_flag_output = cli_command(&config_path)
         .args([
