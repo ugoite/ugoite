@@ -4,7 +4,7 @@
 
 Ugoite implements the Model Context Protocol (MCP) as a resource-first
 integration that lets AI clients read knowledge-base data through explicit
-trust boundaries. MCP requests are sent as HTTP POST to `/mcp`.
+trust boundaries. The current server is mounted at `/mcp` via SSE transport.
 
 In `v0.1`, the shipped MCP server exposes a single read-only resource. Broader
 resource coverage, prompts, and tools are planned for `v0.2`; they are not part
