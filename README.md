@@ -44,6 +44,9 @@ GitHub without comparing two different onboarding maps.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
 
+For a brand-new browser space, the first productive in-app sequence is:
+**open the space, create a form, then create entries from that form**.
+
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
 frontend stack and an explicit login flow, even though the data remains in
@@ -116,7 +119,7 @@ Start with the user-facing guides:
 - [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
 - [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` contributor path
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 
 Go deeper when you need architecture or implementation contracts:
@@ -192,6 +195,11 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 ## Setup & Development (mise)
 
 Install dependencies and repository pre-commit hooks:
+
+The repository root `mise.toml` is the contributor-facing source of truth for
+managed tool versions. Use that shared toolchain story first, then treat
+package README prerequisites as workflow notes on top of the same managed
+environment.
 
 ```bash
 mise run setup
@@ -446,7 +454,10 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
+Contributions welcome! Start with [Run from source](docs/guide/local-dev-auth-login.md)
+for the canonical `mise run setup` -> `mise run dev` -> `/login` workflow. If
+you are using an AI coding agent in this repository, also read
+[AGENTS.md](AGENTS.md).
 
 1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes

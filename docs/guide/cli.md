@@ -97,10 +97,18 @@ cargo run -q -p ugoite-cli -- --help
 If you installed a released binary, use `ugoite` directly:
 
 ```bash
+ugoite config current
+ugoite config set --mode core
+
 mkdir -p ./spaces
 ugoite space list ./spaces
 ugoite space create ./spaces/demo
 ```
+
+The local filesystem examples in this section assume `core` mode. If you
+previously pointed the CLI at a backend or API endpoint, `ugoite config current`
+shows the saved routing state and `ugoite config set --mode core` switches back
+to the local-first filesystem path before you create `./spaces/demo`.
 
 If you are actively developing inside the repository, you can swap those for
 `cargo run -q -p ugoite-cli -- ...` instead.
@@ -163,6 +171,10 @@ CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenario
 
 ## Notes
 
+- The quick-start filesystem examples above assume `core` mode. Run
+  `ugoite config current` to inspect the saved routing state and
+  `ugoite config set --mode core` when you need to switch back from
+  backend/api mode before using local paths such as `./spaces/demo`.
 - In `core` mode, commands that target a specific space now take a positional
   `SPACE_ID_OR_PATH`. Pass the full local path such as
   `./spaces/dev-seed` or `/root/spaces/dev-seed`.
