@@ -11,6 +11,7 @@ import { joinUrl } from "./api";
 import { resetMockData, seedSpace, seedEntry } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 describe("spaceApi", () => {
 	beforeEach(() => {
@@ -54,7 +55,7 @@ describe("spaceApi", () => {
 
 		it("should surface validation errors without object placeholders [REQ-FE-043]", async () => {
 			server.use(
-				http.post("http://localhost:3000/api/spaces", () =>
+				http.post(testApiUrl("/spaces"), () =>
 					HttpResponse.json(
 						{
 							detail: [
@@ -140,7 +141,7 @@ describe("entryApi", () => {
 
 		it("REQ-FE-054: entryApi normalizes unix-second timestamps for entry lists", async () => {
 			server.use(
-				http.get("http://localhost:3000/api/spaces/test-ws/entries", () =>
+				http.get(testApiUrl("/spaces/test-ws/entries"), () =>
 					HttpResponse.json([
 						{
 							id: "entry-1",
@@ -396,7 +397,7 @@ describe("spaceApi members", () => {
 describe("error paths", () => {
 	it("spaceApi.list throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces", () =>
+			http.get(testApiUrl("/spaces"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -405,7 +406,7 @@ describe("error paths", () => {
 
 	it("spaceApi.get throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/nonexistent", () =>
+			http.get(testApiUrl("/spaces/nonexistent"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -421,7 +422,7 @@ describe("error paths", () => {
 
 	it("spaceApi.patch throws on failure", async () => {
 		server.use(
-			http.patch("http://localhost:3000/api/spaces/nonexistent", () =>
+			http.patch(testApiUrl("/spaces/nonexistent"), () =>
 				HttpResponse.json({ detail: "Space not found" }, { status: 404 }),
 			),
 		);
@@ -430,7 +431,7 @@ describe("error paths", () => {
 
 	it("spaceApi.testConnection throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/nonexistent/test-connection", () =>
+			http.post(testApiUrl("/spaces/nonexistent/test-connection"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -441,7 +442,7 @@ describe("error paths", () => {
 
 	it("spaceApi.listMembers throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/nonexistent/members", () =>
+			http.get(testApiUrl("/spaces/nonexistent/members"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -450,7 +451,7 @@ describe("error paths", () => {
 
 	it("spaceApi.inviteMember throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/nonexistent/members/invitations", () =>
+			http.post(testApiUrl("/spaces/nonexistent/members/invitations"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -461,7 +462,7 @@ describe("error paths", () => {
 
 	it("spaceApi.acceptInvitation throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/nonexistent/members/accept", () =>
+			http.post(testApiUrl("/spaces/nonexistent/members/accept"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -472,7 +473,7 @@ describe("error paths", () => {
 
 	it("spaceApi.updateMemberRole throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/nonexistent/members/u1/role", () =>
+			http.post(testApiUrl("/spaces/nonexistent/members/u1/role"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -483,7 +484,7 @@ describe("error paths", () => {
 
 	it("spaceApi.revokeMember throws on failure", async () => {
 		server.use(
-			http.delete("http://localhost:3000/api/spaces/nonexistent/members/u1", () =>
+			http.delete(testApiUrl("/spaces/nonexistent/members/u1"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -553,7 +554,7 @@ describe("error paths", () => {
 
 	it("entryApi.get includes detail in error", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+			http.get(testApiUrl("/spaces/ws-err/entries/bad-id"), () =>
 				HttpResponse.json({ detail: "Custom error detail" }, { status: 404 }),
 			),
 		);
@@ -562,7 +563,7 @@ describe("error paths", () => {
 
 	it("entryApi.get uses statusText fallback when no detail in error", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-err/entries/no-detail-entry", () =>
+			http.get(testApiUrl("/spaces/ws-err/entries/no-detail-entry"), () =>
 				HttpResponse.json({ message: "Generic error" }, { status: 404 }),
 			),
 		);
@@ -571,7 +572,7 @@ describe("error paths", () => {
 
 	it("entryApi.update throws generic error on non-409 failure", async () => {
 		server.use(
-			http.put("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+			http.put(testApiUrl("/spaces/ws-err/entries/bad-id"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);
@@ -582,7 +583,7 @@ describe("error paths", () => {
 
 	it("entryApi.delete throws on failure", async () => {
 		server.use(
-			http.delete("http://localhost:3000/api/spaces/ws-err/entries/bad-id", () =>
+			http.delete(testApiUrl("/spaces/ws-err/entries/bad-id"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -591,7 +592,7 @@ describe("error paths", () => {
 
 	it("entryApi.restore throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/ws-err/entries/bad-id/restore", () =>
+			http.post(testApiUrl("/spaces/ws-err/entries/bad-id/restore"), () =>
 				HttpResponse.json({ detail: "Restore failed" }, { status: 500 }),
 			),
 		);
@@ -600,7 +601,7 @@ describe("error paths", () => {
 
 	it("entryApi.history throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id/history", () =>
+			http.get(testApiUrl("/spaces/ws-err/entries/bad-id/history"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -611,7 +612,7 @@ describe("error paths", () => {
 
 	it("entryApi.getRevision throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-err/entries/bad-id/history/rev-1", () =>
+			http.get(testApiUrl("/spaces/ws-err/entries/bad-id/history/rev-1"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -629,7 +630,7 @@ describe("error paths", () => {
 
 	it("assetApi.list throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-asset-err/assets", () =>
+			http.get(testApiUrl("/spaces/ws-asset-err/assets"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -638,7 +639,7 @@ describe("error paths", () => {
 
 	it("assetApi.upload throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/ws-asset-err/assets", () =>
+			http.post(testApiUrl("/spaces/ws-asset-err/assets"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -648,7 +649,7 @@ describe("error paths", () => {
 
 	it("assetApi.delete throws with detail on failure", async () => {
 		server.use(
-			http.delete("http://localhost:3000/api/spaces/ws-asset-err/assets/bad-id", () =>
+			http.delete(testApiUrl("/spaces/ws-asset-err/assets/bad-id"), () =>
 				HttpResponse.json({ detail: "Asset is referenced" }, { status: 409 }),
 			),
 		);
@@ -664,7 +665,7 @@ describe("error paths", () => {
 
 	it("formApi.listTypes throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-types-err/forms/types", () =>
+			http.get(testApiUrl("/spaces/ws-types-err/forms/types"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -673,7 +674,7 @@ describe("error paths", () => {
 
 	it("formApi.list throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-form-err/forms", () =>
+			http.get(testApiUrl("/spaces/ws-form-err/forms"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -682,7 +683,7 @@ describe("error paths", () => {
 
 	it("formApi.get throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-form-err/forms/nonexistent", () =>
+			http.get(testApiUrl("/spaces/ws-form-err/forms/nonexistent"), () =>
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
@@ -691,7 +692,7 @@ describe("error paths", () => {
 
 	it("formApi.create throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/ws-form-err/forms", () =>
+			http.post(testApiUrl("/spaces/ws-form-err/forms"), () =>
 				HttpResponse.json({ detail: "Invalid" }, { status: 422 }),
 			),
 		);
@@ -702,7 +703,7 @@ describe("error paths", () => {
 
 	it("searchApi.keyword throws on failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/ws-search-err/search", () =>
+			http.get(testApiUrl("/spaces/ws-search-err/search"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -713,7 +714,7 @@ describe("error paths", () => {
 
 	it("searchApi.query throws on failure", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces/ws-search-err/query", () =>
+			http.post(testApiUrl("/spaces/ws-search-err/query"), () =>
 				HttpResponse.json({ detail: "Error" }, { status: 500 }),
 			),
 		);
@@ -722,7 +723,7 @@ describe("error paths", () => {
 
 	it("spaceApi.create uses fallback message when error response has no detail", async () => {
 		server.use(
-			http.post("http://localhost:3000/api/spaces", () =>
+			http.post(testApiUrl("/spaces"), () =>
 				HttpResponse.json({ message: "No detail here" }, { status: 422 }),
 			),
 		);

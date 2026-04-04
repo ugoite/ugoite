@@ -6,7 +6,11 @@
 
 ## Vision
 
-**"Local-First, AI-Native Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space for the Post-SaaS Era"**
+
+`v0.1` ships the local-first core plus a resource-first MCP baseline. Broader
+AI-native workflows, including wider MCP resource coverage and tool exposure,
+remain planned for `v0.2`.
 
 Ugoite is a knowledge management system built on three core principles:
 
@@ -22,9 +26,17 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### Getting Started & Concepts
 - [Core Concepts](../guide/concepts.md) - Plain-language introduction to spaces, entries, forms, and search
-- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path
-- [CLI Guide](../guide/cli.md) - Terminal-first install and usage path
-- [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow
+- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path, with backend + frontend runtime and explicit login
+- [CLI Guide](../guide/cli.md) - Lightest local-first path when you want direct filesystem access in `core` mode
+- [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow for source development
+
+### Entry-Path Trade-offs
+
+| Path | Best for | Trade-off |
+| --- | --- | --- |
+| [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
+| [CLI Guide](../guide/cli.md) in `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
+| [Run from source](../guide/local-dev-auth-login.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
@@ -93,23 +105,35 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Key Concepts
 
-### Form
-A **Form** defines the structure of an entry type. Forms specify:
-- Required and optional fields (H2 headers)
-- Field types (string, number, date, list, markdown)
-- Fixed global template for new entries
+If you are new to Ugoite, start with the
+[Core Concepts guide](../guide/concepts.md). This section is only a quick glossary
+so the specification index can stay easy to scan before you jump into the deeper
+data-model documents.
 
-### Entry
-An **Entry** is stored as a row in an Iceberg table and can be reconstructed as Markdown:
-- H2 sections map to Form-defined fields
-- YAML frontmatter carries metadata (form, tags)
-- Revision history is stored in the Form `revisions` table
+Markdown remains the authoring surface, but once an entry is associated with a
+Form, that Form governs which fields become canonical structured data.
 
 ### Space
-A **Space** is a self-contained data directory with:
-- Iceberg-managed Form tables and assets
-- Derived indexes regenerated from Iceberg tables
-- Portable across storage backends (local, S3, etc.)
+A **Space** is the portable top-level container for your knowledge. It owns its
+entries, forms, settings, assets, and derived indexes while keeping the source
+data under your control. For the concrete on-disk layout, continue to
+[Directory Structure](data-model/directory-structure.md).
+
+### Entry
+An **Entry** is one record inside a space. You edit it as Markdown, but Ugoite
+also stores it as structured form-backed data so it stays queryable, versioned,
+and reconstructable. For the exact storage model, continue to
+[Data Model Overview](data-model/overview.md).
+
+### Form
+A **Form** defines the expected shape of an entry type: which fields exist,
+which ones are required, and how Markdown content maps onto structured data.
+Forms are the bridge between writing-friendly editing and reliable automation.
+
+### Search and indexes
+Search and indexes are derived from entries and forms; they are not the primary
+source of truth. That keeps the system local-first and easier to reason about,
+because the canonical data stays in the space itself.
 
 ---
 
@@ -118,7 +142,7 @@ A **Space** is a self-contained data directory with:
 - [Machine-readable v0.1 tracker](../version/v0.1.yaml) - Current milestone/phase/task state for the v0.1 stream
 - [Machine-readable v0.2 tracker](../version/v0.2.yaml) - Planned milestone/phase/task state for the v0.2 stream
 - [Versions & Release Notes](versions/index.md) - Human-readable summary of what each version adds or changes
-- [Contributing](../../AGENTS.md) - Development guidelines
+- [Contributor onboarding](../guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` workflow for human contributors
 
 ---
 

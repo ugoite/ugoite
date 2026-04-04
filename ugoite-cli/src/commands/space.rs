@@ -21,7 +21,7 @@ pub struct SpaceCmd {
 pub enum SpaceSubCmd {
     /// Create a new space
     #[command(
-        long_about = "Create a new space.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
+        long_about = "Create a new space.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode (full local space path)\n  ugoite space create /root/spaces/my-space\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space create my-space"
     )]
     Create {
         #[arg(
@@ -32,7 +32,7 @@ pub enum SpaceSubCmd {
     },
     /// List spaces
     #[command(
-        long_about = "List all spaces.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
+        long_about = "List all spaces.\n\nRun `ugoite config current` to check whether you should pass a local `ROOT_PATH` or omit it entirely.\nUse `ROOT_PATH` in core mode and omit it in backend/api mode.\n\nExamples:\n  # Core mode (workspace root)\n  ugoite space list /root\n\n  # Core mode (spaces directory also accepted)\n  ugoite space list /root/spaces\n\n  # Backend mode (requires: ugoite config set --mode backend ...)\n  ugoite space list"
     )]
     List {
         #[arg(
@@ -43,7 +43,7 @@ pub enum SpaceSubCmd {
     },
     /// Get space metadata
     #[command(
-        long_about = "Get space metadata.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
+        long_about = "Get space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space get /root/spaces/my-space\n\n  # Backend mode\n  ugoite space get my-space"
     )]
     Get {
         #[arg(
@@ -54,7 +54,7 @@ pub enum SpaceSubCmd {
     },
     /// Patch space metadata
     #[command(
-        long_about = "Patch space metadata.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
+        long_about = "Patch space metadata.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite space patch /root/spaces/my-space --name \"Renamed Space\"\n\n  # Backend mode\n  ugoite space patch my-space --settings '{\"theme\":\"dark\"}'"
     )]
     Patch {
         #[arg(
@@ -71,15 +71,28 @@ pub enum SpaceSubCmd {
     },
     /// Create sample data
     SampleData {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+        )]
         root_path: String,
-        #[arg(value_name = "SPACE_ID")]
+        #[arg(
+            value_name = "SPACE_ID",
+            help = "Space ID for the generated sample-data space"
+        )]
         space_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
+        )]
         scenario: Option<String>,
-        #[arg(long, default_value_t = 50)]
+        #[arg(
+            long,
+            default_value_t = 50,
+            help = "Approximate number of generated entries for the seeded space"
+        )]
         entry_count: usize,
-        #[arg(long)]
+        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
         /// Bootstrap this user ID as the active admin owner of the seeded space.
         /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
@@ -90,15 +103,28 @@ pub enum SpaceSubCmd {
     SampleScenarios,
     /// Create a sample data job
     SampleJob {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root (for example . or /root) where spaces/<SPACE_ID> will be created"
+        )]
         root_path: String,
-        #[arg(value_name = "SPACE_ID")]
+        #[arg(
+            value_name = "SPACE_ID",
+            help = "Space ID for the generated sample-data space"
+        )]
         space_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Sample-data scenario ID (run `ugoite space sample-scenarios` to list options)"
+        )]
         scenario: Option<String>,
-        #[arg(long, default_value_t = 50)]
+        #[arg(
+            long,
+            default_value_t = 50,
+            help = "Approximate number of generated entries for the seeded space"
+        )]
         entry_count: usize,
-        #[arg(long)]
+        #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
         /// Bootstrap this user ID as the active admin owner of the seeded space.
         /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
@@ -107,8 +133,12 @@ pub enum SpaceSubCmd {
     },
     /// Get sample data job status
     SampleJobStatus {
-        #[arg(value_name = "LOCAL_ROOT")]
+        #[arg(
+            value_name = "LOCAL_ROOT",
+            help = "Local workspace root that stores sample-data job state"
+        )]
         root_path: String,
+        #[arg(help = "Job ID returned by `ugoite space sample-job`")]
         job_id: String,
     },
     /// Test storage connection

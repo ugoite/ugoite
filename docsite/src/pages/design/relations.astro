@@ -7,6 +7,7 @@ import {
   getPoliciesDetailed,
   getRequirementGroups,
   getRequirementToFeatureEdges,
+  getSpecifications,
 } from "../../lib/spec-data";
 
 const philosophies = await getPhilosophies();
@@ -14,12 +15,22 @@ const policies = await getPoliciesDetailed();
 const reqGroups = await getRequirementGroups();
 const featureGroups = await getFeatureGroups();
 const reqToFeature = await getRequirementToFeatureEdges();
+const specs = await getSpecifications();
 
 const reqToFeatureMap = new Map<string, string[]>();
 for (const edge of reqToFeature) {
   const items = reqToFeatureMap.get(edge.requirement) ?? [];
   items.push(edge.feature);
   reqToFeatureMap.set(edge.requirement, items);
+}
+
+const specPathById = new Map(specs.map((item) => [item.id, item.sourceFile]));
+
+function getSpecificationHref(specId: string): string {
+  const source = specPathById.get(specId);
+  return source
+    ? withBasePath(`/docs/spec/${source.replace(/\.(md|ya?ml)$/i, "")}`)
+    : withBasePath("/docs/spec/index");
 }
 
 const toc = [
@@ -190,7 +201,13 @@ const toc = [
               <div style="font-size: 0.6875rem; font-weight: 600; color: var(--doc-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Specifications</div>
               <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
                 {pol.linkedSpecifications.map((spec) => (
-                  <span class="doc-pill doc-pill-outline" style="font-size: 0.625rem;">{spec}</span>
+                  <a
+                    href={getSpecificationHref(spec)}
+                    class="doc-pill doc-pill-outline"
+                    style="font-size: 0.625rem; text-decoration: none;"
+                  >
+                    {spec}
+                  </a>
                 ))}
               </div>
             </div>

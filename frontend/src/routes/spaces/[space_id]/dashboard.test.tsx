@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import SpaceDashboardRoute from "./dashboard";
 import { spaceApi } from "~/lib/space-api";
 import { formApi } from "~/lib/form-api";
@@ -81,6 +81,7 @@ describe("/spaces/:space_id/dashboard", () => {
 			id: "default",
 			name: "Default Space",
 			created_at: "2025-01-01T00:00:00Z",
+			storage_config: { uri: "file:///var/lib/ugoite/default" },
 		});
 		(formApi.listTypes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 		(assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -103,9 +104,30 @@ describe("/spaces/:space_id/dashboard", () => {
 		render(() => <SpaceDashboardRoute />);
 
 		await waitFor(() => {
-			expect(screen.getByText("Create a form first to start writing entries.")).toBeInTheDocument();
+			expect(screen.getByText("Start by creating your first form.")).toBeInTheDocument();
 		});
 		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
+	});
+
+	it("REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms", async () => {
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("Start by creating your first form.")).toBeInTheDocument();
+		});
+		expect(
+			screen.getByText(
+				"Entries depend on form templates and fields. Create one form first, then come back to add entries.",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByText("Recommended first step")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Create your first form" }));
+
+		expect(screen.getByRole("heading", { name: "Create New Form" })).toBeInTheDocument();
 	});
 
 	it("REQ-FE-058: dashboard avoids a persistent top-level loading banner during routine navigation", () => {
@@ -147,5 +169,39 @@ describe("/spaces/:space_id/dashboard", () => {
 		expect(
 			screen.getByText("ファイルをアップロードし、カタログのメタデータを同期します。"),
 		).toBeInTheDocument();
+	});
+
+	it("REQ-FE-044: dashboard localizes first-run onboarding copy in Japanese", async () => {
+		setLocale("ja");
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("最初のフォームを作成して始めましょう。")).toBeInTheDocument();
+		});
+		expect(
+			screen.getByText(
+				"エントリはフォームのテンプレートとフィールドをもとに作成します。先に1つフォームを作成してからエントリ作成に戻ってください。",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByText("最初のおすすめステップ")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "最初のフォームを作成" })).toBeInTheDocument();
+	});
+
+	it("REQ-FE-060: dashboard surfaces the active storage topology with a settings link", async () => {
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Storage topology" })).toBeInTheDocument();
+		});
+		expect(screen.getByText("Local filesystem")).toBeInTheDocument();
+		expect(screen.getByText("file:///var/lib/ugoite/default")).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Open space settings" })).toHaveAttribute(
+			"href",
+			"/spaces/default/settings",
+		);
 	});
 });

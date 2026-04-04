@@ -9,6 +9,11 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "daily"
+    groups:
+      vitest-stack:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
 
   - package-ecosystem: "bun"
     directory: "/docsite"

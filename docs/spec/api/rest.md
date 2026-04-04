@@ -198,7 +198,7 @@ POST /spaces/{space_id}/entries
 Content-Type: application/json
 
 {
-  "markdown": "# My Entry\n\n## Field\nValue"
+  "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
 }
 ```
 
@@ -216,6 +216,8 @@ Create uses the submitted Markdown as the authorization target. If frontmatter
 or extracted properties resolve a `form`, the adapter MUST enforce that Form's
 write ACL before mutating storage; otherwise it falls back to the space-level
 `entry_write` permission.
+
+Create request bodies submit entry Markdown via the `content` field.
 
 **Error**: `403 Forbidden` when space or form write authorization fails.
 
@@ -367,6 +369,32 @@ DELETE /spaces/{space_id}/forms/{name}
 #### List Column Types
 ```http
 GET /spaces/{space_id}/forms/types
+```
+
+**Response**: `200 OK`
+```json
+[
+  "string",
+  "sql",
+  "markdown",
+  "number",
+  "double",
+  "float",
+  "integer",
+  "long",
+  "boolean",
+  "date",
+  "time",
+  "timestamp",
+  "timestamp_tz",
+  "timestamp_ns",
+  "timestamp_tz_ns",
+  "uuid",
+  "row_reference",
+  "binary",
+  "list",
+  "object_list"
+]
 ```
 
 ---

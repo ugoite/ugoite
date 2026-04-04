@@ -3,7 +3,7 @@ use crate::config::{
     resolve_space_reference, space_ws_path, Format,
 };
 use crate::http;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 
 #[derive(Args)]
@@ -46,7 +46,7 @@ pub enum EntrySubCmd {
     },
     /// Create an entry
     #[command(
-        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string.\n\nExamples:\n  # Core mode - create a note\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # With custom author\n  ugoite entry create my-space my-note --content '# Note' --author alice"
+        long_about = "Create an entry in a space.\n\nThe entry ID is a slug (alphanumeric + hyphens). Content is a Markdown string. Frontmatter is optional and only needed when you want form-backed metadata.\n\nExamples:\n  # Core mode - minimal note\n  ugoite entry create /root/spaces/my-space my-note --content '# My Note'\n\n  # Core mode - note with form frontmatter\n  ugoite entry create /root/spaces/my-space my-note --content $'---\\nform: Note\\n---\\n# My Note\\n\\n## Body\\n\\nHello world.'\n\n  # Backend mode - minimal entry\n  ugoite entry create my-space task-01 --content '# Task 01'\n\n  # Core mode with custom author\n  ugoite entry create /root/spaces/my-space my-note --content '# Note' --author alice"
     )]
     Create {
         #[arg(
@@ -68,10 +68,9 @@ pub enum EntrySubCmd {
         content: String,
         #[arg(
             long,
-            default_value = "cli",
-            help = "Author name to record in the revision history"
+            help = "Author name to record in the revision history (core mode only)"
         )]
-        author: String,
+        author: Option<String>,
     },
     /// Update an entry
     Update {
@@ -80,14 +79,31 @@ pub enum EntrySubCmd {
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "ENTRY_ID",
+            help = "Entry slug/ID (e.g. 'my-note', 'task-01')"
+        )]
         entry_id: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Updated entry content as a Markdown string (must keep the same form frontmatter)"
+        )]
         markdown: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Expected current revision ID to enforce optimistic concurrency checks"
+        )]
         parent_revision_id: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "JSON array of asset objects to persist with the updated entry revision"
+        )]
         assets: Option<String>,
-        #[arg(long, default_value = "cli")]
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history"
+        )]
         author: String,
     },
     /// Delete an entry
@@ -193,14 +209,20 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry create")?;
             if let Some(base) = base_url(&config) {
+                if author.is_some() {
+                    bail!(
+                        "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                    );
+                }
                 let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
-                    &serde_json::json!({"content": content, "author": author}),
+                    &format!("{base}/spaces/{space_id}/entries"),
+                    &serde_json::json!({"id": entry_id, "content": content}),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
+            let author = author.unwrap_or_else(|| "cli".to_string());
             let op = operator_for_path(&root)?;
             let ws = space_ws_path(&root, &space_id);
             let integrity =
