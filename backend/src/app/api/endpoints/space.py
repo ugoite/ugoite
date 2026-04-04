@@ -15,6 +15,7 @@ from app.core.config import get_root_path
 from app.core.ids import validate_id
 from app.core.storage import space_uri, storage_config_from_root
 from app.models.payloads import (
+    MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS,
     SpaceConnectionRequest,
     SpaceCreate,
     SpacePatch,
@@ -121,6 +122,23 @@ def _validate_path_id(identifier: str, name: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+def _validate_patch_settings(settings: dict[str, Any] | None) -> None:
+    """Reject membership lifecycle mutations from the generic patch endpoint."""
+    if settings is None:
+        return
+
+    reserved_keys = sorted(MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS.intersection(settings))
+    if reserved_keys:
+        joined = ", ".join(reserved_keys)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "settings must not include membership-managed keys "
+                f"({joined}); use the dedicated member endpoints instead"
+            ),
+        )
 
 
 def _space_uri(space_id: str) -> str:
@@ -309,12 +327,15 @@ async def patch_space_endpoint(
             identity,
             "space_admin",
         )
+        _validate_patch_settings(payload.settings)
         updated_space = await ugoite_core.patch_space(
             storage_config,
             space_id,
             json.dumps(patch_data),
         )
         return _sanitize_space_meta(updated_space)
+    except HTTPException:
+        raise
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
     except RuntimeError as e:
