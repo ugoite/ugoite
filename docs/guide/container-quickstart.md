@@ -58,12 +58,33 @@ defaults to `mock-oauth` so first-time browser evaluators can reach `/spaces`
 with fewer steps, while source development keeps `passkey-totp` as the default
 so contributors exercise the explicit passkey + 2FA flow.
 
+## Where browser-created data lives
+
+The browser path is still local-first in practice. When you create entries
+through the published UI, the backend writes that data into the host-mounted
+spaces directory, not into a hosted database.
+
+- By default, that host path is `./spaces`.
+- If you override `UGOITE_SPACES_DIR`, inspect or back up that host path
+  instead.
+- This is what "local-first" means for the published browser path: you can
+  examine and copy the underlying data directory yourself.
+
+For example, after creating content in the browser:
+
+```bash
+ls ./spaces
+find ./spaces -maxdepth 2 -type f | head
+```
+
 ## Next steps
 
 - The `default` space is the starter workspace that the published quick start
   bootstraps for you after login.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
+- After that first browser-created note, inspect `./spaces` (or your overridden
+  `UGOITE_SPACES_DIR`) to see where the data now lives on the host.
 - Read [Core Concepts](concepts.md) next if you want the mental model for
   spaces, entries, forms, and search before exploring more of the UI.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
