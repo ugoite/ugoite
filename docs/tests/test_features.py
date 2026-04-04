@@ -232,7 +232,7 @@ def test_frontend_paths_match_routes() -> None:
 
 
 def test_docs_req_api_004_policy_traceability_docs_describe_manifest_links() -> None:
-    """REQ-API-004: Policy traceability docs must describe manifest-backed feature links."""
+    """REQ-API-004: Policy docs must describe manifest-backed feature links."""
     readme = _read_text(POLICIES_README)
     required_snippets = (
         "linked_requirements",
@@ -242,7 +242,7 @@ def test_docs_req_api_004_policy_traceability_docs_describe_manifest_links() -> 
     missing = [snippet for snippet in required_snippets if snippet not in readme]
     if missing:
         message = (
-            "docs/spec/policies/README.md must explain manifest-backed feature traceability: "
-            + ", ".join(missing)
+            "docs/spec/policies/README.md must explain manifest-backed"
+            " feature traceability: " + ", ".join(missing)
         )
         raise AssertionError(message)
