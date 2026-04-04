@@ -95,9 +95,16 @@ npm install
 
 ### Development
 
+For the canonical auth-aware contributor workflow that starts backend,
+frontend, and docsite together, return to the repository root and run
+`mise run dev` as described in the main [README](../README.md#setup--development-mise).
+
+Use the command below only when you intentionally want frontend-isolated
+iteration and already have a reachable local backend:
+
 ```bash
-# Set backend URL and start dev server
-BACKEND_URL=http://localhost:8000 npm run dev
+# Start the frontend-only dev server
+mise run //frontend:dev
 ```
 
 ### Testing
