@@ -17,7 +17,7 @@ REQ-OPS-017: Release publish must ship container quick-start assets and document
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
-REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-021: Frontend 100% coverage and Vitest drift prevention must stay explicit.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
@@ -144,6 +144,8 @@ WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
+FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
 HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
@@ -151,6 +153,7 @@ PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
@@ -666,6 +669,8 @@ REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "`ugoite auth login`",
     "`ugoite auth token-clear`",
     '`eval "$(ugoite auth token-clear)"`',
+    "`ugoite config set --mode core`",
+    "The local filesystem examples in this section assume `core` mode",
 }
 REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
@@ -854,11 +859,14 @@ REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//frontend:test:coverage",
     "node ./node_modules/vitest/vitest.mjs run --coverage",
+    "Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together",
 }
 REQUIRED_FRONTEND_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage"
 )
 REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS = {"vitest", "@vitest/*"}
+REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES = ("vitest", "@vitest/coverage-v8")
 REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//docsite:test:coverage",
@@ -1235,6 +1243,70 @@ def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
             + ", ".join(missing)
         )
         raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() -> None:
+    """REQ-E2E-008: source contributor docs keep one canonical onboarding path."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    spec_index = SPEC_INDEX_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                README_PATH,
+                ["Start with [Run from source](docs/guide/local-dev-auth-login.md)"],
+                "README Contributing section must route humans through Run from source",
+            ),
+            _require_file_contains(
+                SPEC_INDEX_PATH,
+                [
+                    "[Run from source](../guide/local-dev-auth-login.md)",
+                    "[Contributor onboarding](../guide/local-dev-auth-login.md)",
+                ],
+                (
+                    "spec index must point human contributor guidance at "
+                    "local-dev-auth-login"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "docker-compose.md",
+                [
+                    "alternative way to run Ugoite from source",
+                    (
+                        "[Local Development Authentication and Login]"
+                        "(local-dev-auth-login.md)"
+                    ),
+                ],
+                (
+                    "docker-compose guide must position itself as the "
+                    "alternative source workflow"
+                ),
+            ),
+        ]
+        if detail
+    ]
+
+    if (
+        "Contributions welcome! See [AGENTS.md](AGENTS.md) for development "
+        "guidelines." in readme
+    ):
+        details.append(
+            "README Contributing section must not send human contributors to AGENTS.md",
+        )
+
+    if "[Run from source](../guide/docker-compose.md)" in spec_index:
+        details.append(
+            "spec index must not keep docker-compose as the Run from source path",
+        )
+
+    if "[Contributing](../../AGENTS.md)" in spec_index:
+        details.append(
+            "spec index must not label AGENTS.md as human contributing guidance",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
@@ -3019,10 +3091,16 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
 
 
 def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
-    """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
+    """REQ-OPS-021: Frontend coverage and Vitest alignment must stay explicit."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    frontend_package = _load_json_mapping(FRONTEND_PACKAGE_JSON_PATH)
+    frontend_bun_lock = _read_required_text(
+        FRONTEND_BUN_LOCK_PATH,
+        missing_message="{path} is missing",
+    )
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
         task_name="test:coverage",
@@ -3043,6 +3121,60 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
         if fragment not in guide_text
     )
+    frontend_dev_dependencies = frontend_package.get("devDependencies")
+    vitest_spec: str | None = None
+    coverage_spec: str | None = None
+    if isinstance(frontend_dev_dependencies, dict):
+        vitest_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+        )
+        coverage_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+        )
+        vitest_spec = vitest_value if isinstance(vitest_value, str) else None
+        coverage_spec = coverage_value if isinstance(coverage_value, str) else None
+
+    vitest_lock_pattern = re.compile(
+        r'^\s+"(?P<name>vitest|@vitest/coverage-v8)": '
+        r'\["(?:vitest|@vitest/coverage-v8)@(?P<version>[^"]+)"',
+        re.MULTILINE,
+    )
+    vitest_lock_versions = {
+        match.group("name"): match.group("version")
+        for match in vitest_lock_pattern.finditer(frontend_bun_lock)
+    }
+    vitest_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+    )
+    coverage_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+    )
+
+    frontend_bun_update: dict[str, object] | None = None
+    updates = dependabot.get("updates", [])
+    if isinstance(updates, list):
+        frontend_bun_update = next(
+            (
+                update
+                for update in updates
+                if isinstance(update, dict)
+                and update.get("package-ecosystem") == "bun"
+                and update.get("directory") == "/frontend"
+            ),
+            None,
+        )
+
+    vitest_group_patterns: list[set[str]] = []
+    if frontend_bun_update is not None:
+        groups = frontend_bun_update.get("groups")
+        if isinstance(groups, dict):
+            vitest_group_patterns = [
+                {pattern for pattern in patterns if isinstance(pattern, str)}
+                for group in groups.values()
+                if isinstance(group, dict)
+                for patterns in [group.get("patterns", [])]
+                if isinstance(patterns, list)
+            ]
 
     detail_candidates = (
         (
@@ -3066,6 +3198,59 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing frontend coverage fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+        (
+            not isinstance(frontend_dev_dependencies, dict),
+            "frontend/package.json devDependencies must be a mapping",
+        ),
+        (
+            vitest_spec is None,
+            "frontend/package.json must declare devDependencies.vitest",
+        ),
+        (
+            coverage_spec is None,
+            "frontend/package.json must declare devDependencies.@vitest/coverage-v8",
+        ),
+        (
+            vitest_spec is not None
+            and coverage_spec is not None
+            and vitest_spec != coverage_spec,
+            (
+                "frontend/package.json must keep vitest and "
+                "@vitest/coverage-v8 version ranges aligned"
+            ),
+        ),
+        (
+            vitest_lock_version is None,
+            "frontend/bun.lock must resolve vitest",
+        ),
+        (
+            coverage_lock_version is None,
+            "frontend/bun.lock must resolve @vitest/coverage-v8",
+        ),
+        (
+            vitest_lock_version is not None
+            and coverage_lock_version is not None
+            and vitest_lock_version != coverage_lock_version,
+            (
+                "frontend/bun.lock must keep resolved vitest and "
+                "@vitest/coverage-v8 versions aligned"
+            ),
+        ),
+        (
+            frontend_bun_update is None,
+            ".github/dependabot.yml must track /frontend with the bun ecosystem",
+        ),
+        (
+            frontend_bun_update is not None
+            and not any(
+                REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS.issubset(patterns)
+                for patterns in vitest_group_patterns
+            ),
+            (
+                ".github/dependabot.yml /frontend bun updates must group "
+                "vitest and @vitest/* together"
+            ),
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
