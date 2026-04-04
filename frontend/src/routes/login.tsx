@@ -1,7 +1,12 @@
 import { A, useNavigate, useSearchParams } from "@solidjs/router";
-import { createResource, createSignal, onMount, Show } from "solid-js";
-import { authApi } from "~/lib/auth-api";
-import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
+import { createResource, createSignal, Show } from "solid-js";
+import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
+import { setAuthTokenCookie } from "~/lib/auth-session";
+
+const containerQuickStartGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
+const localDevAuthGuideUrl =
+	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
 
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {
@@ -15,21 +20,24 @@ export default function LoginRoute() {
 	const [searchParams] = useSearchParams();
 	const [username, setUsername] = createSignal("");
 	const [totpCode, setTotpCode] = createSignal("");
+	const [authConfigError, setAuthConfigError] = createSignal("");
 	const [submitError, setSubmitError] = createSignal("");
 	const [isSubmitting, setIsSubmitting] = createSignal(false);
 	const redirectTarget = () => searchParams.next || "/spaces";
 
 	const [authConfig] = createResource(async () => {
-		const config = await authApi.getConfig();
-		setUsername(config.usernameHint);
-		return config;
+		setAuthConfigError("");
+		try {
+			const config = await authApi.getConfig();
+			setUsername(config.usernameHint);
+			return config;
+		} catch (error) {
+			setAuthConfigError(toMessage(error));
+			return null;
+		}
 	});
 
-	onMount(() => {
-		clearAuthTokenCookie();
-	});
-
-	const completeLogin = async (action: () => Promise<{ bearerToken: string }>) => {
+	const completeLogin = async (action: () => Promise<AuthLoginResponse>) => {
 		setIsSubmitting(true);
 		setSubmitError("");
 		try {
@@ -45,15 +53,11 @@ export default function LoginRoute() {
 
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
-		await completeLogin(async () => {
-			return await authApi.loginWithPasskeyTotp(username().trim(), totpCode().trim());
-		});
+		await completeLogin(() => authApi.loginWithPasskeyTotp(username().trim(), totpCode().trim()));
 	};
 
 	const handleMockOAuth = async () => {
-		await completeLogin(async () => {
-			return await authApi.loginWithMockOauth();
-		});
+		await completeLogin(() => authApi.loginWithMockOauth());
 	};
 
 	return (
@@ -70,10 +74,34 @@ export default function LoginRoute() {
 					<p class="text-sm ui-muted">Loading auth mode...</p>
 				</Show>
 
-				<Show when={authConfig.error}>
-					<p class="ui-alert ui-alert-error text-sm">
-						Failed to load the current auth mode. Re-run <code>mise run dev</code> and try again.
-					</p>
+				<Show when={authConfigError()}>
+					<div class="ui-alert ui-alert-error ui-stack-sm text-sm">
+						<p>
+							Failed to load the current auth mode. Confirm the Ugoite stack you started is still
+							running, then refresh this page.
+						</p>
+						<p>
+							Started from source? Re-run <code>mise run dev</code>. Using the published stack?
+							Restart your Docker Compose services and reopen <code>/login</code>.
+						</p>
+						<p>
+							Need the browser setup guide? Open{" "}
+							<a
+								href={containerQuickStartGuideUrl}
+								target="_blank"
+								rel="noopener"
+								class="hover:underline"
+							>
+								Container Quick Start
+							</a>{" "}
+							for the published stack or{" "}
+							<a href={localDevAuthGuideUrl} target="_blank" rel="noopener" class="hover:underline">
+								Local Dev Auth/Login
+							</a>{" "}
+							for source development.
+						</p>
+						<p class="ui-muted">Details: {authConfigError()}</p>
+					</div>
 				</Show>
 
 				<Show when={authConfig()}>
@@ -81,6 +109,35 @@ export default function LoginRoute() {
 						<>
 							<Show when={config().mode === "passkey-totp"}>
 								<form class="ui-stack-sm" onSubmit={handleSubmit}>
+									<section class="ui-card ui-stack-sm" aria-labelledby="login-first-time-heading">
+										<div class="ui-stack-sm">
+											<h2 id="login-first-time-heading" class="text-base font-semibold">
+												First time here?
+											</h2>
+											<ol class="list-decimal space-y-1 pl-5 text-sm ui-muted">
+												<li>
+													Start the local stack with <code>mise run dev</code>.
+												</li>
+												<li>Reuse the username you confirmed in that terminal.</li>
+												<li>
+													Generate the current 2FA code from your authenticator or the guide&apos;s{" "}
+													<code>oathtool</code> example.
+												</li>
+											</ol>
+										</div>
+										<p class="text-sm ui-muted">
+											Need the full walkthrough? Open{" "}
+											<a
+												href={localDevAuthGuideUrl}
+												target="_blank"
+												rel="noopener"
+												class="hover:underline"
+											>
+												Local Dev Auth/Login
+											</a>
+											.
+										</p>
+									</section>
 									<p class="text-sm ui-muted">
 										Use the username you confirmed in the terminal and the current 2FA code from
 										your local development authenticator. This browser must also be using the
@@ -148,9 +205,6 @@ export default function LoginRoute() {
 				<div class="flex flex-wrap gap-3">
 					<A href="/" class="ui-button ui-button-secondary">
 						Back to Home
-					</A>
-					<A href="/spaces" class="ui-button ui-button-secondary">
-						Go to Spaces
 					</A>
 				</div>
 			</section>

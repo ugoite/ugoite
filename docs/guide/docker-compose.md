@@ -1,9 +1,11 @@
 # Docker Compose Guide
 
-This guide describes how to run Ugoite with Docker Compose for local development
-from source.
-If you are working inside the devcontainer and Docker is not available, use the
-local dev workflow described in [README.md](../../README.md) instead.
+This guide describes an alternative way to run Ugoite from source when you
+specifically want Docker Compose instead of the canonical human contributor
+path.
+If you want the default contributor workflow, start with
+[Local Development Authentication and Login](local-dev-auth-login.md) and
+`mise run dev` instead.
 
 If you want pre-built release images from GHCR instead of local builds, use
 [Container Quick Start](container-quickstart.md).
@@ -64,5 +66,6 @@ rm -rf ./spaces
   reach it across the Compose network.
 - The configured `UGOITE_DEV_USER_ID` becomes the local `admin-space` admin for
   this source-based Compose stack.
-- If you prefer to run services directly on the host, use the `mise` tasks
-  instead of Docker Compose.
+- If you want the canonical contributor workflow, follow
+  [Local Development Authentication and Login](local-dev-auth-login.md) and use
+  `mise run dev` instead of Docker Compose.

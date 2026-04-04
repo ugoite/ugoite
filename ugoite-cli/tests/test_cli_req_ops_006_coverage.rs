@@ -300,7 +300,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-passkey-context: passkey-context"));
     assert!(String::from_utf8_lossy(&backend_mode_login.stdout)
-        .contains("export UGOITE_AUTH_BEARER_TOKEN=backend-mode-token"));
+        .contains("export UGOITE_AUTH_BEARER_TOKEN='backend-mode-token'"));
 
     write_endpoint_config(
         &config_path,
@@ -1427,6 +1427,33 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
     handle.join().expect("join remote entry get server");
     assert!(remote_get_request.starts_with("GET /spaces/remote-space/entries/entry-1 HTTP/1.1"));
 
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
+    );
+    let remote_create_with_author_output = cli_command(&remote_config_path)
+        .args([
+            "entry",
+            "create",
+            "remote-space",
+            "entry-1",
+            "--content",
+            "# Remote Entry",
+            "--author",
+            "remote-author",
+        ])
+        .output()
+        .expect("remote entry create with author");
+    assert!(!remote_create_with_author_output.status.success());
+    assert!(
+        String::from_utf8_lossy(&remote_create_with_author_output.stderr)
+            .contains("entry create --author is only supported in core mode"),
+        "{}",
+        String::from_utf8_lossy(&remote_create_with_author_output.stderr)
+    );
+
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"entry-1"}"#);
     write_endpoint_config(
         &remote_config_path,
@@ -1442,8 +1469,6 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
             "entry-1",
             "--content",
             "# Remote Entry",
-            "--author",
-            "remote-author",
         ])
         .output()
         .expect("remote entry create");
@@ -1452,9 +1477,10 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("remote entry create request");
     handle.join().expect("join remote entry create server");
-    assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries/entry-1 HTTP/1.1"));
+    assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries HTTP/1.1"));
+    assert!(remote_create_request.contains(r#""id":"entry-1""#));
     assert!(remote_create_request.contains("\"content\":\"# Remote Entry\""));
-    assert!(remote_create_request.contains(r#""author":"remote-author""#));
+    assert!(!remote_create_request.contains(r#""author":"#));
 
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"updated":true}"#);
     write_endpoint_config(

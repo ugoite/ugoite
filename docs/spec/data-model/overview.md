@@ -9,6 +9,9 @@ To ensure clarity, Ugoite distinguishes between the **System Data Model** and us
 - **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
 - **Entry Forms**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
 
+Markdown remains the primary authoring surface, but Forms are the canonical
+contract that turns that Markdown into typed, queryable fields.
+
 ## Principles
 
 Ugoite's data model is built on these principles:
@@ -19,6 +22,22 @@ Ugoite's data model is built on these principles:
 | **Form-on-Read** | Entries are reconstructed from Form-defined fields in Iceberg |
 | **Append-Only Integrity** | Revisions are appended in Iceberg; history is immutable |
 | **Table-Backed Storage** | Entries live in Apache Iceberg tables via OpenDAL |
+
+## Authority Layers
+
+Ugoite uses three related "source of truth" layers, each for a different job:
+
+- **User-facing authoring surface**: Markdown is the primary editing surface for
+  humans and agents.
+- **Logical/domain contract**: Entries plus their Form definitions are the
+  canonical meaning of the data model, including which typed fields exist and
+  how they should be interpreted.
+- **Physical persistence layer**: Iceberg-managed tables and metadata are the
+  authoritative on-disk representation that persists those entries and Forms.
+
+These layers should agree with each other, but they are not interchangeable:
+Markdown is for authoring, Forms define the logical contract, and Iceberg owns
+the storage layout.
 
 ## Directory Structure
 
@@ -46,6 +65,10 @@ Forms define entry types with:
 - **Fields**: Content columns derived from the Iceberg table schema
 - **Types**: Iceberg column types mapped to entry fields
 - **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
+
+Forms are optional when you are still writing an unstructured note. Once you
+want stable field extraction, validation, or queryable columns, define the Form
+first because it becomes the field contract for that entry type.
 
 ### Metadata vs Content Columns
 
@@ -203,7 +226,9 @@ Conflicts return HTTP 409 with current revision.
 ## Indices
 
 Materialized indexes (search, embeddings, stats) are derived from Iceberg tables
-and can be regenerated. The Iceberg-managed layout is the only source of truth.
+and can be regenerated. They are never authoritative. The authoritative
+physical storage layer is the Iceberg-managed layout, while the logical/domain
+contract still comes from entries and their Form definitions.
 
 ## Integrity
 

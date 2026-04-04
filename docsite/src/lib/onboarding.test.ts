@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import {
+	browserPathCaveat,
 	conceptPrimerCard,
 	nextStepCards,
 	primaryStartCards,
@@ -14,7 +15,7 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 	]);
 	expect(primaryStartCards.map((card) => card.href)).toEqual([
 		"/docs/guide/container-quickstart",
-		"/docs/guide/docker-compose",
+		"/docs/guide/local-dev-auth-login",
 		"/docs/guide/cli",
 	]);
 	expect(primaryStartCards.map((card) => card.badge)).toEqual([
@@ -40,6 +41,24 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 		"Access",
 		"Reference",
 	]);
+});
+
+test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-first paths", () => {
+	expect(browserPathCaveat).toEqual({
+		badge: "Browser caveat today",
+		description:
+			"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+		headline:
+			"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+	});
+	expect(primaryStartCards[0]?.description).toContain(
+		"frontend + backend stack",
+	);
+	expect(primaryStartCards[0]?.description).toContain("explicit browser login");
+	expect(primaryStartCards[1]?.description).toContain("mise run dev");
+	expect(primaryStartCards[1]?.description).toContain("/login");
+	expect(nextStepCards[0]?.description).toContain("completed login");
+	expect(nextStepCards[0]?.description).toContain("create a form first");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {

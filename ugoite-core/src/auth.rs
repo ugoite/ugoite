@@ -467,13 +467,15 @@ pub fn auth_capabilities_snapshot(
                 "supports_signed_tokens": true,
                 "configured_static_token_count": bearer_tokens.len(),
                 "configured_signing_kid_count": signing_secrets.len(),
-                "active_kids": active_kids
+                "active_kids": active_kids,
+                "active_kids_source": "UGOITE_AUTH_BEARER_ACTIVE_KIDS"
             },
             "api_key": {
                 "supports_static_api_keys": true,
                 "supports_space_service_account_keys": true,
                 "configured_static_api_key_count": api_keys.len(),
-                "revoked_key_ids": revoked_key_ids
+                "revoked_key_ids": revoked_key_ids,
+                "revocation_source": "UGOITE_AUTH_REVOKED_KEY_IDS"
             }
         },
         "identity_model": {
@@ -488,6 +490,12 @@ pub fn auth_capabilities_snapshot(
                 "scope_enforced",
                 "service_account_id"
             ]
-        }
+        },
+        "channels": [
+            "backend(rest)",
+            "backend(mcp)",
+            "cli(via backend)",
+            "frontend(via backend)"
+        ]
     })
 }

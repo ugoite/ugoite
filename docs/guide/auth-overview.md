@@ -3,9 +3,11 @@
 Use this guide when you want the human-facing explanation of how authentication
 works across the browser, CLI, and backend today.
 
-If you are actively running the local development stack, read
-[Local Development Authentication and Login](local-dev-auth-login.md) next. That
-guide is the step-by-step workflow for `mise run dev`, `/login`, and
+This guide explains the current auth model. If you want the practical
+step-by-step setup flow, continue to
+[Local Development Authentication and Login](local-dev-auth-login.md) next,
+whether you have already started the stack or are still deciding how to do it.
+That guide is the hands-on workflow for `mise run dev`, `/login`, and
 `ugoite auth login`.
 
 If you need the machine-readable snapshot of the current auth contract, run:
@@ -25,7 +27,7 @@ MCP access. The implemented authentication building blocks are:
 
 - signed or static **bearer tokens** for interactive user sessions
 - **API keys** for service-style access
-- explicit local development login flows for `manual-totp` and `mock-oauth`
+- explicit local development login flows for `passkey-totp` and `mock-oauth`
 
 Some security specifications also describe future passkey/WebAuthn directions.
 Treat those as planned work unless a guide explicitly tells you they are already
@@ -47,6 +49,10 @@ The important mental model is that Ugoite separates **where you run** from
 - `backend` / `api` modes send requests to a server and therefore need
   authentication
 
+For CLI troubleshooting, pair `ugoite config current` with `ugoite auth profile`:
+the first command tells you which topology is active, and the second tells you
+whether the current mode needs backend credentials or already has one available.
+
 ## Local development modes at a glance
 
 When you run `mise run dev`, the backend exposes one of two explicit login
@@ -54,7 +60,7 @@ experiences:
 
 | Mode | What it is for | How login happens |
 | --- | --- | --- |
-| `manual-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
+| `passkey-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
 | `mock-oauth` | Development-only OAuth-style exercise path | You still sign in explicitly after startup, but the backend issues a bearer token through the mock OAuth route instead of username + TOTP |
 
 Both modes are intentionally **explicit login** flows. Startup prepares login
@@ -69,7 +75,7 @@ The browser experience is meant to feel like a real application session:
 3. complete that login flow
 4. receive a bearer token only after successful authentication
 
-In `manual-totp`, the form asks for the same username and current 2FA code that
+In `passkey-totp`, the form asks for the same username and current 2FA code that
 match your local development setup.
 
 In `mock-oauth`, the page offers an explicit mock OAuth action instead.

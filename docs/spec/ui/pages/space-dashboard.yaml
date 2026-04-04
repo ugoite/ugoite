@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-02-02"
+updated: "2026-04-02"
 page:
   id: space-dashboard
   title: Space Dashboard
@@ -50,6 +50,11 @@ components:
       type: grid-list
       item_type: action
       items:
+        - id: first-form-guidance
+          type: callout
+          when: no-creatable-forms
+          title: "Start by creating your first form"
+          action_label: "Create your first form"
         - id: create-entry
           type: button
           label: "New entry"
@@ -58,3 +63,4 @@ components:
           type: button
           label: "New form"
           target_page: space-form-grid
+          emphasis_when: no-creatable-forms

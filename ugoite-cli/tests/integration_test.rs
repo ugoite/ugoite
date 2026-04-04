@@ -21,6 +21,32 @@ fn test_help() {
     assert!(stdout.contains("ugoite"));
 }
 
+/// REQ-OPS-018: top-level help must show a task-oriented quick-start path.
+#[test]
+fn test_help_req_ops_018_shows_task_oriented_quick_start() {
+    let output = Command::new(ugoite_bin())
+        .arg("--help")
+        .output()
+        .expect("failed to execute process");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for expected in [
+        "Quick start (local-first / core mode):",
+        "ugoite space list .",
+        "ugoite space create /path/to/workspace/spaces/demo",
+        "Quick start (backend / API mode):",
+        "ugoite config set --mode backend --backend-url http://localhost:8000",
+        "ugoite auth login",
+        "ugoite space list",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "expected top-level help to include {expected:?}\nstdout:\n{stdout}",
+        );
+    }
+}
+
 #[test]
 fn test_config_show() {
     let dir = tempfile::tempdir().unwrap();

@@ -97,15 +97,43 @@ cargo run -q -p ugoite-cli -- --help
 If you installed a released binary, use `ugoite` directly:
 
 ```bash
+ugoite config current
+ugoite config set --mode core
+
 mkdir -p ./spaces
 ugoite space list ./spaces
 ugoite space create ./spaces/demo
 ```
 
+The local filesystem examples in this section assume `core` mode. If you
+previously pointed the CLI at a backend or API endpoint, `ugoite config current`
+shows the saved routing state and `ugoite config set --mode core` switches back
+to the local-first filesystem path before you create `./spaces/demo`.
+
 If you are actively developing inside the repository, you can swap those for
 `cargo run -q -p ugoite-cli -- ...` instead.
 
-## Seed local sample data
+## Next steps after your first command
+
+`./spaces/demo` is now your local workspace example. A good next step is to add
+one plain Markdown entry there:
+
+```bash
+ugoite entry create ./spaces/demo first-note --content '# First note'
+ugoite entry get ./spaces/demo first-note
+```
+
+You do **not** need Forms or sample data before this first note. Read
+[Core Concepts](concepts.md) next if you want the mental model for spaces,
+entries, forms, and search, or jump to
+[Endpoint routing mode](#endpoint-routing-mode) when you want the CLI to talk to
+a backend or API instead of the local filesystem.
+
+## Contributor-only shortcut: seed local sample data
+
+If you installed a released CLI and only want the basic local workflow, you can
+skip this section. `mise run seed` is a repository task for contributors and
+repeatable demos, not a required first step for end users.
 
 Use the root developer task when you want a quick local dataset without
 remembering the lower-level CLI arguments:
@@ -143,6 +171,10 @@ CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenario
 
 ## Notes
 
+- The quick-start filesystem examples above assume `core` mode. Run
+  `ugoite config current` to inspect the saved routing state and
+  `ugoite config set --mode core` when you need to switch back from
+  backend/api mode before using local paths such as `./spaces/demo`.
 - In `core` mode, commands that target a specific space now take a positional
   `SPACE_ID_OR_PATH`. Pass the full local path such as
   `./spaces/dev-seed` or `/root/spaces/dev-seed`.
@@ -227,12 +259,18 @@ cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 1
 # Or use the explicit mock OAuth login path
 cargo run -q -p ugoite-cli -- auth login --mock-oauth
 
-# Inspect active auth setup
+# Inspect active auth setup, endpoint mode, and the next useful auth action
 cargo run -q -p ugoite-cli -- auth profile
 
 # Print unset commands
 cargo run -q -p ugoite-cli -- auth token-clear
 ```
+
+`ugoite auth profile` distinguishes `core` mode (no backend credential required)
+from `backend` / `api` modes. In server-backed modes it tells you whether a
+bearer token or API key is already present, and whether the next step is
+`ugoite auth login` or `eval "$(ugoite auth token-clear)"` to apply the printed
+credential unsets from `ugoite auth token-clear` in your current shell.
 
 When the backend runs inside Docker/Compose and you target its published
 backend port directly, export the matching `UGOITE_DEV_AUTH_PROXY_TOKEN` value

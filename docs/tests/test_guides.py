@@ -17,7 +17,7 @@ REQ-OPS-017: Release publish must ship container quick-start assets and document
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
-REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-021: Frontend 100% coverage and Vitest drift prevention must stay explicit.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
@@ -27,6 +27,7 @@ REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI
 REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
+REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
 """
 
 from __future__ import annotations
@@ -109,6 +110,8 @@ PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
+BACKEND_PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
+STACK_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "architecture" / "stack.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
@@ -136,21 +139,27 @@ CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
+AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
+FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
+HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
 DEVCONTAINER_JSON_PATH = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 COLUMN_COUNT_THRESHOLD = 2
+RUN_FROM_SOURCE_LINK_COUNT = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
     DOCKER_BUILD_WORKFLOW_PATH,
     E2E_CI_WORKFLOW_PATH,
@@ -207,6 +216,23 @@ REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
         "executable in CI"
     ),
     "uvx pre-commit run --all-files",
+}
+REQUIRED_PRE_COMMIT_SETUP_COMMAND = "uvx pre-commit install"
+REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
+    "if git config --local --get core.hooksPath >/dev/null; "
+    "then git config --local --unset-all "
+    "core.hooksPath; fi"
+)
+REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS = {
+    "Install dependencies and repository pre-commit hooks:",
+    "The setup task also runs `uvx pre-commit install` so local commits use the same",
+    "hook chain as CI by default.",
+}
+REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
+    "The canonical contributor bootstrap is:",
+    "mise run setup",
+    "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
+    "local commits use the same hook chain as CI by default.",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -516,9 +542,12 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "config set --mode backend --backend-url http://127.0.0.1:8000",
     'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
+    'python3 - "$login_output"',
+    "shlex.split(command, posix=True)",
     "space list",
     "create-space",
     "Host cleanup hit permission issues; retrying inside a container.",
+    "--user 0:0",
     "Release container quick-start verification passed",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
@@ -629,6 +658,27 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "signed bearer token",
     "0600",
 }
+REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
+    "passkey-totp",
+    "mock-oauth",
+}
+REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
+    "Inspect active auth setup, endpoint mode, and the next useful auth action",
+    "`ugoite auth profile` distinguishes `core` mode",
+    "`ugoite auth login`",
+    "`ugoite auth token-clear`",
+    '`eval "$(ugoite auth token-clear)"`',
+    "`ugoite config set --mode core`",
+    "The local filesystem examples in this section assume `core` mode",
+}
+REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
+    "`ugoite config current`",
+    "`ugoite auth profile`",
+    "whether the current mode needs backend credentials",
+}
+FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
+    "manual-totp",
+}
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "Local Dev Auth/Login",
     "canonical `mise run dev` workflow",
@@ -732,6 +782,20 @@ REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
     '`package-ecosystem: "github-actions"` at `/`',
 }
 REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-031)"
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS = {
+    "Conventional Commits",
+    "required locally",
+    "`commitlint-ci`",
+    "npm run prepare",
+    "Husky v9-compatible `commit-msg` hook",
+    "runs `commitlint`",
+    "before commit is accepted.",
+}
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND = 'npm run commitlint:edit -- "$1"'
+FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS = {
+    "#!/usr/bin/env sh",
+    "_/husky.sh",
+}
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_ROOT",
@@ -794,11 +858,14 @@ REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//frontend:test:coverage",
     "node ./node_modules/vitest/vitest.mjs run --coverage",
+    "Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together",
 }
 REQUIRED_FRONTEND_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage"
 )
 REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS = {"vitest", "@vitest/*"}
+REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES = ("vitest", "@vitest/coverage-v8")
 REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//docsite:test:coverage",
@@ -975,6 +1042,224 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack() -> None:
+    """REQ-OPS-001: backend Python prerequisites must match metadata and stack docs."""
+    backend_pyproject = tomllib.loads(
+        BACKEND_PYPROJECT_PATH.read_text(encoding="utf-8"),
+    )
+    project = backend_pyproject.get("project", {})
+    if not isinstance(project, dict):
+        message = "backend/pyproject.toml must define a [project] table"
+        raise TypeError(message)
+
+    requires_python = project.get("requires-python")
+    if not isinstance(requires_python, str):
+        message = (
+            "backend/pyproject.toml must define project.requires-python as a string"
+        )
+        raise TypeError(message)
+
+    version_match = re.search(r">=\s*(\d+\.\d+)", requires_python)
+    if version_match is None:
+        message = (
+            "backend/pyproject.toml project.requires-python must declare a "
+            "minimum major.minor version"
+        )
+        raise AssertionError(message)
+
+    expected_fragment = f"Python {version_match.group(1)}+"
+    backend_readme = BACKEND_README_PATH.read_text(encoding="utf-8")
+    prerequisites_match = re.search(
+        r"### Prerequisites\n(?P<section>.*?)(?:\n### |\Z)",
+        backend_readme,
+        re.DOTALL,
+    )
+    if prerequisites_match is None:
+        message = "backend/README.md must keep a `### Prerequisites` section"
+        raise AssertionError(message)
+
+    prerequisites_section = prerequisites_match.group("section")
+    expected_bullet = f"- {expected_fragment}"
+    if expected_bullet not in prerequisites_section:
+        message = (
+            "backend/README.md `### Prerequisites` must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_bullet}` "
+            f"from `{requires_python}`"
+        )
+        raise AssertionError(message)
+
+    stack_spec = STACK_SPEC_PATH.read_text(encoding="utf-8")
+    backend_stack_match = re.search(
+        r"### Backend \(Python/FastAPI\)\n(?P<section>.*?)(?:\n### |\Z)",
+        stack_spec,
+        re.DOTALL,
+    )
+    if backend_stack_match is None:
+        message = "docs/spec/architecture/stack.md must keep a backend stack section"
+        raise AssertionError(message)
+
+    backend_stack_section = backend_stack_match.group("section")
+    expected_stack_row = (
+        rf"\|\s*Python\s*\|\s*{re.escape(version_match.group(1))}\+\s*\|\s*Runtime\s*\|"
+    )
+    if not re.search(expected_stack_row, backend_stack_section):
+        message = (
+            "docs/spec/architecture/stack.md backend stack table must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_fragment}` "
+            f"from `{requires_python}`"
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
+    """REQ-E2E-008: README start-here mirrors the docsite getting-started taxonomy."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
+    if match is None:
+        message = "README must keep a Start Here section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "docsite getting-started flow is the canonical newcomer decision tree",
+        "Understand core concepts",
+        "Try the published release",
+        "Run from source",
+        "Use the CLI",
+        "Explore the browser app",
+        "Understand auth and access",
+        "Read design and source docs",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Start Here section is missing onboarding taxonomy fragments: "
+            + ", ".join(
+                missing,
+            )
+        )
+        raise AssertionError(message)
+
+    positions = [section.index(fragment) for fragment in required_fragments]
+    if positions != sorted(positions):
+        message = (
+            "README Start Here section must keep the docsite onboarding taxonomy order"
+        )
+        raise AssertionError(message)
+
+    if "Local Dev Auth/Login" in section:
+        message = (
+            "README Start Here section must not introduce a competing "
+            "auth-specific top-level path"
+        )
+        raise AssertionError(message)
+
+    if (
+        section.count("(docs/guide/local-dev-auth-login.md)")
+        < RUN_FROM_SOURCE_LINK_COUNT
+    ):
+        message = (
+            "README Start Here section must point both Run from source entries at "
+            "docs/guide/local-dev-auth-login.md"
+        )
+        raise AssertionError(message)
+
+    if "Run from source](docs/guide/docker-compose.md)" in section:
+        message = (
+            "README Start Here section must not keep the outdated Run from source "
+            "docker-compose guide link"
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
+    """REQ-E2E-008: README start-here keeps the browser caveat prominent."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
+    if match is None:
+        message = "README must keep a Start Here section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "**Browser path today:**",
+        "backend + frontend stack",
+        "explicit `/login` flow",
+        "CLI in `core` mode",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Start Here browser caveat is missing required fragments: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() -> None:
+    """REQ-E2E-008: source contributor docs keep one canonical onboarding path."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    spec_index = SPEC_INDEX_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                README_PATH,
+                ["Start with [Run from source](docs/guide/local-dev-auth-login.md)"],
+                "README Contributing section must route humans through Run from source",
+            ),
+            _require_file_contains(
+                SPEC_INDEX_PATH,
+                [
+                    "[Run from source](../guide/local-dev-auth-login.md)",
+                    "[Contributor onboarding](../guide/local-dev-auth-login.md)",
+                ],
+                (
+                    "spec index must point human contributor guidance at "
+                    "local-dev-auth-login"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "docker-compose.md",
+                [
+                    "alternative way to run Ugoite from source",
+                    (
+                        "[Local Development Authentication and Login]"
+                        "(local-dev-auth-login.md)"
+                    ),
+                ],
+                (
+                    "docker-compose guide must position itself as the "
+                    "alternative source workflow"
+                ),
+            ),
+        ]
+        if detail
+    ]
+
+    if (
+        "Contributions welcome! See [AGENTS.md](AGENTS.md) for development "
+        "guidelines." in readme
+    ):
+        details.append(
+            "README Contributing section must not send human contributors to AGENTS.md",
+        )
+
+    if "[Run from source](../guide/docker-compose.md)" in spec_index:
+        details.append(
+            "spec index must not keep docker-compose as the Run from source path",
+        )
+
+    if "[Contributing](../../AGENTS.md)" in spec_index:
+        details.append(
+            "spec index must not label AGENTS.md as human contributing guidance",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
@@ -1104,6 +1389,47 @@ def test_docs_req_ops_001_mise_versions_match_ci_pins() -> None:
 
     if details:
         raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_001_readme_backend_python_version_matches_metadata() -> None:
+    """REQ-OPS-001: README backend stack version must match package metadata."""
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    backend_pyproject = tomllib.loads(
+        BACKEND_PYPROJECT_PATH.read_text(encoding="utf-8"),
+    )
+    project = backend_pyproject.get("project")
+    if not isinstance(project, dict):
+        message = "backend/pyproject.toml must define a [project] table"
+        raise TypeError(message)
+
+    requires_python = project.get("requires-python")
+    if not isinstance(requires_python, str) or not requires_python.strip():
+        message = "backend/pyproject.toml must define project.requires-python"
+        raise AssertionError(message)
+
+    backend_stack_match = re.search(
+        r"^\| Backend\s+\|\s+(Python [^|]+)\s+\|$",
+        readme_text,
+        re.MULTILINE,
+    )
+    if backend_stack_match is None:
+        message = "README.md must include a Backend stack-overview row"
+        raise AssertionError(message)
+
+    if requires_python.startswith(">="):
+        expected_version = requires_python.removeprefix(">=").strip()
+        expected_backend_stack = f"Python {expected_version}+ (FastAPI)"
+    else:
+        expected_backend_stack = f"Python {requires_python.strip()} (FastAPI)"
+
+    documented_backend_stack = backend_stack_match.group(1).strip()
+    if documented_backend_stack != expected_backend_stack:
+        message = (
+            "README.md Backend stack row must match backend/pyproject.toml "
+            f"requires-python: expected {expected_backend_stack!r}, got "
+            f"{documented_backend_stack!r}"
+        )
+        raise AssertionError(message)
 
 
 def test_docs_req_ops_002_docker_build_ci_declared() -> None:
@@ -1756,8 +2082,9 @@ def test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable() -> None:
 
 
 def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
-    """REQ-OPS-015: Local dev auth docs stay canonical and cover manual modes."""
+    """REQ-OPS-015: Local dev auth docs stay canonical for supported modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
+    auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
     devcontainer_text = (REPO_ROOT / ".devcontainer" / "devcontainer.json").read_text(
@@ -1785,69 +2112,57 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
 
     details: list[str] = []
 
-    missing_guide = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS
-        if fragment not in guide_text
+    _append_missing_fragment_detail(
+        details,
+        text=guide_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS,
+        prefix="local-dev-auth-login.md missing auth mode fragments: ",
     )
-    if missing_guide:
-        details.append(
-            "local-dev-auth-login.md missing manual auth fragments: "
-            + ", ".join(missing_guide),
-        )
-
-    missing_readme = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
-        if fragment not in readme_text
+    _append_missing_fragment_detail(
+        details,
+        text=auth_overview_text,
+        required_fragments=REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md missing current auth mode fragments: ",
     )
-    if missing_readme:
-        details.append(
-            "README missing manual auth fragments: " + ", ".join(missing_readme),
-        )
-
-    duplicated_readme = sorted(
-        fragment
-        for fragment in FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS
-        if fragment in readme_text
+    _append_forbidden_fragment_detail(
+        details,
+        text=auth_overview_text,
+        forbidden_fragments=FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md still references obsolete auth mode names: ",
     )
-    if duplicated_readme:
-        details.append(
+    _append_missing_fragment_detail(
+        details,
+        text=readme_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS,
+        prefix="README missing auth mode fragments: ",
+    )
+    _append_forbidden_fragment_detail(
+        details,
+        text=readme_text,
+        forbidden_fragments=FORBIDDEN_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS,
+        prefix=(
             "README must point to the canonical guide instead of duplicating auth "
-            "commands: " + ", ".join(duplicated_readme),
-        )
-
-    missing_env_matrix = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS
-        if fragment not in env_matrix_text
+            "commands: "
+        ),
     )
-    if missing_env_matrix:
-        details.append(
-            "env-matrix.md missing manual auth vars: " + ", ".join(missing_env_matrix),
-        )
-
-    missing_devcontainer_install = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS
-        if fragment not in devcontainer_text
+    _append_missing_fragment_detail(
+        details,
+        text=env_matrix_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS,
+        prefix="env-matrix.md missing auth mode vars: ",
     )
-    if missing_devcontainer_install:
-        details.append(
-            "devcontainer setup missing manual auth install fragments: "
-            + ", ".join(missing_devcontainer_install),
-        )
-
-    missing_devcontainer_ci = sorted(
-        fragment
-        for fragment in REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS
-        if fragment not in devcontainer_ci_text
+    _append_missing_fragment_detail(
+        details,
+        text=devcontainer_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS,
+        prefix="devcontainer setup missing auth mode install fragments: ",
     )
-    if missing_devcontainer_ci:
-        details.append(
-            "devcontainer CI missing manual auth smoke fragments: "
-            + ", ".join(missing_devcontainer_ci),
-        )
+    _append_missing_fragment_detail(
+        details,
+        text=devcontainer_ci_text,
+        required_fragments=REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_CI_FRAGMENTS,
+        prefix="devcontainer CI missing manual auth smoke fragments: ",
+    )
 
     canonical_pointer_sources = {
         "docsite api-storage page": api_storage_text,
@@ -1867,6 +2182,28 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
             + ", ".join(missing_canonical_pointers),
         )
 
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step() -> None:
+    """REQ-OPS-015: auth profile docs distinguish topology from credential state."""
+    cli_guide_text = CLI_GUIDE_PATH.read_text(encoding="utf-8")
+    auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=cli_guide_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS,
+        prefix="cli.md missing auth profile guidance fragments: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=auth_overview_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md missing auth profile guidance fragments: ",
+    )
     if details:
         raise AssertionError("; ".join(details))
 
@@ -2705,10 +3042,16 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
 
 
 def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
-    """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
+    """REQ-OPS-021: Frontend coverage and Vitest alignment must stay explicit."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    frontend_package = _load_json_mapping(FRONTEND_PACKAGE_JSON_PATH)
+    frontend_bun_lock = _read_required_text(
+        FRONTEND_BUN_LOCK_PATH,
+        missing_message="{path} is missing",
+    )
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
         task_name="test:coverage",
@@ -2729,6 +3072,60 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
         if fragment not in guide_text
     )
+    frontend_dev_dependencies = frontend_package.get("devDependencies")
+    vitest_spec: str | None = None
+    coverage_spec: str | None = None
+    if isinstance(frontend_dev_dependencies, dict):
+        vitest_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+        )
+        coverage_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+        )
+        vitest_spec = vitest_value if isinstance(vitest_value, str) else None
+        coverage_spec = coverage_value if isinstance(coverage_value, str) else None
+
+    vitest_lock_pattern = re.compile(
+        r'^\s+"(?P<name>vitest|@vitest/coverage-v8)": '
+        r'\["(?:vitest|@vitest/coverage-v8)@(?P<version>[^"]+)"',
+        re.MULTILINE,
+    )
+    vitest_lock_versions = {
+        match.group("name"): match.group("version")
+        for match in vitest_lock_pattern.finditer(frontend_bun_lock)
+    }
+    vitest_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+    )
+    coverage_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+    )
+
+    frontend_bun_update: dict[str, object] | None = None
+    updates = dependabot.get("updates", [])
+    if isinstance(updates, list):
+        frontend_bun_update = next(
+            (
+                update
+                for update in updates
+                if isinstance(update, dict)
+                and update.get("package-ecosystem") == "bun"
+                and update.get("directory") == "/frontend"
+            ),
+            None,
+        )
+
+    vitest_group_patterns: list[set[str]] = []
+    if frontend_bun_update is not None:
+        groups = frontend_bun_update.get("groups")
+        if isinstance(groups, dict):
+            vitest_group_patterns = [
+                {pattern for pattern in patterns if isinstance(pattern, str)}
+                for group in groups.values()
+                if isinstance(group, dict)
+                for patterns in [group.get("patterns", [])]
+                if isinstance(patterns, list)
+            ]
 
     detail_candidates = (
         (
@@ -2752,6 +3149,59 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing frontend coverage fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+        (
+            not isinstance(frontend_dev_dependencies, dict),
+            "frontend/package.json devDependencies must be a mapping",
+        ),
+        (
+            vitest_spec is None,
+            "frontend/package.json must declare devDependencies.vitest",
+        ),
+        (
+            coverage_spec is None,
+            "frontend/package.json must declare devDependencies.@vitest/coverage-v8",
+        ),
+        (
+            vitest_spec is not None
+            and coverage_spec is not None
+            and vitest_spec != coverage_spec,
+            (
+                "frontend/package.json must keep vitest and "
+                "@vitest/coverage-v8 version ranges aligned"
+            ),
+        ),
+        (
+            vitest_lock_version is None,
+            "frontend/bun.lock must resolve vitest",
+        ),
+        (
+            coverage_lock_version is None,
+            "frontend/bun.lock must resolve @vitest/coverage-v8",
+        ),
+        (
+            vitest_lock_version is not None
+            and coverage_lock_version is not None
+            and vitest_lock_version != coverage_lock_version,
+            (
+                "frontend/bun.lock must keep resolved vitest and "
+                "@vitest/coverage-v8 versions aligned"
+            ),
+        ),
+        (
+            frontend_bun_update is None,
+            ".github/dependabot.yml must track /frontend with the bun ecosystem",
+        ),
+        (
+            frontend_bun_update is not None
+            and not any(
+                REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS.issubset(patterns)
+                for patterns in vitest_group_patterns
+            ),
+            (
+                ".github/dependabot.yml /frontend bun updates must group "
+                "vitest and @vitest/* together"
+            ),
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
@@ -3286,6 +3736,123 @@ def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
             "ci-cd guide missing GitHub Action pinning fragments: "
             + ", ".join(missing_doc_fragments),
         )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
+    """REQ-OPS-032: contributor setup must install repo-local pre-commit hooks."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    devcontainer = _load_json_mapping(DEVCONTAINER_JSON_PATH)
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    root_setup_runs = _get_task_run_commands(root_mise, "setup")
+    on_create_command = devcontainer.get("onCreateCommand")
+    missing_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS
+        if fragment not in readme_text
+    )
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS
+        if fragment not in ci_cd_text
+    )
+
+    detail_candidates = (
+        (
+            REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must clear repo-local core.hooksPath "
+            "before hook install",
+        ),
+        (
+            REQUIRED_PRE_COMMIT_SETUP_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must install pre-commit hooks",
+        ),
+        (
+            not isinstance(on_create_command, str),
+            ".devcontainer/devcontainer.json must define onCreateCommand",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and "mise run setup" not in on_create_command,
+            ".devcontainer/devcontainer.json onCreateCommand must bootstrap "
+            "through mise run setup",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and REQUIRED_PRE_COMMIT_SETUP_COMMAND in on_create_command,
+            ".devcontainer/devcontainer.json should rely on mise run setup for "
+            "pre-commit installation",
+        ),
+        (
+            bool(missing_readme_fragments),
+            "README.md missing setup hook fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing setup hook fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
+    """REQ-OPS-032: local Conventional Commit hook stays current and warning-free."""
+    root_package = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    scripts = _require_mapping(
+        root_package.get("scripts", {}),
+        message="root package.json scripts must be a mapping",
+    )
+    hook_text = _read_required_text(
+        HUSKY_COMMIT_MSG_PATH,
+        ".husky/commit-msg is missing at {path}; required by REQ-OPS-032.",
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        guide_text,
+        REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS,
+    )
+    legacy_fragments = sorted(
+        fragment
+        for fragment in FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS
+        if fragment in hook_text
+    )
+
+    detail_candidates = (
+        (
+            root_package.get("private") is not True,
+            "root package.json must stay private tooling for local commit hooks",
+        ),
+        (
+            str(scripts.get("prepare", "")).strip() != "husky",
+            "root package.json scripts.prepare must stay `husky`",
+        ),
+        (
+            str(scripts.get("commitlint:edit", "")).strip() != "commitlint --edit",
+            'root package.json scripts."commitlint:edit" must stay `commitlint --edit`',
+        ),
+        (
+            hook_text.strip() != REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND,
+            ".husky/commit-msg must stay a single current Husky command",
+        ),
+        (
+            bool(legacy_fragments),
+            ".husky/commit-msg must not include deprecated Husky bootstrap fragments: "
+            + ", ".join(legacy_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local Conventional Commit fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
@@ -4671,6 +5238,30 @@ def _collect_release_publish_jobs(
 
 def _missing_required_fragments(text: str, required_fragments: set[str]) -> list[str]:
     return sorted(fragment for fragment in required_fragments if fragment not in text)
+
+
+def _append_missing_fragment_detail(
+    details: list[str],
+    *,
+    text: str,
+    required_fragments: set[str],
+    prefix: str,
+) -> None:
+    missing = _missing_required_fragments(text, required_fragments)
+    if missing:
+        details.append(prefix + ", ".join(missing))
+
+
+def _append_forbidden_fragment_detail(
+    details: list[str],
+    *,
+    text: str,
+    forbidden_fragments: set[str],
+    prefix: str,
+) -> None:
+    present = sorted(fragment for fragment in forbidden_fragments if fragment in text)
+    if present:
+        details.append(prefix + ", ".join(present))
 
 
 def _load_workflow(workflow_path: Path) -> dict[str, object]:

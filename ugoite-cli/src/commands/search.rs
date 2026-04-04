@@ -15,7 +15,7 @@ pub struct SearchCmd {
 pub enum SearchSubCmd {
     /// Keyword search
     #[command(
-        long_about = "Run keyword search.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode\n  ugoite search keyword my-space invoice"
+        long_about = "Run keyword search.\n\nRun `ugoite config current` to check whether you should pass a local `/root/spaces/<id>` path or a bare `SPACE_ID`.\n\nExamples:\n  # Core mode\n  ugoite search keyword /root/spaces/my-space invoice\n\n  # Backend mode\n  ugoite search keyword my-space invoice"
     )]
     Keyword {
         #[arg(
@@ -23,6 +23,10 @@ pub enum SearchSubCmd {
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            value_name = "QUERY",
+            help = "Plain-text query string to match against indexed entry content."
+        )]
         query: String,
     },
 }
