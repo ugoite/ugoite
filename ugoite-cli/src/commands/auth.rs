@@ -1,4 +1,4 @@
-use crate::config::{base_url, load_config, print_json, EndpointMode};
+use crate::config::{base_url, load_config, print_json, EndpointConfig, EndpointMode};
 use crate::http;
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
@@ -12,7 +12,7 @@ pub struct AuthCmd {
 
 #[derive(Subcommand)]
 pub enum AuthSubCmd {
-    /// Show auth setup (env vars)
+    /// Show auth mode, credential status, and next step
     Profile,
     /// Authenticate via local backend/API passkey + 2FA login and print POSIX-shell-safe export commands.
     ///
@@ -22,7 +22,7 @@ pub enum AuthSubCmd {
     /// Apply the printed export in a POSIX-compatible shell with:
     ///   eval "$(ugoite auth login --username USER --totp-code CODE)"
     #[command(
-        long_about = "Authenticate via backend/API passkey + 2FA login and print POSIX-shell-safe export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, also export UGOITE_DEV_PASSKEY_CONTEXT before logging in.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the escaped token in one step (POSIX shells)\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
+        long_about = "Authenticate via backend/API passkey + 2FA login and print POSIX-shell-safe export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, also export UGOITE_DEV_PASSKEY_CONTEXT before logging in.\nDirect loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN for `--mock-oauth`, but proxied/container-boundary flows do.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the escaped token in one step (POSIX shells)\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
     )]
     Login {
         #[arg(
@@ -38,7 +38,7 @@ pub enum AuthSubCmd {
         #[arg(
             long,
             default_value_t = false,
-            help = "Use mock OAuth flow (development only, requires UGOITE_DEV_AUTH_PROXY_TOKEN)"
+            help = "Use mock OAuth flow (development only; proxied/container flows require UGOITE_DEV_AUTH_PROXY_TOKEN)"
         )]
         mock_oauth: bool,
     },
@@ -53,12 +53,8 @@ pub enum AuthSubCmd {
 pub async fn run(cmd: AuthCmd) -> Result<()> {
     match cmd.sub {
         AuthSubCmd::Profile => {
-            let bearer = std::env::var("UGOITE_AUTH_BEARER_TOKEN").ok();
-            let api_key = std::env::var("UGOITE_AUTH_API_KEY").ok();
-            print_json(&serde_json::json!({
-                "UGOITE_AUTH_BEARER_TOKEN": bearer.as_deref().map(mask_token),
-                "UGOITE_AUTH_API_KEY": api_key.as_deref().map(mask_token),
-            }));
+            let config = load_config();
+            print_json(&auth_profile_snapshot(&config));
         }
         AuthSubCmd::Login {
             username,
@@ -123,6 +119,101 @@ fn mask_token(t: &str) -> String {
     } else {
         "****".to_string()
     }
+}
+
+fn auth_profile_snapshot(config: &EndpointConfig) -> serde_json::Value {
+    let bearer = non_empty_env("UGOITE_AUTH_BEARER_TOKEN");
+    let api_key = non_empty_env("UGOITE_AUTH_API_KEY");
+    let credential_state = credential_state_label(bearer.as_deref(), api_key.as_deref());
+
+    let (topology, endpoint_url) = match &config.mode {
+        EndpointMode::Core => ("local filesystem via ugoite-core".to_string(), None),
+        EndpointMode::Backend => (
+            format!("direct backend server at {}", config.backend_url),
+            Some(config.backend_url.as_str()),
+        ),
+        EndpointMode::Api => (
+            format!("API endpoint at {}", config.api_url),
+            Some(config.api_url.as_str()),
+        ),
+    };
+
+    serde_json::json!({
+        "endpoint_mode": endpoint_mode_label(&config.mode),
+        "topology": topology,
+        "endpoint_url": endpoint_url,
+        "backend_auth_required": config.mode != EndpointMode::Core,
+        "credential_state": credential_state,
+        "status": auth_profile_status(&config.mode, credential_state),
+        "next_action": auth_profile_next_action(config, credential_state),
+        "UGOITE_AUTH_BEARER_TOKEN": bearer.as_deref().map(mask_token),
+        "UGOITE_AUTH_API_KEY": api_key.as_deref().map(mask_token),
+    })
+}
+
+fn endpoint_mode_label(mode: &EndpointMode) -> &'static str {
+    match mode {
+        EndpointMode::Core => "core",
+        EndpointMode::Backend => "backend",
+        EndpointMode::Api => "api",
+    }
+}
+
+fn credential_state_label(bearer: Option<&str>, api_key: Option<&str>) -> &'static str {
+    match (bearer, api_key) {
+        (Some(_), Some(_)) => "bearer_token_and_api_key",
+        (Some(_), None) => "bearer_token",
+        (None, Some(_)) => "api_key",
+        (None, None) => "none",
+    }
+}
+
+fn auth_profile_status(mode: &EndpointMode, credential_state: &str) -> String {
+    match mode {
+        EndpointMode::Core => {
+            if credential_state == "none" {
+                "Core mode does not require backend authentication.".to_string()
+            } else {
+                "Core mode does not require backend authentication. Token env vars are present but only matter after switching to backend or api mode.".to_string()
+            }
+        }
+        EndpointMode::Backend => server_auth_status("Backend", credential_state),
+        EndpointMode::Api => server_auth_status("API", credential_state),
+    }
+}
+
+fn server_auth_status(mode_label: &str, credential_state: &str) -> String {
+    if credential_state == "none" {
+        format!("{mode_label} mode is configured, but no bearer token or API key is currently set.")
+    } else {
+        format!("{mode_label} mode is configured and a server credential is available.")
+    }
+}
+
+fn auth_profile_next_action(config: &EndpointConfig, credential_state: &str) -> String {
+    match &config.mode {
+        EndpointMode::Core => format!(
+            "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url {}`.",
+            config.backend_url
+        ),
+        EndpointMode::Backend | EndpointMode::Api => {
+            if credential_state == "none" {
+                "Run `ugoite auth login` for a bearer token, or export `UGOITE_AUTH_API_KEY` before using server-backed commands.".to_string()
+            } else {
+                "Continue with server-backed commands, or run `eval \"$(ugoite auth token-clear)\"` to print and apply credential unsets in your current shell.".to_string()
+            }
+        }
+    }
+}
+
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    })
 }
 
 fn posix_shell_quote(value: &str) -> String {

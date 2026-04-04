@@ -1,5 +1,5 @@
 //! Integration tests for CLI endpoint routing configuration.
-//! REQ-API-001, REQ-STO-001, REQ-STO-004, REQ-SEC-003
+//! REQ-API-001, REQ-API-002, REQ-STO-001, REQ-STO-004, REQ-SEC-003
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -305,6 +305,67 @@ fn test_create_space_req_api_001_routes_to_api_post_spaces() {
     assert!(request.contains(r#"{"name":"api-space"}"#), "{request}");
 }
 
+/// REQ-API-002: entry create routes to POST /spaces/{space_id}/entries in backend mode.
+#[test]
+fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 201 Created",
+        r#"{"id":"entry-1","revision_id":"rev-1"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "entry",
+            "create",
+            "remote-space",
+            "entry-1",
+            "--content",
+            "# Remote Entry",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("POST /spaces/remote-space/entries HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        !request.contains("POST /spaces/remote-space/entries/entry-1 HTTP/1.1"),
+        "{request}"
+    );
+    assert!(request.contains(r#""id":"entry-1""#), "{request}");
+    assert!(
+        request.contains("\"content\":\"# Remote Entry\""),
+        "{request}"
+    );
+    assert!(!request.contains(r#""author":"#), "{request}");
+}
+
 /// REQ-STO-004: Backend mode returns remote space JSON without Tokio runtime panic.
 #[test]
 fn test_space_list_req_sto_004_returns_remote_json_without_panicking() {
@@ -430,9 +491,9 @@ fn test_space_list_req_sto_010_accepts_backend_mode_without_local_root() {
     assert_eq!(value[0]["id"].as_str(), Some("remote-space"));
 }
 
-/// REQ-STO-010: space help describes the shared core-mode path convention with concrete examples.
+/// REQ-STO-010: CLI help must explain when to use local space paths versus bare IDs.
 #[test]
-fn test_entry_and_form_list_req_sto_010_use_space_id_or_path_help() {
+fn test_cli_help_req_sto_010_describes_space_id_or_path_routing() {
     for args in [
         ["entry", "list", "--help"],
         ["form", "list", "--help"],
@@ -452,6 +513,44 @@ fn test_entry_and_form_list_req_sto_010_use_space_id_or_path_help() {
         assert!(stdout.contains("SPACE_ID_OR_PATH"), "{stdout}");
         assert!(!stdout.contains("SPACE_PATH"), "{stdout}");
         assert!(stdout.contains("/root/spaces/"), "{stdout}");
+    }
+
+    for args in [
+        &["space", "--help"][..],
+        &["form", "--help"][..],
+        &["search", "--help"][..],
+        &["space", "create", "--help"][..],
+        &["space", "list", "--help"][..],
+        &["space", "get", "--help"][..],
+        &["space", "patch", "--help"][..],
+        &["form", "list", "--help"][..],
+        &["form", "get", "--help"][..],
+        &["form", "update", "--help"][..],
+        &["search", "keyword", "--help"][..],
+    ] {
+        let help = Command::new(ugoite_bin())
+            .args(args)
+            .output()
+            .expect("failed to execute");
+        assert!(help.status.success());
+        let stdout = String::from_utf8_lossy(&help.stdout);
+        assert!(stdout.contains("ugoite config current"), "{stdout}");
+    }
+
+    for args in [
+        &["space", "--help"][..],
+        &["form", "--help"][..],
+        &["search", "--help"][..],
+    ] {
+        let help = Command::new(ugoite_bin())
+            .args(args)
+            .output()
+            .expect("failed to execute");
+        assert!(help.status.success());
+        let stdout = String::from_utf8_lossy(&help.stdout);
+        for needle in ["/root/spaces/<id>", "SPACE_ID"] {
+            assert!(stdout.contains(needle), "{stdout}");
+        }
     }
 
     let list_help = Command::new(ugoite_bin())
@@ -486,6 +585,52 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
         "Author name to record in the revision history",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
+    }
+}
+
+/// REQ-OPS-006: form and search help must describe required positional inputs before execution.
+#[test]
+fn test_form_and_search_req_ops_006_help_describes_required_inputs() {
+    let form_get_help = Command::new(ugoite_bin())
+        .args(["form", "get", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(form_get_help.status.success());
+    let form_get_stdout = String::from_utf8_lossy(&form_get_help.stdout);
+    for needle in [
+        "FORM_NAME",
+        "Form name from the form definition",
+        "ugoite config current",
+    ] {
+        assert!(form_get_stdout.contains(needle), "{form_get_stdout}");
+    }
+
+    let form_update_help = Command::new(ugoite_bin())
+        .args(["form", "update", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(form_update_help.status.success());
+    let form_update_stdout = String::from_utf8_lossy(&form_update_help.stdout);
+    for needle in [
+        "FORM_FILE",
+        "Path to a JSON form definition file",
+        "ugoite config current",
+    ] {
+        assert!(form_update_stdout.contains(needle), "{form_update_stdout}");
+    }
+
+    let search_help = Command::new(ugoite_bin())
+        .args(["search", "keyword", "--help"])
+        .output()
+        .expect("failed to execute");
+    assert!(search_help.status.success());
+    let search_stdout = String::from_utf8_lossy(&search_help.stdout);
+    for needle in [
+        "QUERY",
+        "Plain-text query string to match against indexed entry content",
+        "ugoite config current",
+    ] {
+        assert!(search_stdout.contains(needle), "{search_stdout}");
     }
 }
 

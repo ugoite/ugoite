@@ -14,23 +14,35 @@ Ugoite is a knowledge management system built on three core principles:
 
 ## Start Here
 
-The docsite's getting-started flow is the canonical newcomer decision tree once
-you are in the browser docs. This README stays intentionally lighter so you do
-not have to compare two near-identical onboarding checklists before you can
-move forward.
+The docsite getting-started flow is the canonical newcomer decision tree. This
+README mirrors the same top-level path names so you can choose a first step on
+GitHub without comparing two different onboarding maps.
 
-If you are browsing on GitHub and already know the surface you need, jump
-straight to the guide that fits:
+> **Browser path today:** the current browser route still needs a running
+> backend + frontend stack and an explicit `/login` flow. If you want the
+> thinnest local-first path, start with the CLI in `core` mode.
 
-- [Core Concepts](docs/guide/concepts.md) if you want the mental model for
-  spaces, entries, forms, and search before choosing a surface.
-- [Container Quick Start](docs/guide/container-quickstart.md) for the released
-  browser experience without cloning the repository (`mock-oauth` by default).
-- [CLI Guide](docs/guide/cli.md) for terminal-first workflows and scripting.
-- `mise run setup`, then `mise run dev`, for the current backend, frontend, and
-  docsite together from source (`passkey-totp` by default).
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) when you need the
-  canonical sign-in and `/login` workflow details.
+### Choose your first step
+
+- [Understand core concepts](docs/guide/concepts.md) before you choose a
+  surface.
+- [Try the published release](docs/guide/container-quickstart.md) for the
+  fastest browser-based evaluation path, while still running the browser stack
+  with an explicit login step.
+- [Run from source](docs/guide/local-dev-auth-login.md) when you want the current
+  backend, frontend, and docsite together; the shortest contributor path is
+  `mise run setup` (dependencies + repo hooks), then `mise run dev`, followed
+  by the explicit `/login` flow.
+- [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
+
+### After your first step
+
+- **Explore the browser app** by opening `/login` from the published quick
+  start or source workflow, then continuing to `/spaces`.
+- [Understand auth and access](docs/guide/auth-overview.md) before rollout or
+  scripting across the browser, CLI, and API.
+- [Read design and source docs](docs/spec/index.md) when you need philosophy,
+  requirements, APIs, or machine-readable specs.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
@@ -42,6 +54,14 @@ default so source contributors exercise the explicit local passkey + 2FA flow,
 while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
 by default so browser evaluators can reach `/login` and `/spaces` with fewer
 setup steps.
+
+### Which entry path should you choose?
+
+| Path | Best when | Trade-off |
+| --- | --- | --- |
+| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
+| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
@@ -60,7 +80,7 @@ the `v0.2` roadmap.
 | Component    | Technology                           |
 | ------------ | ------------------------------------ |
 | Frontend     | Bun + SolidStart + TailwindCSS       |
-| Backend      | Python 3.12+ (FastAPI)               |
+| Backend      | Python 3.13+ (FastAPI)               |
 | Core         | Rust (ugoite-core via pyo3 bindings) |
 | Storage      | OpenDAL + Apache Iceberg             |
 | AI Interface | MCP (resource-first integration today) |
@@ -80,8 +100,10 @@ ugoite-cli/         # Command-line interface for power users
 ugoite-core/        # Rust core logic + Python bindings
   └─ src/
 docs/
+  ├─ guide/         # User-facing guides and operator workflows
   ├─ spec/          # Technical specifications (YAML + Markdown)
-  └─ tasks/         # Milestone tracking and roadmap
+  ├─ tests/         # Documentation consistency tests
+  └─ version/       # Versioned roadmap YAML + release metadata
 e2e/                # End-to-end tests (Bun)
 ```
 
@@ -169,11 +191,14 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
-Install dependencies:
+Install dependencies and repository pre-commit hooks:
 
 ```bash
 mise run setup
 ```
+
+The setup task also runs `uvx pre-commit install` so local commits use the same
+hook chain as CI by default.
 
 Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
 
@@ -423,6 +448,6 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
 
-1. Check [docs/tasks/tasks.md](docs/tasks/tasks.md) for current work items
+1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes
 3. Submit PR with tests

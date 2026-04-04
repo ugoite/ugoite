@@ -106,6 +106,9 @@ requirements:
     - file: ugoite-core/tests/test_auth_overview_consistency.py
       tests:
       - test_auth_overview_matches_security_yaml_contract
+    - file: ugoite-cli/tests/test_auth.rs
+      tests:
+      - test_cli_auth_overview_req_sec_003_includes_channels
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
