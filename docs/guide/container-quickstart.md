@@ -38,6 +38,11 @@ docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
 ```
 
+If the stack does not start cleanly, ports are already occupied, or the browser
+cannot reach the backend, follow
+[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md)
+before debugging login/auth behavior.
+
 The compose file pulls these canonical published images:
 
 - `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
@@ -69,6 +74,8 @@ so contributors exercise the explicit passkey + 2FA flow.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
   workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
   the full contributor stack from source.
+- If the published stack starts in a confusing partial state, use
+  [Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md).
 
 To stop the stack:
 

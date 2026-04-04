@@ -46,6 +46,10 @@ docker compose logs -f backend
 docker compose logs -f frontend
 ```
 
+If the stack fails before login, the browser stays blank, or the frontend and
+backend cannot reach each other, continue with
+[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md).
+
 ## Stop the stack
 
 ```bash
