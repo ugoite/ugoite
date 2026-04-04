@@ -56,8 +56,8 @@ export default function SpaceSqlDetailRoute() {
 								<>
 									<h1 class="ui-page-title">{data().name}</h1>
 									<p class="ui-page-subtitle max-w-2xl">
-										Review the saved query text, confirm whether it needs variables, then use
-										the supported run flow that already ships today.
+										Review the saved query text, confirm whether it needs variables, then use the
+										supported run flow that already ships today.
 									</p>
 								</>
 							)}
@@ -115,8 +115,8 @@ export default function SpaceSqlDetailRoute() {
 											when={variableCount() > 0}
 											fallback={
 												<p class="text-sm ui-muted">
-													This saved query has no template variables, so you can run it
-													immediately from this page.
+													This saved query has no template variables, so you can run it immediately
+													from this page.
 												</p>
 											}
 										>
