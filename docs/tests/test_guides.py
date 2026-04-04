@@ -873,7 +873,8 @@ REQUIRED_DOCSITE_COVERAGE_COMMAND = (
 )
 REQUIRED_DOCSITE_COVERAGE_STEP_NAME = "Run docsite Vitest with 100% coverage gate"
 REQUIRED_CLI_COVERAGE_COMMAND = (
-    "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1"
+    "cargo llvm-cov --summary-only --fail-under-lines 100 "
+    "--no-default-features --jobs 1"
 )
 REQUIRED_STRICT_NPM_CI_COMMAND = "npm ci"
 REQUIRED_STRICT_ROOT_NPM_CI_COMMAND = "npm ci --no-fund --no-audit"
@@ -1749,7 +1750,8 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             _require_task_contains(
                 cli_mise,
                 "test:coverage",
-                "command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked",
+                "command -v cargo-llvm-cov >/dev/null 2>&1 || "
+                "cargo install cargo-llvm-cov --locked",
                 "ugoite-cli test:coverage task must install cargo-llvm-cov when needed",
             ),
             _require_task_contains(
