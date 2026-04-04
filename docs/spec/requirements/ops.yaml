@@ -900,6 +900,12 @@ requirements:
 
     hard gate is explicit rather than only implied by frontend-local config.
 
+    The Vitest packages that implement the coverage gate MUST stay version-aligned
+
+    and update together so the enforced frontend run does not regress into mixed-version
+
+    coverage execution drift.
+
     '
   related_spec:
   - testing/ci-cd.md
