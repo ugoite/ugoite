@@ -19,15 +19,24 @@ enum Commands {
     Auth(commands::auth::AuthCmd),
     /// CLI endpoint routing settings
     Config(commands::config::ConfigCmd),
-    /// Space management commands
+    /// Space management commands.
+    ///
+    /// Run `ugoite config current` to check whether you are in core, backend, or api mode before choosing positional arguments.
+    /// Use `/root/spaces/<id>` for `SPACE_ID_OR_PATH` arguments in core mode.
+    /// Use a bare `SPACE_ID` in backend/api mode.
+    /// For `ugoite space list`, pass `ROOT_PATH` in core mode and omit it in backend/api mode.
     Space(commands::space::SpaceCmd),
     /// Entry management commands
     Entry(commands::entry::EntryCmd),
-    /// Form management commands
+    /// Form management commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Form(commands::form::FormCmd),
     /// Asset management commands
     Asset(commands::asset::AssetCmd),
-    /// Search commands
+    /// Search commands.
+    ///
+    /// Run `ugoite config current` to check whether you should pass `/root/spaces/<id>` in core mode or a bare `SPACE_ID` in backend/api mode.
     Search(commands::search::SearchCmd),
     /// SQL linting and completion commands
     Sql(commands::sql::SqlCmd),

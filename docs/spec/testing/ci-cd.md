@@ -187,6 +187,9 @@ jobs:
 The root `mise run test` contract must enforce the same frontend 100% coverage
 gate by depending on `//frontend:test:coverage`, so local verification and CI
 fail for the same coverage regressions.
+Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together so the
+coverage runner packages stay aligned and cannot quietly drift into mixed-version
+warnings during that enforced coverage path.
 
 ## Docsite CI
 
@@ -403,11 +406,15 @@ jobs:
 
 ## Pre-commit Hooks
 
-Install and enable:
+The canonical contributor bootstrap is:
 ```bash
-uvx pre-commit install
+mise run setup
 uvx pre-commit run --all-files
 ```
+
+`mise run setup` installs dependencies and runs `uvx pre-commit install`, so
+local commits use the same hook chain as CI by default. Re-run
+`uvx pre-commit install` manually only if the hooks need repair.
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
@@ -425,7 +432,8 @@ npm ci --no-fund --no-audit
 npm run prepare
 ```
 
-This enables Husky `commit-msg` hook and runs `commitlint` before commit is accepted.
+This enables a Husky v9-compatible `commit-msg` hook and runs `commitlint`
+before commit is accepted.
 
 ## Pre-commit CI
 
