@@ -9,9 +9,9 @@ export type OnboardingCard = {
 export const browserPathCaveat = {
 	badge: "Browser caveat today",
 	description:
-		"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+		"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is still the lowest-setup-cost local-first path right now.",
 	headline:
-		"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+		"The browser path is still server-backed, login-gated, and higher-overhead than CLI `core` mode, even though the data stays local-first.",
 } as const;
 
 export const conceptPrimerCard = {
@@ -25,15 +25,15 @@ export const conceptPrimerCard = {
 
 export const primaryStartCards = [
 	{
-		badge: "Fastest path",
+		badge: "Fastest browser path",
 		description:
-			"Launch the released frontend + backend stack without cloning or building from source, then continue through the explicit browser login.",
+			"Launch the released frontend + backend stack with Docker and published image pulls, then continue through the explicit browser login.",
 		href: "/docs/guide/container-quickstart",
 		icon: "🚀",
 		title: "Try the published release",
 	},
 	{
-		badge: "Contributor path",
+		badge: "Highest setup cost",
 		description:
 			"Run the current workspace with mise run dev when you want the latest backend, frontend, and docsite together, then sign in explicitly at /login.",
 		href: "/docs/guide/local-dev-auth-login",
@@ -41,9 +41,9 @@ export const primaryStartCards = [
 		title: "Run from source",
 	},
 	{
-		badge: "Automation path",
+		badge: "Lowest setup cost",
 		description:
-			"Install the released CLI or use it from source when the terminal is your main surface.",
+			"Install the released CLI or use it from source when the terminal is your main surface and you want to avoid container infrastructure.",
 		href: "/docs/guide/cli",
 		icon: "⌨️",
 		title: "Use the CLI",
