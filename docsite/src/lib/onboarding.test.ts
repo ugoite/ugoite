@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
 	browserPathCaveat,
 	conceptPrimerCard,
+	coreConceptSummaries,
 	nextStepCards,
 	primaryStartCards,
 } from "./onboarding";
@@ -64,9 +65,26 @@ test("REQ-E2E-008: onboarding content offers a concepts primer before deeper gui
 	expect(conceptPrimerCard).toEqual({
 		badge: "Learn First",
 		description:
-			"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+			"Get the plain-language mental model for spaces, entries, forms, search, and surface choice before choosing a path.",
 		href: "/docs/guide/concepts",
 		icon: "💡",
 		title: "Understand core concepts",
 	});
+});
+
+test("REQ-E2E-008: onboarding content defines core concepts before asking newcomers to choose a path", () => {
+	expect(coreConceptSummaries.map((concept) => concept.title)).toEqual([
+		"Space",
+		"Entry",
+		"Form",
+		"Markdown, extraction, and search",
+		"Browser, CLI, and API",
+	]);
+	expect(coreConceptSummaries[0]?.description).toContain("portable workspace");
+	expect(coreConceptSummaries[1]?.description).toContain("Markdown-backed record");
+	expect(coreConceptSummaries[2]?.description).toContain("schema and template");
+	expect(coreConceptSummaries[3]?.description).toContain("search/indexes are derived");
+	expect(coreConceptSummaries[4]?.description).toContain(
+		"thinnest local-first automation path",
+	);
 });
