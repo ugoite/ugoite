@@ -187,6 +187,9 @@ jobs:
 The root `mise run test` contract must enforce the same frontend 100% coverage
 gate by depending on `//frontend:test:coverage`, so local verification and CI
 fail for the same coverage regressions.
+Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together so the
+coverage runner packages stay aligned and cannot quietly drift into mixed-version
+warnings during that enforced coverage path.
 
 ## Docsite CI
 
