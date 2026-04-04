@@ -96,7 +96,10 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 			http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
 				const body = (await request.json()) as { sql?: string };
 				expect(body.sql).toBe("SELECT * FROM entries LIMIT 1");
-				return HttpResponse.json({ id: "session-1", status: "ready", error: null }, { status: 201 });
+				return HttpResponse.json(
+					{ id: "session-1", status: "ready", error: null },
+					{ status: 201 },
+				);
 			}),
 		);
 
