@@ -619,6 +619,7 @@ requirements:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
       - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
+      - 'REQ-OPS-015: keeps the /spaces shortcut out of signed-out login screens'
       - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
       - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
       - 'REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows'
