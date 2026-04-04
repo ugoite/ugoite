@@ -91,6 +91,21 @@ describe("/login", () => {
 		expect(navigateMock).not.toHaveBeenCalled();
 	});
 
+	it("REQ-OPS-015: keeps the /spaces shortcut out of signed-out login screens", async () => {
+		seedDevAuthConfig({
+			mode: "mock-oauth",
+			username_hint: "dev-oauth-user",
+			supports_passkey_totp: false,
+			supports_mock_oauth: true,
+		});
+
+		render(() => <LoginRoute />);
+
+		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
+		expect(screen.queryByRole("link", { name: "Go to Spaces" })).not.toBeInTheDocument();
+	});
+
 	it("REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide", async () => {
 		seedDevAuthConfig({
 			mode: "passkey-totp",
