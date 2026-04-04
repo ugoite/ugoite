@@ -6,6 +6,11 @@ Ugoite browser experience locally. It downloads the shipped
 GHCR images, and starts the stack without cloning the repository or rebuilding
 images from source.
 
+This is the fastest **browser** path, but it is not the lowest-overhead path:
+it still needs Docker, published image pulls, and a two-service stack. If you
+want the lightest local-first start, use the [CLI Guide](cli.md) in `core`
+mode instead.
+
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
 If you want the same published two-service topology on Kubernetes, use
