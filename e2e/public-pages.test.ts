@@ -14,15 +14,12 @@ test.describe("Public page stability", () => {
 		});
 		try {
 			const page = await context.newPage();
-			const failingPreferenceRequests: string[] = [];
+			const preferenceRequests: string[] = [];
 			const consoleErrors: string[] = [];
 
-			page.on("response", (response) => {
-				if (
-					response.url().includes("/api/preferences/me") &&
-					response.status() >= 400
-				) {
-					failingPreferenceRequests.push(`${response.status()} ${response.url()}`);
+			page.on("request", (request) => {
+				if (request.url().includes("/api/preferences/me")) {
+					preferenceRequests.push(`${request.method()} ${request.url()}`);
 				}
 			});
 			page.on("console", (message) => {
@@ -36,7 +33,7 @@ test.describe("Public page stability", () => {
 				await page.waitForLoadState("networkidle");
 			}
 
-			expect(failingPreferenceRequests).toEqual([]);
+			expect(preferenceRequests).toEqual([]);
 			expect(consoleErrors).toEqual([]);
 		} finally {
 			await context.close();

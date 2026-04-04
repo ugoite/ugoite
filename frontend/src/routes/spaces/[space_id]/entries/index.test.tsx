@@ -12,6 +12,7 @@ import { createMemo, createSignal } from "solid-js";
 import type { Form } from "~/lib/types";
 import { server } from "~/test/mocks/server";
 import { setLocale } from "~/lib/i18n";
+import { testApiUrl } from "~/test/http-origin";
 
 const navigateMock = vi.fn();
 const searchParamsMock: Record<string, string> = {};
@@ -116,14 +117,14 @@ describe("/spaces/:space_id/entries", () => {
 			);
 		});
 
-		const gridTab = await screen.findByRole("link", { name: "grid" });
-		expect(gridTab).toHaveAttribute("href", "/spaces/default/forms");
+		const formsTab = await screen.findByRole("link", { name: "Forms" });
+		expect(formsTab).toHaveAttribute("href", "/spaces/default/forms");
 	});
 
 	it("REQ-FE-054: renders human-readable updated dates for query result cards", async () => {
 		searchParamsMock.session = "session-1";
 		server.use(
-			http.get("http://localhost:3000/api/spaces/default/sql-sessions/session-1", () =>
+			http.get(testApiUrl("/spaces/default/sql-sessions/session-1"), () =>
 				HttpResponse.json({
 					id: "session-1",
 					space_id: "default",
@@ -134,7 +135,7 @@ describe("/spaces/:space_id/entries", () => {
 					expires_at: "2026-03-01T01:00:00Z",
 				}),
 			),
-			http.get("http://localhost:3000/api/spaces/default/sql-sessions/session-1/rows", () =>
+			http.get(testApiUrl("/spaces/default/sql-sessions/session-1/rows"), () =>
 				HttpResponse.json({
 					rows: [
 						{

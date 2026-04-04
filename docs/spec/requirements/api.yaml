@@ -99,6 +99,9 @@ requirements:
       - test_get_entry
       - test_update_entry
       - test_delete_entry
+    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
+      tests:
+      - test_entry_create_req_api_002_routes_to_backend_post_entries
     vitest:
     - file: frontend/src/lib/client.test.ts
       tests:

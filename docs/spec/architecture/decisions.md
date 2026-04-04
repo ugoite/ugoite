@@ -37,16 +37,23 @@ Extract core logic into a Rust crate (`ugoite-core`) with:
 
 **Decision**: 
 Use "Forms" to define entry types:
-- Form definitions stored as JSON in `forms/{name}.json`
+- Form definitions are stored through the Iceberg-managed `forms/` area; the
+  logical contract matters, while the physical layout is intentionally not
+  specified
 - Entries reference a form via frontmatter: `form: Meeting`
-- H2 headers (`## Field`) become typed properties
-- Live indexer extracts and validates properties
+- H2 headers (`## Field`) become typed properties mapped into Iceberg-backed
+  rows and revisions
+- Live indexing/validation keeps Markdown authoring aligned with the Form
+  schema
 
 **Consequences**:
-- (+) Flexible: users can ignore forms entirely
-- (+) Structured: when needed, data is queryable
-- (+) Portable: standard Markdown with metadata
-- (-) Complexity: indexer must parse Markdown
+- (+) Structured: Form-defined fields stay queryable without abandoning
+  Markdown authoring
+- (+) Portable: the logical storage contract works across OpenDAL-backed
+  backends while Iceberg owns the physical table layout
+- (+) Consistent: a single Form contract drives validation, revisions, and
+  reconstructed Markdown
+- (-) Complexity: Markdown parsing and table updates must stay in sync
 
 ---
 
@@ -85,7 +92,10 @@ OpenDAL-backed adapter layer in `ugoite-core`.
 - Default: local filesystem
 - Optional: S3, GCS, Azure Blob
 - No required cloud services
-- Data format: JSON + Markdown (human-readable)
+- Canonical storage: Iceberg-managed tables and metadata over OpenDAL-backed
+  storage adapters
+- Authoring surface: Markdown remains the user-facing representation, rebuilt
+  from the canonical table-backed data model when needed
 - Historical note: early Python prototypes used `fsspec`, but `fsspec` is no
   longer part of the active runtime storage architecture
 
@@ -93,6 +103,8 @@ OpenDAL-backed adapter layer in `ugoite-core`.
 - (+) User owns their data completely
 - (+) Works offline
 - (+) Multiple storage backends supported
+- (+) Table-backed storage keeps structured queries and revision history
+  consistent across backends
 - (-) No built-in sync (user must configure)
 - (-) No built-in backup (user responsibility)
 
