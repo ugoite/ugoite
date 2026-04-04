@@ -15,5 +15,8 @@ spaces/
 .vscode/mcp.json
 backend/.coverage
 frontend/coverage/
+docsite/coverage/
+/uv.lock
+__pycache__/
 /target/
 backend/.coverage

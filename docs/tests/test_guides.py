@@ -27,6 +27,7 @@ REQ-OPS-027: Lockfile-backed installs must stay strict across local tasks and CI
 REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
+REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
 """
 
 from __future__ import annotations
@@ -110,6 +111,7 @@ PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
 BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
 BACKEND_PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
+STACK_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "architecture" / "stack.md"
 MISE_PATH = REPO_ROOT / "mise.toml"
 BACKEND_MISE_PATH = REPO_ROOT / "backend" / "mise.toml"
 UGOITE_MINIMUM_MISE_PATH = REPO_ROOT / "ugoite-minimum" / "mise.toml"
@@ -144,6 +146,7 @@ RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
 FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
+HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
@@ -155,6 +158,7 @@ BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
 DEVCONTAINER_JSON_PATH = REPO_ROOT / ".devcontainer" / "devcontainer.json"
 COLUMN_COUNT_THRESHOLD = 2
+RUN_FROM_SOURCE_LINK_COUNT = 2
 DOCKER_IMAGE_WORKFLOW_PATHS = (
     DOCKER_BUILD_WORKFLOW_PATH,
     E2E_CI_WORKFLOW_PATH,
@@ -211,6 +215,23 @@ REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
         "executable in CI"
     ),
     "uvx pre-commit run --all-files",
+}
+REQUIRED_PRE_COMMIT_SETUP_COMMAND = "uvx pre-commit install"
+REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
+    "if git config --local --get core.hooksPath >/dev/null; "
+    "then git config --local --unset-all "
+    "core.hooksPath; fi"
+)
+REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS = {
+    "Install dependencies and repository pre-commit hooks:",
+    "The setup task also runs `uvx pre-commit install` so local commits use the same",
+    "hook chain as CI by default.",
+}
+REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
+    "The canonical contributor bootstrap is:",
+    "mise run setup",
+    "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
+    "local commits use the same hook chain as CI by default.",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -520,9 +541,12 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "config set --mode backend --backend-url http://127.0.0.1:8000",
     'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",
+    'python3 - "$login_output"',
+    "shlex.split(command, posix=True)",
     "space list",
     "create-space",
     "Host cleanup hit permission issues; retrying inside a container.",
+    "--user 0:0",
     "Release container quick-start verification passed",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
@@ -637,6 +661,18 @@ REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "passkey-totp",
     "mock-oauth",
 }
+REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
+    "Inspect active auth setup, endpoint mode, and the next useful auth action",
+    "`ugoite auth profile` distinguishes `core` mode",
+    "`ugoite auth login`",
+    "`ugoite auth token-clear`",
+    '`eval "$(ugoite auth token-clear)"`',
+}
+REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
+    "`ugoite config current`",
+    "`ugoite auth profile`",
+    "whether the current mode needs backend credentials",
+}
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
 }
@@ -743,6 +779,20 @@ REQUIRED_GITHUB_ACTION_PIN_DOC_FRAGMENTS = {
     '`package-ecosystem: "github-actions"` at `/`',
 }
 REQUIRED_GITHUB_ACTION_PIN_STEP_NAME = "Check GitHub Action SHA pins (REQ-OPS-031)"
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS = {
+    "Conventional Commits",
+    "required locally",
+    "`commitlint-ci`",
+    "npm run prepare",
+    "Husky v9-compatible `commit-msg` hook",
+    "runs `commitlint`",
+    "before commit is accepted.",
+}
+REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND = 'npm run commitlint:edit -- "$1"'
+FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS = {
+    "#!/usr/bin/env sh",
+    "_/husky.sh",
+}
 REQUIRED_DEV_SEED_SCRIPT_FRAGMENTS = {
     "CARGO_TARGET_DIR",
     "UGOITE_ROOT",
@@ -989,6 +1039,75 @@ def test_docs_req_ops_001_readme_core_commands_match_mise() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack() -> None:
+    """REQ-OPS-001: backend Python prerequisites must match metadata and stack docs."""
+    backend_pyproject = tomllib.loads(
+        BACKEND_PYPROJECT_PATH.read_text(encoding="utf-8"),
+    )
+    project = backend_pyproject.get("project", {})
+    if not isinstance(project, dict):
+        message = "backend/pyproject.toml must define a [project] table"
+        raise TypeError(message)
+
+    requires_python = project.get("requires-python")
+    if not isinstance(requires_python, str):
+        message = (
+            "backend/pyproject.toml must define project.requires-python as a string"
+        )
+        raise TypeError(message)
+
+    version_match = re.search(r">=\s*(\d+\.\d+)", requires_python)
+    if version_match is None:
+        message = (
+            "backend/pyproject.toml project.requires-python must declare a "
+            "minimum major.minor version"
+        )
+        raise AssertionError(message)
+
+    expected_fragment = f"Python {version_match.group(1)}+"
+    backend_readme = BACKEND_README_PATH.read_text(encoding="utf-8")
+    prerequisites_match = re.search(
+        r"### Prerequisites\n(?P<section>.*?)(?:\n### |\Z)",
+        backend_readme,
+        re.DOTALL,
+    )
+    if prerequisites_match is None:
+        message = "backend/README.md must keep a `### Prerequisites` section"
+        raise AssertionError(message)
+
+    prerequisites_section = prerequisites_match.group("section")
+    expected_bullet = f"- {expected_fragment}"
+    if expected_bullet not in prerequisites_section:
+        message = (
+            "backend/README.md `### Prerequisites` must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_bullet}` "
+            f"from `{requires_python}`"
+        )
+        raise AssertionError(message)
+
+    stack_spec = STACK_SPEC_PATH.read_text(encoding="utf-8")
+    backend_stack_match = re.search(
+        r"### Backend \(Python/FastAPI\)\n(?P<section>.*?)(?:\n### |\Z)",
+        stack_spec,
+        re.DOTALL,
+    )
+    if backend_stack_match is None:
+        message = "docs/spec/architecture/stack.md must keep a backend stack section"
+        raise AssertionError(message)
+
+    backend_stack_section = backend_stack_match.group("section")
+    expected_stack_row = (
+        rf"\|\s*Python\s*\|\s*{re.escape(version_match.group(1))}\+\s*\|\s*Runtime\s*\|"
+    )
+    if not re.search(expected_stack_row, backend_stack_section):
+        message = (
+            "docs/spec/architecture/stack.md backend stack table must match "
+            f"backend/pyproject.toml requires-python: expected `{expected_fragment}` "
+            f"from `{requires_python}`"
+        )
+        raise AssertionError(message)
+
+
 def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
     """REQ-E2E-008: README start-here mirrors the docsite getting-started taxonomy."""
     readme = README_PATH.read_text(encoding="utf-8")
@@ -1029,6 +1148,47 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         message = (
             "README Start Here section must not introduce a competing "
             "auth-specific top-level path"
+        )
+        raise AssertionError(message)
+
+    if (
+        section.count("(docs/guide/local-dev-auth-login.md)")
+        < RUN_FROM_SOURCE_LINK_COUNT
+    ):
+        message = (
+            "README Start Here section must point both Run from source entries at "
+            "docs/guide/local-dev-auth-login.md"
+        )
+        raise AssertionError(message)
+
+    if "Run from source](docs/guide/docker-compose.md)" in section:
+        message = (
+            "README Start Here section must not keep the outdated Run from source "
+            "docker-compose guide link"
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
+    """REQ-E2E-008: README start-here keeps the browser caveat prominent."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
+    if match is None:
+        message = "README must keep a Start Here section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "**Browser path today:**",
+        "backend + frontend stack",
+        "explicit `/login` flow",
+        "CLI in `core` mode",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Start Here browser caveat is missing required fragments: "
+            + ", ".join(missing)
         )
         raise AssertionError(message)
 
@@ -1955,6 +2115,28 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
             + ", ".join(missing_canonical_pointers),
         )
 
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step() -> None:
+    """REQ-OPS-015: auth profile docs distinguish topology from credential state."""
+    cli_guide_text = CLI_GUIDE_PATH.read_text(encoding="utf-8")
+    auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=cli_guide_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS,
+        prefix="cli.md missing auth profile guidance fragments: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=auth_overview_text,
+        required_fragments=REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS,
+        prefix="auth-overview.md missing auth profile guidance fragments: ",
+    )
     if details:
         raise AssertionError("; ".join(details))
 
@@ -3487,6 +3669,123 @@ def test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable() -> None:
             "ci-cd guide missing GitHub Action pinning fragments: "
             + ", ".join(missing_doc_fragments),
         )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
+    """REQ-OPS-032: contributor setup must install repo-local pre-commit hooks."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    devcontainer = _load_json_mapping(DEVCONTAINER_JSON_PATH)
+    readme_text = README_PATH.read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    root_setup_runs = _get_task_run_commands(root_mise, "setup")
+    on_create_command = devcontainer.get("onCreateCommand")
+    missing_readme_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS
+        if fragment not in readme_text
+    )
+    missing_doc_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS
+        if fragment not in ci_cd_text
+    )
+
+    detail_candidates = (
+        (
+            REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must clear repo-local core.hooksPath "
+            "before hook install",
+        ),
+        (
+            REQUIRED_PRE_COMMIT_SETUP_COMMAND not in root_setup_runs,
+            "root mise.toml tasks.setup must install pre-commit hooks",
+        ),
+        (
+            not isinstance(on_create_command, str),
+            ".devcontainer/devcontainer.json must define onCreateCommand",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and "mise run setup" not in on_create_command,
+            ".devcontainer/devcontainer.json onCreateCommand must bootstrap "
+            "through mise run setup",
+        ),
+        (
+            isinstance(on_create_command, str)
+            and REQUIRED_PRE_COMMIT_SETUP_COMMAND in on_create_command,
+            ".devcontainer/devcontainer.json should rely on mise run setup for "
+            "pre-commit installation",
+        ),
+        (
+            bool(missing_readme_fragments),
+            "README.md missing setup hook fragments: "
+            + ", ".join(missing_readme_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing setup hook fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
+    """REQ-OPS-032: local Conventional Commit hook stays current and warning-free."""
+    root_package = _load_json_mapping(ROOT_PACKAGE_JSON_PATH)
+    scripts = _require_mapping(
+        root_package.get("scripts", {}),
+        message="root package.json scripts must be a mapping",
+    )
+    hook_text = _read_required_text(
+        HUSKY_COMMIT_MSG_PATH,
+        ".husky/commit-msg is missing at {path}; required by REQ-OPS-032.",
+    )
+    guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        guide_text,
+        REQUIRED_LOCAL_CONVENTIONAL_COMMIT_DOC_FRAGMENTS,
+    )
+    legacy_fragments = sorted(
+        fragment
+        for fragment in FORBIDDEN_HUSKY_BOOTSTRAP_FRAGMENTS
+        if fragment in hook_text
+    )
+
+    detail_candidates = (
+        (
+            root_package.get("private") is not True,
+            "root package.json must stay private tooling for local commit hooks",
+        ),
+        (
+            str(scripts.get("prepare", "")).strip() != "husky",
+            "root package.json scripts.prepare must stay `husky`",
+        ),
+        (
+            str(scripts.get("commitlint:edit", "")).strip() != "commitlint --edit",
+            'root package.json scripts."commitlint:edit" must stay `commitlint --edit`',
+        ),
+        (
+            hook_text.strip() != REQUIRED_LOCAL_CONVENTIONAL_COMMIT_COMMAND,
+            ".husky/commit-msg must stay a single current Husky command",
+        ),
+        (
+            bool(legacy_fragments),
+            ".husky/commit-msg must not include deprecated Husky bootstrap fragments: "
+            + ", ".join(legacy_fragments),
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local Conventional Commit fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
     if details:
         raise AssertionError("; ".join(details))
 
