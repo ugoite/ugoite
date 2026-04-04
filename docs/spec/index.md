@@ -99,7 +99,7 @@ Ugoite is a knowledge management system built on three core principles:
 | `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
 | `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
-| `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |
+| `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart) |
 
 ---
 
