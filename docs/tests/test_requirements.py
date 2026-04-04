@@ -330,7 +330,7 @@ def test_no_orphan_tests() -> None:
 def test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog() -> (
     None
 ):
-    """REQ-API-005: requirements README must list every current requirement file and prefix.
+    """REQ-API-005: requirements README must list current requirement files.
 
     Checks that every catalog file and prefix appears in the README.
     """
