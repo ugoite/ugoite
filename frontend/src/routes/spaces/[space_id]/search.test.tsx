@@ -6,6 +6,7 @@ import SpaceSearchRoute from "./search";
 import { resetMockData, seedEntry, seedForm, seedSpace, seedSqlEntry } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Form, Space } from "~/lib/types";
+import { testApiUrl } from "~/test/http-origin";
 
 const navigateMock = vi.fn();
 
@@ -76,17 +77,15 @@ describe("/spaces/:space_id/search", () => {
 		seedEntry("default", entry, record);
 		let metadataSql: string | null = null;
 		server.use(
-			http.get("http://localhost:3000/api/spaces/default/search", () =>
-				HttpResponse.json([{ id: entry.id }]),
-			),
+			http.get(testApiUrl("/spaces/default/search"), () => HttpResponse.json([{ id: entry.id }])),
 			http.get(
-				"http://localhost:3000/api/spaces/default/entries",
+				testApiUrl("/spaces/default/entries"),
 				() =>
 					new HttpResponse("bulk entry list should not be used for keyword search", {
 						status: 500,
 					}),
 			),
-			http.post("http://localhost:3000/api/spaces/default/sql-sessions", async ({ request }) => {
+			http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
 				const body = (await request.json()) as { sql?: string };
 				metadataSql = body.sql ?? null;
 				return HttpResponse.json(
@@ -94,7 +93,7 @@ describe("/spaces/:space_id/search", () => {
 					{ status: 201 },
 				);
 			}),
-			http.get("http://localhost:3000/api/spaces/default/sql-sessions/keyword-session/rows", () =>
+			http.get(testApiUrl("/spaces/default/sql-sessions/keyword-session/rows"), () =>
 				HttpResponse.json({
 					rows: [record],
 					offset: 0,
@@ -131,11 +130,11 @@ describe("/spaces/:space_id/search", () => {
 		let sessionSqlBody: { sql?: string } | null = null;
 
 		server.use(
-			http.post("http://localhost:3000/api/spaces/default/sql", async ({ request }) => {
+			http.post(testApiUrl("/spaces/default/sql"), async ({ request }) => {
 				savedSqlBody = (await request.json()) as { name?: string; sql?: string };
 				return HttpResponse.json({ id: "saved-search-1", revision_id: "rev-2" }, { status: 201 });
 			}),
-			http.post("http://localhost:3000/api/spaces/default/sql-sessions", async ({ request }) => {
+			http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
 				sessionSqlBody = (await request.json()) as { sql?: string };
 				return HttpResponse.json(
 					{ id: "advanced-session", status: "ready", error: null },
@@ -199,7 +198,7 @@ describe("/spaces/:space_id/search", () => {
 
 		let sessionSqlBody: { sql?: string } | null = null;
 		server.use(
-			http.post("http://localhost:3000/api/spaces/default/sql-sessions", async ({ request }) => {
+			http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
 				sessionSqlBody = (await request.json()) as { sql?: string };
 				return HttpResponse.json(
 					{ id: "history-session", status: "ready", error: null },

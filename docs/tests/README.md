@@ -1,6 +1,7 @@
 # Documentation Consistency Tests
 
-This directory contains tests that verify documentation consistency and requirements traceability.
+This directory contains the documentation consistency suite that runs through
+`mise run test:docs` locally and the Python CI workflow in GitHub Actions.
 
 ## Purpose
 
@@ -9,32 +10,41 @@ These tests ensure:
 1. **Requirements Coverage**: Every requirement has at least one test
 2. **Test Traceability**: Tests reference valid requirements
 3. **Feature Registry Consistency**: API registries match code (`docs/spec/features/features.yaml` + per-kind YAML files)
-4. **Documentation Cross-References**: Links between documents are valid
-5. **Story Format Validation**: User stories follow the required YAML format
+4. **Guide + Workflow Consistency**: Developer docs and shell snippets stay aligned with shipped commands and CI
+5. **Domain Contract Checks**: API, authz, MCP, storage, version, governance, and Helm docs stay aligned with the current implementation
+6. **Artifact Hygiene**: Repository guard scripts stay wired and enforce a clean tree
 
-## Test Files (To Be Implemented)
+## Current Test Files
 
 | File | Purpose |
 |------|---------|
-| `test_requirements.py` | Verify requirement → test mapping |
-| `test_features.py` | Verify feature paths exist in codebase |
-| `test_stories.py` | Validate story YAML format |
-| `test_docs_links.py` | Check cross-references between docs |
+| `test_requirements.py` | Verify requirement → test mappings and REQ references across backend/frontend/docsite/Rust suites |
+| `test_features.py` | Verify feature registry paths and referenced symbols exist in the codebase |
+| `test_guides.py` | Verify developer guides, workflow docs, release docs, and shell snippets stay aligned and parse with `bashlex` |
+| `test_api_docs.py` | Verify REST/OpenAPI docs stay aligned with implemented API contracts |
+| `test_authz_docs.py` | Verify authorization and ACL docs describe the shipped mutation boundaries |
+| `test_mcp_docs.py` | Verify MCP docs describe the current resource safety contract |
+| `test_storage_docs.py` | Verify storage architecture/layout docs match runtime behavior and schemas |
+| `test_versions.py` | Verify version docs, changelog sources, and README version links stay aligned |
+| `test_spec_governance.py` | Verify philosophy/policy/specification/requirement taxonomy links stay complete |
+| `test_helm_chart.py` | Verify Helm chart docs/topology stay aligned with repository-owned deployment artifacts |
+| `test_cli_language_docs.py` | Verify top-level docs and SBOM metadata classify `ugoite-cli` consistently as Rust |
+| `test_artifact_hygiene.py` | Verify repository hygiene guard scripts catch dirty-tree artifacts correctly |
 
 ## Running Tests
 
 ```bash
-# From repository root
-cd docs/tests
-python -m pytest
+# CI-aligned shortcut
+mise run test:docs
 
-# Or with verbose output
-python -m pytest -v
+# Equivalent direct invocation
+uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error
 ```
 
-## Test Details
+`bashlex` is required because `test_guides.py` parses documented shell blocks
+instead of only checking for string fragments.
 
-### Requirement-aware Naming Convention
+## Requirement-aware Naming Convention
 
 Requirement traceability is enforced by:
 
@@ -62,98 +72,25 @@ When adopting this pattern, replace hyphens in `REQ-XXX-001` with underscores to
 form `req_xxx_001`, and keep `feature` aligned to the domain under test (e.g.
 api, space, entry, form, core, cli).
 
-### test_requirements.py
+Representative examples from the current suite:
 
 ```python
-def test_all_requirements_have_tests():
-    """
-    Load all YAML files from docs/spec/requirements/
-    Verify each requirement has at least one test in its tests array
-    """
-    pass
+def test_all_requirements_have_tests() -> None:
+    """REQ-API-005: Requirements must list tests and files must exist."""
+    ...
 
-def test_all_tests_reference_valid_requirements():
-    """
-    Scan test files for REQ-* mentions
-    Verify each reference exists in requirements YAML
-    """
-    pass
-
-def test_no_orphan_tests():
-    """
-    Find tests not listed in any requirement's tests array
-    Report as warnings (not failures)
-    """
-    pass
-
-def test_requirement_ids_are_unique():
-    """
-    Ensure no duplicate requirement IDs across all files
-    """
-    pass
-```
-
-### test_features.py
-
-```python
-def test_feature_paths_exist():
-    """
-    Load docs/spec/features/features.yaml (manifest)
-    Load each referenced per-kind registry YAML
-    Verify each (file, function/component) reference exists in the codebase
-    """
-    pass
-
-def test_no_undeclared_feature_modules():
-    """
-    Find API operations in code that are not declared in the registry
-    Report as warnings
-    """
-    pass
-```
-
-### test_stories.py
-
-```python
-def test_story_format_valid():
-    """
-    Validate YAML structure of all story files
-    Required fields: id, title, as_a, i_want, so_that, acceptance_criteria
-    """
-    pass
-
-def test_story_requirements_exist():
-    """
-    Verify all REQ-* references in stories exist
-    """
-    pass
-```
-
-### test_docs_links.py
-
-```python
-def test_markdown_links_valid():
-    """
-    Parse all .md files for relative links
-    Verify targets exist
-    """
-    pass
-
-def test_yaml_spec_references_valid():
-    """
-    Parse related_spec fields in YAML files
-    Verify referenced files and sections exist
-    """
-    pass
+def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
+    """REQ-ENTRY-001: create-entry docs use the implemented `content` request field."""
+    ...
 ```
 
 ## Adding New Tests
 
-1. Create test file following `test_*.py` naming
-2. Use `pytest` conventions
-3. Load YAML files using `pyyaml`
-4. Use `pathlib` for cross-platform path handling
-5. Document test purpose in docstrings
+1. Extend an existing domain-specific `test_*.py` file when possible, or add a new one under this directory.
+2. Keep the test runnable through `mise run test:docs`.
+3. Add the test name to `docs/spec/requirements/*.yaml` whenever it verifies a `REQ-*`.
+4. Use `pyyaml`, `pathlib`, and `bashlex` consistently with the existing suite.
+5. Prefer concrete contract checks over placeholder "to be implemented" stubs.
 
 ### Requirement-aware Naming
 
@@ -174,41 +111,18 @@ Details:
 
 ## Dependencies
 
-```txt
-# requirements.txt for docs/tests
-pytest>=7.0
-pyyaml>=6.0
-```
+- `pytest`
+- `pyyaml`
+- `bashlex`
 
 ## CI Integration
 
-These tests should run as part of CI:
-
-```yaml
-# .github/workflows/docs-ci.yml
-jobs:
-  docs-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install pytest pyyaml
-      - run: cd docs/tests && pytest -v
-```
-
-## Coverage Report
-
-Generate a coverage report with:
+The Python CI workflow runs the docs consistency suite with the same dependency
+set used locally:
 
 ```bash
-python generate_coverage_report.py
+uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=docs-pytest.xml
 ```
 
-This produces:
-- Total requirements by category
-- Implemented vs planned requirements  
-- Test coverage percentage
-- Orphan tests list
-- Missing documentation cross-references
+See `.github/workflows/python-ci.yml` and `docs/spec/testing/ci-cd.md` for the
+current CI-aligned command line.

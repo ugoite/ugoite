@@ -53,6 +53,8 @@ export default function SpaceDashboardRoute() {
 
 	const safeForms = createMemo(() => forms() || []);
 	const entryForms = createMemo(() => filterCreatableEntryForms(safeForms()));
+	const hasCreatableForms = createMemo(() => entryForms().length > 0);
+	const needsFirstFormGuidance = createMemo(() => !forms.loading && !hasCreatableForms());
 	const displaySpaceName = createMemo(() => space()?.name || spaceId());
 	const storageSummary = createMemo(() => {
 		const currentSpace = space();
@@ -159,20 +161,41 @@ export default function SpaceDashboardRoute() {
 									<p class="text-sm ui-muted">{t("dashboard.section.createEntry.loading")}</p>
 								}
 							>
-								<p class="text-sm ui-muted">
-									{entryForms().length > 0
-										? t("dashboard.section.createEntry.formsAvailable", {
-												count: entryForms().length,
-											})
-										: t("dashboard.section.createEntry.empty")}
-								</p>
+								<Show when={hasCreatableForms()}>
+									<p class="text-sm ui-muted">
+										{t("dashboard.section.createEntry.formsAvailable", {
+											count: entryForms().length,
+										})}
+									</p>
+								</Show>
 							</Show>
 						</div>
+						<Show when={needsFirstFormGuidance()}>
+							<div class="ui-alert ui-alert-warning text-sm ui-stack-sm">
+								<div class="ui-stack-sm">
+									<p class="font-medium">{t("dashboard.section.createEntry.empty")}</p>
+									<p>{t("dashboard.section.createEntry.firstFormDescription")}</p>
+								</div>
+								<div>
+									<button
+										type="button"
+										class="ui-button ui-button-primary text-sm"
+										onClick={() => setShowCreateFormDialog(true)}
+									>
+										{t("dashboard.section.createEntry.createFirstForm")}
+									</button>
+								</div>
+							</div>
+						</Show>
 						<div class="flex flex-wrap gap-2">
 							<button
 								type="button"
-								class="ui-button ui-button-primary text-sm"
-								disabled={entryForms().length === 0}
+								class="ui-button text-sm"
+								classList={{
+									"ui-button-primary": hasCreatableForms(),
+									"ui-button-secondary": !hasCreatableForms(),
+								}}
+								disabled={!hasCreatableForms()}
 								onClick={() => setShowCreateEntryDialog(true)}
 							>
 								{t("dashboard.section.createEntry.new")}
@@ -186,9 +209,16 @@ export default function SpaceDashboardRoute() {
 						</div>
 					</section>
 					<section class="ui-card ui-stack-sm">
-						<div>
+						<div class="ui-stack-sm">
+							<Show when={needsFirstFormGuidance()}>
+								<span class="ui-pill w-fit">{t("dashboard.section.createForm.startHere")}</span>
+							</Show>
 							<h2 class="text-lg font-semibold">{t("dashboard.section.createForm.heading")}</h2>
-							<p class="text-sm ui-muted">{t("dashboard.section.createForm.description")}</p>
+							<p class="text-sm ui-muted">
+								{needsFirstFormGuidance()
+									? t("dashboard.section.createForm.firstFormDescription")
+									: t("dashboard.section.createForm.description")}
+							</p>
 						</div>
 						<div class="flex flex-wrap gap-2">
 							<button

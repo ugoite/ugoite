@@ -6,6 +6,14 @@ export type OnboardingCard = {
 	title: string;
 };
 
+export const browserPathCaveat = {
+	badge: "Browser caveat today",
+	description:
+		"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+	headline:
+		"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+} as const;
+
 export const conceptPrimerCard = {
 	badge: "Learn First",
 	description:
@@ -19,7 +27,7 @@ export const primaryStartCards = [
 	{
 		badge: "Fastest path",
 		description:
-			"Launch the released browser stack without cloning or building from source.",
+			"Launch the released frontend + backend stack without cloning or building from source, then continue through the explicit browser login.",
 		href: "/docs/guide/container-quickstart",
 		icon: "🚀",
 		title: "Try the published release",
@@ -27,7 +35,7 @@ export const primaryStartCards = [
 	{
 		badge: "Contributor path",
 		description:
-			"Run the current workspace with mise run dev when you want the latest backend, frontend, and docsite together.",
+			"Run the current workspace with mise run dev when you want the latest backend, frontend, and docsite together, then sign in explicitly at /login.",
 		href: "/docs/guide/local-dev-auth-login",
 		icon: "🛠️",
 		title: "Run from source",
@@ -46,7 +54,7 @@ export const nextStepCards = [
 	{
 		badge: "Browser",
 		description:
-			"See how spaces, entries, forms, and search fit together in the UI.",
+			"After the stack is running and you have completed login, open a space, create a form first, then add entries and explore search from that shared structure.",
 		href: "/app/frontend",
 		icon: "🖥️",
 		title: "Explore the browser app",

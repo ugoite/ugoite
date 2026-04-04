@@ -37,6 +37,8 @@ Extract core logic into a Rust crate (`ugoite-core`) with:
 
 **Decision**: 
 Use "Forms" to define entry types:
+- Markdown remains the primary authoring surface
+- Forms define the logical contract for typed fields and validation
 - Form definitions are stored through the Iceberg-managed `forms/` area; the
   logical contract matters, while the physical layout is intentionally not
   specified

@@ -3,9 +3,11 @@
 Use this guide when you want the human-facing explanation of how authentication
 works across the browser, CLI, and backend today.
 
-If you are actively running the local development stack, read
-[Local Development Authentication and Login](local-dev-auth-login.md) next. That
-guide is the step-by-step workflow for `mise run dev`, `/login`, and
+This guide explains the current auth model. If you want the practical
+step-by-step setup flow, continue to
+[Local Development Authentication and Login](local-dev-auth-login.md) next,
+whether you have already started the stack or are still deciding how to do it.
+That guide is the hands-on workflow for `mise run dev`, `/login`, and
 `ugoite auth login`.
 
 If you need the machine-readable snapshot of the current auth contract, run:
@@ -46,6 +48,10 @@ The important mental model is that Ugoite separates **where you run** from
 - `core` mode is local-first direct filesystem access from the CLI
 - `backend` / `api` modes send requests to a server and therefore need
   authentication
+
+For CLI troubleshooting, pair `ugoite config current` with `ugoite auth profile`:
+the first command tells you which topology is active, and the second tells you
+whether the current mode needs backend credentials or already has one available.
 
 ## Local development modes at a glance
 

@@ -6,6 +6,7 @@ import { createAssetStore } from "./asset-store";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
 	id: "asset-store-ws",
@@ -54,7 +55,7 @@ describe("createAssetStore", () => {
 
 	it("sets error state on load failure", async () => {
 		server.use(
-			http.get("http://localhost:3000/api/spaces/asset-store-ws/assets", () =>
+			http.get(testApiUrl("/spaces/asset-store-ws/assets"), () =>
 				HttpResponse.json({ detail: "Server error" }, { status: 500 }),
 			),
 		);

@@ -78,6 +78,6 @@ def test_req_ops_033_skip_guard_rejects_skipped_report(
     if exit_code != 1:
         message = f"expected exit code 1, got {exit_code}"
         raise AssertionError(message)
-    if "backend tests: skipped=2 is not allowed" not in stderr:
+    if f"backend tests: skipped={SKIPPED_COUNT} is not allowed" not in stderr:
         message = "skip guard must report the backend skipped-test error"
         raise AssertionError(message)

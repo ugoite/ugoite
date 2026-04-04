@@ -18,15 +18,21 @@ The docsite getting-started flow is the canonical newcomer decision tree. This
 README mirrors the same top-level path names so you can choose a first step on
 GitHub without comparing two different onboarding maps.
 
+> **Browser path today:** the current browser route still needs a running
+> backend + frontend stack and an explicit `/login` flow. If you want the
+> thinnest local-first path, start with the CLI in `core` mode.
+
 ### Choose your first step
 
 - [Understand core concepts](docs/guide/concepts.md) before you choose a
   surface.
 - [Try the published release](docs/guide/container-quickstart.md) for the
-  fastest browser-based evaluation path.
-- [Run from source](docs/guide/docker-compose.md) when you want the current
+  fastest browser-based evaluation path, while still running the browser stack
+  with an explicit login step.
+- [Run from source](docs/guide/local-dev-auth-login.md) when you want the current
   backend, frontend, and docsite together; the shortest contributor path is
-  `mise run setup`, then `mise run dev`.
+  `mise run setup` (dependencies + repo hooks), then `mise run dev`, followed
+  by the explicit `/login` flow.
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 ### After your first step
@@ -37,6 +43,9 @@ GitHub without comparing two different onboarding maps.
   scripting across the browser, CLI, and API.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
+
+For a brand-new browser space, the first productive in-app sequence is:
+**open the space, create a form, then create entries from that form**.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
@@ -55,7 +64,7 @@ setup steps.
 | --- | --- | --- |
 | [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
 | [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Run from source](docs/guide/docker-compose.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
@@ -94,8 +103,10 @@ ugoite-cli/         # Command-line interface for power users
 ugoite-core/        # Rust core logic + Python bindings
   └─ src/
 docs/
+  ├─ guide/         # User-facing guides and operator workflows
   ├─ spec/          # Technical specifications (YAML + Markdown)
-  └─ tasks/         # Milestone tracking and roadmap
+  ├─ tests/         # Documentation consistency tests
+  └─ version/       # Versioned roadmap YAML + release metadata
 e2e/                # End-to-end tests (Bun)
 ```
 
@@ -108,7 +119,7 @@ Start with the user-facing guides:
 - [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
 - [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
 - [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` contributor path
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
 
 Go deeper when you need architecture or implementation contracts:
@@ -183,11 +194,19 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
-Install dependencies:
+Install dependencies and repository pre-commit hooks:
+
+The repository root `mise.toml` is the contributor-facing source of truth for
+managed tool versions. Use that shared toolchain story first, then treat
+package README prerequisites as workflow notes on top of the same managed
+environment.
 
 ```bash
 mise run setup
 ```
+
+The setup task also runs `uvx pre-commit install` so local commits use the same
+hook chain as CI by default.
 
 Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
 
@@ -435,8 +454,11 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
+Contributions welcome! Start with [Run from source](docs/guide/local-dev-auth-login.md)
+for the canonical `mise run setup` -> `mise run dev` -> `/login` workflow. If
+you are using an AI coding agent in this repository, also read
+[AGENTS.md](AGENTS.md).
 
-1. Check [docs/tasks/tasks.md](docs/tasks/tasks.md) for current work items
+1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes
 3. Submit PR with tests
