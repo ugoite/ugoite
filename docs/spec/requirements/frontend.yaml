@@ -1751,3 +1751,35 @@ requirements:
       tests:
       - 'REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions'
       - 'REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-063
+  title: Legacy Query Route Recovery Guidance
+  description: 'The `/spaces/{space_id}/query` route MUST not silently rewrite users
+
+    to `/search`. It MUST explain that Search is the supported query surface,
+
+    preserve a clear recovery path into `/search`, and offer a direct route back
+
+    to the current space context.
+
+    '
+  related_spec:
+  - ui/pages/space-search.yaml
+  priority: medium
+  status: implemented
+  tests:
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/query.test.tsx
+      tests:
+      - 'REQ-FE-063: legacy query route explains the supported search path'
