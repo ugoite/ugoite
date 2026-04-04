@@ -1364,3 +1364,41 @@ requirements:
       tests:
       - test_docs_req_ops_032_setup_installs_pre_commit_hooks
       - test_docs_req_ops_032_local_conventional_commit_hook_is_current
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-034
+  title: Local Direct-Process E2E Cleanup Is Explicit
+  description: 'The direct-process local E2E runner MUST only stop services it
+
+    started itself. If ports `3000` or `8000` are already occupied, `e2e/scripts/run-e2e.sh`
+
+    MUST fail fast and point contributors at an explicit cleanup command instead
+
+    of killing unrelated listeners. The destructive fallback MUST stay isolated
+
+    behind `mise run cleanup:ports`.
+
+    '
+  related_spec:
+  - testing/ci-cd.md
+  - testing/strategy.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup

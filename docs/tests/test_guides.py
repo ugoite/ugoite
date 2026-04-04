@@ -28,6 +28,7 @@ REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
+REQ-OPS-034: Local direct-process E2E runs must not kill unrelated listeners.
 """
 
 from __future__ import annotations
@@ -142,6 +143,7 @@ LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login
 AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
+CLEANUP_DEV_PORTS_PATH = REPO_ROOT / "scripts" / "cleanup-dev-ports.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
@@ -233,6 +235,11 @@ REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
     "mise run setup",
     "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
     "local commits use the same hook chain as CI by default.",
+}
+REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS = {
+    "fails fast when ports",
+    "instead of killing unrelated listeners;",
+    "`mise run cleanup:ports` first.",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -3849,6 +3856,67 @@ def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing local Conventional Commit fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> None:
+    """REQ-OPS-034: local direct-process E2E runs must not kill unrelated listeners."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    run_e2e_text = (REPO_ROOT / "e2e/scripts/run-e2e.sh").read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            "fuser -k 8000/tcp" in run_e2e_text or "fuser -k 3000/tcp" in run_e2e_text,
+            "run-e2e.sh must not kill listeners on ports 8000/3000 automatically",
+        ),
+        (
+            any(
+                fragment not in run_e2e_text
+                for fragment in (
+                    'ensure_port_available 8000 "Backend"',
+                    'ensure_port_available 3000 "Frontend"',
+                    'fuser "${port}/tcp"',
+                    "mise run cleanup:ports",
+                )
+            ),
+            "run-e2e.sh must fail fast on occupied ports and point"
+            " users to cleanup:ports",
+        ),
+        (
+            _require_exact_task_run(
+                root_mise,
+                "cleanup:ports",
+                ["bash scripts/cleanup-dev-ports.sh"],
+                "root mise must expose cleanup:ports as the explicit"
+                " destructive option",
+            )
+            is not None,
+            "root mise must expose cleanup:ports as the explicit destructive option",
+        ),
+        (
+            _require_file_contains(
+                CLEANUP_DEV_PORTS_PATH,
+                ["fuser -k", "port", "Cleaned stale servers"],
+                "cleanup-dev-ports.sh must remain the explicit"
+                " destructive port cleanup helper",
+            )
+            is not None,
+            "cleanup-dev-ports.sh must remain the explicit"
+            " destructive port cleanup helper",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local E2E port safety fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )
