@@ -8,15 +8,16 @@ import {
 	Show,
 	onCleanup,
 } from "solid-js";
-import { CreateEntryDialog } from "~/components/create-dialogs";
+import { CreateEntryDialog, CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
+import { formApi } from "~/lib/form-api";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/sql-session-api";
-import type { EntryRecord } from "~/lib/types";
+import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 
 export default function SpaceEntriesIndexPane() {
 	const navigate = useNavigate();
@@ -24,7 +25,9 @@ export default function SpaceEntriesIndexPane() {
 	const ctx = useEntriesRouteContext();
 	const spaceId = () => ctx.spaceId();
 	const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
+	const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
 	const creatableForms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
+	const hasCreatableForms = createMemo(() => creatableForms().length > 0);
 
 	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
 	const [page, setPage] = createSignal(1);
@@ -97,9 +100,28 @@ export default function SpaceEntriesIndexPane() {
 		if (!err) return null;
 		return err instanceof Error ? err.message : String(err);
 	});
+	const needsFirstFormGuidance = createMemo(
+		() =>
+			!sessionId().trim() &&
+			!isLoading() &&
+			!ctx.loadingForms() &&
+			displayEntries().length === 0 &&
+			!errorMessage() &&
+			!hasCreatableForms(),
+	);
 
 	const handleSelectEntry = (entryId: string) => {
 		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(entryId)}`);
+	};
+
+	const handleCreateForm = async (payload: FormCreatePayload) => {
+		try {
+			await formApi.create(spaceId(), payload);
+			setShowCreateFormDialog(false);
+			void ctx.refetchForms();
+		} catch (e) {
+			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
+		}
 	};
 
 	const handleCreateEntry = async (
@@ -157,7 +179,12 @@ export default function SpaceEntriesIndexPane() {
 						</Show>
 						<button
 							type="button"
-							class="ui-button ui-button-primary text-sm"
+							class="ui-button text-sm"
+							classList={{
+								"ui-button-primary": hasCreatableForms(),
+								"ui-button-secondary": !hasCreatableForms(),
+							}}
+							disabled={!hasCreatableForms()}
 							onClick={() => setShowCreateEntryDialog(true)}
 						>
 							{t("entriesPage.newButton")}
@@ -181,8 +208,32 @@ export default function SpaceEntriesIndexPane() {
 					<Show when={errorMessage()}>
 						<p class="text-sm ui-text-danger">{errorMessage()}</p>
 					</Show>
-					<Show when={!isLoading() && displayEntries().length === 0 && !errorMessage()}>
+					<Show
+						when={
+							!needsFirstFormGuidance() &&
+							!isLoading() &&
+							displayEntries().length === 0 &&
+							!errorMessage()
+						}
+					>
 						<p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
+					</Show>
+					<Show when={needsFirstFormGuidance()}>
+						<div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
+							<div class="ui-stack-sm">
+								<p class="font-medium">{t("dashboard.section.createEntry.empty")}</p>
+								<p>{t("dashboard.section.createEntry.firstFormDescription")}</p>
+							</div>
+							<div>
+								<button
+									type="button"
+									class="ui-button ui-button-primary text-sm"
+									onClick={() => setShowCreateFormDialog(true)}
+								>
+									{t("dashboard.section.createEntry.createFirstForm")}
+								</button>
+							</div>
+						</div>
 					</Show>
 					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						<For each={displayEntries()}>
@@ -243,6 +294,13 @@ export default function SpaceEntriesIndexPane() {
 				defaultForm={creatableForms()[0]?.name}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
+			/>
+			<CreateFormDialog
+				open={showCreateFormDialog()}
+				columnTypes={ctx.columnTypes()}
+				formNames={ctx.forms().map((form) => form.name)}
+				onClose={() => setShowCreateFormDialog(false)}
+				onSubmit={handleCreateForm}
 			/>
 		</SpaceShell>
 	);

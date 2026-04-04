@@ -23,6 +23,22 @@ Ugoite's data model is built on these principles:
 | **Append-Only Integrity** | Revisions are appended in Iceberg; history is immutable |
 | **Table-Backed Storage** | Entries live in Apache Iceberg tables via OpenDAL |
 
+## Authority Layers
+
+Ugoite uses three related "source of truth" layers, each for a different job:
+
+- **User-facing authoring surface**: Markdown is the primary editing surface for
+  humans and agents.
+- **Logical/domain contract**: Entries plus their Form definitions are the
+  canonical meaning of the data model, including which typed fields exist and
+  how they should be interpreted.
+- **Physical persistence layer**: Iceberg-managed tables and metadata are the
+  authoritative on-disk representation that persists those entries and Forms.
+
+These layers should agree with each other, but they are not interchangeable:
+Markdown is for authoring, Forms define the logical contract, and Iceberg owns
+the storage layout.
+
 ## Directory Structure
 
 See [directory-structure.md](directory-structure.md) for the full space layout.
@@ -210,7 +226,9 @@ Conflicts return HTTP 409 with current revision.
 ## Indices
 
 Materialized indexes (search, embeddings, stats) are derived from Iceberg tables
-and can be regenerated. The Iceberg-managed layout is the only source of truth.
+and can be regenerated. They are never authoritative. The authoritative
+physical storage layer is the Iceberg-managed layout, while the logical/domain
+contract still comes from entries and their Form definitions.
 
 ## Integrity
 

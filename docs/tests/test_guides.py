@@ -153,6 +153,7 @@ PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
@@ -667,6 +668,8 @@ REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "`ugoite auth login`",
     "`ugoite auth token-clear`",
     '`eval "$(ugoite auth token-clear)"`',
+    "`ugoite config set --mode core`",
+    "The local filesystem examples in this section assume `core` mode",
 }
 REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
@@ -1236,6 +1239,70 @@ def test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs() -> None:
             + ", ".join(duplicated)
         )
         raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() -> None:
+    """REQ-E2E-008: source contributor docs keep one canonical onboarding path."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    spec_index = SPEC_INDEX_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                README_PATH,
+                ["Start with [Run from source](docs/guide/local-dev-auth-login.md)"],
+                "README Contributing section must route humans through Run from source",
+            ),
+            _require_file_contains(
+                SPEC_INDEX_PATH,
+                [
+                    "[Run from source](../guide/local-dev-auth-login.md)",
+                    "[Contributor onboarding](../guide/local-dev-auth-login.md)",
+                ],
+                (
+                    "spec index must point human contributor guidance at "
+                    "local-dev-auth-login"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "docker-compose.md",
+                [
+                    "alternative way to run Ugoite from source",
+                    (
+                        "[Local Development Authentication and Login]"
+                        "(local-dev-auth-login.md)"
+                    ),
+                ],
+                (
+                    "docker-compose guide must position itself as the "
+                    "alternative source workflow"
+                ),
+            ),
+        ]
+        if detail
+    ]
+
+    if (
+        "Contributions welcome! See [AGENTS.md](AGENTS.md) for development "
+        "guidelines." in readme
+    ):
+        details.append(
+            "README Contributing section must not send human contributors to AGENTS.md",
+        )
+
+    if "[Run from source](../guide/docker-compose.md)" in spec_index:
+        details.append(
+            "spec index must not keep docker-compose as the Run from source path",
+        )
+
+    if "[Contributing](../../AGENTS.md)" in spec_index:
+        details.append(
+            "spec index must not label AGENTS.md as human contributing guidance",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
