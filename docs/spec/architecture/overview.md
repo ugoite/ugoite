@@ -99,11 +99,12 @@ API layer providing access to frontend and AI agents:
 
 ### Frontend (TypeScript/SolidStart)
 
-UI layer with NO data logic:
+UI/client layer with client-side state and cache responsibilities, but no
+business-rule or persistence logic:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `lib/*-store.ts` | State management, optimistic updates |
+| `lib/*-store.ts` | Client-side state, local cache, optimistic updates |
 | `lib/*-api.ts` | Feature API clients (REST calls only) |
 | `routes/` | Page components |
 | `components/` | Reusable UI components |
