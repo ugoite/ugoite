@@ -1229,11 +1229,12 @@ def test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs() -> None:
 
     section = match.group("section")
     required_fragments = [
-        "Start Here section above is the canonical newcomer map",
+        "Use **Start Here** above for the newcomer path.",
         "Backend Healthcheck",
-        "Specification Index",
+        "Environment Matrix",
         "Architecture Overview",
-        "API Reference",
+        "REST API Reference",
+        "MCP Reference",
         "Versions Overview",
         "Machine-readable roadmap",
     ]
@@ -1245,17 +1246,20 @@ def test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs() -> None:
         )
         raise AssertionError(message)
 
-    forbidden_fragments = [
-        "[Core Concepts](docs/guide/concepts.md)",
-        "[Container Quick Start](docs/guide/container-quickstart.md)",
-        "[CLI Guide](docs/guide/cli.md)",
-        "[Local Dev Auth/Login](docs/guide/local-dev-auth-login.md)",
+    duplicated_start_here_references = [
+        "Core Concepts",
+        "Container Quick Start",
+        "CLI Guide",
+        "Local Dev Auth/Login",
+        "Specification Index",
     ]
-    duplicated = [fragment for fragment in forbidden_fragments if fragment in section]
-    if duplicated:
+    duplicates = [
+        fragment for fragment in duplicated_start_here_references if fragment in section
+    ]
+    if duplicates:
         message = (
-            "README Documentation Map must not duplicate Start Here newcomer links: "
-            + ", ".join(duplicated)
+            "README Documentation Map must not repeat Start Here references: "
+            + ", ".join(duplicates)
         )
         raise AssertionError(message)
 
