@@ -54,7 +54,7 @@ export const nextStepCards = [
 	{
 		badge: "Browser",
 		description:
-			"After the stack is running and you have completed login, see how spaces, entries, forms, and search fit together in the UI.",
+			"After the stack is running and you have completed login, open a space, create a form first, then add entries and explore search from that shared structure.",
 		href: "/app/frontend",
 		icon: "🖥️",
 		title: "Explore the browser app",

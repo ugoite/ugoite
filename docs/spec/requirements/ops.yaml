@@ -242,6 +242,7 @@ requirements:
     rust:
     - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
       tests:
+      - test_entry_create_req_ops_006_help_leads_with_plain_markdown_example
       - test_entry_update_req_ops_006_help_describes_required_inputs
       - test_form_and_search_req_ops_006_help_describes_required_inputs
 - set_id: REQCAT-OPS
@@ -619,6 +620,7 @@ requirements:
       - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
       - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
       - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
+      - 'REQ-OPS-015: keeps the /spaces shortcut out of signed-out login screens'
       - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
       - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
       - 'REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows'
@@ -899,6 +901,12 @@ requirements:
     coverage for frontend code, and the contract MUST remain documented so the
 
     hard gate is explicit rather than only implied by frontend-local config.
+
+    The Vitest packages that implement the coverage gate MUST stay version-aligned
+
+    and update together so the enforced frontend run does not regress into mixed-version
+
+    coverage execution drift.
 
     '
   related_spec:

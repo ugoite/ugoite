@@ -206,9 +206,6 @@ export default function LoginRoute() {
 					<A href="/" class="ui-button ui-button-secondary">
 						Back to Home
 					</A>
-					<A href="/spaces" class="ui-button ui-button-secondary">
-						Go to Spaces
-					</A>
 				</div>
 			</section>
 		</main>
