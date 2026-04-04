@@ -84,13 +84,15 @@ const store = createEntryStore(...);  // NO! Violates responsibility
 
 ### Prerequisites
 
-- Node.js >= 22
-- Backend service running (see backend README)
+- For contributor-managed tool versions, use the repository root `mise.toml`
+  via `mise run setup`.
+- Backend service running (see backend README) if you are not using the root
+  `mise run dev` workflow.
 
 ### Installation
 
 ```bash
-npm install
+mise run //frontend:install
 ```
 
 ### Development
