@@ -173,7 +173,7 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 ```
 
 ## Frontend CI
@@ -375,7 +375,7 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 ```
 
 The package-local `mise run //ugoite-minimum:test` task installs
@@ -395,11 +395,15 @@ run with `-W error`, emit JUnit XML into temporary files, and call
 and skipped-test regressions that CI rejects. `mise run //ugoite-core:build:clean`
 provides a package-local destructive rebuild when the editable extension is stale.
 The default `mise run //ugoite-cli:test` path stays incremental (`cargo test`),
-while `mise run //ugoite-cli:test:clean` provides a package-local destructive
-rerun when CLI artifacts are stale. `mise run cleanup:rust-targets` removes
-both the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
-path when artifacts grow unexpectedly. Rust CI and pre-commit still enforce the
-100% CLI line-coverage gate through `cargo llvm-cov`.
+while root `mise run test` routes through `mise run //ugoite-cli:test:coverage`.
+That task installs `cargo-llvm-cov` when needed, adds `llvm-tools-preview`,
+cleans both package-local and workspace coverage artifacts, and enforces the
+same 100% CLI line-coverage gate as Rust CI. `mise run //ugoite-cli:test:clean`
+provides a package-local destructive rerun when CLI artifacts are stale.
+`mise run cleanup:rust-targets` removes both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+unexpectedly. Pre-commit still enforces the same 100% CLI line-coverage gate
+through `cargo llvm-cov`.
 
 ## SBOM and Supply Chain CI
 
@@ -511,8 +515,9 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+<<<<<<< HEAD
 cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/check_pytest_no_skips.py "$report" "ugoite-core tests"
-cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 
 # Python
 cd .. && uvx ruff format --check .

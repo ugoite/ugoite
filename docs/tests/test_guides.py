@@ -890,6 +890,10 @@ REQUIRED_DOCSITE_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
 )
 REQUIRED_DOCSITE_COVERAGE_STEP_NAME = "Run docsite Vitest with 100% coverage gate"
+REQUIRED_CLI_COVERAGE_COMMAND = (
+    "cargo llvm-cov --summary-only --fail-under-lines 100 "
+    "--no-default-features --jobs 1"
+)
 REQUIRED_STRICT_NPM_CI_COMMAND = "npm ci"
 REQUIRED_STRICT_ROOT_NPM_CI_COMMAND = "npm ci --no-fund --no-audit"
 REQUIRED_STRICT_BUN_INSTALL_COMMAND = "bun install --frozen-lockfile"
@@ -1629,9 +1633,6 @@ def _collect_req_ops_006_ci_details() -> list[str]:
     )
 
     workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
-    cli_coverage_command = (
-        "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
-    )
     if missing_ci_steps:
         missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
     if "mise run //ugoite-minimum:test" not in root_runs:
@@ -1646,14 +1647,14 @@ def _collect_req_ops_006_ci_details() -> list[str]:
         missing_parts.append("rust-ci minimum coverage gate must run the wrapper")
     if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
         missing_parts.append("rust-ci must install llvm-tools-preview")
-    if cli_coverage_command not in workflow_text:
+    if REQUIRED_CLI_COVERAGE_COMMAND not in workflow_text:
         missing_parts.append("rust-ci must enforce 100% ugoite-cli coverage")
 
     spec_detail = _require_file_contains(
         CI_CD_SPEC_PATH,
         [
-            cli_coverage_command,
-            "mise run //ugoite-cli:test",
+            REQUIRED_CLI_COVERAGE_COMMAND,
+            "mise run //ugoite-cli:test:coverage",
             "100% CLI line-coverage gate",
         ],
         "ci-cd spec must document the ugoite-cli 100% coverage gate",
@@ -1836,6 +1837,37 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             ),
             _require_task_contains(
                 cli_mise,
+                "test:coverage",
+                "command -v cargo-llvm-cov >/dev/null 2>&1 || "
+                "cargo install cargo-llvm-cov --locked",
+                "ugoite-cli test:coverage task must install cargo-llvm-cov when needed",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "rustup component add llvm-tools-preview",
+                "ugoite-cli test:coverage task must install llvm-tools-preview",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli test:coverage task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "cargo llvm-cov clean --workspace",
+                "ugoite-cli test:coverage task must clean llvm-cov workspace artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                REQUIRED_CLI_COVERAGE_COMMAND,
+                "ugoite-cli test:coverage task must enforce 100% CLI line coverage",
+            ),
+            _require_task_contains(
+                cli_mise,
                 "test:clean",
                 "cargo clean -p ugoite-cli",
                 "ugoite-cli test:clean task must clean package-local Rust artifacts",
@@ -1860,7 +1892,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                     "mise run //backend:test:no-build",
                     "mise run //frontend:test:coverage",
                     "mise run //docsite:test:coverage",
-                    "mise run //ugoite-cli:test",
+                    "mise run //ugoite-cli:test:coverage",
                     "mise run //ugoite-core:test:no-build",
                     "mise run //ugoite-minimum:test",
                     "mise run test:docs",
@@ -1887,6 +1919,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 README_PATH,
                 [
                     "mise run cleanup:rust-targets",
+                    "mise run //ugoite-cli:test:coverage",
                     "mise run //ugoite-core:build:clean",
                     "mise run //ugoite-cli:test:clean",
                 ],
