@@ -71,7 +71,7 @@ test.describe("Smoke Tests", () => {
 
 		try {
 			await page.goto("/login");
-			await page.getByRole("button", { name: "Continue with Mock OAuth" }).click();
+			await page.getByRole("button", { name: "Continue with Local Demo Login" }).click();
 			await expect(page).toHaveURL(/\/spaces$/);
 			await expect(page.getByText("Available Spaces")).toBeVisible();
 		} finally {
@@ -102,7 +102,7 @@ test.describe("Smoke Tests", () => {
 		try {
 			await page.goto("/login");
 			await page.waitForLoadState("networkidle");
-			await expect(page.getByRole("button", { name: "Continue with Mock OAuth" })).toBeVisible();
+			await expect(page.getByRole("button", { name: "Continue with Local Demo Login" })).toBeVisible();
 			const cookies = await context.cookies(frontendUrl);
 			expect(
 				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")?.value,

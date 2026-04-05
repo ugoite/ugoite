@@ -10,24 +10,26 @@ session. The browser and CLI must sign in explicitly after startup, so local
 development follows the same mental model as production: authenticate first,
 receive a bearer token second.
 
-The default path remains `passkey-totp`, and you can opt into `mock-oauth`
-when you want to exercise an explicit OAuth-style login flow. In every case,
-the browser and CLI must sign in explicitly after startup.
+The default path remains `passkey-totp`, and you can opt into the local demo
+login path (`mock-oauth`) when you want an explicit browser/CLI sign-in flow
+without an external provider. In every case, the browser and CLI must sign in
+explicitly after startup.
 
 That default intentionally differs from the published
 [`docker-compose.release.yaml` quick start](container-quickstart.md), which
-uses `mock-oauth` so newcomers can evaluate the browser flow faster. Source
-development keeps `passkey-totp` on by default so contributors exercise the
-explicit passkey + 2FA login path that `mise run dev` wires through
-`scripts/dev-auth-env.sh`. If you want source development to mirror the release
-quick start instead, set `UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
+uses the local demo login mode (`mock-oauth`) so newcomers can evaluate the
+browser flow faster. Source development keeps `passkey-totp` on by default so
+contributors exercise the explicit passkey + 2FA login path that
+`mise run dev` wires through `scripts/dev-auth-env.sh`. If you want source
+development to mirror the release quick start instead, set
+`UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
 
 ## 1) Auth modes at a glance
 
 | Mode | How to enable | What it does |
 |---|---|---|
 | `passkey-totp` (default) | `mise run dev` | Prompts for a local admin username and validates a current 2FA code in the terminal, then creates a passkey-bound local context that browser/CLI login requests must present alongside the 2FA step. |
-| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit mock OAuth browser/CLI login path after the stack is running as the configured local admin user. |
+| `mock-oauth` | `UGOITE_DEV_AUTH_MODE=mock-oauth mise run dev` | Keeps startup unauthenticated, but exposes an explicit local demo browser/CLI login path after the stack is running as the configured local admin user. No external OAuth provider is used. |
 
 Each backend/frontend dev process logs the active mode at startup, for example:
 
@@ -163,9 +165,9 @@ shell. That token is minted only after the backend validates the username + 2FA
 input together with the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the
 authenticated admin user can then create additional spaces.
 
-## 7) Mock OAuth mode
+## 7) Local demo login (`mock-oauth`) mode
 
-Use `mock-oauth` when you want an explicit OAuth-style login path without
+Use `mock-oauth` when you want the explicit local demo login path without
 pre-authenticating the stack at startup.
 
 ```bash
@@ -176,7 +178,7 @@ mise run dev
 Browser flow:
 
 1. open `http://localhost:3000/login`
-2. click **Continue with Mock OAuth**
+2. click **Continue with Local Demo Login**
 
 CLI flow:
 
@@ -188,7 +190,7 @@ cargo run -q -p ugoite-cli -- auth login --mock-oauth
 ## 8) Verify auth locally
 
 1. Open `http://localhost:3000/login`.
-2. Complete either the passkey-bound username + 2FA form or the mock OAuth button.
+2. Complete either the passkey-bound username + 2FA form or the local demo login button.
 3. Confirm protected pages such as `/spaces` load successfully.
 4. Check backend health (`/health` is intentionally unauthenticated):
 

@@ -54,9 +54,9 @@ user-controlled local storage.
 
 Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
 default so source contributors exercise the explicit local passkey + 2FA flow,
-while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
-by default so browser evaluators can reach `/login` and `/spaces` with fewer
-setup steps.
+while the published `docker-compose.release.yaml` quick start uses the local
+demo login mode (`mock-oauth`) by default so browser evaluators can reach
+`/login` and `/spaces` with fewer steps and no external provider.
 
 ### Which entry path should you choose?
 
@@ -325,9 +325,10 @@ docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
 ```
 
-Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
-and you will land on `/spaces`. The shipped compose file bootstraps the `default` space
-at startup so the first browser and CLI session both have a ready workspace.
+Then open `http://localhost:3000/login`, click
+**Continue with Local Demo Login**, and you will land on `/spaces`. The shipped
+compose file bootstraps the `default` space at startup so the first browser and
+CLI session both have a ready workspace.
 For more background on the explicit browser login flow, see
 [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
@@ -351,7 +352,7 @@ Tag conventions:
 | `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the backend container at `/data`                                                                                                                               |
 | `UGOITE_FRONTEND_PORT`        | `3000`                       | Host port that exposes the frontend UI                                                                                                                                                |
 | `UGOITE_BACKEND_PORT`         | `8000`                       | Host port that exposes the backend API                                                                                                                                                |
-| `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Mock OAuth user id bootstrapped as the shipped quick-start admin-space admin                                                                                                          |
+| `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Local demo login user id bootstrapped as the shipped quick-start admin-space admin                                                                                                    |
 | `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
