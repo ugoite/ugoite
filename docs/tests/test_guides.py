@@ -3813,7 +3813,7 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
 
     backend_test = " ".join(_get_task_run_commands(backend_mise, "test"))
     backend_test_no_build = " ".join(
-        _get_task_run_commands(backend_mise, "test:no-build")
+        _get_task_run_commands(backend_mise, "test:no-build"),
     )
     core_test = " ".join(_get_task_run_commands(core_mise, "test"))
     core_test_no_build = " ".join(_get_task_run_commands(core_mise, "test:no-build"))
@@ -3865,7 +3865,8 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
                     "check_pytest_no_skips.py",
                 )
             ),
-            "backend mise test task must reject warnings and skipped tests without leaving reports behind",
+            "backend mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
         ),
         (
             any(
@@ -3877,7 +3878,8 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
                     "check_pytest_no_skips.py",
                 )
             ),
-            "backend mise test:no-build task must reject warnings and skipped tests without leaving reports behind",
+            "backend mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
         ),
         (
             any(
@@ -3889,7 +3891,8 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
                     "check_pytest_no_skips.py",
                 )
             ),
-            "ugoite-core mise test task must reject warnings and skipped tests without leaving reports behind",
+            "ugoite-core mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
         ),
         (
             any(
@@ -3901,7 +3904,8 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
                     "check_pytest_no_skips.py",
                 )
             ),
-            "ugoite-core mise test:no-build task must reject warnings and skipped tests without leaving reports behind",
+            "ugoite-core mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
         ),
         (
             any(
@@ -3913,25 +3917,29 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
                     "check_pytest_no_skips.py",
                 )
             ),
-            "root mise test:docs task must reject warnings and skipped tests without leaving reports behind",
+            "root mise test:docs task must reject warnings and skipped tests"
+            " without leaving reports behind",
         ),
         (
             python_backend_run is None
             or "-W error" not in python_backend_run
             or "--junitxml=../backend-pytest.xml" not in python_backend_run,
-            "python-ci.yml backend pytest step must keep warnings-as-errors and a JUnit report",
+            "python-ci.yml backend pytest step must keep warnings-as-errors"
+            " and a JUnit report",
         ),
         (
             python_backend_skip is None
             or 'scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"'
             not in python_backend_skip,
-            "python-ci.yml backend skip check must use scripts/check_pytest_no_skips.py",
+            "python-ci.yml backend skip check must use"
+            " scripts/check_pytest_no_skips.py",
         ),
         (
             python_docs_run is None
             or "-W error" not in python_docs_run
             or "--junitxml=docs-pytest.xml" not in python_docs_run,
-            "python-ci.yml docs pytest step must keep warnings-as-errors and a JUnit report",
+            "python-ci.yml docs pytest step must keep warnings-as-errors"
+            " and a JUnit report",
         ),
         (
             python_docs_skip is None
@@ -3943,7 +3951,8 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
             rust_core_run is None
             or "-W error" not in rust_core_run
             or "--junitxml=../core-pytest.xml" not in rust_core_run,
-            "rust-ci.yml core pytest step must keep warnings-as-errors and a JUnit report",
+            "rust-ci.yml core pytest step must keep warnings-as-errors"
+            " and a JUnit report",
         ),
         (
             rust_core_skip is None
@@ -3955,10 +3964,12 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
             _require_file_contains(
                 PYTEST_NO_SKIPS_SCRIPT_PATH,
                 ["xml.etree.ElementTree", "skipped=", "tests=", "is not allowed"],
-                "scripts/check_pytest_no_skips.py must parse JUnit XML and reject skipped tests",
+                "scripts/check_pytest_no_skips.py must parse JUnit XML"
+                " and reject skipped tests",
             )
             is not None,
-            "scripts/check_pytest_no_skips.py must parse JUnit XML and reject skipped tests",
+            "scripts/check_pytest_no_skips.py must parse JUnit XML"
+            " and reject skipped tests",
         ),
         (
             bool(missing_doc_fragments),
