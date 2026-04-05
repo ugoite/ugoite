@@ -40,6 +40,32 @@ test.describe("Public page stability", () => {
 		}
 	});
 
+	test("REQ-OPS-015: home page Log in is the primary CTA and Open Spaces is secondary for unauthenticated visitors", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			baseURL: process.env.FRONTEND_URL ?? "http://localhost:3000",
+		});
+		try {
+			const page = await context.newPage();
+			await page.goto("/");
+			await page.waitForLoadState("networkidle");
+
+			const loginLink = page.getByRole("link", { name: "Log in" });
+			const spacesLink = page.getByRole("link", { name: "Open Spaces" });
+
+			await expect(loginLink).toHaveAttribute("href", "/login");
+			await expect(loginLink).toHaveClass(/ui-button-primary/);
+			await expect(spacesLink).toHaveAttribute("href", "/spaces");
+			await expect(spacesLink).toHaveClass(/ui-button-secondary/);
+			await expect(page.locator("body")).toContainText(
+				"/spaces requires an authenticated browser session",
+			);
+		} finally {
+			await context.close();
+		}
+	});
+
 	test("REQ-E2E-004: unknown routes show Ugoite recovery guidance instead of scaffold copy", async ({
 		browser,
 	}) => {
@@ -51,24 +77,22 @@ test.describe("Public page stability", () => {
 			await page.goto("/does-not-exist");
 			await page.waitForLoadState("networkidle");
 
-			await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+			await expect(
+				page.getByRole("heading", { name: "Page not found" }),
+			).toBeVisible();
 			await expect(page.locator("body")).toContainText("still inside Ugoite");
-			await expect(page.getByRole("link", { name: "Open Spaces" })).toHaveAttribute(
-				"href",
-				"/spaces",
-			);
-			await expect(page.getByRole("link", { name: "Go to Login" })).toHaveAttribute(
-				"href",
-				"/login",
-			);
-			await expect(page.getByRole("link", { name: "Back to Home" })).toHaveAttribute(
-				"href",
-				"/",
-			);
-			await expect(page.getByRole("link", { name: "About Ugoite" })).toHaveAttribute(
-				"href",
-				"/about",
-			);
+			await expect(
+				page.getByRole("link", { name: "Open Spaces" }),
+			).toHaveAttribute("href", "/spaces");
+			await expect(
+				page.getByRole("link", { name: "Go to Login" }),
+			).toHaveAttribute("href", "/login");
+			await expect(
+				page.getByRole("link", { name: "Back to Home" }),
+			).toHaveAttribute("href", "/");
+			await expect(
+				page.getByRole("link", { name: "About Ugoite" }),
+			).toHaveAttribute("href", "/about");
 			await expect(page.locator("body")).not.toContainText("Visit solidjs.com");
 			await expect(page.locator("body")).not.toContainText("About Page");
 		} finally {

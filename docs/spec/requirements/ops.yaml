@@ -654,6 +654,9 @@ requirements:
     - file: frontend/src/routes/spaces/index.test.tsx
       tests:
       - 'REQ-OPS-015: redirects unauthenticated users to the explicit login route'
+    - file: frontend/src/routes/index.test.tsx
+      tests:
+      - 'REQ-OPS-015: public home page points first-time users to /login before /spaces'
     rust:
     - file: ugoite-cli/tests/test_auth.rs
       tests:
@@ -669,6 +672,9 @@ requirements:
     - file: e2e/smoke.test.ts
       tests:
       - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
+    - file: e2e/public-pages.test.ts
+      tests:
+      - 'REQ-OPS-015: home page Log in is the primary CTA and Open Spaces is secondary for unauthenticated visitors'
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
