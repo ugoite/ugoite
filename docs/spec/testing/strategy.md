@@ -59,11 +59,12 @@ mise run //backend:test    # Backend pytest
 mise run //frontend:test   # Frontend vitest
 mise run //docsite:test    # Docsite Vitest unit tests
 mise run //ugoite-cli:test # Incremental CLI Rust tests
+mise run //ugoite-cli:test:coverage # CLI Rust coverage gate matching CI
 mise run //ugoite-cli:test:clean # Clean package-local CLI artifacts and rerun tests
 ```
 
-CLI 100% line coverage remains enforced in pre-commit and Rust CI via
-`cargo llvm-cov`.
+Root `mise run test`, `mise run //ugoite-cli:test:coverage`, pre-commit, and
+Rust CI enforce the CLI 100% line-coverage gate via `cargo llvm-cov`.
 
 ### E2E Tests
 ```bash

@@ -58,7 +58,7 @@ run = [
 	"mise run //backend:test:no-build",
 	"mise run //frontend:test:coverage",
 	"mise run //docsite:test:coverage",
-	"mise run //ugoite-cli:test",
+	"mise run //ugoite-cli:test:coverage",
 	"mise run //ugoite-core:test:no-build",
 	"mise run //ugoite-minimum:test",
 	"mise run test:docs",
