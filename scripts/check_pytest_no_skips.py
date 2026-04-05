@@ -34,7 +34,8 @@ def _main() -> int:
     suites = _collect_suites(root)
     skipped = _count_attr(suites, "skipped")
     if skipped > 0:
-        raise SystemExit(f"{args.label}: skipped={skipped} is not allowed")
+        msg = f"{args.label}: skipped={skipped} is not allowed"
+        raise SystemExit(msg)
 
     tests = _count_attr(suites, "tests")
     sys.stdout.write(f"{args.label} OK: tests={tests}, skipped={skipped}\n")
