@@ -9,9 +9,9 @@ export type OnboardingCard = {
 export const browserPathCaveat = {
 	badge: "Browser caveat today",
 	description:
-		"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is still the lowest-setup-cost local-first path right now.",
+		"The current browser route still needs a running backend + frontend stack and an explicit login flow. It also costs more setup than the CLI in `core` mode, which is still the lowest-setup-cost local-first path right now.",
 	headline:
-		"The browser path is still server-backed, login-gated, and higher-overhead than CLI `core` mode, even though the data stays local-first.",
+		"The browser path is still server-backed and login-gated, even though the data stays local-first. It also has higher setup cost than CLI `core` mode.",
 } as const;
 
 export const conceptPrimerCard = {
