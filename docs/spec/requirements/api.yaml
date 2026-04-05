@@ -203,6 +203,8 @@ requirements:
       - test_feature_paths_exist
       - test_no_undeclared_feature_modules
       - test_docs_req_api_004_policy_traceability_docs_describe_manifest_links
+      - test_docs_req_api_004_feature_readme_inventory_matches_manifest
+      - test_docs_req_api_004_docsite_feature_pages_use_manifest_loader
     vitest:
     - file: docsite/src/lib/spec-data.test.ts
       tests:
