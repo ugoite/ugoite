@@ -29,6 +29,7 @@ REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
 REQ-OPS-033: Local and CI Python test paths must reject warnings and skipped tests.
+REQ-OPS-034: Local direct-process E2E runs must not kill unrelated listeners.
 """
 
 from __future__ import annotations
@@ -143,6 +144,7 @@ LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login
 AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
+CLEANUP_DEV_PORTS_PATH = REPO_ROOT / "scripts" / "cleanup-dev-ports.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
@@ -155,6 +157,7 @@ PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
@@ -240,6 +243,11 @@ REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS = {
     "run with `-W error`, emit JUnit XML into temporary files, and call",
     "`scripts/check_pytest_no_skips.py` so `mise run test` fails on the same warning",
     "and skipped-test regressions that CI rejects.",
+}
+REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS = {
+    "fails fast when ports",
+    "instead of killing unrelated listeners;",
+    "`mise run cleanup:ports` first.",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -675,6 +683,8 @@ REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "`ugoite auth login`",
     "`ugoite auth token-clear`",
     '`eval "$(ugoite auth token-clear)"`',
+    "`ugoite config set --mode core`",
+    "The local filesystem examples in this section assume `core` mode",
 }
 REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
@@ -1201,6 +1211,70 @@ def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() -> None:
+    """REQ-E2E-008: source contributor docs keep one canonical onboarding path."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    spec_index = SPEC_INDEX_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                README_PATH,
+                ["Start with [Run from source](docs/guide/local-dev-auth-login.md)"],
+                "README Contributing section must route humans through Run from source",
+            ),
+            _require_file_contains(
+                SPEC_INDEX_PATH,
+                [
+                    "[Run from source](../guide/local-dev-auth-login.md)",
+                    "[Contributor onboarding](../guide/local-dev-auth-login.md)",
+                ],
+                (
+                    "spec index must point human contributor guidance at "
+                    "local-dev-auth-login"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "docker-compose.md",
+                [
+                    "alternative way to run Ugoite from source",
+                    (
+                        "[Local Development Authentication and Login]"
+                        "(local-dev-auth-login.md)"
+                    ),
+                ],
+                (
+                    "docker-compose guide must position itself as the "
+                    "alternative source workflow"
+                ),
+            ),
+        ]
+        if detail
+    ]
+
+    if (
+        "Contributions welcome! See [AGENTS.md](AGENTS.md) for development "
+        "guidelines." in readme
+    ):
+        details.append(
+            "README Contributing section must not send human contributors to AGENTS.md",
+        )
+
+    if "[Run from source](../guide/docker-compose.md)" in spec_index:
+        details.append(
+            "spec index must not keep docker-compose as the Run from source path",
+        )
+
+    if "[Contributing](../../AGENTS.md)" in spec_index:
+        details.append(
+            "spec index must not label AGENTS.md as human contributing guidance",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
@@ -1703,25 +1777,19 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "uv run maturin develop",
                 "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
-            _require_task_contains(
+            _require_exact_task_run(
                 core_mise,
                 "test:no-build",
-                "cargo test -j 1",
-                "ugoite-core test:no-build task must run crate tests",
-            ),
-            _require_task_contains(
-                core_mise,
-                "test:no-build",
-                "python -m pytest",
-                "ugoite-core test:no-build task must run Python binding tests",
-            ),
-            _require_task_excludes(
-                core_mise,
-                "test:no-build",
-                "uv run maturin develop",
+                [
+                    "cargo test -j 1",
+                    (
+                        "if [ -d tests ]; then uv run --with pytest --with "
+                        "pytest-asyncio python -m pytest; fi"
+                    ),
+                ],
                 (
-                    "ugoite-core test:no-build task must not rebuild the editable "
-                    "extension"
+                    "ugoite-core test:no-build task must run crate and Python "
+                    "binding tests without rebuilding"
                 ),
             ),
             _require_exact_task_depends(
@@ -1730,10 +1798,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 ["build"],
                 "ugoite-core test task must depend on build",
             ),
-            _require_task_contains(
+            _require_exact_task_run(
                 backend_mise,
                 "test:no-build",
-                "uv run pytest",
+                ["uv run pytest"],
                 "backend test:no-build task must run backend pytest directly",
             ),
             _require_exact_task_depends(
@@ -3974,6 +4042,67 @@ def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing Python strictness fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> None:
+    """REQ-OPS-034: local direct-process E2E runs must not kill unrelated listeners."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    run_e2e_text = (REPO_ROOT / "e2e/scripts/run-e2e.sh").read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            "fuser -k 8000/tcp" in run_e2e_text or "fuser -k 3000/tcp" in run_e2e_text,
+            "run-e2e.sh must not kill listeners on ports 8000/3000 automatically",
+        ),
+        (
+            any(
+                fragment not in run_e2e_text
+                for fragment in (
+                    'ensure_port_available 8000 "Backend"',
+                    'ensure_port_available 3000 "Frontend"',
+                    'fuser "${port}/tcp"',
+                    "mise run cleanup:ports",
+                )
+            ),
+            "run-e2e.sh must fail fast on occupied ports and point"
+            " users to cleanup:ports",
+        ),
+        (
+            _require_exact_task_run(
+                root_mise,
+                "cleanup:ports",
+                ["bash scripts/cleanup-dev-ports.sh"],
+                "root mise must expose cleanup:ports as the explicit"
+                " destructive option",
+            )
+            is not None,
+            "root mise must expose cleanup:ports as the explicit destructive option",
+        ),
+        (
+            _require_file_contains(
+                CLEANUP_DEV_PORTS_PATH,
+                ["fuser -k", "port", "Cleaned stale servers"],
+                "cleanup-dev-ports.sh must remain the explicit"
+                " destructive port cleanup helper",
+            )
+            is not None,
+            "cleanup-dev-ports.sh must remain the explicit"
+            " destructive port cleanup helper",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local E2E port safety fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )

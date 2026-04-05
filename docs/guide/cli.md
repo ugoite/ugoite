@@ -97,10 +97,18 @@ cargo run -q -p ugoite-cli -- --help
 If you installed a released binary, use `ugoite` directly:
 
 ```bash
+ugoite config current
+ugoite config set --mode core
+
 mkdir -p ./spaces
 ugoite space list ./spaces
 ugoite space create ./spaces/demo
 ```
+
+The local filesystem examples in this section assume `core` mode. If you
+previously pointed the CLI at a backend or API endpoint, `ugoite config current`
+shows the saved routing state and `ugoite config set --mode core` switches back
+to the local-first filesystem path before you create `./spaces/demo`.
 
 If you are actively developing inside the repository, you can swap those for
 `cargo run -q -p ugoite-cli -- ...` instead.
@@ -163,6 +171,10 @@ CARGO_TARGET_DIR=target/rust cargo run -q -p ugoite-cli -- space sample-scenario
 
 ## Notes
 
+- The quick-start filesystem examples above assume `core` mode. Run
+  `ugoite config current` to inspect the saved routing state and
+  `ugoite config set --mode core` when you need to switch back from
+  backend/api mode before using local paths such as `./spaces/demo`.
 - In `core` mode, commands that target a specific space now take a positional
   `SPACE_ID_OR_PATH`. Pass the full local path such as
   `./spaces/dev-seed` or `/root/spaces/dev-seed`.
@@ -200,9 +212,16 @@ Backend and API modes still accept bare space IDs such as `demo`.
 
 CLI can run in three modes, and stores the selection in `~/.ugoite/cli-endpoints.json`.
 
-- `core`: call `ugoite-core` directly (default)
-- `backend`: call backend REST endpoints directly (e.g. `http://localhost:8000`)
-- `api`: call the frontend-proxied API base (e.g. `http://localhost:3000/api`)
+If you are choosing for the first time, use this rule of thumb:
+
+| Mode | Choose it when | Practical trade-off |
+| --- | --- | --- |
+| `core` | You are working directly with a local checkout or local `spaces/` directory on this machine | Reads and writes your filesystem directly with no backend required. This is the default because it is the shortest local-first path. |
+| `backend` | You want the CLI to talk to a backend server directly | Uses backend REST endpoints and the server's storage/auth behavior instead of your local filesystem. |
+| `api` | You want the CLI to use the same proxied `/api` surface as the frontend | Follows the frontend-facing API path and its proxy/auth behavior instead of direct local access. |
+
+Switch away from `core` only when you specifically want server-backed behavior
+or the same frontend proxy path the browser uses.
 
 When mode is `backend` or `api`, remote commands accept a `SPACE_ID` (or the
 shared `SPACE_ID_OR_PATH` argument for commands that also work in `core` mode)
@@ -225,10 +244,9 @@ cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3
 cargo run -q -p ugoite-cli -- config set --mode core
 ```
 
-When you switch away from `core`, the CLI now prints a reminder that future
-commands will run against the configured server or API instead of your local
-filesystem. Use `ugoite config current` whenever you want a quick plain-language
-summary of the active topology and the command to return to `core`.
+Use `ugoite config current` whenever you want the same newcomer-facing summary
+in plain language, including when the current mode is a better fit than the
+other two and how to return to `core`.
 
 ## Auth profile commands
 

@@ -46,6 +46,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Explore the browser app",
 			"Understand auth and access",
 			"Read design and source docs",
+			"Run and troubleshoot the stack",
 		]);
 
 		const getStartedLink = page.getByRole("link", { name: "Get Started" });
@@ -67,6 +68,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Explore the browser app",
 			"Understand auth and access",
 			"Read design and source docs",
+			"Run and troubleshoot the stack",
 		]);
 	});
 
@@ -116,9 +118,10 @@ test.describe("Docsite onboarding-first navigation", () => {
 		).toHaveText([
 			"Core Concepts",
 			"Container Quickstart",
-			"Docker Compose",
-			"Auth Overview",
+			"Run from source",
 			"CLI Guide",
+			"Auth Overview",
+			"Operations & Troubleshooting",
 		]);
 		await expect(
 			page.locator(".site-nav-menu").nth(2).locator(".site-nav-submenu a"),
