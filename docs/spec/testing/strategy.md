@@ -51,11 +51,14 @@ Ugoite follows **Test-Driven Development (TDD)**:
 mise run test
 ```
 
+The root test task now reuses the same Python warning-as-error and no-skipped-test
+gates as the backend, ugoite-core, and docs CI lanes.
+
 ### Individual Packages
 ```bash
 mise run //ugoite-minimum:test # Portable Rust core tests with 100% coverage enforcement
-mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
-mise run //backend:test    # Backend pytest
+mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests (+ Python warnings as errors, no skips)
+mise run //backend:test    # Backend pytest (+ warnings as errors, no skips)
 mise run //frontend:test   # Frontend vitest
 mise run //docsite:test    # Docsite Vitest unit tests
 mise run //ugoite-cli:test # Incremental CLI Rust tests
