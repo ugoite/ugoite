@@ -1782,7 +1782,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 core_mise,
                 "test:no-build",
                 "cargo test -j 1",
-                "ugoite-core test:no-build task must run crate tests without rebuilding",
+                (
+                    "ugoite-core test:no-build task must run crate tests without "
+                    "rebuilding"
+                ),
             ),
             _require_task_contains(
                 core_mise,
@@ -1797,7 +1800,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 core_mise,
                 "test:no-build",
                 "uv run maturin develop",
-                "ugoite-core test:no-build task must not rebuild the editable extension",
+                (
+                    "ugoite-core test:no-build task must not rebuild the editable "
+                    "extension"
+                ),
             ),
             _require_exact_task_depends(
                 core_mise,
