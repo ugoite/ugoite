@@ -6,7 +6,7 @@
 
 ## Vision
 
-**"Local-First Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
 `v0.1` ships the local-first core plus a resource-first MCP baseline. Broader
 AI-native workflows, including wider MCP resource coverage and tool exposure,
@@ -19,6 +19,9 @@ Ugoite is a knowledge management system built on three core principles:
 | **Low Cost** | No expensive cloud services required; runs on local storage |
 | **Easy** | Markdown-first with automatic structure extraction |
 | **Freedom** | Your data, your storage, your AI - no vendor lock-in |
+
+Today the shipped AI surface is **resource-first MCP access**: resources and
+prompts are available now, while tool-style MCP workflows remain future work.
 
 ---
 
@@ -61,7 +64,7 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
-- [MCP Protocol](api/mcp.md) - AI agent interface via Model Context Protocol
+- [MCP Protocol](api/mcp.md) - Resource-first AI agent interface today; tool-style workflows remain future work
 - [OpenAPI Spec](api/openapi.yaml) - Machine-readable API definition
 
 ### Requirements
