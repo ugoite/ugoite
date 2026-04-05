@@ -4,7 +4,7 @@ page:
   id: space-sql-detail
   title: Space SQL Detail
   route: /spaces/{space_id}/sql/{sql_id}
-  implementation: implemented
+  implementation: in-progress
 components:
   shared:
     - id: top-tabs
