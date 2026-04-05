@@ -312,10 +312,32 @@ async def _apply_security_headers(
     context: _SecurityHeaderContext,
 ) -> Response:
     """Attach security-related headers including the HMAC signature."""
-    if space_id == "default":
-        key_id, signature = await build_response_signature(body, root_path)
-    else:
-        key_id, signature = await build_response_signature(body, root_path, space_id)
+    _set_standard_security_headers(response, body, context)
+    try:
+        if space_id == "default":
+            key_id, signature = await build_response_signature(body, root_path)
+        else:
+            key_id, signature = await build_response_signature(body, root_path, space_id)
+    except RuntimeError as exc:
+        logger.warning(
+            "Failed to sign response for %s in space %s: %s",
+            context.request_path,
+            space_id,
+            exc,
+        )
+        return response
+
+    response.headers["X-Ugoite-Key-Id"] = key_id
+    response.headers["X-Ugoite-Signature"] = signature
+    return response
+
+
+def _set_standard_security_headers(
+    response: Response,
+    body: bytes,
+    context: _SecurityHeaderContext,
+) -> None:
+    """Attach non-signature security headers that should survive signing failures."""
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -327,7 +349,4 @@ async def _apply_security_headers(
         )
     if context.uses_https:
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
-    response.headers["X-Ugoite-Key-Id"] = key_id
-    response.headers["X-Ugoite-Signature"] = signature
     response.headers["Content-Length"] = str(len(body))
-    return response
