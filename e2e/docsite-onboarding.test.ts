@@ -98,6 +98,30 @@ test.describe("Docsite onboarding-first navigation", () => {
 		await expect(page.getByText("Application Docs")).toBeVisible();
 	});
 
+	test("REQ-E2E-008: landing and getting-started pages keep the concepts primer ahead of path selection", async ({
+		page,
+	}) => {
+		await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
+
+		const homeSectionOrder = await page
+			.locator(".doc-page-stack > section[id]")
+			.evaluateAll((sections) => sections.map((section) => section.id));
+		expect(homeSectionOrder.indexOf("concept-primer")).toBeLessThan(
+			homeSectionOrder.indexOf("start-paths"),
+		);
+
+		await page.goto(buildDocsiteUrl("/getting-started"), {
+			waitUntil: "networkidle",
+		});
+
+		const gettingStartedSectionOrder = await page
+			.locator(".doc-page-stack > section[id]")
+			.evaluateAll((sections) => sections.map((section) => section.id));
+		expect(gettingStartedSectionOrder.indexOf("concepts")).toBeLessThan(
+			gettingStartedSectionOrder.indexOf("first-steps"),
+		);
+	});
+
 	test("REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs", async ({
 		page,
 	}) => {

@@ -112,10 +112,10 @@ find ./spaces -maxdepth 2 -type f | head
   bootstraps for you after login.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
+- If you skipped the primer earlier, read [Core Concepts](concepts.md) now
+  before exploring more of the UI or the deeper docs.
 - After that first browser-created note, inspect `./spaces` (or your overridden
   `UGOITE_SPACES_DIR`) to see where the data now lives on the host.
-- Read [Core Concepts](concepts.md) next if you want the mental model for
-  spaces, entries, forms, and search before exploring more of the UI.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
   workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
   the full contributor stack from source.
