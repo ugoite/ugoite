@@ -20,9 +20,9 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 		"/docs/guide/cli",
 	]);
 	expect(primaryStartCards.map((card) => card.badge)).toEqual([
-		"Fastest path",
-		"Contributor path",
-		"Automation path",
+		"Fastest browser path",
+		"Highest setup cost",
+		"Lowest setup cost",
 	]);
 });
 
@@ -51,16 +51,20 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(browserPathCaveat).toEqual({
 		badge: "Browser caveat today",
 		description:
-			"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+			"The current browser route still needs a running backend + frontend stack and an explicit login flow. It also costs more setup than the CLI in `core` mode, which is still the lowest-setup-cost local-first path right now.",
 		headline:
-			"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+			"The browser path is still server-backed and login-gated, even though the data stays local-first. It also has higher setup cost than CLI `core` mode.",
 	});
 	expect(primaryStartCards[0]?.description).toContain(
 		"frontend + backend stack",
 	);
-	expect(primaryStartCards[0]?.description).toContain("explicit browser login");
+	expect(primaryStartCards[0]?.description).toContain("Docker");
+	expect(primaryStartCards[0]?.description).toContain("published image pulls");
 	expect(primaryStartCards[1]?.description).toContain("mise run dev");
 	expect(primaryStartCards[1]?.description).toContain("/login");
+	expect(primaryStartCards[2]?.description).toContain(
+		"avoid container infrastructure",
+	);
 	expect(nextStepCards[0]?.description).toContain("completed login");
 	expect(nextStepCards[3]?.description).toContain("health checks");
 	expect(nextStepCards[0]?.description).toContain("create a form first");
