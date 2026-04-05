@@ -79,6 +79,7 @@ This command:
 3. Uses CI-equivalent Playwright JUnit/no-skipped-tests gates in either mode
 4. Executes the full Playwright E2E suite
 5. Shuts down any services it started
+6. Fails fast if ports `3000` or `8000` are already occupied; use `mise run cleanup:ports` for explicit local port cleanup
 
 ### Fast E2E Iteration
 ```bash

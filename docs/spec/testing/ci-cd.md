@@ -235,7 +235,10 @@ jobs:
 The shared compose runner remains the CI path. Local `mise run e2e` prefers
 that same compose runner when Docker is available, and otherwise falls back to a
 production-style host runner that keeps the same Playwright JUnit/no-skips
-validation contract. CI reuses pre-built images by setting
+validation contract. The direct-process fallback now fails fast when ports
+`3000` or `8000` are already occupied instead of killing unrelated listeners;
+contributors who want to clear standard Ugoite dev ports explicitly should run
+`mise run cleanup:ports` first. CI reuses pre-built images by setting
 `E2E_BUILD_IMAGES=false`, while Docker-enabled local runs build the images from
 the current workspace before starting the compose stack.
 

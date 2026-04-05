@@ -84,20 +84,29 @@ const store = createEntryStore(...);  // NO! Violates responsibility
 
 ### Prerequisites
 
-- Node.js >= 22
-- Backend service running (see backend README)
+- For contributor-managed tool versions, use the repository root `mise.toml`
+  via `mise run setup`.
+- Backend service running (see backend README) if you are not using the root
+  `mise run dev` workflow.
 
 ### Installation
 
 ```bash
-npm install
+mise run //frontend:install
 ```
 
 ### Development
 
+For the canonical auth-aware contributor workflow that starts backend,
+frontend, and docsite together, return to the repository root and run
+`mise run dev` as described in the main [README](../README.md#setup--development-mise).
+
+Use the command below only when you intentionally want frontend-isolated
+iteration and already have a reachable local backend:
+
 ```bash
-# Set backend URL and start dev server
-BACKEND_URL=http://localhost:8000 npm run dev
+# Start the frontend-only dev server
+mise run //frontend:dev
 ```
 
 ### Testing
@@ -121,7 +130,7 @@ npm run format
 
 ## Project Structure
 
-```
+```text
 src/
 ├── components/       # Reusable UI components
 │   ├── EntryList.tsx      # Entry list sidebar
@@ -133,13 +142,46 @@ src/
 │   ├── client.ts         # Typed API client
 │   ├── store.ts          # SolidJS reactive store
 │   └── types.ts          # TypeScript interfaces
-├── routes/          # Page components
-│   ├── index.tsx         # Landing page
-│   └── entries.tsx       # Main entries view
+├── routes/          # Layout routes and leaf pages
+│   ├── index.tsx         # Public landing page
+│   ├── login.tsx         # Auth entrypoint
+│   └── spaces/[space_id]/
+│       ├── entries.tsx         # Layout route for the entries branch
+│       ├── entries/index.tsx   # Entries list page
+│       ├── forms.tsx           # Layout route for the forms branch
+│       └── forms/index.tsx     # Forms list page
 └── test/            # Test utilities
     ├── setup.ts          # Vitest setup
     └── mocks/            # MSW handlers
 ```
+
+## Routing Conventions
+
+SolidStart nested routes in this repository use a **parent layout + `index.tsx` leaf**
+pattern.
+
+- Put shared setup for a route branch in the parent route file such as
+  `entries.tsx`, `forms.tsx`, `sql.tsx`, or `[entry_id].tsx`.
+- Layout routes accept `RouteSectionProps` from `@solidjs/router` and render
+  `props.children`.
+- Put the actual page UI for that branch in `index.tsx`.
+- Use the layout file to own shared context, loaders, and route-level state;
+  keep `index.tsx` focused on the leaf page content.
+
+Examples from the current tree:
+
+```text
+src/routes/spaces/[space_id]/entries.tsx                 # layout/context
+src/routes/spaces/[space_id]/entries/index.tsx           # entries list page
+src/routes/spaces/[space_id]/entries/[entry_id].tsx      # nested layout
+src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx # entry detail page
+src/routes/spaces/[space_id]/sql.tsx                     # layout
+src/routes/spaces/[space_id]/sql/index.tsx               # SQL page
+```
+
+When you add a deeper dynamic segment, keep the same rule: the dynamic segment
+file is the layout for that branch, and its `index.tsx` is the leaf page for
+the default view under that segment.
 
 E2E tests are located in the root `/e2e` directory using Bun's native test runner.
 

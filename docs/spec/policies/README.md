@@ -17,9 +17,10 @@ angles:
   policy.
 
 The rendered design pages in the docsite use those links to show how a
-philosophy connects to specific policies and how those policies influence
-feature areas such as `spaces`, `entries`, `forms`, `assets`, `search`, and
-`sql`.
+philosophy connects to specific policies. Feature-area badges on the policy and
+relations pages are derived from the requirement categories declared in
+`linked_requirements` and the manifest-backed feature inventory in
+`docs/spec/features/features.yaml`, so those two sources must stay aligned.
 
 When updating the governance taxonomy:
 

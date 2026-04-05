@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
 	browserPathCaveat,
 	conceptPrimerCard,
+	coreConceptSummaries,
 	nextStepCards,
 	primaryStartCards,
 } from "./onboarding";
@@ -30,16 +31,19 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 		"Explore the browser app",
 		"Understand auth and access",
 		"Read design and source docs",
+		"Run and troubleshoot the stack",
 	]);
 	expect(nextStepCards.map((card) => card.href)).toEqual([
 		"/app/frontend",
 		"/docs/guide/auth-overview",
 		"/docs/spec/index",
+		"/docs/guide/operations",
 	]);
 	expect(nextStepCards.map((card) => card.badge)).toEqual([
 		"Browser",
 		"Access",
 		"Reference",
+		"Ops",
 	]);
 });
 
@@ -58,15 +62,38 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(primaryStartCards[1]?.description).toContain("mise run dev");
 	expect(primaryStartCards[1]?.description).toContain("/login");
 	expect(nextStepCards[0]?.description).toContain("completed login");
+	expect(nextStepCards[3]?.description).toContain("health checks");
+	expect(nextStepCards[0]?.description).toContain("create a form first");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
 	expect(conceptPrimerCard).toEqual({
 		badge: "Learn First",
 		description:
-			"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+			"Get the plain-language mental model for spaces, entries, forms, search, and surface choice before choosing a path.",
 		href: "/docs/guide/concepts",
 		icon: "💡",
 		title: "Understand core concepts",
 	});
+});
+
+test("REQ-E2E-008: onboarding content defines core concepts before asking newcomers to choose a path", () => {
+	expect(coreConceptSummaries.map((concept) => concept.title)).toEqual([
+		"Space",
+		"Entry",
+		"Form",
+		"Markdown, extraction, and search",
+		"Browser, CLI, and API",
+	]);
+	expect(coreConceptSummaries[0]?.description).toContain("portable workspace");
+	expect(coreConceptSummaries[1]?.description).toContain(
+		"Markdown-backed record",
+	);
+	expect(coreConceptSummaries[2]?.description).toContain("schema and template");
+	expect(coreConceptSummaries[3]?.description).toContain(
+		"search/indexes are derived",
+	);
+	expect(coreConceptSummaries[4]?.description).toContain(
+		"thinnest local-first automation path",
+	);
 });

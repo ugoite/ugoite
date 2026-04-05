@@ -6,6 +6,11 @@ export type OnboardingCard = {
 	title: string;
 };
 
+export type ConceptSummary = {
+	description: string;
+	title: string;
+};
+
 export const browserPathCaveat = {
 	badge: "Browser caveat today",
 	description:
@@ -17,11 +22,39 @@ export const browserPathCaveat = {
 export const conceptPrimerCard = {
 	badge: "Learn First",
 	description:
-		"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+		"Get the plain-language mental model for spaces, entries, forms, search, and surface choice before choosing a path.",
 	href: "/docs/guide/concepts",
 	icon: "💡",
 	title: "Understand core concepts",
 } as const satisfies OnboardingCard;
+
+export const coreConceptSummaries = [
+	{
+		description:
+			"A portable workspace that owns its entries, forms, assets, settings, and derived indexes for one project, team, or knowledge base.",
+		title: "Space",
+	},
+	{
+		description:
+			"One Markdown-backed record inside a space, such as a note, task, meeting log, or person page.",
+		title: "Entry",
+	},
+	{
+		description:
+			"The schema and template for an entry type, so extracted fields stay predictable and queryable.",
+		title: "Form",
+	},
+	{
+		description:
+			"You write Markdown first, forms extract typed fields when you want structure, and search/indexes are derived from that source data.",
+		title: "Markdown, extraction, and search",
+	},
+	{
+		description:
+			"Use the browser for guided exploration, the CLI for the thinnest local-first automation path, and backend/API surfaces when you intentionally want server-backed behavior.",
+		title: "Browser, CLI, and API",
+	},
+] as const satisfies readonly ConceptSummary[];
 
 export const primaryStartCards = [
 	{
@@ -54,7 +87,7 @@ export const nextStepCards = [
 	{
 		badge: "Browser",
 		description:
-			"After the stack is running and you have completed login, see how spaces, entries, forms, and search fit together in the UI.",
+			"After the stack is running and you have completed login, open a space, create a form first, then add entries and explore search from that shared structure.",
 		href: "/app/frontend",
 		icon: "🖥️",
 		title: "Explore the browser app",
@@ -74,5 +107,13 @@ export const nextStepCards = [
 		href: "/docs/spec/index",
 		icon: "📚",
 		title: "Read design and source docs",
+	},
+	{
+		badge: "Ops",
+		description:
+			"Open the operational guide hub for health checks, env vars, deployment, log redaction, storage cleanup, migration, and unauthorized-space fixes.",
+		href: "/docs/guide/operations",
+		icon: "🧭",
+		title: "Run and troubleshoot the stack",
 	},
 ] as const satisfies readonly OnboardingCard[];

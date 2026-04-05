@@ -17,6 +17,18 @@ import { testApiUrl } from "~/test/http-origin";
 const navigateMock = vi.fn();
 const searchParamsMock: Record<string, string> = {};
 const setSearchParamsMock = vi.fn();
+const createdAt = "2025-01-01T00:00:00Z";
+
+const assetsForm: Form = {
+	name: "Assets",
+	version: 1,
+	template: "",
+	fields: {
+		link: { type: "string", required: true },
+		name: { type: "string", required: true },
+		uploaded_at: { type: "timestamp", required: true },
+	},
+};
 
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
@@ -28,6 +40,53 @@ vi.mock("@solidjs/router", () => ({
 	),
 }));
 
+function renderEntriesRoute(options?: {
+	spaceId?: string;
+	forms?: Form[];
+	loadingForms?: boolean;
+	columnTypes?: string[];
+	refetchForms?: () => void;
+}) {
+	const {
+		spaceId = "default",
+		forms = [],
+		loadingForms = false,
+		columnTypes = [],
+		refetchForms = () => undefined,
+	} = options ?? {};
+	render(() => {
+		const entryStore = createEntryStore(() => spaceId);
+		const spaceStore = createSpaceStore();
+		const [formsSignal] = createSignal<Form[]>(forms);
+		const [loadingFormsSignal] = createSignal(loadingForms);
+		const [columnTypesSignal] = createSignal<string[]>(columnTypes);
+		return (
+			<EntriesRouteContext.Provider
+				value={{
+					spaceStore,
+					spaceId: () => spaceId,
+					entryStore,
+					forms: createMemo(() => formsSignal()),
+					loadingForms: loadingFormsSignal,
+					columnTypes: columnTypesSignal,
+					refetchForms,
+				}}
+			>
+				<SpaceEntriesIndexPane />
+			</EntriesRouteContext.Provider>
+		);
+	});
+}
+
+function seedTestSpace(id: string, name = id) {
+	const space: Space = {
+		id,
+		name,
+		created_at: createdAt,
+	};
+	seedSpace(space);
+}
+
 describe("/spaces/:space_id/entries", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
@@ -37,12 +96,7 @@ describe("/spaces/:space_id/entries", () => {
 		}
 		setSearchParamsMock.mockReset();
 		resetMockData();
-		const ws: Space = {
-			id: "default",
-			name: "Default",
-			created_at: "2025-01-01T00:00:00Z",
-		};
-		seedSpace(ws);
+		seedTestSpace("default", "Default");
 
 		const entry: Entry = {
 			id: "entry/with space",
@@ -62,28 +116,7 @@ describe("/spaces/:space_id/entries", () => {
 	});
 
 	it("REQ-FE-033: selecting an entry navigates with encoded id", async () => {
-		render(() => {
-			const entryStore = createEntryStore(() => "default");
-			const spaceStore = createSpaceStore();
-			const [forms] = createSignal<Form[]>([]);
-			const [loadingForms] = createSignal(false);
-			const [columnTypes] = createSignal<string[]>([]);
-			return (
-				<EntriesRouteContext.Provider
-					value={{
-						spaceStore,
-						spaceId: () => "default",
-						entryStore,
-						forms: createMemo(() => forms()),
-						loadingForms,
-						columnTypes,
-						refetchForms: () => undefined,
-					}}
-				>
-					<SpaceEntriesIndexPane />
-				</EntriesRouteContext.Provider>
-			);
-		});
+		renderEntriesRoute();
 
 		await waitFor(() => {
 			expect(screen.getByText("Test Entry")).toBeInTheDocument();
@@ -94,31 +127,40 @@ describe("/spaces/:space_id/entries", () => {
 	});
 
 	it("selecting an entry form navigates correctly", async () => {
-		render(() => {
-			const entryStore = createEntryStore(() => "default");
-			const spaceStore = createSpaceStore();
-			const [forms] = createSignal<Form[]>([]);
-			const [loadingForms] = createSignal(false);
-			const [columnTypes] = createSignal<string[]>([]);
-			return (
-				<EntriesRouteContext.Provider
-					value={{
-						spaceStore,
-						spaceId: () => "default",
-						entryStore,
-						forms: createMemo(() => forms()),
-						loadingForms,
-						columnTypes,
-						refetchForms: () => undefined,
-					}}
-				>
-					<SpaceEntriesIndexPane />
-				</EntriesRouteContext.Provider>
-			);
-		});
+		renderEntriesRoute();
 
 		const formsTab = await screen.findByRole("link", { name: "Forms" });
 		expect(formsTab).toHaveAttribute("href", "/spaces/default/forms");
+	});
+
+	it("REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist", async () => {
+		seedTestSpace("reserved-only", "Reserved Only");
+		renderEntriesRoute({ spaceId: "reserved-only", forms: [assetsForm] });
+
+		await waitFor(() => {
+			expect(screen.getByText("Start by creating your first form.")).toBeInTheDocument();
+		});
+		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
+		expect(screen.queryByText("No entries found.")).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-037: entries route guides first-run spaces toward form creation", async () => {
+		seedTestSpace("empty-space", "Empty Space");
+		renderEntriesRoute({ spaceId: "empty-space" });
+
+		await waitFor(() => {
+			expect(screen.getByText("Start by creating your first form.")).toBeInTheDocument();
+		});
+		expect(
+			screen.getByText(
+				"Entries depend on form templates and fields. Create one form first, then come back to add entries.",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Create your first form" }));
+
+		expect(screen.getByRole("heading", { name: "Create New Form" })).toBeInTheDocument();
 	});
 
 	it("REQ-FE-054: renders human-readable updated dates for query result cards", async () => {
@@ -155,28 +197,7 @@ describe("/spaces/:space_id/entries", () => {
 			),
 		);
 
-		render(() => {
-			const entryStore = createEntryStore(() => "default");
-			const spaceStore = createSpaceStore();
-			const [forms] = createSignal<Form[]>([]);
-			const [loadingForms] = createSignal(false);
-			const [columnTypes] = createSignal<string[]>([]);
-			return (
-				<EntriesRouteContext.Provider
-					value={{
-						spaceStore,
-						spaceId: () => "default",
-						entryStore,
-						forms: createMemo(() => forms()),
-						loadingForms,
-						columnTypes,
-						refetchForms: () => undefined,
-					}}
-				>
-					<SpaceEntriesIndexPane />
-				</EntriesRouteContext.Provider>
-			);
-		});
+		renderEntriesRoute();
 
 		const expectedDate = new Date(1772960822.056 * 1000).toLocaleDateString();
 		expect(await screen.findByText("Query Entry")).toBeInTheDocument();
@@ -186,30 +207,17 @@ describe("/spaces/:space_id/entries", () => {
 
 	it("REQ-FE-044: localizes entries route CTA copy in Japanese", async () => {
 		setLocale("ja");
-		render(() => {
-			const entryStore = createEntryStore(() => "default");
-			const spaceStore = createSpaceStore();
-			const [forms] = createSignal<Form[]>([]);
-			const [loadingForms] = createSignal(false);
-			const [columnTypes] = createSignal<string[]>([]);
-			return (
-				<EntriesRouteContext.Provider
-					value={{
-						spaceStore,
-						spaceId: () => "default",
-						entryStore,
-						forms: createMemo(() => forms()),
-						loadingForms,
-						columnTypes,
-						refetchForms: () => undefined,
-					}}
-				>
-					<SpaceEntriesIndexPane />
-				</EntriesRouteContext.Provider>
-			);
-		});
+		seedTestSpace("empty-ja", "empty-ja");
+		renderEntriesRoute({ spaceId: "empty-ja" });
 
 		expect(await screen.findByRole("heading", { name: "エントリ" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "新しいエントリ" })).toBeInTheDocument();
+		expect(await screen.findByText("最初のフォームを作成して始めましょう。")).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"エントリはフォームのテンプレートとフィールドをもとに作成します。先に1つフォームを作成してからエントリ作成に戻ってください。",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "最初のフォームを作成" })).toBeInTheDocument();
 	});
 });
