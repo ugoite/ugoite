@@ -408,6 +408,12 @@ Run all tests from repo root:
 mise run test
 ```
 
+Run the CI-aligned CLI coverage gate without the full repo suite:
+
+```bash
+mise run //ugoite-cli:test:coverage
+```
+
 Run the authoritative local E2E suite. It prefers the docker-compose path used
 by GitHub Actions when Docker is available, and otherwise falls back to a
 production-style host runner with the same Playwright JUnit/no-skips gates:
