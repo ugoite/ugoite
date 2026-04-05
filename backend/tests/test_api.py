@@ -1614,6 +1614,56 @@ def test_middleware_403_non_json_body_handled(
     assert result.status_code == 403
 
 
+def test_middleware_req_sec_002_preserves_error_response_when_signing_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """REQ-SEC-002: signing failures preserve the original error response."""
+    monkeypatch.setenv("UGOITE_ROOT", str(tmp_path))
+
+    mock_request = MagicMock()
+    mock_request.client.host = "127.0.0.1"
+    mock_request.url.path = "/spaces"
+    mock_request.method = "POST"
+    mock_request.headers = {}
+
+    original_body = b'{"detail":"operator-visible problem"}'
+    original_response = Response(
+        content=original_body,
+        media_type="application/json",
+        status_code=500,
+    )
+
+    async def _call_next(_req: object) -> Response:
+        return original_response
+
+    def _authenticate(_request: object) -> MagicMock:
+        return MagicMock(user_id="operator")
+
+    async def _failing_sign(_body: bytes, _root: object, _space_id: str = "default") -> tuple[str, str]:
+        raise RuntimeError("corrupt spaces entry")
+
+    with caplog.at_level("WARNING"), patch(
+        "app.core.middleware.authenticate_request",
+        _authenticate,
+    ), patch(
+        "app.core.middleware.build_response_signature",
+        _failing_sign,
+    ):
+        result = asyncio.run(security_middleware(mock_request, _call_next))
+
+    assert result.status_code == 500
+    assert result.body == original_body
+    assert json.loads(result.body.decode("utf-8")) == {"detail": "operator-visible problem"}
+    assert result.headers["X-Content-Type-Options"] == "nosniff"
+    assert result.headers["X-Frame-Options"] == "DENY"
+    assert result.headers["Content-Length"] == str(len(original_body))
+    assert "X-Ugoite-Key-Id" not in result.headers
+    assert "X-Ugoite-Signature" not in result.headers
+    assert "Failed to sign response for /spaces in space default: corrupt spaces entry" in caplog.text
+
+
 def test_middleware_emit_audit_runtime_error_swallowed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
