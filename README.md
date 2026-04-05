@@ -20,7 +20,7 @@ GitHub without comparing two different onboarding maps.
 
 > **Browser path today:** the current browser route still needs a running
 > backend + frontend stack and an explicit `/login` flow. If you want the
-> thinnest local-first path, start with the CLI in `core` mode.
+> lowest-setup-cost local-first path, start with the CLI in `core` mode.
 
 ### Choose your first step
 
@@ -60,11 +60,11 @@ setup steps.
 
 ### Which entry path should you choose?
 
-| Path | Best when | Trade-off |
-| --- | --- | --- |
-| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
-| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+| Path | Best when | Setup cost / requirements | Trade-off |
+| --- | --- | --- | --- |
+| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
+| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full contributor surface, but also the heaviest path |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of

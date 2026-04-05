@@ -3,6 +3,10 @@
 This guide explains the recommended release-install path for `ugoite`, then
 covers the Cargo-based workflow contributors still use inside the repository.
 
+This is the lowest-setup-cost local-first path today. In `core` mode the CLI
+works directly against the local spaces directory, so you can start without a
+Docker stack, frontend process, or browser login flow.
+
 ## Install the released CLI (recommended)
 
 Install the public `ugoite` npm bootstrap package:
