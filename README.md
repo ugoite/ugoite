@@ -114,13 +114,21 @@ e2e/                # End-to-end tests (Bun)
 
 ## Documentation Map
 
-The Start Here section above is the canonical newcomer map. Use the deeper
-references below once you want implementation details, contributor diagnostics,
-or release planning:
+Use **Start Here** above for the newcomer path. This section only lists the
+additional references you usually open after that first choice.
+
+### Operational guides
+
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
-- [Specification Index](docs/spec/index.md) - Technical specifications
+- [Environment Matrix](docs/guide/env-matrix.md) - Runtime variables and which surface consumes them
+
+### Design and implementation references
+
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
-- [API Reference](docs/spec/api/rest.md) - REST API documentation
+- [REST API Reference](docs/spec/api/rest.md) - Backend HTTP contract
+- [MCP Reference](docs/spec/api/mcp.md) - Current resource-first MCP surface
+
+### Release planning
 - [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
   and planned milestones
 - [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone
