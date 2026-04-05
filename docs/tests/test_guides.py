@@ -28,6 +28,7 @@ REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
+REQ-OPS-033: Local and CI Python test paths must reject warnings and skipped tests.
 REQ-OPS-034: Local direct-process E2E runs must not kill unrelated listeners.
 """
 
@@ -149,6 +150,7 @@ ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
 FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
 HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
+PYTEST_NO_SKIPS_SCRIPT_PATH = REPO_ROOT / "scripts" / "check_pytest_no_skips.py"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
@@ -235,6 +237,12 @@ REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
     "mise run setup",
     "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
     "local commits use the same hook chain as CI by default.",
+}
+REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS = {
+    "Local backend, ugoite-core, and docs pytest tasks also",
+    "run with `-W error`, emit JUnit XML into temporary files, and call",
+    "`scripts/check_pytest_no_skips.py` so `mise run test` fails on the same warning",
+    "and skipped-test regressions that CI rejects.",
 }
 REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS = {
     "fails fast when ports",
@@ -1815,19 +1823,31 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "uv run maturin develop",
                 "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 core_mise,
                 "test:no-build",
-                [
-                    "cargo test -j 1",
-                    (
-                        "if [ -d tests ]; then uv run --with pytest --with "
-                        "pytest-asyncio python -m pytest; fi"
-                    ),
-                ],
+                "cargo test -j 1",
+                (
+                    "ugoite-core test:no-build task must run crate tests without "
+                    "rebuilding"
+                ),
+            ),
+            _require_task_contains(
+                core_mise,
+                "test:no-build",
+                "python -m pytest",
                 (
                     "ugoite-core test:no-build task must run crate and Python "
                     "binding tests without rebuilding"
+                ),
+            ),
+            _require_task_excludes(
+                core_mise,
+                "test:no-build",
+                "uv run maturin develop",
+                (
+                    "ugoite-core test:no-build task must not rebuild the editable "
+                    "extension"
                 ),
             ),
             _require_exact_task_depends(
@@ -1836,10 +1856,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 ["build"],
                 "ugoite-core test task must depend on build",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 backend_mise,
                 "test:no-build",
-                ["uv run pytest"],
+                "uv run pytest",
                 "backend test:no-build task must run backend pytest directly",
             ),
             _require_exact_task_depends(
@@ -3934,6 +3954,184 @@ def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing local Conventional Commit fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
+    """REQ-OPS-033: local and CI Python test paths reject warnings and skipped tests."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    backend_test = " ".join(_get_task_run_commands(backend_mise, "test"))
+    backend_test_no_build = " ".join(
+        _get_task_run_commands(backend_mise, "test:no-build"),
+    )
+    core_test = " ".join(_get_task_run_commands(core_mise, "test"))
+    core_test_no_build = " ".join(_get_task_run_commands(core_mise, "test:no-build"))
+    docs_test = " ".join(_get_task_run_commands(root_mise, "test:docs"))
+
+    python_backend_run = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run pytest (backend)",
+    )
+    python_backend_skip = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped backend tests",
+    )
+    python_docs_run = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run docs consistency tests",
+    )
+    python_docs_skip = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped docs tests",
+    )
+    rust_core_run = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run pytest (core)",
+    )
+    rust_core_skip = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped core tests",
+    )
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            any(
+                fragment not in backend_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "backend mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in backend_test_no_build
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "backend mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in core_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "ugoite-core mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in core_test_no_build
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "ugoite-core mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in docs_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "root mise test:docs task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            python_backend_run is None
+            or "-W error" not in python_backend_run
+            or "--junitxml=../backend-pytest.xml" not in python_backend_run,
+            "python-ci.yml backend pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            python_backend_skip is None
+            or 'scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"'
+            not in python_backend_skip,
+            "python-ci.yml backend skip check must use"
+            " scripts/check_pytest_no_skips.py",
+        ),
+        (
+            python_docs_run is None
+            or "-W error" not in python_docs_run
+            or "--junitxml=docs-pytest.xml" not in python_docs_run,
+            "python-ci.yml docs pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            python_docs_skip is None
+            or 'scripts/check_pytest_no_skips.py docs-pytest.xml "docs tests"'
+            not in python_docs_skip,
+            "python-ci.yml docs skip check must use scripts/check_pytest_no_skips.py",
+        ),
+        (
+            rust_core_run is None
+            or "-W error" not in rust_core_run
+            or "--junitxml=../core-pytest.xml" not in rust_core_run,
+            "rust-ci.yml core pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            rust_core_skip is None
+            or 'scripts/check_pytest_no_skips.py core-pytest.xml "ugoite-core tests"'
+            not in rust_core_skip,
+            "rust-ci.yml core skip check must use scripts/check_pytest_no_skips.py",
+        ),
+        (
+            _require_file_contains(
+                PYTEST_NO_SKIPS_SCRIPT_PATH,
+                ["xml.etree.ElementTree", "skipped=", "tests=", "is not allowed"],
+                "scripts/check_pytest_no_skips.py must parse JUnit XML"
+                " and reject skipped tests",
+            )
+            is not None,
+            "scripts/check_pytest_no_skips.py must parse JUnit XML"
+            " and reject skipped tests",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing Python strictness fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )

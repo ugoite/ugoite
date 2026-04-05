@@ -67,7 +67,9 @@ description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend,
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"
-run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
+run = [
+	"report=\"$(mktemp)\" && trap 'rm -f \"$report\"' EXIT && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=\"$report\" && python3 scripts/check_pytest_no_skips.py \"$report\" \"docs tests\"",
+]
 
 [tasks.e2e]
 description = "Run the authoritative E2E path (docker-compose when available, parity fallback otherwise)"
