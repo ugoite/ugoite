@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, fireEvent, screen } from "@solidjs/testing-library";
+import { render, fireEvent, screen, waitFor } from "@solidjs/testing-library";
 import { CreateFormDialog, EditFormDialog, CreateEntryDialog } from "./create-dialogs";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
@@ -174,6 +174,33 @@ describe("CreateFormDialog", () => {
 		);
 	});
 
+	it("REQ-FE-043: create-form dialog renders rejected submit errors inline", async () => {
+		const onSubmit = vi.fn().mockRejectedValue(new Error("Form already exists"));
+		const onClose = vi.fn();
+
+		render(() => (
+			<CreateFormDialog
+				open={true}
+				columnTypes={columnTypes}
+				formNames={[]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+			target: { value: "NewForm" },
+		});
+		fireEvent.click(screen.getByText("+ Add Column"));
+		fireEvent.input(screen.getByPlaceholderText("Column Name"), {
+			target: { value: "field1" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+
+		expect(await screen.findByText("Form already exists")).toBeInTheDocument();
+	});
+
 	it("REQ-FE-032: removes a column from create form dialog", async () => {
 		const onSubmit = vi.fn();
 		const onClose = vi.fn();
@@ -277,6 +304,63 @@ describe("CreateEntryDialog", () => {
 
 		expect(onSubmit).not.toHaveBeenCalled();
 		expect(screen.getByText("Please fill required fields: Status.")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-043: create-entry dialog renders rejected submit errors inline", async () => {
+		const onSubmit = vi.fn().mockRejectedValue(new Error("Entry already exists"));
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Task",
+				version: 1,
+				fields: { Summary: { type: "string", required: false } },
+				template: "",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Test Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(await screen.findByText("Entry already exists")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline", async () => {
+		const onSubmit = vi.fn().mockRejectedValue(new Error("Markdown submit failed"));
+		const onClose = vi.fn();
+		const forms = [
+			{
+				name: "Meeting",
+				version: 1,
+				fields: { Date: { type: "date", required: true } },
+				template: "# Meeting\n\n## Date\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Markdown Entry" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Meeting" } });
+		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
+		fireEvent.input(screen.getByRole("textbox", { name: "Markdown input" }), {
+			target: {
+				value: "# Markdown Entry\n\n---\nform: Meeting\n---\n\n## Date\n2026-02-14",
+			},
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(await screen.findByText("Markdown submit failed")).toBeInTheDocument();
 	});
 
 	it("REQ-FE-037: pre-fills defaults for required fields", async () => {
@@ -479,11 +563,13 @@ describe("CreateEntryDialog", () => {
 			}),
 			"markdown",
 		);
-		expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe(
-			"",
-		);
-		expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
-		expect(screen.queryByRole("textbox", { name: "Markdown input" })).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect((screen.getByPlaceholderText("Enter entry title...") as HTMLInputElement).value).toBe(
+				"",
+			);
+			expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+			expect(screen.queryByRole("textbox", { name: "Markdown input" })).not.toBeInTheDocument();
+		});
 	});
 
 	it("REQ-FE-053: renders English entry guidance across input modes", async () => {
@@ -1308,5 +1394,26 @@ describe("EditFormDialog", () => {
 				strategies: expect.objectContaining({ newcol: "SomeDefault" }),
 			}),
 		);
+	});
+
+	it("REQ-FE-044: localizes rejected edit-form submit fallback in Japanese", async () => {
+		setLocale("ja");
+		const onSubmit = vi.fn().mockRejectedValue("network");
+		const onClose = vi.fn();
+
+		render(() => (
+			<EditFormDialog
+				open={true}
+				entryForm={mockForm}
+				columnTypes={columnTypes}
+				formNames={["ExistingForm"]}
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.click(screen.getByRole("button", { name: "変更を保存" }));
+
+		expect(await screen.findByText("フォームの更新に失敗しました")).toBeInTheDocument();
 	});
 });

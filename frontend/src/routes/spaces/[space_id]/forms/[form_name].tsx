@@ -52,13 +52,9 @@ export default function SpaceFormDetailRoute() {
 	});
 
 	const handleUpdateForm = async (payload: FormCreatePayload) => {
-		try {
-			await formApi.create(ctx.spaceId(), payload);
-			setShowEditDialog(false);
-			ctx.refetchForms();
-		} catch (e) {
-			alert(e instanceof Error ? e.message : "Failed to update form");
-		}
+		await formApi.create(ctx.spaceId(), payload);
+		setShowEditDialog(false);
+		ctx.refetchForms();
 	};
 
 	return (

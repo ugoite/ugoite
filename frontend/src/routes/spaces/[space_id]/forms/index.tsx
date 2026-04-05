@@ -30,13 +30,9 @@ export default function SpaceFormsIndexPane() {
 	const [pageSize] = createSignal(25);
 	const selectedFormName = createMemo(() => (searchParams.form ? String(searchParams.form) : ""));
 	const handleCreateForm = async (payload: FormCreatePayload) => {
-		try {
-			await formApi.create(ctx.spaceId(), payload);
-			setShowCreateFormDialog(false);
-			ctx.refetchForms();
-		} catch (e) {
-			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
-		}
+		await formApi.create(ctx.spaceId(), payload);
+		setShowCreateFormDialog(false);
+		ctx.refetchForms();
 	};
 
 	const [session, { refetch: refetchSession }] = createResource(
