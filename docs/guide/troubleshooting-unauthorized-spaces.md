@@ -1,6 +1,10 @@
 # Troubleshooting Unauthorized Spaces Page
 
-When the spaces page returns `Unauthorized`, validate these items in order:
+When the spaces page returns `Unauthorized`, validate these items in order.
+If the container stack is not healthy enough to reach `/login` or `/spaces` at
+all, start with
+[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md)
+instead:
 
 1. Confirm backend is running and reachable.
    - `curl -sS http://localhost:8000/health`
