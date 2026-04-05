@@ -115,13 +115,9 @@ export default function SpaceEntriesIndexPane() {
 	};
 
 	const handleCreateForm = async (payload: FormCreatePayload) => {
-		try {
-			await formApi.create(spaceId(), payload);
-			setShowCreateFormDialog(false);
-			void ctx.refetchForms();
-		} catch (e) {
-			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
-		}
+		await formApi.create(spaceId(), payload);
+		setShowCreateFormDialog(false);
+		void ctx.refetchForms();
 	};
 
 	const handleCreateEntry = async (
@@ -131,23 +127,16 @@ export default function SpaceEntriesIndexPane() {
 		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
-			alert(t("dashboard.error.selectFormBeforeCreate"));
-			return;
+			throw new Error(t("dashboard.error.selectFormBeforeCreate"));
 		}
 		const formDef = creatableForms().find((s) => s.name === formName);
 		if (!formDef) {
-			alert(t("dashboard.error.selectedFormNotFound"));
-			return;
+			throw new Error(t("dashboard.error.selectedFormNotFound"));
 		}
 		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
-
-		try {
-			const result = await ctx.entryStore.createEntry(initialContent);
-			setShowCreateEntryDialog(false);
-			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
-		} catch (e) {
-			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateEntry"));
-		}
+		const result = await ctx.entryStore.createEntry(initialContent);
+		setShowCreateEntryDialog(false);
+		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 	};
 
 	return (

@@ -141,7 +141,11 @@ export interface CreateEntryDialogProps {
 		formName: string,
 		requiredValues: Record<string, string>,
 		inputMode?: EntryInputMode,
-	) => void;
+	) => Promise<void> | void;
+}
+
+function resolveSubmitErrorMessage(error: unknown, fallback: string): string {
+	return error instanceof Error ? error.message : fallback;
 }
 
 /**
@@ -346,18 +350,22 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setLastGeneratedMarkdown(generated);
 	});
 
-	const setFieldValue = (name: string, nextValue: string) =>
+	const setFieldValue = (name: string, nextValue: string) => {
+		setErrorMessage(null);
 		setFieldValues((prev) => ({
 			...prev,
 			[name]: nextValue,
 		}));
+	};
 
-	const clearFieldValue = (name: string) =>
+	const clearFieldValue = (name: string) => {
+		setErrorMessage(null);
 		setFieldValues((prev) => {
 			const next = { ...prev };
 			delete next[name];
 			return next;
 		});
+	};
 
 	const moveChatStep = (delta: number) =>
 		setChatStep((prev) => {
@@ -396,6 +404,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	/* v8 ignore stop */
 
 	const resetEntryDraft = () => {
+		setErrorMessage(null);
 		setTitle("");
 		setSelectedForm("");
 		setMarkdownInput("");
@@ -406,7 +415,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const buildMissingRequiredFieldsMessage = (missing: string[]) =>
 		t("createDialog.entry.error.fillRequiredFields", { fields: missing.join(", ") });
 
-	const handleSubmit = (e: Event) => {
+	const handleSubmit = async (e: Event) => {
 		e.preventDefault();
 		const entryTitle = title().trim();
 		const formName = selectedForm().trim();
@@ -416,14 +425,21 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			return;
 		}
 		/* v8 ignore stop */
+		setErrorMessage(null);
 		if (inputMode() === "markdown") {
 			const markdown = markdownInput().trim();
 			if (!markdown) {
 				setErrorMessage(t("createDialog.entry.error.provideMarkdown"));
 				return;
 			}
-			props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
-			resetEntryDraft();
+			try {
+				await props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
+				resetEntryDraft();
+			} catch (error) {
+				setErrorMessage(
+					resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")),
+				);
+			}
 			return;
 		}
 		const missing = requiredFields()
@@ -433,8 +449,12 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setErrorMessage(buildMissingRequiredFieldsMessage(missing));
 			return;
 		}
-		props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
-		resetEntryDraft();
+		try {
+			await props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
+			resetEntryDraft();
+		} catch (error) {
+			setErrorMessage(resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")));
+		}
 	};
 
 	/* v8 ignore start */
@@ -467,7 +487,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							id="entry-title"
 							type="text"
 							value={title()}
-							onInput={(e) => setTitle(e.currentTarget.value)}
+							onInput={(e) => {
+								setErrorMessage(null);
+								setTitle(e.currentTarget.value);
+							}}
 							placeholder={t("createDialog.entry.titlePlaceholder")}
 							class="ui-input"
 							autofocus
@@ -542,21 +565,30 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "webform" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => setInputMode("webform")}
+								onClick={() => {
+									setErrorMessage(null);
+									setInputMode("webform");
+								}}
 							>
 								{t("createDialog.entry.inputMode.webform")}
 							</button>
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "markdown" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => setInputMode("markdown")}
+								onClick={() => {
+									setErrorMessage(null);
+									setInputMode("markdown");
+								}}
 							>
 								{t("createDialog.entry.inputMode.markdown")}
 							</button>
 							<button
 								type="button"
 								class={`ui-button text-xs ${inputMode() === "chat" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => setInputMode("chat")}
+								onClick={() => {
+									setErrorMessage(null);
+									setInputMode("chat");
+								}}
 							>
 								{t("createDialog.entry.inputMode.chat")}
 							</button>
@@ -576,7 +608,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								aria-label={t("createDialog.entry.markdownAria")}
 								class="ui-input ui-textarea mt-3 min-h-56"
 								value={markdownInput()}
-								onInput={(e) => setMarkdownInput(e.currentTarget.value)}
+								onInput={(e) => {
+									setErrorMessage(null);
+									setMarkdownInput(e.currentTarget.value);
+								}}
 							/>
 						</div>
 					</Show>
@@ -781,7 +816,7 @@ export interface CreateFormDialogProps {
 	columnTypes: string[];
 	formNames: string[];
 	onClose: () => void;
-	onSubmit: (payload: FormCreatePayload) => void;
+	onSubmit: (payload: FormCreatePayload) => Promise<void> | void;
 }
 
 /**
@@ -792,6 +827,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 	const [fields, setFields] = createSignal<
 		Array<{ name: string; type: string; required: boolean; targetForm?: string }>
 	>([]);
+	const [submitError, setSubmitError] = createSignal<string | null>(null);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 	const targetFormOptions = createMemo(() => {
@@ -821,6 +857,11 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
 	const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
 
+	createEffect(() => {
+		if (!props.open) return;
+		setSubmitError(null);
+	});
+
 	// Handle escape key
 	/* v8 ignore start */
 	const handleKeyDown = (e: KeyboardEvent) => {
@@ -848,12 +889,13 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 	};
 	/* v8 ignore stop */
 
-	const handleSubmit = (e: Event) => {
+	const handleSubmit = async (e: Event) => {
 		e.preventDefault();
 		const formName = name().trim();
 		/* v8 ignore start */
 		if (!formName || hasFieldIssues() || nameIssue()) return;
 		/* v8 ignore stop */
+		setSubmitError(null);
 
 		const fieldRecord: Record<string, { type: string; required: boolean; target_form?: string }> =
 			{};
@@ -870,20 +912,26 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 			}
 		}
 
-		props.onSubmit({
-			name: formName,
-			template,
-			fields: fieldRecord,
-		});
-		setName("");
-		setFields([]);
+		try {
+			await props.onSubmit({
+				name: formName,
+				template,
+				fields: fieldRecord,
+			});
+			setName("");
+			setFields([]);
+		} catch (error) {
+			setSubmitError(resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateForm")));
+		}
 	};
 
 	const addField = () => {
+		setSubmitError(null);
 		setFields([...fields(), { name: "", type: "string", required: false }]);
 	};
 
 	const removeField = (index: number) => {
+		setSubmitError(null);
 		const newFields = [...fields()];
 		newFields.splice(index, 1);
 		setFields(newFields);
@@ -894,6 +942,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 		key: keyof (typeof fields extends () => infer R ? R : never)[0],
 		value: string | boolean,
 	) => {
+		setSubmitError(null);
 		const newFields = [...fields()];
 		newFields[index] = { ...newFields[index], [key]: value } as (typeof fields extends () => infer R
 			? R
@@ -931,7 +980,10 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								id="form-name"
 								type="text"
 								value={name()}
-								onInput={(e) => setName(e.currentTarget.value)}
+								onInput={(e) => {
+									setSubmitError(null);
+									setName(e.currentTarget.value);
+								}}
 								placeholder={t("createDialog.form.namePlaceholder")}
 								class="ui-input"
 								classList={{ "ui-input-error": Boolean(nameIssue()) }}
@@ -1035,6 +1087,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 								</div>
 							</Show>
 						</div>
+						<Show when={submitError()}>
+							<div class="ui-alert ui-alert-error text-sm">{submitError()}</div>
+						</Show>
 
 						<div class="flex justify-end gap-3 pt-4">
 							<button
@@ -1101,7 +1156,7 @@ export interface EditFormDialogProps {
 	columnTypes: string[];
 	formNames: string[];
 	onClose: () => void;
-	onSubmit: (payload: FormCreatePayload) => void;
+	onSubmit: (payload: FormCreatePayload) => Promise<void> | void;
 }
 
 export function EditFormDialog(props: EditFormDialogProps) {
@@ -1115,6 +1170,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 			isNew?: boolean;
 		}>
 	>([]);
+	const [submitError, setSubmitError] = createSignal<string | null>(null);
 	let dialogRef: HTMLDialogElement | undefined;
 	const targetFormOptions = createMemo(() => {
 		const options = new Set(props.formNames);
@@ -1165,6 +1221,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 	createEffect(() => {
 		/* v8 ignore next */
 		if (props.open && props.entryForm) {
+			setSubmitError(null);
 			const initialFields = Object.entries(props.entryForm.fields).map(([name, def]) => ({
 				name,
 				type: def.type,
@@ -1184,11 +1241,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
 	};
 	/* v8 ignore stop */
 
-	const handleSubmit = (e: Event) => {
+	const handleSubmit = async (e: Event) => {
 		e.preventDefault();
 		/* v8 ignore start */
 		if (hasFieldIssues() || nameIssue()) return;
 		/* v8 ignore stop */
+		setSubmitError(null);
 
 		const { fieldRecord, strategies } = processFields(fields(), props.entryForm.fields);
 
@@ -1199,19 +1257,25 @@ export function EditFormDialog(props: EditFormDialogProps) {
 			/* v8 ignore stop */
 		}
 
-		props.onSubmit({
-			name: props.entryForm.name,
-			template,
-			fields: fieldRecord,
-			strategies: Object.keys(strategies).length > 0 ? strategies : undefined,
-		});
+		try {
+			await props.onSubmit({
+				name: props.entryForm.name,
+				template,
+				fields: fieldRecord,
+				strategies: Object.keys(strategies).length > 0 ? strategies : undefined,
+			});
+		} catch (error) {
+			setSubmitError(resolveSubmitErrorMessage(error, t("dashboard.error.failedUpdateForm")));
+		}
 	};
 
 	const addField = () => {
+		setSubmitError(null);
 		setFields([...fields(), { name: "", type: "string", required: false, isNew: true }]);
 	};
 
 	const removeField = (index: number) => {
+		setSubmitError(null);
 		const newFields = [...fields()];
 		newFields.splice(index, 1);
 		setFields(newFields);
@@ -1222,6 +1286,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 		key: keyof (typeof fields extends () => infer R ? R : never)[0],
 		value: string | boolean,
 	) => {
+		setSubmitError(null);
 		const newFields = [...fields()];
 		newFields[index] = { ...newFields[index], [key]: value } as (typeof fields extends () => infer R
 			? R
@@ -1369,6 +1434,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
 								</div>
 							</Show>
 						</div>
+						<Show when={submitError()}>
+							<div class="ui-alert ui-alert-error text-sm">{submitError()}</div>
+						</Show>
 
 						<div class="flex justify-end gap-3 pt-4">
 							<button
