@@ -58,15 +58,18 @@ Then open:
 - Frontend UI login: http://localhost:3000/login
 - Backend API: http://localhost:8000
 
-Click **Continue with Mock OAuth** to reach `/spaces`. The shipped compose file
-bootstraps the `default` space at startup so the first browser and CLI session
-both have a ready workspace. For more detail on the explicit browser login
-flow, see [Local Dev Auth Login](local-dev-auth-login.md).
+Click **Continue with Local Demo Login** to reach `/spaces`. That button starts
+the local demo login path (`mock-oauth`), so no external OAuth provider is
+involved. The shipped compose file bootstraps the `default` space at startup so
+the first browser and CLI session both have a ready workspace. For more detail
+on the explicit browser login flow, see
+[Local Dev Auth Login](local-dev-auth-login.md).
 
 This published quick start intentionally differs from `mise run dev`: it
-defaults to `mock-oauth` so first-time browser evaluators can reach `/spaces`
-with fewer steps, while source development keeps `passkey-totp` as the default
-so contributors exercise the explicit passkey + 2FA flow.
+defaults to the local demo login mode (`mock-oauth`) so first-time browser
+evaluators can reach `/spaces` with fewer steps, while source development keeps
+`passkey-totp` as the default so contributors exercise the explicit passkey +
+2FA flow.
 
 ## Why does release compose set `UGOITE_ALLOW_REMOTE=true`?
 
@@ -139,12 +142,12 @@ These are the supported release-compose environment variables for the shipped
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
-| `UGOITE_DEV_USER_ID` | `dev-local-user` | Mock OAuth user id created by the shipped release compose login flow. |
+| `UGOITE_DEV_USER_ID` | `dev-local-user` | Local demo login user id created by the shipped release compose login flow. |
 | `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token between frontend and backend so `/login` works out of the box in the published quick start. |
 
 The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
 the Compose network, and it pre-wires the signing/bearer settings needed for
-the explicit `mock-oauth` browser login flow. For a broader mode-by-mode
+the explicit local demo login (`mock-oauth`) browser flow. For a broader mode-by-mode
 reference, see [Environment Variable Matrix](env-matrix.md).
 
 ## Version selectors
@@ -163,7 +166,7 @@ Choose the release channel that matches your goal:
   to preserve the local-first storage model.
 - The published quick start binds both services to `127.0.0.1`, wires the dev
   auth proxy token between frontend and backend, bootstraps the `default`
-  space, and enables explicit `mock-oauth` browser login so `/login` works
+  space, and enables explicit local demo login (`mock-oauth`) so `/login` works
   without editing the compose file.
 - The frontend container talks to the backend through the Compose network via
   `http://backend:8000`, which is why the shipped backend environment keeps

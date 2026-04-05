@@ -47,7 +47,8 @@ By default the chart uses:
 - `ghcr.io/ugoite/ugoite/backend:${image.tag}`
 - `ghcr.io/ugoite/ugoite/frontend:${image.tag}`
 - a backend volume mounted at `/data`
-- `mock-oauth` dev auth defaults that match the release Compose quick start
+- local demo login (`mock-oauth`) defaults that match the release Compose quick
+  start
 - a computed `BACKEND_URL` equivalent to `http://backend:8000`, but scoped to
   the generated Kubernetes service name for the current release
 
@@ -66,7 +67,7 @@ The example commands above assume the Helm release name is `ugoite`. Then open:
 - Frontend UI login: http://127.0.0.1:3000/login
 - Backend API: http://127.0.0.1:8000
 
-Click **Continue with Mock OAuth** to reach `/spaces`.
+Click **Continue with Local Demo Login** to reach `/spaces`.
 
 ## Key values
 
@@ -81,7 +82,7 @@ Click **Continue with Mock OAuth** to reach `/spaces`.
 | `backend.persistence.size` | `10Gi` | Requested PVC size for the backend storage volume. |
 | `backend.persistence.storageClassName` | empty | Optional storage class override for the backend PVC. |
 | `backend.persistence.existingClaim` | empty | Reuse an existing PVC instead of creating a new one. |
-| `auth.devUserId` | `dev-local-user` | Mock OAuth user id for the shipped login flow. |
+| `auth.devUserId` | `dev-local-user` | Local demo login user id for the shipped login flow. |
 | `auth.proxyToken` | `release-compose-auth-proxy` | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
 | `auth.signingKid` | `release-compose-local-v1` | Signing key id for the default bearer-token setup. |
 | `auth.signingSecret` | `release-compose-local-secret` | Signing secret used to mint the default bearer-token secret. |

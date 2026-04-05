@@ -67,7 +67,12 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		fireEvent.click(await screen.findByRole("button", { name: "Continue with Mock OAuth" }));
+		expect(
+			await screen.findByText(
+				"Use the explicit local demo login path to exercise the browser login flow without an external OAuth provider or startup auth bypass.",
+			),
+		).toBeInTheDocument();
+		fireEvent.click(await screen.findByRole("button", { name: "Continue with Local Demo Login" }));
 
 		await waitFor(() => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
@@ -86,7 +91,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(document.cookie).toContain("ugoite_auth_bearer_token=existing-browser-session");
 		expect(navigateMock).not.toHaveBeenCalled();
 	});
@@ -139,7 +144,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(screen.queryByRole("heading", { name: "First time here?" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: "Local Dev Auth/Login" })).not.toBeInTheDocument();
 	});
