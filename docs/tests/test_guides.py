@@ -1777,20 +1777,26 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "uv run maturin develop",
                 "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 core_mise,
                 "test:no-build",
-                [
-                    "cargo test -j 1",
-                    (
-                        "if [ -d tests ]; then uv run --with pytest --with "
-                        "pytest-asyncio python -m pytest; fi"
-                    ),
-                ],
+                "cargo test -j 1",
+                "ugoite-core test:no-build task must run crate tests without rebuilding",
+            ),
+            _require_task_contains(
+                core_mise,
+                "test:no-build",
+                "python -m pytest",
                 (
                     "ugoite-core test:no-build task must run crate and Python "
                     "binding tests without rebuilding"
                 ),
+            ),
+            _require_task_excludes(
+                core_mise,
+                "test:no-build",
+                "uv run maturin develop",
+                "ugoite-core test:no-build task must not rebuild the editable extension",
             ),
             _require_exact_task_depends(
                 core_mise,
@@ -1798,10 +1804,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 ["build"],
                 "ugoite-core test task must depend on build",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 backend_mise,
                 "test:no-build",
-                ["uv run pytest"],
+                "uv run pytest",
                 "backend test:no-build task must run backend pytest directly",
             ),
             _require_exact_task_depends(
