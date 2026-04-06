@@ -71,6 +71,11 @@ from .service_accounts import (
     revoke_service_account_key,
     rotate_service_account_key,
 )
+from .sql_sessions import (
+    get_sql_session_count_for_identity,
+    get_sql_session_rows_all_for_identity,
+    get_sql_session_rows_for_identity,
+)
 from .sql_rules import (
     SqlLintDiagnostic,
     build_sql_schema,
@@ -202,8 +207,11 @@ __all__ = [
     "get_space",
     "get_sql",
     "get_sql_session_count",
+    "get_sql_session_count_for_identity",
     "get_sql_session_rows",
+    "get_sql_session_rows_all_for_identity",
     "get_sql_session_rows_all",
+    "get_sql_session_rows_for_identity",
     "get_sql_session_status",
     "get_user_preferences",
     "is_active_member",

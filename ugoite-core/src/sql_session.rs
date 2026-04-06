@@ -77,6 +77,41 @@ async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Re
     Ok(meta)
 }
 
+fn session_sql(meta: &Value) -> Result<&str> {
+    meta.get("sql")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("SQL session missing sql"))
+}
+
+async fn execute_session_sql(op: &Operator, ws_path: &str, session_id: &str) -> Result<Vec<Value>> {
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(anyhow!("SQL session expired"));
+    }
+    index::execute_sql_query(op, ws_path, session_sql(&meta)?).await
+}
+
+async fn execute_session_sql_scoped(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Result<Vec<Value>> {
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(anyhow!("SQL session expired"));
+    }
+    index::execute_sql_query_scoped(
+        op,
+        ws_path,
+        session_sql(&meta)?,
+        readable_forms,
+        include_untyped_entries,
+    )
+    .await
+}
+
 pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Result<Value> {
     ensure_sessions_dir(op, ws_path).await?;
 
@@ -150,16 +185,25 @@ pub async fn get_sql_session_status(
 }
 
 pub async fn get_sql_session_count(op: &Operator, ws_path: &str, session_id: &str) -> Result<u64> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(anyhow!("SQL session expired"));
-    }
+    let rows = execute_session_sql(op, ws_path, session_id).await?;
+    Ok(rows.len() as u64)
+}
 
-    let sql = meta
-        .get("sql")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
-    let rows = index::execute_sql_query(op, ws_path, sql).await?;
+pub async fn get_sql_session_count_scoped(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Result<u64> {
+    let rows = execute_session_sql_scoped(
+        op,
+        ws_path,
+        session_id,
+        readable_forms,
+        include_untyped_entries,
+    )
+    .await?;
     Ok(rows.len() as u64)
 }
 
@@ -170,15 +214,37 @@ pub async fn get_sql_session_rows(
     offset: usize,
     limit: usize,
 ) -> Result<Value> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(anyhow!("SQL session expired"));
-    }
-    let sql = meta
-        .get("sql")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
-    let rows = index::execute_sql_query(op, ws_path, sql).await?;
+    let rows = execute_session_sql(op, ws_path, session_id).await?;
+    let total = rows.len();
+    let start = offset.min(total);
+    let end = (offset + limit).min(total);
+    let slice: Vec<Value> = rows[start..end].to_vec();
+
+    Ok(serde_json::json!({
+        "rows": slice,
+        "offset": offset,
+        "limit": limit,
+        "total_count": total,
+    }))
+}
+
+pub async fn get_sql_session_rows_scoped(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    offset: usize,
+    limit: usize,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Result<Value> {
+    let rows = execute_session_sql_scoped(
+        op,
+        ws_path,
+        session_id,
+        readable_forms,
+        include_untyped_entries,
+    )
+    .await?;
     let total = rows.len();
     let start = offset.min(total);
     let end = (offset + limit).min(total);
@@ -197,13 +263,22 @@ pub async fn get_sql_session_rows_all(
     ws_path: &str,
     session_id: &str,
 ) -> Result<Vec<Value>> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(anyhow!("SQL session expired"));
-    }
-    let sql = meta
-        .get("sql")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("SQL session missing sql"))?;
-    index::execute_sql_query(op, ws_path, sql).await
+    execute_session_sql(op, ws_path, session_id).await
+}
+
+pub async fn get_sql_session_rows_all_scoped(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Result<Vec<Value>> {
+    execute_session_sql_scoped(
+        op,
+        ws_path,
+        session_id,
+        readable_forms,
+        include_untyped_entries,
+    )
+    .await
 }

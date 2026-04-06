@@ -63,3 +63,103 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+/// REQ-API-008
+async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-sql-session-acl", "/tmp").await?;
+    let ws_path = "spaces/test-sql-session-acl";
+
+    struct MockIntegrity;
+    impl _ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+        fn checksum(&self, data: &str) -> String {
+            format!("chk-{}", data.len())
+        }
+
+        fn signature(&self, _data: &str) -> String {
+            "mock-signature".to_string()
+        }
+    }
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "PublicTask",
+            "template": "# PublicTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "RestrictedTask",
+            "template": "# RestrictedTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string"}},
+        }),
+    )
+    .await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "public-a",
+        "---\nform: PublicTask\n---\n# Public A\n\n## Summary\nPublic A\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "public-b",
+        "---\nform: PublicTask\n---\n# Public B\n\n## Summary\nPublic B\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "restricted-z",
+        "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+
+    let session = sql_session::create_sql_session(
+        &op,
+        ws_path,
+        "SELECT * FROM entries ORDER BY id DESC LIMIT 2",
+    )
+    .await?;
+    let session_id = session["id"].as_str().unwrap();
+    let readable_forms = vec!["PublicTask".to_string()];
+
+    let count =
+        sql_session::get_sql_session_count_scoped(&op, ws_path, session_id, &readable_forms, false)
+            .await?;
+    assert_eq!(count, 2);
+
+    let rows = sql_session::get_sql_session_rows_scoped(
+        &op,
+        ws_path,
+        session_id,
+        0,
+        10,
+        &readable_forms,
+        false,
+    )
+    .await?;
+    assert_eq!(rows["total_count"], 2);
+    let rows_list = rows["rows"].as_array().unwrap();
+    assert_eq!(rows_list.len(), 2);
+    assert_eq!(rows_list[0]["id"], "public-b");
+    assert_eq!(rows_list[1]["id"], "public-a");
+
+    Ok(())
+}
