@@ -436,9 +436,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 				await props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
 				resetEntryDraft();
 			} catch (error) {
-				setErrorMessage(
-					resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")),
-				);
+				setErrorMessage(resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")));
 			}
 			return;
 		}
