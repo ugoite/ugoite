@@ -44,9 +44,14 @@ Resource parameter and content-safety notes:
 
 ## Current Scope vs Planned Expansion
 
-Additional resource coverage, such as per-entry, history, and forms resources,
-is not currently exposed in the shipped server. Pre-defined prompts and MCP
-tools are also planned rather than shipped.
+Additional resource coverage is not currently exposed in the shipped server.
+That includes planned surfaces such as:
+
+- `ugoite://{space_id}/entries/{entry_id}` for individual entry reads
+- `ugoite://{space_id}/entries/{entry_id}/history` for revision summaries
+- `ugoite://{space_id}/forms` for form-definition discovery
+
+Pre-defined prompts and MCP tools are also planned rather than shipped.
 
 Broader MCP coverage belongs to the planned `v0.2` work described in
 [`docs/spec/versions/v0.2.md`](../versions/v0.2.md).
@@ -55,13 +60,16 @@ Broader MCP coverage belongs to the planned `v0.2` work described in
 
 ## Tools
 
-No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
+No MCP tools are currently exposed. The shipped MCP surface is resource-first
+today (one read-only resource), and the deprecated `run_script` tool has been
+removed.
 
 ---
 
 ## Prompts
 
-No MCP prompts are currently exposed in the shipped server.
+No MCP prompts are currently exposed. Prompt templates can ship later alongside
+the broader MCP surface planned for `v0.2`.
 
 ---
 

@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { readLocalPreferences, writeLocalPreferences } from "./preferences-local";
-import { portablePreferences, setSelectedSpacePreference } from "./preferences-store";
+import { portablePreferences, setSelectedSpacePreference } from "~/lib/preferences-store";
 import type { Space } from "./types";
 import { spaceApi } from "./space-api";
 

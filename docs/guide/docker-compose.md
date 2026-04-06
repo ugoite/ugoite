@@ -29,10 +29,11 @@ The stack exposes:
 The backend persists data in `./spaces` on the host. You can safely remove the
 folder to reset local data.
 
-The shipped Compose file enables explicit `mock-oauth` dev auth. On startup the
-backend bootstraps the configured `UGOITE_DEV_USER_ID` into the reserved
-`admin-space`, so that user becomes the local admin who can create new spaces
-after signing in at `http://localhost:3000/login`.
+The shipped Compose file enables the explicit local demo login mode
+(`mock-oauth`). On startup the backend bootstraps the configured
+`UGOITE_DEV_USER_ID` into the reserved `admin-space`, so that user becomes the
+local admin who can create new spaces after signing in at
+`http://localhost:3000/login`.
 
 ## Verify status and logs
 
@@ -47,6 +48,10 @@ docker compose logs -f backend
 ```bash
 docker compose logs -f frontend
 ```
+
+If the stack fails before login, the browser stays blank, or the frontend and
+backend cannot reach each other, continue with
+[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md).
 
 ## Stop the stack
 

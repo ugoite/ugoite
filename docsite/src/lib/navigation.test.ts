@@ -132,6 +132,7 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 		{
 			title: "Getting Started",
 			overviewHref: "/getting-started",
+			expandAll: true,
 			items: [
 				{ title: "Overview", href: "/getting-started" },
 				{
@@ -145,6 +146,40 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 				{ title: "Run from source", href: "/docs/guide/local-dev-auth-login" },
 				{ title: "CLI Guide", href: "/docs/guide/cli" },
 				{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
+				{
+					title: "Operations & Troubleshooting",
+					href: "/docs/guide/operations",
+					items: [
+						{
+							title: "Backend Healthcheck",
+							href: "/docs/guide/backend-healthcheck",
+						},
+						{
+							title: "Environment Matrix",
+							href: "/docs/guide/env-matrix",
+						},
+						{
+							title: "Helm Chart",
+							href: "/docs/guide/helm-chart",
+						},
+						{
+							title: "Log Redaction",
+							href: "/docs/guide/log-redaction",
+						},
+						{
+							title: "Storage Cleanup",
+							href: "/docs/guide/storage-cleanup",
+						},
+						{
+							title: "Storage Migration",
+							href: "/docs/guide/storage-migration",
+						},
+						{
+							title: "Unauthorized Spaces Troubleshooting",
+							href: "/docs/guide/troubleshooting-unauthorized-spaces",
+						},
+					],
+				},
 			],
 		},
 	]);

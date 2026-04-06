@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -158,7 +159,7 @@ pub fn resolve_space_reference(
     command_name: &str,
 ) -> Result<(String, String)> {
     let parsed = parse_space_path(space_path);
-    if base_url(config).is_some() {
+    if validated_base_url(config)?.is_some() {
         return Ok(parsed);
     }
     explicit_core_space_path(space_path).ok_or_else(|| {
@@ -183,12 +184,73 @@ pub fn normalize_space_root(root_path: &str) -> String {
     trimmed.to_string()
 }
 
-pub fn base_url(config: &EndpointConfig) -> Option<String> {
+struct SelectedServerEndpoint<'a> {
+    label: &'static str,
+    url: &'a str,
+}
+
+fn selected_server_endpoint(config: &EndpointConfig) -> Option<SelectedServerEndpoint<'_>> {
     match config.mode {
-        EndpointMode::Backend => Some(config.backend_url.trim_end_matches('/').to_string()),
-        EndpointMode::Api => Some(config.api_url.trim_end_matches('/').to_string()),
+        EndpointMode::Backend => Some(SelectedServerEndpoint {
+            label: "Backend endpoint",
+            url: &config.backend_url,
+        }),
+        EndpointMode::Api => Some(SelectedServerEndpoint {
+            label: "API endpoint",
+            url: &config.api_url,
+        }),
         EndpointMode::Core => None,
     }
+}
+
+pub fn base_url(config: &EndpointConfig) -> Option<String> {
+    selected_server_endpoint(config).map(|endpoint| endpoint.url.trim_end_matches('/').to_string())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let normalized = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    normalized.eq_ignore_ascii_case("localhost")
+        || normalized
+            .parse::<IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false)
+}
+
+pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|error| anyhow!("{label} URL {url:?} is invalid: {error}"))?;
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            if parsed.host_str().is_some_and(is_loopback_host) {
+                return Ok(());
+            }
+            bail!(
+                "{label} URL {url} uses cleartext http:// for a non-loopback host. Use https:// for remote endpoints, or use a loopback http:// URL for local development."
+            )
+        }
+        scheme => bail!("{label} URL {url} must use http:// or https://, not {scheme}://."),
+    }
+}
+
+pub fn endpoint_transport_warning(url: &str, label: &str) -> Option<String> {
+    validate_server_endpoint_url(url, label).err().map(|error| {
+        format!(
+            "{error} Server-backed commands will refuse this endpoint until you switch to https:// or a loopback http:// URL."
+        )
+    })
+}
+
+pub fn validated_base_url(config: &EndpointConfig) -> Result<Option<String>> {
+    let Some(endpoint) = selected_server_endpoint(config) else {
+        return Ok(None);
+    };
+    let base = endpoint.url.trim_end_matches('/').to_string();
+    validate_server_endpoint_url(&base, endpoint.label)?;
+    Ok(Some(base))
 }
 
 pub fn print_json<T: serde::Serialize>(value: &T) {

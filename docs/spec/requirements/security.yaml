@@ -390,3 +390,41 @@ requirements:
       - test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists
       - test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled
       - test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-011
+  title: CLI Remote Endpoint Transport Safety
+  description: 'CLI server-backed endpoint configuration MUST reject non-loopback
+
+    cleartext `http://` URLs, keep loopback `http://` allowed for local development,
+
+    warn when legacy insecure remote endpoints are still saved, and refuse
+
+    server-backed requests before sending traffic to such endpoints.
+
+    '
+  related_spec:
+  - security/overview.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
+      tests:
+      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_api_urls
+      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_backend_urls
+      - test_cli_req_sec_011_config_set_allows_loopback_cleartext_development_endpoints
+      - test_cli_req_sec_011_config_set_allows_ipv6_loopback_cleartext_development_endpoints
+      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_ipv6_api_urls
+      - test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoints
+      - test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_endpoints_before_requests_are_sent

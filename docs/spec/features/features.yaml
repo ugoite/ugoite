@@ -6,6 +6,7 @@
 # - frontend: includes path, file definition location, and function name
 # - ugoite_core: includes file and function name
 # - ugoite_cli: optional; when present it includes command, file, and function name
+# - linked_requirements: requirement categories that surface through the feature area
 
 version: "0.2"
 updated: "2026-01"
@@ -30,17 +31,42 @@ conventions:
 files:
   - kind: spaces
     file: spaces.yaml
+    linked_requirements:
+      - REQCAT-STORAGE
+      - REQCAT-API
   - kind: preferences
     file: preferences.yaml
+    linked_requirements:
+      - REQCAT-STORAGE
+      - REQCAT-API
   - kind: entries
     file: entries.yaml
+    linked_requirements:
+      - REQCAT-ENTRY
+      - REQCAT-API
   - kind: forms
     file: forms.yaml
+    linked_requirements:
+      - REQCAT-FORM
+      - REQCAT-API
   - kind: assets
     file: assets.yaml
+    linked_requirements:
+      - REQCAT-ASSET
+      - REQCAT-API
   - kind: auth
     file: auth.yaml
+    linked_requirements:
+      - REQCAT-SECURITY
+      - REQCAT-API
   - kind: search
     file: search.yaml
+    linked_requirements:
+      - REQCAT-SEARCH
+      - REQCAT-API
   - kind: sql
     file: sql.yaml
+    linked_requirements:
+      - REQCAT-SEARCH
+      - REQCAT-API
+      - REQCAT-FORM
