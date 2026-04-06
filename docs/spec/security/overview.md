@@ -71,6 +71,9 @@ targets an **Authenticated Access by Default** model.
 ### Input Sanitization
 - All inputs validated via Pydantic models
 - Path traversal prevention in file operations
+- Asset upload filenames are reduced to a single metadata-safe basename before
+  storage writes so traversal segments, control characters, and Markdown heading
+  prefixes cannot escape or spoof a space's `assets/` directory metadata
 - SQL injection not applicable (no SQL database)
 
 ## Software Supply Chain Security
