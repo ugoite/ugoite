@@ -6,5 +6,6 @@
 "docs/tests/test_storage_docs.py" = ["S603", "S607"]
 "docs/tests/test_artifact_hygiene.py" = ["S101", "S603", "S607"]
 "scripts/check_minimum_coverage.py" = ["S603", "S607"]
+"scripts/fail_on_skipped_tests.py" = ["S314"]
 "scripts/check_pytest_no_skips.py" = ["S314"]
 "docs/tests/test_guides.py" = ["S603", "S607"]
