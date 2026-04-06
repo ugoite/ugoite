@@ -13,6 +13,16 @@ description = "Build ugoite-cli"
 run = "cargo test"
 description = "Run ugoite-cli Rust test suite"
 
+[tasks."test:coverage"]
+run = [
+	"command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked",
+	"rustup component add llvm-tools-preview",
+	"cargo clean -p ugoite-cli",
+	"CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=1 RUSTFLAGS='-C debuginfo=0' cargo llvm-cov clean --workspace",
+	"CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=1 RUSTFLAGS='-C debuginfo=0' cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1 || { cargo llvm-cov report --text --show-missing-lines; exit 1; }",
+]
+description = "Run the ugoite-cli Rust coverage gate matching CI"
+
 [tasks."test:clean"]
 run = "cargo clean -p ugoite-cli && cargo test"
 description = "Clean package-local artifacts and rerun the ugoite-cli Rust test suite"

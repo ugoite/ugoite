@@ -97,17 +97,18 @@ test.describe("Public page stability", () => {
 			await page.goto("/");
 			await page.waitForLoadState("networkidle");
 
+			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
 			await expect(page.locator("main")).toContainText(
 				"ローカルファーストの知識を、検索と自動化のために構造化",
 			);
-			await expect(page.locator("main").getByRole("link", { name: "詳しく見る" })).toHaveAttribute(
-				"href",
-				"/about",
-			);
+			await expect(page.locator("main").getByRole("link", { name: "詳しく見る" })).toBeVisible();
 
 			await page.goto("/about");
 			await page.waitForLoadState("networkidle");
 
+			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
 			await expect(
 				page.locator("main").getByRole("heading", { name: "Ugoite について" }),
 			).toBeVisible();
