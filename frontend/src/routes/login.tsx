@@ -2,11 +2,16 @@ import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
 import { setAuthTokenCookie } from "~/lib/auth-session";
+import { getDocsiteHref } from "~/lib/docsite-links";
 
-const containerQuickStartGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
-const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+const containerQuickStartGuideUrl = getDocsiteHref(
+	"/docs/guide/container-quickstart",
+	"docs/guide/container-quickstart.md",
+);
+const localDevAuthGuideUrl = getDocsiteHref(
+	"/docs/guide/local-dev-auth-login",
+	"docs/guide/local-dev-auth-login.md",
+);
 
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {
@@ -181,8 +186,8 @@ export default function LoginRoute() {
 							<Show when={config().mode === "mock-oauth"}>
 								<div class="ui-stack-sm">
 									<p class="text-sm ui-muted">
-										Use the explicit mock OAuth path to exercise the browser login flow without
-										bypassing authentication at startup.
+										Use the explicit local demo login path to exercise the browser login flow
+										without an external OAuth provider or startup auth bypass.
 									</p>
 									<button
 										type="button"
@@ -190,7 +195,7 @@ export default function LoginRoute() {
 										onClick={() => void handleMockOAuth()}
 										disabled={isSubmitting()}
 									>
-										{isSubmitting() ? "Redirecting..." : "Continue with Mock OAuth"}
+										{isSubmitting() ? "Redirecting..." : "Continue with Local Demo Login"}
 									</button>
 								</div>
 							</Show>

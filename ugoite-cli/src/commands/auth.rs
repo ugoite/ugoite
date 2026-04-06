@@ -1,4 +1,4 @@
-use crate::config::{base_url, load_config, print_json, EndpointConfig, EndpointMode};
+use crate::config::{load_config, print_json, validated_base_url, EndpointConfig, EndpointMode};
 use crate::http;
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
@@ -67,7 +67,8 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                     "auth login requires backend or api mode.\nRun: ugoite config set --mode backend --backend-url http://localhost:8000"
                 ));
             }
-            let base = base_url(&config).expect("backend/api mode always has a base URL");
+            let base =
+                validated_base_url(&config)?.expect("backend/api mode always has a base URL");
 
             let result = if mock_oauth {
                 http::http_post_with_dev_auth_proxy(

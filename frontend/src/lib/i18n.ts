@@ -30,7 +30,7 @@ const applyLocaleAttributes = (nextLocale: Locale) => {
 };
 
 const localeStore = createRoot(() => {
-	const [locale, setLocaleInternal] = createSignal<Locale>(readStoredLocale() ?? "en");
+	const [locale, setLocaleInternal] = createSignal<Locale>("en");
 
 	const setLocale = (nextLocale: Locale) => {
 		if (!availableLocales.has(nextLocale)) {
@@ -64,5 +64,10 @@ export const t = (key: TranslationKey, params?: TranslationParams): string => {
 };
 
 export const initializeLocale = () => {
-	applyLocaleAttributes(locale());
+	const nextLocale = readStoredLocale() ?? locale();
+	if (nextLocale !== locale()) {
+		setLocale(nextLocale);
+		return;
+	}
+	applyLocaleAttributes(nextLocale);
 };

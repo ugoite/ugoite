@@ -202,6 +202,13 @@ requirements:
       tests:
       - test_feature_paths_exist
       - test_no_undeclared_feature_modules
+      - test_docs_req_api_004_policy_traceability_docs_describe_manifest_links
+      - test_docs_req_api_004_feature_readme_inventory_matches_manifest
+      - test_docs_req_api_004_docsite_feature_pages_use_manifest_loader
+    vitest:
+    - file: docsite/src/lib/spec-data.test.ts
+      tests:
+      - 'REQ-API-004: feature manifest requirement links drive policy feature edges'
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -245,6 +252,9 @@ requirements:
       - test_all_requirements_have_tests
       - test_all_tests_reference_valid_requirements
       - test_no_orphan_tests
+      - test_docs_req_api_005_requirements_readme_lists_current_requirement_catalog
+      - test_docs_req_api_005_requirements_readme_covers_declared_test_kinds
+      - test_docs_req_api_005_spec_index_lists_current_requirement_catalog
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -574,3 +584,52 @@ requirements:
     - file: docs/tests/test_mcp_docs.py
       tests:
       - test_docs_req_api_012_mcp_contract_covers_safe_ids_and_untrusted_content
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-013
+  title: Current MCP Surface Documentation
+  description: 'Current-state MCP documentation MUST describe the shipped surface
+
+    as a resource-first baseline: one registered `ugoite://{space_id}/entries/list`
+
+    resource with no MCP tools or prompts. Broader MCP resource and tool coverage
+
+    MUST be framed as planned `v0.2` work rather than current behavior.
+
+    '
+  related_spec:
+  - index.md
+  - api/mcp.md
+  - architecture/overview.md
+  - versions/index.md
+  - ../version/v0.1/mvp.yaml
+  - ../version/v0.2.yaml
+  - ../version/unknown/roadmap.yaml
+  - versions/v0.2.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_mcp_docs.py
+      tests:
+      - test_docs_req_api_013_current_mcp_surface_stays_resource_first

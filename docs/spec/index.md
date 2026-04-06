@@ -6,7 +6,7 @@
 
 ## Vision
 
-**"Local-First Knowledge Space for the Post-SaaS Era"**
+**"Local-First Knowledge Space with a Resource-First MCP Surface for the Post-SaaS Era"**
 
 `v0.1` ships the local-first core plus a resource-first MCP baseline. Broader
 AI-native workflows, including wider MCP resource coverage and tool exposure,
@@ -19,6 +19,10 @@ Ugoite is a knowledge management system built on three core principles:
 | **Low Cost** | No expensive cloud services required; runs on local storage |
 | **Easy** | Markdown-first with automatic structure extraction |
 | **Freedom** | Your data, your storage, your AI - no vendor lock-in |
+
+Today the shipped AI surface is **resource-first MCP access**: one read-only
+resource is available now, while prompts and tool-style MCP workflows remain
+future work.
 
 ---
 
@@ -61,12 +65,12 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
-- [MCP Protocol](api/mcp.md) - AI agent interface via Model Context Protocol
+- [MCP Protocol](api/mcp.md) - Current resource-first MCP surface for AI agents; prompts and tool-style workflows remain future work
 - [OpenAPI Spec](api/openapi.yaml) - Machine-readable API definition
 
 ### Requirements
 - [Requirements Overview](requirements/README.md) - How requirements are tracked
-- Requirements by category: [storage](requirements/storage.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [ops](requirements/ops.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
+- Requirements by category: [storage](requirements/storage.yaml) | [asset](requirements/asset.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [ops](requirements/ops.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
 
 ### Governance Taxonomy
 - [Philosophy](philosophy/foundation.yaml) - Constitutional-level ideals
@@ -99,7 +103,7 @@ Ugoite is a knowledge management system built on three core principles:
 | `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
 | `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
-| `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |
+| `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart) |
 
 ---
 

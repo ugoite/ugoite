@@ -9,9 +9,8 @@ import { server } from "~/test/mocks/server";
 
 const navigateMock = vi.fn();
 const containerQuickStartGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/container-quickstart.md";
-const localDevAuthGuideUrl =
-	"https://github.com/ugoite/ugoite/blob/main/docs/guide/local-dev-auth-login.md";
+	"https://ugoite.github.io/ugoite/docs/guide/container-quickstart";
+const localDevAuthGuideUrl = "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
@@ -67,7 +66,12 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		fireEvent.click(await screen.findByRole("button", { name: "Continue with Mock OAuth" }));
+		expect(
+			await screen.findByText(
+				"Use the explicit local demo login path to exercise the browser login flow without an external OAuth provider or startup auth bypass.",
+			),
+		).toBeInTheDocument();
+		fireEvent.click(await screen.findByRole("button", { name: "Continue with Local Demo Login" }));
 
 		await waitFor(() => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
@@ -86,7 +90,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(document.cookie).toContain("ugoite_auth_bearer_token=existing-browser-session");
 		expect(navigateMock).not.toHaveBeenCalled();
 	});
@@ -101,7 +105,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
 		expect(screen.queryByRole("link", { name: "Go to Spaces" })).not.toBeInTheDocument();
 	});
@@ -139,7 +143,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(screen.queryByRole("heading", { name: "First time here?" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: "Local Dev Auth/Login" })).not.toBeInTheDocument();
 	});

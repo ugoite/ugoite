@@ -20,12 +20,10 @@ GitHub without comparing two different onboarding maps.
 
 > **Browser path today:** the current browser route still needs a running
 > backend + frontend stack and an explicit `/login` flow. If you want the
-> thinnest local-first path, start with the CLI in `core` mode.
+> lowest-setup-cost local-first path, start with the CLI in `core` mode.
 
 ### Choose your first step
 
-- [Understand core concepts](docs/guide/concepts.md) before you choose a
-  surface.
 - [Try the published release](docs/guide/container-quickstart.md) for the
   fastest browser-based evaluation path, while still running the browser stack
   with an explicit login step.
@@ -37,6 +35,9 @@ GitHub without comparing two different onboarding maps.
 
 ### After your first step
 
+- [Understand core concepts](docs/guide/concepts.md) when you want the mental
+  model behind spaces, entries, forms, and search before you go deeper into
+  auth or the specs.
 - **Explore the browser app** by opening `/login` from the published quick
   start or source workflow, then continuing to `/spaces`.
 - [Understand auth and access](docs/guide/auth-overview.md) before rollout or
@@ -54,17 +55,17 @@ user-controlled local storage.
 
 Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
 default so source contributors exercise the explicit local passkey + 2FA flow,
-while the published `docker-compose.release.yaml` quick start uses `mock-oauth`
-by default so browser evaluators can reach `/login` and `/spaces` with fewer
-setup steps.
+while the published `docker-compose.release.yaml` quick start uses the local
+demo login mode (`mock-oauth`) by default so browser evaluators can reach
+`/login` and `/spaces` with fewer steps and no external provider.
 
 ### Which entry path should you choose?
 
-| Path | Best when | Trade-off |
-| --- | --- | --- |
-| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
-| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+| Path | Best when | Setup cost / requirements | Trade-off |
+| --- | --- | --- | --- |
+| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
+| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full contributor surface, but also the heaviest path |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
@@ -114,22 +115,21 @@ e2e/                # End-to-end tests (Bun)
 
 ## Documentation Map
 
-Start with the user-facing guides:
+Use **Start Here** above for the newcomer path. This section only lists the
+additional references you usually open after that first choice.
 
-- [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
-- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
-- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` contributor path
+### Operational guides
+
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+- [Environment Matrix](docs/guide/env-matrix.md) - Runtime variables and which surface consumes them
 
-Go deeper when you need architecture or implementation contracts:
+### Design and implementation references
 
-- [Specification Index](docs/spec/index.md) - Technical specifications
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
-- [API Reference](docs/spec/api/rest.md) - REST API documentation
+- [REST API Reference](docs/spec/api/rest.md) - Backend HTTP contract
+- [MCP Reference](docs/spec/api/mcp.md) - Current resource-first MCP surface
 
-Track ongoing work:
-
+### Release planning
 - [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
   and planned milestones
 - [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone
@@ -334,9 +334,10 @@ docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
 ```
 
-Then open `http://localhost:3000/login`, click **Continue with Mock OAuth**,
-and you will land on `/spaces`. The shipped compose file bootstraps the `default` space
-at startup so the first browser and CLI session both have a ready workspace.
+Then open `http://localhost:3000/login`, click
+**Continue with Local Demo Login**, and you will land on `/spaces`. The shipped
+compose file bootstraps the `default` space at startup so the first browser and
+CLI session both have a ready workspace.
 For more background on the explicit browser login flow, see
 [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
@@ -360,7 +361,7 @@ Tag conventions:
 | `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the backend container at `/data`                                                                                                                               |
 | `UGOITE_FRONTEND_PORT`        | `3000`                       | Host port that exposes the frontend UI                                                                                                                                                |
 | `UGOITE_BACKEND_PORT`         | `8000`                       | Host port that exposes the backend API                                                                                                                                                |
-| `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Mock OAuth user id bootstrapped as the shipped quick-start admin-space admin                                                                                                          |
+| `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Local demo login user id bootstrapped as the shipped quick-start admin-space admin                                                                                                    |
 | `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
@@ -406,6 +407,12 @@ Run all tests from repo root:
 
 ```bash
 mise run test
+```
+
+Run the CI-aligned CLI coverage gate without the full repo suite:
+
+```bash
+mise run //ugoite-cli:test:coverage
 ```
 
 Run the authoritative local E2E suite. It prefers the docker-compose path used

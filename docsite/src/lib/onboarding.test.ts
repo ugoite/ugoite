@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
 	browserPathCaveat,
 	conceptPrimerCard,
+	coreConceptSummaries,
 	nextStepCards,
 	primaryStartCards,
 } from "./onboarding";
@@ -19,9 +20,9 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 		"/docs/guide/cli",
 	]);
 	expect(primaryStartCards.map((card) => card.badge)).toEqual([
-		"Fastest path",
-		"Contributor path",
-		"Automation path",
+		"Fastest browser path",
+		"Highest setup cost",
+		"Lowest setup cost",
 	]);
 });
 
@@ -30,16 +31,19 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 		"Explore the browser app",
 		"Understand auth and access",
 		"Read design and source docs",
+		"Run and troubleshoot the stack",
 	]);
 	expect(nextStepCards.map((card) => card.href)).toEqual([
 		"/app/frontend",
 		"/docs/guide/auth-overview",
 		"/docs/spec/index",
+		"/docs/guide/operations",
 	]);
 	expect(nextStepCards.map((card) => card.badge)).toEqual([
 		"Browser",
 		"Access",
 		"Reference",
+		"Ops",
 	]);
 });
 
@@ -47,27 +51,53 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(browserPathCaveat).toEqual({
 		badge: "Browser caveat today",
 		description:
-			"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+			"The current browser route still needs a running backend + frontend stack and an explicit login flow. It also costs more setup than the CLI in `core` mode, which is still the lowest-setup-cost local-first path right now.",
 		headline:
-			"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+			"The browser path is still server-backed and login-gated, even though the data stays local-first. It also has higher setup cost than CLI `core` mode.",
 	});
 	expect(primaryStartCards[0]?.description).toContain(
 		"frontend + backend stack",
 	);
-	expect(primaryStartCards[0]?.description).toContain("explicit browser login");
+	expect(primaryStartCards[0]?.description).toContain("Docker");
+	expect(primaryStartCards[0]?.description).toContain("published image pulls");
 	expect(primaryStartCards[1]?.description).toContain("mise run dev");
 	expect(primaryStartCards[1]?.description).toContain("/login");
+	expect(primaryStartCards[2]?.description).toContain(
+		"avoid container infrastructure",
+	);
 	expect(nextStepCards[0]?.description).toContain("completed login");
+	expect(nextStepCards[3]?.description).toContain("health checks");
 	expect(nextStepCards[0]?.description).toContain("create a form first");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
 	expect(conceptPrimerCard).toEqual({
-		badge: "Learn First",
+		badge: "Concept primer",
 		description:
-			"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+			"Get the plain-language mental model for spaces, entries, forms, search, and surface choice after you pick a path and before you go deeper into auth or specs.",
 		href: "/docs/guide/concepts",
 		icon: "💡",
 		title: "Understand core concepts",
 	});
+});
+
+test("REQ-E2E-008: onboarding content keeps core concepts ready for the follow-up primer", () => {
+	expect(coreConceptSummaries.map((concept) => concept.title)).toEqual([
+		"Space",
+		"Entry",
+		"Form",
+		"Markdown, extraction, and search",
+		"Browser, CLI, and API",
+	]);
+	expect(coreConceptSummaries[0]?.description).toContain("portable workspace");
+	expect(coreConceptSummaries[1]?.description).toContain(
+		"Markdown-backed record",
+	);
+	expect(coreConceptSummaries[2]?.description).toContain("schema and template");
+	expect(coreConceptSummaries[3]?.description).toContain(
+		"search/indexes are derived",
+	);
+	expect(coreConceptSummaries[4]?.description).toContain(
+		"thinnest local-first automation path",
+	);
 });
