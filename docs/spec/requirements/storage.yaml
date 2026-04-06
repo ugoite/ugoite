@@ -82,9 +82,11 @@ requirements:
   title: Space Directory Structure
   description: 'Space has the following structure:
 
-    - meta.json, settings.json
+    - meta.json, settings.json (including `default_form`)
 
-    - forms/ (Iceberg-managed Form tables)
+    - forms/ (Iceberg-managed Form tables, including a starter `Entry` form for
+
+      first-entry authoring)
 
     - assets/
 
@@ -101,6 +103,7 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_create_space
+      - test_create_space_req_sto_002_bootstraps_starter_entry_form
     rust:
     - file: ugoite-core/tests/test_space.rs
       tests:

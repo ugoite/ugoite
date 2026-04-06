@@ -63,6 +63,12 @@ describe("/spaces/:space_id/dashboard", () => {
 		template: "",
 		fields: { Date: { type: "date", required: true } },
 	};
+	const starterForm: Form = {
+		name: "Entry",
+		version: 1,
+		template: "",
+		fields: { Body: { type: "markdown", required: false } },
+	};
 	const assetsForm: Form = {
 		name: "Assets",
 		version: 1,
@@ -82,6 +88,7 @@ describe("/spaces/:space_id/dashboard", () => {
 			name: "Default Space",
 			created_at: "2025-01-01T00:00:00Z",
 			storage_config: { uri: "file:///var/lib/ugoite/default" },
+			settings: { default_form: "Entry" },
 		});
 		(formApi.listTypes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 		(assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -98,6 +105,25 @@ describe("/spaces/:space_id/dashboard", () => {
 		expect(screen.queryByText("2 forms available")).not.toBeInTheDocument();
 	});
 
+	it("REQ-FE-037: dashboard opens the starter entry flow for a new space", async () => {
+		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([starterForm]);
+
+		render(() => <SpaceDashboardRoute />);
+
+		const newEntryButton = await screen.findByRole("button", { name: "New entry" });
+		await waitFor(() => {
+			expect(newEntryButton).toBeEnabled();
+		});
+		expect(screen.queryByText("Start by creating your first form.")).not.toBeInTheDocument();
+
+		fireEvent.click(newEntryButton);
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Create New Entry" })).toBeInTheDocument();
+		});
+		expect(screen.getByDisplayValue("Entry")).toBeInTheDocument();
+	});
+
 	it("REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist", async () => {
 		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([assetsForm]);
 
@@ -109,7 +135,7 @@ describe("/spaces/:space_id/dashboard", () => {
 		expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
 	});
 
-	it("REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms", async () => {
+	it("REQ-FE-037: dashboard promotes form creation when a space has no creatable forms", async () => {
 		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
 		render(() => <SpaceDashboardRoute />);
