@@ -44,6 +44,10 @@ targets an **Authenticated Access by Default** model.
 - `UGOITE_TRUST_PROXY_HEADERS=true` only trusts forwarded client headers from
   loopback proxy peers; direct remote clients cannot spoof `X-Forwarded-For`
   into looking like localhost
+- The source `docker-compose.yaml` keeps both published ports on `127.0.0.1`
+  and expects unique dev signing/proxy secrets before startup
+- The Helm chart requires install-specific dev auth secrets instead of shipping
+  repository-known signing or proxy defaults
 
 ### CORS
 - Restricted to explicit frontend origins from `ALLOW_ORIGIN`

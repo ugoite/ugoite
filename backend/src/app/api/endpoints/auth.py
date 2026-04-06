@@ -12,6 +12,7 @@ import ugoite_core
 from fastapi import APIRouter, HTTPException, Request, status
 from ugoite_core.auth import mint_signed_bearer_token, validate_totp_code
 
+from app.core.auth import clear_auth_manager_cache
 from app.core.config import get_root_path
 from app.core.security import is_local_host, resolve_client_host
 from app.core.storage import storage_config_from_root
@@ -81,6 +82,29 @@ def _dev_signing_material() -> tuple[str, str]:
             detail=message,
         )
     return key_id, secret
+
+
+def configure_dev_auth_bearer_env() -> None:
+    """Mirror dev signing material into bearer verification env when needed."""
+    raw_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", "").strip()
+    if raw_mode not in {"passkey-totp", "mock-oauth"}:
+        return
+
+    try:
+        key_id, secret = _dev_signing_material()
+    except HTTPException:
+        return
+
+    changed = False
+    if not os.environ.get("UGOITE_AUTH_BEARER_SECRETS", "").strip():
+        os.environ["UGOITE_AUTH_BEARER_SECRETS"] = f"{key_id}:{secret}"
+        changed = True
+    if not os.environ.get("UGOITE_AUTH_BEARER_ACTIVE_KIDS", "").strip():
+        os.environ["UGOITE_AUTH_BEARER_ACTIVE_KIDS"] = key_id
+        changed = True
+
+    if changed:
+        clear_auth_manager_cache()
 
 
 def _dev_auth_ttl_seconds() -> int:

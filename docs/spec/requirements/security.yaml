@@ -25,6 +25,12 @@ requirements:
 
     spoof loopback access.
 
+    Source Docker Compose defaults MUST keep browser access loopback-only, and
+
+    containerized dev-auth packaging MUST avoid repository-known signing or proxy
+
+    secrets when network exposure is possible.
+
     '
   related_spec:
   - security/overview.md
@@ -42,6 +48,15 @@ requirements:
       - test_resolve_client_host_trusted_proxy
       - test_resolve_client_host_empty_forwarded
       - test_resolve_client_host_ignores_untrusted_forwarded_for
+    - file: backend/tests/test_dev_auth.py
+      tests:
+      - test_dev_auth_req_sec_001_startup_derives_bearer_env_from_signing_material
+    - file: docs/tests/test_guides.py
+      tests:
+      - test_docs_req_sec_001_source_compose_requires_unique_dev_auth_secrets
+    - file: docs/tests/test_helm_chart.py
+      tests:
+      - test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
