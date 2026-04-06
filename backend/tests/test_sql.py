@@ -1,13 +1,59 @@
 """Saved SQL API tests.
 
 REQ-API-006: Saved SQL CRUD.
+REQ-API-008: SQL session query API.
 """
 
+import asyncio
+import json
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import pytest
 import ugoite_core
 from fastapi.testclient import TestClient
+
+from app.core.auth import clear_auth_manager_cache
+from app.core.storage import storage_config_from_root
+from app.main import app
+
+
+def _bootstrap_admin_space_for_user(temp_space_root: Path, user_id: str) -> None:
+    asyncio.run(
+        ugoite_core.ensure_admin_space(
+            storage_config_from_root(temp_space_root),
+            user_id,
+        ),
+    )
+
+
+@pytest.fixture
+def sql_auth_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> Iterator[dict[str, TestClient]]:
+    """Provide deterministic multi-user clients for SQL ACL tests."""
+    monkeypatch.setenv(
+        "UGOITE_AUTH_BEARER_TOKENS_JSON",
+        json.dumps(
+            {
+                "owner-token": {"user_id": "owner-user", "principal_type": "user"},
+                "viewer-token": {"user_id": "viewer-user", "principal_type": "user"},
+            },
+        ),
+    )
+    monkeypatch.delenv("UGOITE_BOOTSTRAP_BEARER_TOKEN", raising=False)
+    _bootstrap_admin_space_for_user(temp_space_root, "owner-user")
+    clear_auth_manager_cache()
+
+    yield {
+        "owner": TestClient(app, headers={"Authorization": "Bearer owner-token"}),
+        "viewer": TestClient(app, headers={"Authorization": "Bearer viewer-token"}),
+    }
+
+    clear_auth_manager_cache()
 
 
 def test_sql_req_api_006_crud(test_client: TestClient) -> None:
@@ -584,7 +630,7 @@ def test_get_sql_session_count_generic_exception(test_client: TestClient) -> Non
     """REQ-API-008: get SQL session count returns 500 for unexpected error."""
     test_client.post("/spaces", json={"name": "sess-cnt-exc-ws"})
     with patch(
-        "ugoite_core.get_sql_session_count",
+        "ugoite_core.get_sql_session_count_for_identity",
         _amock(side_effect=ValueError("unexpected")),
     ):
         response = test_client.get(
@@ -616,7 +662,7 @@ def test_get_sql_session_rows_generic_exception(test_client: TestClient) -> None
     """REQ-API-008: get SQL session rows returns 500 for unexpected error."""
     test_client.post("/spaces", json={"name": "sess-rows-exc-ws"})
     with patch(
-        "ugoite_core.get_sql_session_rows",
+        "ugoite_core.get_sql_session_rows_for_identity",
         _amock(side_effect=ValueError("unexpected")),
     ):
         response = test_client.get(
@@ -657,7 +703,10 @@ def test_get_sql_session_stream_success(test_client: TestClient) -> None:
         call_count["n"] += 1
         return page1 if call_count["n"] == 1 else page2
 
-    with patch("ugoite_core.get_sql_session_rows", AsyncMock(side_effect=_rows_side)):
+    with patch(
+        "ugoite_core.get_sql_session_rows_for_identity",
+        AsyncMock(side_effect=_rows_side),
+    ):
         response = test_client.get(
             "/spaces/sess-stream-ws/sql-sessions/some-session/stream",
         )
@@ -669,7 +718,7 @@ def test_get_sql_session_stream_empty_rows(test_client: TestClient) -> None:
     """REQ-API-008: get SQL session stream returns empty body when no rows."""
     test_client.post("/spaces", json={"name": "sess-stream-empty-ws"})
     with patch(
-        "ugoite_core.get_sql_session_rows",
+        "ugoite_core.get_sql_session_rows_for_identity",
         _amock(return_value={"rows": []}),
     ):
         response = test_client.get(
@@ -677,3 +726,102 @@ def test_get_sql_session_stream_empty_rows(test_client: TestClient) -> None:
         )
     assert response.status_code == 200
     assert response.text == ""
+
+
+def test_sql_sessions_req_api_008_filter_form_acl_before_limit(
+    sql_auth_clients: dict[str, TestClient],
+) -> None:
+    """REQ-API-008: SQL sessions apply form ACLs before ORDER BY/LIMIT evaluation."""
+    owner = sql_auth_clients["owner"]
+    viewer = sql_auth_clients["viewer"]
+
+    create_space = owner.post("/spaces", json={"name": "sql-acl-ws"})
+    assert create_space.status_code == 201
+    space_id = create_space.json()["id"]
+
+    patch_space = owner.patch(
+        f"/spaces/{space_id}",
+        json={
+            "settings": {
+                "member_roles": {
+                    "owner-user": "owner",
+                    "viewer-user": "viewer",
+                },
+            },
+        },
+    )
+    assert patch_space.status_code == 200
+
+    public_form = owner.post(
+        f"/spaces/{space_id}/forms",
+        json={
+            "name": "PublicTask",
+            "version": 1,
+            "template": "# PublicTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string", "required": True}},
+        },
+    )
+    assert public_form.status_code == 201
+
+    restricted_form = owner.post(
+        f"/spaces/{space_id}/forms",
+        json={
+            "name": "RestrictedTask",
+            "version": 1,
+            "template": "# RestrictedTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string", "required": True}},
+            "read_principals": [{"kind": "user", "id": "owner-user"}],
+            "write_principals": [{"kind": "user", "id": "owner-user"}],
+        },
+    )
+    assert restricted_form.status_code == 201
+
+    public_a = owner.post(
+        f"/spaces/{space_id}/entries",
+        json={
+            "id": "public-a",
+            "content": "---\nform: PublicTask\n---\n## Summary\nPublic A\n",
+        },
+    )
+    assert public_a.status_code == 201
+
+    public_b = owner.post(
+        f"/spaces/{space_id}/entries",
+        json={
+            "id": "public-b",
+            "content": "---\nform: PublicTask\n---\n## Summary\nPublic B\n",
+        },
+    )
+    assert public_b.status_code == 201
+
+    restricted = owner.post(
+        f"/spaces/{space_id}/entries",
+        json={
+            "id": "restricted-z",
+            "content": "---\nform: RestrictedTask\n---\n## Summary\nRestricted Z\n",
+        },
+    )
+    assert restricted.status_code == 201
+
+    viewer_get = viewer.get(f"/spaces/{space_id}/entries/restricted-z")
+    assert viewer_get.status_code == 403
+
+    create_session = viewer.post(
+        f"/spaces/{space_id}/sql-sessions",
+        json={"sql": "SELECT * FROM entries ORDER BY id DESC LIMIT 2"},
+    )
+    assert create_session.status_code == 201
+    session_id = create_session.json()["id"]
+
+    count_response = viewer.get(f"/spaces/{space_id}/sql-sessions/{session_id}/count")
+    assert count_response.status_code == 200
+    assert count_response.json() == {"count": 2}
+
+    rows_response = viewer.get(
+        f"/spaces/{space_id}/sql-sessions/{session_id}/rows",
+        params={"offset": 0, "limit": 10},
+    )
+    assert rows_response.status_code == 200
+    rows_payload = rows_response.json()
+    assert rows_payload["total_count"] == 2
+    assert [row["id"] for row in rows_payload["rows"]] == ["public-b", "public-a"]

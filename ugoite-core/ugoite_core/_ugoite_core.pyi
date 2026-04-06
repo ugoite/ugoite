@@ -108,11 +108,23 @@ def get_sql_session_count(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[int]: ...
+def get_sql_session_count_scoped(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[int]: ...
 def get_sql_session_rows(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[dict[str, object]]: ...
+def get_sql_session_rows_scoped(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[dict[str, object]]: ...
 def get_sql_session_rows_all(
+    *args: object,
+    **kwargs: object,
+) -> Awaitable[list[dict[str, object]]]: ...
+def get_sql_session_rows_all_scoped(
     *args: object,
     **kwargs: object,
 ) -> Awaitable[list[dict[str, object]]]: ...

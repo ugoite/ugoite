@@ -1170,6 +1170,32 @@ fn get_sql_session_count<'a>(
 }
 
 #[pyfunction]
+fn get_sql_session_count_scoped<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+    readable_forms: Vec<String>,
+    include_untyped_entries: bool,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let count = sql_session::get_sql_session_count_scoped(
+            &op,
+            &ws_path,
+            &session_id,
+            &readable_forms,
+            include_untyped_entries,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = Value::Number(count.into());
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
 fn get_sql_session_rows<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
@@ -1189,6 +1215,35 @@ fn get_sql_session_rows<'a>(
 }
 
 #[pyfunction]
+fn get_sql_session_rows_scoped<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+    offset: usize,
+    limit: usize,
+    readable_forms: Vec<String>,
+    include_untyped_entries: bool,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let rows = sql_session::get_sql_session_rows_scoped(
+            &op,
+            &ws_path,
+            &session_id,
+            offset,
+            limit,
+            &readable_forms,
+            include_untyped_entries,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, rows))
+    })
+}
+
+#[pyfunction]
 fn get_sql_session_rows_all<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
@@ -1201,6 +1256,32 @@ fn get_sql_session_rows_all<'a>(
         let rows = sql_session::get_sql_session_rows_all(&op, &ws_path, &session_id)
             .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val = Value::Array(rows);
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
+fn get_sql_session_rows_all_scoped<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    session_id: String,
+    readable_forms: Vec<String>,
+    include_untyped_entries: bool,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let rows = sql_session::get_sql_session_rows_all_scoped(
+            &op,
+            &ws_path,
+            &session_id,
+            &readable_forms,
+            include_untyped_entries,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let val = Value::Array(rows);
         Python::with_gil(|py| json_to_py(py, val))
     })
@@ -1262,8 +1343,11 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_sql_session, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_status, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_count, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_count_scoped, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_rows_scoped, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_rows_all, m)?)?;
+    m.add_function(wrap_pyfunction!(get_sql_session_rows_all_scoped, m)?)?;
     m.add_function(wrap_pyfunction!(reindex_all, m)?)?;
     m.add_function(wrap_pyfunction!(update_entry_index, m)?)?;
 
