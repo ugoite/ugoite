@@ -84,7 +84,7 @@ def _serve_http(
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            headers = {name: value for name, value in self.headers.items()}
+            headers = dict(self.headers.items())
             requests.append((self.path, headers))
             status_code, body, content_type = response_factory(self.path, headers)
             self.send_response(status_code)
@@ -93,7 +93,7 @@ def _serve_http(
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, format: str, *args: object) -> None:
+        def log_message(self, _format: str, *_args: object) -> None:
             return
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -440,7 +440,7 @@ def test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack(
         assert space_response.json()["id"] == space_id
 
 
-def test_local_smoke_check_req_ops_015_uses_public_auth_config_without_bearer_token() -> None:
+def test_local_smoke_check_req_ops_015_uses_auth_config_without_token() -> None:
     """REQ-OPS-015: local smoke checks stay non-interactive without a bearer token."""
 
     def backend_response(path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
@@ -452,12 +452,18 @@ def test_local_smoke_check_req_ops_015_uses_public_auth_config_without_bearer_to
             return 401, b'{"detail":"missing bearer token"}', "application/json"
         return 404, b"not found", "text/plain; charset=utf-8"
 
-    def frontend_response(_path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
         return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
 
-    with _serve_http(backend_response) as (backend_url, backend_requests), _serve_http(
-        frontend_response,
-    ) as (frontend_url, frontend_requests):
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
         result = _run_local_smoke_check(
             backend_url=backend_url,
             frontend_url=frontend_url,
@@ -471,7 +477,7 @@ def test_local_smoke_check_req_ops_015_uses_public_auth_config_without_bearer_to
 
 
 def test_local_smoke_check_req_ops_015_uses_spaces_with_bearer_token() -> None:
-    """REQ-OPS-015: local smoke checks may probe protected spaces when auth is explicit."""
+    """REQ-OPS-015: local smoke checks may probe spaces when auth is explicit."""
     bearer_token = "dev-local-token"
 
     def backend_response(path: str, headers: dict[str, str]) -> tuple[int, bytes, str]:
@@ -485,12 +491,18 @@ def test_local_smoke_check_req_ops_015_uses_spaces_with_bearer_token() -> None:
             return 401, b'{"detail":"missing bearer token"}', "application/json"
         return 404, b"not found", "text/plain; charset=utf-8"
 
-    def frontend_response(_path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
         return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
 
-    with _serve_http(backend_response) as (backend_url, backend_requests), _serve_http(
-        frontend_response,
-    ) as (frontend_url, frontend_requests):
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
         result = _run_local_smoke_check(
             backend_url=backend_url,
             frontend_url=frontend_url,
