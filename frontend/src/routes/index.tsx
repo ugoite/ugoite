@@ -13,6 +13,7 @@ export default function Home() {
 		login: t("homePage.login"),
 		openSpaces: t("homePage.openSpaces"),
 		learnMore: t("homePage.learnMore"),
+		loginHint: t("homePage.loginHint"),
 		markdownTitle: t("homePage.card.markdown.title"),
 		markdownDescription: t("homePage.card.markdown.description"),
 		aiTitle: t("homePage.card.ai.title"),
@@ -26,16 +27,17 @@ export default function Home() {
 			<h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">Ugoite</h1>
 			<p class="text-base sm:text-xl mb-6 sm:mb-8 ui-muted">{copy().subtitle}</p>
 			<div class="flex justify-center gap-3 sm:gap-4 flex-wrap">
-				<A href="/login" class="ui-button ui-button-secondary">
+				<A href="/login" class="ui-button ui-button-primary">
 					{copy().login}
 				</A>
-				<A href="/spaces" class="ui-button ui-button-primary">
+				<A href="/spaces" class="ui-button ui-button-secondary">
 					{copy().openSpaces}
 				</A>
 				<a href={learnMoreHref} class="ui-button ui-button-secondary">
 					{copy().learnMore}
 				</a>
 			</div>
+			<p class="mt-4 text-sm ui-muted">{copy().loginHint}</p>
 			<div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
 				<div class="ui-card">
 					<h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
