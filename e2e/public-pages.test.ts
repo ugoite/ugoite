@@ -75,4 +75,49 @@ test.describe("Public page stability", () => {
 			await context.close();
 		}
 	});
+
+test("REQ-FE-064: public landing pages respect the saved Japanese locale", async ({
+		browser,
+	}) => {
+		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
+		const context = await browser.newContext({
+			baseURL: frontendUrl,
+			storageState: {
+				cookies: [],
+				origins: [
+					{
+						origin: frontendUrl,
+						localStorage: [{ name: "ugoite-locale", value: "ja" }],
+					},
+				],
+			},
+		});
+		try {
+			const page = await context.newPage();
+			await page.goto("/");
+			await page.waitForLoadState("networkidle");
+
+			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
+			await expect(page.locator("main")).toContainText(
+				"ローカルファーストの知識を、検索と自動化のために構造化",
+			);
+			await expect(page.locator("main").getByRole("link", { name: "詳しく見る" })).toBeVisible();
+
+			await page.goto("/about");
+			await page.waitForLoadState("networkidle");
+
+			await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+			await expect(page.locator("html")).toHaveAttribute("data-locale", "ja");
+			await expect(
+				page.locator("main").getByRole("heading", { name: "Ugoite について" }),
+			).toBeVisible();
+			await expect(page.locator("main")).toContainText("柔軟な構造と高速な検索");
+			await expect(
+				page.locator("main").getByRole("link", { name: "ホームに戻る" }),
+			).toHaveAttribute("href", "/");
+		} finally {
+			await context.close();
+		}
+	});
 });
