@@ -317,7 +317,11 @@ async def _apply_security_headers(
         if space_id == "default":
             key_id, signature = await build_response_signature(body, root_path)
         else:
-            key_id, signature = await build_response_signature(body, root_path, space_id)
+            key_id, signature = await build_response_signature(
+                body,
+                root_path,
+                space_id,
+            )
     except RuntimeError as exc:
         logger.warning(
             "Failed to sign response for %s in space %s: %s",
