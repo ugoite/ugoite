@@ -81,7 +81,8 @@ describe("/spaces/:space_id/dashboard", () => {
 			id: "default",
 			name: "Default Space",
 			created_at: "2025-01-01T00:00:00Z",
-			storage_config: { uri: "file:///var/lib/ugoite/default" },
+			storage: { type: "local", root: "/var/lib/ugoite/default" },
+			storage_config: { uri: "s3://planned-bucket/default" },
 		});
 		(formApi.listTypes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 		(assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
