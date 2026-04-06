@@ -121,8 +121,10 @@ jobs:
     - uvx ruff check --select ALL --ignore-noqa .
     - uvx ruff format --check .
     - cd backend && uv run ty check .
-    - cd backend && uv run pytest -W error
-    - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+    - cd backend && uv run pytest -W error --junitxml=../backend-pytest.xml
+    - python3 scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"
+    - uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error --junitxml=docs-pytest.xml
+    - python3 scripts/check_pytest_no_skips.py docs-pytest.xml "docs tests"
 ```
 
 Backend pytest also carries the focused local dev seed regression: it runs
@@ -171,7 +173,7 @@ jobs:
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 ```
 
 ## Frontend CI
@@ -233,7 +235,10 @@ jobs:
 The shared compose runner remains the CI path. Local `mise run e2e` prefers
 that same compose runner when Docker is available, and otherwise falls back to a
 production-style host runner that keeps the same Playwright JUnit/no-skips
-validation contract. CI reuses pre-built images by setting
+validation contract. The direct-process fallback now fails fast when ports
+`3000` or `8000` are already occupied instead of killing unrelated listeners;
+contributors who want to clear standard Ugoite dev ports explicitly should run
+`mise run cleanup:ports` first. CI reuses pre-built images by setting
 `E2E_BUILD_IMAGES=false`, while Docker-enabled local runs build the images from
 the current workspace before starting the compose stack.
 
@@ -365,11 +370,12 @@ jobs:
     - cd ugoite-core && cargo clippy -- -D warnings
     - cd ugoite-core && cargo test --no-run
     - cd ugoite-core && uv run maturin develop
-    - cd ugoite-core && uv run pytest -W error
+    - cd ugoite-core && uv run pytest -W error --junitxml=../core-pytest.xml
+    - python3 scripts/check_pytest_no_skips.py core-pytest.xml "ugoite-core tests"
     - cd ugoite-core && cargo llvm-cov --summary-only --fail-under-lines 45
     - cd ugoite-cli && cargo fmt --check
     - cd ugoite-cli && cargo clippy --no-default-features -- -D warnings
-    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+    - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 ```
 
 The package-local `mise run //ugoite-minimum:test` task installs
@@ -383,14 +389,21 @@ Local `mise` tasks for `ugoite-core` and `ugoite-cli` also share `target/rust`.
 The default `ugoite-core` build path stays incremental, and root `mise run
 test` runs `//ugoite-core:build` before `//backend:test:no-build` and
 `//ugoite-core:test:no-build` so one editable extension build is reused across
-that local test workflow. `mise run //ugoite-core:build:clean` provides a
-package-local destructive rebuild when the editable extension is stale.
+that local test workflow. Local backend, ugoite-core, and docs pytest tasks also
+run with `-W error`, emit JUnit XML into temporary files, and call
+`scripts/check_pytest_no_skips.py` so `mise run test` fails on the same warning
+and skipped-test regressions that CI rejects. `mise run //ugoite-core:build:clean`
+provides a package-local destructive rebuild when the editable extension is stale.
 The default `mise run //ugoite-cli:test` path stays incremental (`cargo test`),
-while `mise run //ugoite-cli:test:clean` provides a package-local destructive
-rerun when CLI artifacts are stale. `mise run cleanup:rust-targets` removes
-both the shared target root and the legacy `~/.cache/ugoite/ugoite-core/target`
-path when artifacts grow unexpectedly. Rust CI and pre-commit still enforce the
-100% CLI line-coverage gate through `cargo llvm-cov`.
+while root `mise run test` routes through `mise run //ugoite-cli:test:coverage`.
+That task installs `cargo-llvm-cov` when needed, adds `llvm-tools-preview`,
+cleans both package-local and workspace coverage artifacts, and enforces the
+same 100% CLI line-coverage gate as Rust CI. `mise run //ugoite-cli:test:clean`
+provides a package-local destructive rerun when CLI artifacts are stale.
+`mise run cleanup:rust-targets` removes both the shared target root and the
+legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+unexpectedly. Pre-commit still enforces the same 100% CLI line-coverage gate
+through `cargo llvm-cov`.
 
 ## SBOM and Supply Chain CI
 
@@ -502,16 +515,17 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && uv run pytest -W error
-cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features
+<<<<<<< HEAD
+cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/check_pytest_no_skips.py "$report" "ugoite-core tests"
+cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 
 # Python
 cd .. && uvx ruff format --check .
 uvx ruff check --select ALL --ignore-noqa .
-cd backend && uv run ty check . && uv run pytest -W error
+cd backend && uv run ty check . && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/check_pytest_no_skips.py "$report" "backend tests"
 
 # Docs
-cd .. && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error
+cd .. && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error --junitxml="$report" && python3 scripts/check_pytest_no_skips.py "$report" "docs tests"
 cd docsite && bun run lint && bun run format:check && bun run typecheck && bun run test:validation && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1
 
 # Frontend
