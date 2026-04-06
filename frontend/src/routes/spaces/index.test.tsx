@@ -4,8 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
 import { spaceApi } from "~/lib/space-api";
 
-const localDevAuthGuideUrl =
-	"https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+const localDevAuthGuideUrl = "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
 
 const navigateMock = vi.fn();
 
