@@ -19,7 +19,7 @@ describe("public page localization", () => {
 		setLocale("en");
 	});
 
-	it("REQ-FE-063: home page localizes public copy through the shared dictionary", () => {
+	it("REQ-FE-064: home page localizes public copy through the shared dictionary", () => {
 		render(() => <HomeRoute />);
 
 		expect(screen.getByText("Local-first knowledge, structured for search and automation")).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("public page localization", () => {
 		});
 	});
 
-	it("REQ-FE-063: about page localizes public copy through the shared dictionary", () => {
+	it("REQ-FE-064: about page localizes public copy through the shared dictionary", () => {
 		render(() => <AboutRoute />);
 
 		expect(screen.getByRole("heading", { name: "About Ugoite" })).toBeInTheDocument();
