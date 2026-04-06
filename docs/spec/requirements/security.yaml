@@ -424,5 +424,7 @@ requirements:
       - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_api_urls
       - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_backend_urls
       - test_cli_req_sec_011_config_set_allows_loopback_cleartext_development_endpoints
+      - test_cli_req_sec_011_config_set_allows_ipv6_loopback_cleartext_development_endpoints
+      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_ipv6_api_urls
       - test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoints
       - test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_endpoints_before_requests_are_sent

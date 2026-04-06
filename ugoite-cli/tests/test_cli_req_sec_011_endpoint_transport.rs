@@ -127,6 +127,57 @@ fn test_cli_req_sec_011_config_set_allows_loopback_cleartext_development_endpoin
 }
 
 #[test]
+fn test_cli_req_sec_011_config_set_allows_ipv6_loopback_cleartext_development_endpoints() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("cli-config.json");
+
+    let output = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            "http://[::1]:9999",
+        ])
+        .output()
+        .expect("config set ipv6 loopback backend");
+    assert_success(&output, "config set ipv6 loopback backend");
+    assert_eq!(
+        parse_stdout_json(&output)["config"]["backend_url"].as_str(),
+        Some("http://[::1]:9999")
+    );
+}
+
+#[test]
+fn test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_ipv6_api_urls() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("cli-config.json");
+
+    let output = cli_command(&config_path)
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "api",
+            "--api-url",
+            "http://[2001:db8::1]:8443/api",
+        ])
+        .output()
+        .expect("config set remote ipv6 api");
+
+    assert!(
+        !output.status.success(),
+        "remote cleartext ipv6 api endpoint should fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(
+        "API endpoint URL http://[2001:db8::1]:8443/api uses cleartext http:// for a non-loopback host"
+    ));
+    assert!(stderr.contains("https:// for remote endpoints"));
+}
+
+#[test]
 fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoints() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("cli-config.json");

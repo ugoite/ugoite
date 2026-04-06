@@ -184,25 +184,36 @@ pub fn normalize_space_root(root_path: &str) -> String {
     trimmed.to_string()
 }
 
-pub fn base_url(config: &EndpointConfig) -> Option<String> {
+struct SelectedServerEndpoint<'a> {
+    label: &'static str,
+    url: &'a str,
+}
+
+fn selected_server_endpoint(config: &EndpointConfig) -> Option<SelectedServerEndpoint<'_>> {
     match config.mode {
-        EndpointMode::Backend => Some(config.backend_url.trim_end_matches('/').to_string()),
-        EndpointMode::Api => Some(config.api_url.trim_end_matches('/').to_string()),
+        EndpointMode::Backend => Some(SelectedServerEndpoint {
+            label: "Backend endpoint",
+            url: &config.backend_url,
+        }),
+        EndpointMode::Api => Some(SelectedServerEndpoint {
+            label: "API endpoint",
+            url: &config.api_url,
+        }),
         EndpointMode::Core => None,
     }
 }
 
-fn endpoint_label(mode: &EndpointMode) -> Option<&'static str> {
-    match mode {
-        EndpointMode::Backend => Some("Backend endpoint"),
-        EndpointMode::Api => Some("API endpoint"),
-        EndpointMode::Core => None,
-    }
+pub fn base_url(config: &EndpointConfig) -> Option<String> {
+    selected_server_endpoint(config).map(|endpoint| endpoint.url.trim_end_matches('/').to_string())
 }
 
 fn is_loopback_host(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host
+    let normalized = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    normalized.eq_ignore_ascii_case("localhost")
+        || normalized
             .parse::<IpAddr>()
             .map(|address| address.is_loopback())
             .unwrap_or(false)
@@ -237,11 +248,12 @@ pub fn endpoint_transport_warning(url: &str, label: &str) -> Option<String> {
 }
 
 pub fn validated_base_url(config: &EndpointConfig) -> Result<Option<String>> {
-    let base = base_url(config);
-    if let (Some(label), Some(url)) = (endpoint_label(&config.mode), base.as_deref()) {
-        validate_server_endpoint_url(url, label)?;
-    }
-    Ok(base)
+    let Some(endpoint) = selected_server_endpoint(config) else {
+        return Ok(None);
+    };
+    let base = endpoint.url.trim_end_matches('/').to_string();
+    validate_server_endpoint_url(&base, endpoint.label)?;
+    Ok(Some(base))
 }
 
 pub fn print_json<T: serde::Serialize>(value: &T) {

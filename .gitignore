@@ -15,7 +15,11 @@ spaces/
 .vscode/mcp.json
 backend/.coverage
 frontend/coverage/
+frontend/.vinxi/
+frontend/.output/
+frontend/dist/
 docsite/coverage/
+e2e/test-results/
 /uv.lock
 __pycache__/
 /target/
