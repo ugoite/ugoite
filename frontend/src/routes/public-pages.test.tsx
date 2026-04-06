@@ -22,7 +22,9 @@ describe("public page localization", () => {
 	it("REQ-FE-064: home page localizes public copy through the shared dictionary", () => {
 		render(() => <HomeRoute />);
 
-		expect(screen.getByText("Local-first knowledge, structured for search and automation")).toBeInTheDocument();
+		expect(
+			screen.getByText("Local-first knowledge, structured for search and automation"),
+		).toBeInTheDocument();
 
 		setLocale("ja");
 
