@@ -6,34 +6,67 @@ export type OnboardingCard = {
 	title: string;
 };
 
+export type ConceptSummary = {
+	description: string;
+	title: string;
+};
+
 export const browserPathCaveat = {
 	badge: "Browser caveat today",
 	description:
-		"The current browser route still needs a running backend + frontend stack and an explicit login flow. The CLI in `core` mode is the thinnest local-first path right now.",
+		"The current browser route still needs a running backend + frontend stack and an explicit login flow. It also costs more setup than the CLI in `core` mode, which is still the lowest-setup-cost local-first path right now.",
 	headline:
-		"The browser path is still server-backed and login-gated, even though the data stays local-first.",
+		"The browser path is still server-backed and login-gated, even though the data stays local-first. It also has higher setup cost than CLI `core` mode.",
 } as const;
 
 export const conceptPrimerCard = {
 	badge: "Learn First",
 	description:
-		"Get the plain-language mental model for spaces, entries, forms, and search before choosing a surface.",
+		"Get the plain-language mental model for spaces, entries, forms, search, and surface choice before choosing a path.",
 	href: "/docs/guide/concepts",
 	icon: "💡",
 	title: "Understand core concepts",
 } as const satisfies OnboardingCard;
 
+export const coreConceptSummaries = [
+	{
+		description:
+			"A portable workspace that owns its entries, forms, assets, settings, and derived indexes for one project, team, or knowledge base.",
+		title: "Space",
+	},
+	{
+		description:
+			"One Markdown-backed record inside a space, such as a note, task, meeting log, or person page.",
+		title: "Entry",
+	},
+	{
+		description:
+			"The schema and template for an entry type, so extracted fields stay predictable and queryable.",
+		title: "Form",
+	},
+	{
+		description:
+			"You write Markdown first, forms extract typed fields when you want structure, and search/indexes are derived from that source data.",
+		title: "Markdown, extraction, and search",
+	},
+	{
+		description:
+			"Use the browser for guided exploration, the CLI for the thinnest local-first automation path, and backend/API surfaces when you intentionally want server-backed behavior.",
+		title: "Browser, CLI, and API",
+	},
+] as const satisfies readonly ConceptSummary[];
+
 export const primaryStartCards = [
 	{
-		badge: "Fastest path",
+		badge: "Fastest browser path",
 		description:
-			"Launch the released frontend + backend stack without cloning or building from source, then continue through the explicit browser login.",
+			"Launch the released frontend + backend stack with Docker and published image pulls, then continue through the explicit browser login.",
 		href: "/docs/guide/container-quickstart",
 		icon: "🚀",
 		title: "Try the published release",
 	},
 	{
-		badge: "Contributor path",
+		badge: "Highest setup cost",
 		description:
 			"Run the current workspace with mise run dev when you want the latest backend, frontend, and docsite together, then sign in explicitly at /login.",
 		href: "/docs/guide/local-dev-auth-login",
@@ -41,9 +74,9 @@ export const primaryStartCards = [
 		title: "Run from source",
 	},
 	{
-		badge: "Automation path",
+		badge: "Lowest setup cost",
 		description:
-			"Install the released CLI or use it from source when the terminal is your main surface.",
+			"Install the released CLI or use it from source when the terminal is your main surface and you want to avoid container infrastructure.",
 		href: "/docs/guide/cli",
 		icon: "⌨️",
 		title: "Use the CLI",
@@ -74,5 +107,13 @@ export const nextStepCards = [
 		href: "/docs/spec/index",
 		icon: "📚",
 		title: "Read design and source docs",
+	},
+	{
+		badge: "Ops",
+		description:
+			"Open the operational guide hub for health checks, env vars, deployment, log redaction, storage cleanup, migration, and unauthorized-space fixes.",
+		href: "/docs/guide/operations",
+		icon: "🧭",
+		title: "Run and troubleshoot the stack",
 	},
 ] as const satisfies readonly OnboardingCard[];

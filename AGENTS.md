@@ -33,7 +33,7 @@ uvx ruff check --select ALL --ignore-noqa .  # Lint Python (CI-aligned)
 uvx ruff format --check .                    # Format check (CI-aligned)
 cd backend && uv run ty check .              # Type check backend
 cd ugoite-core && uv run ty check .          # Type check core Python bindings
-cd ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo test --no-default-features
+cd ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && mise run test:coverage
 cd frontend && biome ci .                    # Check frontend
 
 ```
