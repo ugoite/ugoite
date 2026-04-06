@@ -1158,6 +1158,31 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     assert!(remote_patch_request.contains(r#""storage_config":{"uri":"memory://remote"}"#));
     assert!(remote_patch_request.contains(r#""settings":{"theme":"dark"}"#));
 
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"remote-space","settings":[]}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let remote_array_settings_patch_output = cli_command(&remote_config_path)
+        .args(["space", "patch", "remote-space", "--settings", r#"[]"#])
+        .output()
+        .expect("remote space patch array settings");
+    assert_success(
+        &remote_array_settings_patch_output,
+        "remote space patch array settings",
+    );
+    let remote_array_settings_patch_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("remote space patch array settings request");
+    handle
+        .join()
+        .expect("join remote space patch array settings server");
+    assert!(remote_array_settings_patch_request.starts_with("PATCH /spaces/remote-space HTTP/1.1",));
+    assert!(remote_array_settings_patch_request.contains(r#""settings":[]}"#));
+
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"[]"#);
     write_endpoint_config(
         &remote_config_path,

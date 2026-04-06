@@ -21,7 +21,7 @@ MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS = frozenset(
         "members",
         "membership_version",
         "owner_user_id",
-    }
+    },
 )
 TotpCode = Annotated[
     str,

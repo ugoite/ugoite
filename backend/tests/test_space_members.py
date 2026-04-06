@@ -202,9 +202,9 @@ def test_space_patch_rejects_membership_managed_settings(
                             "user_id": "ghost-user",
                             "role": "admin",
                             "state": "active",
-                        }
-                    }
-                }
+                        },
+                    },
+                },
             },
         )
 
