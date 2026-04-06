@@ -52,15 +52,32 @@ fn build_asset_entry_content(name: &str, link: &str, uploaded_at: &str) -> Strin
     )
 }
 
+fn normalize_asset_basename(segment: &str) -> Option<String> {
+    let trimmed = segment.trim();
+    if trimmed.is_empty() || matches!(trimmed, "." | "..") {
+        return None;
+    }
+
+    let flattened = trimmed
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>();
+    let single_line = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+    let metadata_safe = single_line.trim_start_matches('#').trim_start();
+
+    if metadata_safe.is_empty() {
+        None
+    } else {
+        Some(metadata_safe.to_string())
+    }
+}
+
 fn normalize_asset_filename(filename: &str, fallback_name: &str) -> String {
     let basename = filename
         .rsplit(['/', '\\'])
         .find(|segment| !segment.is_empty())
         .unwrap_or("");
-    if basename.is_empty() || matches!(basename, "." | "..") {
-        return fallback_name.to_string();
-    }
-    basename.to_string()
+    normalize_asset_basename(basename).unwrap_or_else(|| fallback_name.to_string())
 }
 
 pub async fn save_asset(
