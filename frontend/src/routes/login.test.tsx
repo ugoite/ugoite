@@ -106,7 +106,7 @@ describe("/login", () => {
 
 		render(() => <LoginRoute />);
 
-		await screen.findByRole("button", { name: "Continue with Mock OAuth" });
+		await screen.findByRole("button", { name: "Continue with Local Demo Login" });
 		expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
 		expect(screen.queryByRole("link", { name: "Go to Spaces" })).not.toBeInTheDocument();
 	});
