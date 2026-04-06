@@ -115,8 +115,8 @@ find ./spaces -maxdepth 2 -type f | head
   bootstraps for you after login.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
-- If you skipped the primer earlier, read [Core Concepts](concepts.md) now
-  before exploring more of the UI or the deeper docs.
+- Read [Core Concepts](concepts.md) once you want the mental model for spaces,
+  entries, forms, and search behind the browser workflow you just started. If you skipped the primer earlier, do that before exploring more of the UI or the deeper docs.
 - After that first browser-created note, inspect `./spaces` (or your overridden
   `UGOITE_SPACES_DIR`) to see where the data now lives on the host.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first

@@ -272,7 +272,7 @@ requirements:
       tests:
       - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
       - 'REQ-E2E-008: landing page labels the application overview CTA as documentation'
-      - 'REQ-E2E-008: landing and getting-started pages keep the concepts primer ahead of path selection'
+      - 'REQ-E2E-008: landing and getting-started pages keep path choices ahead of the concepts primer'
       - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
       - 'REQ-E2E-008: run from source card opens the canonical host-dev workflow'
       - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
@@ -283,6 +283,7 @@ requirements:
       - 'REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference docs available after the first step'
       - 'REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-first paths'
       - 'REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references'
+      - 'REQ-E2E-008: onboarding content keeps core concepts ready for the follow-up primer'
     pytest:
     - file: docs/tests/test_guides.py
       tests:
