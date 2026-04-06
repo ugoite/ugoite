@@ -20,11 +20,19 @@ describe("/api/[...path]", () => {
 	it("REQ-OPS-015: proxy login stores browser auth in an HttpOnly cookie and redacts the bearer token", async () => {
 		vi.stubEnv("BACKEND_URL", "http://localhost:8000");
 		const fetchMock = vi.fn().mockResolvedValue(
-			Response.json({
-				bearer_token: "backend-token",
-				user_id: "dev-alice",
-				expires_at: 1_900_000_000,
-			}),
+			new Response(
+				JSON.stringify({
+					bearer_token: "backend-token",
+					user_id: "dev-alice",
+					expires_at: 1_900_000_000,
+				}),
+				{
+					headers: {
+						"content-type": "application/json",
+						"set-cookie": "upstream-session=backend-cookie; Path=/; HttpOnly",
+					},
+				},
+			),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -48,6 +56,7 @@ describe("/api/[...path]", () => {
 		expect(setCookie).toContain("Max-Age=");
 		expect(setCookie).toContain("Expires=");
 		expect(setCookie).not.toContain("Secure");
+		expect(setCookie).not.toContain("upstream-session=");
 	});
 
 	it("REQ-OPS-015: proxy login marks auth cookies Secure when HTTPS is forwarded", async () => {
