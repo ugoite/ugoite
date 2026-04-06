@@ -72,16 +72,16 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
 	expect(conceptPrimerCard).toEqual({
-		badge: "Learn First",
+		badge: "Concept primer",
 		description:
-			"Get the plain-language mental model for spaces, entries, forms, search, and surface choice before choosing a path.",
+			"Get the plain-language mental model for spaces, entries, forms, search, and surface choice after you pick a path and before you go deeper into auth or specs.",
 		href: "/docs/guide/concepts",
 		icon: "💡",
 		title: "Understand core concepts",
 	});
 });
 
-test("REQ-E2E-008: onboarding content defines core concepts before asking newcomers to choose a path", () => {
+test("REQ-E2E-008: onboarding content keeps core concepts ready for the follow-up primer", () => {
 	expect(coreConceptSummaries.map((concept) => concept.title)).toEqual([
 		"Space",
 		"Entry",

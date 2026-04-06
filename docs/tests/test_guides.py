@@ -142,6 +142,11 @@ DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
 AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
+CONCEPTS_GUIDE_PATH = GUIDE_DIR / "concepts.md"
+DOCSITE_HOME_PAGE_PATH = REPO_ROOT / "docsite" / "src" / "pages" / "index.astro"
+DOCSITE_GETTING_STARTED_PAGE_PATH = (
+    REPO_ROOT / "docsite" / "src" / "pages" / "getting-started" / "index.astro"
+)
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
 CLEANUP_DEV_PORTS_PATH = REPO_ROOT / "scripts" / "cleanup-dev-ports.sh"
@@ -1133,6 +1138,12 @@ def test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack() -> N
 def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
     """REQ-E2E-008: README start-here mirrors the docsite getting-started taxonomy."""
     readme = README_PATH.read_text(encoding="utf-8")
+    docsite_home = DOCSITE_HOME_PAGE_PATH.read_text(encoding="utf-8")
+    getting_started = DOCSITE_GETTING_STARTED_PAGE_PATH.read_text(encoding="utf-8")
+    concepts_guide = CONCEPTS_GUIDE_PATH.read_text(encoding="utf-8")
+    quickstart_guide = CONTAINER_QUICKSTART_GUIDE_PATH.read_text(encoding="utf-8")
+    normalized_concepts_guide = " ".join(concepts_guide.split())
+    normalized_quickstart_guide = " ".join(quickstart_guide.split())
     match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
     if match is None:
         message = "README must keep a Start Here section"
@@ -1141,10 +1152,10 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
     section = match.group("section")
     required_fragments = [
         "docsite getting-started flow is the canonical newcomer decision tree",
-        "Understand core concepts",
         "Try the published release",
         "Run from source",
         "Use the CLI",
+        "Understand core concepts",
         "Explore the browser app",
         "Understand auth and access",
         "Read design and source docs",
@@ -1173,22 +1184,49 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         )
         raise AssertionError(message)
 
-    if (
-        section.count("(docs/guide/local-dev-auth-login.md)")
-        < RUN_FROM_SOURCE_LINK_COUNT
-    ):
-        message = (
+    detail_candidates = (
+        (
+            '<section id="start-paths"' not in docsite_home
+            or '<section id="concept-primer"' not in docsite_home
+            or docsite_home.index('<section id="start-paths"')
+            > docsite_home.index('<section id="concept-primer"'),
+            "docsite home must keep path choices before the concepts primer",
+        ),
+        (
+            '<section id="first-steps"' not in getting_started
+            or '<section id="concepts"' not in getting_started
+            or getting_started.index('<section id="first-steps"')
+            > getting_started.index('<section id="concepts"'),
+            "docsite getting-started must keep path choices before the concepts primer",
+        ),
+        (
+            "path you already picked" not in normalized_concepts_guide
+            or "return to the one you already started" not in normalized_concepts_guide,
+            "concepts guide must frame the primer as supporting an already-chosen path",
+        ),
+        (
+            "Read [Core Concepts](concepts.md) once you want the mental model"
+            not in normalized_quickstart_guide,
+            (
+                "container quickstart must keep the concepts guide as an "
+                "optional follow-up"
+            ),
+        ),
+        (
+            section.count("(docs/guide/local-dev-auth-login.md)")
+            < RUN_FROM_SOURCE_LINK_COUNT,
             "README Start Here section must point both Run from source entries at "
-            "docs/guide/local-dev-auth-login.md"
-        )
-        raise AssertionError(message)
-
-    if "Run from source](docs/guide/docker-compose.md)" in section:
-        message = (
+            "docs/guide/local-dev-auth-login.md",
+        ),
+        (
+            "Run from source](docs/guide/docker-compose.md)" in section,
             "README Start Here section must not keep the outdated Run from source "
-            "docker-compose guide link"
-        )
-        raise AssertionError(message)
+            "docker-compose guide link",
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:

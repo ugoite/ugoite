@@ -10,8 +10,8 @@ import {
 
 const toc = [
   { id: "overview", title: "Overview" },
-  { id: "concepts", title: "Core Concepts" },
   { id: "first-steps", title: "Choose a Path" },
+  { id: "concepts", title: "Core Concepts" },
   { id: "next", title: "Next" },
 ];
 ---
@@ -33,14 +33,36 @@ const toc = [
       </div>
     </section>
 
+    <section id="first-steps" class="doc-section-stack">
+      <div class="doc-section-copy">
+        <p class="doc-pill doc-kicker">Choose a Path</p>
+        <h2 class="doc-section-title">Start with the path that matches what you need today</h2>
+        <p class="doc-lead">
+          Pick the shortest route for what you want to do right now, then come back to the concepts primer once you want the shared mental model behind spaces, entries, forms, search, and surface choice.
+        </p>
+      </div>
+
+      <div class="doc-grid">
+        {primaryStartCards.map((step) => (
+          <a href={withBasePath(step.href)} class="doc-card doc-card-hover doc-link-card">
+            <div class="doc-link-card__icon" aria-hidden="true">{step.icon}</div>
+            <div class="doc-link-card__eyebrow">
+              <span class="doc-pill">{step.badge}</span>
+            </div>
+            <h2 class="doc-link-card__title">{step.title}</h2>
+            <p class="doc-link-card__body">{step.description}</p>
+            <div class="doc-link-card__footer">Open guide</div>
+          </a>
+        ))}
+      </div>
+    </section>
+
     <section id="concepts" class="doc-card doc-section-stack">
       <div class="doc-section-copy">
-        <p class="doc-pill doc-kicker">Core Concepts</p>
-        <h2 class="doc-section-title">Learn the mental model before you pick a tool</h2>
+        <p class="doc-pill doc-kicker">Concept primer</p>
+        <h2 class="doc-section-title">Use the mental model when you want more context</h2>
         <p class="doc-lead">
-          Spend a few minutes on spaces, entries, forms, Markdown-backed search,
-          and surface choice first. It makes the browser, CLI, API, and design
-          docs easier to understand later.
+          After you pick a path, spend a few minutes on spaces, entries, forms, Markdown-backed search, and surface choice before you dive deeper into auth or the specification docs.
         </p>
       </div>
 
@@ -63,27 +85,6 @@ const toc = [
           <p class="doc-link-card__body">{conceptPrimerCard.description}</p>
           <div class="doc-link-card__footer">Open the full primer</div>
         </a>
-      </div>
-    </section>
-
-    <section id="first-steps" class="doc-section-stack">
-      <div class="doc-section-copy">
-        <p class="doc-pill doc-kicker">Choose a Path</p>
-        <h2 class="doc-section-title">Start with the path that matches what you need today</h2>
-      </div>
-
-      <div class="doc-grid">
-        {primaryStartCards.map((step) => (
-          <a href={withBasePath(step.href)} class="doc-card doc-card-hover doc-link-card">
-            <div class="doc-link-card__icon" aria-hidden="true">{step.icon}</div>
-            <div class="doc-link-card__eyebrow">
-              <span class="doc-pill">{step.badge}</span>
-            </div>
-            <h2 class="doc-link-card__title">{step.title}</h2>
-            <p class="doc-link-card__body">{step.description}</p>
-            <div class="doc-link-card__footer">Open guide</div>
-          </a>
-        ))}
       </div>
     </section>
 

@@ -98,7 +98,7 @@ test.describe("Docsite onboarding-first navigation", () => {
 		await expect(page.getByText("Application Docs")).toBeVisible();
 	});
 
-	test("REQ-E2E-008: landing and getting-started pages keep the concepts primer ahead of path selection", async ({
+	test("REQ-E2E-008: landing and getting-started pages keep path choices ahead of the concepts primer", async ({
 		page,
 	}) => {
 		await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
@@ -106,8 +106,8 @@ test.describe("Docsite onboarding-first navigation", () => {
 		const homeSectionOrder = await page
 			.locator(".doc-page-stack > section[id]")
 			.evaluateAll((sections) => sections.map((section) => section.id));
-		expect(homeSectionOrder.indexOf("concept-primer")).toBeLessThan(
-			homeSectionOrder.indexOf("start-paths"),
+		expect(homeSectionOrder.indexOf("start-paths")).toBeLessThan(
+			homeSectionOrder.indexOf("concept-primer"),
 		);
 
 		await page.goto(buildDocsiteUrl("/getting-started"), {
@@ -117,8 +117,8 @@ test.describe("Docsite onboarding-first navigation", () => {
 		const gettingStartedSectionOrder = await page
 			.locator(".doc-page-stack > section[id]")
 			.evaluateAll((sections) => sections.map((section) => section.id));
-		expect(gettingStartedSectionOrder.indexOf("concepts")).toBeLessThan(
-			gettingStartedSectionOrder.indexOf("first-steps"),
+		expect(gettingStartedSectionOrder.indexOf("first-steps")).toBeLessThan(
+			gettingStartedSectionOrder.indexOf("concepts"),
 		);
 	});
 
