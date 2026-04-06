@@ -80,11 +80,9 @@ def _passkey_headers(
 
 @pytest.fixture(autouse=True)
 def _clear_dev_login_attempts() -> Iterator[None]:
-    with auth_endpoints._LOGIN_ATTEMPTS_LOCK:
-        auth_endpoints._LOGIN_ATTEMPTS.clear()
+    auth_endpoints.clear_login_attempts()
     yield
-    with auth_endpoints._LOGIN_ATTEMPTS_LOCK:
-        auth_endpoints._LOGIN_ATTEMPTS.clear()
+    auth_endpoints.clear_login_attempts()
 
 
 def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(

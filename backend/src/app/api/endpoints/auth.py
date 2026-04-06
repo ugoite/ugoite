@@ -221,7 +221,9 @@ def _prune_login_attempt_state(
         state.failed_at.clear()
 
     cutoff = now - LOGIN_FAILURE_WINDOW_SECONDS
-    state.failed_at[:] = [failed_at for failed_at in state.failed_at if failed_at >= cutoff]
+    state.failed_at[:] = [
+        failed_at for failed_at in state.failed_at if failed_at >= cutoff
+    ]
 
     if state.locked_until is None and not state.failed_at:
         _LOGIN_ATTEMPTS.pop(key, None)
@@ -266,6 +268,12 @@ def _record_login_failure(key: str) -> int | None:
 def _clear_login_failures(key: str) -> None:
     with _LOGIN_ATTEMPTS_LOCK:
         _LOGIN_ATTEMPTS.pop(key, None)
+
+
+def clear_login_attempts() -> None:
+    """Reset in-memory login throttling state."""
+    with _LOGIN_ATTEMPTS_LOCK:
+        _LOGIN_ATTEMPTS.clear()
 
 
 @router.get("/config")
