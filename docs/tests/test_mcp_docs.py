@@ -95,11 +95,13 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
         for ok, message in (
             (
                 "Resource-First MCP Surface" in spec_index,
-                "docs/spec/index.md must frame the current vision around a resource-first MCP surface",
+                "docs/spec/index.md must frame the current vision around a "
+                "resource-first MCP surface",
             ),
             (
                 "Resource-First MCP" in architecture,
-                "docs/spec/architecture/overview.md must describe the current MCP design as resource-first",
+                "docs/spec/architecture/overview.md must describe the current "
+                "MCP design as resource-first",
             ),
             (
                 "ugoite://{space_id}/entries/list" in mcp_doc,
@@ -107,39 +109,48 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
             ),
             (
                 "No MCP tools are currently exposed." in mcp_doc,
-                "docs/spec/api/mcp.md must state that no MCP tools are currently exposed",
+                "docs/spec/api/mcp.md must state that no MCP tools are "
+                "currently exposed",
             ),
             (
                 "No MCP prompts are currently exposed." in mcp_doc,
-                "docs/spec/api/mcp.md must state that no MCP prompts are currently exposed",
+                "docs/spec/api/mcp.md must state that no MCP prompts are "
+                "currently exposed",
             ),
             (
                 "### `ugoite://{space_id}/entries/{entry_id}`" not in mcp_doc,
-                "docs/spec/api/mcp.md must not present unshipped entry detail resources as current behavior",
+                "docs/spec/api/mcp.md must not present unshipped entry detail "
+                "resources as current behavior",
             ),
             (
                 "### `ugoite://{space_id}/forms`" not in mcp_doc,
-                "docs/spec/api/mcp.md must not present unshipped form resources as current behavior",
+                "docs/spec/api/mcp.md must not present unshipped form resources "
+                "as current behavior",
             ),
             (
                 "resource-first MCP baseline" in normalized_v0_2,
-                "docs/spec/versions/v0.2.md must describe v0.2 work as expanding beyond today's resource-first MCP baseline",
+                "docs/spec/versions/v0.2.md must describe v0.2 work as "
+                "expanding beyond today's resource-first MCP baseline",
             ),
             (
                 "resource-first MCP baseline" in normalized_versions_index,
-                "docs/spec/versions/index.md must summarize v0.2 as work beyond today's resource-first MCP baseline",
+                "docs/spec/versions/index.md must summarize v0.2 as work "
+                "beyond today's resource-first MCP baseline",
             ),
             (
                 "`entries/list`" in mvp,
-                "docs/version/v0.1/mvp.yaml must describe the completed MCP work as the entries/list baseline",
+                "docs/version/v0.1/mvp.yaml must describe the completed MCP "
+                "work as the entries/list baseline",
             ),
             (
                 "resource-first MCP baseline" in normalized_v0_2_yaml,
-                "docs/version/v0.2.yaml must summarize the release stream as work beyond today's resource-first MCP baseline",
+                "docs/version/v0.2.yaml must summarize the release stream as "
+                "work beyond today's resource-first MCP baseline",
             ),
             (
                 "resource-first MCP baseline" in normalized_roadmap,
-                "docs/version/unknown/roadmap.yaml must frame future AI work as growing from today's resource-first MCP baseline",
+                "docs/version/unknown/roadmap.yaml must frame future AI work "
+                "as growing from today's resource-first MCP baseline",
             ),
             (
                 len(backend_mcp_resources) == 1,
