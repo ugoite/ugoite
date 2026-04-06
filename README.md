@@ -20,7 +20,7 @@ GitHub without comparing two different onboarding maps.
 
 > **Browser path today:** the current browser route still needs a running
 > backend + frontend stack and an explicit `/login` flow. If you want the
-> thinnest local-first path, start with the CLI in `core` mode.
+> lowest-setup-cost local-first path, start with the CLI in `core` mode.
 
 ### Choose your first step
 
@@ -44,6 +44,9 @@ GitHub without comparing two different onboarding maps.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
 
+For a brand-new browser space, the first productive in-app sequence is:
+**open the space, create a form, then create entries from that form**.
+
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
 frontend stack and an explicit login flow, even though the data remains in
@@ -57,11 +60,11 @@ setup steps.
 
 ### Which entry path should you choose?
 
-| Path | Best when | Trade-off |
-| --- | --- | --- |
-| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Runs both frontend and backend containers, and still requires an explicit login flow |
-| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest setup cost: source checkout, toolchain install, backend + frontend + docsite processes, and auth setup |
+| Path | Best when | Setup cost / requirements | Trade-off |
+| --- | --- | --- | --- |
+| [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
+| [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full contributor surface, but also the heaviest path |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
@@ -111,22 +114,21 @@ e2e/                # End-to-end tests (Bun)
 
 ## Documentation Map
 
-Start with the user-facing guides:
+Use **Start Here** above for the newcomer path. This section only lists the
+additional references you usually open after that first choice.
 
-- [Core Concepts](docs/guide/concepts.md) - Learn what spaces, entries, forms, and search mean before choosing a surface
-- [Container Quick Start](docs/guide/container-quickstart.md) - Run published GHCR release images
-- [CLI Guide](docs/guide/cli.md) - Install the released CLI or build it from source
-- [Local Dev Auth/Login](docs/guide/local-dev-auth-login.md) - Configure local bearer token auth
+### Operational guides
+
 - [Backend Healthcheck](docs/guide/backend-healthcheck.md) - Quick backend readiness check
+- [Environment Matrix](docs/guide/env-matrix.md) - Runtime variables and which surface consumes them
 
-Go deeper when you need architecture or implementation contracts:
+### Design and implementation references
 
-- [Specification Index](docs/spec/index.md) - Technical specifications
 - [Architecture Overview](docs/spec/architecture/overview.md) - System design
-- [API Reference](docs/spec/api/rest.md) - REST API documentation
+- [REST API Reference](docs/spec/api/rest.md) - Backend HTTP contract
+- [MCP Reference](docs/spec/api/mcp.md) - Current resource-first MCP surface
 
-Track ongoing work:
-
+### Release planning
 - [Versions Overview](docs/spec/versions/index.md) - Human-readable release streams
   and planned milestones
 - [Machine-readable roadmap](docs/version/unknown/roadmap.yaml) - YAML milestone
@@ -192,6 +194,11 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 ## Setup & Development (mise)
 
 Install dependencies and repository pre-commit hooks:
+
+The repository root `mise.toml` is the contributor-facing source of truth for
+managed tool versions. Use that shared toolchain story first, then treat
+package README prerequisites as workflow notes on top of the same managed
+environment.
 
 ```bash
 mise run setup
@@ -400,6 +407,12 @@ Run all tests from repo root:
 mise run test
 ```
 
+Run the CI-aligned CLI coverage gate without the full repo suite:
+
+```bash
+mise run //ugoite-cli:test:coverage
+```
+
 Run the authoritative local E2E suite. It prefers the docker-compose path used
 by GitHub Actions when Docker is available, and otherwise falls back to a
 production-style host runner with the same Playwright JUnit/no-skips gates:
@@ -446,7 +459,10 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions welcome! See [AGENTS.md](AGENTS.md) for development guidelines.
+Contributions welcome! Start with [Run from source](docs/guide/local-dev-auth-login.md)
+for the canonical `mise run setup` -> `mise run dev` -> `/login` workflow. If
+you are using an AI coding agent in this repository, also read
+[AGENTS.md](AGENTS.md).
 
 1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
 2. Open an issue to discuss larger changes

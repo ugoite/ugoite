@@ -17,7 +17,7 @@ REQ-OPS-017: Release publish must ship container quick-start assets and document
 REQ-OPS-018: CLI release binaries and install path must stay documented and wired.
 REQ-OPS-019: Mise monorepo config roots must be explicit and complete.
 REQ-OPS-020: ugoite-minimum must keep WASM gates and boundary docs explicit.
-REQ-OPS-021: Frontend 100% coverage must be explicit in CI and root mise test.
+REQ-OPS-021: Frontend 100% coverage and Vitest drift prevention must stay explicit.
 REQ-OPS-022: E2E CI path-aware tiering must stay explicit for PRs and merge queue.
 REQ-OPS-023: Public installer package must stay separate from private tooling.
 REQ-OPS-024: Docsite 100% coverage must be explicit in CI and root mise test.
@@ -28,6 +28,8 @@ REQ-OPS-029: Pre-commit hook orchestration must stay executable in required CI.
 REQ-OPS-030: Release quick-start must stay continuously exercised before merge.
 REQ-OPS-031: GitHub Actions workflow refs must stay SHA-pinned and updatable.
 REQ-OPS-032: Local Conventional Commit hooks must stay current and warning-free.
+REQ-OPS-033: Local and CI Python test paths must reject warnings and skipped tests.
+REQ-OPS-034: Local direct-process E2E runs must not kill unrelated listeners.
 """
 
 from __future__ import annotations
@@ -142,15 +144,20 @@ LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login
 AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 WAIT_FOR_HTTP_PATH = REPO_ROOT / "scripts" / "wait-for-http.sh"
 RUST_TARGET_CLEANUP_PATH = REPO_ROOT / "scripts" / "cleanup-rust-targets.sh"
+CLEANUP_DEV_PORTS_PATH = REPO_ROOT / "scripts" / "cleanup-dev-ports.sh"
 RELEASE_MANIFEST_PATH = REPO_ROOT / ".github" / ".release-please-manifest.json"
 ROOT_PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
+FRONTEND_PACKAGE_JSON_PATH = REPO_ROOT / "frontend" / "package.json"
+FRONTEND_BUN_LOCK_PATH = REPO_ROOT / "frontend" / "bun.lock"
 HUSKY_COMMIT_MSG_PATH = REPO_ROOT / ".husky" / "commit-msg"
+PYTEST_NO_SKIPS_SCRIPT_PATH = REPO_ROOT / "scripts" / "check_pytest_no_skips.py"
 PUBLIC_PACKAGE_DIR = REPO_ROOT / "packages" / "ugoite"
 PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
+SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
 BACKEND_DOCKERFILE_PATH = REPO_ROOT / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE_PATH = REPO_ROOT / "frontend" / "Dockerfile"
@@ -230,6 +237,17 @@ REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
     "mise run setup",
     "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
     "local commits use the same hook chain as CI by default.",
+}
+REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS = {
+    "Local backend, ugoite-core, and docs pytest tasks also",
+    "run with `-W error`, emit JUnit XML into temporary files, and call",
+    "`scripts/check_pytest_no_skips.py` so `mise run test` fails on the same warning",
+    "and skipped-test regressions that CI rejects.",
+}
+REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS = {
+    "fails fast when ports",
+    "instead of killing unrelated listeners;",
+    "`mise run cleanup:ports` first.",
 }
 REQUIRED_ARTIFACT_HYGIENE_SPEC_SNIPPETS = [
     "scripts/check-root-artifact-hygiene.sh",
@@ -665,6 +683,8 @@ REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "`ugoite auth login`",
     "`ugoite auth token-clear`",
     '`eval "$(ugoite auth token-clear)"`',
+    "`ugoite config set --mode core`",
+    "The local filesystem examples in this section assume `core` mode",
 }
 REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
@@ -853,11 +873,14 @@ REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//frontend:test:coverage",
     "node ./node_modules/vitest/vitest.mjs run --coverage",
+    "Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together",
 }
 REQUIRED_FRONTEND_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage"
 )
 REQUIRED_FRONTEND_COVERAGE_STEP_NAME = "Run Vitest with 100% coverage gate"
+REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS = {"vitest", "@vitest/*"}
+REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES = ("vitest", "@vitest/coverage-v8")
 REQUIRED_DOCSITE_COVERAGE_DOC_FRAGMENTS = {
     "100% coverage",
     "//docsite:test:coverage",
@@ -867,6 +890,10 @@ REQUIRED_DOCSITE_COVERAGE_COMMAND = (
     "node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
 )
 REQUIRED_DOCSITE_COVERAGE_STEP_NAME = "Run docsite Vitest with 100% coverage gate"
+REQUIRED_CLI_COVERAGE_COMMAND = (
+    "cargo llvm-cov --summary-only --fail-under-lines 100 "
+    "--no-default-features --jobs 1"
+)
 REQUIRED_STRICT_NPM_CI_COMMAND = "npm ci"
 REQUIRED_STRICT_ROOT_NPM_CI_COMMAND = "npm ci --no-fund --no-audit"
 REQUIRED_STRICT_BUN_INSTALL_COMMAND = "bun install --frozen-lockfile"
@@ -1186,6 +1213,159 @@ def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
             + ", ".join(missing)
         )
         raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs() -> None:
+    """REQ-E2E-008: README documentation map stays focused on deeper references."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        r"## Documentation Map\n(?P<section>.*?)(?:\n## |\Z)",
+        readme,
+        re.DOTALL,
+    )
+    if match is None:
+        message = "README must keep a Documentation Map section"
+        raise AssertionError(message)
+
+    section = match.group("section")
+    required_fragments = [
+        "Use **Start Here** above for the newcomer path.",
+        "Backend Healthcheck",
+        "Environment Matrix",
+        "Architecture Overview",
+        "REST API Reference",
+        "MCP Reference",
+        "Versions Overview",
+        "Machine-readable roadmap",
+    ]
+    missing = [fragment for fragment in required_fragments if fragment not in section]
+    if missing:
+        message = (
+            "README Documentation Map is missing deeper-reference fragments: "
+            + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+    duplicated_start_here_references = [
+        "Core Concepts",
+        "Container Quick Start",
+        "CLI Guide",
+        "Local Dev Auth/Login",
+        "Specification Index",
+    ]
+    duplicates = [
+        fragment for fragment in duplicated_start_here_references if fragment in section
+    ]
+    if duplicates:
+        message = (
+            "README Documentation Map must not repeat Start Here references: "
+            + ", ".join(duplicates)
+        )
+        raise AssertionError(message)
+
+
+def test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs() -> None:
+    """REQ-E2E-008: source contributor docs keep one canonical onboarding path."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    spec_index = SPEC_INDEX_PATH.read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                README_PATH,
+                ["Start with [Run from source](docs/guide/local-dev-auth-login.md)"],
+                "README Contributing section must route humans through Run from source",
+            ),
+            _require_file_contains(
+                SPEC_INDEX_PATH,
+                [
+                    "[Run from source](../guide/local-dev-auth-login.md)",
+                    "[Contributor onboarding](../guide/local-dev-auth-login.md)",
+                ],
+                (
+                    "spec index must point human contributor guidance at "
+                    "local-dev-auth-login"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "docker-compose.md",
+                [
+                    "alternative way to run Ugoite from source",
+                    (
+                        "[Local Development Authentication and Login]"
+                        "(local-dev-auth-login.md)"
+                    ),
+                ],
+                (
+                    "docker-compose guide must position itself as the "
+                    "alternative source workflow"
+                ),
+            ),
+        ]
+        if detail
+    ]
+
+    if (
+        "Contributions welcome! See [AGENTS.md](AGENTS.md) for development "
+        "guidelines." in readme
+    ):
+        details.append(
+            "README Contributing section must not send human contributors to AGENTS.md",
+        )
+
+    if "[Run from source](../guide/docker-compose.md)" in spec_index:
+        details.append(
+            "spec index must not keep docker-compose as the Run from source path",
+        )
+
+    if "[Contributing](../../AGENTS.md)" in spec_index:
+        details.append(
+            "spec index must not label AGENTS.md as human contributing guidance",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_e2e_008_concepts_primer_order_stays_consistent() -> None:
+    """REQ-E2E-008: concepts primer guidance stays consistent across newcomer docs."""
+    quick_start = (GUIDE_DIR / "container-quickstart.md").read_text(encoding="utf-8")
+
+    details = [
+        detail
+        for detail in [
+            _require_file_contains(
+                GUIDE_DIR / "container-quickstart.md",
+                [
+                    "If you skipped the primer earlier",
+                    "[Core Concepts](concepts.md)",
+                    "before exploring more of the UI or the deeper docs",
+                ],
+                (
+                    "container-quickstart.md must keep concepts ahead of "
+                    "deeper exploration"
+                ),
+            ),
+            _require_file_contains(
+                GUIDE_DIR / "concepts.md",
+                ["before choosing", "Once the concepts make sense, choose the surface"],
+                "concepts.md must keep the concepts-first route into surface guides",
+            ),
+        ]
+        if detail
+    ]
+
+    if "Read [Core Concepts](concepts.md) next" in quick_start:
+        details.append(
+            (
+                "container-quickstart.md must not tell newcomers to defer "
+                "concepts until after deeper UI exploration"
+            ),
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
 
 
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
@@ -1542,9 +1722,6 @@ def _collect_req_ops_006_ci_details() -> list[str]:
     )
 
     workflow_text = RUST_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
-    cli_coverage_command = (
-        "cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features"
-    )
     if missing_ci_steps:
         missing_parts.append("rust-ci missing steps: " + ", ".join(missing_ci_steps))
     if "mise run //ugoite-minimum:test" not in root_runs:
@@ -1559,14 +1736,14 @@ def _collect_req_ops_006_ci_details() -> list[str]:
         missing_parts.append("rust-ci minimum coverage gate must run the wrapper")
     if "components: rustfmt, clippy, llvm-tools-preview" not in workflow_text:
         missing_parts.append("rust-ci must install llvm-tools-preview")
-    if cli_coverage_command not in workflow_text:
+    if REQUIRED_CLI_COVERAGE_COMMAND not in workflow_text:
         missing_parts.append("rust-ci must enforce 100% ugoite-cli coverage")
 
     spec_detail = _require_file_contains(
         CI_CD_SPEC_PATH,
         [
-            cli_coverage_command,
-            "mise run //ugoite-cli:test",
+            REQUIRED_CLI_COVERAGE_COMMAND,
+            "mise run //ugoite-cli:test:coverage",
             "100% CLI line-coverage gate",
         ],
         "ci-cd spec must document the ugoite-cli 100% coverage gate",
@@ -1690,19 +1867,31 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 "uv run maturin develop",
                 "ugoite-core build:clean task must rebuild the editable Rust extension",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 core_mise,
                 "test:no-build",
-                [
-                    "cargo test -j 1",
-                    (
-                        "if [ -d tests ]; then uv run --with pytest --with "
-                        "pytest-asyncio python -m pytest; fi"
-                    ),
-                ],
+                "cargo test -j 1",
+                (
+                    "ugoite-core test:no-build task must run crate tests without "
+                    "rebuilding"
+                ),
+            ),
+            _require_task_contains(
+                core_mise,
+                "test:no-build",
+                "python -m pytest",
                 (
                     "ugoite-core test:no-build task must run crate and Python "
                     "binding tests without rebuilding"
+                ),
+            ),
+            _require_task_excludes(
+                core_mise,
+                "test:no-build",
+                "uv run maturin develop",
+                (
+                    "ugoite-core test:no-build task must not rebuild the editable "
+                    "extension"
                 ),
             ),
             _require_exact_task_depends(
@@ -1711,10 +1900,10 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 ["build"],
                 "ugoite-core test task must depend on build",
             ),
-            _require_exact_task_run(
+            _require_task_contains(
                 backend_mise,
                 "test:no-build",
-                ["uv run pytest"],
+                "uv run pytest",
                 "backend test:no-build task must run backend pytest directly",
             ),
             _require_exact_task_depends(
@@ -1743,6 +1932,37 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
             ),
             _require_task_contains(
                 cli_mise,
+                "test:coverage",
+                "command -v cargo-llvm-cov >/dev/null 2>&1 || "
+                "cargo install cargo-llvm-cov --locked",
+                "ugoite-cli test:coverage task must install cargo-llvm-cov when needed",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "rustup component add llvm-tools-preview",
+                "ugoite-cli test:coverage task must install llvm-tools-preview",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "cargo clean -p ugoite-cli",
+                "ugoite-cli test:coverage task must clean package-local Rust artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                "cargo llvm-cov clean --workspace",
+                "ugoite-cli test:coverage task must clean llvm-cov workspace artifacts",
+            ),
+            _require_task_contains(
+                cli_mise,
+                "test:coverage",
+                REQUIRED_CLI_COVERAGE_COMMAND,
+                "ugoite-cli test:coverage task must enforce 100% CLI line coverage",
+            ),
+            _require_task_contains(
+                cli_mise,
                 "test:clean",
                 "cargo clean -p ugoite-cli",
                 "ugoite-cli test:clean task must clean package-local Rust artifacts",
@@ -1767,7 +1987,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                     "mise run //backend:test:no-build",
                     "mise run //frontend:test:coverage",
                     "mise run //docsite:test:coverage",
-                    "mise run //ugoite-cli:test",
+                    "mise run //ugoite-cli:test:coverage",
                     "mise run //ugoite-core:test:no-build",
                     "mise run //ugoite-minimum:test",
                     "mise run test:docs",
@@ -1794,6 +2014,7 @@ def test_docs_req_ops_011_rust_target_cache_discipline_declared() -> None:
                 README_PATH,
                 [
                     "mise run cleanup:rust-targets",
+                    "mise run //ugoite-cli:test:coverage",
                     "mise run //ugoite-core:build:clean",
                     "mise run //ugoite-cli:test:clean",
                 ],
@@ -2970,10 +3191,16 @@ def test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared() -> None:
 
 
 def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
-    """REQ-OPS-021: Frontend 100% coverage must stay explicit in CI and root tests."""
+    """REQ-OPS-021: Frontend coverage and Vitest alignment must stay explicit."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    frontend_package = _load_json_mapping(FRONTEND_PACKAGE_JSON_PATH)
+    frontend_bun_lock = _read_required_text(
+        FRONTEND_BUN_LOCK_PATH,
+        missing_message="{path} is missing",
+    )
+    dependabot = _load_yaml_base_mapping(REPO_ROOT / ".github" / "dependabot.yml")
     coverage_task = _load_mise_task_mapping(
         frontend_mise,
         task_name="test:coverage",
@@ -2994,6 +3221,60 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         for fragment in REQUIRED_FRONTEND_COVERAGE_DOC_FRAGMENTS
         if fragment not in guide_text
     )
+    frontend_dev_dependencies = frontend_package.get("devDependencies")
+    vitest_spec: str | None = None
+    coverage_spec: str | None = None
+    if isinstance(frontend_dev_dependencies, dict):
+        vitest_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+        )
+        coverage_value = frontend_dev_dependencies.get(
+            REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+        )
+        vitest_spec = vitest_value if isinstance(vitest_value, str) else None
+        coverage_spec = coverage_value if isinstance(coverage_value, str) else None
+
+    vitest_lock_pattern = re.compile(
+        r'^\s+"(?P<name>vitest|@vitest/coverage-v8)": '
+        r'\["(?:vitest|@vitest/coverage-v8)@(?P<version>[^"]+)"',
+        re.MULTILINE,
+    )
+    vitest_lock_versions = {
+        match.group("name"): match.group("version")
+        for match in vitest_lock_pattern.finditer(frontend_bun_lock)
+    }
+    vitest_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[0],
+    )
+    coverage_lock_version = vitest_lock_versions.get(
+        REQUIRED_FRONTEND_VITEST_PACKAGE_NAMES[1],
+    )
+
+    frontend_bun_update: dict[str, object] | None = None
+    updates = dependabot.get("updates", [])
+    if isinstance(updates, list):
+        frontend_bun_update = next(
+            (
+                update
+                for update in updates
+                if isinstance(update, dict)
+                and update.get("package-ecosystem") == "bun"
+                and update.get("directory") == "/frontend"
+            ),
+            None,
+        )
+
+    vitest_group_patterns: list[set[str]] = []
+    if frontend_bun_update is not None:
+        groups = frontend_bun_update.get("groups")
+        if isinstance(groups, dict):
+            vitest_group_patterns = [
+                {pattern for pattern in patterns if isinstance(pattern, str)}
+                for group in groups.values()
+                if isinstance(group, dict)
+                for patterns in [group.get("patterns", [])]
+                if isinstance(patterns, list)
+            ]
 
     detail_candidates = (
         (
@@ -3017,6 +3298,59 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing frontend coverage fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+        (
+            not isinstance(frontend_dev_dependencies, dict),
+            "frontend/package.json devDependencies must be a mapping",
+        ),
+        (
+            vitest_spec is None,
+            "frontend/package.json must declare devDependencies.vitest",
+        ),
+        (
+            coverage_spec is None,
+            "frontend/package.json must declare devDependencies.@vitest/coverage-v8",
+        ),
+        (
+            vitest_spec is not None
+            and coverage_spec is not None
+            and vitest_spec != coverage_spec,
+            (
+                "frontend/package.json must keep vitest and "
+                "@vitest/coverage-v8 version ranges aligned"
+            ),
+        ),
+        (
+            vitest_lock_version is None,
+            "frontend/bun.lock must resolve vitest",
+        ),
+        (
+            coverage_lock_version is None,
+            "frontend/bun.lock must resolve @vitest/coverage-v8",
+        ),
+        (
+            vitest_lock_version is not None
+            and coverage_lock_version is not None
+            and vitest_lock_version != coverage_lock_version,
+            (
+                "frontend/bun.lock must keep resolved vitest and "
+                "@vitest/coverage-v8 versions aligned"
+            ),
+        ),
+        (
+            frontend_bun_update is None,
+            ".github/dependabot.yml must track /frontend with the bun ecosystem",
+        ),
+        (
+            frontend_bun_update is not None
+            and not any(
+                REQUIRED_FRONTEND_VITEST_DEPENDABOT_PATTERNS.issubset(patterns)
+                for patterns in vitest_group_patterns
+            ),
+            (
+                ".github/dependabot.yml /frontend bun updates must group "
+                "vitest and @vitest/* together"
+            ),
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
@@ -3664,6 +3998,245 @@ def test_docs_req_ops_032_local_conventional_commit_hook_is_current() -> None:
         (
             bool(missing_doc_fragments),
             "ci-cd guide missing local Conventional Commit fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_033_python_test_strictness_parity_declared() -> None:
+    """REQ-OPS-033: local and CI Python test paths reject warnings and skipped tests."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    backend_mise = tomllib.loads(BACKEND_MISE_PATH.read_text(encoding="utf-8"))
+    core_mise = tomllib.loads(UGOITE_CORE_MISE_PATH.read_text(encoding="utf-8"))
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+
+    backend_test = " ".join(_get_task_run_commands(backend_mise, "test"))
+    backend_test_no_build = " ".join(
+        _get_task_run_commands(backend_mise, "test:no-build"),
+    )
+    core_test = " ".join(_get_task_run_commands(core_mise, "test"))
+    core_test_no_build = " ".join(_get_task_run_commands(core_mise, "test:no-build"))
+    docs_test = " ".join(_get_task_run_commands(root_mise, "test:docs"))
+
+    python_backend_run = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run pytest (backend)",
+    )
+    python_backend_skip = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped backend tests",
+    )
+    python_docs_run = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run docs consistency tests",
+    )
+    python_docs_skip = _find_workflow_step_run(
+        PYTHON_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped docs tests",
+    )
+    rust_core_run = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Run pytest (core)",
+    )
+    rust_core_skip = _find_workflow_step_run(
+        RUST_CI_WORKFLOW_PATH,
+        job_name="ci",
+        step_name="Fail on skipped core tests",
+    )
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            any(
+                fragment not in backend_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "backend mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in backend_test_no_build
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "backend mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in core_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "ugoite-core mise test task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in core_test_no_build
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "ugoite-core mise test:no-build task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            any(
+                fragment not in docs_test
+                for fragment in (
+                    "mktemp",
+                    "-W error",
+                    "--junitxml=",
+                    "check_pytest_no_skips.py",
+                )
+            ),
+            "root mise test:docs task must reject warnings and skipped tests"
+            " without leaving reports behind",
+        ),
+        (
+            python_backend_run is None
+            or "-W error" not in python_backend_run
+            or "--junitxml=../backend-pytest.xml" not in python_backend_run,
+            "python-ci.yml backend pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            python_backend_skip is None
+            or 'scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"'
+            not in python_backend_skip,
+            "python-ci.yml backend skip check must use"
+            " scripts/check_pytest_no_skips.py",
+        ),
+        (
+            python_docs_run is None
+            or "-W error" not in python_docs_run
+            or "--junitxml=docs-pytest.xml" not in python_docs_run,
+            "python-ci.yml docs pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            python_docs_skip is None
+            or 'scripts/check_pytest_no_skips.py docs-pytest.xml "docs tests"'
+            not in python_docs_skip,
+            "python-ci.yml docs skip check must use scripts/check_pytest_no_skips.py",
+        ),
+        (
+            rust_core_run is None
+            or "-W error" not in rust_core_run
+            or "--junitxml=../core-pytest.xml" not in rust_core_run,
+            "rust-ci.yml core pytest step must keep warnings-as-errors"
+            " and a JUnit report",
+        ),
+        (
+            rust_core_skip is None
+            or 'scripts/check_pytest_no_skips.py core-pytest.xml "ugoite-core tests"'
+            not in rust_core_skip,
+            "rust-ci.yml core skip check must use scripts/check_pytest_no_skips.py",
+        ),
+        (
+            _require_file_contains(
+                PYTEST_NO_SKIPS_SCRIPT_PATH,
+                ["xml.etree.ElementTree", "skipped=", "tests=", "is not allowed"],
+                "scripts/check_pytest_no_skips.py must parse JUnit XML"
+                " and reject skipped tests",
+            )
+            is not None,
+            "scripts/check_pytest_no_skips.py must parse JUnit XML"
+            " and reject skipped tests",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing Python strictness fragments: "
+            + ", ".join(missing_doc_fragments),
+        ),
+    )
+    details = [message for condition, message in detail_candidates if condition]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> None:
+    """REQ-OPS-034: local direct-process E2E runs must not kill unrelated listeners."""
+    root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
+    run_e2e_text = (REPO_ROOT / "e2e/scripts/run-e2e.sh").read_text(encoding="utf-8")
+    ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    missing_doc_fragments = _missing_required_fragments(
+        ci_cd_text,
+        REQUIRED_LOCAL_E2E_PORT_SAFETY_DOC_FRAGMENTS,
+    )
+
+    detail_candidates = (
+        (
+            "fuser -k 8000/tcp" in run_e2e_text or "fuser -k 3000/tcp" in run_e2e_text,
+            "run-e2e.sh must not kill listeners on ports 8000/3000 automatically",
+        ),
+        (
+            any(
+                fragment not in run_e2e_text
+                for fragment in (
+                    'ensure_port_available 8000 "Backend"',
+                    'ensure_port_available 3000 "Frontend"',
+                    'fuser "${port}/tcp"',
+                    "mise run cleanup:ports",
+                )
+            ),
+            "run-e2e.sh must fail fast on occupied ports and point"
+            " users to cleanup:ports",
+        ),
+        (
+            _require_exact_task_run(
+                root_mise,
+                "cleanup:ports",
+                ["bash scripts/cleanup-dev-ports.sh"],
+                "root mise must expose cleanup:ports as the explicit"
+                " destructive option",
+            )
+            is not None,
+            "root mise must expose cleanup:ports as the explicit destructive option",
+        ),
+        (
+            _require_file_contains(
+                CLEANUP_DEV_PORTS_PATH,
+                ["fuser -k", "port", "Cleaned stale servers"],
+                "cleanup-dev-ports.sh must remain the explicit"
+                " destructive port cleanup helper",
+            )
+            is not None,
+            "cleanup-dev-ports.sh must remain the explicit"
+            " destructive port cleanup helper",
+        ),
+        (
+            bool(missing_doc_fragments),
+            "ci-cd guide missing local E2E port safety fragments: "
             + ", ".join(missing_doc_fragments),
         ),
     )

@@ -8,6 +8,10 @@ understand. The core idea is simple: you keep information in a **space**,
 organize it as **entries**, define predictable structure with **forms**, and
 then let Ugoite derive **search and indexes** from that source data.
 
+In one sentence: a space groups entries, forms define their structure, Markdown
+stays the authoring surface, and search is derived from the typed fields Ugoite
+extracts when you want schema-aware behavior.
+
 ## Start with a space
 
 A **space** is the top-level container for your knowledge. Think of it as a
@@ -59,6 +63,11 @@ That makes forms the bridge between free-form writing and reliable structure.
 They help people enter consistent information, and they help the browser, CLI,
 and automation flows understand what each entry is supposed to contain.
 
+For browser-first users, that makes the first-run workflow concrete: create or
+open a space, create a form, then create entries that use it. A new space
+becomes meaningfully authorable once at least one form exists, because the form
+is what tells Ugoite how new structured entries should start.
+
 You can absolutely start with a lightweight note, but as soon as you want
 stable extracted fields, validation, or reliable queries, the Form becomes the
 contract Ugoite uses to interpret that Markdown.
@@ -85,9 +94,13 @@ source of truth.
 
 That design matters because it keeps the system easier to reason about:
 
-- entries and forms are the canonical data
+- entries and forms are the canonical domain data
 - indexes can be rebuilt when needed
 - automation can trust that search results come from local-first source data
+
+In other words: Markdown stays the authoring surface, entries plus Forms define
+the logical contract, and storage/index internals exist to persist or accelerate
+that contract rather than replace it.
 
 ## Which surface should you use?
 
@@ -98,6 +111,9 @@ Once the concepts make sense, choose the surface that matches your task:
   + frontend stack locally.
 - Use the [CLI Guide](cli.md) when you prefer terminal-first workflows or
   scripting, or when you want the thinnest local-first workflow today.
+- Use the [REST API](../spec/api/rest.md) when you are integrating another
+  client or intentionally want server-backed automation instead of direct local
+  filesystem access.
 - Use the [Docker Compose Guide](docker-compose.md) when you want the full
   contributor stack from source.
 - Use the [Specification Index](../spec/index.md) when you need the formal

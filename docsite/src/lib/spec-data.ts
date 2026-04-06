@@ -58,6 +58,7 @@ export type FeatureGroup = {
 	kind: string;
 	file: string;
 	apis: FeatureApi[];
+	linkedRequirements: string[];
 };
 
 export type UiPageSpec = {
@@ -78,6 +79,7 @@ type FeatureRegistry = {
 	files?: Array<{
 		kind: string;
 		file: string;
+		linked_requirements?: string[];
 	}>;
 };
 
@@ -204,6 +206,7 @@ export async function getFeatureGroups(): Promise<FeatureGroup[]> {
 			kind: data.kind ?? entry.kind,
 			file: entry.file,
 			apis: data.apis ?? [],
+			linkedRequirements: entry.linked_requirements ?? [],
 		});
 	}
 
@@ -353,21 +356,12 @@ export async function getSpecifications(): Promise<SpecEntry[]> {
 export async function getRequirementToFeatureEdges(): Promise<
 	Array<{ requirement: string; feature: string }>
 > {
-	const specs = await getSpecifications();
 	const features = await getFeatureGroups();
 
-	const featureByFile = new Map<string, string>();
-	for (const feature of features) {
-		featureByFile.set(`features/${feature.file}`, feature.kind);
-	}
-
 	const edges = new Set<string>();
-	for (const spec of specs) {
-		const featureKind = featureByFile.get(spec.sourceFile);
-		if (!featureKind) continue;
-
-		for (const requirement of spec.linkedRequirements) {
-			edges.add(`${requirement}::${featureKind}`);
+	for (const feature of features) {
+		for (const requirement of feature.linkedRequirements) {
+			edges.add(`${requirement}::${feature.kind}`);
 		}
 	}
 
