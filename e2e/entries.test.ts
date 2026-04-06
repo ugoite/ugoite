@@ -232,6 +232,40 @@ test.describe("Entries CRUD", () => {
 		);
 	});
 
+	test("REQ-FE-005: entry detail preview escapes raw HTML in markdown content", async ({ page, request }) => {
+		const createRes = await request.post(
+			getBackendUrl("/spaces/default/entries"),
+			{
+				data: {
+					content:
+						'---\nform: Entry\n---\n# Preview Safety\n\n## Body\n<img src=x onerror="window.__ugoiteXss=\'ran\'">\n\n**bold**',
+				},
+			},
+		);
+		expect(createRes.status()).toBe(201);
+		const created = (await createRes.json()) as { id: string };
+
+		await page.goto(`/spaces/default/entries/${created.id}`);
+		await page.waitForLoadState("networkidle");
+		await settleUiLoading(page);
+
+		const preview = page.locator(".preview").first();
+		await expect(preview).toBeVisible();
+		await expect(preview.locator("img")).toHaveCount(0);
+		await expect(preview).toContainText('<img src=x onerror="window.__ugoiteXss=\'ran\'">');
+		await expect(preview.locator("strong")).toHaveText("bold");
+
+		const marker = await page.evaluate(() => {
+			const target = globalThis as typeof globalThis & { __ugoiteXss?: string };
+			return target.__ugoiteXss ?? null;
+		});
+		expect(marker).toBeNull();
+
+		await request.delete(
+			getBackendUrl(`/spaces/default/entries/${created.id}`),
+		);
+	});
+
 	test("REQ-FE-033: Retrieve entry with special characters", async ({ page, request }) => {
 		const timestamp = Date.now();
 		const title = `Special Entry @ ${timestamp} % &`;
