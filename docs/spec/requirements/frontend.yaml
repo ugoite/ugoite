@@ -169,7 +169,9 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-005
   title: Markdown Editor
-  description: 'Editor with Markdown editing, preview, and save functionality.
+  description: 'Editor with Markdown editing, preview, and save functionality. Preview
+
+    MUST escape raw HTML before inserting rendered content into the DOM.
 
     '
   related_spec:
@@ -192,6 +194,14 @@ requirements:
       - should handle null content gracefully
       - should render preview with undefined content without crashing
       - should display placeholder when content is empty
+      - 'REQ-FE-005: split preview escapes raw HTML content'
+    - file: frontend/src/lib/markdown.test.ts
+      tests:
+      - 'REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting'
+    e2e:
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-005: entry detail preview escapes raw HTML in markdown content'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.

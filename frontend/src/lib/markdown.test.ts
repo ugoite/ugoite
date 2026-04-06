@@ -1,6 +1,11 @@
 // REQ-ENTRY-006: Structured data extraction from markdown
 import { describe, it, expect } from "vitest";
-import { replaceFirstH1, ensureFormFrontmatter, updateH2Section } from "./markdown";
+import {
+	replaceFirstH1,
+	ensureFormFrontmatter,
+	renderMarkdownPreview,
+	updateH2Section,
+} from "./markdown";
 
 describe("markdown utils", () => {
 	it("replaceFirstH1 replaces existing H1", () => {
@@ -49,6 +54,18 @@ describe("markdown utils", () => {
 		const md = "# Title\n\n## Section (Special) [Ref]\nOldValue";
 		const out = updateH2Section(md, "Section (Special) [Ref]", "NewValue");
 		expect(out).toContain("## Section (Special) [Ref]\nNewValue");
+	});
+
+	it("REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting", () => {
+		const preview = renderMarkdownPreview(
+			'# Preview\n\n<img src=x onerror="alert(1)">\n\n**bold** `code`',
+		);
+
+		expect(preview).toContain('<h1 class="text-2xl font-bold mb-2">Preview</h1>');
+		expect(preview).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+		expect(preview).not.toContain("<img");
+		expect(preview).toContain("<strong>bold</strong>");
+		expect(preview).toContain('<code class="ui-code">code</code>');
 	});
 
 	it("ensureFormFrontmatter handles unclosed frontmatter (no closing ---)", () => {

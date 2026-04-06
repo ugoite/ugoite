@@ -1,4 +1,5 @@
 import { createSignal, Show } from "solid-js";
+import { renderMarkdownPreview } from "~/lib/markdown";
 
 export interface MarkdownEditorProps {
 	content: string | undefined;
@@ -32,22 +33,6 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 				props.onSave();
 			}
 		}
-	};
-
-	const renderMarkdown = (content: string | undefined | null) => {
-		// Simple markdown rendering for preview
-		// In production, use a proper markdown parser
-		/* v8 ignore start */
-		const safeContent = content ?? "";
-		/* v8 ignore stop */
-		return safeContent
-			.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mb-2">$1</h1>')
-			.replace(/^## (.+)$/gm, '<h2 class="text-xl font-semibold mb-2 mt-4">$1</h2>')
-			.replace(/^### (.+)$/gm, '<h3 class="text-lg font-medium mb-1 mt-3">$1</h3>')
-			.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-			.replace(/\*(.+?)\*/g, "<em>$1</em>")
-			.replace(/`(.+?)`/g, '<code class="ui-code">$1</code>')
-			.replace(/\n/g, "<br>");
 	};
 
 	return (
@@ -122,7 +107,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 						/>
 						<div
 							class="preview ui-preview w-1/2 h-full"
-							innerHTML={renderMarkdown(props.content ?? "")}
+							innerHTML={renderMarkdownPreview(props.content)}
 						/>
 					</div>
 				</Show>
@@ -143,7 +128,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
 					>
 						<div
 							class="preview ui-preview h-full"
-							innerHTML={renderMarkdown(props.content ?? "")}
+							innerHTML={renderMarkdownPreview(props.content)}
 						/>
 					</Show>
 				</Show>
