@@ -129,6 +129,9 @@ Content-Type: application/json
 
 **Authorization**: caller must be an active admin of the reserved `admin-space`.
 The reserved `admin-space` id itself cannot be created through the public API.
+New spaces bootstrap a user-creatable `Entry` form and set
+`settings.default_form = "Entry"` so clients can open a starter entry flow
+without an extra first-form setup step.
 
 #### Get Space
 ```http

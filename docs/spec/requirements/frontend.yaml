@@ -1154,12 +1154,16 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-037
-  title: Form-first Entry Creation UI
-  description: 'Creating a new entry MUST require selecting a Form. The create dialog
+  title: Starter-form Entry Creation UI
+  description: 'Creating a new entry MUST require selecting a Form. New spaces
 
-    MUST show the selected Form fields and generate the entry from the
+    MUST surface a user-creatable default Form so first-entry authoring works
 
-    Form template with the correct frontmatter. Reserved metadata forms MUST NOT
+    without designing a custom schema first. The create dialog MUST show the
+
+    selected Form fields and generate the entry from the Form template with the
+
+    correct frontmatter. Reserved metadata forms MUST NOT
 
     be presented as ordinary user-selectable forms in entry creation flows.
 
@@ -1198,8 +1202,14 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
+      - 'REQ-FE-037: dashboard opens the starter entry flow for a new space'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
-      - 'REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms'
+      - 'REQ-FE-037: dashboard promotes form creation when a space has no creatable forms'
+    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+      tests:
+      - 'REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist'
+      - 'REQ-FE-037: entries route opens the starter entry flow for a new space'
+      - 'REQ-FE-037: entries route guides spaces with no creatable forms toward form creation'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
@@ -1207,7 +1217,10 @@ requirements:
     e2e:
     - file: e2e/dashboard-first-form.test.ts
       tests:
-      - 'REQ-FE-037: dashboard guides first-run spaces toward form creation'
+      - 'REQ-FE-037: dashboard lets a new space create a first entry with the starter form'
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-037: entries route opens the starter entry flow for new spaces'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
