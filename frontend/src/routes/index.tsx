@@ -37,9 +37,7 @@ export default function Home() {
 					{copy().learnMore}
 				</a>
 			</div>
-			<p class="mt-4 text-sm ui-muted">
-				{copy().loginHint}
-			</p>
+			<p class="mt-4 text-sm ui-muted">{copy().loginHint}</p>
 			<div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
 				<div class="ui-card">
 					<h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
