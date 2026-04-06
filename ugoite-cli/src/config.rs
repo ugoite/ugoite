@@ -225,10 +225,7 @@ pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
     match parsed.scheme() {
         "https" => Ok(()),
         "http" => {
-            let Some(host) = parsed.host_str() else {
-                bail!("{label} URL {url:?} is missing a host");
-            };
-            if is_loopback_host(host) {
+            if parsed.host_str().is_some_and(is_loopback_host) {
                 return Ok(());
             }
             bail!(

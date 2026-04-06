@@ -201,6 +201,31 @@ fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoi
 }
 
 #[test]
+fn test_cli_req_sec_011_config_current_warns_about_legacy_insecure_backend_endpoints() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("cli-config.json");
+    write_endpoint_config(
+        &config_path,
+        "backend",
+        "http://backend.example.test",
+        "http://localhost:3000/api",
+    );
+
+    let output = cli_command(&config_path)
+        .args(["config", "current"])
+        .output()
+        .expect("config current backend");
+    assert_success(&output, "config current backend");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Current endpoint mode: backend"));
+    assert!(stdout.contains(
+        "Warning: Backend endpoint URL http://backend.example.test uses cleartext http:// for a non-loopback host"
+    ));
+    assert!(stdout.contains("Server-backed commands will refuse this endpoint"));
+}
+
+#[test]
 fn test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_endpoints_before_requests_are_sent(
 ) {
     let dir = tempfile::tempdir().expect("tempdir");
