@@ -139,6 +139,14 @@ def _reserved_admin_space_error(space_id: str) -> HTTPException:
     )
 
 
+def _space_exists_conflict_error(space_id: str) -> HTTPException:
+    """Return a stable create-space conflict error without storage internals."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"Space already exists: {space_id}",
+    )
+
+
 def _sanitize_space_meta(space_meta: dict[str, Any]) -> dict[str, Any]:
     """Redact sensitive membership secrets before API response serialization."""
     sanitized = dict(space_meta)
@@ -225,10 +233,7 @@ async def create_space_endpoint(
         raise
     except RuntimeError as e:
         if "already exists" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(e),
-            ) from e
+            raise _space_exists_conflict_error(space_id) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
