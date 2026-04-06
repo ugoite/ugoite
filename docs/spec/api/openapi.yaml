@@ -257,6 +257,21 @@ paths:
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - revision_id
+                properties:
+                  id:
+                    type: string
+                  revision_id:
+                    type: string
+              example:
+                id: "entry-new-uuid"
+                revision_id: "rev-0001"
 
   /spaces/{space_id}/entries/{entry_id}:
     get:

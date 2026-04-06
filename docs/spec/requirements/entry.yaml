@@ -36,6 +36,7 @@ requirements:
     - file: docs/tests/test_api_docs.py
       tests:
       - test_docs_req_entry_001_create_entry_payload_uses_content_field
+      - test_docs_req_entry_001_create_entry_response_matches_backend_contract
     rust:
     - file: ugoite-core/tests/test_entry.rs
       tests:
