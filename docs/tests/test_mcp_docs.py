@@ -154,11 +154,13 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
             ),
             (
                 len(backend_mcp_resources) == 1,
-                "backend/src/app/mcp/server.py must still register exactly one MCP resource for this docs contract",
+                "backend/src/app/mcp/server.py must still register exactly one "
+                "MCP resource for this docs contract",
             ),
             (
                 "ugoite://{space_id}/entries/list" in backend_mcp_resources,
-                "backend/src/app/mcp/server.py must register the entries/list MCP resource",
+                "backend/src/app/mcp/server.py must register the "
+                "entries/list MCP resource",
             ),
         )
         if not ok
