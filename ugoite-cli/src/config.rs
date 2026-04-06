@@ -1,7 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
@@ -145,7 +147,7 @@ pub fn save_auth_session(session: &AuthSession) -> Result<PathBuf> {
     };
     let text =
         serde_json::to_string_pretty(&normalized).expect("AuthSession serialization is infallible");
-    std::fs::write(&path, text)?;
+    write_auth_session_text(&path, &text)?;
     set_owner_only_permissions(&path)?;
     Ok(path)
 }
@@ -165,6 +167,27 @@ pub fn effective_bearer_token() -> Option<String> {
 
 pub fn effective_api_key() -> Option<String> {
     non_empty_env_value("UGOITE_AUTH_API_KEY")
+}
+
+#[cfg(unix)]
+fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
+    std::fs::write(path, text)?;
+    Ok(())
 }
 
 #[cfg(unix)]
