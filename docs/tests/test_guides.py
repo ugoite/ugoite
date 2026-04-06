@@ -1102,7 +1102,7 @@ def test_docs_req_ops_001_backend_targeted_pytest_path_is_documented() -> None:
                 TESTING_STRATEGY_PATH,
                 [
                     "mise run //backend:test:targeted:no-build -- "
-                    "tests/test_config.py -q"
+                    "tests/test_config.py -q",
                 ],
                 "testing strategy must document the targeted backend pytest fast path",
             ),
