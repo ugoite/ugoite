@@ -181,8 +181,8 @@ export default function LoginRoute() {
 							<Show when={config().mode === "mock-oauth"}>
 								<div class="ui-stack-sm">
 									<p class="text-sm ui-muted">
-										Use the explicit mock OAuth path to exercise the browser login flow without
-										bypassing authentication at startup.
+										Use the explicit local demo login path to exercise the browser login flow
+										without an external OAuth provider or startup auth bypass.
 									</p>
 									<button
 										type="button"
@@ -190,7 +190,7 @@ export default function LoginRoute() {
 										onClick={() => void handleMockOAuth()}
 										disabled={isSubmitting()}
 									>
-										{isSubmitting() ? "Redirecting..." : "Continue with Mock OAuth"}
+										{isSubmitting() ? "Redirecting..." : "Continue with Local Demo Login"}
 									</button>
 								</div>
 							</Show>

@@ -27,7 +27,8 @@ MCP access. The implemented authentication building blocks are:
 
 - signed or static **bearer tokens** for interactive user sessions
 - **API keys** for service-style access
-- explicit local development login flows for `passkey-totp` and `mock-oauth`
+- explicit local development login flows for `passkey-totp` and the local demo
+  login mode (`mock-oauth`)
 
 Some security specifications also describe future passkey/WebAuthn directions.
 Treat those as planned work unless a guide explicitly tells you they are already
@@ -61,7 +62,7 @@ experiences:
 | Mode | What it is for | How login happens |
 | --- | --- | --- |
 | `passkey-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
-| `mock-oauth` | Development-only OAuth-style exercise path | You still sign in explicitly after startup, but the backend issues a bearer token through the mock OAuth route instead of username + TOTP |
+| `mock-oauth` | Development-only local demo login path | You still sign in explicitly after startup, but the backend issues a bearer token through the local demo login route instead of username + TOTP. No external OAuth provider is involved. |
 
 Both modes are intentionally **explicit login** flows. Startup prepares login
 context; it does not silently inject an already-authenticated session.
@@ -78,7 +79,7 @@ The browser experience is meant to feel like a real application session:
 In `passkey-totp`, the form asks for the same username and current 2FA code that
 match your local development setup.
 
-In `mock-oauth`, the page offers an explicit mock OAuth action instead.
+In `mock-oauth`, the page offers an explicit local demo login action instead.
 
 After login, the frontend uses the browser session cookie for proxied `/api/*`
 requests. That is why protected pages such as `/spaces` work only after the
