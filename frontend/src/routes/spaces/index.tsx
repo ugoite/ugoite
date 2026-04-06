@@ -3,8 +3,10 @@ import { createEffect, createMemo, createResource, createSignal, For, Show } fro
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/space-api";
 
-const localDevAuthGuideUrl =
-	getDocsiteHref("/docs/guide/local-dev-auth-login", "docs/guide/local-dev-auth-login.md");
+const localDevAuthGuideUrl = getDocsiteHref(
+	"/docs/guide/local-dev-auth-login",
+	"docs/guide/local-dev-auth-login.md",
+);
 
 const toMessage = (value: unknown): string => {
 	if (value instanceof Error && value.message.trim()) {
