@@ -11,4 +11,4 @@ Then open:
   Frontend UI login: http://127.0.0.1:3000/login
   Backend API: http://127.0.0.1:8000
 
-Click "Continue with Mock OAuth" to reach /spaces.
+Click "Continue with Local Demo Login" to reach /spaces.

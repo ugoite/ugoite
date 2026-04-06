@@ -98,7 +98,7 @@ REQUIRED_HELM_GUIDE_FRAGMENTS = {
     "kubectl -n ugoite port-forward svc/ugoite-frontend 3000:3000",
     "kubectl -n ugoite port-forward svc/ugoite-backend 8000:8000",
     "http://127.0.0.1:3000/login",
-    "Continue with Mock OAuth",
+    "Continue with Local Demo Login",
     "`/data`",
     "UGOITE_DEV_AUTH_PROXY_TOKEN",
     "backend.persistence.existingClaim",
@@ -369,7 +369,7 @@ def test_docs_req_ops_028_helm_chart_docs_stay_wired() -> None:
             {
                 "docker-compose.release.yaml",
                 "http://127.0.0.1:3000/login",
-                "Continue with Mock OAuth",
+                "Continue with Local Demo Login",
                 "port-forward",
             },
             "charts/ugoite/templates/NOTES.txt",
