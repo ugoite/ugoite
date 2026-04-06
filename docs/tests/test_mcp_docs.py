@@ -70,7 +70,7 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
         encoding="utf-8",
     )
     versions_index = (REPO_ROOT / "docs" / "spec" / "versions" / "index.md").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     )
     mvp = (REPO_ROOT / "docs" / "version" / "v0.1" / "mvp.yaml").read_text(
         encoding="utf-8",
@@ -79,7 +79,7 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
         encoding="utf-8",
     )
     roadmap = (REPO_ROOT / "docs" / "version" / "unknown" / "roadmap.yaml").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     )
     backend_mcp = (
         REPO_ROOT / "backend" / "src" / "app" / "mcp" / "server.py"
