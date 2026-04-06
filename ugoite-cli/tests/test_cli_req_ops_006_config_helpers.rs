@@ -7,8 +7,7 @@ use ugoite_cli::config::{
     auth_session_path, base_url, clear_auth_session, config_path, effective_format_for_stdout,
     load_auth_session, load_config, normalize_space_root, operator_for_path, parse_space_path,
     print_json, print_json_table, resolve_space_reference, save_auth_session, save_config,
-    space_ws_path, validate_server_endpoint_url, AuthSession, EndpointConfig, EndpointMode,
-    Format,
+    space_ws_path, validate_server_endpoint_url, AuthSession, EndpointConfig, EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
