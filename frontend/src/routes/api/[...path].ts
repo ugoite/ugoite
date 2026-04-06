@@ -198,6 +198,7 @@ const rewriteAuthProxyResponse = async (
 	}
 	const responseHeaders = filterResponseHeaders(response.headers);
 	responseHeaders.delete("content-length");
+	responseHeaders.delete("set-cookie");
 	if (!responseHeaders.has("x-request-id")) {
 		responseHeaders.set("x-request-id", requestId);
 	}
