@@ -63,35 +63,13 @@ jobs:
         run: uv run pytest -W error --junitxml=../backend-pytest.xml
 
       - name: Fail on skipped backend tests
-        run: |
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          report = Path("backend-pytest.xml")
-          root = ET.parse(report).getroot()
-          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
-          if skipped > 0:
-              raise SystemExit(f"backend tests: skipped={skipped} is not allowed")
-          PY
+        run: python3 scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"
 
       - name: Run docs consistency tests
         run: uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=docs-pytest.xml
 
       - name: Fail on skipped docs tests
-        run: |
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          report = Path("docs-pytest.xml")
-          root = ET.parse(report).getroot()
-          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-          skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
-          if skipped > 0:
-              raise SystemExit(f"docs tests: skipped={skipped} is not allowed")
-          PY
+        run: python3 scripts/check_pytest_no_skips.py docs-pytest.xml "docs tests"
 
   required-check:
     name: Python CI
