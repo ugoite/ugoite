@@ -139,14 +139,12 @@ def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
 
 
 def test_docs_req_entry_001_create_entry_response_matches_backend_contract() -> None:
-    """REQ-ENTRY-001: create-entry docs return only the implemented id and revision_id."""
+    """REQ-ENTRY-001: create-entry docs return only the implemented ids."""
     rest_text = _read_text(API_REST_PATH)
-    create_entry_section = (
-        rest_text.split("#### Create Entry", maxsplit=1)[1].split(
-            "#### Get Entry",
-            maxsplit=1,
-        )[0]
-    )
+    create_entry_section = rest_text.split("#### Create Entry", maxsplit=1)[1].split(
+        "#### Get Entry",
+        maxsplit=1,
+    )[0]
     response_section = create_entry_section.split(
         "**Response**: `201 Created`",
         maxsplit=1,
@@ -201,11 +199,13 @@ def test_docs_req_entry_001_create_entry_response_matches_backend_contract() -> 
 
     if not isinstance(required, list) or sorted(required) != ["id", "revision_id"]:
         details.append(
-            "api/openapi.yaml create-entry 201 schema must require only id and revision_id",
+            "api/openapi.yaml create-entry 201 schema must require only id and"
+            " revision_id",
         )
     if sorted(properties) != ["id", "revision_id"]:
         details.append(
-            "api/openapi.yaml create-entry 201 schema must expose only id and revision_id",
+            "api/openapi.yaml create-entry 201 schema must expose only id and"
+            " revision_id",
         )
     if example != {"id": "entry-new-uuid", "revision_id": "rev-0001"}:
         details.append(
