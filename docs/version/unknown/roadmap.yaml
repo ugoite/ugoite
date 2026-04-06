@@ -5,8 +5,8 @@ title: "Development Roadmap"
 goal: >
   Outline major milestones for Ugoite development from MVP through native app,
   aligned with the vision of a Local-First Knowledge Space for the Post-SaaS
-  Era, where broader AI-native workflows build on the current resource-first
-  MCP baseline.
+  Era, where broader AI-native workflows build on today's resource-first MCP
+  baseline.
 phases:
   - id: design
     status: in_progress
@@ -30,7 +30,7 @@ phases:
         done: false
       - description: "Milestone 5 User Controlled View - query-driven UI views (v0.2)"
         done: false
-      - description: "Milestone 6 AI-Enabled & AI-Used - full MCP + vector search (v0.2)"
+      - description: "Milestone 6 AI-Enabled & AI-Used - broader MCP resources/tools + vector search (v0.2)"
         done: false
       - description: "Milestone 7 Native App - Tauri desktop application"
         done: false
