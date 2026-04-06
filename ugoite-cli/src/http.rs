@@ -1,7 +1,16 @@
 use anyhow::{bail, Result};
+use serde::Deserialize;
+use std::net::IpAddr;
+use std::path::PathBuf;
 
 const DEV_AUTH_PROXY_HEADER_NAME: &str = "x-ugoite-dev-auth-proxy-token";
 const DEV_PASSKEY_CONTEXT_HEADER_NAME: &str = "x-ugoite-dev-passkey-context";
+const DEV_AUTH_FILE_ENV_NAME: &str = "UGOITE_DEV_AUTH_FILE";
+
+#[derive(Deserialize)]
+struct CachedDevAuthFile {
+    passkey_context: Option<String>,
+}
 
 pub async fn http_get(url: &str) -> Result<serde_json::Value> {
     ensure_safe_remote_request_url(url)?;
@@ -33,7 +42,7 @@ pub async fn http_post_with_dev_auth_proxy(
 ) -> Result<serde_json::Value> {
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
-    let req = add_dev_local_auth_headers(add_auth_headers(client.post(url).json(body)));
+    let req = add_dev_local_auth_headers(url, add_auth_headers(client.post(url).json(body)));
     let resp = req.send().await?;
     if !resp.status().is_success() {
         let status = resp.status();
@@ -92,24 +101,92 @@ fn ensure_safe_remote_request_url(url: &str) -> Result<()> {
     crate::config::validate_server_endpoint_url(url, "Remote request")
 }
 
-fn add_dev_local_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    let req = if let Ok(token) = std::env::var("UGOITE_DEV_AUTH_PROXY_TOKEN") {
-        let trimmed = token.trim();
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_end_matches('.');
+    let normalized = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    normalized.eq_ignore_ascii_case("localhost")
+        || normalized
+            .parse::<IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false)
+}
+
+fn is_local_dev_request_url(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some_and(is_loopback_host)
+}
+
+fn non_empty_env_var(key: &str) -> Option<String> {
+    std::env::var(key).ok().and_then(|value| {
+        let trimmed = value.trim();
         if trimmed.is_empty() {
-            req
+            None
         } else {
-            req.header(DEV_AUTH_PROXY_HEADER_NAME, trimmed)
+            Some(trimmed.to_string())
         }
+    })
+}
+
+pub(crate) fn dev_auth_file_path() -> Option<PathBuf> {
+    non_empty_env_var(DEV_AUTH_FILE_ENV_NAME)
+        .map(PathBuf::from)
+        .or_else(|| {
+            non_empty_env_var("HOME")
+                .map(|home| PathBuf::from(home).join(".ugoite").join("dev-auth.json"))
+        })
+}
+
+fn cached_dev_passkey_context() -> Option<String> {
+    let path = dev_auth_file_path()?;
+    let payload = std::fs::read_to_string(path).ok()?;
+    let cached: CachedDevAuthFile = serde_json::from_str(&payload).ok()?;
+    cached.passkey_context.and_then(|context| {
+        let trimmed = context.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn add_dev_local_auth_headers(url: &str, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    if !is_local_dev_request_url(url) {
+        return req;
+    }
+
+    let req = if let Some(token) = non_empty_env_var("UGOITE_DEV_AUTH_PROXY_TOKEN") {
+        req.header(DEV_AUTH_PROXY_HEADER_NAME, token)
     } else {
         req
     };
 
-    let Ok(context) = std::env::var("UGOITE_DEV_PASSKEY_CONTEXT") else {
-        return req;
-    };
-    let trimmed = context.trim();
-    if trimmed.is_empty() {
-        return req;
+    if let Some(context) =
+        non_empty_env_var("UGOITE_DEV_PASSKEY_CONTEXT").or_else(cached_dev_passkey_context)
+    {
+        req.header(DEV_PASSKEY_CONTEXT_HEADER_NAME, context)
+    } else {
+        req
     }
-    req.header(DEV_PASSKEY_CONTEXT_HEADER_NAME, trimmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_local_dev_request_url;
+
+    #[test]
+    fn test_dev_local_auth_headers_req_ops_015_only_allow_loopback_hosts() {
+        assert!(is_local_dev_request_url("http://localhost:8000/auth/login"));
+        assert!(is_local_dev_request_url("https://127.0.0.1/auth/login"));
+        assert!(is_local_dev_request_url("http://[::1]:3000/api/auth/login"));
+
+        assert!(!is_local_dev_request_url("https://example.com/auth/login"));
+        assert!(!is_local_dev_request_url("http://example.com/auth/login"));
+        assert!(!is_local_dev_request_url("not-a-url"));
+    }
 }
