@@ -183,7 +183,6 @@ export const handlers = [
 			return HttpResponse.json({ detail: "Invalid username or 2FA code." }, { status: 401 });
 		}
 		return HttpResponse.json({
-			bearer_token: "frontend-test-token",
 			user_id: mockDevAuthConfig.username_hint,
 			expires_at: 1_900_000_000,
 		});
@@ -197,7 +196,6 @@ export const handlers = [
 			);
 		}
 		return HttpResponse.json({
-			bearer_token: "frontend-test-token",
 			user_id: mockDevAuthConfig.username_hint,
 			expires_at: 1_900_000_000,
 		});
