@@ -199,9 +199,9 @@ def test_request_identity_missing_raises() -> None:
 
 
 def test_resolve_client_host_trusted_proxy() -> None:
-    """REQ-SEC-001: resolve_client_host honors X-Forwarded-For with trust flag."""
+    """REQ-SEC-001: resolve_client_host honors X-Forwarded-For from loopback proxies."""
     headers = {"x-forwarded-for": "203.0.113.5, 198.51.100.1"}
-    result = resolve_client_host(headers, "10.0.0.1", trust_proxy_headers=True)
+    result = resolve_client_host(headers, "127.0.0.1", trust_proxy_headers=True)
     assert result == "203.0.113.5"
 
 
@@ -210,6 +210,13 @@ def test_resolve_client_host_empty_forwarded() -> None:
     headers = {"x-forwarded-for": "   "}
     result = resolve_client_host(headers, "10.0.0.1", trust_proxy_headers=True)
     assert result == "10.0.0.1"
+
+
+def test_resolve_client_host_ignores_untrusted_forwarded_for() -> None:
+    """REQ-SEC-001: ignore spoofed X-Forwarded-For from remote peers."""
+    headers = {"x-forwarded-for": "127.0.0.1"}
+    result = resolve_client_host(headers, "198.51.100.25", trust_proxy_headers=True)
+    assert result == "198.51.100.25"
 
 
 def test_is_local_host_none_returns_false() -> None:

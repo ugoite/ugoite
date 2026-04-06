@@ -445,6 +445,30 @@ def test_dev_auth_req_ops_015_rejects_remote_clients(
     )
 
 
+def test_dev_auth_req_ops_015_rejects_spoofed_loopback_forwarded_for(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth ignores spoofed loopback forwarded headers."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get("/auth/config", headers={"x-forwarded-for": "127.0.0.1"})
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
+
+
 def test_dev_auth_req_ops_015_allows_trusted_proxy_token(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,

@@ -1434,6 +1434,20 @@ def test_middleware_blocks_remote_clients_when_proxy_headers_trusted(
     assert "X-Ugoite-Signature" in response.headers
 
 
+def test_middleware_blocks_spoofed_loopback_forwarded_for_when_proxy_headers_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-001: spoofed loopback X-Forwarded-For must not bypass remote blocking."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-for": "127.0.0.1"})
+
+    assert response.status_code == 403
+    assert "Remote access is disabled" in response.json()["detail"]
+    assert "X-Ugoite-Signature" in response.headers
+
+
 def test_get_form_types(test_client: TestClient, temp_space_root: Path) -> None:
     """Test getting available form column types (REQ-FORM-001)."""
     # Create space to ensure path is valid
