@@ -169,6 +169,25 @@ def test_create_space_conflict(
     assert "already exists" in response.json()["detail"]
 
 
+def test_create_space_req_api_001_sanitizes_corrupt_skeleton_conflict_detail(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: create space conflict hides raw storage details."""
+    broken_space_root = temp_space_root / "spaces" / "bad"
+    broken_space_root.mkdir(parents=True)
+    (broken_space_root / "forms").write_text("not-a-directory")
+
+    response = test_client.post("/spaces", json={"name": "bad"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Space already exists: bad"
+    lowered = response.json()["detail"].lower()
+    assert "service:" not in lowered
+    assert "path:" not in lowered
+    assert "os error" not in lowered
+
+
 def test_list_spaces(
     test_client: TestClient,
     temp_space_root: Path,
@@ -2666,6 +2685,10 @@ def test_create_space_generic_runtime_error(test_client: TestClient) -> None:
     ):
         response = test_client.post("/spaces", json={"name": "fail-ws"})
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_create_space_generic_exception(test_client: TestClient) -> None:
@@ -2676,6 +2699,10 @@ def test_create_space_generic_exception(test_client: TestClient) -> None:
     ):
         response = test_client.post("/spaces", json={"name": "fail-exc-ws"})
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_get_space_generic_runtime_error(test_client: TestClient) -> None:
