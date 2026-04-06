@@ -2,7 +2,11 @@
 
 This directory contains the feature definitions for Ugoite.
 
-## Files
+## Inventory
+
+The API feature inventory is authoritative in [features.yaml](features.yaml). The
+docsite feature pages load their domains from that manifest, so the list below
+must stay in sync with it.
 
 - [features.yaml](features.yaml) - Registry manifest and conventions
 - [spaces.yaml](spaces.yaml) - Space APIs
@@ -10,9 +14,15 @@ This directory contains the feature definitions for Ugoite.
 - [entries.yaml](entries.yaml) - Entry APIs
 - [forms.yaml](forms.yaml) - Form APIs
 - [assets.yaml](assets.yaml) - Asset APIs
-- [links.yaml](links.yaml) - Link APIs
+- [auth.yaml](auth.yaml) - Explicit login APIs
 - [search.yaml](search.yaml) - Search + structured query APIs
-- [sql.md](sql.md) - Ugoite SQL dialect
+- [sql.yaml](sql.yaml) - Saved SQL and SQL session APIs
+
+## Supplemental References
+
+- [links.yaml](links.yaml) - Legacy link API registry kept for traceability after
+  the product moved to `row_reference` fields instead of dedicated link APIs
+- [sql.md](sql.md) - Ugoite SQL dialect reference used by the saved SQL features
 
 ## Purpose
 

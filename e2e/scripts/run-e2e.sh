@@ -32,10 +32,29 @@ if [ "$ENFORCE_CI_GATES" = "true" ]; then
   export PLAYWRIGHT_JUNIT_OUTPUT_FILE="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
 fi
 
-echo "Checking for existing processes on ports 8000 and 3000..."
-fuser -k 8000/tcp 2>/dev/null || true
-fuser -k 3000/tcp 2>/dev/null || true
-sleep 1
+describe_port() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN || true
+  else
+    ss -ltnp "( sport = :${port} )" || true
+  fi
+}
+
+ensure_port_available() {
+  local port="$1"
+  local label="$2"
+  if fuser "${port}/tcp" >/dev/null 2>&1; then
+    echo "✗ ERROR: ${label} port ${port} is already in use."
+    describe_port "$port"
+    echo "Stop the conflicting process, or run \`mise run cleanup:ports\` if you want to clear standard Ugoite dev ports explicitly."
+    exit 1
+  fi
+}
+
+echo "Checking that ports 8000 and 3000 are free..."
+ensure_port_available 8000 "Backend"
+ensure_port_available 3000 "Frontend"
 
 echo "Creating default space..."
 cd "$ROOT_DIR/backend"
