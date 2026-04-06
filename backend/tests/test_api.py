@@ -1206,6 +1206,20 @@ def test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https(
     assert "Strict-Transport-Security" not in response.headers
 
 
+def test_middleware_headers_req_sec_002_ignores_spoofed_remote_forwarded_https(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: remote clients cannot spoof HTTPS with X-Forwarded-Proto alone."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-proto": "https"})
+
+    assert response.status_code == 200
+    assert "Strict-Transport-Security" not in response.headers
+
+
 def test_middleware_headers_req_sec_002_skips_csp_for_docs_ui(
     test_client: TestClient,
 ) -> None:
