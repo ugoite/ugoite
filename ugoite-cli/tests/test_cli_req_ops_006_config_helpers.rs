@@ -6,8 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use ugoite_cli::config::{
     base_url, config_path, effective_format_for_stdout, load_config, normalize_space_root,
     operator_for_path, parse_space_path, print_json, print_json_table, resolve_space_reference,
-    save_config, space_ws_path, validate_server_endpoint_url, EndpointConfig, EndpointMode,
-    Format,
+    save_config, space_ws_path, validate_server_endpoint_url, EndpointConfig, EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
@@ -288,11 +287,9 @@ fn test_cli_req_ops_006_endpoint_helpers_cover_base_url_and_space_path() {
 
     let malformed =
         validate_server_endpoint_url("not a url", "Backend endpoint").expect_err("bad URL");
-    assert!(
-        malformed
-            .to_string()
-            .contains("Backend endpoint URL \"not a url\" is invalid")
-    );
+    assert!(malformed
+        .to_string()
+        .contains("Backend endpoint URL \"not a url\" is invalid"));
 
     let unsupported_scheme =
         validate_server_endpoint_url("ftp://backend.example.test", "Backend endpoint")
