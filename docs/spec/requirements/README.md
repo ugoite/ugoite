@@ -7,6 +7,7 @@ This directory contains machine-readable requirement definitions for Ugoite.
 | File | Category | Prefix |
 |------|----------|--------|
 | [storage.yaml](storage.yaml) | Storage & Data Model | REQ-STO-* |
+| [asset.yaml](asset.yaml) | Asset Management | REQ-ASSET-* |
 | [entry.yaml](entry.yaml) | Entry Management | REQ-ENTRY-* |
 | [index.yaml](index.yaml) | Indexer | REQ-IDX-* |
 | [integrity.yaml](integrity.yaml) | Data Integrity | REQ-INT-* |
@@ -39,22 +40,27 @@ requirements:
     status: implemented | planned | deprecated
     tests:
       pytest:
-        - file: path/to/test.py
+        - file: backend/tests/test_api.py
           tests:
-            - test_function_name
+            - test_create_entry
+      rust:
+        - file: ugoite-core/tests/test_entry.rs
+          tests:
+            - test_entry_req_entry_001_create_entry_basic
       vitest:
-        - file: path/to/test.ts
+        - file: frontend/src/lib/client.test.ts
           tests:
-            - test name in describe block
+            - should create a entry and extract title from markdown
       e2e:
-        - file: e2e/test.ts
+        - file: e2e/entries.test.ts
           tests:
-            - test name
+            - POST /spaces/default/entries creates a new entry
 ```
 
 ## Requirement ID Convention
 
 - `REQ-STO-###` - Storage & data model requirements
+- `REQ-ASSET-###` - Asset management requirements
 - `REQ-ENTRY-###` - Entry management requirements
 - `REQ-IDX-###` - Indexer requirements
 - `REQ-INT-###` - Integrity requirements
@@ -62,6 +68,7 @@ requirements:
 - `REQ-API-###` - API requirements
 - `REQ-FE-###` - Frontend requirements
 - `REQ-E2E-###` - End-to-end requirements
+- `REQ-OPS-###` - Operations & developer environment requirements
 - `REQ-FORM-###` - Form management requirements
 - `REQ-LNK-###` - Link requirements
 - `REQ-SRCH-###` - Search requirements
@@ -70,9 +77,10 @@ requirements:
 
 Each requirement lists the tests that verify it:
 
-- **pytest**: Python tests in `ugoite-cli/tests/` and `backend/tests/`
-- **vitest**: TypeScript tests in `frontend/src/**/*.test.ts(x)`
-- **e2e**: End-to-end tests in `e2e/`
+- **pytest**: Python-driven checks, typically in `backend/tests/` and `docs/tests/`
+- **rust**: Rust crate tests in `ugoite-core/tests/`, `ugoite-cli/tests/`, and `ugoite-minimum/tests/`
+- **vitest**: TypeScript tests in `frontend/src/**/*.test.ts(x)` and `docsite/src/**/*.test.ts(x)`
+- **e2e**: End-to-end browser tests in `e2e/`
 
 ## Verification Tests
 

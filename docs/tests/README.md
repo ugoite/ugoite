@@ -38,7 +38,10 @@ These tests ensure:
 mise run test:docs
 
 # Equivalent direct invocation
-uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error
+report="$(mktemp)"
+trap 'rm -f "$report"' EXIT
+uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml="$report"
+python3 scripts/check_pytest_no_skips.py "$report" "docs tests"
 ```
 
 `bashlex` is required because `test_guides.py` parses documented shell blocks
@@ -122,6 +125,7 @@ set used locally:
 
 ```bash
 uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=docs-pytest.xml
+python3 scripts/check_pytest_no_skips.py docs-pytest.xml "docs tests"
 ```
 
 See `.github/workflows/python-ci.yml` and `docs/spec/testing/ci-cd.md` for the
