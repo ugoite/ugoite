@@ -45,8 +45,12 @@ export default function About() {
 				</h1>
 				<p class="text-base sm:text-xl ui-muted max-w-3xl mx-auto">{copy().subtitle}</p>
 				<div class="mt-8 flex justify-center gap-3 flex-wrap">
-					<A href="/spaces" class="ui-button ui-button-primary">{copy().openSpaces}</A>
-					<A href="/" class="ui-button ui-button-secondary">{copy().backHome}</A>
+					<A href="/spaces" class="ui-button ui-button-primary">
+						{copy().openSpaces}
+					</A>
+					<A href="/" class="ui-button ui-button-secondary">
+						{copy().backHome}
+					</A>
 				</div>
 			</section>
 			<h2 class="sr-only">{copy().whatMakesDifferent}</h2>
