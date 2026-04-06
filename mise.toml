@@ -19,7 +19,7 @@ BROWSERSLIST_IGNORE_OLD_DATA = "true"
 biome = "2.3.15"
 bun = "1.3.8"
 node = "22.12.0"
-python = "3.12.13"
+python = "3.13.12"
 rust = "1.93.0"
 uv = "0.10.10"
 
@@ -58,7 +58,7 @@ run = [
 	"mise run //backend:test:no-build",
 	"mise run //frontend:test:coverage",
 	"mise run //docsite:test:coverage",
-	"mise run //ugoite-cli:test",
+	"mise run //ugoite-cli:test:coverage",
 	"mise run //ugoite-core:test:no-build",
 	"mise run //ugoite-minimum:test",
 	"mise run test:docs",
@@ -67,7 +67,9 @@ description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend,
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"
-run = "uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v"
+run = [
+	"report=\"$(mktemp)\" && trap 'rm -f \"$report\"' EXIT && uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -v -W error --junitxml=\"$report\" && python3 scripts/check_pytest_no_skips.py \"$report\" \"docs tests\"",
+]
 
 [tasks.e2e]
 description = "Run the authoritative E2E path (docker-compose when available, parity fallback otherwise)"

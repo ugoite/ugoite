@@ -8,6 +8,10 @@
 
 **"Local-First Knowledge Space with a Resource-First MCP Surface for the Post-SaaS Era"**
 
+`v0.1` ships the local-first core plus a resource-first MCP baseline. Broader
+AI-native workflows, including wider MCP resource coverage and tool exposure,
+remain planned for `v0.2`.
+
 Ugoite is a knowledge management system built on three core principles:
 
 | Principle | Description |
@@ -15,6 +19,10 @@ Ugoite is a knowledge management system built on three core principles:
 | **Low Cost** | No expensive cloud services required; runs on local storage |
 | **Easy** | Markdown-first with automatic structure extraction |
 | **Freedom** | Your data, your storage, your AI - no vendor lock-in |
+
+Today the shipped AI surface is **resource-first MCP access**: one read-only
+resource is available now, while prompts and tool-style MCP workflows remain
+future work.
 
 ---
 
@@ -32,7 +40,7 @@ Ugoite is a knowledge management system built on three core principles:
 | --- | --- | --- |
 | [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
 | [CLI Guide](../guide/cli.md) in `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
-| [Run from source](../guide/docker-compose.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
+| [Run from source](../guide/local-dev-auth-login.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
 ### Architecture & Design
 - [Architecture Overview](architecture/overview.md) - System design and component responsibilities
@@ -57,12 +65,12 @@ Ugoite is a knowledge management system built on three core principles:
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
-- [MCP Protocol](api/mcp.md) - Current resource-first MCP interface for AI agents
+- [MCP Protocol](api/mcp.md) - Current resource-first MCP surface for AI agents; prompts and tool-style workflows remain future work
 - [OpenAPI Spec](api/openapi.yaml) - Machine-readable API definition
 
 ### Requirements
 - [Requirements Overview](requirements/README.md) - How requirements are tracked
-- Requirements by category: [storage](requirements/storage.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [ops](requirements/ops.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
+- Requirements by category: [storage](requirements/storage.yaml) | [asset](requirements/asset.yaml) | [entry](requirements/entry.yaml) | [index](requirements/index.yaml) | [integrity](requirements/integrity.yaml) | [security](requirements/security.yaml) | [api](requirements/api.yaml) | [frontend](requirements/frontend.yaml) | [e2e](requirements/e2e.yaml) | [ops](requirements/ops.yaml) | [form](requirements/form.yaml) | [links](requirements/links.yaml) | [search](requirements/search.yaml)
 
 ### Governance Taxonomy
 - [Philosophy](philosophy/foundation.yaml) - Constitutional-level ideals
@@ -95,7 +103,7 @@ Ugoite is a knowledge management system built on three core principles:
 | `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
 | `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
-| `frontend` | UI rendering, optimistic updates (no data logic) | TypeScript (SolidStart) |
+| `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart) |
 
 ---
 
@@ -138,7 +146,7 @@ because the canonical data stays in the space itself.
 - [Machine-readable v0.1 tracker](../version/v0.1.yaml) - Current milestone/phase/task state for the v0.1 stream
 - [Machine-readable v0.2 tracker](../version/v0.2.yaml) - Planned milestone/phase/task state for the v0.2 stream
 - [Versions & Release Notes](versions/index.md) - Human-readable summary of what each version adds or changes
-- [Contributing](../../AGENTS.md) - Development guidelines
+- [Contributor onboarding](../guide/local-dev-auth-login.md) - Canonical `mise run setup` -> `mise run dev` -> `/login` workflow for human contributors
 
 ---
 

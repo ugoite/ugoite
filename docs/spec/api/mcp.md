@@ -2,15 +2,17 @@
 
 ## Overview
 
-Ugoite currently implements a resource-first Model Context Protocol (MCP)
-surface so AI agents can inspect the knowledge base over HTTP POST `/mcp`.
-Today's shipped backend registers one read-only MCP resource and exposes no MCP
-tools or prompts. Broader resource coverage and tool- or prompt-driven
-workflows remain planned `v0.2` work.
+Ugoite implements the Model Context Protocol (MCP) as a resource-first
+integration that lets AI clients read knowledge-base data through explicit
+trust boundaries. The current server is mounted at `/mcp` via SSE transport.
+
+In `v0.1`, the shipped MCP server exposes a single read-only resource. Broader
+resource coverage, prompts, and tools are planned for `v0.2`; they are not part
+of the current server surface.
 
 ## Resources
 
-Resources provide read-only access to data:
+Resources provide read-only access to data. The currently exposed resource is:
 
 ### `ugoite://{space_id}/entries/list`
 
@@ -38,20 +40,29 @@ Resource parameter and content-safety notes:
 }
 ```
 
-## Planned Resource Expansion
+---
 
-The following MCP surfaces are roadmap items rather than already-shipped
-behavior:
+## Current Scope vs Planned Expansion
+
+Additional resource coverage is not currently exposed in the shipped server.
+That includes planned surfaces such as:
 
 - `ugoite://{space_id}/entries/{entry_id}` for individual entry reads
 - `ugoite://{space_id}/entries/{entry_id}/history` for revision summaries
 - `ugoite://{space_id}/forms` for form-definition discovery
 
+Pre-defined prompts and MCP tools are also planned rather than shipped.
+
+Broader MCP coverage belongs to the planned `v0.2` work described in
+[`docs/spec/versions/v0.2.md`](../versions/v0.2.md).
+
 ---
 
 ## Tools
 
-No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
+No MCP tools are currently exposed. The shipped MCP surface is resource-first
+today (one read-only resource), and the deprecated `run_script` tool has been
+removed.
 
 ---
 

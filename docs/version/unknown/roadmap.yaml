@@ -4,9 +4,9 @@ status: planned
 title: "Development Roadmap"
 goal: >
   Outline major milestones for Ugoite development from MVP through native app,
-  aligned with the vision of a local-first knowledge space that grows from
-  today's resource-first MCP baseline toward richer AI workflows for the
-  post-SaaS era.
+  aligned with the vision of a Local-First Knowledge Space for the Post-SaaS
+  Era, where broader AI-native workflows build on today's resource-first MCP
+  baseline.
 phases:
   - id: design
     status: in_progress

@@ -99,11 +99,12 @@ API layer providing access to frontend and AI agents:
 
 ### Frontend (TypeScript/SolidStart)
 
-UI layer with NO data logic:
+UI/client layer with client-side state and cache responsibilities, but no
+business-rule or persistence logic:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `lib/*-store.ts` | State management, optimistic updates |
+| `lib/*-store.ts` | Client-side state, local cache, optimistic updates |
 | `lib/*-api.ts` | Feature API clients (REST calls only) |
 | `routes/` | Page components |
 | `components/` | Reusable UI components |
@@ -149,6 +150,6 @@ Frontend                 Backend              ugoite-core           Storage
 |-----------|----------------|
 | **Local-First** | All data in user-controlled storage; no required cloud services |
 | **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
-| **Resource-First MCP** | Current backend ships one read-only MCP resource; broader MCP resources and tools are planned for v0.2 |
+| **Resource-First MCP** | `v0.1` ships one read-only MCP resource; broader MCP resources, prompts, and tools are planned for `v0.2` |
 | **Layered** | Clear separation: ugoite-minimum → ugoite-core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |
