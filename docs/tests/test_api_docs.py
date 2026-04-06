@@ -138,6 +138,84 @@ def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_entry_001_create_entry_response_matches_backend_contract() -> None:
+    """REQ-ENTRY-001: create-entry docs return only the implemented ids."""
+    rest_text = _read_text(API_REST_PATH)
+    create_entry_section = rest_text.split("#### Create Entry", maxsplit=1)[1].split(
+        "#### Get Entry",
+        maxsplit=1,
+    )[0]
+    response_section = create_entry_section.split(
+        "**Response**: `201 Created`",
+        maxsplit=1,
+    )[1]
+    response_payload = _extract_json_code_block(
+        response_section,
+        "create-entry response section",
+    )
+    details: list[str] = []
+
+    if response_payload != {"id": "entry-new-uuid", "revision_id": "rev-0001"}:
+        details.append(
+            "api/rest.md create-entry response must document only id and revision_id",
+        )
+    if (
+        "Create responses return only the generated `id` and `revision_id`"
+        not in rest_text
+    ):
+        details.append(
+            "api/rest.md must explain that create-entry responses stay minimal",
+        )
+
+    openapi = _require_mapping(
+        yaml.safe_load(_read_text(OPENAPI_PATH)),
+        "openapi root",
+    )
+    paths = _require_mapping(openapi.get("paths"), "openapi paths")
+    entry_post = _require_mapping(
+        _require_mapping(
+            paths.get("/spaces/{space_id}/entries"),
+            "create-entry path",
+        ).get("post"),
+        "create-entry post operation",
+    )
+    responses = _require_mapping(entry_post.get("responses"), "create-entry responses")
+    created = _require_mapping(responses.get("201"), "create-entry 201 response")
+    content = _require_mapping(created.get("content"), "create-entry 201 content")
+    app_json = _require_mapping(
+        content.get("application/json"),
+        "create-entry 201 application/json",
+    )
+    schema = _require_mapping(app_json.get("schema"), "create-entry 201 schema")
+    properties = _require_mapping(
+        schema.get("properties"),
+        "create-entry 201 properties",
+    )
+    required = schema.get("required")
+    example = _require_mapping(
+        app_json.get("example"),
+        "create-entry 201 example",
+    )
+
+    if not isinstance(required, list) or sorted(required) != ["id", "revision_id"]:
+        details.append(
+            "api/openapi.yaml create-entry 201 schema must require only id and"
+            " revision_id",
+        )
+    if sorted(properties) != ["id", "revision_id"]:
+        details.append(
+            "api/openapi.yaml create-entry 201 schema must expose only id and"
+            " revision_id",
+        )
+    if example != {"id": "entry-new-uuid", "revision_id": "rev-0001"}:
+        details.append(
+            "api/openapi.yaml create-entry 201 example must match the backend contract",
+        )
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
 def test_docs_req_form_001_list_column_types_response_contract() -> None:
     """REQ-FORM-001: list-column-types docs describe the full array response."""
     rest_text = _read_text(API_REST_PATH)
