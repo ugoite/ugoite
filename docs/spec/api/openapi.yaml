@@ -236,17 +236,17 @@ paths:
             schema:
               type: object
               required:
-                - content
+                - markdown
               properties:
                 id:
                   type: string
                   maxLength: 128
-                content:
+                markdown:
                   type: string
                   minLength: 1
                   maxLength: 200000
             example:
-              content: |-
+              markdown: |-
                 ---
                 form: Entry
                 ---
