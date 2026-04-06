@@ -6,6 +6,11 @@ Ugoite browser experience locally. It downloads the shipped
 GHCR images, and starts the stack without cloning the repository or rebuilding
 images from source.
 
+This is the fastest **browser** path, but it is not the lowest-overhead path:
+it still needs Docker, published image pulls, and a two-service stack. If you
+want the lightest local-first start, use the [CLI Guide](cli.md) in `core`
+mode instead.
+
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
 If you want the same published two-service topology on Kubernetes, use
@@ -38,6 +43,11 @@ docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
 ```
 
+If the stack does not start cleanly, ports are already occupied, or the browser
+cannot reach the backend, follow
+[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md)
+before debugging login/auth behavior.
+
 The compose file pulls these canonical published images:
 
 - `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
@@ -58,6 +68,44 @@ defaults to `mock-oauth` so first-time browser evaluators can reach `/spaces`
 with fewer steps, while source development keeps `passkey-totp` as the default
 so contributors exercise the explicit passkey + 2FA flow.
 
+## Why does release compose set `UGOITE_ALLOW_REMOTE=true`?
+
+The shipped `docker-compose.release.yaml` runs the frontend and backend as two
+separate containers. The frontend reaches the backend through the Compose
+network at `http://backend:8000`, so the backend must accept non-loopback
+traffic **inside that private container network**. That is why the published
+compose file sets `UGOITE_ALLOW_REMOTE=true`.
+
+This does **not** make the quick start publicly reachable by default. The
+published host ports still bind to `127.0.0.1`, so the browser UI and backend
+API remain localhost-only on the host unless you edit the compose file
+yourself.
+
+If you want stricter host exposure, remove the backend `ports:` mapping and use
+the browser only through the frontend container; it will still reach
+`http://backend:8000` over the Compose network. If you need a topology that
+keeps `UGOITE_ALLOW_REMOTE=false`, use the CLI in `core` mode or a non-Compose
+workflow where the client talks to a loopback-bound backend directly.
+
+## Where browser-created data lives
+
+The browser path is still local-first in practice. When you create entries
+through the published UI, the backend writes that data into the host-mounted
+spaces directory, not into a hosted database.
+
+- By default, that host path is `./spaces`.
+- If you override `UGOITE_SPACES_DIR`, inspect or back up that host path
+  instead.
+- This is what "local-first" means for the published browser path: you can
+  examine and copy the underlying data directory yourself.
+
+For example, after creating content in the browser:
+
+```bash
+ls ./spaces
+find ./spaces -maxdepth 2 -type f | head
+```
+
 ## Next steps
 
 - The `default` space is the starter workspace that the published quick start
@@ -65,10 +113,14 @@ so contributors exercise the explicit passkey + 2FA flow.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
 - Read [Core Concepts](concepts.md) once you want the mental model for spaces,
-  entries, forms, and search behind the browser workflow you just started.
+  entries, forms, and search behind the browser workflow you just started. If you skipped the primer earlier, do that before exploring more of the UI or the deeper docs.
+- After that first browser-created note, inspect `./spaces` (or your overridden
+  `UGOITE_SPACES_DIR`) to see where the data now lives on the host.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
   workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
   the full contributor stack from source.
+- If the published stack starts in a confusing partial state, use
+  [Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md).
 
 To stop the stack:
 
@@ -114,6 +166,8 @@ Choose the release channel that matches your goal:
   space, and enables explicit `mock-oauth` browser login so `/login` works
   without editing the compose file.
 - The frontend container talks to the backend through the Compose network via
-  `http://backend:8000`.
+  `http://backend:8000`, which is why the shipped backend environment keeps
+  `UGOITE_ALLOW_REMOTE=true` inside the container network even though host
+  access still stays on `127.0.0.1`.
 - If you want source-mounted development containers instead, use
   `docker-compose.yaml` and build locally.

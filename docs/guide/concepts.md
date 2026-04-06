@@ -1,12 +1,17 @@
 # Core Concepts: Spaces, Entries, Forms, and Search
 
 Use this guide when you want the plain-language mental model behind the path
-you already picked, or before you go deeper into auth and specification docs.
+you already picked, or when you want that same mental model before choosing a
+surface and before you go deeper into auth and specification docs.
 
 Ugoite is built to keep your knowledge local-first, portable, and easy to
 understand. The core idea is simple: you keep information in a **space**,
 organize it as **entries**, define predictable structure with **forms**, and
 then let Ugoite derive **search and indexes** from that source data.
+
+In one sentence: a space groups entries, forms define their structure, Markdown
+stays the authoring surface, and search is derived from the typed fields Ugoite
+extracts when you want schema-aware behavior.
 
 ## Start with a space
 
@@ -100,14 +105,17 @@ that contract rather than replace it.
 
 ## Which surface should you use next?
 
-Once the concepts make sense, continue with the surface that matches your
-task, or return to the one you already started:
+Once the concepts make sense, choose the surface that matches your task, or
+return to the one you already started:
 
 - Use the [Container Quick Start](container-quickstart.md) when you want the
   fastest browser-based evaluation and you are comfortable running the backend
   + frontend stack locally.
 - Use the [CLI Guide](cli.md) when you prefer terminal-first workflows or
   scripting, or when you want the thinnest local-first workflow today.
+- Use the [REST API](../spec/api/rest.md) when you are integrating another
+  client or intentionally want server-backed automation instead of direct local
+  filesystem access.
 - Use the [Docker Compose Guide](docker-compose.md) when you want the full
   contributor stack from source.
 - Use the [Specification Index](../spec/index.md) when you need the formal

@@ -3,6 +3,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
 import {
   conceptPrimerCard,
+  coreConceptSummaries,
   nextStepCards,
   primaryStartCards,
 } from "../../lib/onboarding";
@@ -37,7 +38,7 @@ const toc = [
         <p class="doc-pill doc-kicker">Choose a Path</p>
         <h2 class="doc-section-title">Start with the path that matches what you need today</h2>
         <p class="doc-lead">
-          Pick the shortest route for what you want to do right now, then come back to the concepts primer once you want the shared mental model behind spaces, entries, forms, and search.
+          Pick the shortest route for what you want to do right now, then come back to the concepts primer once you want the shared mental model behind spaces, entries, forms, search, and surface choice.
         </p>
       </div>
 
@@ -61,8 +62,17 @@ const toc = [
         <p class="doc-pill doc-kicker">Concept primer</p>
         <h2 class="doc-section-title">Use the mental model when you want more context</h2>
         <p class="doc-lead">
-          After you pick a path, spend a few minutes on spaces, entries, forms, and search before you dive deeper into auth or the specification docs.
+          After you pick a path, spend a few minutes on spaces, entries, forms, Markdown-backed search, and surface choice before you dive deeper into auth or the specification docs.
         </p>
+      </div>
+
+      <div class="doc-grid doc-card-list">
+        {coreConceptSummaries.map((concept) => (
+          <article class="doc-card doc-section-stack">
+            <h3 class="doc-link-card__title">{concept.title}</h3>
+            <p>{concept.description}</p>
+          </article>
+        ))}
       </div>
 
       <div class="doc-grid">
@@ -73,7 +83,7 @@ const toc = [
           </div>
           <h2 class="doc-link-card__title">{conceptPrimerCard.title}</h2>
           <p class="doc-link-card__body">{conceptPrimerCard.description}</p>
-          <div class="doc-link-card__footer">Open primer</div>
+          <div class="doc-link-card__footer">Open the full primer</div>
         </a>
       </div>
     </section>
