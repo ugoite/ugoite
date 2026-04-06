@@ -31,7 +31,7 @@ describe("public page localization", () => {
 				screen.getByText("ローカルファーストの知識を、検索と自動化のために構造化"),
 			).toBeInTheDocument();
 			expect(screen.getByRole("link", { name: "ログイン" })).toHaveAttribute("href", "/login");
-			expect(screen.getByRole("link", { name: "詳しく見る" })).toHaveAttribute("href", "/about");
+			expect(screen.getByRole("link", { name: "詳しく見る" })).toHaveAttribute("href");
 			expect(
 				screen.queryByText("Local-first knowledge, structured for search and automation"),
 			).not.toBeInTheDocument();

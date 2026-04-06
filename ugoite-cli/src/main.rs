@@ -74,7 +74,7 @@ enum Commands {
     ///   ugoite query /root/spaces/my-space --sql "SELECT id, title FROM entries WHERE form='note'"
     ///
     #[command(
-        long_about = "Query the index using SQL.\n\nThe SQL dialect is SQLite. The queryable table is `entries` with columns: id, title, body, form, tags, created_at, updated_at.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM entries LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM entries WHERE form='note'\""
+        long_about = "Query the index using SQL.\n\nThe SQL dialect is SQLite. The queryable table is `entries` with standard columns: id, title, form, updated_at, space_id, word_count, tags. Form fields can also be queried directly by field name or through properties.<field>.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM entries LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM entries WHERE form='note'\""
     )]
     Query {
         #[arg(
@@ -84,7 +84,7 @@ enum Commands {
         space_path: String,
         #[arg(
             long,
-            help = "SQL query to run against the indexed entries (SQLite dialect). Table: entries. Columns: id, title, body, form, tags, created_at, updated_at.\n\nExample: \"SELECT id, title FROM entries LIMIT 10\""
+            help = "SQL query to run against the indexed entries (SQLite dialect). Table: entries. Standard columns: id, title, form, updated_at, space_id, word_count, tags. Form fields can also be queried directly by field name or through properties.<field>.\n\nExample: \"SELECT id, title FROM entries LIMIT 10\""
         )]
         sql: String,
     },

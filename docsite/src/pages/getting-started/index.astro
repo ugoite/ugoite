@@ -3,6 +3,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import { withBasePath } from "../../lib/base-path";
 import {
   conceptPrimerCard,
+  coreConceptSummaries,
   nextStepCards,
   primaryStartCards,
 } from "../../lib/onboarding";
@@ -37,8 +38,19 @@ const toc = [
         <p class="doc-pill doc-kicker">Core Concepts</p>
         <h2 class="doc-section-title">Learn the mental model before you pick a tool</h2>
         <p class="doc-lead">
-          Spend a few minutes on spaces, entries, forms, and search first. It makes the browser, CLI, and design docs easier to understand later.
+          Spend a few minutes on spaces, entries, forms, Markdown-backed search,
+          and surface choice first. It makes the browser, CLI, API, and design
+          docs easier to understand later.
         </p>
+      </div>
+
+      <div class="doc-grid doc-card-list">
+        {coreConceptSummaries.map((concept) => (
+          <article class="doc-card doc-section-stack">
+            <h3 class="doc-link-card__title">{concept.title}</h3>
+            <p>{concept.description}</p>
+          </article>
+        ))}
       </div>
 
       <div class="doc-grid">
@@ -49,7 +61,7 @@ const toc = [
           </div>
           <h2 class="doc-link-card__title">{conceptPrimerCard.title}</h2>
           <p class="doc-link-card__body">{conceptPrimerCard.description}</p>
-          <div class="doc-link-card__footer">Open primer</div>
+          <div class="doc-link-card__footer">Open the full primer</div>
         </a>
       </div>
     </section>

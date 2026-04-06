@@ -1101,7 +1101,9 @@ requirements:
   title: UI Spec YAML Registry Validation
   description: 'Frontend tests MUST load all UI page YAML specs under docs/spec/ui/pages
 
-    and validate page links, shared chrome, and component type registry.
+    and validate page links, shared chrome, component type registry, and that
+
+    pages marked `implemented` do not still render obvious placeholder route copy.
 
     '
   related_spec:
@@ -1115,6 +1117,9 @@ requirements:
       - 'REQ-FE-040: loads UI page specs'
       - 'REQ-FE-040: validates page links'
       - 'REQ-FE-040: validates component types'
+      - 'REQ-FE-040: validates docs pages map to implemented routes'
+      - 'REQ-FE-040: validates implemented routes are documented'
+      - 'REQ-FE-040: implemented page specs reject placeholder route content'
       - 'REQ-FE-040: validates shared space chrome'
       - 'REQ-FE-040: validates entries/forms bottom tabs use product labels'
     - file: frontend/src/components/SpaceShell.test.tsx
@@ -1712,6 +1717,45 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
       tests:
       - 'REQ-FE-061: saved SQL route explains the missing UI and links to working recovery paths'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-062
+  title: Saved SQL Detail Route Uses Supported Query Actions
+  description: 'The `/spaces/{space_id}/sql/{sql_id}` route MUST load the saved query,
+
+    show the query text and metadata instead of placeholder copy, and only expose
+
+    supported next actions: run the query immediately when it has no variables
+
+    or send the user to the existing variable-input flow when parameters are
+
+    required.
+
+    '
+  related_spec:
+  - ui/pages/space-sql-detail.yaml
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/saved-sql-route.test.ts
+      tests:
+      - 'REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries'
+    vitest:
+    - file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
+      tests:
+      - 'REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions'
+      - 'REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
