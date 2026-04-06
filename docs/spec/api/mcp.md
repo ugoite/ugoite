@@ -55,7 +55,9 @@ Broader MCP coverage belongs to the planned `v0.2` work described in
 
 ## Tools
 
-No MCP tools are currently exposed. The deprecated `run_script` tool has been removed.
+No MCP tools are currently exposed. The shipped MCP surface is resource-first
+today (resources + prompts), and the deprecated `run_script` tool has been
+removed.
 
 ---
 

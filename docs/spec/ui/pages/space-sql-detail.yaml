@@ -1,10 +1,10 @@
 version: "0.1"
-updated: "2026-02-14"
+updated: "2026-04-03"
 page:
   id: space-sql-detail
   title: Space SQL Detail
   route: /spaces/{space_id}/sql/{sql_id}
-  implementation: implemented
+  implementation: in-progress
 components:
   shared:
     - id: top-tabs
@@ -15,6 +15,27 @@ components:
       position: top-right-floating
       icon: settings
   body:
-    - id: sql-detail
-      type: sql-editor
+    - id: sql-detail-heading
+      type: heading
       title: Saved SQL detail
+    - id: sql-detail-metadata
+      type: list
+      title: Query metadata
+    - id: sql-detail-editor
+      type: sql-editor
+      title: Saved SQL text
+    - id: sql-detail-variables
+      type: list
+      title: Query variables
+    - id: sql-detail-primary-action
+      type: button
+      title: Run query or open variables
+    - id: saved-sql-index-action
+      type: button
+      title: Back to saved SQL
+    - id: search-recovery-action
+      type: button
+      title: Open search
+    - id: dashboard-recovery-action
+      type: button
+      title: Back to dashboard

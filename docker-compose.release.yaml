@@ -7,6 +7,8 @@ services:
       - "${UGOITE_SPACES_DIR:-./spaces}:/data"
     environment:
       - UGOITE_ROOT=/data
+      # Required because the frontend container reaches the backend over the
+      # private Compose bridge network; host exposure still stays on 127.0.0.1.
       - UGOITE_ALLOW_REMOTE=true
       - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
       - UGOITE_DEV_AUTH_MODE=mock-oauth

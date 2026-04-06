@@ -19,12 +19,12 @@ pub enum ConfigSubCmd {
     Current,
     /// Save endpoint config (mode, backend URL, API URL)
     #[command(
-        long_about = "Save endpoint configuration.\n\nThree modes are supported:\n  core     - Direct local filesystem access (no backend needed)\n  backend  - Connect to a running ugoite backend server\n  api      - Connect to a remote API endpoint\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (connect to remote API)\n  ugoite config set --mode api --api-url https://api.example.com\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
+        long_about = "Save endpoint configuration.\n\nWhich mode should you use?\n  core     - Default. Use when you are working directly with a local checkout or local spaces/ directory.\n  backend  - Use when you want the CLI to talk to a backend server directly.\n  api      - Use when you want the CLI to use the same proxied /api surface as the frontend.\n\nWhy core is the default:\n  core keeps the CLI local-first. Commands read and write your filesystem directly, with no server required.\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (same proxied /api surface as the frontend)\n  ugoite config set --mode api --api-url https://example.com/api\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
     )]
     Set {
         #[arg(
             long,
-            help = "Endpoint mode: core (local filesystem), backend (ugoite server), or api (remote API)"
+            help = "Endpoint mode: core (local spaces/ on this machine, default), backend (direct backend server), or api (same proxied /api surface as the frontend)"
         )]
         mode: Option<String>,
         #[arg(
@@ -96,6 +96,10 @@ fn print_current_config(config: &crate::config::EndpointConfig) {
         EndpointMode::Core => {
             println!("Current endpoint mode: core");
             println!("Topology: local filesystem via ugoite-core.");
+            println!(
+                "Best when: you are working directly with a local checkout or local spaces/ directory."
+            );
+            println!("Why it stays the default: it is the shortest local-first path and does not require a running server.");
             println!("Future commands read and write your local workspace directly.");
             println!("To switch to a server-backed mode:");
             println!("  ugoite config set --mode backend --backend-url http://localhost:8000");
@@ -103,6 +107,8 @@ fn print_current_config(config: &crate::config::EndpointConfig) {
         EndpointMode::Backend => {
             println!("Current endpoint mode: backend");
             println!("Topology: direct backend server at {}", config.backend_url);
+            println!("Best when: you want the CLI to talk to a backend server directly.");
+            println!("Trade-off: future commands use the server's storage and auth behavior instead of your local filesystem.");
             if let Some(warning) =
                 endpoint_transport_warning(&config.backend_url, "Backend endpoint")
             {
@@ -115,6 +121,10 @@ fn print_current_config(config: &crate::config::EndpointConfig) {
         EndpointMode::Api => {
             println!("Current endpoint mode: api");
             println!("Topology: API endpoint at {}", config.api_url);
+            println!(
+                "Best when: you want the CLI to use the same proxied /api surface as the frontend."
+            );
+            println!("Trade-off: future commands follow the frontend-facing API path instead of direct local filesystem access.");
             if let Some(warning) = endpoint_transport_warning(&config.api_url, "API endpoint") {
                 println!("Warning: {warning}");
             }
