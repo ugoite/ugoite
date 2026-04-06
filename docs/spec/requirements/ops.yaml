@@ -574,7 +574,13 @@ requirements:
 
     indefinitely, and
 
-    complete an explicit login step before a bearer token is issued. `mock-oauth`
+    complete an explicit login step before a bearer token is issued. CLI logins
+
+    MUST also persist the issued bearer token in a CLI-owned session file with
+
+    owner-only permissions so follow-up CLI commands stay authenticated without
+
+    shell eval, while still allowing shell export output for scripting. `mock-oauth`
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
@@ -680,7 +686,12 @@ requirements:
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
+      - test_cli_auth_login_req_ops_015_persists_cli_session_for_followup_commands
+      - test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session
       - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
+    - file: ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+      tests:
+      - test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths
     e2e:
     - file: e2e/smoke.test.ts
       tests:
