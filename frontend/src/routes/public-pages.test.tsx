@@ -33,15 +33,17 @@ describe("public page localization", () => {
 				screen.getByText("ローカルファーストの知識を、検索と自動化のために構造化"),
 			).toBeInTheDocument();
 			expect(screen.getByRole("link", { name: "ログイン" })).toHaveAttribute("href", "/login");
-			expect(screen.getByText("まずはログインから始めてください。/spaces には認証済みのブラウザーセッションが必要です。")).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					"まずはログインから始めてください。/spaces には認証済みのブラウザーセッションが必要です。",
+				),
+			).toBeInTheDocument();
 			expect(screen.getByRole("link", { name: "詳しく見る" })).toHaveAttribute("href");
 			expect(
 				screen.queryByText("Local-first knowledge, structured for search and automation"),
 			).not.toBeInTheDocument();
 			expect(
-				screen.queryByText(
-					"Start with Log in. /spaces requires an authenticated browser session.",
-				),
+				screen.queryByText("Start with Log in. /spaces requires an authenticated browser session."),
 			).not.toBeInTheDocument();
 		});
 	});
