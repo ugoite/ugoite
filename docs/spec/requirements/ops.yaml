@@ -564,11 +564,15 @@ requirements:
 
     login context with owner-only permissions, require a passkey-bound local
 
-    context in addition to the 2FA code during explicit browser/CLI login,
+    context in addition to the 2FA code during explicit browser/CLI login, keep
 
-    keep `GET /auth/config` read-only so login discovery cannot recreate
+    `GET /auth/config` read-only so login discovery cannot recreate admin-space
 
-    admin-space or other storage state, and
+    or other storage state, apply temporary throttling after repeated failed
+
+    `passkey-totp` login attempts so the endpoint cannot be hammered
+
+    indefinitely, and
 
     complete an explicit login step before a bearer token is issued. `mock-oauth`
 
@@ -607,6 +611,8 @@ requirements:
       - test_dev_auth_req_ops_015_auth_config_remains_read_only
       - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
       - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
+      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures
+      - test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
       - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
       - test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context
