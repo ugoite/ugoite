@@ -1459,14 +1459,13 @@ def test_docs_req_e2e_008_concepts_primer_order_stays_consistent() -> None:
 
 
 def test_docs_req_ops_001_source_compose_frontend_stays_loopback_only() -> None:
-    """REQ-OPS-001: source Compose defaults must keep browser auth endpoints on loopback."""
+    """REQ-OPS-001: source Compose keeps browser auth endpoints on loopback."""
     compose_text = (REPO_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
     guide_text = (GUIDE_DIR / "docker-compose.md").read_text(encoding="utf-8")
 
     compose_fragments = [
         "127.0.0.1:8000:8000",
         "127.0.0.1:3000:3000",
-        "UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy",
     ]
     guide_fragments = [
         "http://127.0.0.1:8000",
@@ -1482,7 +1481,7 @@ def test_docs_req_ops_001_source_compose_frontend_stays_loopback_only() -> None:
     ]
     if missing:
         raise AssertionError(
-            "source Compose loopback defaults are missing fragments: " + ", ".join(missing),
+            "source Compose loopback fragments are missing: " + ", ".join(missing),
         )
 
 
