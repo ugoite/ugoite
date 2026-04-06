@@ -43,6 +43,8 @@ Planned endpoint surface (exact payloads may evolve during implementation):
 
 These endpoints expose the current explicit passwordless login flow and stay
 unauthenticated so the browser and CLI can complete sign-in after startup.
+`GET /auth/config` is read-only discovery: it must not create admin-space or
+patch storage as a side effect.
 
 - `GET /auth/config`
 - `POST /auth/login`

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -256,6 +257,32 @@ def test_dev_auth_req_ops_015_startup_bootstraps_admin_space(
     assert admin_space_response.status_code == 200
     admin_settings = admin_space_response.json()["settings"]
     assert admin_settings["members"]["dev-startup-user"]["state"] == "active"
+
+
+def test_dev_auth_req_ops_015_auth_config_remains_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: auth config discovery must not recreate admin-space."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+        overrides={"UGOITE_DEV_USER_ID": "dev-config-user"},
+    )
+    clear_auth_manager_cache()
+
+    admin_space_dir = temp_space_root / "spaces" / ugoite_core.admin_space_id()
+
+    with TestClient(app) as client:
+        assert admin_space_dir.is_dir()
+        shutil.rmtree(admin_space_dir)
+
+        response = client.get("/auth/config")
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "mock-oauth"
+    assert not admin_space_dir.exists()
 
 
 def test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack(
