@@ -227,8 +227,12 @@ test("REQ-OPS-003: requirement and feature helpers sort governance sources predi
 			[featureRegistryPath]: `files:
   - kind: links
     file: links.yaml
+    linked_requirements:
+      - REQ-1
   - kind: fallback
     file: fallback.yaml
+    linked_requirements:
+      - REQ-2
   - kind: empty
     file: empty.yaml
 `,
@@ -294,7 +298,7 @@ apis:
 		},
 	]);
 	expect(await getFeatureGroups()).toEqual([
-		{ kind: "empty", file: "empty.yaml", apis: [] },
+		{ kind: "empty", file: "empty.yaml", apis: [], linkedRequirements: [] },
 		{
 			kind: "entries",
 			file: "links.yaml",
@@ -313,6 +317,7 @@ apis:
 					},
 				},
 			],
+			linkedRequirements: ["REQ-1"],
 		},
 		{
 			kind: "fallback",
@@ -332,6 +337,7 @@ apis:
 					},
 				},
 			],
+			linkedRequirements: ["REQ-2"],
 		},
 	]);
 
@@ -409,8 +415,13 @@ updated: false
 			[featureRegistryPath]: `files:
   - kind: links
     file: links.yaml
+    linked_requirements:
+      - REQ-1
+      - REQ-2
   - kind: fallback
     file: fallback.yaml
+    linked_requirements:
+      - REQ-1
 `,
 			[linksFeaturePath]: `kind: entries
 apis: []
@@ -502,4 +513,52 @@ apis: []
 
 	expect(await getSpecifications()).toEqual([]);
 	expect(await getRequirementToFeatureEdges()).toEqual([]);
+});
+
+test("REQ-API-004: feature manifest requirement links drive policy feature edges", async () => {
+	const featureRegistryPath = path.join(featuresDir, "features.yaml");
+	const searchFeaturePath = path.join(featuresDir, "search.yaml");
+	const sqlFeaturePath = path.join(featuresDir, "sql.yaml");
+
+	useMockedFs({
+		files: {
+			[featureRegistryPath]: `files:
+  - kind: search
+    file: search.yaml
+    linked_requirements:
+      - REQCAT-SEARCH
+  - kind: sql
+    file: sql.yaml
+    linked_requirements:
+      - REQCAT-SEARCH
+      - REQCAT-API
+`,
+			[searchFeaturePath]: "kind: search\napis: []\n",
+			[sqlFeaturePath]: "kind: sql\napis: []\n",
+		},
+	});
+
+	expect(await getFeatureGroups()).toEqual([
+		{
+			kind: "search",
+			file: "search.yaml",
+			apis: [],
+			linkedRequirements: ["REQCAT-SEARCH"],
+		},
+		{
+			kind: "sql",
+			file: "sql.yaml",
+			apis: [],
+			linkedRequirements: ["REQCAT-SEARCH", "REQCAT-API"],
+		},
+	]);
+	expect(await getRequirementToFeatureEdges()).toEqual([
+		{ requirement: "REQCAT-SEARCH", feature: "search" },
+		{ requirement: "REQCAT-SEARCH", feature: "sql" },
+		{ requirement: "REQCAT-API", feature: "sql" },
+	]);
+	expect(await getFeatureKindsLinkedToRequirements(["REQCAT-SEARCH"])).toEqual([
+		"search",
+		"sql",
+	]);
 });

@@ -51,19 +51,23 @@ Ugoite follows **Test-Driven Development (TDD)**:
 mise run test
 ```
 
+The root test task now reuses the same Python warning-as-error and no-skipped-test
+gates as the backend, ugoite-core, and docs CI lanes.
+
 ### Individual Packages
 ```bash
 mise run //ugoite-minimum:test # Portable Rust core tests with 100% coverage enforcement
-mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests
-mise run //backend:test    # Backend pytest
+mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests (+ Python warnings as errors, no skips)
+mise run //backend:test    # Backend pytest (+ warnings as errors, no skips)
 mise run //frontend:test   # Frontend vitest
 mise run //docsite:test    # Docsite Vitest unit tests
 mise run //ugoite-cli:test # Incremental CLI Rust tests
+mise run //ugoite-cli:test:coverage # CLI Rust coverage gate matching CI
 mise run //ugoite-cli:test:clean # Clean package-local CLI artifacts and rerun tests
 ```
 
-CLI 100% line coverage remains enforced in pre-commit and Rust CI via
-`cargo llvm-cov`.
+Root `mise run test`, `mise run //ugoite-cli:test:coverage`, pre-commit, and
+Rust CI enforce the CLI 100% line-coverage gate via `cargo llvm-cov`.
 
 ### E2E Tests
 ```bash
@@ -76,6 +80,7 @@ This command:
 3. Uses CI-equivalent Playwright JUnit/no-skipped-tests gates in either mode
 4. Executes the full Playwright E2E suite
 5. Shuts down any services it started
+6. Fails fast if ports `3000` or `8000` are already occupied; use `mise run cleanup:ports` for explicit local port cleanup
 
 ### Fast E2E Iteration
 ```bash
