@@ -1,5 +1,6 @@
 use crate::config::{
-    base_url, load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
+    validated_base_url,
 };
 use crate::http;
 use anyhow::Result;
@@ -63,7 +64,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         }
         SqlSubCmd::SavedList { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_get(&format!("{base}/spaces/{space_id}/sql")).await?;
                 print_json(&result);
                 return Ok(());
@@ -75,7 +76,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         }
         SqlSubCmd::SavedGet { space_path, sql_id } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-get")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result =
                     http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
                 print_json(&result);
@@ -99,7 +100,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/sql"),
                     &serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author}),
@@ -136,7 +137,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let vars: serde_json::Value = variables
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_put(
                     &format!("{base}/spaces/{space_id}/sql/{sql_id}"),
                     &serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author}),
@@ -168,7 +169,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedDelete { space_path, sql_id } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-delete")?;
-            if let Some(base) = base_url(&config) {
+            if let Some(base) = validated_base_url(&config)? {
                 let result =
                     http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
                 print_json(&result);

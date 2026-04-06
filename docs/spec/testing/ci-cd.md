@@ -521,7 +521,6 @@ Before pushing, run the same checks as CI:
 ```bash
 # Rust
 cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
-<<<<<<< HEAD
 cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/check_pytest_no_skips.py "$report" "ugoite-core tests"
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 
