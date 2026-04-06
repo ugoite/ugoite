@@ -20,3 +20,12 @@ run = [
 	"report=\"$(mktemp)\" && trap 'rm -f \"$report\"' EXIT && uv run pytest -W error --junitxml=\"$report\" && python3 ../scripts/check_pytest_no_skips.py \"$report\" \"backend tests\"",
 ]
 description = "Run backend pytest suite assuming ugoite-core is already built"
+
+[tasks."test:targeted"]
+run = "uv run pytest --no-cov"
+description = "Run backend pytest without the global coverage gate"
+depends = ["//ugoite-core:build"]
+
+[tasks."test:targeted:no-build"]
+run = "uv run pytest --no-cov"
+description = "Run backend pytest without the global coverage gate assuming ugoite-core is already built"
