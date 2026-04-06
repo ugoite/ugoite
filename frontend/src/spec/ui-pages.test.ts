@@ -95,6 +95,13 @@ const collectRouteFiles = (dir: string): string[] => {
 	return files;
 };
 
+const placeholderStubPatterns = [
+	/\bis not yet available\b/i,
+	/\bcoming soon\b/i,
+	/\bnot implemented\b/i,
+	/\bplaceholder (?:screen|ui|route)\b/i,
+];
+
 const segmentFromFile = (segment: string) => {
 	if (segment === "index") return "";
 	if (segment.startsWith("[") && segment.endsWith("]")) {
@@ -109,6 +116,13 @@ const routeFromFilePath = (filePath: string) => {
 	const segments = withoutExt.split("/").map(segmentFromFile).filter(Boolean);
 	return `/spaces/{space_id}${segments.length ? `/${segments.join("/")}` : ""}`;
 };
+
+const loadRoutes = () =>
+	collectRouteFiles(routesDir).map((filePath) => ({
+		filePath,
+		route: routeFromFilePath(filePath),
+		source: readFileSync(filePath, "utf8"),
+	}));
 
 const collectTargets = (value: unknown, targets: string[]) => {
 	if (Array.isArray(value)) {
@@ -183,7 +197,7 @@ describe("UI spec YAML registry", () => {
 
 	it("REQ-FE-040: validates docs pages map to implemented routes", () => {
 		const pages = loadPages();
-		const routes = new Set(collectRouteFiles(routesDir).map(routeFromFilePath));
+		const routes = new Set(loadRoutes().map(({ route }) => route));
 		for (const { spec, filePath } of pages) {
 			const route = spec.page?.route;
 			expect(route, `${filePath} missing route`).toBeTruthy();
@@ -198,11 +212,35 @@ describe("UI spec YAML registry", () => {
 		const documented = new Set(
 			pages.map(({ spec }) => spec.page?.route).filter((route): route is string => Boolean(route)),
 		);
-		const routes = new Set(collectRouteFiles(routesDir).map(routeFromFilePath));
+		const routes = new Set(loadRoutes().map(({ route }) => route));
 		for (const route of routes) {
 			expect(documented.has(route), `missing docs/spec/ui/pages entry for route: ${route}`).toBe(
 				true,
 			);
+		}
+	});
+
+	it("REQ-FE-040: implemented page specs reject placeholder route content", () => {
+		const pages = loadPages();
+		const routesByPath = new Map(loadRoutes().map((route) => [route.route, route]));
+		for (const { spec, filePath } of pages) {
+			if (spec.page?.implementation !== "implemented") {
+				continue;
+			}
+			const route = spec.page?.route;
+			expect(route, `${filePath} missing route`).toBeTruthy();
+			const routeRecord = routesByPath.get(String(route));
+			expect(routeRecord, `${filePath} route not implemented: ${String(route)}`).toBeTruthy();
+			if (!routeRecord) {
+				continue;
+			}
+			const matchedPattern = placeholderStubPatterns.find((pattern) =>
+				pattern.test(routeRecord.source),
+			);
+			expect(
+				matchedPattern,
+				`${filePath} marks ${String(route)} implemented but ${routeRecord.filePath} still contains placeholder copy`,
+			).toBeUndefined();
 		}
 	});
 
