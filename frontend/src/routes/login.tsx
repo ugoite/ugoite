@@ -4,10 +4,14 @@ import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
 import { setAuthTokenCookie } from "~/lib/auth-session";
 import { getDocsiteHref } from "~/lib/docsite-links";
 
-const containerQuickStartGuideUrl =
-	getDocsiteHref("/docs/guide/container-quickstart", "docs/guide/container-quickstart.md");
-const localDevAuthGuideUrl =
-	getDocsiteHref("/docs/guide/local-dev-auth-login", "docs/guide/local-dev-auth-login.md");
+const containerQuickStartGuideUrl = getDocsiteHref(
+	"/docs/guide/container-quickstart",
+	"docs/guide/container-quickstart.md",
+);
+const localDevAuthGuideUrl = getDocsiteHref(
+	"/docs/guide/local-dev-auth-login",
+	"docs/guide/local-dev-auth-login.md",
+);
 
 const toMessage = (error: unknown): string => {
 	if (error instanceof Error && error.message.trim()) {
