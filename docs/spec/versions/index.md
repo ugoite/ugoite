@@ -25,7 +25,7 @@ changes, or prepares meaningful product behavior for users and operators.
 | Version | Status | What it means |
 |---------|--------|---------------|
 | `v0.1` | in progress | Foundational release stream covering MVP, full configuration, Iceberg-backed data model changes, user management, and release preparation |
-| `v0.2` | planned | Next stream focused on user-controlled experiences and deeper AI-native workflows |
+| `v0.2` | planned | Next stream focused on user-controlled experiences and broader AI-assisted workflows beyond today's resource-first MCP baseline |
 
 ## What Each Version Adds
 
