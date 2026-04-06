@@ -10,8 +10,7 @@ import { server } from "~/test/mocks/server";
 const navigateMock = vi.fn();
 const containerQuickStartGuideUrl =
 	"https://ugoite.github.io/ugoite/docs/guide/container-quickstart";
-const localDevAuthGuideUrl =
-	"https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+const localDevAuthGuideUrl = "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (

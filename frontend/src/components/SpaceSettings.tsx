@@ -4,8 +4,10 @@ import { t } from "~/lib/i18n";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type { Space, SpacePatchPayload } from "~/lib/types";
 
-const storageMigrationGuideUrl =
-	getDocsiteHref("/docs/guide/storage-migration", "docs/guide/storage-migration.md");
+const storageMigrationGuideUrl = getDocsiteHref(
+	"/docs/guide/storage-migration",
+	"docs/guide/storage-migration.md",
+);
 
 export interface SpaceSettingsProps {
 	space: Space;
