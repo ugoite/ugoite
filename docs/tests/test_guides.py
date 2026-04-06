@@ -1,5 +1,6 @@
 """Guide validation tests.
 
+REQ-SEC-001: Local-only container guides must keep loopback/default secret protections explicit.
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
 REQ-OPS-002: Docker build CI workflow must be declared.
 REQ-OPS-005: YAML/workflow lint gates must be enforced in pre-commit and CI.
@@ -1485,6 +1486,55 @@ def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     if missing:
         raise AssertionError(
             "env-matrix.md is missing runtime env vars: " + ", ".join(missing),
+        )
+
+
+def test_docs_req_sec_001_source_compose_requires_unique_dev_auth_secrets() -> None:
+    """REQ-SEC-001: source Docker Compose must stay loopback-only and require unique auth secrets."""
+    compose_text = (REPO_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    required_compose_fragments = {
+        '127.0.0.1:3000:3000',
+        'UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:?set UGOITE_DEV_SIGNING_SECRET}',
+        'UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}',
+    }
+    missing_compose_fragments = sorted(
+        fragment for fragment in required_compose_fragments if fragment not in compose_text
+    )
+    if missing_compose_fragments:
+        raise AssertionError(
+            "docker-compose.yaml must keep loopback + unique auth secret fragments: "
+            + ", ".join(missing_compose_fragments),
+        )
+
+    forbidden_compose_fragments = [
+        'UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:-dev-compose-local-signing-secret}',
+        'UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy',
+        '"3000:3000"',
+    ]
+    present_forbidden_fragments = [
+        fragment for fragment in forbidden_compose_fragments if fragment in compose_text
+    ]
+    if present_forbidden_fragments:
+        raise AssertionError(
+            "docker-compose.yaml must not ship public/fixed dev auth defaults: "
+            + ", ".join(present_forbidden_fragments),
+        )
+
+    guide_text = (GUIDE_DIR / "docker-compose.md").read_text(encoding="utf-8")
+    required_guide_fragments = {
+        'export UGOITE_DEV_SIGNING_SECRET="$(openssl rand -hex 32)"',
+        'export UGOITE_DEV_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"',
+        "The source Compose file expects unique values for",
+        "The backend derives `UGOITE_AUTH_BEARER_SECRETS` and",
+        "binds both published ports to `127.0.0.1`",
+    }
+    missing_guide_fragments = sorted(
+        fragment for fragment in required_guide_fragments if fragment not in guide_text
+    )
+    if missing_guide_fragments:
+        raise AssertionError(
+            "docs/guide/docker-compose.md must document local-only unique auth secrets: "
+            + ", ".join(missing_guide_fragments),
         )
 
 

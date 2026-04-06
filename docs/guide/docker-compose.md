@@ -18,6 +18,8 @@ If you want pre-built release images from GHCR instead of local builds, use
 ## Start the stack
 
 ```bash
+export UGOITE_DEV_SIGNING_SECRET="$(openssl rand -hex 32)"
+export UGOITE_DEV_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"
 docker compose up --build
 ```
 
@@ -28,6 +30,12 @@ The stack exposes:
 
 The backend persists data in `./spaces` on the host. You can safely remove the
 folder to reset local data.
+
+The source Compose file expects unique values for
+`UGOITE_DEV_SIGNING_SECRET` and `UGOITE_DEV_AUTH_PROXY_TOKEN` before startup.
+The backend derives `UGOITE_AUTH_BEARER_SECRETS` and
+`UGOITE_AUTH_BEARER_ACTIVE_KIDS` from that signing material automatically, so
+you only need to export the signing secret and proxy token once per local stack.
 
 The shipped Compose file enables the explicit local demo login mode
 (`mock-oauth`). On startup the backend bootstraps the configured
@@ -69,6 +77,9 @@ rm -rf ./spaces
 
 - The backend container enables remote access internally so the frontend can
   reach it across the Compose network.
+- The shipped Compose file binds both published ports to `127.0.0.1`, so the
+  browser-facing stack stays local-only even though the backend still accepts
+  the frontend container's internal network hop.
 - The configured `UGOITE_DEV_USER_ID` becomes the local `admin-space` admin for
   this source-based Compose stack.
 - If you want the canonical contributor workflow, follow

@@ -2,6 +2,7 @@
 
 REQ-OPS-028: Repository-owned Helm chart must mirror the published release
 topology.
+REQ-SEC-001: Exposed container packaging must not rely on repository-known auth secrets.
 """
 
 from __future__ import annotations
@@ -244,16 +245,8 @@ def test_docs_req_ops_028_helm_chart_defaults_match_release_topology() -> None:
             "release-compose-local-v1",
             "charts/ugoite values.auth.signingKid",
         ),
-        (
-            str(auth.get("signingSecret")),
-            "release-compose-local-secret",
-            "charts/ugoite values.auth.signingSecret",
-        ),
-        (
-            str(auth.get("proxyToken")),
-            "release-compose-auth-proxy",
-            "charts/ugoite values.auth.proxyToken",
-        ),
+        (str(auth.get("signingSecret")), "", "charts/ugoite values.auth.signingSecret"),
+        (str(auth.get("proxyToken")), "", "charts/ugoite values.auth.proxyToken"),
     )
     for actual, expected, label in expected_values:
         if actual != expected:
@@ -334,6 +327,42 @@ def test_docs_req_ops_028_helm_chart_defaults_match_release_topology() -> None:
         missing = _missing_fragments(_read_text(path), fragments)
         if missing:
             _fail(f"{label} missing fragments: {', '.join(missing)}")
+
+
+def test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets() -> None:
+    """REQ-SEC-001: Helm chart installs must require unique dev auth secrets."""
+    secret_text = _read_text(CHART_SECRET_PATH)
+    required_secret_fragments = {
+        'required "charts/ugoite values.auth.signingSecret must be set to a unique secret"',
+        'required "charts/ugoite values.auth.proxyToken must be set to a unique token"',
+    }
+    missing_secret_fragments = _missing_fragments(
+        secret_text,
+        required_secret_fragments,
+    )
+    if missing_secret_fragments:
+        _fail(
+            "charts/ugoite/templates/auth-secret.yaml must require unique auth secrets: "
+            + ", ".join(missing_secret_fragments),
+        )
+
+    guide_text = _read_text(HELM_GUIDE_PATH)
+    required_guide_fragments = {
+        'HELM_AUTH_SIGNING_SECRET="$(openssl rand -hex 32)"',
+        'HELM_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"',
+        "signingSecret: ${HELM_AUTH_SIGNING_SECRET}",
+        "proxyToken: ${HELM_AUTH_PROXY_TOKEN}",
+        "empty (required unique value)",
+    }
+    missing_guide_fragments = _missing_fragments(
+        guide_text,
+        required_guide_fragments,
+    )
+    if missing_guide_fragments:
+        _fail(
+            "docs/guide/helm-chart.md must document unique auth secret setup: "
+            + ", ".join(missing_guide_fragments),
+        )
 
 
 def test_docs_req_ops_028_helm_chart_docs_stay_wired() -> None:
