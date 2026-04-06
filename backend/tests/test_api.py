@@ -173,7 +173,7 @@ def test_create_space_req_api_001_sanitizes_corrupt_skeleton_conflict_detail(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-API-001: create space conflict hides raw storage details for corrupt skeletons."""
+    """REQ-API-001: create space conflict hides raw storage details."""
     broken_space_root = temp_space_root / "spaces" / "bad"
     broken_space_root.mkdir(parents=True)
     (broken_space_root / "forms").write_text("not-a-directory")
