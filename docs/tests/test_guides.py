@@ -680,6 +680,8 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "ugoite auth login",
     "signed bearer token",
     "0600",
+    "~/.ugoite/dev-auth.json",
+    'eval "$(bash scripts/dev-auth-env.sh)"',
 }
 REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "passkey-totp",

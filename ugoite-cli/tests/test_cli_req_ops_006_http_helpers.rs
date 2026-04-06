@@ -4,6 +4,7 @@
 mod support;
 
 use serde_json::json;
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use support::spawn_recording_server;
@@ -20,6 +21,7 @@ struct EnvState {
     bearer: Option<String>,
     api_key: Option<String>,
     dev_auth_proxy_token: Option<String>,
+    dev_auth_file: Option<String>,
     dev_passkey_context: Option<String>,
 }
 
@@ -29,6 +31,7 @@ impl EnvState {
             bearer: std::env::var("UGOITE_AUTH_BEARER_TOKEN").ok(),
             api_key: std::env::var("UGOITE_AUTH_API_KEY").ok(),
             dev_auth_proxy_token: std::env::var("UGOITE_DEV_AUTH_PROXY_TOKEN").ok(),
+            dev_auth_file: std::env::var("UGOITE_DEV_AUTH_FILE").ok(),
             dev_passkey_context: std::env::var("UGOITE_DEV_PASSKEY_CONTEXT").ok(),
         }
     }
@@ -39,6 +42,7 @@ impl Drop for EnvState {
         std::env::remove_var("UGOITE_AUTH_BEARER_TOKEN");
         std::env::remove_var("UGOITE_AUTH_API_KEY");
         std::env::remove_var("UGOITE_DEV_AUTH_PROXY_TOKEN");
+        std::env::remove_var("UGOITE_DEV_AUTH_FILE");
         std::env::remove_var("UGOITE_DEV_PASSKEY_CONTEXT");
         if let Some(value) = &self.bearer {
             std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", value);
@@ -49,10 +53,27 @@ impl Drop for EnvState {
         if let Some(value) = &self.dev_auth_proxy_token {
             std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", value);
         }
+        if let Some(value) = &self.dev_auth_file {
+            std::env::set_var("UGOITE_DEV_AUTH_FILE", value);
+        }
         if let Some(value) = &self.dev_passkey_context {
             std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", value);
         }
     }
+}
+
+fn write_dev_auth_file(path: &Path, passkey_context: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create dev auth parent");
+    }
+    std::fs::write(
+        path,
+        serde_json::json!({
+            "passkey_context": passkey_context,
+        })
+        .to_string(),
+    )
+    .expect("write dev auth file");
 }
 
 /// REQ-OPS-006: each HTTP helper must return JSON on successful responses.
@@ -203,8 +224,16 @@ async fn test_cli_req_ops_006_http_helpers_apply_auth_headers() {
 async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     let _guard = env_lock().lock().expect("env lock");
     let _env = EnvState::capture();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing_auth_file = dir.path().join("missing-dev-auth.json");
+    let cached_auth_file = dir.path().join("cached-dev-auth.json");
+    let blank_cached_auth_file = dir.path().join("blank-dev-auth.json");
+
+    write_dev_auth_file(&cached_auth_file, "cached-passkey-context");
+    write_dev_auth_file(&blank_cached_auth_file, "   ");
 
     std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "   ");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &missing_auth_file);
     std::env::remove_var("UGOITE_DEV_PASSKEY_CONTEXT");
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
     http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
@@ -217,8 +246,12 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     assert!(!blank_proxy_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-auth-proxy-token:"),);
+    assert!(!blank_proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context:"));
 
     std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &missing_auth_file);
     std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "   ");
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
     http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
@@ -236,6 +269,45 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
         .contains("x-ugoite-dev-passkey-context:"));
 
     std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &cached_auth_file);
+    std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "   ");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
+    http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect("cached passkey context request should succeed");
+    let cached_context_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("cached passkey context request text");
+    handle.join().expect("join cached passkey context server");
+    assert!(cached_context_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(cached_context_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: cached-passkey-context\r\n"));
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &blank_cached_auth_file);
+    std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "   ");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
+    http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect("blank cached passkey context request should succeed");
+    let blank_cached_context_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("blank cached passkey context request text");
+    handle
+        .join()
+        .expect("join blank cached passkey context server");
+    assert!(blank_cached_context_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(!blank_cached_context_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context:"));
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &cached_auth_file);
     std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
     http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
@@ -251,6 +323,9 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     assert!(proxy_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-passkey-context: passkey-context\r\n"));
+    assert!(!proxy_request
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: cached-passkey-context\r\n"));
 }
 
 /// REQ-OPS-006: explicit auth POST helpers must surface proxy-auth errors with response text.
