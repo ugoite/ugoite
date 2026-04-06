@@ -302,11 +302,17 @@ async def login_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail=message,
         )
-    _ensure_dev_passkey_context(request)
-
     expected_username = _dev_user_id()
     attempt_key = _login_attempt_key(client_scope, expected_username)
     _enforce_login_throttle(attempt_key)
+    try:
+        _ensure_dev_passkey_context(request)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            wait_seconds = _record_login_failure(attempt_key)
+            if wait_seconds is not None:
+                _raise_login_throttled(wait_seconds)
+        raise
     if payload.username != expected_username:
         wait_seconds = _record_login_failure(attempt_key)
         if wait_seconds is not None:
