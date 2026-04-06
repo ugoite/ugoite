@@ -38,7 +38,7 @@ implemented.
 
 | Surface | What you normally do | Token or credential shape |
 | --- | --- | --- |
-| Browser frontend | Sign in on `/login` after the backend advertises the active dev auth mode | Bearer token stored in the browser session context for `/api/*` requests |
+| Browser frontend | Sign in on `/login` after the backend advertises the active dev auth mode | HttpOnly browser session cookie used by the frontend proxy for `/api/*` requests |
 | CLI in `backend` / `api` mode | Run `ugoite auth login` or provide an API key / bearer token env var | Bearer token or API key |
 | Backend REST / MCP clients | Send `Authorization: Bearer ...` or configured API keys | Bearer token or API key |
 | CLI in `core` mode | No backend auth flow because the CLI talks to local storage directly | No backend credential required |
@@ -81,9 +81,10 @@ match your local development setup.
 
 In `mock-oauth`, the page offers an explicit local demo login action instead.
 
-After login, the frontend uses the browser session cookie for proxied `/api/*`
-requests. That is why protected pages such as `/spaces` work only after the
-login step succeeds.
+After login, the frontend proxy stores the bearer token in an HttpOnly browser
+session cookie for proxied `/api/*` requests. Frontend JavaScript does not read
+the raw token directly. That is why protected pages such as `/spaces` work only
+after the login step succeeds.
 
 ## CLI login in plain language
 
