@@ -93,7 +93,7 @@ Active
 `;
 		const entryRes = await request.post(
 			getBackendUrl(`/spaces/${spaceId}/entries`),
-			{ data: { content: entryContent } },
+			{ data: { markdown: entryContent } },
 		);
 		expect(entryRes.status()).toBe(201);
 		const entry = (await entryRes.json()) as { id: string };

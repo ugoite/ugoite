@@ -385,7 +385,7 @@ def test_create_entry(test_client: TestClient, temp_space_root: Path) -> None:
     _create_form(test_client, "test-ws")
 
     entry_payload = {
-        "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nSome content",
+        "markdown": "---\nform: Entry\n---\n# My Entry\n\n## Body\nSome content",
     }
 
     response = test_client.post("/spaces/test-ws/entries", json=entry_payload)
@@ -398,6 +398,7 @@ def test_create_entry(test_client: TestClient, temp_space_root: Path) -> None:
     # Verify retrieval
     get_response = test_client.get(f"/spaces/test-ws/entries/{entry_id}")
     assert get_response.status_code == 200
+    assert get_response.json()["markdown"] == entry_payload["markdown"]
 
 
 def test_create_entry_conflict(
@@ -545,7 +546,7 @@ def test_get_entry(
     data = response.json()
     assert data["id"] == "test-entry"
     assert data["title"] == "Test Entry"
-    # Entry: get_entry returns "content" field (not "markdown")
+    assert "# Test Entry" in data["markdown"]
     assert "# Test Entry" in data["content"]
 
 
@@ -605,7 +606,7 @@ Original body""",
     get_response = test_client.get("/spaces/test-ws/entries/test-entry")
     updated_entry = get_response.json()
     assert updated_entry["title"] == "Updated Title"
-    # Entry: get_entry returns "content" field (not "markdown")
+    assert "New content" in updated_entry["markdown"]
     assert "New content" in updated_entry["content"]
 
 

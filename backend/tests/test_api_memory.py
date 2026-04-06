@@ -78,7 +78,7 @@ def test_create_entry_memory(memory_client: TestClient) -> None:
 
     # Create entry
     entry_payload = {
-        "content": "---\nform: Entry\n---\n# Memory Entry\n\n## Body\nStored in RAM.",
+        "markdown": "---\nform: Entry\n---\n# Memory Entry\n\n## Body\nStored in RAM.",
     }
     response = memory_client.post(f"/spaces/{ws_id}/entries", json=entry_payload)
     assert response.status_code == 201
@@ -88,7 +88,8 @@ def test_create_entry_memory(memory_client: TestClient) -> None:
     # Get entry
     response = memory_client.get(f"/spaces/{ws_id}/entries/{entry_id}")
     assert response.status_code == 200
-    assert response.json()["content"] == entry_payload["content"]
+    assert response.json()["markdown"] == entry_payload["markdown"]
+    assert response.json()["content"] == entry_payload["markdown"]
 
 
 def test_update_entry_and_search_memory(memory_client: TestClient) -> None:

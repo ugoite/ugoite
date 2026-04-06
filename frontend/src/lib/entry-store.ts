@@ -66,7 +66,7 @@ export function createEntryStore(spaceId: () => string) {
 	async function createEntry(content: string, id?: string) {
 		setError(null);
 		try {
-			const result = await entryApi.create(spaceId(), { content, id });
+			const result = await entryApi.create(spaceId(), { markdown: content, id });
 			// Reload to get the indexed version
 			await loadEntries();
 			return result;

@@ -24,6 +24,14 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _entry_response(entry: dict[str, Any]) -> dict[str, Any]:
+    response = dict(entry)
+    content = response.get("content")
+    if isinstance(content, str) and "markdown" not in response:
+        response["markdown"] = content
+    return response
+
+
 @router.post(
     "/spaces/{space_id}/entries",
     status_code=status.HTTP_201_CREATED,
@@ -48,19 +56,19 @@ async def create_entry_endpoint(
         await _validate_entry_markdown_against_form(
             storage_config,
             space_id,
-            payload.content,
+            payload.markdown,
         )
         await ugoite_core.require_markdown_write(
             storage_config,
             space_id,
             identity,
-            payload.content,
+            payload.markdown,
         )
         await ugoite_core.create_entry(
             storage_config,
             space_id,
             entry_id,
-            payload.content,
+            payload.markdown,
         )
         entry_data = await ugoite_core.get_entry(storage_config, space_id, entry_id)
     except ugoite_core.AuthorizationError as exc:
@@ -160,7 +168,7 @@ async def get_entry_endpoint(
             detail=str(e),
         ) from e
     else:
-        return entry
+        return _entry_response(entry)
 
 
 @router.put("/spaces/{space_id}/entries/{entry_id}")
@@ -228,7 +236,7 @@ async def update_entry_endpoint(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "message": msg,
-                        "current_revision": current_entry,
+                        "current_revision": _entry_response(current_entry),
                     },
                 ) from e
             except RuntimeError:
@@ -369,11 +377,13 @@ async def get_entry_revision_endpoint(
             identity,
             current_entry,
         )
-        return await ugoite_core.get_entry_revision(
-            storage_config,
-            space_id,
-            entry_id,
-            revision_id,
+        return _entry_response(
+            await ugoite_core.get_entry_revision(
+                storage_config,
+                space_id,
+                entry_id,
+                revision_id,
+            ),
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
@@ -450,4 +460,4 @@ async def restore_entry_endpoint(
             detail=str(e),
         ) from e
 
-    return entry_data
+    return _entry_response(entry_data)

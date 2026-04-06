@@ -108,9 +108,9 @@ async function ensureSearchForm(request: APIRequestContext, formName: string): P
 	}
 }
 
-async function createEntry(request: APIRequestContext, content: string): Promise<string> {
+async function createEntry(request: APIRequestContext, markdown: string): Promise<string> {
 	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
-		data: { content },
+		data: { markdown },
 	});
 	expect(response.status()).toBe(201);
 	const entry = (await response.json()) as { id: string };

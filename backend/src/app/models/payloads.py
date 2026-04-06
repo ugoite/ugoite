@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
 
 Identifier = Annotated[
     str,
@@ -39,8 +39,14 @@ class AuthLogin(BaseModel):
 class EntryCreate(BaseModel):
     """Entry creation payload."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     id: BoundedIdentifier | None = None
-    content: Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
+    markdown: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=200_000),
+        Field(validation_alias=AliasChoices("markdown", "content")),
+    ]
 
 
 class EntryUpdate(BaseModel):
