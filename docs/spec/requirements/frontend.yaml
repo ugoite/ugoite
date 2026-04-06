@@ -1788,3 +1788,38 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/query.test.tsx
       tests:
       - 'REQ-FE-063: legacy query route explains the supported search path'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-064
+  title: Public Landing Page Localization
+  description: 'The public `/` and `/about` routes MUST render their user-facing
+
+    copy through the shared frontend locale dictionary so they respect the saved
+
+    locale on first load instead of staying English-only.
+
+    '
+  related_spec:
+  - ui/README.md
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/public-pages.test.ts
+      tests:
+      - 'REQ-FE-064: public landing pages respect the saved Japanese locale'
+    vitest:
+    - file: frontend/src/routes/public-pages.test.tsx
+      tests:
+      - 'REQ-FE-064: home page localizes public copy through the shared dictionary'
+      - 'REQ-FE-064: about page localizes public copy through the shared dictionary'
