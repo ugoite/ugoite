@@ -13,9 +13,11 @@ SKIPPED_COUNT = 2
 
 
 class _SkipGuardModule(Protocol):
-    def count_skipped_tests(self, report_path: Path) -> int: ...
+    def count_skipped_tests(self, report_path: Path) -> int:
+        pass
 
-    def main(self, argv: list[str]) -> int: ...
+    def main(self, argv: list[str]) -> int:
+        pass
 
 
 def _load_skip_guard_module() -> _SkipGuardModule:

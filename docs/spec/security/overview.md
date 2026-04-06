@@ -37,6 +37,10 @@ targets an **Authenticated Access by Default** model.
 - Set `UGOITE_ALLOW_REMOTE=true` to allow remote connections
 - Required for dev containers or Codespaces
 - Automatically configured in `mise run dev`
+- Also required for the published two-container release Compose quick start,
+  because the frontend container reaches the backend over the private Compose
+  bridge network; host exposure still remains localhost-only there because the
+  published ports bind to `127.0.0.1`
 
 ### CORS
 - Restricted to explicit frontend origins from `ALLOW_ORIGIN`

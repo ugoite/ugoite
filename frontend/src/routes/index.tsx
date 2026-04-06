@@ -1,5 +1,10 @@
 import { A } from "@solidjs/router";
 
+const learnMoreHref =
+	process.env.NODE_ENV === "development"
+		? "http://localhost:4321/getting-started"
+		: "https://ugoite.github.io/ugoite/getting-started";
+
 export default function Home() {
 	return (
 		<main class="ui-page text-center mx-auto">
@@ -14,9 +19,9 @@ export default function Home() {
 				<A href="/spaces" class="ui-button ui-button-primary">
 					Open Spaces
 				</A>
-				<A href="/about" class="ui-button ui-button-secondary">
+				<a href={learnMoreHref} class="ui-button ui-button-secondary">
 					Learn More
-				</A>
+				</a>
 			</div>
 			<div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
 				<div class="ui-card">
