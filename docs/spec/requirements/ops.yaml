@@ -612,6 +612,7 @@ requirements:
       - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
       - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
       - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures
+      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures
       - test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
       - test_dev_auth_req_ops_015_startup_bootstraps_admin_space

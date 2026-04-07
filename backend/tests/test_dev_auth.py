@@ -704,8 +704,14 @@ def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures(
     ("headers", "expected_detail"),
     [
         (None, "Passkey-bound local context is missing or invalid."),
-        (_passkey_headers("wrong-context"), "Passkey-bound local context is missing or invalid."),
-        (_passkey_headers("   "), "Passkey-bound local context is missing or invalid."),
+        (
+            _passkey_headers("wrong-context"),
+            "Passkey-bound local context is missing or invalid.",
+        ),
+        (
+            _passkey_headers("   "),
+            "Passkey-bound local context is missing or invalid.",
+        ),
     ],
     ids=["missing", "wrong", "blank"],
 )
@@ -715,7 +721,7 @@ def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures(
     headers: dict[str, str] | None,
     expected_detail: str,
 ) -> None:
-    """REQ-OPS-015: passkey-totp login throttles repeated missing/invalid local context failures."""
+    """REQ-OPS-015: passkey-totp login throttles repeated local-context failures."""
     timestamp = 1_700_000_000
     monotonic = 15_000.0
     secret = TEST_TOTP_SECRET
@@ -734,15 +740,28 @@ def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures(
         "username": "dev-alice",
         "totp_code": _totp_code(secret, timestamp),
     }
-    request_kwargs = {"headers": headers} if headers is not None else {}
 
     for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
-        response = client.post("/auth/login", json=valid_payload, **request_kwargs)
+        if headers is None:
+            response = client.post("/auth/login", json=valid_payload)
+        else:
+            response = client.post(
+                "/auth/login",
+                json=valid_payload,
+                headers=headers,
+            )
         assert response.status_code == 401
         assert response.json()["detail"] == expected_detail
         monotonic += 1.0
 
-    throttled_response = client.post("/auth/login", json=valid_payload, **request_kwargs)
+    if headers is None:
+        throttled_response = client.post("/auth/login", json=valid_payload)
+    else:
+        throttled_response = client.post(
+            "/auth/login",
+            json=valid_payload,
+            headers=headers,
+        )
     assert throttled_response.status_code == 429
     assert throttled_response.json()["detail"] == (
         "Too many failed login attempts. Try again in 60 seconds."
