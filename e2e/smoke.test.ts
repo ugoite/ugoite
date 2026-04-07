@@ -41,7 +41,7 @@ test.describe("Smoke Tests", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
+					markdown: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
 				},
 			},
 		);

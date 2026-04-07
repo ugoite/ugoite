@@ -360,7 +360,7 @@ fn test_entry_create_req_api_002_routes_to_backend_post_entries() {
     );
     assert!(request.contains(r#""id":"entry-1""#), "{request}");
     assert!(
-        request.contains("\"content\":\"# Remote Entry\""),
+        request.contains("\"markdown\":\"# Remote Entry\""),
         "{request}"
     );
     assert!(!request.contains(r#""author":"#), "{request}");

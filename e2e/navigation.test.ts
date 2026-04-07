@@ -18,7 +18,7 @@ test.describe("Dynamic navigation traversal", () => {
 
 		const createdEntry = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 			data: {
-				content: `---\nform: Entry\n---\n# E2E Dynamic Traversal ${Date.now()}\n\n## Body\nTraversal seed entry.`,
+				markdown: `---\nform: Entry\n---\n# E2E Dynamic Traversal ${Date.now()}\n\n## Body\nTraversal seed entry.`,
 			},
 		});
 		expect(createdEntry.status()).toBe(201);

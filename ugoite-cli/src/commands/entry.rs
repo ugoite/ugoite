@@ -216,7 +216,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 }
                 let result = http::http_post(
                     &format!("{base}/spaces/{space_id}/entries"),
-                    &serde_json::json!({"id": entry_id, "content": content}),
+                    &serde_json::json!({"id": entry_id, "markdown": content}),
                 )
                 .await?;
                 print_json(&result);
