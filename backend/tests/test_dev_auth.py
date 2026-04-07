@@ -8,13 +8,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import os
 import shutil
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -93,11 +94,13 @@ def _serve_http(
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, _format: str, *_args: object) -> None:
-            return
-
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+
+    def _serve_quietly() -> None:
+        with redirect_stderr(io.StringIO()):
+            server.serve_forever()
+
+    thread = threading.Thread(target=_serve_quietly, daemon=True)
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}", requests
@@ -474,6 +477,40 @@ def test_local_smoke_check_req_ops_015_uses_auth_config_without_token() -> None:
     assert [path for path, _headers in frontend_requests] == ["/"]
     assert "Checking backend auth config" in result.stdout
     assert "Local smoke check passed" in result.stdout
+
+
+def test_local_smoke_check_req_ops_015_fails_when_auth_config_errors() -> None:
+    """REQ-OPS-015: local smoke checks fail when the auth config probe fails."""
+
+    def backend_response(path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
+        if path == "/health":
+            return 200, b"ok", "text/plain; charset=utf-8"
+        if path == "/auth/config":
+            return 503, b'{"detail":"auth config unavailable"}', "application/json"
+        return 404, b"not found", "text/plain; charset=utf-8"
+
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
+        return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
+
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
+        result = _run_local_smoke_check(
+            backend_url=backend_url,
+            frontend_url=frontend_url,
+        )
+
+    assert result.returncode != 0
+    assert [path for path, _headers in backend_requests] == ["/health", "/auth/config"]
+    assert frontend_requests == []
+    assert "Checking backend auth config" in result.stdout
+    assert "503" in result.stderr
 
 
 def test_local_smoke_check_req_ops_015_uses_spaces_with_bearer_token() -> None:
