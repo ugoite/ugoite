@@ -1,7 +1,6 @@
 import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
-import { setAuthTokenCookie } from "~/lib/auth-session";
 import { getDocsiteHref } from "~/lib/docsite-links";
 
 const containerQuickStartGuideUrl = getDocsiteHref(
@@ -46,8 +45,7 @@ export default function LoginRoute() {
 		setIsSubmitting(true);
 		setSubmitError("");
 		try {
-			const response = await action();
-			setAuthTokenCookie(response.bearerToken, response.expiresAt);
+			await action();
 			navigate(redirectTarget(), { replace: true });
 		} catch (error) {
 			setSubmitError(toMessage(error));

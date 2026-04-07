@@ -65,9 +65,10 @@ test.describe("Smoke Tests", () => {
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with default ahead of reserved admin-space", async ({
+	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with an HttpOnly auth cookie and default ahead of reserved admin-space", async ({
 		browser,
 	}) => {
+		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 		const context = await browser.newContext();
 		const page = await context.newPage();
 
@@ -83,6 +84,11 @@ test.describe("Smoke Tests", () => {
 			await expect(adminSpaces).toContainText("admin-space");
 			await userSpaces.getByRole("link", { name: "Open Space" }).first().click();
 			await expect(page).toHaveURL(/\/spaces\/default\/dashboard$/);
+			const cookies = await context.cookies(frontendUrl);
+			const authCookie = cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token");
+			expect(authCookie).toBeDefined();
+			expect(authCookie?.httpOnly).toBe(true);
+			expect(await page.evaluate(() => document.cookie)).not.toContain("ugoite_auth_bearer_token=");
 		} finally {
 			await context.close();
 		}
