@@ -203,6 +203,7 @@ const preferencesStore = createRoot(() => {
 		portablePreferences,
 		initialized,
 		loading,
+		primePortablePreferencesFromLocal: syncLocalPreferences,
 		resetPortablePreferencesState,
 		initializePortablePreferences,
 		initializePortablePreferencesForPath,
@@ -238,6 +239,7 @@ const preferencesStore = createRoot(() => {
 export const portablePreferences = preferencesStore.portablePreferences;
 export const portablePreferencesInitialized = preferencesStore.initialized;
 export const portablePreferencesLoading = preferencesStore.loading;
+export const primePortablePreferencesFromLocal = preferencesStore.primePortablePreferencesFromLocal;
 export const resetPortablePreferencesState = preferencesStore.resetPortablePreferencesState;
 export const initializePortablePreferences = preferencesStore.initializePortablePreferences;
 export const initializePortablePreferencesForPath =

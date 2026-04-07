@@ -1,9 +1,14 @@
 import { useLocation } from "@solidjs/router";
+import { createMemo } from "solid-js";
 import { t } from "~/lib/i18n";
 
 export default function Nav() {
 	const location = useLocation();
 	const active = (path: string) => path === location.pathname;
+	const homeLabel = createMemo(() => t("nav.home"), undefined, { equals: false });
+	const spacesLabel = createMemo(() => t("nav.spaces"), undefined, { equals: false });
+	const loginLabel = createMemo(() => t("nav.login"), undefined, { equals: false });
+	const aboutLabel = createMemo(() => t("nav.about"), undefined, { equals: false });
 
 	const isSpaceExplorer =
 		location.pathname.includes("/spaces/") && !location.pathname.endsWith("/spaces");
@@ -18,7 +23,7 @@ export default function Nav() {
 			<ul class="ui-nav-list">
 				<li>
 					<a href="/" class="ui-nav-link" classList={{ "ui-nav-link-active": active("/") }}>
-						{t("nav.home")}
+						<span>{homeLabel()}</span>
 					</a>
 				</li>
 				<li>
@@ -27,7 +32,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/spaces") }}
 					>
-						{t("nav.spaces")}
+						<span>{spacesLabel()}</span>
 					</a>
 				</li>
 				<li>
@@ -36,7 +41,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/login") }}
 					>
-						{t("nav.login")}
+						<span>{loginLabel()}</span>
 					</a>
 				</li>
 				<li>
@@ -45,7 +50,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/about") }}
 					>
-						{t("nav.about")}
+						<span>{aboutLabel()}</span>
 					</a>
 				</li>
 			</ul>
