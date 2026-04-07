@@ -38,6 +38,7 @@ requirements:
       - test_docs_req_ops_001_shell_blocks_parse
       - test_docs_req_ops_001_backend_targeted_pytest_path_is_documented
       - test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack
+      - test_docs_req_ops_001_source_compose_frontend_stays_loopback_only
       - test_docs_req_ops_001_env_matrix_matches_runtime_usage
       - test_docs_req_ops_001_mise_versions_match_ci_pins
 - set_id: REQCAT-OPS
