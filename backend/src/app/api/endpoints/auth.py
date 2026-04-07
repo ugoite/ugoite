@@ -187,7 +187,6 @@ async def auth_config_endpoint(request: Request) -> dict[str, object]:
     """Expose the current passwordless login mode to browser/CLI clients."""
     _ensure_local_dev_auth_request(request)
     mode = _resolve_dev_auth_mode()
-    await ugoite_core.ensure_admin_space(_storage_config(), _dev_user_id())
     return {
         "mode": mode,
         "username_hint": _dev_user_id(),
