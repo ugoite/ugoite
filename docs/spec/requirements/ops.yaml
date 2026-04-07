@@ -564,7 +564,11 @@ requirements:
 
     login context with owner-only permissions, require a passkey-bound local
 
-    context in addition to the 2FA code during explicit browser/CLI login, and
+    context in addition to the 2FA code during explicit browser/CLI login,
+
+    keep `GET /auth/config` read-only so login discovery cannot recreate
+
+    admin-space or other storage state, and
 
     complete an explicit login step before a bearer token is issued. `mock-oauth`
 
@@ -600,6 +604,7 @@ requirements:
     - file: backend/tests/test_dev_auth.py
       tests:
       - test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode
+      - test_dev_auth_req_ops_015_auth_config_remains_read_only
       - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
       - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
