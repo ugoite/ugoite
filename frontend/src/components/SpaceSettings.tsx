@@ -97,8 +97,9 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 				<div class="border-t pt-6">
 					<h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
 					<p class="text-sm ui-muted">
-						Choose where this space lives. Local paths keep control and offline access on this
-						machine, while object storage changes the cost, credential, and sharing model.
+						Review the saved storage connector metadata for this space. Today the backend still
+						writes through the deployment-wide storage root, so this URI is best treated as
+						manual migration planning plus connection-validation metadata.
 					</p>
 
 					<div class="space-y-4">
@@ -142,14 +143,16 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 											storage bill.
 										</li>
 										<li>
-											<code>s3://</code> moves the data location to object storage, which can help
-											with team access and backups but adds cloud credentials and usage costs.
+											<code>s3://</code> records an object-storage target that can support later
+											migration, team access, and backups, but it adds cloud credentials and usage
+											costs.
 										</li>
 									</ul>
 								</div>
 								<p class="text-sm ui-muted">
-									Changing the storage URI updates this space&apos;s saved connector settings. It
-									does not migrate existing entries or assets to the new location for you.
+									Changing the storage URI saves connector metadata for this space. It does not
+									reroute current entry or asset writes, and it does not migrate existing data for
+									you.
 								</p>
 								<p class="text-sm ui-muted">
 									Before switching, review the{" "}
@@ -161,7 +164,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									>
 										storage migration guide
 									</a>{" "}
-									and use Test Connection to validate the target first.
+									and use Test Connection to validate the target before saving metadata or planning
+									a manual migration.
 								</p>
 							</div>
 						</div>

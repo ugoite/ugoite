@@ -128,17 +128,23 @@ describe("SpaceSettings", () => {
 	it("REQ-FE-017: explains storage trade-offs before changing the URI", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(
-			screen.getByText(/local paths keep control and offline access on this machine/i),
+			screen.getByText(/backend still writes through the deployment-wide storage root/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/team access and backups but adds cloud credentials and usage costs/i),
+			screen.getByText(/manual migration planning plus connection-validation metadata/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/team access, and backups, but it adds cloud credentials and usage costs/i),
 		).toBeInTheDocument();
 	});
 
-	it("REQ-FE-017: warns that changing the URI does not migrate existing data automatically", () => {
+	it("REQ-FE-017: warns that changing the URI only saves metadata until a manual migration happens", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(
-			screen.getByText(/does not migrate existing entries or assets to the new location/i),
+			screen.getByText(/saves connector metadata for this space/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/does not reroute current entry or asset writes/i),
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /storage migration guide/i })).toHaveAttribute(
 			"href",
@@ -146,10 +152,10 @@ describe("SpaceSettings", () => {
 		);
 	});
 
-	it("REQ-FE-060: settings show the current storage topology before editing", () => {
+	it("REQ-FE-060: settings show saved storage metadata before editing", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
-		expect(screen.getByText("Storage topology")).toBeInTheDocument();
-		expect(screen.getByText("Local filesystem")).toBeInTheDocument();
+		expect(screen.getByText("Saved storage connector")).toBeInTheDocument();
+		expect(screen.getByText("Saved local filesystem URI")).toBeInTheDocument();
 		expect(screen.getByText("file:///local/path")).toBeInTheDocument();
 	});
 });

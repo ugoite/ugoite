@@ -189,17 +189,17 @@ describe("/spaces/:space_id/dashboard", () => {
 		expect(screen.getByRole("button", { name: "最初のフォームを作成" })).toBeInTheDocument();
 	});
 
-	it("REQ-FE-060: dashboard surfaces the active storage topology with a settings link", async () => {
+	it("REQ-FE-060: dashboard surfaces saved storage metadata with a settings link", async () => {
 		(formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
 
 		render(() => <SpaceDashboardRoute />);
 
 		await waitFor(() => {
-			expect(screen.getByRole("heading", { name: "Storage topology" })).toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "Saved storage connector" })).toBeInTheDocument();
 		});
-		expect(screen.getByText("Local filesystem")).toBeInTheDocument();
+		expect(screen.getByText("Saved local filesystem URI")).toBeInTheDocument();
 		expect(screen.getByText("file:///var/lib/ugoite/default")).toBeInTheDocument();
-		expect(screen.getByRole("link", { name: "Open space settings" })).toHaveAttribute(
+		expect(screen.getByRole("link", { name: "Review space settings" })).toHaveAttribute(
 			"href",
 			"/spaces/default/settings",
 		);
