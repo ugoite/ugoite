@@ -676,6 +676,7 @@ requirements:
     e2e:
     - file: e2e/smoke.test.ts
       tests:
+      - 'REQ-OPS-015: browser mock-oauth login reaches /spaces with default ahead of reserved admin-space'
       - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
     - file: e2e/public-pages.test.ts
       tests:

@@ -61,8 +61,10 @@ Then open:
 Click **Continue with Local Demo Login** to reach `/spaces`. That button starts
 the local demo login path (`mock-oauth`), so no external OAuth provider is
 involved. The shipped compose file bootstraps the `default` space at startup so
-the first browser and CLI session both have a ready workspace. For more detail
-on the explicit browser login flow, see
+the first browser and CLI session both have a ready workspace. The reserved
+`admin-space` still exists for admin-only workflows, but `/spaces` keeps it in a
+separate admin section so the first visible workspace path stays newcomer-friendly.
+For more detail on the explicit browser login flow, see
 [Local Dev Auth Login](local-dev-auth-login.md).
 
 This published quick start intentionally differs from `mise run dev`: it
@@ -112,7 +114,8 @@ find ./spaces -maxdepth 2 -type f | head
 ## Next steps
 
 - The `default` space is the starter workspace that the published quick start
-  bootstraps for you after login.
+  bootstraps for you after login. The reserved `admin-space` stays separate in
+  the UI for admin tasks.
 - Try creating one plain Markdown entry in that space first. You do **not** need
   to define a Form before the first note.
 - Read [Core Concepts](concepts.md) once you want the mental model for spaces,
