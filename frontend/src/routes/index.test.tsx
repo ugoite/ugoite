@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@solidjs/testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "~/lib/i18n";
 import HomeRoute from "./index";
 
 vi.mock("@solidjs/router", () => ({
@@ -12,6 +13,11 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 describe("home route", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		setLocale("en");
+	});
+
 	it("REQ-E2E-008: public home page routes Learn More to the canonical getting-started docsite flow", () => {
 		render(() => <HomeRoute />);
 
@@ -35,6 +41,21 @@ describe("home route", () => {
 		expect(spacesLink).toHaveClass("ui-button-secondary");
 		expect(screen.getByText(/Start with Log in\./i)).toHaveTextContent(
 			"/spaces requires an authenticated browser session.",
+		);
+	});
+
+	it("REQ-FE-044: localizes home route CTA copy in Japanese", () => {
+		render(() => <HomeRoute />);
+		setLocale("ja");
+
+		expect(
+			screen.getByText("ローカルファーストの知識を、検索と自動化のために構造化"),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "ログイン" })).toHaveAttribute("href", "/login");
+		expect(screen.getByRole("link", { name: "スペースを開く" })).toHaveAttribute("href", "/spaces");
+		expect(screen.getByRole("link", { name: "詳しく見る" })).toHaveAttribute(
+			"href",
+			"https://ugoite.github.io/ugoite/getting-started",
 		);
 	});
 });
