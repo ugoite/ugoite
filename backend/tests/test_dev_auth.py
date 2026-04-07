@@ -12,12 +12,14 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import ugoite_core
 from fastapi.testclient import TestClient
 
+from app.api.endpoints import auth as auth_endpoints
 from app.core.auth import clear_auth_manager_cache
 from app.main import app
 
@@ -74,6 +76,13 @@ def _passkey_headers(
     context: str = DEFAULT_TEST_PASSKEY_CONTEXT,
 ) -> dict[str, str]:
     return {"x-ugoite-dev-passkey-context": context}
+
+
+@pytest.fixture(autouse=True)
+def _clear_dev_login_attempts() -> Iterator[None]:
+    auth_endpoints.clear_login_attempts()
+    yield
+    auth_endpoints.clear_login_attempts()
 
 
 def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(
@@ -429,6 +438,7 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_wrong_username(
 ) -> None:
     """REQ-OPS-015: manual login rejects usernames outside the terminal context."""
     timestamp = int(time.time())
+    monotonic = 30_000.0
     secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
@@ -437,16 +447,32 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_wrong_username(
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
     clear_auth_manager_cache()
 
-    response = TestClient(app).post(
+    client = TestClient(app)
+    payload = {"username": "other-user", "totp_code": _totp_code(secret, timestamp)}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        response = client.post(
+            "/auth/login",
+            json=payload,
+            headers=_passkey_headers(),
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid username or 2FA code."
+        monotonic += 1.0
+
+    throttled_response = client.post(
         "/auth/login",
-        json={"username": "other-user", "totp_code": _totp_code(secret, timestamp)},
+        json=payload,
         headers=_passkey_headers(),
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid username or 2FA code."
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
 
 
 def test_dev_auth_req_ops_015_rejects_remote_clients(
@@ -646,6 +672,181 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_totp_code(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or 2FA code."
+
+
+def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: repeated invalid passkey login attempts temporarily return 429."""
+    monotonic = 10_000.0
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", TEST_TOTP_SECRET)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    invalid_payload = {"username": "dev-alice", "totp_code": "000000"}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        response = client.post(
+            "/auth/login",
+            json=invalid_payload,
+            headers=_passkey_headers(),
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid username or 2FA code."
+        monotonic += 1.0
+
+    throttled_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
+    assert throttled_response.headers["retry-after"] == "60"
+
+    follow_up_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert follow_up_response.status_code == 429
+    assert follow_up_response.headers["retry-after"] == "60"
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_detail"),
+    [
+        (None, "Passkey-bound local context is missing or invalid."),
+        (
+            _passkey_headers("wrong-context"),
+            "Passkey-bound local context is missing or invalid.",
+        ),
+        (
+            _passkey_headers("   "),
+            "Passkey-bound local context is missing or invalid.",
+        ),
+    ],
+    ids=["missing", "wrong", "blank"],
+)
+def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+    headers: dict[str, str] | None,
+    expected_detail: str,
+) -> None:
+    """REQ-OPS-015: passkey-totp login throttles repeated local-context failures."""
+    timestamp = 1_700_000_000
+    monotonic = 15_000.0
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    valid_payload = {
+        "username": "dev-alice",
+        "totp_code": _totp_code(secret, timestamp),
+    }
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        if headers is None:
+            response = client.post("/auth/login", json=valid_payload)
+        else:
+            response = client.post(
+                "/auth/login",
+                json=valid_payload,
+                headers=headers,
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == expected_detail
+        monotonic += 1.0
+
+    if headers is None:
+        throttled_response = client.post("/auth/login", json=valid_payload)
+    else:
+        throttled_response = client.post(
+            "/auth/login",
+            json=valid_payload,
+            headers=headers,
+        )
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
+    assert throttled_response.headers["retry-after"] == "60"
+
+
+def test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login clears the temporary throttle after the wait."""
+    timestamp = 1_700_000_000
+    monotonic = 20_000.0
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    invalid_payload = {"username": "dev-alice", "totp_code": "000000"}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT):
+        response = client.post(
+            "/auth/login",
+            json=invalid_payload,
+            headers=_passkey_headers(),
+        )
+        monotonic += 1.0
+
+    assert response.status_code == 429
+    monotonic += auth_endpoints.LOGIN_LOCKOUT_SECONDS + 1.0
+
+    successful_response = client.post(
+        "/auth/login",
+        json={
+            "username": "dev-alice",
+            "totp_code": _totp_code(secret, timestamp),
+        },
+        headers=_passkey_headers(),
+    )
+
+    assert successful_response.status_code == 200
+
+    monotonic += 1.0
+    next_failure_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert next_failure_response.status_code == 401
+    assert next_failure_response.json()["detail"] == "Invalid username or 2FA code."
 
 
 def test_dev_auth_req_ops_015_passkey_login_requires_signing_material(
