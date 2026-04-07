@@ -64,7 +64,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Values.auth.bearerSecrets -}}
 {{- .Values.auth.bearerSecrets -}}
 {{- else -}}
-{{- printf "%s:%s" .Values.auth.signingKid .Values.auth.signingSecret -}}
+{{- printf "%s:%s" .Values.auth.signingKid (required "charts/ugoite values.auth.signingSecret must be set to a unique secret" .Values.auth.signingSecret) -}}
 {{- end -}}
 {{- end -}}
 

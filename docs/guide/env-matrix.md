@@ -12,18 +12,18 @@ refers to the CI-parity compose helper in `e2e/scripts/run-e2e-compose.sh`.
 | UGOITE_ALLOW_REMOTE | optional | required | required | required for API tests |
 | UGOITE_AUTH_API_KEY | optional | optional | optional | optional |
 | UGOITE_AUTH_BEARER_TOKENS_JSON | optional | required for static secondary e2e users | required for static secondary e2e users | optional |
-| UGOITE_AUTH_BEARER_SECRETS | auto-managed by `dev-auth-env.sh` | required | required | optional |
-| UGOITE_AUTH_BEARER_ACTIVE_KIDS | auto-managed by `dev-auth-env.sh` | required | required | optional |
+| UGOITE_AUTH_BEARER_SECRETS | auto-managed by `dev-auth-env.sh` | required | auto-derived from `UGOITE_DEV_SIGNING_*` when omitted | optional |
+| UGOITE_AUTH_BEARER_ACTIVE_KIDS | auto-managed by `dev-auth-env.sh` | required | auto-derived from `UGOITE_DEV_SIGNING_KID` when omitted | optional |
 | UGOITE_PROXY_TIMEOUT_MS | optional | optional | optional | optional |
 | UGOITE_DEV_AUTH_FILE | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_TTL_SECONDS | optional | optional | optional | optional |
 | UGOITE_DEV_AUTH_FORCE_LOGIN | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_MODE | optional | required (`mock-oauth`) | required (`mock-oauth`) | optional |
 | UGOITE_DEV_PASSKEY_CONTEXT | auto-managed by `dev-auth-env.sh` for `passkey-totp` local login | n/a | n/a | optional |
-| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` and direct CLI auth flows | required for compose e2e | set by `docker-compose.yaml` | optional |
+| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` and direct CLI auth flows | required for compose e2e | required unique value | optional |
 | UGOITE_DEV_USER_ID | optional | required | required | optional |
 | UGOITE_DEV_2FA_SECRET | optional | n/a | n/a | n/a |
-| UGOITE_DEV_SIGNING_SECRET | auto-managed by `dev-auth-env.sh` | required | required | optional |
+| UGOITE_DEV_SIGNING_SECRET | auto-managed by `dev-auth-env.sh` | required | required unique value | optional |
 | UGOITE_DEV_SIGNING_KID | auto-managed by `dev-auth-env.sh` | required | required | optional |
 | E2E_AUTH_BEARER_TOKEN | n/a | generated after mock-oauth login | generated after mock-oauth login | required for e2e jobs |
 | E2E_STORAGE_ROOT | n/a | required | n/a | optional |
