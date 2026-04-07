@@ -489,7 +489,10 @@ def test_create_sql_session_rejects_oversized_sql(test_client: TestClient) -> No
 def test_create_sql_session_accepts_sql_at_max_length(test_client: TestClient) -> None:
     """REQ-API-008: create SQL session accepts SQL payloads at the max boundary."""
     test_client.post("/spaces", json={"name": "sess-max-ws"})
-    with patch("ugoite_core.create_sql_session", _amock(return_value={"id": "sess-max"})) as create_sql_session:
+    with patch(
+        "ugoite_core.create_sql_session",
+        _amock(return_value={"id": "sess-max"}),
+    ) as create_sql_session:
         response = test_client.post(
             "/spaces/sess-max-ws/sql-sessions",
             json={"sql": "S" * 100_000},
