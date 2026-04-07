@@ -1,6 +1,6 @@
 use crate::config::{
     endpoint_transport_warning, load_config, print_json, save_config,
-    validate_active_remote_endpoint, validate_remote_endpoint_url, EndpointMode,
+    validate_active_remote_endpoint, validate_server_endpoint_url, EndpointMode,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -48,7 +48,6 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
         }
         ConfigSubCmd::Current => {
             let config = load_config();
-            validate_active_remote_endpoint(&config)?;
             print_current_config(&config);
         }
         ConfigSubCmd::Set {
@@ -67,11 +66,11 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
                 };
             }
             if let Some(u) = backend_url {
-                validate_remote_endpoint_url(&u, "--backend-url")?;
+                validate_server_endpoint_url(&u, "Backend endpoint")?;
                 config.backend_url = u;
             }
             if let Some(u) = api_url {
-                validate_remote_endpoint_url(&u, "--api-url")?;
+                validate_server_endpoint_url(&u, "API endpoint")?;
                 config.api_url = u;
             }
             validate_active_remote_endpoint(&config)?;

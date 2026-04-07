@@ -1572,7 +1572,7 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
     handle.join().expect("join remote entry create server");
     assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries HTTP/1.1"));
     assert!(remote_create_request.contains(r#""id":"entry-1""#));
-    assert!(remote_create_request.contains("\"content\":\"# Remote Entry\""));
+    assert!(remote_create_request.contains("\"markdown\":\"# Remote Entry\""));
     assert!(!remote_create_request.contains(r#""author":"#));
 
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"updated":true}"#);
