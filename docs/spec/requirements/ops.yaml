@@ -585,7 +585,10 @@ requirements:
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
-    mode may pre-inject a bearer token into the running stack. The standard
+    mode may pre-inject a bearer token into the running stack. CLI auth login,
+    token-clear, and logout MUST print shell-aware environment commands so users
+    can apply or clear credentials in POSIX shells, fish, or PowerShell without
+    manual translation. The standard
 
     devcontainer setup MUST include `oathtool` so passkey-totp flows remain
 
@@ -693,7 +696,10 @@ requirements:
       - test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
+      - test_cli_auth_login_req_ops_015_supports_fish_env_output
+      - test_cli_auth_login_req_ops_015_supports_powershell_env_output
       - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
+      - test_cli_auth_token_clear_req_ops_015_prints_shell_specific_unsets
       - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
     e2e:
     - file: e2e/smoke.test.ts
