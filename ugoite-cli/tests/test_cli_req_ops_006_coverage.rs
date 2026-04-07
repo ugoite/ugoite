@@ -159,18 +159,13 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
         .contains("Invalid mode: invalid. Use core, backend, or api"));
 
     let config_without_mode = cli_command(&config_path)
-        .args([
-            "config",
-            "set",
-            "--backend-url",
-            "https://backend.example.test",
-        ])
+        .args(["config", "set", "--backend-url", "http://127.0.0.1:9000"])
         .output()
         .expect("config set without mode");
     assert_success(&config_without_mode, "config set without mode");
     assert_eq!(
         parse_stdout_json(&config_without_mode)["config"]["backend_url"].as_str(),
-        Some("https://backend.example.test")
+        Some("http://127.0.0.1:9000")
     );
 
     let config_set_help = cli_command(&config_path)
@@ -210,7 +205,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--mode",
             "api",
             "--api-url",
-            "https://api.example.test/api",
+            "http://localhost:3000/api",
         ])
         .output()
         .expect("config switch to api from core");
@@ -226,7 +221,8 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     assert_success(&current_api, "config current api");
     let current_api_stdout = String::from_utf8_lossy(&current_api.stdout);
     assert!(current_api_stdout.contains("Current endpoint mode: api"));
-    assert!(current_api_stdout.contains("https://api.example.test/api"));
+    assert!(current_api_stdout.contains("same proxied /api surface as the frontend"));
+    assert!(current_api_stdout.contains("http://localhost:3000/api"));
     assert!(current_api_stdout.contains("same proxied /api surface as the frontend"));
     assert!(current_api_stdout.contains("remote API instead of your local filesystem"));
 
@@ -248,7 +244,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--mode",
             "backend",
             "--backend-url",
-            "https://backend.example.test",
+            "http://127.0.0.1:9000",
         ])
         .output()
         .expect("config switch to backend");
@@ -264,7 +260,8 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     assert_success(&current_backend, "config current backend");
     let current_backend_stdout = String::from_utf8_lossy(&current_backend.stdout);
     assert!(current_backend_stdout.contains("Current endpoint mode: backend"));
-    assert!(current_backend_stdout.contains("https://backend.example.test"));
+    assert!(current_backend_stdout.contains("talk to a backend server directly"));
+    assert!(current_backend_stdout.contains("http://127.0.0.1:9000"));
     assert!(current_backend_stdout.contains("talk to a backend server directly"));
     assert!(current_backend_stdout.contains("server instead of your local filesystem"));
 
@@ -275,7 +272,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--mode",
             "api",
             "--api-url",
-            "https://api.example.test/v2",
+            "http://localhost:3000/v2",
         ])
         .output()
         .expect("config switch to api from backend");
@@ -286,7 +283,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     let switch_to_api_from_backend_stderr =
         String::from_utf8_lossy(&switch_to_api_from_backend.stderr);
     assert!(switch_to_api_from_backend_stderr.contains("Switched to api mode"));
-    assert!(switch_to_api_from_backend_stderr.contains("https://api.example.test/v2"));
+    assert!(switch_to_api_from_backend_stderr.contains("http://localhost:3000/v2"));
     assert!(switch_to_api_from_backend_stderr.contains("ugoite config set --mode core"));
 
     let switch_to_backend_from_api = cli_command(&config_path)
@@ -296,7 +293,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
             "--mode",
             "backend",
             "--backend-url",
-            "https://backend-two.example.test",
+            "http://127.0.0.1:9100",
         ])
         .output()
         .expect("config switch to backend from api");
@@ -307,7 +304,7 @@ fn test_cli_req_ops_006_main_auth_and_config_error_paths() {
     let switch_to_backend_from_api_stderr =
         String::from_utf8_lossy(&switch_to_backend_from_api.stderr);
     assert!(switch_to_backend_from_api_stderr.contains("Switched to backend mode"));
-    assert!(switch_to_backend_from_api_stderr.contains("https://backend-two.example.test"));
+    assert!(switch_to_backend_from_api_stderr.contains("http://127.0.0.1:9100"));
     assert!(switch_to_backend_from_api_stderr.contains("ugoite config set --mode core"));
 
     write_endpoint_config(
@@ -1575,7 +1572,7 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
     handle.join().expect("join remote entry create server");
     assert!(remote_create_request.starts_with("POST /spaces/remote-space/entries HTTP/1.1"));
     assert!(remote_create_request.contains(r#""id":"entry-1""#));
-    assert!(remote_create_request.contains("\"markdown\":\"# Remote Entry\""));
+    assert!(remote_create_request.contains("\"content\":\"# Remote Entry\""));
     assert!(!remote_create_request.contains(r#""author":"#));
 
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"updated":true}"#);
