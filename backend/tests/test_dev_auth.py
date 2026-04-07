@@ -1,6 +1,7 @@
 """Local development login endpoint tests.
 
 REQ-OPS-015: Local dev auth mode selection.
+REQ-SEC-001: Local-only defaults and container auth-secret protections.
 """
 
 from __future__ import annotations
@@ -107,6 +108,59 @@ def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(
         "supports_passkey_totp": True,
         "supports_mock_oauth": False,
     }
+
+
+def test_dev_auth_req_sec_001_startup_derives_bearer_env_from_signing_material(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: containerized dev auth derives bearer verification state."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", raising=False)
+    clear_auth_manager_cache()
+
+    with TestClient(app) as client:
+        login_response = client.post("/auth/mock-oauth")
+        assert login_response.status_code == 200
+        assert (
+            os.environ["UGOITE_AUTH_BEARER_SECRETS"]
+            == f"{DEFAULT_TEST_SIGNING_KID}:{DEFAULT_TEST_SIGNING_SECRET}"
+        )
+        assert os.environ["UGOITE_AUTH_BEARER_ACTIVE_KIDS"] == DEFAULT_TEST_SIGNING_KID
+
+        token = login_response.json()["bearer_token"]
+        spaces_response = client.get(
+            "/spaces",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert spaces_response.status_code == 200
+
+
+def test_dev_auth_req_sec_001_skips_bearer_derivation_without_signing_material(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: startup skips derived bearer auth without signing material."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", " ")
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", raising=False)
+    clear_auth_manager_cache()
+
+    auth_endpoints.configure_dev_auth_bearer_env()
+
+    assert "UGOITE_AUTH_BEARER_SECRETS" not in os.environ
+    assert "UGOITE_AUTH_BEARER_ACTIVE_KIDS" not in os.environ
 
 
 def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
