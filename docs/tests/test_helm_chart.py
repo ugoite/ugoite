@@ -333,8 +333,14 @@ def test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets() -> None:
     """REQ-SEC-001: Helm chart installs must require unique dev auth secrets."""
     secret_text = _read_text(CHART_SECRET_PATH)
     required_secret_fragments = {
-        'required "charts/ugoite values.auth.signingSecret must be set to a unique secret"',
-        'required "charts/ugoite values.auth.proxyToken must be set to a unique token"',
+        (
+            'required "charts/ugoite values.auth.signingSecret '
+            'must be set to a unique secret"'
+        ),
+        (
+            'required "charts/ugoite values.auth.proxyToken '
+            'must be set to a unique token"'
+        ),
     }
     missing_secret_fragments = _missing_fragments(
         secret_text,
@@ -342,7 +348,10 @@ def test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets() -> None:
     )
     if missing_secret_fragments:
         _fail(
-            "charts/ugoite/templates/auth-secret.yaml must require unique auth secrets: "
+            (
+                "charts/ugoite/templates/auth-secret.yaml must require unique "
+                "auth secrets: "
+            )
             + ", ".join(missing_secret_fragments),
         )
 
