@@ -783,7 +783,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 					</Show>
 
 					<Show when={errorMessage()}>
-						<div class="ui-alert ui-alert-error text-sm">{errorMessage()}</div>
+						<div class="ui-alert ui-alert-error text-sm" role="alert">
+							{errorMessage()}
+						</div>
 					</Show>
 
 					<div class="flex justify-end gap-3 pt-2">
@@ -1086,7 +1088,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 							</Show>
 						</div>
 						<Show when={submitError()}>
-							<div class="ui-alert ui-alert-error text-sm">{submitError()}</div>
+							<div class="ui-alert ui-alert-error text-sm" role="alert">
+								{submitError()}
+							</div>
 						</Show>
 
 						<div class="flex justify-end gap-3 pt-4">
@@ -1433,7 +1437,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
 							</Show>
 						</div>
 						<Show when={submitError()}>
-							<div class="ui-alert ui-alert-error text-sm">{submitError()}</div>
+							<div class="ui-alert ui-alert-error text-sm" role="alert">
+								{submitError()}
+							</div>
 						</Show>
 
 						<div class="flex justify-end gap-3 pt-4">

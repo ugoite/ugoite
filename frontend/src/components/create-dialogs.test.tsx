@@ -198,7 +198,7 @@ describe("CreateFormDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
 
-		expect(await screen.findByText("Form already exists")).toBeInTheDocument();
+		expect(await screen.findByRole("alert")).toHaveTextContent("Form already exists");
 	});
 
 	it("REQ-FE-032: removes a column from create form dialog", async () => {
@@ -328,7 +328,7 @@ describe("CreateEntryDialog", () => {
 		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
 		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-		expect(await screen.findByText("Entry already exists")).toBeInTheDocument();
+		expect(await screen.findByRole("alert")).toHaveTextContent("Entry already exists");
 	});
 
 	it("REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline", async () => {
@@ -360,7 +360,7 @@ describe("CreateEntryDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
-		expect(await screen.findByText("Markdown submit failed")).toBeInTheDocument();
+		expect(await screen.findByRole("alert")).toHaveTextContent("Markdown submit failed");
 	});
 
 	it("REQ-FE-037: pre-fills defaults for required fields", async () => {
@@ -1414,6 +1414,6 @@ describe("EditFormDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "変更を保存" }));
 
-		expect(await screen.findByText("フォームの更新に失敗しました")).toBeInTheDocument();
+		expect(await screen.findByRole("alert")).toHaveTextContent("フォームの更新に失敗しました");
 	});
 });
