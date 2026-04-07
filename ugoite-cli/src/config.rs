@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
@@ -94,6 +94,41 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
         serde_json::to_string_pretty(config).expect("EndpointConfig serialization is infallible");
     std::fs::write(&path, text)?;
     Ok(path)
+}
+
+pub fn validate_remote_endpoint_url(url: &str, label: &str) -> Result<()> {
+    let parsed = reqwest::Url::parse(url)
+        .with_context(|| format!("{label} must be a valid http:// or https:// URL"))?;
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            let Some(host) = parsed.host_str() else {
+                bail!("{label} must include a host");
+            };
+            let host = host.trim_end_matches('.');
+            let normalized_ip_host = host.trim_start_matches('[').trim_end_matches(']');
+            if host.eq_ignore_ascii_case("localhost")
+                || normalized_ip_host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+            {
+                Ok(())
+            } else {
+                bail!(
+                    "{label} must use https:// for non-loopback hosts. Cleartext http:// is only allowed for localhost, 127.0.0.1, or [::1]."
+                )
+            }
+        }
+        scheme => bail!("{label} must use http:// or https:// (got {scheme}://)"),
+    }
+}
+
+pub fn validate_active_remote_endpoint(config: &EndpointConfig) -> Result<()> {
+    match config.mode {
+        EndpointMode::Core => Ok(()),
+        EndpointMode::Backend => validate_remote_endpoint_url(&config.backend_url, "--backend-url"),
+        EndpointMode::Api => validate_remote_endpoint_url(&config.api_url, "--api-url"),
+    }
 }
 
 pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {

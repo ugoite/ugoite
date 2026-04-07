@@ -1,7 +1,7 @@
 //! Integration tests for the endpoint configuration system.
-//! REQ-STO-001, REQ-STO-004
+//! REQ-STO-001, REQ-STO-004, REQ-SEC-011
 
-use std::process::Command;
+use std::{fs, process::Command};
 
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().unwrap();
@@ -96,4 +96,182 @@ fn test_parse_space_id_from_path_and_id() {
     assert!(list_output.status.success());
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     assert!(stdout.contains("path-id-space"));
+}
+
+/// REQ-SEC-011: config set must reject non-loopback cleartext backend and API URLs.
+#[test]
+fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
+    let dir = tempfile::tempdir().unwrap();
+
+    for (name, args, flag) in [
+        (
+            "backend",
+            vec![
+                "config",
+                "set",
+                "--mode",
+                "backend",
+                "--backend-url",
+                "http://example.com",
+            ],
+            "--backend-url",
+        ),
+        (
+            "api",
+            vec![
+                "config",
+                "set",
+                "--mode",
+                "api",
+                "--api-url",
+                "http://example.com/api",
+            ],
+            "--api-url",
+        ),
+        (
+            "backend-lookalike",
+            vec![
+                "config",
+                "set",
+                "--mode",
+                "backend",
+                "--backend-url",
+                "http://localhost.example.com:8000",
+            ],
+            "--backend-url",
+        ),
+    ] {
+        let config_path = dir.path().join(format!("{name}.json"));
+        let output = Command::new(ugoite_bin())
+            .args(&args)
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(
+            !output.status.success(),
+            "stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(flag), "stderr: {stderr}");
+        assert!(
+            stderr.contains("https:// for non-loopback hosts"),
+            "stderr: {stderr}"
+        );
+        assert!(
+            !config_path.exists(),
+            "config should not be written for rejected insecure endpoints",
+        );
+    }
+}
+
+/// REQ-SEC-011: loopback cleartext endpoints remain available for local development.
+#[test]
+fn test_config_set_req_sec_011_allows_loopback_cleartext_urls() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, url) in [
+        ("ipv4", "http://127.0.0.1:8080"),
+        ("localhost-dot", "http://localhost.:8081"),
+        ("ipv6", "http://[::1]:8082"),
+    ] {
+        let config_path = dir.path().join(format!("{name}.json"));
+
+        let set_output = Command::new(ugoite_bin())
+            .args(["config", "set", "--mode", "backend", "--backend-url", url])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(
+            set_output.status.success(),
+            "url: {url}\nstderr: {}",
+            String::from_utf8_lossy(&set_output.stderr)
+        );
+
+        let show_output = Command::new(ugoite_bin())
+            .args(["config", "show"])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(show_output.status.success());
+
+        let stdout = String::from_utf8_lossy(&show_output.stdout);
+        let v: serde_json::Value = serde_json::from_str(&stdout).expect("JSON");
+        assert_eq!(v["backend_url"].as_str(), Some(url), "url: {url}");
+    }
+}
+
+/// REQ-SEC-011: config current must reject previously saved insecure remote endpoints.
+#[test]
+fn test_config_current_req_sec_011_rejects_saved_non_loopback_cleartext_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    fs::write(
+        &config_path,
+        r#"{
+  "mode": "api",
+  "backend_url": "http://localhost:8000",
+  "api_url": "http://example.com/api"
+}
+"#,
+    )
+    .expect("write insecure config");
+
+    let output = Command::new(ugoite_bin())
+        .args(["config", "current"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--api-url"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("https:// for non-loopback hosts"),
+        "stderr: {stderr}"
+    );
+}
+
+/// REQ-SEC-011: remote commands must refuse insecure saved endpoints before any request is sent.
+#[test]
+fn test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    fs::write(
+        &config_path,
+        r#"{
+  "mode": "backend",
+  "backend_url": "http://example.com",
+  "api_url": "http://localhost:3000/api"
+}
+"#,
+    )
+    .expect("write insecure config");
+
+    let output = Command::new(ugoite_bin())
+        .args(["space", "list"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Backend endpoint URL http://example.com uses cleartext http:// for a non-loopback host"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "Use https:// for remote endpoints, or use a loopback http:// URL for local development."
+        ),
+        "stderr: {stderr}"
+    );
 }
