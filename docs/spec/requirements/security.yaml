@@ -139,6 +139,15 @@ requirements:
     - file: ugoite-cli/tests/test_auth.rs
       tests:
       - test_cli_auth_overview_req_sec_003_includes_channels
+    vitest:
+    - file: frontend/src/routes/api/[...path].test.ts
+      tests:
+      - 'REQ-SEC-003: rejects protocol-relative proxy paths before forwarding browser bearer tokens'
+      - 'REQ-SEC-003: pins forwarded browser auth to the configured backend origin'
+    e2e:
+    - file: e2e/api-proxy-security.test.ts
+      tests:
+      - 'REQ-SEC-003: browser /api proxy rejects protocol-relative upstream targets'
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
