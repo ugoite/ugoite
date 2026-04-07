@@ -8,7 +8,6 @@ export type AuthConfig = {
 };
 
 export type AuthLoginResponse = {
-	bearerToken: string;
 	userId: string;
 	expiresAt: number;
 };
@@ -84,7 +83,6 @@ export const authApi = {
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {
-			bearerToken: readString(payload, "bearer_token"),
 			userId: readString(payload, "user_id"),
 			expiresAt: readNumber(payload, "expires_at"),
 		};
@@ -101,7 +99,6 @@ export const authApi = {
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {
-			bearerToken: readString(payload, "bearer_token"),
 			userId: readString(payload, "user_id"),
 			expiresAt: readNumber(payload, "expires_at"),
 		};
