@@ -2,6 +2,8 @@ import { A, useNavigate } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/space-api";
+import { partitionSpaces } from "~/lib/space-list";
+import type { Space } from "~/lib/types";
 
 const localDevAuthGuideUrl = getDocsiteHref(
 	"/docs/guide/local-dev-auth-login",
@@ -23,6 +25,34 @@ const normalizeCreateError = (value: unknown): string => {
 	return message || "Failed to create space.";
 };
 
+function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
+	return (
+		<ul aria-label={props.label} class="ui-stack-sm">
+			<For each={props.spaces}>
+				{(space) => (
+					<li class="ui-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+						<div>
+							<h3 class="font-medium">{space.name || space.id}</h3>
+							<p class="text-xs ui-muted">ID: {space.id}</p>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							<A
+								href={`/spaces/${space.id}/settings`}
+								class="ui-button ui-button-secondary text-sm"
+							>
+								Settings
+							</A>
+							<A href={`/spaces/${space.id}/dashboard`} class="ui-button ui-button-primary text-sm">
+								Open Space
+							</A>
+						</div>
+					</li>
+				)}
+			</For>
+		</ul>
+	);
+}
+
 export default function SpacesIndexRoute() {
 	const navigate = useNavigate();
 	const [spacesError, setSpacesError] = createSignal("");
@@ -40,6 +70,9 @@ export default function SpacesIndexRoute() {
 	const [newSpaceId, setNewSpaceId] = createSignal("");
 	const [createError, setCreateError] = createSignal<string | null>(null);
 	const [isCreating, setIsCreating] = createSignal(false);
+	const listedSpaces = createMemo(() => partitionSpaces(spaces() || []));
+	const userSpaces = createMemo(() => listedSpaces().userSpaces);
+	const adminSpaces = createMemo(() => listedSpaces().adminSpaces);
 
 	const authHint = createMemo((): { message: string; showGuide: boolean } | null => {
 		const message = spacesError().toLowerCase();
@@ -67,7 +100,10 @@ export default function SpacesIndexRoute() {
 	});
 
 	const hasNoSpaces = createMemo(
-		() => !spaces.loading && !spacesError() && (spaces()?.length ?? 0) === 0,
+		() => !spaces.loading && !spacesError() && userSpaces().length === 0,
+	);
+	const emptyStateMessage = createMemo(() =>
+		adminSpaces().length > 0 ? "No user spaces available yet." : "No spaces available.",
 	);
 
 	const openCreateForm = () => {
@@ -139,6 +175,12 @@ export default function SpacesIndexRoute() {
 
 			<section class="ui-card">
 				<h2 class="text-lg font-semibold mb-3">Available Spaces</h2>
+				<Show when={adminSpaces().length > 0}>
+					<p class="mb-3 text-sm ui-muted">
+						User-facing spaces stay primary here. Reserved admin spaces remain available in a
+						separate section below.
+					</p>
+				</Show>
 				<Show when={showCreateForm()}>
 					<form class="ui-card ui-stack-sm mb-4" onSubmit={handleCreateSpace}>
 						<div>
@@ -211,7 +253,7 @@ export default function SpacesIndexRoute() {
 				</Show>
 				<Show when={hasNoSpaces() && !showCreateForm()}>
 					<div class="ui-card ui-card-dashed ui-stack-sm">
-						<p class="text-sm ui-muted">No spaces available.</p>
+						<p class="text-sm ui-muted">{emptyStateMessage()}</p>
 						<div>
 							<button
 								type="button"
@@ -223,32 +265,20 @@ export default function SpacesIndexRoute() {
 						</div>
 					</div>
 				</Show>
-				<ul class="ui-stack-sm">
-					<For each={spaces() || []}>
-						{(space) => (
-							<li class="ui-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-								<div>
-									<h3 class="font-medium">{space.name || space.id}</h3>
-									<p class="text-xs ui-muted">ID: {space.id}</p>
-								</div>
-								<div class="flex flex-wrap gap-2">
-									<A
-										href={`/spaces/${space.id}/settings`}
-										class="ui-button ui-button-secondary text-sm"
-									>
-										Settings
-									</A>
-									<A
-										href={`/spaces/${space.id}/dashboard`}
-										class="ui-button ui-button-primary text-sm"
-									>
-										Open Space
-									</A>
-								</div>
-							</li>
-						)}
-					</For>
-				</ul>
+				<Show when={userSpaces().length > 0}>
+					<SpaceCards label="User spaces" spaces={userSpaces()} />
+				</Show>
+				<Show when={adminSpaces().length > 0}>
+					<div class="mt-4 ui-stack-sm">
+						<div>
+							<h3 class="text-base font-semibold">Admin Spaces</h3>
+							<p class="text-sm ui-muted">
+								Reserved workspaces for administration and setup tasks.
+							</p>
+						</div>
+						<SpaceCards label="Admin spaces" spaces={adminSpaces()} />
+					</div>
+				</Show>
 			</section>
 		</main>
 	);

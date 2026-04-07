@@ -8,6 +8,7 @@ export interface Space {
 	id: string;
 	name: string;
 	created_at: string;
+	is_admin_space?: boolean;
 	storage_config?: Record<string, unknown>;
 	settings?: Record<string, unknown>;
 }

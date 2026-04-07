@@ -25,7 +25,11 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-001
   title: Space CRUD
-  description: 'Create, retrieve, and list spaces.
+  description: 'Create, retrieve, and list spaces. `/spaces` MUST keep the default
+
+    user workspace ahead of the reserved admin-space and identify the reserved
+
+    admin-space explicitly for clients.
 
     '
   related_spec:
@@ -42,6 +46,7 @@ requirements:
       - test_create_space_req_api_001_propagates_http_exception
       - test_list_spaces
       - test_list_spaces_req_api_001_admin_sees_admin_space
+      - test_list_spaces_req_api_001_flags_reserved_admin_space_and_keeps_default_first
       - test_list_spaces_req_api_001_non_admin_cannot_see_admin_space
       - test_get_space
       - test_get_space_not_found
