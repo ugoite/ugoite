@@ -89,6 +89,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         os.environ.get("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "false").lower() == "true"
     )
     if should_bootstrap_default_space:
+        # Dev auth still bootstraps admin-space for creation permissions, while
+        # newcomer browser flows rely on a separate user-facing default space.
         try:
             await ugoite_core.create_space(storage_config, "default")
             logger.info("Created default space at startup")

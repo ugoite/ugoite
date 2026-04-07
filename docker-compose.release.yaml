@@ -10,6 +10,8 @@ services:
       # Required because the frontend container reaches the backend over the
       # private Compose bridge network; host exposure still stays on 127.0.0.1.
       - UGOITE_ALLOW_REMOTE=true
+      # Keep a newcomer-facing workspace ready; admin-space stays separate in
+      # the browser UI after mock-oauth login.
       - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
       - UGOITE_DEV_AUTH_MODE=mock-oauth
       - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}

@@ -219,6 +219,31 @@ def test_list_spaces_req_api_001_admin_sees_admin_space(
     assert ugoite_core.admin_space_id() in space_ids
 
 
+def test_list_spaces_req_api_001_flags_reserved_admin_space_and_keeps_default_first(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: /spaces flags reserved admin-space and keeps it behind default."""
+    default_response = test_client.post("/spaces", json={"name": "default"})
+    assert default_response.status_code == 201
+    workspace_response = test_client.post("/spaces", json={"name": "workspace-a"})
+    assert workspace_response.status_code == 201
+
+    response = test_client.get("/spaces")
+
+    assert response.status_code == 200
+    spaces = response.json()
+    assert [space["id"] for space in spaces] == [
+        "default",
+        "workspace-a",
+        ugoite_core.admin_space_id(),
+    ]
+    flags = {space["id"]: space["is_admin_space"] for space in spaces}
+    assert flags["default"] is False
+    assert flags["workspace-a"] is False
+    assert flags[ugoite_core.admin_space_id()] is True
+
+
 def test_list_spaces_req_api_001_non_admin_cannot_see_admin_space(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
