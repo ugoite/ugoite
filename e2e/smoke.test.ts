@@ -37,14 +37,11 @@ test.describe("Smoke Tests", () => {
 	});
 
 	test("GET /spaces/default/entries/:id returns HTML", async ({ page, request }) => {
-		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
-			{
-				data: {
-					markdown: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
-				},
+		const createRes = await request.post(getBackendUrl("/spaces/default/entries"), {
+			data: {
+				markdown: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
 			},
-		);
+		});
 		expect(createRes.status()).toBe(201);
 		const created = (await createRes.json()) as { id: string };
 
@@ -53,9 +50,7 @@ test.describe("Smoke Tests", () => {
 		const body = await page.content();
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 
-		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
-		);
+		await request.delete(getBackendUrl(`/spaces/default/entries/${created.id}`));
 	});
 
 	test("GET /about returns HTML", async ({ page }) => {
@@ -68,7 +63,9 @@ test.describe("Smoke Tests", () => {
 	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with default ahead of reserved admin-space", async ({
 		browser,
 	}) => {
-		const context = await browser.newContext();
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+		});
 		const page = await context.newPage();
 
 		try {
@@ -111,14 +108,32 @@ test.describe("Smoke Tests", () => {
 		try {
 			await page.goto("/login");
 			await page.waitForLoadState("networkidle");
-			await expect(page.getByRole("button", { name: "Continue with Local Demo Login" })).toBeVisible();
+			await expect(
+				page.getByRole("button", { name: "Continue with Local Demo Login" }),
+			).toBeVisible();
 			const cookies = await context.cookies(frontendUrl);
-			expect(
-				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")?.value,
-			).toBe("existing-browser-session");
+			expect(cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")?.value).toBe(
+				"existing-browser-session",
+			);
 		} finally {
 			await context.close();
 		}
+	});
+
+	test("REQ-FE-066: signed-in browser nav exposes sign-out and returns to login", async ({
+		page,
+	}) => {
+		await page.goto("/spaces");
+		await expect(page).toHaveURL(/\/spaces$/);
+		await expect(page.getByText("Signed in")).toBeVisible();
+		await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+		await expect(page.getByRole("link", { name: "Login" })).toHaveCount(0);
+
+		await page.getByRole("button", { name: "Sign out" }).click();
+		await expect(page).toHaveURL(/\/login$/);
+		await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
+		await expect(page.getByText("Signed in")).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
 	});
 
 	test("GET /spaces returns list", async ({ request }) => {
@@ -145,9 +160,7 @@ test.describe("Smoke Tests", () => {
 	});
 
 	test("GET /nonexistent-api returns 404", async ({ request }) => {
-		const res = await request.get(
-			getBackendUrl("/nonexistent-endpoint-xyz"),
-		);
+		const res = await request.get(getBackendUrl("/nonexistent-endpoint-xyz"));
 		expect(res.status()).toBe(404);
 	});
 });
