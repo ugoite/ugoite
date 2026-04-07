@@ -92,21 +92,41 @@ fn setup_space_with_form(dir: &tempfile::TempDir, space_id: &str) -> (String, Pa
 fn test_cli_req_sec_007_space_patch_rejects_membership_managed_settings() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (_root, config_path, space_path) = setup_space(&dir, "space-membership-guard");
+    let reserved_keys = [
+        "admin_user_ids",
+        "invitations",
+        "member_roles",
+        "members",
+        "membership_version",
+        "owner_user_id",
+    ];
 
-    let patch_output = cli_command(&config_path)
-        .args([
-            "space",
-            "patch",
-            &space_path,
-            "--settings",
-            r#"{"members":{"ghost-user":{"user_id":"ghost-user","role":"admin","state":"active"}}}"#,
-        ])
-        .output()
-        .expect("space patch membership guard");
+    for key in reserved_keys {
+        let mut settings = serde_json::Map::new();
+        settings.insert(key.to_string(), Value::String("sentinel".to_string()));
 
-    assert!(!patch_output.status.success());
-    assert!(String::from_utf8_lossy(&patch_output.stderr)
-        .contains("membership-managed settings keys: members"));
+        let patch_output = cli_command(&config_path)
+            .args([
+                "space",
+                "patch",
+                &space_path,
+                "--settings",
+                &Value::Object(settings).to_string(),
+            ])
+            .output()
+            .expect("space patch membership guard");
+
+        assert!(
+            !patch_output.status.success(),
+            "expected rejection for reserved key {key}"
+        );
+        assert!(
+            String::from_utf8_lossy(&patch_output.stderr)
+                .contains(&format!("membership-managed settings keys: {key}")),
+            "missing reserved key {key} in stderr: {}",
+            String::from_utf8_lossy(&patch_output.stderr),
+        );
+    }
 }
 
 fn create_entry(config_path: &Path, space_path: &str, entry_id: &str, content: &str) {
