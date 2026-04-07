@@ -89,7 +89,7 @@ fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 }
 
 fn ensure_safe_remote_request_url(url: &str) -> Result<()> {
-    crate::config::validate_remote_endpoint_url(url, "remote request URL")
+    crate::config::validate_server_endpoint_url(url, "Remote request")
 }
 
 fn add_dev_local_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

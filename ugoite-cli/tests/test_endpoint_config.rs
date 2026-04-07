@@ -103,7 +103,7 @@ fn test_parse_space_id_from_path_and_id() {
 fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
     let dir = tempfile::tempdir().unwrap();
 
-    for (name, args, flag) in [
+    for (name, args, label) in [
         (
             "backend",
             vec![
@@ -114,7 +114,7 @@ fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
                 "--backend-url",
                 "http://example.com",
             ],
-            "--backend-url",
+            "Backend endpoint URL http://example.com uses cleartext http:// for a non-loopback host",
         ),
         (
             "api",
@@ -126,7 +126,7 @@ fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
                 "--api-url",
                 "http://example.com/api",
             ],
-            "--api-url",
+            "API endpoint URL http://example.com/api uses cleartext http:// for a non-loopback host",
         ),
         (
             "backend-lookalike",
@@ -138,7 +138,7 @@ fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
                 "--backend-url",
                 "http://localhost.example.com:8000",
             ],
-            "--backend-url",
+            "Backend endpoint URL http://localhost.example.com:8000 uses cleartext http:// for a non-loopback host",
         ),
     ] {
         let config_path = dir.path().join(format!("{name}.json"));
@@ -154,9 +154,9 @@ fn test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls() {
             String::from_utf8_lossy(&output.stderr),
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains(flag), "stderr: {stderr}");
+        assert!(stderr.contains(label), "stderr: {stderr}");
         assert!(
-            stderr.contains("https:// for non-loopback hosts"),
+            stderr.contains("https:// for remote endpoints"),
             "stderr: {stderr}"
         );
         assert!(
@@ -201,9 +201,9 @@ fn test_config_set_req_sec_011_allows_loopback_cleartext_urls() {
     }
 }
 
-/// REQ-SEC-011: config current must reject previously saved insecure remote endpoints.
+/// REQ-SEC-011: config current must warn about previously saved insecure remote endpoints.
 #[test]
-fn test_config_current_req_sec_011_rejects_saved_non_loopback_cleartext_url() {
+fn test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
     fs::write(
@@ -223,16 +223,22 @@ fn test_config_current_req_sec_011_rejects_saved_non_loopback_cleartext_url() {
         .output()
         .expect("failed to execute");
     assert!(
-        !output.status.success(),
+        output.status.success(),
         "stdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--api-url"), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Current endpoint mode: api"), "stdout: {stdout}");
     assert!(
-        stderr.contains("https:// for non-loopback hosts"),
-        "stderr: {stderr}"
+        stdout.contains(
+            "Warning: API endpoint URL http://example.com/api uses cleartext http:// for a non-loopback host"
+        ),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("Server-backed commands will refuse this endpoint"),
+        "stdout: {stdout}"
     );
 }
 
