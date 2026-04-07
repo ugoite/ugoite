@@ -203,7 +203,7 @@ POST /spaces/{space_id}/entries
 Content-Type: application/json
 
 {
-  "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
+  "markdown": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
 }
 ```
 
@@ -220,7 +220,7 @@ or extracted properties resolve a `form`, the adapter MUST enforce that Form's
 write ACL before mutating storage; otherwise it falls back to the space-level
 `entry_write` permission.
 
-Create request bodies submit entry Markdown via the `content` field.
+Create request bodies submit entry Markdown via the canonical `markdown` field.
 Create responses return only the generated `id` and `revision_id`; fetch the
 entry afterward if a client needs extracted title or properties.
 
