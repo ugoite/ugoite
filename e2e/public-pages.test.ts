@@ -100,7 +100,7 @@ test.describe("Public page stability", () => {
 		}
 	});
 
-test("REQ-FE-064: public landing pages respect the saved Japanese locale", async ({
+	test("REQ-FE-064: public landing pages respect the saved Japanese locale", async ({
 		browser,
 	}) => {
 		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";

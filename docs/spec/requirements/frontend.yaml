@@ -17,10 +17,6 @@ requirements:
   title: Space Selector
   description: 'Select and switch spaces.
 
-    Newcomer-facing lists and automatic selection MUST keep user workspaces
-
-    primary and avoid preferring the reserved admin-space by default.
-
     '
   related_spec:
   - stories/core.yaml#STORY-003
@@ -38,14 +34,9 @@ requirements:
       tests:
       - should keep selection empty when no spaces exist
       - should select existing default space
-      - 'REQ-FE-001: should skip reserved admin-space when choosing the first user space'
-      - 'REQ-FE-001: should sort blank space names by fallback id'
       - should restore persisted space selection
       - should select space and persist choice
       - should not select non-existent space
-    - file: frontend/src/routes/spaces/index.test.tsx
-      tests:
-      - 'REQ-FE-001: keeps reserved admin-space out of the primary newcomer list'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -76,14 +67,12 @@ requirements:
     - file: frontend/src/lib/space-store.test.ts
       tests:
       - should keep selection empty when no spaces exist
-      - 'REQ-FE-002: should keep selection empty when only reserved admin spaces exist'
     - file: frontend/src/routes/spaces/index.test.tsx
       tests:
       - 'REQ-FE-002: shows a create-space action when no spaces exist'
       - 'REQ-FE-002: creates a space only after explicit user submission'
       - 'REQ-FE-002: labels the create-space field as a space ID and explains allowed characters'
       - 'REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance'
-      - 'REQ-FE-002: treats reserved admin-space-only responses as an empty user-space state'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -180,9 +169,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-005
   title: Markdown Editor
-  description: 'Editor with Markdown editing, preview, and save functionality. Preview
-
-    MUST escape raw HTML before inserting rendered content into the DOM.
+  description: 'Editor with Markdown editing, preview, and save functionality.
 
     '
   related_spec:
@@ -205,14 +192,6 @@ requirements:
       - should handle null content gracefully
       - should render preview with undefined content without crashing
       - should display placeholder when content is empty
-      - 'REQ-FE-005: split preview escapes raw HTML content'
-    - file: frontend/src/lib/markdown.test.ts
-      tests:
-      - 'REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting'
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-005: entry detail preview escapes raw HTML in markdown content'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -403,11 +382,6 @@ requirements:
     - file: frontend/src/lib/client.test.ts
       tests:
       - should surface validation errors without object placeholders [REQ-FE-043]
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-043: create-form dialog renders rejected submit errors inline'
-      - 'REQ-FE-043: create-entry dialog renders rejected submit errors inline'
-      - 'REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -451,7 +425,6 @@ requirements:
       tests:
       - 'REQ-FE-044: localizes create-form dialog copy in Japanese'
       - 'REQ-FE-044: localizes create-entry dialog copy in Japanese'
-      - 'REQ-FE-044: localizes rejected edit-form submit fallback in Japanese'
     - file: frontend/src/components/AssetUploader.test.tsx
       tests:
       - 'REQ-FE-044: localizes asset uploader controls in Japanese'
@@ -462,6 +435,12 @@ requirements:
       tests:
       - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
       - 'REQ-FE-044: public routes apply local locale without remote preference fetch'
+    - file: frontend/src/routes/index.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes home route CTA copy in Japanese'
+    - file: frontend/src/routes/about.test.tsx
+      tests:
+      - 'REQ-FE-044: localizes about route copy in Japanese'
     - file: frontend/src/lib/preferences-api.test.ts
       tests:
       - 'REQ-FE-044: surfaces string detail on portable preference load failure'
