@@ -21,6 +21,9 @@ targets an **Authenticated Access by Default** model.
 - Local development obtains browser/CLI bearer tokens through explicit
   `passkey-totp` or `mock-oauth` login endpoints after startup instead of
   injecting an authenticated token before the app starts.
+- Shipped release Compose and Helm surfaces require operator-supplied auth
+  secrets, and local-demo `mock-oauth` remains an explicit opt-in instead of
+  the manifest default.
 - Space creation is further restricted to active admins of the reserved
   `admin-space`, and the creator of each non-admin space becomes that space's
   initial admin.
