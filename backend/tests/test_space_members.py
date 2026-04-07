@@ -185,6 +185,35 @@ def test_space_member_role_change_controls_admin_permissions(
     assert allowed_patch.status_code == 200
 
 
+def test_space_patch_rejects_membership_managed_settings(
+    member_clients: dict[str, TestClient],
+) -> None:
+    """REQ-SEC-007: generic space patch rejects membership-managed settings keys."""
+    owner = member_clients["owner"]
+    space_id = _create_space(owner)
+
+    with patch("ugoite_core.patch_space", _amock()) as patch_space:
+        response = owner.patch(
+            f"/spaces/{space_id}",
+            json={
+                "settings": {
+                    "members": {
+                        "ghost-user": {
+                            "user_id": "ghost-user",
+                            "role": "admin",
+                            "state": "active",
+                        },
+                    },
+                },
+            },
+        )
+
+    assert response.status_code == 422
+    assert "membership-managed keys" in response.json()["detail"]
+    assert "members" in response.json()["detail"]
+    patch_space.assert_not_awaited()
+
+
 def test_space_member_revoke_removes_access(
     member_clients: dict[str, TestClient],
 ) -> None:
