@@ -64,6 +64,10 @@ Content-Type: application/json
 
 **Response**: `200 OK`
 
+Notes:
+- Updating `storage_config` stores saved per-space connector metadata.
+- Current backend reads and writes still follow the deployment-scoped storage configuration until per-space routing is implemented.
+
 ```json
 {
   "bearer_token": "v1.<payload>.<signature>",
@@ -177,6 +181,7 @@ Content-Type: application/json
 **Response**: `200 OK` or `400 Bad Request`
 
 Notes:
+- Test Connection validates the candidate connector settings only; it does not move data or change the current write path.
 - `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`, or be a plain local path starting with `/` or `.`.
 - `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
 

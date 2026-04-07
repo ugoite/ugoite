@@ -1,12 +1,16 @@
 # Storage Migration Guide
 
-Use this guide before you change a space from one storage URI to another.
+Use this guide before you change the saved storage URI metadata for a space.
 
 ## What changing the URI does today
 
-Updating a space's `storage_config.uri` changes the saved connector settings for
-that space metadata. It does **not** automatically copy existing entries, assets,
-or derived indexes from the old location to the new one.
+Updating a space's `storage_config.uri` changes the saved connector settings in
+that space's metadata. It does **not** automatically copy existing entries,
+assets, or derived indexes from the old location to the new one.
+
+The current backend still reads and writes through the deployment-scoped storage
+backend. Treat the saved URI as planning metadata plus connection validation
+until your operators complete the manual migration work.
 
 That means a storage switch is currently a **manual migration step**, not a
 one-click move.
@@ -20,9 +24,10 @@ one-click move.
 2. Validate the destination first with **Test Connection** in Space Settings.
 3. Copy the existing space data with tooling that matches your current storage
    backend.
-4. Update the Storage URI only after you know the new location is reachable.
-5. Verify that the space opens correctly from the new backend before treating the
-   migration as complete.
+4. Update the Storage URI only after you know the new location is reachable and
+   you have a manual migration plan.
+5. Do not treat the saved URI as proof that writes have moved until the backend
+   deployment or migration procedure has been updated accordingly.
 
 ## Local vs object-storage trade-offs
 
