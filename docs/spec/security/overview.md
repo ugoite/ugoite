@@ -41,6 +41,9 @@ targets an **Authenticated Access by Default** model.
   because the frontend container reaches the backend over the private Compose
   bridge network; host exposure still remains localhost-only there because the
   published ports bind to `127.0.0.1`
+- `UGOITE_TRUST_PROXY_HEADERS=true` only trusts forwarded client headers from
+  loopback proxy peers; direct remote clients cannot spoof `X-Forwarded-For`
+  into looking like localhost
 
 ### CORS
 - Restricted to explicit frontend origins from `ALLOW_ORIGIN`

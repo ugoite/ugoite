@@ -19,6 +19,12 @@ requirements:
 
     explicit UGOITE_ALLOW_REMOTE=true environment variable.
 
+    When `UGOITE_TRUST_PROXY_HEADERS=true`, forwarded client headers MUST only
+
+    be honored from trusted loopback proxy peers so direct remote clients cannot
+
+    spoof loopback access.
+
     '
   related_spec:
   - security/overview.md
@@ -29,6 +35,13 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_middleware_blocks_remote_clients
+      - test_middleware_blocks_remote_clients_when_proxy_headers_trusted
+      - test_middleware_blocks_spoofed_loopback_forwarded_for_when_proxy_headers_trusted
+    - file: backend/tests/test_auth.py
+      tests:
+      - test_resolve_client_host_trusted_proxy
+      - test_resolve_client_host_empty_forwarded
+      - test_resolve_client_host_ignores_untrusted_forwarded_for
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -59,6 +72,7 @@ requirements:
       - test_middleware_headers
       - test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy
       - test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https
+      - test_middleware_headers_req_sec_002_ignores_spoofed_remote_forwarded_https
       - test_middleware_headers_req_sec_002_skips_csp_for_docs_ui
       - test_middleware_req_sec_002_preserves_error_response_when_signing_fails
 - set_id: REQCAT-SECURITY
