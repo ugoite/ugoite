@@ -1225,6 +1225,20 @@ def test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https(
     assert "Strict-Transport-Security" not in response.headers
 
 
+def test_middleware_headers_req_sec_002_ignores_spoofed_remote_forwarded_https(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: remote clients cannot spoof HTTPS with X-Forwarded-Proto alone."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-proto": "https"})
+
+    assert response.status_code == 200
+    assert "Strict-Transport-Security" not in response.headers
+
+
 def test_middleware_headers_req_sec_002_skips_csp_for_docs_ui(
     test_client: TestClient,
 ) -> None:
@@ -1448,6 +1462,20 @@ def test_middleware_blocks_remote_clients_when_proxy_headers_trusted(
     """REQ-SEC-001: trusted proxy mode enforces forwarded remote blocking."""
     monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
     response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
+    assert response.status_code == 403
+    assert "Remote access is disabled" in response.json()["detail"]
+    assert "X-Ugoite-Signature" in response.headers
+
+
+def test_middleware_blocks_spoofed_loopback_forwarded_for_when_proxy_headers_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-001: spoofed loopback X-Forwarded-For must not bypass remote blocking."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-for": "127.0.0.1"})
+
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
     assert "X-Ugoite-Signature" in response.headers

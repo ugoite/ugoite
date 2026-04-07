@@ -613,6 +613,7 @@ requirements:
       - test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context
       - test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context
       - test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context
+      - test_dev_auth_req_ops_015_rejects_spoofed_loopback_forwarded_for
       - test_dev_auth_req_ops_015_allows_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token
