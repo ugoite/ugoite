@@ -392,6 +392,11 @@ requirements:
     - file: frontend/src/lib/client.test.ts
       tests:
       - should surface validation errors without object placeholders [REQ-FE-043]
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-043: create-form dialog renders rejected submit errors inline'
+      - 'REQ-FE-043: create-entry dialog renders rejected submit errors inline'
+      - 'REQ-FE-043: create-entry markdown dialog renders rejected submit errors inline'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -435,6 +440,7 @@ requirements:
       tests:
       - 'REQ-FE-044: localizes create-form dialog copy in Japanese'
       - 'REQ-FE-044: localizes create-entry dialog copy in Japanese'
+      - 'REQ-FE-044: localizes rejected edit-form submit fallback in Japanese'
     - file: frontend/src/components/AssetUploader.test.tsx
       tests:
       - 'REQ-FE-044: localizes asset uploader controls in Japanese'

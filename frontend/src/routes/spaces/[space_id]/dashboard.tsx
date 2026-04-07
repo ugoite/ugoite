@@ -62,13 +62,9 @@ export default function SpaceDashboardRoute() {
 	});
 
 	const handleCreateForm = async (payload: FormCreatePayload) => {
-		try {
-			await formApi.create(spaceId(), payload);
-			setShowCreateFormDialog(false);
-			await refetchForms();
-		} catch (e) {
-			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateForm"));
-		}
+		await formApi.create(spaceId(), payload);
+		setShowCreateFormDialog(false);
+		await refetchForms();
 	};
 
 	const handleCreateEntry = async (
@@ -78,23 +74,16 @@ export default function SpaceDashboardRoute() {
 		inputMode: EntryInputMode = "webform",
 	) => {
 		if (!formName) {
-			alert(t("dashboard.error.selectFormBeforeCreate"));
-			return;
+			throw new Error(t("dashboard.error.selectFormBeforeCreate"));
 		}
 		const formDef = entryForms().find((entryForm) => entryForm.name === formName);
 		if (!formDef) {
-			alert(t("dashboard.error.selectedFormNotFound"));
-			return;
+			throw new Error(t("dashboard.error.selectedFormNotFound"));
 		}
 		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
-
-		try {
-			const result = await entryStore.createEntry(initialContent);
-			setShowCreateEntryDialog(false);
-			navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
-		} catch (e) {
-			alert(e instanceof Error ? e.message : t("dashboard.error.failedCreateEntry"));
-		}
+		const result = await entryStore.createEntry(initialContent);
+		setShowCreateEntryDialog(false);
+		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
 	};
 
 	const handleAssetUpload = async (file: File): Promise<Asset> => {
