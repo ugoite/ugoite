@@ -486,6 +486,18 @@ def test_create_sql_session_rejects_oversized_sql(test_client: TestClient) -> No
     create_sql_session.assert_not_awaited()
 
 
+def test_create_sql_session_accepts_sql_at_max_length(test_client: TestClient) -> None:
+    """REQ-API-008: create SQL session accepts SQL payloads at the max boundary."""
+    test_client.post("/spaces", json={"name": "sess-max-ws"})
+    with patch("ugoite_core.create_sql_session", _amock(return_value={"id": "sess-max"})) as create_sql_session:
+        response = test_client.post(
+            "/spaces/sess-max-ws/sql-sessions",
+            json={"sql": "S" * 100_000},
+        )
+    assert response.status_code == 201
+    create_sql_session.assert_awaited_once()
+
+
 def test_create_sql_session_generic_runtime_error(test_client: TestClient) -> None:
     """REQ-API-008: create SQL session returns 500 for generic runtime error."""
     test_client.post("/spaces", json={"name": "sess-rt-ws"})
