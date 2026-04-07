@@ -389,6 +389,13 @@ a:hover {
 	color: var(--ui-foreground);
 }
 
+.ui-nav-session {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--ui-spacing-sm);
+}
+
 .ui-page-title {
 	font-size: 2rem;
 	font-weight: 700;

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { authApi } from "./auth-api";
-import { clearAuthTokenCookie, setAuthTokenCookie } from "./auth-session";
+import { clearAuthTokenCookie, hasAuthTokenCookie, setAuthTokenCookie } from "./auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";
@@ -185,5 +185,68 @@ describe("authSession", () => {
 
 		expect(() => setAuthTokenCookie("token-value")).not.toThrow();
 		expect(() => clearAuthTokenCookie()).not.toThrow();
+	});
+
+	it("REQ-FE-066: preserves explicit auth state across browser cookie write timing gaps", () => {
+		const cookieAssignments: string[] = [];
+		const fakeDocument = {
+			get cookie() {
+				return "";
+			},
+			set cookie(value: string) {
+				cookieAssignments.push(value);
+			},
+		};
+		vi.stubGlobal("document", fakeDocument);
+		vi.stubGlobal("window", { location: { protocol: "http:" }, dispatchEvent: vi.fn() });
+
+		setAuthTokenCookie("token-value", 1_900_000_000);
+		expect(cookieAssignments[0]).toContain("ugoite_auth_bearer_token=token-value");
+		expect(hasAuthTokenCookie()).toBe(true);
+
+		clearAuthTokenCookie();
+		expect(hasAuthTokenCookie()).toBe(false);
+	});
+
+	it("REQ-FE-066: drops stale explicit auth state once the browser cookie stays absent", () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+			const fakeDocument = {
+				get cookie() {
+					return "";
+				},
+				set cookie(_value: string) {},
+			};
+			vi.stubGlobal("document", fakeDocument);
+			vi.stubGlobal("window", { location: { protocol: "http:" }, dispatchEvent: vi.fn() });
+
+			setAuthTokenCookie("token-value", 1_900_000_000);
+			expect(hasAuthTokenCookie()).toBe(true);
+
+			vi.advanceTimersByTime(1_001);
+			expect(hasAuthTokenCookie()).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("REQ-FE-066: reports no browser auth cookie when document is unavailable", () => {
+		vi.stubGlobal("document", undefined);
+		expect(hasAuthTokenCookie()).toBe(false);
+	});
+
+	it("REQ-FE-066: falls back to parsing browser cookies when there is no explicit auth state", async () => {
+		vi.resetModules();
+		const fakeDocument = {
+			cookie: "theme=violet; ugoite_auth_bearer_token=browser-session; locale=en",
+		};
+		vi.stubGlobal("document", fakeDocument);
+		const { clearAuthTokenCookie, hasAuthTokenCookie } = await import("./auth-session");
+
+		expect(hasAuthTokenCookie()).toBe(true);
+
+		clearAuthTokenCookie();
+		expect(hasAuthTokenCookie()).toBe(false);
 	});
 });
