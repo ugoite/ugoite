@@ -32,7 +32,9 @@ cat > values.local.yaml <<EOF
 image:
   tag: stable
 auth:
+  mode: mock-oauth
   devUserId: dev-local-user
+  signingKid: release-compose-local-v1
   signingSecret: ${HELM_AUTH_SIGNING_SECRET}
   proxyToken: ${HELM_AUTH_PROXY_TOKEN}
 backend:
@@ -50,8 +52,8 @@ By default the chart uses:
 - `ghcr.io/ugoite/ugoite/backend:${image.tag}`
 - `ghcr.io/ugoite/ugoite/frontend:${image.tag}`
 - a backend volume mounted at `/data`
-- local demo login (`mock-oauth`) defaults that match the release Compose quick
-  start
+- `passkey-totp` as the safer shipped auth-mode default until you explicitly opt
+  into local demo login
 - install-specific auth secrets that you supply through `values.local.yaml`
 - a computed `BACKEND_URL` equivalent to `http://backend:8000`, but scoped to
   the generated Kubernetes service name for the current release
@@ -86,7 +88,8 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 | `backend.persistence.size` | `10Gi` | Requested PVC size for the backend storage volume. |
 | `backend.persistence.storageClassName` | empty | Optional storage class override for the backend PVC. |
 | `backend.persistence.existingClaim` | empty | Reuse an existing PVC instead of creating a new one. |
-| `auth.devUserId` | `dev-local-user` | Local demo login user id for the shipped login flow. |
+| `auth.mode` | `passkey-totp` | Shipped auth-mode default. Set it to `mock-oauth` only for an explicit local demo flow. |
+| `auth.devUserId` | empty | Username/user id hint for the explicit login flow you enable. |
 | `auth.proxyToken` | empty (required unique value) | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
 | `auth.signingKid` | `release-compose-local-v1` | Signing key id for the default bearer-token setup. |
 | `auth.signingSecret` | empty (required unique value) | Signing secret used to mint the dev bearer-token secret for this install. |
@@ -100,6 +103,8 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 - Publication or automatic cluster deployment is intentionally out of scope for this chart today. The repository keeps the chart in-tree, but it does not yet publish it to an OCI registry or install it from CI.
 - The chart deliberately stays limited to the existing backend + frontend
   topology from `docker-compose.release.yaml`.
+- The example above explicitly opts into loopback-oriented `mock-oauth`; the
+  shipped chart defaults stay on `passkey-totp` until you make that choice.
 - Generate a fresh `auth.signingSecret` and `auth.proxyToken` for every install
   so exposed clusters do not rely on repository-known development secrets.
 - If your cluster already has a durable claim, set

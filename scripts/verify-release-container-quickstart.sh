@@ -10,7 +10,6 @@ ASSET_BASE_URL_INPUT="${UGOITE_RELEASE_ASSET_BASE_URL:-}"
 BACKEND_TIMEOUT_SECONDS="${UGOITE_BACKEND_START_TIMEOUT_SECONDS:-120}"
 FRONTEND_TIMEOUT_SECONDS="${UGOITE_FRONTEND_START_TIMEOUT_SECONDS:-120}"
 CLI_INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
-DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -52,6 +51,21 @@ require_command npm
 require_command npx
 require_command python3
 require_command bash
+
+generate_secret() {
+  python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+}
+
+DEV_AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-mock-oauth}"
+DEV_USER_ID="${UGOITE_DEV_USER_ID:-dev-local-user}"
+DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-release-compose-local-v1}"
+DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-$(generate_secret)}"
+AUTH_BEARER_SECRETS="${UGOITE_AUTH_BEARER_SECRETS:-${DEV_SIGNING_KID}:${DEV_SIGNING_SECRET}}"
+AUTH_BEARER_ACTIVE_KIDS="${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-${DEV_SIGNING_KID}}"
+DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-$(generate_secret)}"
 
 cleanup_mode="cleanup"
 if [ -n "$WORK_ROOT_INPUT" ]; then
@@ -135,6 +149,21 @@ download_asset \
 log "Loading released Docker images"
 gzip -dc "$DOWNLOAD_DIR/backend-image.tar.gz" | docker load
 gzip -dc "$DOWNLOAD_DIR/frontend-image.tar.gz" | docker load
+
+cat > "$STACK_DIR/.env" <<EOF
+UGOITE_VERSION=${VERSION_INPUT}
+UGOITE_SPACES_DIR=./spaces
+UGOITE_FRONTEND_PORT=3000
+UGOITE_BACKEND_PORT=8000
+UGOITE_DEV_AUTH_MODE=${DEV_AUTH_MODE}
+UGOITE_DEV_USER_ID=${DEV_USER_ID}
+UGOITE_DEV_SIGNING_KID=${DEV_SIGNING_KID}
+UGOITE_DEV_SIGNING_SECRET=${DEV_SIGNING_SECRET}
+UGOITE_AUTH_BEARER_SECRETS=${AUTH_BEARER_SECRETS}
+UGOITE_AUTH_BEARER_ACTIVE_KIDS=${AUTH_BEARER_ACTIVE_KIDS}
+UGOITE_DEV_AUTH_PROXY_TOKEN=${DEV_AUTH_PROXY_TOKEN}
+EOF
+mkdir -p "$STACK_DIR/spaces"
 
 log "Starting released compose stack"
 (

@@ -234,10 +234,10 @@ def test_docs_req_ops_028_helm_chart_defaults_match_release_topology() -> None:
             "/data",
             "charts/ugoite values.backend.persistence.mountPath",
         ),
-        (str(auth.get("mode")), "mock-oauth", "charts/ugoite values.auth.mode"),
+        (str(auth.get("mode")), "passkey-totp", "charts/ugoite values.auth.mode"),
         (
             str(auth.get("devUserId")),
-            "dev-local-user",
+            "",
             "charts/ugoite values.auth.devUserId",
         ),
         (
@@ -265,13 +265,13 @@ def test_docs_req_ops_028_helm_chart_defaults_match_release_topology() -> None:
         "ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}",
         "UGOITE_ROOT=/data",
         "UGOITE_ALLOW_REMOTE=true",
-        "UGOITE_DEV_AUTH_MODE=mock-oauth",
-        "UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}",
-        "UGOITE_DEV_SIGNING_KID=release-compose-local-v1",
-        "UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret",
-        "UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret",
-        "UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1",
-        "UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}",
+        "UGOITE_DEV_AUTH_MODE=${UGOITE_DEV_AUTH_MODE:-passkey-totp}",
+        "UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:?set UGOITE_DEV_USER_ID}",
+        "UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID:-release-compose-local-v1}",
+        "UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:?set UGOITE_DEV_SIGNING_SECRET}",
+        "UGOITE_AUTH_BEARER_SECRETS=${UGOITE_AUTH_BEARER_SECRETS:?set UGOITE_AUTH_BEARER_SECRETS}",
+        "UGOITE_AUTH_BEARER_ACTIVE_KIDS=${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-release-compose-local-v1}",
+        "UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}",
         "BACKEND_URL=http://backend:8000",
     }
     missing_compose_fragments = _missing_fragments(

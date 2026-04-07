@@ -46,8 +46,8 @@ frontend:
   affinity: {}
 
 auth:
-  mode: mock-oauth
-  devUserId: dev-local-user
+  mode: passkey-totp
+  devUserId: ""
   signingKid: release-compose-local-v1
   signingSecret: ""
   bearerSecrets: ""
