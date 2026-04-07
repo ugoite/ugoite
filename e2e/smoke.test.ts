@@ -65,7 +65,9 @@ test.describe("Smoke Tests", () => {
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("REQ-OPS-015: browser mock-oauth login reaches the spaces page", async ({ browser }) => {
+	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with default ahead of reserved admin-space", async ({
+		browser,
+	}) => {
 		const context = await browser.newContext();
 		const page = await context.newPage();
 
@@ -74,6 +76,13 @@ test.describe("Smoke Tests", () => {
 			await page.getByRole("button", { name: "Continue with Local Demo Login" }).click();
 			await expect(page).toHaveURL(/\/spaces$/);
 			await expect(page.getByText("Available Spaces")).toBeVisible();
+			const userSpaces = page.getByRole("list", { name: "User spaces" });
+			await expect(userSpaces).toContainText("default");
+			await expect(userSpaces).not.toContainText("admin-space");
+			const adminSpaces = page.getByRole("list", { name: "Admin spaces" });
+			await expect(adminSpaces).toContainText("admin-space");
+			await userSpaces.getByRole("link", { name: "Open Space" }).first().click();
+			await expect(page).toHaveURL(/\/spaces\/default\/dashboard$/);
 		} finally {
 			await context.close();
 		}

@@ -107,12 +107,19 @@ GET /spaces
 ```json
 [
   {
-    "id": "ws-main",
-    "name": "Personal Knowledge",
-    "created_at": "2025-08-12T12:00:00Z"
+    "id": "default",
+    "name": "default",
+    "created_at": "2025-08-12T12:00:00Z",
+    "is_admin_space": false
   }
 ]
 ```
+
+Notes:
+
+- `default` stays ahead of reserved bootstrap spaces in list responses.
+- Reserved bootstrap spaces include `is_admin_space: true` so browser clients can
+  keep newcomer-facing workspace lists separate from internal admin workflows.
 
 #### Create Space
 ```http

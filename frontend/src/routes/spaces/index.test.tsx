@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
 import { spaceApi } from "~/lib/space-api";
 
@@ -124,6 +124,59 @@ describe("/spaces", () => {
 		expect(
 			screen.queryByText(/localhost and remote mode both require authentication/i),
 		).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-001: keeps reserved admin-space out of the primary newcomer list", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{
+				id: "admin-space",
+				name: "admin-space",
+				created_at: "2025-01-01T00:00:00Z",
+				is_admin_space: true,
+			},
+			{
+				id: "default",
+				name: "default",
+				created_at: "2025-01-01T00:00:00Z",
+			},
+		]);
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("list", { name: "User spaces" })).toBeInTheDocument();
+		});
+
+		const userList = screen.getByRole("list", { name: "User spaces" });
+		expect(within(userList).getByText("default")).toBeInTheDocument();
+		expect(within(userList).queryByText("admin-space")).not.toBeInTheDocument();
+		expect(within(userList).getByRole("link", { name: "Open Space" })).toHaveAttribute(
+			"href",
+			"/spaces/default/dashboard",
+		);
+
+		const adminList = screen.getByRole("list", { name: "Admin spaces" });
+		expect(within(adminList).getByText("admin-space")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-002: treats reserved admin-space-only responses as an empty user-space state", async () => {
+		(spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{
+				id: "admin-space",
+				name: "admin-space",
+				created_at: "2025-01-01T00:00:00Z",
+				is_admin_space: true,
+			},
+		]);
+
+		render(() => <SpacesIndexRoute />);
+
+		await waitFor(() => {
+			expect(screen.getByText("No user spaces available yet.")).toBeInTheDocument();
+		});
+
+		expect(screen.getByRole("button", { name: "Create space" })).toBeInTheDocument();
+		expect(screen.getByRole("list", { name: "Admin spaces" })).toBeInTheDocument();
 	});
 
 	it("REQ-FE-056: shows concise auth errors only when space loading fails", async () => {
