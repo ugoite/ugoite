@@ -87,6 +87,48 @@ fn setup_space_with_form(dir: &tempfile::TempDir, space_id: &str) -> (String, Pa
     (root, config_path, space_path)
 }
 
+/// REQ-SEC-007: CLI space patch must reject membership-managed settings keys.
+#[test]
+fn test_cli_req_sec_007_space_patch_rejects_membership_managed_settings() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (_root, config_path, space_path) = setup_space(&dir, "space-membership-guard");
+    let reserved_keys = [
+        "admin_user_ids",
+        "invitations",
+        "member_roles",
+        "members",
+        "membership_version",
+        "owner_user_id",
+    ];
+
+    for key in reserved_keys {
+        let mut settings = serde_json::Map::new();
+        settings.insert(key.to_string(), Value::String("sentinel".to_string()));
+
+        let patch_output = cli_command(&config_path)
+            .args([
+                "space",
+                "patch",
+                &space_path,
+                "--settings",
+                &Value::Object(settings).to_string(),
+            ])
+            .output()
+            .expect("space patch membership guard");
+
+        assert!(
+            !patch_output.status.success(),
+            "expected rejection for reserved key {key}"
+        );
+        assert!(
+            String::from_utf8_lossy(&patch_output.stderr)
+                .contains(&format!("membership-managed settings keys: {key}")),
+            "missing reserved key {key} in stderr: {}",
+            String::from_utf8_lossy(&patch_output.stderr),
+        );
+    }
+}
+
 fn create_entry(config_path: &Path, space_path: &str, entry_id: &str, content: &str) {
     let output = cli_command(config_path)
         .args([
@@ -1164,6 +1206,31 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     assert!(remote_patch_request.contains(r#""name":"Remote""#));
     assert!(remote_patch_request.contains(r#""storage_config":{"uri":"memory://remote"}"#));
     assert!(remote_patch_request.contains(r#""settings":{"theme":"dark"}"#));
+
+    let (base, requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"remote-space","settings":[]}"#);
+    write_endpoint_config(
+        &remote_config_path,
+        "backend",
+        &base,
+        &format!("{base}/api"),
+    );
+    let remote_array_settings_patch_output = cli_command(&remote_config_path)
+        .args(["space", "patch", "remote-space", "--settings", r#"[]"#])
+        .output()
+        .expect("remote space patch array settings");
+    assert_success(
+        &remote_array_settings_patch_output,
+        "remote space patch array settings",
+    );
+    let remote_array_settings_patch_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("remote space patch array settings request");
+    handle
+        .join()
+        .expect("join remote space patch array settings server");
+    assert!(remote_array_settings_patch_request.starts_with("PATCH /spaces/remote-space HTTP/1.1",));
+    assert!(remote_array_settings_patch_request.contains(r#""settings":[]}"#));
 
     let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"[]"#);
     write_endpoint_config(

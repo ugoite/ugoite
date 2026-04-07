@@ -13,6 +13,16 @@ Identifier = Annotated[
 ]
 BoundedIdentifier = Annotated[str, StringConstraints(max_length=128)]
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=256)]
+MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS = frozenset(
+    {
+        "admin_user_ids",
+        "invitations",
+        "member_roles",
+        "members",
+        "membership_version",
+        "owner_user_id",
+    },
+)
 TotpCode = Annotated[
     str,
     StringConstraints(
