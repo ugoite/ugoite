@@ -85,5 +85,20 @@ async fn test_asset_req_asset_001_normalizes_uploaded_filename() -> anyhow::Resu
         victim_meta_before
     );
 
+    let dot_info = asset::save_asset(&op, "spaces/source-space", ".", b"dot payload").await?;
+    let dot_stored_name = dot_info.path.trim_start_matches("assets/");
+
+    assert_eq!(dot_info.name, dot_info.id);
+    assert_eq!(
+        dot_info.path,
+        format!("assets/{}_{}", dot_info.id, dot_info.id)
+    );
+    assert!(!dot_info.path.contains(".."));
+    assert!(!dot_stored_name.contains('/'));
+    assert!(
+        op.exists(&format!("spaces/source-space/{}", dot_info.path))
+            .await?
+    );
+
     Ok(())
 }
