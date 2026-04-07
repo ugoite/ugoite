@@ -72,6 +72,9 @@ Content-Type: application/json
 }
 ```
 
+Repeated invalid `passkey-totp` login attempts temporarily return
+`429 Too Many Requests` with a `Retry-After` header.
+
 Authorization policy baseline:
 
 - Every request resolves an authenticated `user_id` in the target space.
