@@ -601,6 +601,38 @@ a:hover {
 	padding: calc(var(--ui-card-padding) * 1.1);
 }
 
+.ui-reference-picker-selection {
+	background: color-mix(in oklch, var(--ui-surface-1) 92%, transparent 8%);
+	border: var(--ui-border-width) solid var(--ui-border);
+	border-radius: var(--ui-radius-lg);
+	padding: var(--ui-spacing-sm);
+	display: grid;
+	gap: var(--ui-spacing-xs);
+}
+
+.ui-reference-picker-list {
+	max-height: 12rem;
+	overflow-y: auto;
+	border: var(--ui-border-width) solid var(--ui-border);
+	border-radius: var(--ui-radius-lg);
+	background: var(--ui-surface-1);
+}
+
+.ui-reference-picker-option + .ui-reference-picker-option {
+	border-top: var(--ui-border-width) solid var(--ui-border);
+}
+
+.ui-reference-picker-button {
+	width: 100%;
+	padding: var(--ui-spacing-sm);
+	text-align: left;
+	transition: background var(--ui-motion-fast) ease;
+}
+
+.ui-reference-picker-button:hover {
+	background: color-mix(in oklch, var(--ui-accent) 10%, transparent 90%);
+}
+
 .ui-field {
 	display: grid;
 	gap: var(--ui-spacing-xs);

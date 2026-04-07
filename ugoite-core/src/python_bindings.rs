@@ -1118,6 +1118,34 @@ fn query_index<'a>(
 }
 
 #[pyfunction]
+#[pyo3(signature = (storage_config, space_id, form_name=None, query=None, limit=8))]
+fn list_entry_summaries<'a>(
+    py: Python<'a>,
+    storage_config: Bound<'a, PyDict>,
+    space_id: String,
+    form_name: Option<String>,
+    query: Option<String>,
+    limit: usize,
+) -> PyResult<Bound<'a, PyAny>> {
+    let op = get_operator(py, &storage_config)?;
+    let ws_path = format!("spaces/{}", space_id);
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let summaries = entry::list_entry_summaries(
+            &op,
+            &ws_path,
+            form_name.as_deref(),
+            query.as_deref(),
+            limit,
+        )
+        .await
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let val =
+            serde_json::to_value(summaries).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, val))
+    })
+}
+
+#[pyfunction]
 fn create_sql_session<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,
@@ -1259,6 +1287,7 @@ fn _ugoite_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(patch_user_preferences, m)?)?;
 
     m.add_function(wrap_pyfunction!(query_index, m)?)?;
+    m.add_function(wrap_pyfunction!(list_entry_summaries, m)?)?;
     m.add_function(wrap_pyfunction!(create_sql_session, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_status, m)?)?;
     m.add_function(wrap_pyfunction!(get_sql_session_count, m)?)?;

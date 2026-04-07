@@ -245,6 +245,7 @@ export default function SpaceDashboardRoute() {
 			<CreateEntryDialog
 				open={showCreateEntryDialog()}
 				forms={entryForms()}
+				spaceId={spaceId()}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
 			/>

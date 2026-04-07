@@ -72,9 +72,6 @@ Content-Type: application/json
 }
 ```
 
-Repeated invalid `passkey-totp` login attempts temporarily return
-`429 Too Many Requests` with a `Retry-After` header.
-
 Authorization policy baseline:
 
 - Every request resolves an authenticated `user_id` in the target space.
@@ -110,19 +107,12 @@ GET /spaces
 ```json
 [
   {
-    "id": "default",
-    "name": "default",
-    "created_at": "2025-08-12T12:00:00Z",
-    "is_admin_space": false
+    "id": "ws-main",
+    "name": "Personal Knowledge",
+    "created_at": "2025-08-12T12:00:00Z"
   }
 ]
 ```
-
-Notes:
-
-- `default` stays ahead of reserved bootstrap spaces in list responses.
-- Reserved bootstrap spaces include `is_admin_space: true` so browser clients can
-  keep newcomer-facing workspace lists separate from internal admin workflows.
 
 #### Create Space
 ```http
@@ -204,13 +194,34 @@ GET /spaces/{space_id}/entries
 ]
 ```
 
+#### List Entry Picker Options
+```http
+GET /spaces/{space_id}/entries/options?form=Project&q=alpha&limit=8
+```
+
+**Response**: `200 OK`
+```json
+[
+  {
+    "id": "project-alpha",
+    "title": "Alpha Project",
+    "form": "Project"
+  }
+]
+```
+
+Notes:
+- `form` scopes the picker to one target form.
+- `q` is optional and filters by human-readable title or stable entry id.
+- `limit` defaults to `8` and is capped at `20` so UI pickers fetch a bounded payload.
+
 #### Create Entry
 ```http
 POST /spaces/{space_id}/entries
 Content-Type: application/json
 
 {
-  "markdown": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
+  "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
 }
 ```
 
@@ -227,7 +238,7 @@ or extracted properties resolve a `form`, the adapter MUST enforce that Form's
 write ACL before mutating storage; otherwise it falls back to the space-level
 `entry_write` permission.
 
-Create request bodies submit entry Markdown via the canonical `markdown` field.
+Create request bodies submit entry Markdown via the `content` field.
 Create responses return only the generated `id` and `revision_id`; fetch the
 entry afterward if a client needs extracted title or properties.
 
