@@ -1003,12 +1003,12 @@ def test_sql_session_stream_uses_incremental_row_paging(
     async def _paged_rows(
         _config: dict[str, str],
         _space_id: str,
+        _identity: object,
         _session_id: str,
-        offset: int,
-        _limit: int,
+        page: ugoite_core.SqlSessionPageInput,
     ) -> dict[str, object]:
-        call_offsets.append(offset)
-        if offset == 0:
+        call_offsets.append(page.offset)
+        if page.offset == 0:
             return {
                 "rows": [
                     {"id": "entry-1", "title": "Alpha"},
@@ -1018,12 +1018,7 @@ def test_sql_session_stream_uses_incremental_row_paging(
             }
         return {"rows": [], "total_count": 2}
 
-    async def _rows_all(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
-        msg = "rows_all must not be called"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows", _paged_rows)
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_all", _rows_all)
+    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_for_identity", _paged_rows)
 
     response = test_client.get("/spaces/test-ws/sql-sessions/session-1/stream")
     assert response.status_code == 200
