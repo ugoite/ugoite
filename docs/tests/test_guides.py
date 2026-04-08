@@ -1458,6 +1458,33 @@ def test_docs_req_e2e_008_concepts_primer_order_stays_consistent() -> None:
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_001_source_compose_frontend_stays_loopback_only() -> None:
+    """REQ-OPS-001: source Compose keeps browser auth endpoints on loopback."""
+    compose_text = (REPO_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    guide_text = (GUIDE_DIR / "docker-compose.md").read_text(encoding="utf-8")
+
+    compose_fragments = [
+        "127.0.0.1:8000:8000",
+        "127.0.0.1:3000:3000",
+    ]
+    guide_fragments = [
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3000/login",
+        "127.0.0.1",
+        "local-only",
+    ]
+
+    missing = [
+        *[fragment for fragment in compose_fragments if fragment not in compose_text],
+        *[fragment for fragment in guide_fragments if fragment not in guide_text],
+    ]
+    if missing:
+        raise AssertionError(
+            "source Compose loopback fragments are missing: " + ", ".join(missing),
+        )
+
+
 def test_docs_req_ops_001_env_matrix_matches_runtime_usage() -> None:
     """REQ-OPS-001: Environment matrix must track runtime variables used by tooling."""
     matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
