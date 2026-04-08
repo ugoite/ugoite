@@ -1,7 +1,7 @@
 use crate::config::{
     effective_format, load_config, normalize_space_root, operator_for_path, parse_space_path,
     print_json, print_json_table, print_list_table, resolve_space_reference, validated_base_url,
-    Format,
+    EndpointConfig, Format,
 };
 use crate::http;
 use anyhow::{bail, Result};
@@ -16,6 +16,13 @@ const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "membership_version",
     "owner_user_id",
 ];
+
+fn backend_api_mode_error(config: &EndpointConfig, command_name: &str) -> String {
+    format!(
+        "{command_name} requires backend or api mode.\nRun `ugoite config current` to inspect the active mode, then switch with `ugoite config set --mode backend --backend-url {}` or `ugoite config set --mode api --api-url {}`.",
+        config.backend_url, config.api_url
+    )
+}
 
 #[derive(Args)]
 pub struct SpaceCmd {
@@ -424,7 +431,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            bail!("service-account-list requires backend or api mode");
+            bail!(
+                "{}",
+                backend_api_mode_error(&config, "service-account-list")
+            );
         }
         SpaceSubCmd::ServiceAccountCreate {
             space_id,
@@ -443,7 +453,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            bail!("service-account-create requires backend or api mode");
+            bail!(
+                "{}",
+                backend_api_mode_error(&config, "service-account-create")
+            );
         }
         SpaceSubCmd::Members { space_path } => {
             let (_, space_id) = parse_space_path(&space_path);
@@ -452,7 +465,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            bail!("members requires backend or api mode");
+            bail!("{}", backend_api_mode_error(&config, "members"));
         }
         SpaceSubCmd::AuditEvents {
             space_path,
@@ -468,7 +481,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            bail!("audit-events requires backend or api mode");
+            bail!("{}", backend_api_mode_error(&config, "audit-events"));
         }
     }
     Ok(())
