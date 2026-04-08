@@ -454,7 +454,7 @@ requirements:
       tests:
       - test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls
       - test_config_set_req_sec_011_allows_loopback_cleartext_urls
-      - test_config_current_req_sec_011_rejects_saved_non_loopback_cleartext_url
+      - test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url
       - test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint
     - file: ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
       tests:
