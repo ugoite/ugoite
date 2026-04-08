@@ -280,7 +280,7 @@ async def update_entry_endpoint(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "message": msg,
-                        "current_revision": current_entry,
+                        "current_revision": _entry_response(current_entry),
                     },
                 ) from e
             except RuntimeError:
@@ -421,11 +421,13 @@ async def get_entry_revision_endpoint(
             identity,
             current_entry,
         )
-        return await ugoite_core.get_entry_revision(
-            storage_config,
-            space_id,
-            entry_id,
-            revision_id,
+        return _entry_response(
+            await ugoite_core.get_entry_revision(
+                storage_config,
+                space_id,
+                entry_id,
+                revision_id,
+            ),
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
@@ -502,4 +504,4 @@ async def restore_entry_endpoint(
             detail=str(e),
         ) from e
 
-    return entry_data
+    return _entry_response(entry_data)
