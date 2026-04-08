@@ -1905,7 +1905,7 @@ requirements:
       - 'REQ-FE-065: row_reference picker options request bounded form-scoped summaries'
     - file: backend/tests/test_api.py
       tests:
-      - 'REQ-FE-065: row_reference picker options stay form-scoped, query-aware, and bounded'
+      - 'REQ-FE-065: row_reference picker options stay form-scoped and bounded'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
