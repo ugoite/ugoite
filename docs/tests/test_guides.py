@@ -561,7 +561,7 @@ REQUIRED_RELEASE_CONTAINER_QUICKSTART_SCRIPT_FRAGMENTS = {
     "npx playwright test",
     "smoke.test.ts",
     "search-ui.test.ts",
-    "127.0.0.1:3000/api/auth/mock-oauth",
+    "127.0.0.1:8000/auth/mock-oauth",
     "config set --mode backend --backend-url http://127.0.0.1:8000",
     'UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN"',
     "auth login --mock-oauth",

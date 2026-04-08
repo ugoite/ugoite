@@ -16,8 +16,8 @@ pub const DEFAULT_SCENARIO: &str = "renewable-ops";
 pub const DEFAULT_ENTRY_COUNT: usize = 5_000;
 const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
-const SAMPLE_JOB_READ_RETRIES: usize = 10;
-const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 10;
+const SAMPLE_JOB_READ_RETRIES: usize = 50;
+const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 20;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
