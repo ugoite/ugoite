@@ -13,6 +13,16 @@ requirements:
   title: Asset Creation
   description: 'Store binary files (images, PDF, etc.) in the assets/ folder.
 
+    Upload filenames MUST resolve to a single metadata-safe basename inside the
+
+    target space''s
+
+    `assets/` directory; path separators, traversal segments, control characters,
+
+    and Markdown heading prefixes MUST NOT escape that directory or spoof stored
+
+    asset metadata.
+
     '
   related_spec:
   - api/rest.md#upload-asset
@@ -21,9 +31,14 @@ requirements:
   status: implemented
   tests:
     pytest:
+    - file: backend/tests/test_api.py
+      tests:
+      - test_upload_asset_req_asset_001_normalizes_markdown_heading_filename
     - file: ugoite-cli/tests/test_assets.rs
       tests:
       - test_asset_lifecycle
+      - test_asset_req_asset_001_upload_strips_filename_traversal
+      - test_asset_req_asset_001_upload_normalizes_markdown_heading_filename
     rust:
     - file: ugoite-core/tests/test_asset.rs
       tests:
