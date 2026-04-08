@@ -112,6 +112,24 @@ fn parse_stdout_json(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("stdout JSON")
 }
 
+fn write_dev_auth_file(path: &Path, passkey_context: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create dev auth parent");
+    }
+    std::fs::write(
+        path,
+        serde_json::json!({
+            "mode": "passkey-totp",
+            "user_id": "dev-alice",
+            "signing_secret": "dev-signing-secret",
+            "signing_kid": "dev-local-v1",
+            "passkey_context": passkey_context,
+        })
+        .to_string(),
+    )
+    .expect("write dev auth file");
+}
+
 fn auth_session_path_for_config(config_path: &Path) -> PathBuf {
     config_path
         .parent()
@@ -166,6 +184,262 @@ fn test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("export UGOITE_AUTH_BEARER_TOKEN='issued-token'"));
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_reuses_cached_dev_auth_file_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_file = dir.path().join("dev-auth.json");
+    write_dev_auth_file(&auth_file, "cached-passkey-context");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_FILE", &auth_file)
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: cached-passkey-context"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token:"));
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_reuses_home_cached_dev_auth_file_when_env_path_blank() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let home_dir = dir.path().join("home");
+    let auth_file = home_dir.join(".ugoite").join("dev-auth.json");
+    write_dev_auth_file(&auth_file, "home-passkey-context");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("HOME", &home_dir)
+        .env("UGOITE_DEV_AUTH_FILE", "   ")
+        .env_remove("UGOITE_DEV_AUTH_PROXY_TOKEN")
+        .env_remove("UGOITE_DEV_PASSKEY_CONTEXT")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: home-passkey-context"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token:"));
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_surfaces_passkey_context_recovery_guidance() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_file = dir.path().join("missing-dev-auth.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 401 Unauthorized",
+        r#"{"detail":"Passkey-bound local context is missing or invalid."}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_AUTH_FILE", &auth_file)
+        .output()
+        .expect("failed to execute");
+    assert!(!output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context:"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Passkey-bound local context is missing or invalid."),
+        "stderr was {stderr}"
+    );
+    assert!(
+        stderr.contains("UGOITE_DEV_PASSKEY_CONTEXT"),
+        "stderr was {stderr}"
+    );
+    assert!(
+        stderr.contains(auth_file.to_string_lossy().as_ref()),
+        "stderr was {stderr}"
+    );
+    assert!(
+        stderr.contains("scripts/dev-auth-env.sh"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_uses_default_cached_auth_path_in_recovery_guidance() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 401 Unauthorized",
+        r#"{"detail":"Passkey-bound local context is missing or invalid."}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("HOME")
+        .env_remove("UGOITE_DEV_AUTH_FILE")
+        .env_remove("UGOITE_DEV_PASSKEY_CONTEXT")
+        .output()
+        .expect("failed to execute");
+    assert!(!output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context:"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("~/.ugoite/dev-auth.json"),
+        "stderr was {stderr}"
+    );
+    assert!(
+        stderr.contains("scripts/dev-auth-env.sh"),
+        "stderr was {stderr}"
+    );
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_leaves_non_context_auth_failures_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 401 Unauthorized",
+        r#"{"detail":"Invalid username or 2FA code."}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
+        .output()
+        .expect("failed to execute");
+    assert!(!output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: passkey-context"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid username or 2FA code."),
+        "stderr was {stderr}"
+    );
+    assert!(
+        !stderr.contains("scripts/dev-auth-env.sh"),
+        "stderr was {stderr}"
+    );
+    assert!(
+        !stderr.contains("cached local dev auth file"),
+        "stderr was {stderr}"
+    );
 }
 
 #[test]
