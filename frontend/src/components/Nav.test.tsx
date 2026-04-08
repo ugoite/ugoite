@@ -87,6 +87,64 @@ describe("Nav", () => {
 		});
 	});
 
+	it("REQ-FE-066: surfaces auth session load failures in the nav", async () => {
+		getSessionMock.mockRejectedValueOnce(new Error("Session lookup failed."));
+		render(() => <Nav />);
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("Session lookup failed.");
+	});
+
+	it("REQ-FE-066: retries auth session detection when the window regains focus", async () => {
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		window.dispatchEvent(new Event("focus"));
+
+		await waitFor(() => {
+			expect(getSessionMock).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("REQ-FE-066: retries auth session detection when the tab becomes visible again", async () => {
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			get: () => "visible",
+		});
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		await waitFor(() => {
+			expect(getSessionMock).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("REQ-FE-066: ignores hidden-tab visibility changes until the tab is visible again", async () => {
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			get: () => "hidden",
+		});
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		expect(getSessionMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("REQ-FE-066: surfaces sign-out failures without navigating away", async () => {
+		getSessionMock.mockResolvedValue({ authenticated: true });
+		clearSessionMock.mockRejectedValueOnce("network unavailable");
+		mockPathname = "/spaces";
+		render(() => <Nav />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("Failed to sign out.");
+		expect(navigateMock).not.toHaveBeenCalled();
+	});
+
 	it("REQ-FE-066: safely initializes without a browser window during SSR", () => {
 		vi.stubGlobal("window", undefined);
 		mockPathname = "/";

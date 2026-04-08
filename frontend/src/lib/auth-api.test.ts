@@ -152,6 +152,16 @@ describe("authApi", () => {
 		);
 
 		server.use(
+			http.get(
+				testApiUrl("/auth/session"),
+				() => new HttpResponse(null, { status: 503, statusText: "Service Unavailable" }),
+			),
+		);
+		await expect(authApi.getSession()).rejects.toThrow(
+			"Failed to load auth session: Service Unavailable",
+		);
+
+		server.use(
 			http.delete(testApiUrl("/auth/session"), () =>
 				HttpResponse.json(
 					{ detail: "Failed to clear browser auth session." },

@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js";
+import { createMemo, createResource, createSignal, onCleanup } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { t } from "~/lib/i18n";
 
@@ -16,27 +16,25 @@ export default function Nav() {
 	const active = (path: string) => path === location.pathname;
 	// The browser auth cookie is HttpOnly, so the nav has to ask the server whether
 	// the current request still carries a session cookie instead of reading it in JS.
+	const [sessionError, setSessionError] = createSignal("");
 	const [authSession, { refetch }] = createResource(
 		() => location.pathname,
-		() => authApi.getSession(),
+		async (_pathname, info) => {
+			try {
+				const session = await authApi.getSession();
+				setSessionError("");
+				return session;
+			} catch (error) {
+				setSessionError(toMessage(error, "Failed to load auth session."));
+				return info.value ?? { authenticated: false };
+			}
+		},
 	);
-	const [sessionError, setSessionError] = createSignal("");
 	const homeLabel = createMemo(() => t("nav.home"), undefined, { equals: false });
 	const spacesLabel = createMemo(() => t("nav.spaces"), undefined, { equals: false });
 	const loginLabel = createMemo(() => t("nav.login"), undefined, { equals: false });
 	const aboutLabel = createMemo(() => t("nav.about"), undefined, { equals: false });
 	const authenticated = () => authSession()?.authenticated ?? false;
-
-	createEffect(() => {
-		const error = authSession.error;
-		if (error) {
-			setSessionError(toMessage(error, "Failed to load auth session."));
-			return;
-		}
-		if (!authSession.loading) {
-			setSessionError("");
-		}
-	});
 
 	if (typeof window !== "undefined") {
 		const refreshAuthState = () => {
