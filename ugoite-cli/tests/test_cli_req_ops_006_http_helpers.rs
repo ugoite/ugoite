@@ -184,6 +184,54 @@ async fn test_cli_req_ops_006_http_helpers_surface_error_bodies() {
     assert!(delete_err.to_string().contains("delete failed"));
 }
 
+/// REQ-OPS-006: HTTP helpers must reject unsafe non-loopback cleartext endpoints.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_helpers_reject_unsafe_remote_urls() {
+    let unsafe_url = "http://example.com/items";
+
+    let get_err = http_get(unsafe_url)
+        .await
+        .expect_err("http_get should reject unsafe remote url");
+    assert!(get_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+
+    let post_err = http_post(unsafe_url, &json!({"name": "demo"}))
+        .await
+        .expect_err("http_post should reject unsafe remote url");
+    assert!(post_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+
+    let proxy_post_err = http_post_with_dev_auth_proxy(unsafe_url, &json!({}))
+        .await
+        .expect_err("http_post_with_dev_auth_proxy should reject unsafe remote url");
+    assert!(proxy_post_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+
+    let put_err = http_put(unsafe_url, &json!({"name": "updated"}))
+        .await
+        .expect_err("http_put should reject unsafe remote url");
+    assert!(put_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+
+    let patch_err = http_patch(unsafe_url, &json!({"name": "patched"}))
+        .await
+        .expect_err("http_patch should reject unsafe remote url");
+    assert!(patch_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+
+    let delete_err = http_delete(unsafe_url)
+        .await
+        .expect_err("http_delete should reject unsafe remote url");
+    assert!(delete_err
+        .to_string()
+        .contains("Remote request URL http://example.com/items uses cleartext http://"));
+}
+
 /// REQ-OPS-006: auth headers must prefer bearer tokens and fall back to API keys.
 #[tokio::test]
 async fn test_cli_req_ops_006_http_helpers_apply_auth_headers() {
