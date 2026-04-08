@@ -22,7 +22,7 @@ pub enum AuthSubCmd {
     /// Apply the printed export in a POSIX-compatible shell with:
     ///   eval "$(ugoite auth login --username USER --totp-code CODE)"
     #[command(
-        long_about = "Authenticate via backend/API passkey + 2FA login and print POSIX-shell-safe export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, the CLI first reads UGOITE_DEV_PASSKEY_CONTEXT from the current shell and then falls back to the cached local dev auth file prepared by `eval \"$(bash scripts/dev-auth-env.sh)\"` for loopback backend/API endpoints.\nDirect loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN for `--mock-oauth`, but proxied/container-boundary loopback flows do.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the escaped token in one step (POSIX shells)\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
+        long_about = "Authenticate via backend/API passkey + 2FA login and print POSIX-shell-safe export commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, the CLI first reads UGOITE_DEV_PASSKEY_CONTEXT from the current shell and then falls back to the cached local dev auth file prepared by `eval \"$(bash scripts/dev-auth-env.sh)\"` for loopback backend/API endpoints.\nDirect loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN for `--mock-oauth`, but proxied/container flows require UGOITE_DEV_AUTH_PROXY_TOKEN.\n\nExamples:\n  # Login with username and TOTP code\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the escaped token in one step (POSIX shells)\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow\n  eval \"$(ugoite auth login --mock-oauth)\""
     )]
     Login {
         #[arg(
@@ -38,7 +38,7 @@ pub enum AuthSubCmd {
         #[arg(
             long,
             default_value_t = false,
-            help = "Use mock OAuth flow (development only; proxied/container loopback flows require UGOITE_DEV_AUTH_PROXY_TOKEN)"
+            help = "Use mock OAuth flow (development only; direct loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN, but proxied/container flows do)"
         )]
         mock_oauth: bool,
     },
