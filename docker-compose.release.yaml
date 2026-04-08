@@ -1,11 +1,14 @@
 services:
   backend:
     image: ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION:?set UGOITE_VERSION}
+    # Match the host user/group so the local-first bind mount stays writable.
+    user: "${UGOITE_UID:-10001}:${UGOITE_GID:-10001}"
     ports:
       - "127.0.0.1:${UGOITE_BACKEND_PORT:-8000}:8000"
     volumes:
       - "${UGOITE_SPACES_DIR:-./spaces}:/data"
     environment:
+      - HOME=/tmp/ugoite-home
       - UGOITE_ROOT=/data
       # Required because the frontend container reaches the backend over the
       # private Compose bridge network; host exposure still stays on 127.0.0.1.

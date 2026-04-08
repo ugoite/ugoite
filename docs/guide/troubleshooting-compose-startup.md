@@ -84,6 +84,10 @@ touch "$SPACE_PATH/.ugoite-write-test" && rm "$SPACE_PATH/.ugoite-write-test"
 If that write test fails, fix the directory ownership or permissions on the
 host before retrying the stack.
 
+For the published release quick start, also confirm that your `.env` keeps
+`UGOITE_UID=$(id -u)` and `UGOITE_GID=$(id -g)` aligned with the current shell
+user before re-running `docker compose -f docker-compose.release.yaml up -d`.
+
 ## 5. Reset stale services, networks, and partial startup state
 
 Repeated interrupted runs can leave orphaned containers or a half-started

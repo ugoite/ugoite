@@ -324,6 +324,8 @@ curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-co
 cat > .env <<EOF
 UGOITE_VERSION=stable
 UGOITE_SPACES_DIR=./spaces
+UGOITE_UID=$(id -u)
+UGOITE_GID=$(id -g)
 UGOITE_FRONTEND_PORT=3000
 UGOITE_BACKEND_PORT=8000
 UGOITE_DEV_USER_ID=dev-local-user
@@ -338,6 +340,8 @@ Then open `http://localhost:3000/login`, click
 **Continue with Local Demo Login**, and you will land on `/spaces`. The shipped
 compose file bootstraps the `default` space at startup so the first browser and
 CLI session both have a ready workspace.
+Those UID/GID lines keep the host-mounted `./spaces` directory writable even
+when the published backend image runs as a non-root user.
 For more background on the explicit browser login flow, see
 [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
@@ -359,6 +363,8 @@ Tag conventions:
 | ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `UGOITE_VERSION`              | `required`                   | Published image tag selector; set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version to pin the stack |
 | `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the backend container at `/data`                                                                                                                               |
+| `UGOITE_UID`                  | `10001`                      | Backend container user id; set it to `$(id -u)` in the quick-start `.env` so Linux bind mounts stay writable without running the app as root                                        |
+| `UGOITE_GID`                  | `10001`                      | Backend container group id; set it to `$(id -g)` in the quick-start `.env` so Linux bind mounts stay writable without running the app as root                                       |
 | `UGOITE_FRONTEND_PORT`        | `3000`                       | Host port that exposes the frontend UI                                                                                                                                                |
 | `UGOITE_BACKEND_PORT`         | `8000`                       | Host port that exposes the backend API                                                                                                                                                |
 | `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Local demo login user id bootstrapped as the shipped quick-start admin-space admin                                                                                                    |
