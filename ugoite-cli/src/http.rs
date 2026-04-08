@@ -213,10 +213,7 @@ mod tests {
         .build()
         .expect("build request");
 
-        assert!(request
-            .headers()
-            .get(DEV_AUTH_PROXY_HEADER_NAME)
-            .is_none());
+        assert!(request.headers().get(DEV_AUTH_PROXY_HEADER_NAME).is_none());
         assert!(request
             .headers()
             .get(DEV_PASSKEY_CONTEXT_HEADER_NAME)
