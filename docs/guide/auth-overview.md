@@ -103,9 +103,11 @@ ugoite auth login --mock-oauth
 ```
 
 The command saves a CLI session under the ugoite config home so later `ugoite`
-commands stay authenticated without `eval`, and it also prints shell exports
-such as `UGOITE_AUTH_BEARER_TOKEN=...` when you want to apply the same token to
-your current shell session.
+commands stay authenticated without `eval`, and it also prints shell-ready
+environment commands for the current shell session. By default it emits POSIX
+`export` / `unset` syntax; pass `--shell fish` or `--shell powershell` when you
+want `source` / `Invoke-Expression` friendly output instead. The same flag also
+works with `ugoite auth token-clear` and `ugoite auth logout`.
 
 If the CLI is still in `core` mode, `ugoite auth login` correctly refuses to
 run because there is no backend auth exchange in that topology.
