@@ -232,6 +232,55 @@ fn test_cli_auth_login_req_ops_015_reuses_cached_dev_auth_file_context() {
 }
 
 #[test]
+fn test_cli_auth_login_req_ops_015_reuses_home_cached_dev_auth_file_when_env_path_blank() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let home_dir = dir.path().join("home");
+    let auth_file = home_dir.join(".ugoite").join("dev-auth.json");
+    write_dev_auth_file(&auth_file, "home-passkey-context");
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("HOME", &home_dir)
+        .env("UGOITE_DEV_AUTH_FILE", "   ")
+        .env_remove("UGOITE_DEV_AUTH_PROXY_TOKEN")
+        .env_remove("UGOITE_DEV_PASSKEY_CONTEXT")
+        .output()
+        .expect("failed to execute");
+    assert!(output.status.success());
+
+    let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+
+    assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context: home-passkey-context"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token:"));
+}
+
+#[test]
 fn test_cli_auth_login_req_ops_015_surfaces_passkey_context_recovery_guidance() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.json");
