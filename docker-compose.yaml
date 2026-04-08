@@ -22,8 +22,8 @@ services:
       - UGOITE_DEV_AUTH_MODE=mock-oauth
       - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
       - UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID:-dev-compose-local-v1}
-      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:-dev-compose-local-signing-secret}
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy
+      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:?set UGOITE_DEV_SIGNING_SECRET}
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
     working_dir: /app
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -33,13 +33,13 @@ services:
       additional_contexts:
         shared: ./shared
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./frontend:/usr/src/app
       - frontend_node_modules:/usr/src/app/node_modules
     environment:
       - BACKEND_URL=http://backend:8000
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=dev-compose-auth-proxy
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
     entrypoint: ["bun", "run", "dev"]
     depends_on:
       - backend

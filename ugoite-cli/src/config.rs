@@ -315,6 +315,7 @@ pub fn base_url(config: &EndpointConfig) -> Option<String> {
 }
 
 fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_end_matches('.');
     let normalized = host
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
@@ -341,6 +342,13 @@ pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
         }
         scheme => bail!("{label} URL {url} must use http:// or https://, not {scheme}://."),
     }
+}
+
+pub fn validate_active_remote_endpoint(config: &EndpointConfig) -> Result<()> {
+    let Some(endpoint) = selected_server_endpoint(config) else {
+        return Ok(());
+    };
+    validate_server_endpoint_url(endpoint.url, endpoint.label)
 }
 
 pub fn endpoint_transport_warning(url: &str, label: &str) -> Option<String> {

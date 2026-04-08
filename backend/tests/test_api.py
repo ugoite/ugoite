@@ -1086,6 +1086,68 @@ def test_upload_asset_and_link_to_entry(
     assert any(a["id"] == asset["id"] for a in content.get("assets", []))
 
 
+def test_upload_asset_strips_traversal_segments_from_filename(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-ENTRY-008: asset upload normalizes traversal-like filenames."""
+    test_client.post("/spaces", json={"name": "source-ws"})
+    test_client.post("/spaces", json={"name": "victim-ws"})
+
+    victim_meta_path = temp_space_root / "spaces" / "victim-ws" / "meta.json"
+    victim_meta_before = victim_meta_path.read_text(encoding="utf-8")
+
+    response = test_client.post(
+        "/spaces/source-ws/assets",
+        files={
+            "file": (
+                "../../../../victim-ws/meta.json",
+                io.BytesIO(b"safe asset"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "meta.json"
+    assert asset["path"].startswith("assets/")
+    assert ".." not in asset["path"]
+    assert "/" not in asset["path"][len("assets/") :]
+    assert (temp_space_root / "spaces" / "source-ws" / asset["path"]).exists()
+    assert victim_meta_path.read_text(encoding="utf-8") == victim_meta_before
+
+
+def test_upload_asset_req_asset_001_normalizes_markdown_heading_filename(
+    test_client: TestClient,
+) -> None:
+    """REQ-ASSET-001: asset upload normalizes metadata-spoofing filenames."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    response = test_client.post(
+        "/spaces/test-ws/assets",
+        files={
+            "file": (
+                "## uploaded_at.txt",
+                io.BytesIO(b"hello"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "uploaded_at.txt"
+    assert asset["path"] == f"assets/{asset['id']}_uploaded_at.txt"
+
+    entry_response = test_client.get(f"/spaces/test-ws/entries/{asset['id']}")
+    assert entry_response.status_code == 200
+    content = entry_response.json()["content"]
+    assert "## name\nuploaded_at.txt" in content
+    assert f"## link\nugoite://asset/{asset['id']}" in content
+    assert "## name\n## uploaded_at.txt" not in content
+
+
 def test_delete_asset_referenced_fails(
     test_client: TestClient,
     temp_space_root: Path,

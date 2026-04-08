@@ -161,6 +161,11 @@ Content-Type: application/json
 
 **Response**: `200 OK`
 
+Notes:
+- `storage_config` updates saved connector metadata only. The backend continues
+  writing through the deployment storage root until per-space routing or
+  migration support is available.
+
 #### Test Connection
 ```http
 POST /spaces/{id}/test-connection
@@ -177,6 +182,8 @@ Content-Type: application/json
 **Response**: `200 OK` or `400 Bad Request`
 
 Notes:
+- Test Connection validates a proposed connector target only; it does not switch
+  the space's active write location.
 - `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`, or be a plain local path starting with `/` or `.`.
 - `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
 
