@@ -6,6 +6,7 @@ use rand::TryRng;
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 
+use crate::form;
 use crate::storage::{OpendalStorage, StorageBackend};
 pub use ugoite_minimum::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 
@@ -33,6 +34,17 @@ fn generate_hmac_material() -> (String, String, String) {
     let hmac_key = general_purpose::STANDARD.encode(key_bytes);
 
     (key_id, hmac_key, now_iso)
+}
+
+fn starter_entry_form_definition() -> serde_json::Value {
+    serde_json::json!({
+        "name": "Entry",
+        "version": 1,
+        "fields": {
+            "Body": {"type": "markdown"}
+        },
+        "allow_extra_attributes": "allow_columns",
+    })
 }
 
 #[cfg(unix)]
@@ -136,6 +148,9 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
     let storage = OpendalStorage::from_operator(op);
     create_space_with_storage(&storage, name, root_path).await?;
+    let ws_path = format!("spaces/{name}");
+    // Bootstrap a user-creatable starter form so first-entry authoring works immediately.
+    form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
 
     // Local filesystem spaces are private by default: directories are owner-only,
     // and the metadata files created here are readable/writeable by the owner only.

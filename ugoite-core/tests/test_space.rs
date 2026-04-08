@@ -1,5 +1,5 @@
 mod common;
-use _ugoite_core::space;
+use _ugoite_core::{form, space};
 use common::setup_operator;
 #[cfg(unix)]
 use opendal::services::Fs;
@@ -28,7 +28,8 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert!(op.exists(&meta_path).await?);
 
     // Check other files/folders
-    assert!(op.exists(&format!("{}/settings.json", ws_path)).await?);
+    let settings_path = format!("{}/settings.json", ws_path);
+    assert!(op.exists(&settings_path).await?);
     assert!(op.exists(&format!("{}/forms/", ws_path)).await?);
     assert!(op.exists(&format!("{}/assets/", ws_path)).await?);
 
@@ -39,6 +40,17 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert_eq!(meta["name"], ws_id);
     assert!(meta.get("created_at").is_some());
     assert!(meta.get("storage").is_some());
+
+    let settings_bytes = op.read(&settings_path).await?.to_vec();
+    let settings: Value = serde_json::from_slice(&settings_bytes)?;
+    assert_eq!(settings["default_form"], "Entry");
+
+    let forms = form::list_forms(&op, &ws_path).await?;
+    let entry_form = forms
+        .iter()
+        .find(|value| value.get("name").and_then(|name| name.as_str()) == Some("Entry"))
+        .expect("starter Entry form");
+    assert_eq!(entry_form["allow_extra_attributes"], "allow_columns");
 
     Ok(())
 }

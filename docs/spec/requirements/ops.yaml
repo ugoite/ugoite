@@ -250,6 +250,13 @@ requirements:
     - file: ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
       tests:
       - test_cli_req_ops_006_query_help_rejects_removed_flags
+    - file: ugoite-cli/tests/test_cli_req_ops_006_http_helpers.rs
+      tests:
+      - test_cli_req_ops_006_http_helpers_return_json_on_success
+      - test_cli_req_ops_006_http_helpers_surface_error_bodies
+      - test_cli_req_ops_006_http_helpers_apply_auth_headers
+      - test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header
+      - test_cli_req_ops_006_http_helpers_surface_dev_auth_proxy_error_bodies
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -701,6 +708,8 @@ requirements:
       - test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials
       - test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key
       - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
+      - test_cli_auth_login_req_ops_015_reuses_cached_dev_auth_file_context
+      - test_cli_auth_login_req_ops_015_surfaces_passkey_context_recovery_guidance
       - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
       - test_cli_auth_login_req_ops_015_supports_fish_env_output
       - test_cli_auth_login_req_ops_015_supports_powershell_env_output
@@ -709,6 +718,9 @@ requirements:
       - test_cli_auth_login_req_ops_015_persists_cli_session_for_followup_commands
       - test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session
       - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
+    - file: ugoite-cli/src/http.rs
+      tests:
+      - test_dev_local_auth_headers_req_ops_015_only_allow_loopback_hosts
     - file: ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
       tests:
       - test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths
@@ -1499,3 +1511,45 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-035
+  title: Container Runtime Hardening Defaults
+  description: 'Published backend container artifacts and repository-owned Kubernetes
+
+    deployment manifests MUST default to non-root execution. The backend image
+
+    MUST create and run as a dedicated non-root user, and the Helm backend/frontend
+
+    deployments MUST render baseline hardening defaults that disable privilege
+
+    escalation, drop unused Linux capabilities, and keep the backend `/data`
+
+    volume writable without falling back to root.
+
+    '
+  related_spec:
+  - architecture/stack.md
+  - ../guide/helm-chart.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_helm_chart.py
+      tests:
+      - test_docs_req_ops_035_backend_image_runs_as_non_root
+      - test_docs_req_ops_035_helm_security_defaults_are_hardened
+      - test_docs_req_ops_035_hardening_docs_stay_visible

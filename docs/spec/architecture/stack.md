@@ -8,7 +8,9 @@ interfaces. The repository-owned deployment artifacts are
 `docker-compose.release.yaml` for published Compose installs and `charts/ugoite`
 for Kubernetes installs; both package the same backend + frontend images, keep
 the backend storage contract rooted at `/data`, and preserve frontend-to-backend
-service wiring instead of hard-coding a host-specific endpoint.
+service wiring instead of hard-coding a host-specific endpoint. The published
+backend image and Helm deployments also default to non-root/container-hardened
+runtime settings so browser-oriented installs do not start with root-only privileges.
 
 ## Core Technologies
 

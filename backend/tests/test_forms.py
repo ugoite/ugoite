@@ -54,8 +54,8 @@ def test_create_and_get_form(space_id: str) -> None:
     response = client.get(f"/spaces/{space_id}/forms")
     assert response.status_code == 200
     forms = response.json()
-    assert len(forms) == 1
-    assert forms[0]["name"] == form_name
+    assert len(forms) == 2
+    assert {item["name"] for item in forms} == {"Entry", form_name}
 
 
 def test_form_validation_in_entry(space_id: str) -> None:

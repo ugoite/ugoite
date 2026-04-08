@@ -1150,12 +1150,16 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-037
-  title: Form-first Entry Creation UI
-  description: 'Creating a new entry MUST require selecting a Form. The create dialog
+  title: Starter-form Entry Creation UI
+  description: 'Creating a new entry MUST require selecting a Form. New spaces
 
-    MUST show the selected Form fields and generate the entry from the
+    MUST surface a user-creatable default Form so first-entry authoring works
 
-    Form template with the correct frontmatter. Reserved metadata forms MUST NOT
+    without designing a custom schema first. The create dialog MUST show the
+
+    selected Form fields and generate the entry from the Form template with the
+
+    correct frontmatter. Reserved metadata forms MUST NOT
 
     be presented as ordinary user-selectable forms in entry creation flows.
 
@@ -1194,8 +1198,14 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
+      - 'REQ-FE-037: dashboard opens the starter entry flow for a new space'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
-      - 'REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms'
+      - 'REQ-FE-037: dashboard promotes form creation when a space has no creatable forms'
+    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+      tests:
+      - 'REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist'
+      - 'REQ-FE-037: entries route opens the starter entry flow for a new space'
+      - 'REQ-FE-037: entries route guides spaces with no creatable forms toward form creation'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
@@ -1203,7 +1213,10 @@ requirements:
     e2e:
     - file: e2e/dashboard-first-form.test.ts
       tests:
-      - 'REQ-FE-037: dashboard guides first-run spaces toward form creation'
+      - 'REQ-FE-037: dashboard lets a new space create a first entry with the starter form'
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-037: entries route opens the starter entry flow for new spaces'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1841,3 +1854,43 @@ requirements:
       tests:
       - 'REQ-FE-064: home page localizes public copy through the shared dictionary'
       - 'REQ-FE-064: about page localizes public copy through the shared dictionary'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-066
+  title: Auth-Aware Global Navigation Session Controls
+  description: 'The global frontend navigation MUST show `Login` only when the browser
+
+    does not currently have an auth session cookie. Once a browser session exists,
+
+    the nav MUST replace that link with an explicit signed-in state and a sign-out
+
+    control that clears the cookie and returns the user to `/login`.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - 'REQ-FE-066: signed-in browser nav exposes sign-out and returns to login'
+    vitest:
+    - file: frontend/src/components/Nav.test.tsx
+      tests:
+      - 'REQ-FE-066: signed-out nav shows primary routes and a login link'
+      - 'REQ-FE-066: active state tracks the current route for signed-out nav links'
+      - 'REQ-FE-066: stays hidden on space explorer pages'
+      - 'REQ-FE-066: signed-in nav swaps Login for session status and sign-out'
+      - 'REQ-FE-066: sign-out clears the auth cookie and redirects to login'
