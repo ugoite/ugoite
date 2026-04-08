@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 import ugoite_core
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -137,9 +137,9 @@ async def list_entries_endpoint(
 async def list_entry_options_endpoint(
     space_id: str,
     request: Request,
-    form: str | None = Query(default=None, min_length=1),
-    q: str | None = Query(default=None, min_length=1, max_length=512),
-    limit: int = Query(default=8, ge=1, le=20),
+    form: Annotated[str | None, Query(min_length=1)] = None,
+    q: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
 ) -> list[dict[str, Any]]:
     """List bounded entry summaries for UI pickers."""
     identity = request_identity(request)
