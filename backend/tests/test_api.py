@@ -988,11 +988,10 @@ def test_sql_session_stream_uses_incremental_row_paging(
         _space_id: str,
         _identity: object,
         _session_id: str,
-        offset: int,
-        _limit: int,
+        page: ugoite_core.SqlSessionPageInput,
     ) -> dict[str, object]:
-        call_offsets.append(offset)
-        if offset == 0:
+        call_offsets.append(page.offset)
+        if page.offset == 0:
             return {
                 "rows": [
                     {"id": "entry-1", "title": "Alpha"},
