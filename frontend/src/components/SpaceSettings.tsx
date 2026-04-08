@@ -140,7 +140,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									<ul class="mt-2 list-disc pl-5 text-sm ui-muted space-y-1">
 										<li>
 											<code>file://</code> records a local path you may want to migrate this space
-											to later.
+											to later, so local paths keep control and offline access on this machine.
 										</li>
 										<li>
 											<code>s3://</code> records an object-storage target you may want to validate
@@ -149,9 +149,10 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									</ul>
 								</div>
 								<p class="text-sm ui-muted">
-									Changing the saved storage URI only updates this space&apos;s metadata. Ugoite
-									keeps writing through the storage root shown above until per-space routing or
-									migration support lands.
+									Changing the saved storage URI only updates this space&apos;s metadata. It does
+									not migrate existing entries or assets to the new location, and Ugoite keeps
+									writing through the storage root shown above until per-space routing or migration
+									support lands.
 								</p>
 								<p class="text-sm ui-muted">
 									Before saving a new URI, review the{" "}
