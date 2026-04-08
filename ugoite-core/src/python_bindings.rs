@@ -1215,6 +1215,7 @@ fn get_sql_session_rows<'a>(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 fn get_sql_session_rows_scoped<'a>(
     py: Python<'a>,
     storage_config: Bound<'a, PyDict>,

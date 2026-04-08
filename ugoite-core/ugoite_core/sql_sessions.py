@@ -5,13 +5,24 @@ REQ-API-008: SQL session query API.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 from . import _ugoite_core as _core
-from .auth import RequestIdentity
 from .authz import AuthorizationError, require_form_read, require_space_action
 
+if TYPE_CHECKING:
+    from .auth import RequestIdentity
+
 _core_any = cast("Any", _core)
+
+
+@dataclass(frozen=True)
+class SqlSessionPageInput:
+    """Pagination window for SQL session row queries."""
+
+    offset: int
+    limit: int
 
 
 async def _resolve_sql_read_scope(
@@ -71,8 +82,7 @@ async def get_sql_session_rows_for_identity(
     space_id: str,
     identity: RequestIdentity,
     session_id: str,
-    offset: int,
-    limit: int,
+    page: SqlSessionPageInput,
 ) -> dict[str, object]:
     """REQ-API-008: page SQL rows using the caller's readable entry scope."""
     readable_forms, include_untyped_entries = await _resolve_sql_read_scope(
@@ -86,8 +96,8 @@ async def get_sql_session_rows_for_identity(
             storage_config,
             space_id,
             session_id,
-            offset,
-            limit,
+            page.offset,
+            page.limit,
             readable_forms,
             include_untyped_entries,
         ),
@@ -119,6 +129,7 @@ async def get_sql_session_rows_all_for_identity(
 
 
 __all__ = [
+    "SqlSessionPageInput",
     "get_sql_session_count_for_identity",
     "get_sql_session_rows_all_for_identity",
     "get_sql_session_rows_for_identity",

@@ -172,8 +172,7 @@ async def get_sql_session_rows_endpoint(
             space_id,
             identity,
             session_id,
-            offset,
-            limit,
+            ugoite_core.SqlSessionPageInput(offset=offset, limit=limit),
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
@@ -217,8 +216,10 @@ async def get_sql_session_stream_endpoint(
                 space_id,
                 identity,
                 session_id,
-                offset,
-                page_size,
+                ugoite_core.SqlSessionPageInput(
+                    offset=offset,
+                    limit=page_size,
+                ),
             )
             rows_obj = page.get("rows") if isinstance(page, dict) else None
             rows = rows_obj if isinstance(rows_obj, list) else []

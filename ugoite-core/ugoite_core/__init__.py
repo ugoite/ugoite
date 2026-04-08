@@ -71,17 +71,18 @@ from .service_accounts import (
     revoke_service_account_key,
     rotate_service_account_key,
 )
-from .sql_sessions import (
-    get_sql_session_count_for_identity,
-    get_sql_session_rows_all_for_identity,
-    get_sql_session_rows_for_identity,
-)
 from .sql_rules import (
     SqlLintDiagnostic,
     build_sql_schema,
     lint_sql,
     load_sql_rules,
     sql_completions,
+)
+from .sql_sessions import (
+    SqlSessionPageInput,
+    get_sql_session_count_for_identity,
+    get_sql_session_rows_all_for_identity,
+    get_sql_session_rows_for_identity,
 )
 from .storage_validation import validate_test_storage_config
 
@@ -167,6 +168,7 @@ __all__ = [
     "RoleName",
     "RotateServiceAccountKeyInput",
     "SqlLintDiagnostic",
+    "SqlSessionPageInput",
     "TokenOnlyInvitationProvider",
     "UpdateMemberRoleInput",
     "accept_invitation",
@@ -209,8 +211,8 @@ __all__ = [
     "get_sql_session_count",
     "get_sql_session_count_for_identity",
     "get_sql_session_rows",
-    "get_sql_session_rows_all_for_identity",
     "get_sql_session_rows_all",
+    "get_sql_session_rows_all_for_identity",
     "get_sql_session_rows_for_identity",
     "get_sql_session_status",
     "get_user_preferences",

@@ -6,17 +6,20 @@ REQ-API-008: SQL session query API.
 from __future__ import annotations
 
 import json
-import pathlib
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 import ugoite_core
 from ugoite_core.auth import RequestIdentity
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 @pytest.mark.asyncio
 async def test_sql_sessions_req_api_008_filters_form_acl_before_limit(
-    tmp_path: pathlib.Path,
+    tmp_path: Path,
 ) -> None:
     """REQ-API-008: SQL sessions filter unreadable Forms before ORDER BY/LIMIT."""
     root = tmp_path / "storage"
@@ -121,11 +124,11 @@ async def test_sql_sessions_req_api_008_filters_form_acl_before_limit(
         space_id,
         viewer,
         session_id,
-        0,
-        10,
+        ugoite_core.SqlSessionPageInput(offset=0, limit=10),
     )
     assert rows["total_count"] == 2
-    assert [row["id"] for row in rows["rows"]] == ["public-b", "public-a"]
+    row_items = cast("list[dict[str, object]]", rows["rows"])
+    assert [row["id"] for row in row_items] == ["public-b", "public-a"]
 
     all_rows = await ugoite_core.get_sql_session_rows_all_for_identity(
         config,
