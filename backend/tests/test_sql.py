@@ -29,6 +29,24 @@ def _bootstrap_admin_space_for_user(temp_space_root: Path, user_id: str) -> None
     )
 
 
+def _invite_and_accept_viewer(
+    owner_client: TestClient,
+    viewer_client: TestClient,
+    space_id: str,
+) -> None:
+    invite_response = owner_client.post(
+        f"/spaces/{space_id}/members/invitations",
+        json={"user_id": "viewer-user", "role": "viewer"},
+    )
+    assert invite_response.status_code == 201
+
+    accept_response = viewer_client.post(
+        f"/spaces/{space_id}/members/accept",
+        json={"token": invite_response.json()["invitation"]["token"]},
+    )
+    assert accept_response.status_code == 200
+
+
 @pytest.fixture
 def sql_auth_clients(
     monkeypatch: pytest.MonkeyPatch,
@@ -738,19 +756,7 @@ def test_sql_sessions_req_api_008_filter_form_acl_before_limit(
     create_space = owner.post("/spaces", json={"name": "sql-acl-ws"})
     assert create_space.status_code == 201
     space_id = create_space.json()["id"]
-
-    patch_space = owner.patch(
-        f"/spaces/{space_id}",
-        json={
-            "settings": {
-                "member_roles": {
-                    "owner-user": "owner",
-                    "viewer-user": "viewer",
-                },
-            },
-        },
-    )
-    assert patch_space.status_code == 200
+    _invite_and_accept_viewer(owner, viewer, space_id)
 
     public_form = owner.post(
         f"/spaces/{space_id}/forms",
@@ -825,3 +831,132 @@ def test_sql_sessions_req_api_008_filter_form_acl_before_limit(
     rows_payload = rows_response.json()
     assert rows_payload["total_count"] == 2
     assert [row["id"] for row in rows_payload["rows"]] == ["public-b", "public-a"]
+
+
+def test_sql_sessions_req_api_008_filter_auxiliary_tables_by_acl(
+    sql_auth_clients: dict[str, TestClient],
+) -> None:
+    """REQ-API-008: SQL sessions scope auxiliary assets tables by readable entries."""
+    owner = sql_auth_clients["owner"]
+    viewer = sql_auth_clients["viewer"]
+
+    create_space = owner.post("/spaces", json={"name": "sql-aux-ws"})
+    assert create_space.status_code == 201
+    space_id = create_space.json()["id"]
+    _invite_and_accept_viewer(owner, viewer, space_id)
+
+    assert (
+        owner.post(
+            f"/spaces/{space_id}/forms",
+            json={
+                "name": "PublicTask",
+                "version": 1,
+                "template": "# PublicTask\n\n## Summary\n",
+                "fields": {"Summary": {"type": "string", "required": True}},
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        owner.post(
+            f"/spaces/{space_id}/forms",
+            json={
+                "name": "RestrictedTask",
+                "version": 1,
+                "template": "# RestrictedTask\n\n## Summary\n",
+                "fields": {"Summary": {"type": "string", "required": True}},
+                "read_principals": [{"kind": "user", "id": "owner-user"}],
+                "write_principals": [{"kind": "user", "id": "owner-user"}],
+            },
+        ).status_code
+        == 201
+    )
+
+    public_a = owner.post(
+        f"/spaces/{space_id}/entries",
+        json={
+            "id": "public-a",
+            "content": (
+                "---\nform: PublicTask\n---\n# Public A\n\n## Summary\nPublic A\n"
+            ),
+        },
+    )
+    assert public_a.status_code == 201
+    public_a_revision = public_a.json()["revision_id"]
+
+    assert (
+        owner.post(
+            f"/spaces/{space_id}/entries",
+            json={
+                "id": "public-b",
+                "content": "---\nform: PublicTask\n---\n# Public B\n\n## Summary\nPublic B\n",
+            },
+        ).status_code
+        == 201
+    )
+
+    restricted = owner.post(
+        f"/spaces/{space_id}/entries",
+        json={
+            "id": "restricted-z",
+            "content": (
+                "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n"
+            ),
+        },
+    )
+    assert restricted.status_code == 201
+    restricted_revision = restricted.json()["revision_id"]
+
+    public_asset = owner.post(
+        f"/spaces/{space_id}/assets",
+        files={"file": ("public.txt", b"public asset", "text/plain")},
+    )
+    assert public_asset.status_code == 201
+    restricted_asset = owner.post(
+        f"/spaces/{space_id}/assets",
+        files={"file": ("restricted.txt", b"restricted asset", "text/plain")},
+    )
+    assert restricted_asset.status_code == 201
+
+    assert (
+        owner.put(
+            f"/spaces/{space_id}/entries/public-a",
+            json={
+                "markdown": (
+                    "---\nform: PublicTask\n---\n# Public A\n\n## Summary\nPublic A\n"
+                ),
+                "parent_revision_id": public_a_revision,
+                "assets": [public_asset.json()],
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        owner.put(
+            f"/spaces/{space_id}/entries/restricted-z",
+            json={
+                "markdown": (
+                    "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n"
+                ),
+                "parent_revision_id": restricted_revision,
+                "assets": [restricted_asset.json()],
+            },
+        ).status_code
+        == 200
+    )
+
+    assets_session = viewer.post(
+        f"/spaces/{space_id}/sql-sessions",
+        json={"sql": "SELECT * FROM assets ORDER BY entry_id"},
+    )
+    assert assets_session.status_code == 201
+    assets_rows = viewer.get(
+        f"/spaces/{space_id}/sql-sessions/{assets_session.json()['id']}/rows",
+        params={"offset": 0, "limit": 10},
+    )
+    assert assets_rows.status_code == 200
+    assert assets_rows.json()["total_count"] == 1
+    asset_rows = assets_rows.json()["rows"]
+    assert len(asset_rows) == 1
+    assert asset_rows[0]["entry_id"] == "public-a"
+    assert asset_rows[0]["name"] == "public.txt"

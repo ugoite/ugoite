@@ -1,6 +1,6 @@
 mod common;
 
-use _ugoite_core::{entry, form, saved_sql, space, sql_session};
+use _ugoite_core::{asset, entry, form, link, saved_sql, space, sql_session};
 use common::setup_operator;
 
 #[tokio::test]
@@ -160,6 +160,170 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     assert_eq!(rows_list.len(), 2);
     assert_eq!(rows_list[0]["id"], "public-b");
     assert_eq!(rows_list[1]["id"], "public-a");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-API-008
+async fn test_sql_sessions_req_api_008_scopes_auxiliary_tables() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-sql-session-aux", "/tmp").await?;
+    let ws_path = "spaces/test-sql-session-aux";
+
+    struct MockIntegrity;
+    impl _ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+        fn checksum(&self, data: &str) -> String {
+            format!("chk-{}", data.len())
+        }
+
+        fn signature(&self, _data: &str) -> String {
+            "mock-signature".to_string()
+        }
+    }
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "PublicTask",
+            "template": "# PublicTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "RestrictedTask",
+            "template": "# RestrictedTask\n\n## Summary\n",
+            "fields": {"Summary": {"type": "string"}},
+        }),
+    )
+    .await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "public-a",
+        "---\nform: PublicTask\n---\n# Public A\n\n## Summary\nPublic A\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "public-b",
+        "---\nform: PublicTask\n---\n# Public B\n\n## Summary\nPublic B\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "restricted-z",
+        "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n",
+        "author",
+        &MockIntegrity,
+    )
+    .await?;
+    let public_a_revision = entry::get_entry_content(&op, ws_path, "public-a")
+        .await?
+        .revision_id;
+    let restricted_z_revision = entry::get_entry_content(&op, ws_path, "restricted-z")
+        .await?
+        .revision_id;
+
+    let public_asset = asset::save_asset(&op, ws_path, "public.txt", b"public").await?;
+    let restricted_asset = asset::save_asset(&op, ws_path, "restricted.txt", b"restricted").await?;
+    link::create_link(
+        &op,
+        ws_path,
+        "public-a",
+        "public-b",
+        "reference",
+        "public-link",
+    )
+    .await?;
+    link::create_link(
+        &op,
+        ws_path,
+        "restricted-z",
+        "public-a",
+        "reference",
+        "restricted-link",
+    )
+    .await?;
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        "public-a",
+        "---\nform: PublicTask\n---\n# Public A\n\n## Summary\nPublic A\n",
+        Some(&public_a_revision),
+        "author",
+        Some(vec![serde_json::json!({
+            "id": public_asset.id,
+            "name": public_asset.name,
+            "path": public_asset.path,
+        })]),
+        &MockIntegrity,
+    )
+    .await?;
+    entry::update_entry(
+        &op,
+        ws_path,
+        "restricted-z",
+        "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n",
+        Some(&restricted_z_revision),
+        "author",
+        Some(vec![serde_json::json!({
+            "id": restricted_asset.id,
+            "name": restricted_asset.name,
+            "path": restricted_asset.path,
+        })]),
+        &MockIntegrity,
+    )
+    .await?;
+
+    let readable_forms = vec!["PublicTask".to_string()];
+
+    let assets_session =
+        sql_session::create_sql_session(&op, ws_path, "SELECT * FROM assets ORDER BY entry_id")
+            .await?;
+    let assets_rows = sql_session::get_sql_session_rows_all_scoped(
+        &op,
+        ws_path,
+        assets_session["id"].as_str().unwrap(),
+        &readable_forms,
+        false,
+    )
+    .await?;
+    assert_eq!(assets_rows.len(), 1);
+    assert_eq!(assets_rows[0]["entry_id"], "public-a");
+    assert_eq!(assets_rows[0]["name"], public_asset.name);
+
+    let links_session = sql_session::create_sql_session(
+        &op,
+        ws_path,
+        "SELECT * FROM links WHERE source = 'public-a' ORDER BY target",
+    )
+    .await?;
+    let links_rows = sql_session::get_sql_session_rows_all_scoped(
+        &op,
+        ws_path,
+        links_session["id"].as_str().unwrap(),
+        &readable_forms,
+        false,
+    )
+    .await?;
+    assert_eq!(links_rows.len(), 1);
+    assert_eq!(links_rows[0]["id"], "public-link");
+    assert_eq!(links_rows[0]["source"], "public-a");
+    assert_eq!(links_rows[0]["target"], "public-b");
 
     Ok(())
 }
