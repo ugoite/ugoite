@@ -386,6 +386,69 @@ fn prompt_totp_code(provided: Option<String>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{mpsc, Mutex, OnceLock};
+    use std::thread;
+    use std::time::Duration;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_test_env() {
+        for key in [
+            "UGOITE_CLI_CONFIG_PATH",
+            "UGOITE_AUTH_BEARER_TOKEN",
+            "UGOITE_AUTH_API_KEY",
+            "UGOITE_DEV_AUTH_PROXY_TOKEN",
+            "UGOITE_DEV_PASSKEY_CONTEXT",
+        ] {
+            std::env::remove_var(key);
+        }
+    }
+
+    fn spawn_recording_server(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            let mut content_length = 0_usize;
+
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                request.push_str(&line);
+                let lower = line.to_ascii_lowercase();
+                if let Some(value) = lower.strip_prefix("content-length:") {
+                    content_length = value.trim().parse().unwrap();
+                }
+                if line == "\r\n" {
+                    break;
+                }
+            }
+
+            let mut body_buffer = vec![0_u8; content_length];
+            reader.read_exact(&mut body_buffer).unwrap();
+            request.push_str(&String::from_utf8_lossy(&body_buffer));
+            tx.send(request).unwrap();
+
+            let response = format!(
+                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (format!("http://{}", addr), rx, handle)
+    }
 
     #[test]
     fn test_auth_shell_helpers_req_ops_015_cover_shell_variants() {
@@ -403,6 +466,179 @@ mod tests {
         assert_eq!(
             auth_login_command_example(AuthShell::Zsh, false),
             "ugoite auth login --shell zsh --username USER --totp-code CODE",
+        );
+
+        assert_eq!(posix_shell_quote(""), "''");
+        assert_eq!(posix_shell_quote("it's"), "'it'\\''s'");
+        assert_eq!(powershell_shell_quote("value"), "'value'");
+        assert_eq!(powershell_shell_quote("it's"), "'it''s'");
+    }
+
+    /// REQ-OPS-015: core mode login must fail before any network prompt or request.
+    #[test]
+    fn test_auth_run_req_ops_015_rejects_core_mode_login() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env();
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("cli-endpoints.json");
+        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+        crate::config::save_config(&EndpointConfig {
+            mode: EndpointMode::Core,
+            backend_url: "http://localhost:8000".to_string(),
+            api_url: "http://localhost:3000/api".to_string(),
+        })
+        .unwrap();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let error = runtime
+            .block_on(run(AuthCmd {
+                sub: AuthSubCmd::Login {
+                    username: Some("dev-alice".to_string()),
+                    totp_code: Some("123456".to_string()),
+                    mock_oauth: false,
+                    output: AuthShellArgs {
+                        shell: AuthShell::Sh,
+                    },
+                },
+            }))
+            .unwrap_err();
+
+        clear_test_env();
+        assert!(error
+            .to_string()
+            .contains("auth login requires backend or api mode"));
+    }
+
+    /// REQ-OPS-015: direct auth run coverage must exercise the mock OAuth loopback path.
+    #[test]
+    fn test_auth_run_req_ops_015_posts_mock_oauth_directly() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env();
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("cli-endpoints.json");
+        let (base, requests, handle) = spawn_recording_server(
+            "HTTP/1.1 200 OK",
+            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+        );
+
+        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+        crate::config::save_config(&EndpointConfig {
+            mode: EndpointMode::Backend,
+            backend_url: base,
+            api_url: "http://localhost:3000/api".to_string(),
+        })
+        .unwrap();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(run(AuthCmd {
+                sub: AuthSubCmd::Login {
+                    username: None,
+                    totp_code: None,
+                    mock_oauth: true,
+                    output: AuthShellArgs {
+                        shell: AuthShell::Sh,
+                    },
+                },
+            }))
+            .unwrap();
+
+        let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
+        clear_test_env();
+        assert!(request_text.starts_with("POST /auth/mock-oauth HTTP/1.1"));
+    }
+
+    /// REQ-OPS-015: direct auth run coverage must exercise the provided credential path.
+    #[test]
+    fn test_auth_run_req_ops_015_posts_totp_credentials_directly() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env();
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("cli-endpoints.json");
+        let (base, requests, handle) = spawn_recording_server(
+            "HTTP/1.1 200 OK",
+            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+        );
+
+        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
+        std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+        std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
+        crate::config::save_config(&EndpointConfig {
+            mode: EndpointMode::Backend,
+            backend_url: base,
+            api_url: "http://localhost:3000/api".to_string(),
+        })
+        .unwrap();
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime
+            .block_on(run(AuthCmd {
+                sub: AuthSubCmd::Login {
+                    username: Some("dev-alice".to_string()),
+                    totp_code: Some("123456".to_string()),
+                    mock_oauth: false,
+                    output: AuthShellArgs {
+                        shell: AuthShell::Sh,
+                    },
+                },
+            }))
+            .unwrap();
+
+        let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
+        clear_test_env();
+        assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+        assert!(request_text.contains("dev-alice"));
+        assert!(request_text.contains("123456"));
+    }
+
+    /// REQ-OPS-015: helper coverage must validate provided auth prompt values without stdin.
+    #[test]
+    fn test_prompt_helpers_req_ops_015_validate_provided_values() {
+        assert_eq!(
+            prompt_value("Username", Some("  dev-alice  ".to_string())).unwrap(),
+            "dev-alice",
+        );
+        assert!(prompt_non_empty_value("Username", Some("   ".to_string()))
+            .unwrap_err()
+            .to_string()
+            .contains("Username must not be empty"));
+        assert_eq!(
+            prompt_totp_code(Some("123456".to_string())).unwrap(),
+            "123456",
+        );
+        assert!(prompt_totp_code(Some("abc123".to_string()))
+            .unwrap_err()
+            .to_string()
+            .contains("2FA code must be exactly 6 digits"));
+    }
+
+    /// REQ-OPS-015: core-mode profile snapshots ignore blank env vars and stay local-first.
+    #[test]
+    fn test_auth_profile_snapshot_req_ops_015_core_mode_ignores_blank_env_vars() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env();
+        std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", "   ");
+        std::env::set_var("UGOITE_AUTH_API_KEY", "   ");
+
+        let payload = auth_profile_snapshot(&EndpointConfig {
+            mode: EndpointMode::Core,
+            backend_url: "http://localhost:8000".to_string(),
+            api_url: "http://localhost:3000/api".to_string(),
+        });
+
+        clear_test_env();
+        assert_eq!(payload["endpoint_mode"], "core");
+        assert_eq!(payload["topology"], "local filesystem via ugoite-core");
+        assert!(payload["endpoint_url"].is_null());
+        assert_eq!(payload["credential_state"], "none");
+        assert_eq!(
+            payload["next_action"],
+            "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url http://localhost:8000`.",
         );
     }
 }
