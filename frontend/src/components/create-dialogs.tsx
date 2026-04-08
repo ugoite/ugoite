@@ -456,184 +456,270 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	};
 
 	/* v8 ignore start */
-	if (!props.open) return undefined;
 	return (
-		<dialog
-			ref={dialogRef}
-			open
-			class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
-			onClick={handleDialogClick}
-			onKeyDown={(e) => {
-				if (e.key === "Escape") props.onClose();
-			}}
-		>
-			<div
-				class="ui-dialog w-full max-w-md mx-4"
-				role="document"
-				onClick={(e) => e.stopPropagation()}
-				onKeyDown={(e) => e.stopPropagation()}
+		<Show when={props.open}>
+			<dialog
+				ref={dialogRef}
+				open
+				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
+				onClick={handleDialogClick}
+				onKeyDown={(e) => {
+					if (e.key === "Escape") props.onClose();
+				}}
 			>
-				<h2 class="text-lg font-semibold mb-4">{t("createDialog.entry.heading")}</h2>
+				<div
+					class="ui-dialog w-full max-w-md mx-4"
+					role="document"
+					onClick={(e) => e.stopPropagation()}
+					onKeyDown={(e) => e.stopPropagation()}
+				>
+					<h2 class="text-lg font-semibold mb-4">{t("createDialog.entry.heading")}</h2>
 
-				<form onSubmit={handleSubmit} class="ui-stack-sm">
-					<div class="ui-field">
-						<label class="ui-label" for="entry-title">
-							{t("createDialog.entry.titleLabel")}
-						</label>
-						<input
-							ref={inputRef}
-							id="entry-title"
-							type="text"
-							value={title()}
-							onInput={(e) => {
-								setErrorMessage(null);
-								setTitle(e.currentTarget.value);
-							}}
-							placeholder={t("createDialog.entry.titlePlaceholder")}
-							class="ui-input"
-							autofocus
-						/>
-					</div>
-
-					<Show
-						when={selectableForms().length > 0}
-						fallback={
-							<div class="ui-card ui-card-dashed text-sm ui-muted">
-								{t("createDialog.entry.empty")}
-							</div>
-						}
-					>
+					<form onSubmit={handleSubmit} class="ui-stack-sm">
 						<div class="ui-field">
-							<label class="ui-label" for="entry-form">
-								{t("createDialog.entry.formLabel")} <span class="ui-text-danger">*</span>
+							<label class="ui-label" for="entry-title">
+								{t("createDialog.entry.titleLabel")}
 							</label>
-							<select
-								id="entry-form"
-								class="ui-input"
-								value={selectedForm()}
-								onChange={(e) => {
-									setSelectedForm(e.currentTarget.value);
-									setErrorMessage(null);
-								}}
-							>
-								<option value="" disabled>
-									{t("createDialog.entry.formPlaceholder")}
-								</option>
-								<For each={selectableForms()}>
-									{(entryForm) => <option value={entryForm.name}>{entryForm.name}</option>}
-								</For>
-							</select>
-							<Show when={selectedFormDef()}>
-								{(entryForm) => (
-									<div class="ui-card mt-3">
-										<p class="text-xs font-semibold ui-muted uppercase tracking-wide">
-											{t("createDialog.entry.fieldsTitle")}
-										</p>
-										<div class="mt-2 flex flex-wrap gap-2">
-											<Show
-												when={Object.keys(entryForm().fields || {}).length > 0}
-												fallback={
-													<span class="text-xs ui-muted">
-														{t("createDialog.entry.noFieldsDefined")}
-													</span>
-												}
-											>
-												<For each={Object.entries(entryForm().fields)}>
-													{([name, def]) => (
-														<span class="ui-pill gap-1">
-															<span class="font-medium">{name}</span>
-															<span class="ui-muted">({def.type})</span>
-															<Show when={def.required}>
-																<span class="ui-text-danger">*</span>
-															</Show>
-														</span>
-													)}
-												</For>
-											</Show>
-										</div>
-									</div>
-								)}
-							</Show>
-						</div>
-					</Show>
-
-					<div class="ui-field">
-						<p class="ui-label">{t("createDialog.entry.inputMode")}</p>
-						<div class="flex flex-wrap gap-2">
-							<button
-								type="button"
-								class={`ui-button text-xs ${inputMode() === "webform" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => {
-									setErrorMessage(null);
-									setInputMode("webform");
-								}}
-							>
-								{t("createDialog.entry.inputMode.webform")}
-							</button>
-							<button
-								type="button"
-								class={`ui-button text-xs ${inputMode() === "markdown" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => {
-									setErrorMessage(null);
-									setInputMode("markdown");
-								}}
-							>
-								{t("createDialog.entry.inputMode.markdown")}
-							</button>
-							<button
-								type="button"
-								class={`ui-button text-xs ${inputMode() === "chat" ? "ui-button-primary" : "ui-button-secondary"}`}
-								onClick={() => {
-									setErrorMessage(null);
-									setInputMode("chat");
-								}}
-							>
-								{t("createDialog.entry.inputMode.chat")}
-							</button>
-						</div>
-					</div>
-
-					<Show when={selectedFormDef() && inputGuidance().length > 0}>
-						<div class="ui-alert ui-alert-warning text-xs space-y-1">
-							<For each={inputGuidance()}>{(hint) => <p>{hint}</p>}</For>
-						</div>
-					</Show>
-
-					<Show when={inputMode() === "markdown" && selectedFormDef()}>
-						<div class="ui-card">
-							<p class="text-sm font-semibold">{t("createDialog.entry.markdownTitle")}</p>
-							<textarea
-								aria-label={t("createDialog.entry.markdownAria")}
-								class="ui-input ui-textarea mt-3 min-h-56"
-								value={markdownInput()}
+							<input
+								ref={inputRef}
+								id="entry-title"
+								type="text"
+								value={title()}
 								onInput={(e) => {
 									setErrorMessage(null);
-									setMarkdownInput(e.currentTarget.value);
+									setTitle(e.currentTarget.value);
 								}}
+								placeholder={t("createDialog.entry.titlePlaceholder")}
+								class="ui-input"
+								autofocus
 							/>
 						</div>
-					</Show>
 
-					<Show when={inputMode() === "webform" && webFormFields().length > 0}>
-						<div class="ui-card">
-							<p class="text-sm font-semibold">{t("createDialog.entry.formFieldsTitle")}</p>
-							<div class="ui-stack-sm mt-3">
-								<For each={webFormFields()}>
-									{([name, def], index) => {
+						<Show
+							when={selectableForms().length > 0}
+							fallback={
+								<div class="ui-card ui-card-dashed text-sm ui-muted">
+									{t("createDialog.entry.empty")}
+								</div>
+							}
+						>
+							<div class="ui-field">
+								<label class="ui-label" for="entry-form">
+									{t("createDialog.entry.formLabel")} <span class="ui-text-danger">*</span>
+								</label>
+								<select
+									id="entry-form"
+									class="ui-input"
+									value={selectedForm()}
+									onChange={(e) => {
+										setSelectedForm(e.currentTarget.value);
+										setErrorMessage(null);
+									}}
+								>
+									<option value="" disabled>
+										{t("createDialog.entry.formPlaceholder")}
+									</option>
+									<For each={selectableForms()}>
+										{(entryForm) => <option value={entryForm.name}>{entryForm.name}</option>}
+									</For>
+								</select>
+								<Show when={selectedFormDef()}>
+									{(entryForm) => (
+										<div class="ui-card mt-3">
+											<p class="text-xs font-semibold ui-muted uppercase tracking-wide">
+												{t("createDialog.entry.fieldsTitle")}
+											</p>
+											<div class="mt-2 flex flex-wrap gap-2">
+												<Show
+													when={Object.keys(entryForm().fields || {}).length > 0}
+													fallback={
+														<span class="text-xs ui-muted">
+															{t("createDialog.entry.noFieldsDefined")}
+														</span>
+													}
+												>
+													<For each={Object.entries(entryForm().fields)}>
+														{([name, def]) => (
+															<span class="ui-pill gap-1">
+																<span class="font-medium">{name}</span>
+																<span class="ui-muted">({def.type})</span>
+																<Show when={def.required}>
+																	<span class="ui-text-danger">*</span>
+																</Show>
+															</span>
+														)}
+													</For>
+												</Show>
+											</div>
+										</div>
+									)}
+								</Show>
+							</div>
+						</Show>
+
+						<div class="ui-field">
+							<p class="ui-label">{t("createDialog.entry.inputMode")}</p>
+							<div class="flex flex-wrap gap-2">
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "webform" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => {
+										setErrorMessage(null);
+										setInputMode("webform");
+									}}
+								>
+									{t("createDialog.entry.inputMode.webform")}
+								</button>
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "markdown" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => {
+										setErrorMessage(null);
+										setInputMode("markdown");
+									}}
+								>
+									{t("createDialog.entry.inputMode.markdown")}
+								</button>
+								<button
+									type="button"
+									class={`ui-button text-xs ${inputMode() === "chat" ? "ui-button-primary" : "ui-button-secondary"}`}
+									onClick={() => {
+										setErrorMessage(null);
+										setInputMode("chat");
+									}}
+								>
+									{t("createDialog.entry.inputMode.chat")}
+								</button>
+							</div>
+						</div>
+
+						<Show when={selectedFormDef() && inputGuidance().length > 0}>
+							<div class="ui-alert ui-alert-warning text-xs space-y-1">
+								<For each={inputGuidance()}>{(hint) => <p>{hint}</p>}</For>
+							</div>
+						</Show>
+
+						<Show when={inputMode() === "markdown" && selectedFormDef()}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">{t("createDialog.entry.markdownTitle")}</p>
+								<textarea
+									aria-label={t("createDialog.entry.markdownAria")}
+									class="ui-input ui-textarea mt-3 min-h-56"
+									value={markdownInput()}
+									onInput={(e) => {
+										setErrorMessage(null);
+										setMarkdownInput(e.currentTarget.value);
+									}}
+								/>
+							</div>
+						</Show>
+
+						<Show when={inputMode() === "webform" && webFormFields().length > 0}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">{t("createDialog.entry.formFieldsTitle")}</p>
+								<div class="ui-stack-sm mt-3">
+									<For each={webFormFields()}>
+										{([name, def], index) => {
+											const useTextarea = isTextareaField(name, def);
+											const inputType = resolveInputType(def);
+											const value = fieldValues()[name] ?? "";
+											const fieldId = createFieldInputId("webform", name, index());
+											const handleValue = (nextValue: string) => setFieldValue(name, nextValue);
+											return (
+												<div class="ui-field">
+													<label class="ui-label" for={fieldId}>
+														{name}
+														<span class="ui-muted ml-2 text-xs">
+															{t(
+																def.required
+																	? "createDialog.entry.fieldMeta.required"
+																	: "createDialog.entry.fieldMeta.optional",
+																{ type: def.type },
+															)}
+														</span>
+													</label>
+													<Show
+														when={!useTextarea}
+														fallback={
+															<textarea
+																id={fieldId}
+																class="ui-input ui-textarea"
+																placeholder={resolveTextareaPlaceholder(def)}
+																value={value}
+																onInput={(e) => handleValue(e.currentTarget.value)}
+															/>
+														}
+													>
+														<input
+															id={fieldId}
+															type={inputType}
+															class="ui-input"
+															value={value}
+															onInput={(e) => handleValue(e.currentTarget.value)}
+														/>
+													</Show>
+												</div>
+											);
+										}}
+									</For>
+								</div>
+							</div>
+						</Show>
+
+						<Show when={inputMode() === "chat" && chatFields().length > 0}>
+							<div class="ui-card">
+								<p class="text-sm font-semibold">{t("createDialog.entry.chatTitle")}</p>
+								<p class="text-xs ui-muted mt-1">
+									{t("createDialog.entry.chatProgress", {
+										current: Math.min(chatStep() + 1, chatFields().length),
+										total: chatFields().length,
+									})}
+								</p>
+								<div class="mt-3 flex flex-wrap gap-2">
+									<For each={chatFields()}>
+										{([name, def], index) => {
+											const answered = () => !!(fieldValues()[name] || "").trim();
+											const current = () => index() === chatStep();
+											return (
+												<button
+													type="button"
+													class={`ui-button text-xs ${current() ? "ui-button-primary" : "ui-button-secondary"}`}
+													onClick={() => {
+														goToChatStep(index());
+														setErrorMessage(null);
+													}}
+												>
+													{name} (
+													{answered()
+														? t("createDialog.entry.chatStatus.answered")
+														: def.required
+															? t("createDialog.entry.chatStatus.required")
+															: t("createDialog.entry.chatStatus.optional")}
+													)
+												</button>
+											);
+										}}
+									</For>
+								</div>
+								<Show when={currentChatField()} keyed>
+									{(current) => {
+										const [name, def] = current;
+										const fieldIndex = chatFields().findIndex(
+											([candidateName]) => candidateName === name,
+										);
+										const value = fieldValues()[name] ?? "";
 										const useTextarea = isTextareaField(name, def);
 										const inputType = resolveInputType(def);
-										const value = fieldValues()[name] ?? "";
-										const fieldId = createFieldInputId("webform", name, index());
-										const handleValue = (nextValue: string) => setFieldValue(name, nextValue);
+										const fieldId = createFieldInputId("chat", name, Math.max(fieldIndex, 0));
 										return (
-											<div class="ui-field">
+											<div class="ui-field mt-3">
 												<label class="ui-label" for={fieldId}>
 													{name}
 													<span class="ui-muted ml-2 text-xs">
 														{t(
 															def.required
-																? "createDialog.entry.fieldMeta.required"
-																: "createDialog.entry.fieldMeta.optional",
+																? "createDialog.entry.chatFieldMeta.required"
+																: "createDialog.entry.chatFieldMeta.optional",
 															{ type: def.type },
 														)}
 													</span>
@@ -644,9 +730,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														<textarea
 															id={fieldId}
 															class="ui-input ui-textarea"
-															placeholder={resolveTextareaPlaceholder(def)}
 															value={value}
-															onInput={(e) => handleValue(e.currentTarget.value)}
+															onInput={(e) => setFieldValue(name, e.currentTarget.value)}
 														/>
 													}
 												>
@@ -655,158 +740,76 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														type={inputType}
 														class="ui-input"
 														value={value}
-														onInput={(e) => handleValue(e.currentTarget.value)}
-													/>
-												</Show>
-											</div>
-										);
-									}}
-								</For>
-							</div>
-						</div>
-					</Show>
-
-					<Show when={inputMode() === "chat" && chatFields().length > 0}>
-						<div class="ui-card">
-							<p class="text-sm font-semibold">{t("createDialog.entry.chatTitle")}</p>
-							<p class="text-xs ui-muted mt-1">
-								{t("createDialog.entry.chatProgress", {
-									current: Math.min(chatStep() + 1, chatFields().length),
-									total: chatFields().length,
-								})}
-							</p>
-							<div class="mt-3 flex flex-wrap gap-2">
-								<For each={chatFields()}>
-									{([name, def], index) => {
-										const answered = () => !!(fieldValues()[name] || "").trim();
-										const current = () => index() === chatStep();
-										return (
-											<button
-												type="button"
-												class={`ui-button text-xs ${current() ? "ui-button-primary" : "ui-button-secondary"}`}
-												onClick={() => {
-													goToChatStep(index());
-													setErrorMessage(null);
-												}}
-											>
-												{name} (
-												{answered()
-													? t("createDialog.entry.chatStatus.answered")
-													: def.required
-														? t("createDialog.entry.chatStatus.required")
-														: t("createDialog.entry.chatStatus.optional")}
-												)
-											</button>
-										);
-									}}
-								</For>
-							</div>
-							<Show when={currentChatField()} keyed>
-								{(current) => {
-									const [name, def] = current;
-									const fieldIndex = chatFields().findIndex(
-										([candidateName]) => candidateName === name,
-									);
-									const value = fieldValues()[name] ?? "";
-									const useTextarea = isTextareaField(name, def);
-									const inputType = resolveInputType(def);
-									const fieldId = createFieldInputId("chat", name, Math.max(fieldIndex, 0));
-									return (
-										<div class="ui-field mt-3">
-											<label class="ui-label" for={fieldId}>
-												{name}
-												<span class="ui-muted ml-2 text-xs">
-													{t(
-														def.required
-															? "createDialog.entry.chatFieldMeta.required"
-															: "createDialog.entry.chatFieldMeta.optional",
-														{ type: def.type },
-													)}
-												</span>
-											</label>
-											<Show
-												when={!useTextarea}
-												fallback={
-													<textarea
-														id={fieldId}
-														class="ui-input ui-textarea"
-														value={value}
 														onInput={(e) => setFieldValue(name, e.currentTarget.value)}
 													/>
-												}
-											>
-												<input
-													id={fieldId}
-													type={inputType}
-													class="ui-input"
-													value={value}
-													onInput={(e) => setFieldValue(name, e.currentTarget.value)}
-												/>
-											</Show>
-											<div class="mt-3 flex items-center justify-between">
-												<button
-													type="button"
-													class="ui-button ui-button-secondary text-xs"
-													disabled={chatStep() <= 0}
-													onClick={() => moveChatStep(-1)}
-												>
-													{t("createDialog.entry.chatPrevious")}
-												</button>
-												<div class="flex items-center gap-2">
+												</Show>
+												<div class="mt-3 flex items-center justify-between">
 													<button
 														type="button"
 														class="ui-button ui-button-secondary text-xs"
-														onClick={handleSkipChatField}
+														disabled={chatStep() <= 0}
+														onClick={() => moveChatStep(-1)}
 													>
-														{t(
-															def.required
-																? "createDialog.entry.chatSkip"
-																: "createDialog.entry.chatSkipOptional",
-														)}
+														{t("createDialog.entry.chatPrevious")}
 													</button>
-													<Show when={chatStep() < chatFields().length - 1}>
+													<div class="flex items-center gap-2">
 														<button
 															type="button"
 															class="ui-button ui-button-secondary text-xs"
-															onClick={handleAdvanceChatStep}
+															onClick={handleSkipChatField}
 														>
-															{t("createDialog.entry.chatNext")}
+															{t(
+																def.required
+																	? "createDialog.entry.chatSkip"
+																	: "createDialog.entry.chatSkipOptional",
+															)}
 														</button>
-													</Show>
+														<Show when={chatStep() < chatFields().length - 1}>
+															<button
+																type="button"
+																class="ui-button ui-button-secondary text-xs"
+																onClick={handleAdvanceChatStep}
+															>
+																{t("createDialog.entry.chatNext")}
+															</button>
+														</Show>
+													</div>
 												</div>
 											</div>
-										</div>
-									);
-								}}
-							</Show>
-						</div>
-					</Show>
+										);
+									}}
+								</Show>
+							</div>
+						</Show>
 
-					<Show when={errorMessage()}>
-						<div class="ui-alert ui-alert-error text-sm" role="alert">
-							{errorMessage()}
-						</div>
-					</Show>
+						<Show when={errorMessage()}>
+							<div class="ui-alert ui-alert-error text-sm" role="alert">
+								{errorMessage()}
+							</div>
+						</Show>
 
-					<div class="flex justify-end gap-3 pt-2">
-						<button
-							type="button"
-							onClick={props.onClose}
-							class="ui-button ui-button-secondary text-sm"
-						>
-							{t("common.cancel")}
-						</button>
-						<button
-							type="submit"
-							disabled={!title().trim() || !selectedForm().trim() || selectableForms().length === 0}
-							class="ui-button ui-button-primary text-sm"
-						>
-							{t("common.create")}
-						</button>
-					</div>
-				</form>
-			</div>
-		</dialog>
+						<div class="flex justify-end gap-3 pt-2">
+							<button
+								type="button"
+								onClick={props.onClose}
+								class="ui-button ui-button-secondary text-sm"
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								type="submit"
+								disabled={
+									!title().trim() || !selectedForm().trim() || selectableForms().length === 0
+								}
+								class="ui-button ui-button-primary text-sm"
+							>
+								{t("common.create")}
+							</button>
+						</div>
+					</form>
+				</div>
+			</dialog>
+		</Show>
 	);
 	/* v8 ignore stop */
 }
