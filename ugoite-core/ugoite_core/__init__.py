@@ -78,6 +78,12 @@ from .sql_rules import (
     load_sql_rules,
     sql_completions,
 )
+from .sql_sessions import (
+    SqlSessionPageInput,
+    get_sql_session_count_for_identity,
+    get_sql_session_rows_all_for_identity,
+    get_sql_session_rows_for_identity,
+)
 from .storage_validation import validate_test_storage_config
 
 with suppress(ImportError):
@@ -163,6 +169,7 @@ __all__ = [
     "RoleName",
     "RotateServiceAccountKeyInput",
     "SqlLintDiagnostic",
+    "SqlSessionPageInput",
     "TokenOnlyInvitationProvider",
     "UpdateMemberRoleInput",
     "accept_invitation",
@@ -203,8 +210,11 @@ __all__ = [
     "get_space",
     "get_sql",
     "get_sql_session_count",
+    "get_sql_session_count_for_identity",
     "get_sql_session_rows",
     "get_sql_session_rows_all",
+    "get_sql_session_rows_all_for_identity",
+    "get_sql_session_rows_for_identity",
     "get_sql_session_status",
     "get_user_preferences",
     "is_active_member",

@@ -73,6 +73,23 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     assert (ws_path / "meta.json").exists()
 
 
+def test_create_space_req_sto_002_bootstraps_starter_entry_form(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-002: create space bootstraps starter entry authoring assets."""
+    response = test_client.post("/spaces", json={"name": "starter-ws"})
+    assert response.status_code == 201
+
+    ws_path = temp_space_root / "spaces" / "starter-ws"
+    settings = json.loads((ws_path / "settings.json").read_text())
+    assert settings["default_form"] == "Entry"
+
+    forms_response = test_client.get("/spaces/starter-ws/forms")
+    assert forms_response.status_code == 200
+    assert {item["name"] for item in forms_response.json()} == {"Entry"}
+
+
 def test_health_endpoint(test_client: TestClient) -> None:
     """REQ-OPS-001: health endpoint returns service readiness."""
     response = test_client.get("/health")
@@ -986,12 +1003,12 @@ def test_sql_session_stream_uses_incremental_row_paging(
     async def _paged_rows(
         _config: dict[str, str],
         _space_id: str,
+        _identity: object,
         _session_id: str,
-        offset: int,
-        _limit: int,
+        page: ugoite_core.SqlSessionPageInput,
     ) -> dict[str, object]:
-        call_offsets.append(offset)
-        if offset == 0:
+        call_offsets.append(page.offset)
+        if page.offset == 0:
             return {
                 "rows": [
                     {"id": "entry-1", "title": "Alpha"},
@@ -1001,12 +1018,7 @@ def test_sql_session_stream_uses_incremental_row_paging(
             }
         return {"rows": [], "total_count": 2}
 
-    async def _rows_all(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
-        msg = "rows_all must not be called"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows", _paged_rows)
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_all", _rows_all)
+    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_for_identity", _paged_rows)
 
     response = test_client.get("/spaces/test-ws/sql-sessions/session-1/stream")
     assert response.status_code == 200

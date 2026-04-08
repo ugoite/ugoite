@@ -55,6 +55,17 @@ export default function SpaceDashboardRoute() {
 	const entryForms = createMemo(() => filterCreatableEntryForms(safeForms()));
 	const hasCreatableForms = createMemo(() => entryForms().length > 0);
 	const needsFirstFormGuidance = createMemo(() => !forms.loading && !hasCreatableForms());
+	const defaultEntryForm = createMemo(() => {
+		const settings = space()?.settings;
+		const configured = settings && typeof settings === "object" ? settings.default_form : undefined;
+		if (typeof configured === "string") {
+			const trimmed = configured.trim();
+			if (trimmed && entryForms().some((entryForm) => entryForm.name === trimmed)) {
+				return trimmed;
+			}
+		}
+		return entryForms()[0]?.name;
+	});
 	const displaySpaceName = createMemo(() => space()?.name || spaceId());
 	const storageSummary = createMemo(() => {
 		const currentSpace = space();
@@ -246,6 +257,7 @@ export default function SpaceDashboardRoute() {
 				open={showCreateEntryDialog()}
 				forms={entryForms()}
 				spaceId={spaceId()}
+				defaultForm={defaultEntryForm()}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
 			/>

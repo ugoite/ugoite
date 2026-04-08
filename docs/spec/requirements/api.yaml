@@ -382,6 +382,10 @@ requirements:
 
     and stream endpoints for paged retrieval.
 
+    Rows and counts MUST be evaluated against the caller''s readable entry/form scope
+    before SQL ordering and LIMIT are applied so restricted Forms cannot leak through
+    SQL sessions.
+
     '
   related_spec:
   - api/rest.md#sql-sessions
@@ -392,10 +396,19 @@ requirements:
     - file: backend/tests/test_api.py
       tests:
       - test_query_entries_sql
+    - file: backend/tests/test_sql.py
+      tests:
+      - test_sql_sessions_req_api_008_filter_form_acl_before_limit
+      - test_sql_sessions_req_api_008_filter_auxiliary_tables_by_acl
+    - file: ugoite-core/tests/test_sql_sessions_authz.py
+      tests:
+      - test_sql_sessions_req_api_008_filters_form_acl_before_limit
     rust:
     - file: ugoite-core/tests/test_sql_sessions.rs
       tests:
       - test_sql_sessions_req_api_008_end_to_end
+      - test_sql_sessions_req_api_008_scopes_rows_before_limit
+      - test_sql_sessions_req_api_008_scopes_auxiliary_tables
     - file: ugoite-core/tests/test_materialized_view.rs
       tests:
       - test_materialized_view_req_api_008_metadata_lifecycle

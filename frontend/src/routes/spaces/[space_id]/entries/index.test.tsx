@@ -30,6 +30,15 @@ const assetsForm: Form = {
 	},
 };
 
+const starterForm: Form = {
+	name: "Entry",
+	version: 1,
+	template: "",
+	fields: {
+		Body: { type: "markdown", required: false },
+	},
+};
+
 vi.mock("@solidjs/router", () => ({
 	useNavigate: () => navigateMock,
 	useSearchParams: () => [searchParamsMock, setSearchParamsMock],
@@ -144,7 +153,27 @@ describe("/spaces/:space_id/entries", () => {
 		expect(screen.queryByText("No entries found.")).not.toBeInTheDocument();
 	});
 
-	it("REQ-FE-037: entries route guides first-run spaces toward form creation", async () => {
+	it("REQ-FE-037: entries route opens the starter entry flow for a new space", async () => {
+		seedTestSpace("starter-space", "Starter Space");
+		renderEntriesRoute({ spaceId: "starter-space", forms: [starterForm] });
+
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: "New entry" })).toBeEnabled();
+		});
+		expect(screen.queryByText("Start by creating your first form.")).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.queryByText("Loading entries...")).not.toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Create New Entry" })).toBeInTheDocument();
+		});
+		expect(screen.getByDisplayValue("Entry")).toBeInTheDocument();
+	});
+
+	it("REQ-FE-037: entries route guides spaces with no creatable forms toward form creation", async () => {
 		seedTestSpace("empty-space", "Empty Space");
 		renderEntriesRoute({ spaceId: "empty-space" });
 

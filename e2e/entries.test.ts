@@ -177,7 +177,7 @@ test.describe("Entries CRUD", () => {
 		);
 	});
 
-	test("REQ-FE-037: entries route guides first-run spaces toward form creation", async ({
+	test("REQ-FE-037: entries route opens the starter entry flow for new spaces", async ({
 		page,
 		request,
 	}) => {
@@ -193,19 +193,18 @@ test.describe("Entries CRUD", () => {
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 
-		await expect(page.getByText("Start by creating your first form.")).toBeVisible();
+		await expect(page.getByRole("button", { name: "New entry" })).toBeEnabled();
 		await expect(
-			page.getByText(
-				"Entries depend on form templates and fields. Create one form first, then come back to add entries.",
-			),
-		).toBeVisible();
-		await expect(page.getByRole("button", { name: "New entry" })).toBeDisabled();
+			page.getByText("Start by creating your first form."),
+		).toHaveCount(0);
 
-		await page.getByRole("button", { name: "Create your first form" }).click();
-
-		await expect(page.getByRole("heading", { name: "Create New Form" })).toBeVisible({
+		await page.getByRole("button", { name: "New entry" }).click();
+		await expect(
+			page.getByRole("heading", { name: "Create New Entry" }),
+		).toBeVisible({
 			timeout: 10_000,
 		});
+		await expect(page.locator("#entry-form")).toHaveValue("Entry");
 	});
 
 	test("REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id", async ({
