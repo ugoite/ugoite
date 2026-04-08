@@ -1493,3 +1493,45 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-035
+  title: Container Runtime Hardening Defaults
+  description: 'Published backend container artifacts and repository-owned Kubernetes
+
+    deployment manifests MUST default to non-root execution. The backend image
+
+    MUST create and run as a dedicated non-root user, and the Helm backend/frontend
+
+    deployments MUST render baseline hardening defaults that disable privilege
+
+    escalation, drop unused Linux capabilities, and keep the backend `/data`
+
+    volume writable without falling back to root.
+
+    '
+  related_spec:
+  - architecture/stack.md
+  - ../guide/helm-chart.md
+  priority: high
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_helm_chart.py
+      tests:
+      - test_docs_req_ops_035_backend_image_runs_as_non_root
+      - test_docs_req_ops_035_helm_security_defaults_are_hardened
+      - test_docs_req_ops_035_hardening_docs_stay_visible
