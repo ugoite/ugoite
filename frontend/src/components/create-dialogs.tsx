@@ -2,6 +2,7 @@ import {
 	createSignal,
 	createEffect,
 	createMemo,
+	createResource,
 	For,
 	Index,
 	Show,
@@ -10,6 +11,7 @@ import {
 } from "solid-js";
 import { buildEntryMarkdownFromFields, type EntryInputMode } from "~/lib/entry-input";
 import { t } from "~/lib/i18n";
+import { searchApi } from "~/lib/search-api";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import { RESERVED_METADATA_COLUMNS, isReservedMetadataColumn } from "~/lib/metadata-columns";
 import {
@@ -55,6 +57,60 @@ const resolveTextareaPlaceholder = (def: Form["fields"][string]) => {
 	return def.type === "object_list" ? "[]" : t("createDialog.entry.textareaPlaceholder");
 };
 /* v8 ignore stop */
+
+type RowReferenceOption = {
+	id: string;
+	title: string;
+	label: string;
+};
+
+const rowReferenceSuggestionLimit = 8;
+
+const normalizeRowReferenceTargetForm = (def: Form["fields"][string]) =>
+	def.target_form?.trim() ?? "";
+
+const buildRowReferenceOptions = (
+	entries: Array<{ id: string; title?: string | null }>,
+): RowReferenceOption[] =>
+	entries
+		.map((entry) => {
+			const title = entry.title?.trim() || entry.id;
+			return {
+				id: entry.id,
+				title,
+				label: title === entry.id ? entry.id : `${title} (${entry.id})`,
+			};
+		})
+		.sort(
+			(left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id),
+		);
+
+const buildInputModeHints = (mode: EntryInputMode): string[] => {
+	const hints =
+		mode === "webform" ? [t("entryGuidance.webFormMode")] : [t("entryGuidance.editAfterCreate")];
+	if (mode === "chat") {
+		hints.push(t("entryGuidance.chatMode"));
+	}
+	if (mode === "markdown") {
+		hints.push(t("entryGuidance.markdownMode"));
+	}
+	return hints;
+};
+
+const appendInputTypeHints = (
+	hints: string[],
+	types: Set<string>,
+	mode: EntryInputMode,
+): string[] => {
+	if (types.has("list")) hints.push(t("entryGuidance.listValue"));
+	if (types.has("boolean")) hints.push(t("entryGuidance.booleanValue"));
+	if (types.has("row_reference")) {
+		hints.push(
+			t(mode === "markdown" ? "entryGuidance.rowReferenceMarkdown" : "entryGuidance.rowReference"),
+		);
+	}
+	return hints;
+};
 
 const columnTypeSelectClass =
 	"ui-input ui-input-sm min-w-0 w-full sm:w-auto sm:min-w-[10rem] sm:flex-shrink-0";
@@ -134,6 +190,7 @@ const hasReservedMetadataFieldName = (fields: FieldIssueSource[]) =>
 export interface CreateEntryDialogProps {
 	open: boolean;
 	forms: Form[];
+	spaceId?: string;
 	defaultForm?: string;
 	onClose: () => void;
 	onSubmit: (
@@ -148,6 +205,115 @@ function resolveSubmitErrorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
 }
 
+type RowReferencePickerProps = {
+	spaceId: string;
+	fieldId: string;
+	targetForm: string;
+	query: string;
+	selectedOption: RowReferenceOption | null;
+	onQueryInput: (value: string) => void;
+	onSelect: (option: RowReferenceOption) => void;
+	onClear: () => void;
+};
+
+function RowReferencePicker(props: RowReferencePickerProps) {
+	const [options] = createResource(
+		() => ({
+			spaceId: props.spaceId.trim(),
+			targetForm: props.targetForm.trim(),
+			query: props.query,
+		}),
+		async ({ spaceId, targetForm, query }) => {
+			const entries = await searchApi.rowReferenceOptions(
+				spaceId,
+				targetForm,
+				query,
+				rowReferenceSuggestionLimit,
+			);
+			return buildRowReferenceOptions(entries);
+		},
+		{
+			initialValue: [] as RowReferenceOption[],
+		},
+	);
+
+	return (
+		<div class="ui-stack-sm">
+			<input
+				id={props.fieldId}
+				type="search"
+				class="ui-input"
+				value={props.query}
+				placeholder={t("createDialog.entry.rowReference.searchPlaceholder", {
+					form: props.targetForm,
+				})}
+				onInput={(event) => props.onQueryInput(event.currentTarget.value)}
+				autocomplete="off"
+			/>
+			<p class="text-xs ui-muted">
+				{t("createDialog.entry.rowReference.help", { form: props.targetForm })}
+			</p>
+			<Show when={props.selectedOption}>
+				{(selectedOption) => (
+					<div class="ui-reference-picker-selection">
+						<p class="text-[11px] font-semibold uppercase tracking-wide ui-muted">
+							{t("createDialog.entry.rowReference.selected")}
+						</p>
+						<div class="flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<p class="text-sm font-medium">{selectedOption().title}</p>
+								<p class="text-xs ui-muted">{selectedOption().id}</p>
+							</div>
+							<button
+								type="button"
+								class="ui-button ui-button-secondary text-xs"
+								onClick={props.onClear}
+							>
+								{t("createDialog.entry.rowReference.clear")}
+							</button>
+						</div>
+					</div>
+				)}
+			</Show>
+			<Show when={options.loading}>
+				<p class="text-xs ui-muted">
+					{t("createDialog.entry.rowReference.loading", { form: props.targetForm })}
+				</p>
+			</Show>
+			<Show when={!options.loading && options.error}>
+				<p class="text-xs ui-text-danger">
+					{t("createDialog.entry.rowReference.loadError", { form: props.targetForm })}
+				</p>
+			</Show>
+			<Show when={!options.loading && !options.error && options().length > 0}>
+				<ul class="ui-reference-picker-list">
+					<For each={options()}>
+						{(option) => (
+							<li class="ui-reference-picker-option">
+								<button
+									type="button"
+									class="ui-reference-picker-button"
+									onClick={() => props.onSelect(option)}
+								>
+									<p class="text-sm font-medium">{option.title}</p>
+									<p class="text-xs ui-muted">{option.id}</p>
+								</button>
+							</li>
+						)}
+					</For>
+				</ul>
+			</Show>
+			<Show
+				when={!options.loading && !options.error && props.query.trim() && options().length === 0}
+			>
+				<p class="text-xs ui-muted">
+					{t("createDialog.entry.rowReference.noMatches", { form: props.targetForm })}
+				</p>
+			</Show>
+		</div>
+	);
+}
+
 /**
  * Dialog for creating a new entry with optional form selection.
  */
@@ -160,11 +326,16 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 	const [markdownInput, setMarkdownInput] = createSignal("");
 	const [lastGeneratedMarkdown, setLastGeneratedMarkdown] = createSignal("");
 	const [initializedFormName, setInitializedFormName] = createSignal("");
+	const [rowReferenceQueries, setRowReferenceQueries] = createSignal<Record<string, string>>({});
+	const [rowReferenceSelections, setRowReferenceSelections] = createSignal<
+		Record<string, RowReferenceOption>
+	>({});
 	const [chatStep, setChatStep] = createSignal(0);
 	let inputRef: HTMLInputElement | undefined;
 	let dialogRef: HTMLDialogElement | undefined;
 
 	const selectableForms = createMemo(() => filterCreatableEntryForms(props.forms));
+	const pickerSpaceId = createMemo(() => props.spaceId?.trim() ?? "");
 
 	const selectedFormDef = createMemo(() =>
 		selectableForms().find((entryForm) => entryForm.name === selectedForm()),
@@ -202,24 +373,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		/* v8 ignore start */
 		const types = new Set(Object.values(form.fields || {}).map((field) => field.type));
 		/* v8 ignore stop */
-		const hints =
-			inputMode() === "webform"
-				? [t("entryGuidance.webFormMode")]
-				: [t("entryGuidance.editAfterCreate")];
-		/* v8 ignore start */
-		if (inputMode() === "chat") {
-			hints.push(t("entryGuidance.chatMode"));
-		}
-		/* v8 ignore stop */
-		if (inputMode() === "markdown") {
-			hints.push(t("entryGuidance.markdownMode"));
-		}
-		/* v8 ignore start */
-		if (types.has("list")) hints.push(t("entryGuidance.listValue"));
-		if (types.has("boolean")) hints.push(t("entryGuidance.booleanValue"));
-		if (types.has("row_reference")) hints.push(t("entryGuidance.rowReference"));
-		/* v8 ignore stop */
-		return hints;
+		return appendInputTypeHints(buildInputModeHints(inputMode()), types, inputMode());
 	});
 
 	const buildDefaultValue = (name: string, field: Form["fields"][string]) => {
@@ -290,6 +444,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setMarkdownInput("");
 		setLastGeneratedMarkdown("");
 		setInitializedFormName("");
+		setRowReferenceQueries({});
+		setRowReferenceSelections({});
 		setChatStep(0);
 		const availableForms = selectableForms();
 		/* v8 ignore start */
@@ -302,7 +458,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setSelectedForm("");
 		}
 		/* v8 ignore stop */
-		setTimeout(() => inputRef?.focus(), 50);
+		inputRef?.focus();
 	});
 
 	createEffect(() => {
@@ -313,6 +469,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setMarkdownInput("");
 			setLastGeneratedMarkdown("");
 			setInitializedFormName("");
+			setRowReferenceQueries({});
+			setRowReferenceSelections({});
 			return;
 		}
 		if (initializedFormName() === form.name) {
@@ -330,6 +488,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setMarkdownInput(generated);
 		setLastGeneratedMarkdown(generated);
 		setInitializedFormName(form.name);
+		setRowReferenceQueries({});
+		setRowReferenceSelections({});
 		setChatStep(0);
 	});
 
@@ -367,6 +527,115 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		});
 	};
 
+	const setRowReferenceQuery = (name: string, nextValue: string) =>
+		setRowReferenceQueries((prev) => ({
+			...prev,
+			[name]: nextValue,
+		}));
+
+	const clearRowReferenceQuery = (name: string) =>
+		setRowReferenceQueries((prev) => {
+			const next = { ...prev };
+			delete next[name];
+			return next;
+		});
+
+	const clearRowReferenceSelectionState = (name: string) =>
+		setRowReferenceSelections((prev) => {
+			const next = { ...prev };
+			delete next[name];
+			return next;
+		});
+
+	const hasRowReferencePicker = (def: Form["fields"][string]) =>
+		Boolean(pickerSpaceId()) &&
+		def.type === "row_reference" &&
+		normalizeRowReferenceTargetForm(def) !== "";
+
+	const resolveSelectedRowReferenceOption = (name: string) =>
+		rowReferenceSelections()[name] ?? null;
+
+	const rowReferenceSelectionPending = (name: string, def: Form["fields"][string]) =>
+		hasRowReferencePicker(def) &&
+		(rowReferenceQueries()[name] ?? "").trim() !== "" &&
+		!(fieldValues()[name] ?? "").trim();
+
+	const handleRowReferenceQueryInput = (name: string, nextQuery: string) => {
+		setRowReferenceQuery(name, nextQuery);
+		clearFieldValue(name);
+		clearRowReferenceSelectionState(name);
+		setErrorMessage(null);
+	};
+
+	const handleRowReferenceSelect = (name: string, option: RowReferenceOption) => {
+		setRowReferenceQuery(name, option.label);
+		setFieldValue(name, option.id);
+		setRowReferenceSelections((prev) => ({
+			...prev,
+			[name]: option,
+		}));
+		setErrorMessage(null);
+	};
+
+	const clearRowReferenceSelection = (name: string) => {
+		clearRowReferenceQuery(name);
+		clearFieldValue(name);
+		clearRowReferenceSelectionState(name);
+		setErrorMessage(null);
+	};
+
+	const firstUnresolvedRowReferenceField = (fields: Array<[string, Form["fields"][string]]>) =>
+		fields.find(([name, def]) => rowReferenceSelectionPending(name, def)) ?? null;
+
+	const renderFieldInput = (
+		prefix: "webform" | "chat",
+		name: string,
+		def: Form["fields"][string],
+		index: number,
+	) => {
+		const fieldId = createFieldInputId(prefix, name, index);
+		if (hasRowReferencePicker(def)) {
+			return (
+				<RowReferencePicker
+					spaceId={pickerSpaceId()}
+					fieldId={fieldId}
+					targetForm={normalizeRowReferenceTargetForm(def)}
+					query={rowReferenceQueries()[name] ?? ""}
+					selectedOption={resolveSelectedRowReferenceOption(name)}
+					onQueryInput={(nextQuery) => handleRowReferenceQueryInput(name, nextQuery)}
+					onSelect={(option) => handleRowReferenceSelect(name, option)}
+					onClear={() => clearRowReferenceSelection(name)}
+				/>
+			);
+		}
+
+		const useTextarea = isTextareaField(name, def);
+		const inputType = resolveInputType(def);
+		const value = fieldValues()[name] ?? "";
+
+		if (useTextarea) {
+			return (
+				<textarea
+					id={fieldId}
+					class="ui-input ui-textarea"
+					placeholder={resolveTextareaPlaceholder(def)}
+					value={value}
+					onInput={(event) => setFieldValue(name, event.currentTarget.value)}
+				/>
+			);
+		}
+
+		return (
+			<input
+				id={fieldId}
+				type={inputType}
+				class="ui-input"
+				value={value}
+				onInput={(event) => setFieldValue(name, event.currentTarget.value)}
+			/>
+		);
+	};
+
 	const moveChatStep = (delta: number) =>
 		setChatStep((prev) => {
 			const lastIndex = Math.max(chatFields().length - 1, 0);
@@ -381,6 +650,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		const current = currentChatField();
 		if (!current) return;
 		const [name, def] = current;
+		if (rowReferenceSelectionPending(name, def)) {
+			setErrorMessage(t("createDialog.entry.error.selectRowReference", { field: name }));
+			return;
+		}
 		if (def.required && !(fieldValues()[name] || "").trim()) {
 			setErrorMessage(t("createDialog.entry.error.answerRequired", { field: name }));
 			return;
@@ -397,6 +670,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			setErrorMessage(t("createDialog.entry.error.skipRequired", { field: name }));
 			return;
 		}
+		clearRowReferenceQuery(name);
 		clearFieldValue(name);
 		setErrorMessage(null);
 		moveChatStep(1);
@@ -407,6 +681,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		setErrorMessage(null);
 		setTitle("");
 		setSelectedForm("");
+		setRowReferenceQueries({});
 		setMarkdownInput("");
 		setLastGeneratedMarkdown("");
 		setChatStep(0);
@@ -414,6 +689,35 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
 	const buildMissingRequiredFieldsMessage = (missing: string[]) =>
 		t("createDialog.entry.error.fillRequiredFields", { fields: missing.join(", ") });
+
+	const validateStructuredSubmission = () => {
+		const unresolvedRowReference = firstUnresolvedRowReferenceField(webFormFields());
+		if (unresolvedRowReference) {
+			return t("createDialog.entry.error.selectRowReference", {
+				field: unresolvedRowReference[0],
+			});
+		}
+		const missing = requiredFields()
+			.map(([name]) => name)
+			.filter((name) => !(fieldValues()[name] || "").trim());
+		return missing.length > 0 ? buildMissingRequiredFieldsMessage(missing) : null;
+	};
+
+	const validateMarkdownSubmission = () =>
+		markdownInput().trim() ? null : t("createDialog.entry.error.provideMarkdown");
+
+	const submitEntry = async (entryTitle: string, formName: string) => {
+		if (inputMode() === "markdown") {
+			await props.onSubmit(
+				entryTitle,
+				formName,
+				{ __markdown: markdownInput().trim() },
+				"markdown",
+			);
+			return;
+		}
+		await props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
+	};
 
 	const handleSubmit = async (e: Event) => {
 		e.preventDefault();
@@ -426,29 +730,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 		}
 		/* v8 ignore stop */
 		setErrorMessage(null);
-		if (inputMode() === "markdown") {
-			const markdown = markdownInput().trim();
-			if (!markdown) {
-				setErrorMessage(t("createDialog.entry.error.provideMarkdown"));
-				return;
-			}
-			try {
-				await props.onSubmit(entryTitle, formName, { __markdown: markdown }, "markdown");
-				resetEntryDraft();
-			} catch (error) {
-				setErrorMessage(resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")));
-			}
-			return;
-		}
-		const missing = requiredFields()
-			.map(([name]) => name)
-			.filter((name) => !(fieldValues()[name] || "").trim());
-		if (missing.length > 0) {
-			setErrorMessage(buildMissingRequiredFieldsMessage(missing));
+		const submitError =
+			inputMode() === "markdown" ? validateMarkdownSubmission() : validateStructuredSubmission();
+		if (submitError) {
+			setErrorMessage(submitError);
 			return;
 		}
 		try {
-			await props.onSubmit(entryTitle, formName, fieldValues(), inputMode());
+			await submitEntry(entryTitle, formName);
 			resetEntryDraft();
 		} catch (error) {
 			setErrorMessage(resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateEntry")));
@@ -461,14 +750,14 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
+				class="fixed inset-0 z-[70] flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();
 				}}
 			>
 				<div
-					class="ui-dialog w-full max-w-md mx-4"
+					class="ui-dialog w-full max-w-md mx-4 flex flex-col max-h-[90vh] overflow-y-auto"
 					role="document"
 					onClick={(e) => e.stopPropagation()}
 					onKeyDown={(e) => e.stopPropagation()}
@@ -620,11 +909,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<div class="ui-stack-sm mt-3">
 									<For each={webFormFields()}>
 										{([name, def], index) => {
-											const useTextarea = isTextareaField(name, def);
-											const inputType = resolveInputType(def);
-											const value = fieldValues()[name] ?? "";
 											const fieldId = createFieldInputId("webform", name, index());
-											const handleValue = (nextValue: string) => setFieldValue(name, nextValue);
 											return (
 												<div class="ui-field">
 													<label class="ui-label" for={fieldId}>
@@ -638,26 +923,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 															)}
 														</span>
 													</label>
-													<Show
-														when={!useTextarea}
-														fallback={
-															<textarea
-																id={fieldId}
-																class="ui-input ui-textarea"
-																placeholder={resolveTextareaPlaceholder(def)}
-																value={value}
-																onInput={(e) => handleValue(e.currentTarget.value)}
-															/>
-														}
-													>
-														<input
-															id={fieldId}
-															type={inputType}
-															class="ui-input"
-															value={value}
-															onInput={(e) => handleValue(e.currentTarget.value)}
-														/>
-													</Show>
+													{renderFieldInput("webform", name, def, index())}
 												</div>
 											);
 										}}
@@ -707,9 +973,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 										const fieldIndex = chatFields().findIndex(
 											([candidateName]) => candidateName === name,
 										);
-										const value = fieldValues()[name] ?? "";
-										const useTextarea = isTextareaField(name, def);
-										const inputType = resolveInputType(def);
 										const fieldId = createFieldInputId("chat", name, Math.max(fieldIndex, 0));
 										return (
 											<div class="ui-field mt-3">
@@ -724,25 +987,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 														)}
 													</span>
 												</label>
-												<Show
-													when={!useTextarea}
-													fallback={
-														<textarea
-															id={fieldId}
-															class="ui-input ui-textarea"
-															value={value}
-															onInput={(e) => setFieldValue(name, e.currentTarget.value)}
-														/>
-													}
-												>
-													<input
-														id={fieldId}
-														type={inputType}
-														class="ui-input"
-														value={value}
-														onInput={(e) => setFieldValue(name, e.currentTarget.value)}
-													/>
-												</Show>
+												{renderFieldInput("chat", name, def, Math.max(fieldIndex, 0))}
 												<div class="mt-3 flex items-center justify-between">
 													<button
 														type="button"
@@ -959,7 +1204,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
+				class="fixed inset-0 z-[70] flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();
@@ -1305,7 +1550,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 			<dialog
 				ref={dialogRef}
 				open
-				class="fixed inset-0 z-50 flex items-center justify-center ui-backdrop w-full h-full"
+				class="fixed inset-0 z-[70] flex items-center justify-center ui-backdrop w-full h-full"
 				onClick={handleDialogClick}
 				onKeyDown={(e) => {
 					if (e.key === "Escape") props.onClose();

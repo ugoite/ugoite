@@ -3,10 +3,10 @@
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 import ugoite_core
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.api.endpoints.space import (
     _ensure_space_exists,
@@ -127,6 +127,50 @@ async def list_entries_endpoint(
         raise_authorization_http_error(exc, space_id=space_id)
     except Exception as e:
         logger.exception("Failed to list entries")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+
+@router.get("/spaces/{space_id}/entries/options")
+async def list_entry_options_endpoint(
+    space_id: str,
+    request: Request,
+    form: Annotated[str | None, Query(min_length=1)] = None,
+    q: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+) -> list[dict[str, Any]]:
+    """List bounded entry summaries for UI pickers."""
+    identity = request_identity(request)
+    _validate_path_id(space_id, "space_id")
+    storage_config = _storage_config()
+    await _ensure_space_exists(storage_config, space_id)
+
+    try:
+        await ugoite_core.require_space_action(
+            storage_config,
+            space_id,
+            identity,
+            "entry_read",
+        )
+        options = await ugoite_core.list_entry_summaries(
+            storage_config,
+            space_id,
+            form_name=form,
+            query=q,
+            limit=limit,
+        )
+        return await ugoite_core.filter_readable_entries(
+            storage_config,
+            space_id,
+            identity,
+            options,
+        )
+    except ugoite_core.AuthorizationError as exc:
+        raise_authorization_http_error(exc, space_id=space_id)
+    except Exception as e:
+        logger.exception("Failed to list entry picker options")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),

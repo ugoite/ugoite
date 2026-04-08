@@ -192,6 +192,29 @@ describe("/spaces/:space_id/entries", () => {
 		expect(screen.getByRole("heading", { name: "Create New Form" })).toBeInTheDocument();
 	});
 
+	it("REQ-FE-037: entries route opens the create-entry dialog when creatable forms exist", async () => {
+		seedTestSpace("creatable-space", "Creatable Space");
+		renderEntriesRoute({
+			spaceId: "creatable-space",
+			forms: [
+				{
+					name: "Task",
+					version: 1,
+					template: "# Task\n\n## Summary\n",
+					fields: {
+						Summary: { type: "string", required: true },
+					},
+				},
+			],
+		});
+
+		const newEntryButton = await screen.findByRole("button", { name: "New entry" });
+		expect(newEntryButton).toBeEnabled();
+		fireEvent.click(newEntryButton);
+
+		expect(screen.getByRole("heading", { name: "Create New Entry" })).toBeInTheDocument();
+	});
+
 	it("REQ-FE-054: renders human-readable updated dates for query result cards", async () => {
 		searchParamsMock.session = "session-1";
 		server.use(

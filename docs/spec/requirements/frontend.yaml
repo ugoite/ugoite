@@ -1206,6 +1206,7 @@ requirements:
       - 'REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist'
       - 'REQ-FE-037: entries route opens the starter entry flow for a new space'
       - 'REQ-FE-037: entries route guides spaces with no creatable forms toward form creation'
+      - 'REQ-FE-037: entries route opens the create-entry dialog when creatable forms exist'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
@@ -1854,6 +1855,57 @@ requirements:
       tests:
       - 'REQ-FE-064: home page localizes public copy through the shared dictionary'
       - 'REQ-FE-064: about page localizes public copy through the shared dictionary'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-065
+  title: Searchable Row Reference Picker
+  description: 'Create-entry flows for `row_reference` fields MUST let users search
+
+    and choose target-form entries by human-readable metadata while still storing
+
+    the stable referenced `entry_id` in the generated entry content. Web and chat
+
+    modes MUST block submission when a user typed a row-reference search but has
+
+    not actually selected a saved target entry yet.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  - data-model/overview.md#content-column-types--markdown-parsing
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id'
+    vitest:
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids'
+      - 'REQ-FE-065: chat mode stores the selected row_reference entry id'
+      - 'REQ-FE-065: row_reference searches must resolve to a saved entry before submit'
+      - 'REQ-FE-065: row_reference pickers surface load errors when reference lookup fails'
+      - 'REQ-FE-065: clearing a selected row_reference removes the saved entry id'
+      - 'REQ-FE-065: row_reference fields without target_form keep raw text entry'
+      - 'REQ-FE-065: row_reference pickers fall back to entry ids and sort duplicate titles by id'
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - 'REQ-FE-065: row_reference picker options request bounded form-scoped summaries'
+    - file: backend/tests/test_api.py
+      tests:
+      - 'REQ-FE-065: row_reference picker options stay form-scoped and bounded'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
