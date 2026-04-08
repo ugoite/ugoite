@@ -889,7 +889,9 @@ def test_sql_sessions_req_api_008_filter_auxiliary_tables_by_acl(
             f"/spaces/{space_id}/entries",
             json={
                 "id": "public-b",
-                "content": "---\nform: PublicTask\n---\n# Public B\n\n## Summary\nPublic B\n",
+                "content": (
+                    "---\nform: PublicTask\n---\n# Public B\n\n## Summary\nPublic B\n"
+                ),
             },
         ).status_code
         == 201
@@ -937,7 +939,8 @@ def test_sql_sessions_req_api_008_filter_auxiliary_tables_by_acl(
             f"/spaces/{space_id}/entries/restricted-z",
             json={
                 "markdown": (
-                    "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n"
+                    "---\nform: RestrictedTask\n---\n"
+                    "# Restricted Z\n\n## Summary\nRestricted Z\n"
                 ),
                 "parent_revision_id": restricted_revision,
                 "assets": [restricted_asset.json()],
