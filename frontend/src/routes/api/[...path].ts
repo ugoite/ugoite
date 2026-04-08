@@ -1,14 +1,17 @@
 import type { APIEvent } from "@solidjs/start/server";
+import { buildServerAuthCookie, readAuthCookie } from "~/lib/auth-cookie";
 
 const backendUrl = process.env.BACKEND_URL;
 const defaultProxyTimeoutMs = 15_000;
-const authCookieName = "ugoite_auth_bearer_token";
 const devAuthProxyToken = process.env.UGOITE_DEV_AUTH_PROXY_TOKEN;
 const devAuthProxyTokenHeader = "x-ugoite-dev-auth-proxy-token";
 const devPasskeyContext = process.env.UGOITE_DEV_PASSKEY_CONTEXT;
 const devPasskeyContextHeader = "x-ugoite-dev-passkey-context";
 const proxyTokenAuthPaths = new Set(["/auth/config", "/auth/login", "/auth/mock-oauth"]);
 const passkeyContextAuthPaths = new Set(["/auth/login"]);
+const authCookieProxyPaths = new Set(["/auth/login", "/auth/mock-oauth"]);
+const invalidProxyPathMessage = "Invalid API proxy path";
+const invalidBackendUrlMessage = "BACKEND_URL is invalid";
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -77,11 +80,15 @@ const ensureRequestId = (headers: Headers): string => {
 	return requestId;
 };
 
-const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
+const buildTargetUrl = (requestUrl: string, baseUrl: URL): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
 	const targetPath = path.length > 0 ? path : "/";
-	return new URL(`${targetPath}${url.search}`, baseUrl);
+	const targetUrl = new URL(`${targetPath}${url.search}`, baseUrl);
+	if (targetUrl.origin !== baseUrl.origin) {
+		throw new Error("cross-origin proxy target is not allowed");
+	}
+	return targetUrl;
 };
 
 const resolveProxyTimeoutMs = (): number => {
@@ -96,26 +103,13 @@ const resolveProxyTimeoutMs = (): number => {
 	return parsed;
 };
 
-const readAuthCookie = (cookieHeader: string | null): string | null => {
-	if (!cookieHeader) {
-		return null;
+const requestUsesHttps = (request: Request): boolean => {
+	const forwardedProto = request.headers.get("x-forwarded-proto");
+	const effectiveProto = forwardedProto?.split(",", 1)[0]?.trim().toLowerCase();
+	if (effectiveProto) {
+		return effectiveProto === "https";
 	}
-	for (const segment of cookieHeader.split(";")) {
-		const [rawName, ...rest] = segment.split("=");
-		if (rawName?.trim() !== authCookieName) {
-			continue;
-		}
-		const rawValue = rest.join("=").trim();
-		if (!rawValue) {
-			return null;
-		}
-		try {
-			return decodeURIComponent(rawValue);
-		} catch {
-			return rawValue;
-		}
-	}
-	return null;
+	return new URL(request.url).protocol === "https:";
 };
 
 const applyProxyCredentials = (headers: Headers, cookieHeader: string | null): void => {
@@ -172,13 +166,95 @@ const handleProxyError = (
 	return new Response("Backend service unavailable", { status: 502 });
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null;
+
+const invalidAuthProxyResponse = (requestId: string): Response =>
+	new Response(
+		JSON.stringify({ detail: "Frontend auth proxy received an invalid login response." }),
+		{
+			status: 502,
+			headers: {
+				"content-type": "application/json",
+				"x-request-id": requestId,
+			},
+		},
+	);
+
+const rewriteAuthProxyResponse = async (
+	response: Response,
+	requestId: string,
+	secure: boolean,
+): Promise<Response> => {
+	const payload = (await response.json()) as unknown;
+	if (!isRecord(payload)) {
+		return invalidAuthProxyResponse(requestId);
+	}
+	const bearerToken = payload.bearer_token;
+	if (typeof bearerToken !== "string") {
+		return invalidAuthProxyResponse(requestId);
+	}
+	const userId = payload.user_id;
+	if (typeof userId !== "string") {
+		return invalidAuthProxyResponse(requestId);
+	}
+	const expiresAt = payload.expires_at;
+	if (typeof expiresAt !== "number") {
+		return invalidAuthProxyResponse(requestId);
+	}
+	const responseHeaders = filterResponseHeaders(response.headers);
+	responseHeaders.delete("content-length");
+	responseHeaders.delete("set-cookie");
+	if (!responseHeaders.has("x-request-id")) {
+		responseHeaders.set("x-request-id", requestId);
+	}
+	responseHeaders.append("set-cookie", buildServerAuthCookie(bearerToken, expiresAt, { secure }));
+	const redactedPayload = { ...payload };
+	delete redactedPayload.bearer_token;
+	return new Response(JSON.stringify(redactedPayload), {
+		status: response.status,
+		statusText: response.statusText,
+		headers: responseHeaders,
+	});
+};
+
+const handleInvalidTargetPath = (
+	error: unknown,
+	requestMethod: string,
+	requestUrl: string,
+): Response => {
+	const message =
+		`API proxy rejected invalid target method=${requestMethod} request=${requestUrl} ` +
+		`error=${error instanceof Error ? error.message : String(error)}\n`;
+	process.stderr.write(message);
+	return new Response(invalidProxyPathMessage, { status: 400 });
+};
+
+const handleInvalidBackendUrl = (error: unknown): Response => {
+	process.stderr.write(
+		`API proxy backend misconfiguration error=${error instanceof Error ? error.message : String(error)}\n`,
+	);
+	return new Response(invalidBackendUrlMessage, { status: 500 });
+};
+
 const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	if (!backendUrl) {
 		return new Response("BACKEND_URL is not configured", { status: 500 });
 	}
 
 	const request = event.request;
-	const targetUrl = buildTargetUrl(request.url, backendUrl);
+	let backendBaseUrl: URL;
+	try {
+		backendBaseUrl = new URL(backendUrl);
+	} catch (error) {
+		return handleInvalidBackendUrl(error);
+	}
+	let targetUrl: URL;
+	try {
+		targetUrl = buildTargetUrl(request.url, backendBaseUrl);
+	} catch (error) {
+		return handleInvalidTargetPath(error, request.method, request.url);
+	}
 	const headers = filterRequestHeaders(request.headers);
 	const requestId = ensureRequestId(headers);
 	applyProxyCredentials(headers, request.headers.get("cookie"));
@@ -204,6 +280,9 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 
 	try {
 		const response = await fetch(targetUrl, init);
+		if (response.ok && authCookieProxyPaths.has(targetUrl.pathname)) {
+			return await rewriteAuthProxyResponse(response, requestId, requestUsesHttps(request));
+		}
 		const responseHeaders = filterResponseHeaders(response.headers);
 		if (!responseHeaders.has("x-request-id")) {
 			responseHeaders.set("x-request-id", requestId);

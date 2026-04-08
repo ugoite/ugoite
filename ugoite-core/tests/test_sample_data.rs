@@ -185,7 +185,7 @@ async fn test_sample_data_req_api_010_job_status_retries_transient_eof() -> anyh
     let delayed_op = op.clone();
     let delayed_path = path.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_millis(20)).await;
+        sleep(Duration::from_millis(250)).await;
         delayed_op
             .write(&delayed_path, delayed_job_bytes)
             .await

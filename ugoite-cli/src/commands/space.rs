@@ -8,6 +8,15 @@ use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::sample_data::SampleDataOptions;
 
+const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
+    "admin_user_ids",
+    "invitations",
+    "member_roles",
+    "members",
+    "membership_version",
+    "owner_user_id",
+];
+
 #[derive(Args)]
 pub struct SpaceCmd {
     /// Output format (default: table when TTY, json when piped)
@@ -208,6 +217,28 @@ fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
     }
 }
 
+fn validate_patch_settings(settings: &serde_json::Value) -> Result<()> {
+    let Some(settings_obj) = settings.as_object() else {
+        return Ok(());
+    };
+
+    let mut reserved_keys: Vec<&str> = settings_obj
+        .keys()
+        .map(String::as_str)
+        .filter(|key| MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS.contains(key))
+        .collect();
+    reserved_keys.sort_unstable();
+
+    if reserved_keys.is_empty() {
+        return Ok(());
+    }
+
+    bail!(
+        "space patch does not allow membership-managed settings keys: {}. Use the dedicated member commands instead.",
+        reserved_keys.join(", ")
+    )
+}
+
 pub async fn create_space_cmd(
     root_path: Option<&str>,
     space_id: &str,
@@ -298,6 +329,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             }
             if let Some(s) = &settings {
                 let v: serde_json::Value = serde_json::from_str(s)?;
+                validate_patch_settings(&v)?;
                 patch.insert("settings".to_string(), v);
             }
             if let Some(base) = validated_base_url(&config)? {

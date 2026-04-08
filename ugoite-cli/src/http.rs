@@ -5,6 +5,7 @@ const DEV_AUTH_PROXY_HEADER_NAME: &str = "x-ugoite-dev-auth-proxy-token";
 const DEV_PASSKEY_CONTEXT_HEADER_NAME: &str = "x-ugoite-dev-passkey-context";
 
 pub async fn http_get(url: &str) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.get(url));
     let resp = req.send().await?;
@@ -16,6 +17,7 @@ pub async fn http_get(url: &str) -> Result<serde_json::Value> {
 }
 
 pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.post(url).json(body));
     let resp = req.send().await?;
@@ -30,6 +32,7 @@ pub async fn http_post_with_dev_auth_proxy(
     url: &str,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_dev_local_auth_headers(add_auth_headers(client.post(url).json(body)));
     let resp = req.send().await?;
@@ -41,6 +44,7 @@ pub async fn http_post_with_dev_auth_proxy(
 }
 
 pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.put(url).json(body));
     let resp = req.send().await?;
@@ -52,6 +56,7 @@ pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json:
 }
 
 pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.patch(url).json(body));
     let resp = req.send().await?;
@@ -63,6 +68,7 @@ pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_jso
 }
 
 pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
+    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.delete(url));
     let resp = req.send().await?;
@@ -81,6 +87,10 @@ fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         r = r.header("X-Api-Key", key);
     }
     r
+}
+
+fn ensure_safe_remote_request_url(url: &str) -> Result<()> {
+    crate::config::validate_server_endpoint_url(url, "Remote request")
 }
 
 fn add_dev_local_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

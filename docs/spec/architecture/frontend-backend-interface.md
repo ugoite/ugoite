@@ -47,6 +47,14 @@ and responsibility boundaries.
 - Frontend clears selection/editor state on space change.
 - Frontend reloads space-scoped resources (entries, forms, etc.).
 
+### Frontend API Proxy Boundary
+
+- The frontend `/api/*` proxy MUST pin upstream requests to the configured
+  `BACKEND_URL` origin.
+- Malformed or protocol-relative target paths MUST be rejected with **400 Bad
+  Request** before the proxy copies browser bearer cookies or other credentials
+  upstream.
+
 ## Storage Boundary (Backend ↔ ugoite-core)
 
 - All runtime filesystem I/O lives behind the shared Rust storage abstraction.
