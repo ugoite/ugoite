@@ -776,9 +776,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-017
   title: Space Storage Configuration
-  description: 'Space settings MUST allow configuring storage backends (local, S3,
+  description: 'Space settings MUST allow saving storage connector metadata (local,
 
-    remote) with connection validation before saving.
+    S3, remote) with connection validation before saving.
+
+    The UI MUST explain that changing `storage_config.uri` updates saved metadata
+
+    only until per-space routing or migration support is implemented.
 
     '
   related_spec:
@@ -796,6 +800,8 @@ requirements:
       - should display success message after test connection
       - should display error message on test connection failure
       - should save storage config
+      - 'REQ-FE-017: explains that saved storage URIs are metadata-only before migration'
+      - 'REQ-FE-017: frames connector URIs as future migration targets'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1659,13 +1665,17 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-060
   title: Space Storage Topology Visibility
-  description: 'Authenticated frontend surfaces MUST show the effective storage topology
+  description: 'Authenticated frontend surfaces MUST show the current storage topology
 
-    for the current space using user-facing labels and the configured URI when
+    for the current space using backend-reported storage metadata and user-facing
 
-    available. The dashboard MUST provide a direct path to space settings so
+    labels.
 
-    users can verify or change where the space is writing data.
+    Space settings MUST separate that current topology from any saved
+
+    `storage_config.uri` migration metadata so users can review the active root
+
+    before editing future targets.
 
     '
   related_spec:
@@ -1676,11 +1686,13 @@ requirements:
     vitest:
     - file: frontend/src/lib/storage-topology.test.ts
       tests:
-      - 'REQ-FE-060: summarizes file-backed spaces as local filesystem'
-      - 'REQ-FE-060: summarizes s3-backed spaces as remote object store'
-      - 'REQ-FE-060: falls back to backend API when no storage URI is present'
-      - 'REQ-FE-060: ignores blank storage URIs when summarizing topology'
-      - 'REQ-FE-060: treats unrecognized storage URIs as backend-managed topology'
+      - 'REQ-FE-060: summarizes backend local storage as local filesystem'
+      - 'REQ-FE-060: preserves already formatted backend storage URIs'
+      - 'REQ-FE-060: preserves relative local storage roots verbatim'
+      - 'REQ-FE-060: summarizes backend s3 storage as remote object store'
+      - 'REQ-FE-060: falls back to backend API when no backend storage metadata is present'
+      - 'REQ-FE-060: ignores blank backend storage roots when summarizing topology'
+      - 'REQ-FE-060: treats unrecognized backend storage types as backend-managed topology'
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-060: dashboard surfaces the active storage topology with a settings link'
