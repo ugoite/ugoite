@@ -264,7 +264,7 @@ fn auth_profile_next_action(config: &EndpointConfig, credential_state: &str) -> 
             if credential_state == "none" {
                 "Run `ugoite auth login` for a bearer token (use `--shell fish` or `--shell powershell` when you want shell-native env output), or export `UGOITE_AUTH_API_KEY` before using server-backed commands.".to_string()
             } else {
-                "Continue with server-backed commands, or run `ugoite auth token-clear` to clear any saved CLI session. In POSIX shells, `eval \"$(ugoite auth token-clear)\"` also applies the printed credential unsets to your current shell; in fish or PowerShell, use the matching `--shell` variant to apply the same unsets there.".to_string()
+                "Continue with server-backed commands, or run `ugoite auth token-clear` to clear any saved CLI session. In POSIX shells, `eval \"$(ugoite auth token-clear)\"` also applies the printed credential unsets to your current shell; in fish, use `ugoite auth token-clear --shell fish | source`; in PowerShell, use `ugoite auth token-clear --shell powershell | Invoke-Expression`.".to_string()
             }
         }
     }
