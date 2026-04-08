@@ -87,7 +87,6 @@ requirements:
       - test_middleware_headers
       - test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy
       - test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https
-      - test_middleware_headers_req_sec_002_ignores_spoofed_remote_forwarded_https
       - test_middleware_headers_req_sec_002_skips_csp_for_docs_ui
       - test_middleware_req_sec_002_preserves_error_response_when_signing_fails
 - set_id: REQCAT-SECURITY
@@ -445,11 +444,13 @@ requirements:
   title: CLI Remote Endpoint Transport Safety
   description: 'CLI server-backed endpoint configuration MUST reject non-loopback
 
-    cleartext `http://` URLs, keep loopback `http://` allowed for local development,
+    cleartext `http://` URLs, keep loopback cleartext URLs available for local
 
-    warn when legacy insecure remote endpoints are still saved, and refuse
+    development, warn when legacy insecure remote endpoints are still saved,
 
-    server-backed requests before sending traffic to such endpoints.
+    and refuse to treat such endpoints as active topology before any credentialed
+
+    request can be sent to them.
 
     '
   related_spec:
@@ -457,7 +458,13 @@ requirements:
   priority: high
   status: implemented
   tests:
-    pytest:
+    rust:
+    - file: ugoite-cli/tests/test_endpoint_config.rs
+      tests:
+      - test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls
+      - test_config_set_req_sec_011_allows_loopback_cleartext_urls
+      - test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url
+      - test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint
     - file: ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
       tests:
       - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_api_urls
