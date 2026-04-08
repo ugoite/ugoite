@@ -200,12 +200,6 @@ mod tests {
         add_dev_local_auth_headers, is_local_dev_request_url, DEV_AUTH_PROXY_HEADER_NAME,
         DEV_PASSKEY_CONTEXT_HEADER_NAME,
     };
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[test]
     fn test_dev_local_auth_headers_req_ops_015_only_allow_loopback_hosts() {
@@ -220,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_dev_local_auth_headers_req_ops_015_skip_non_loopback_https_hosts() {
-        let _guard = env_lock().lock().expect("env lock");
+        let _guard = crate::test_support::env_lock().lock().expect("env lock");
         std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
         std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
 
@@ -244,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_dev_local_auth_headers_req_ops_015_add_loopback_headers() {
-        let _guard = env_lock().lock().expect("env lock");
+        let _guard = crate::test_support::env_lock().lock().expect("env lock");
         std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
         std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
 
@@ -277,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_dev_local_auth_headers_req_ops_015_skip_invalid_urls() {
-        let _guard = env_lock().lock().expect("env lock");
+        let _guard = crate::test_support::env_lock().lock().expect("env lock");
         std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
         std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
 

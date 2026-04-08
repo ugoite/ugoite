@@ -454,14 +454,9 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
-    use std::sync::{mpsc, Mutex, OnceLock};
+    use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     fn clear_test_env() {
         for key in [
@@ -552,7 +547,7 @@ mod tests {
     /// REQ-OPS-015: core mode login must fail before any network prompt or request.
     #[test]
     fn test_auth_run_req_ops_015_rejects_core_mode_login() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -588,7 +583,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must surface invalid configured backend URLs.
     #[test]
     fn test_auth_run_req_ops_015_rejects_invalid_backend_url() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -624,7 +619,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must surface provided login validation failures.
     #[test]
     fn test_auth_run_req_ops_015_rejects_blank_username_before_request() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -669,7 +664,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must exercise the profile subcommand path.
     #[test]
     fn test_auth_run_req_ops_015_profile_succeeds() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -683,7 +678,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must exercise the mock OAuth loopback path.
     #[test]
     fn test_auth_run_req_ops_015_posts_mock_oauth_directly() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -724,7 +719,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must exercise the provided credential path.
     #[test]
     fn test_auth_run_req_ops_015_posts_totp_credentials_directly() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -769,7 +764,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must surface login session persistence failures.
     #[test]
     fn test_auth_run_req_ops_015_surfaces_session_write_failures() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -811,7 +806,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must surface token-clear session removal failures.
     #[test]
     fn test_auth_run_req_ops_015_surfaces_token_clear_session_remove_failures() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -837,7 +832,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must exercise token-clear when no saved session exists.
     #[test]
     fn test_auth_run_req_ops_015_token_clear_without_saved_session_succeeds() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -861,7 +856,7 @@ mod tests {
     /// REQ-OPS-015: direct auth run coverage must exercise the logout alias success path.
     #[test]
     fn test_auth_run_req_ops_015_logout_clears_saved_session_successfully() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -998,7 +993,7 @@ mod tests {
     /// REQ-OPS-015: auth login must surface session persistence I/O failures.
     #[test]
     fn test_persist_login_session_req_ops_015_surfaces_session_write_failures() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let dir = tempfile::tempdir().unwrap();
@@ -1022,7 +1017,7 @@ mod tests {
     /// REQ-OPS-015: core-mode profile snapshots ignore blank env vars and stay local-first.
     #[test]
     fn test_auth_profile_snapshot_req_ops_015_core_mode_ignores_blank_env_vars() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
         std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", "   ");
         std::env::set_var("UGOITE_AUTH_API_KEY", "   ");
@@ -1047,7 +1042,7 @@ mod tests {
     /// REQ-OPS-015: backend/api profile snapshots must report remote credential states directly.
     #[test]
     fn test_auth_profile_snapshot_req_ops_015_reports_remote_modes_and_credentials() {
-        let _guard = env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         clear_test_env();
 
         let backend_config = EndpointConfig {
