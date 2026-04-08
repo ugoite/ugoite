@@ -19,7 +19,9 @@ If you want the same published two-service topology on Kubernetes, use
 ## Quick start
 
 Create a small working directory, download the release compose file, and add the
-runtime environment values:
+runtime environment values. Keep the UID/GID lines in the example so the
+non-root backend container can still write into the host-mounted spaces
+directory on Linux hosts:
 
 ```bash
 mkdir -p ugoite-release
@@ -28,6 +30,8 @@ curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-co
 cat > .env <<EOF
 UGOITE_VERSION=stable
 UGOITE_SPACES_DIR=./spaces
+UGOITE_UID=$(id -u)
+UGOITE_GID=$(id -g)
 UGOITE_FRONTEND_PORT=3000
 UGOITE_BACKEND_PORT=8000
 UGOITE_DEV_USER_ID=dev-local-user
@@ -143,6 +147,8 @@ These are the supported release-compose environment variables for the shipped
 | --- | --- | --- |
 | `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version such as `0.0.1` to pin the stack. |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
+| `UGOITE_UID` | `10001` | Backend container user id. Set it to `$(id -u)` in the quick-start `.env` so Linux bind mounts stay writable without running the app as root. |
+| `UGOITE_GID` | `10001` | Backend container group id. Set it to `$(id -g)` in the quick-start `.env` so Linux bind mounts stay writable without running the app as root. |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
 | `UGOITE_DEV_USER_ID` | `dev-local-user` | Local demo login user id created by the shipped release compose login flow. |
@@ -167,6 +173,9 @@ Choose the release channel that matches your goal:
 
 - By default, the release compose file keeps data on the host under `./spaces`
   to preserve the local-first storage model.
+- The quick-start `.env` maps the backend container to your current host UID/GID
+  so that bind-mounted local storage stays writable even though the published
+  backend image runs as a non-root user.
 - The published quick start binds both services to `127.0.0.1`, wires the dev
   auth proxy token between frontend and backend, bootstraps the `default`
   space, and enables explicit local demo login (`mock-oauth`) so `/login` works

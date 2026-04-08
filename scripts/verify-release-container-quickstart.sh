@@ -139,6 +139,8 @@ gzip -dc "$DOWNLOAD_DIR/frontend-image.tar.gz" | docker load
 log "Starting released compose stack"
 (
   cd "$STACK_DIR" &&
+    UGOITE_UID="$(id -u)" \
+      UGOITE_GID="$(id -g)" \
     UGOITE_VERSION="$VERSION_INPUT" "${compose_cmd[@]}" up -d
 )
 
