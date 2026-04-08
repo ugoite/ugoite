@@ -1,3 +1,4 @@
+use crate::config::{effective_api_key, effective_bearer_token};
 use anyhow::{bail, Result};
 
 const DEV_AUTH_PROXY_HEADER_NAME: &str = "x-ugoite-dev-auth-proxy-token";
@@ -80,9 +81,9 @@ pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
 
 fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     let mut r = req;
-    if let Ok(token) = std::env::var("UGOITE_AUTH_BEARER_TOKEN") {
+    if let Some(token) = effective_bearer_token() {
         r = r.header("Authorization", format!("Bearer {token}"));
-    } else if let Ok(key) = std::env::var("UGOITE_AUTH_API_KEY") {
+    } else if let Some(key) = effective_api_key() {
         r = r.header("X-Api-Key", key);
     }
     r

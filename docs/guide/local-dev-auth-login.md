@@ -162,10 +162,12 @@ cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 1
 If you installed the published CLI, run the equivalent `ugoite auth login`
 command with the same flags.
 
-The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
-shell. That token is minted only after the backend validates the username + 2FA
-input together with the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the
-authenticated admin user can then create additional spaces.
+The command saves a CLI session so later `ugoite` commands stay authenticated
+without extra shell setup, and it also prints an
+`export UGOITE_AUTH_BEARER_TOKEN=...` line for the current shell. That token is
+minted only after the backend validates the username + 2FA input together with
+the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the authenticated admin user can
+then create additional spaces.
 Repeated invalid login attempts hit the same temporary `429 Too Many Requests`
 throttle the browser flow uses.
 
