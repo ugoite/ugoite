@@ -327,6 +327,18 @@ describe("entryApi", () => {
 			expect(matches).toEqual([{ id: "project-alpha", title: "Alpha Project", form: "Project" }]);
 		});
 
+		it("REQ-FE-065: row_reference picker options surface backend load failures", async () => {
+			server.use(
+				http.get(testApiUrl("/spaces/test-ws/entries/options"), () =>
+					HttpResponse.json({ detail: "lookup failed" }, { status: 502 }),
+				),
+			);
+
+			await expect(searchApi.rowReferenceOptions("test-ws", "Project", "alpha", 8)).rejects.toThrow(
+				"Failed to load row_reference options: Bad Gateway",
+			);
+		});
+
 		it("uploads asset and blocks deletion when referenced", async () => {
 			const { id, revision_id } = await entryApi.create("test-ws", {
 				markdown: "# Audio Entry",

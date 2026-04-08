@@ -1205,7 +1205,7 @@ def test_entry_options_req_fe_065_returns_bounded_form_scoped_matches(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
-    """REQ-FE-065: row_reference picker options stay form-scoped, query-aware, and bounded."""
+    """REQ-FE-065: row_reference picker options stay bounded and form-scoped."""
     test_client.post("/spaces", json={"name": "test-ws"})
     _create_form(
         test_client,
@@ -1222,7 +1222,9 @@ def test_entry_options_req_fe_065_returns_bounded_form_scoped_matches(
             "/spaces/test-ws/entries",
             json={
                 "id": entry_id,
-                "markdown": f"---\nform: Project\n---\n# {title}\n\n## Summary\nReference",
+                "markdown": (
+                    f"---\nform: Project\n---\n# {title}\n\n## Summary\nReference"
+                ),
             },
         )
         assert response.status_code == 201
