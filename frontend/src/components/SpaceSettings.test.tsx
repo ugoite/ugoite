@@ -134,6 +134,9 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(screen.getByText(/saved uri below is migration metadata/i)).toBeInTheDocument();
 		expect(
+			screen.getByText(/does not migrate existing entries or assets to the new location/i),
+		).toBeInTheDocument();
+		expect(
 			screen.getByText(/does not reroute writes until per-space routing support lands/i),
 		).toBeInTheDocument();
 	});
@@ -142,6 +145,9 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(
 			screen.getByText(/records a local path you may want to migrate this space to later/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/local paths keep control and offline access on this machine/i),
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(/records an object-storage target you may want to validate or migrate/i),
