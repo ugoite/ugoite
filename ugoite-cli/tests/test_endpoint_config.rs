@@ -229,7 +229,10 @@ fn test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url(
         String::from_utf8_lossy(&output.stderr),
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Current endpoint mode: api"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("Current endpoint mode: api"),
+        "stdout: {stdout}"
+    );
     assert!(
         stdout.contains(
             "Warning: API endpoint URL http://example.com/api uses cleartext http:// for a non-loopback host"
