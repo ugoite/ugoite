@@ -1235,6 +1235,7 @@ def test_entry_options_req_fe_065_returns_bounded_form_scoped_matches(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
+    #REQ-FE-065: row_reference picker options stay form-scoped, query-aware, and bounded
     """REQ-FE-065: row_reference picker options stay form-scoped and bounded."""
     test_client.post("/spaces", json={"name": "test-ws"})
     _create_form(
