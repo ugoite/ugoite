@@ -45,6 +45,12 @@ let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
+const normalizeMockEntry = (entry: Entry): Entry => ({
+	...entry,
+	content: entry.content ?? entry.markdown ?? "",
+	markdown: entry.markdown ?? entry.content,
+});
+
 const createTestApiPredicate = <Params extends PathParams = PathParams>(path: string) => {
 	const testApiPathname = testApiPath(path);
 	return ({ request }: { request: Request }) => {
@@ -118,7 +124,7 @@ export const seedSpace = (space: Space) => {
 };
 
 export const seedEntry = (spaceId: string, entry: Entry, record: EntryRecord) => {
-	mockEntries.get(spaceId)?.set(entry.id, entry);
+	mockEntries.get(spaceId)?.set(entry.id, normalizeMockEntry(entry));
 	mockEntryIndex.get(spaceId)?.set(entry.id, record);
 };
 
@@ -177,7 +183,6 @@ export const handlers = [
 			return HttpResponse.json({ detail: "Invalid username or 2FA code." }, { status: 401 });
 		}
 		return HttpResponse.json({
-			bearer_token: "frontend-test-token",
 			user_id: mockDevAuthConfig.username_hint,
 			expires_at: 1_900_000_000,
 		});
@@ -191,7 +196,6 @@ export const handlers = [
 			);
 		}
 		return HttpResponse.json({
-			bearer_token: "frontend-test-token",
 			user_id: mockDevAuthConfig.username_hint,
 			expires_at: 1_900_000_000,
 		});
@@ -354,27 +358,28 @@ export const handlers = [
 		const now = new Date().toISOString();
 
 		// Extract title from markdown (first H1 or first line)
-		const titleMatch = body.content.match(/^#\s+(.+)$/m);
-		const title = titleMatch ? titleMatch[1] : body.content.split("\n")[0] || "Untitled";
+		const titleMatch = body.markdown.match(/^#\s+(.+)$/m);
+		const title = titleMatch ? titleMatch[1] : body.markdown.split("\n")[0] || "Untitled";
 
 		// Extract properties from H2 headers
 		const properties: Record<string, string> = {};
 		const h2Regex = /^##\s+(.+)\n([\s\S]*?)(?=^##\s|$(?![\r\n]))/gm;
-		for (const match of body.content.matchAll(h2Regex)) {
+		for (const match of body.markdown.matchAll(h2Regex)) {
 			const key = match[1].trim();
 			const value = match[2].trim();
 			properties[key] = value;
 		}
 
-		const entry: Entry = {
+		const entry: Entry = normalizeMockEntry({
 			id: entryId,
-			content: body.content,
+			content: body.markdown,
+			markdown: body.markdown,
 			revision_id: revisionId,
 			created_at: now,
 			updated_at: now,
 			assets: [],
 			links: [],
-		};
+		});
 
 		const record: EntryRecord = {
 			id: entryId,
@@ -401,7 +406,7 @@ export const handlers = [
 		if (!entry) {
 			return HttpResponse.json({ detail: "Entry not found" }, { status: 404 });
 		}
-		return HttpResponse.json(entry);
+		return HttpResponse.json(normalizeMockEntry(entry));
 	}),
 
 	// Update entry
@@ -445,6 +450,7 @@ export const handlers = [
 
 		// Update entry
 		entry.content = body.markdown;
+		entry.markdown = body.markdown;
 		entry.revision_id = newRevisionId;
 		entry.updated_at = now;
 		entry.assets = body.assets ?? entry.assets ?? [];
@@ -517,7 +523,10 @@ export const handlers = [
 		const entries = Array.from(mockEntries.get(spaceId)?.values() || []);
 		const index = Array.from(mockEntryIndex.get(spaceId)?.values() || []);
 		const matches = index.filter((record) => {
-			const entryContent = entries.find((n) => n.id === record.id)?.content ?? "";
+			const entryContent =
+				entries.find((n) => n.id === record.id)?.markdown ??
+				entries.find((n) => n.id === record.id)?.content ??
+				"";
 			const haystack =
 				`${record.title}\n${JSON.stringify(record.properties)}\n${entryContent}`.toLowerCase();
 			return haystack.includes(q);
@@ -546,7 +555,7 @@ export const handlers = [
 		const spaceId = params.spaceId as string;
 		const assetId = params.assetId as string;
 		const store = mockAssets.get(spaceId);
-		if (!store || !store.has(assetId)) {
+		if (!store?.has(assetId)) {
 			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 		}
 
@@ -594,7 +603,7 @@ export const handlers = [
 		if (!entry || entry.revision_id !== revisionId) {
 			return HttpResponse.json({ detail: "Revision not found" }, { status: 404 });
 		}
-		return HttpResponse.json(entry);
+		return HttpResponse.json(normalizeMockEntry(entry));
 	}),
 
 	// Restore entry
@@ -608,7 +617,7 @@ export const handlers = [
 		const _body = (await request.json()) as { revision_id: string };
 		const newRevisionId = generateRevisionId();
 		entry.revision_id = newRevisionId;
-		return HttpResponse.json({ ...entry, revision_id: newRevisionId });
+		return HttpResponse.json(normalizeMockEntry({ ...entry, revision_id: newRevisionId }));
 	}),
 
 	// SQL CRUD
@@ -654,8 +663,7 @@ export const handlers = [
 		const spaceId = params.spaceId as string;
 		const sqlId = params.sqlId as string;
 		const store = mockSqlEntries.get(spaceId);
-		if (!store || !store.has(sqlId))
-			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+		if (!store?.has(sqlId)) return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 		store.delete(sqlId);
 		return HttpResponse.json({ status: "deleted" });
 	}),

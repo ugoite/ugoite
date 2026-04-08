@@ -41,7 +41,7 @@ test.describe("Smoke Tests", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
+					markdown: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
 				},
 			},
 		);
@@ -65,7 +65,10 @@ test.describe("Smoke Tests", () => {
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("REQ-OPS-015: browser mock-oauth login reaches the spaces page", async ({ browser }) => {
+	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with an HttpOnly auth cookie and default ahead of reserved admin-space", async ({
+		browser,
+	}) => {
+		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 		const context = await browser.newContext();
 		const page = await context.newPage();
 
@@ -74,6 +77,18 @@ test.describe("Smoke Tests", () => {
 			await page.getByRole("button", { name: "Continue with Local Demo Login" }).click();
 			await expect(page).toHaveURL(/\/spaces$/);
 			await expect(page.getByText("Available Spaces")).toBeVisible();
+			const userSpaces = page.getByRole("list", { name: "User spaces" });
+			await expect(userSpaces).toContainText("default");
+			await expect(userSpaces).not.toContainText("admin-space");
+			const adminSpaces = page.getByRole("list", { name: "Admin spaces" });
+			await expect(adminSpaces).toContainText("admin-space");
+			await userSpaces.getByRole("link", { name: "Open Space" }).first().click();
+			await expect(page).toHaveURL(/\/spaces\/default\/dashboard$/);
+			const cookies = await context.cookies(frontendUrl);
+			const authCookie = cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token");
+			expect(authCookie).toBeDefined();
+			expect(authCookie?.httpOnly).toBe(true);
+			expect(await page.evaluate(() => document.cookie)).not.toContain("ugoite_auth_bearer_token=");
 		} finally {
 			await context.close();
 		}

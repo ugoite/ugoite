@@ -163,7 +163,7 @@ describe("entryApi", () => {
 	describe("create", () => {
 		it("should create a entry and extract title from markdown", async () => {
 			const result = await entryApi.create("test-ws", {
-				content: "# My Meeting Entries\n\n## Date\n2025-01-15\n\n## Attendees\nAlice, Bob",
+				markdown: "# My Meeting Entries\n\n## Date\n2025-01-15\n\n## Attendees\nAlice, Bob",
 			});
 
 			expect(result.id).toBeDefined();
@@ -179,7 +179,7 @@ describe("entryApi", () => {
 
 		it("should extract H2 headers as properties", async () => {
 			const result = await entryApi.create("test-ws", {
-				content: "# Task\n\n## Status\nPending\n\n## Priority\nHigh",
+				markdown: "# Task\n\n## Status\nPending\n\n## Priority\nHigh",
 			});
 
 			const entries = await entryApi.list("test-ws");
@@ -192,26 +192,33 @@ describe("entryApi", () => {
 	describe("get", () => {
 		it("should return full entry content", async () => {
 			const content = "# Full Entry\n\nWith body content";
-			const entry: Entry = {
-				id: "entry-get",
-				content,
-				revision_id: "rev-get",
-				created_at: "2025-01-01T00:00:00Z",
-				updated_at: "2025-01-01T00:00:00Z",
-			};
-			const record: EntryRecord = {
-				id: "entry-get",
-				title: "Full Entry",
-				updated_at: "2025-01-01T00:00:00Z",
-				properties: {},
-				tags: [],
-				links: [],
-			};
-			seedEntry("test-ws", entry, record);
+			server.use(
+				http.get(testApiUrl("/spaces/test-ws/entries/entry-get"), () =>
+					HttpResponse.json({
+						id: "entry-get",
+						markdown: content,
+						revision_id: "rev-get",
+						created_at: "2025-01-01T00:00:00Z",
+						updated_at: "2025-01-01T00:00:00Z",
+					}),
+				),
+				http.get(testApiUrl("/spaces/test-ws/entries/entry-empty"), () =>
+					HttpResponse.json({
+						id: "entry-empty",
+						revision_id: "rev-empty",
+						created_at: "2025-01-01T00:00:00Z",
+						updated_at: "2025-01-01T00:00:00Z",
+					}),
+				),
+			);
 
 			const fetched = await entryApi.get("test-ws", "entry-get");
 			expect(fetched.content).toBe(content);
+			expect(fetched.markdown).toBe(content);
 			expect(fetched.revision_id).toBe("rev-get");
+
+			const emptyFetched = await entryApi.get("test-ws", "entry-empty");
+			expect(emptyFetched.content).toBe("");
 		});
 
 		it("should throw error for non-existent entry", async () => {
@@ -222,7 +229,7 @@ describe("entryApi", () => {
 	describe("update", () => {
 		it("should update entry with correct parent_revision_id", async () => {
 			const createResult = await entryApi.create("test-ws", {
-				content: "# Original\n\n## Status\nDraft",
+				markdown: "# Original\n\n## Status\nDraft",
 			});
 
 			const updateResult = await entryApi.update("test-ws", createResult.id, {
@@ -241,7 +248,7 @@ describe("entryApi", () => {
 
 		it("should throw RevisionConflictError (409) on revision mismatch", async () => {
 			const createResult = await entryApi.create("test-ws", {
-				content: "# Original",
+				markdown: "# Original",
 			});
 
 			// First update succeeds
@@ -263,7 +270,7 @@ describe("entryApi", () => {
 	describe("delete", () => {
 		it("should remove entry from list", async () => {
 			const result = await entryApi.create("test-ws", {
-				content: "# To Delete",
+				markdown: "# To Delete",
 			});
 
 			let entries = await entryApi.list("test-ws");
@@ -279,7 +286,7 @@ describe("entryApi", () => {
 	describe("search, assets, and links", () => {
 		it("searches entries by keyword", async () => {
 			const created = await entryApi.create("test-ws", {
-				content: "# Rocket Project\nEntries about propulsion",
+				markdown: "# Rocket Project\nEntries about propulsion",
 			});
 
 			const matches = await searchApi.keyword("test-ws", "rocket");
@@ -288,7 +295,7 @@ describe("entryApi", () => {
 
 		it("uploads asset and blocks deletion when referenced", async () => {
 			const { id, revision_id } = await entryApi.create("test-ws", {
-				content: "# Audio Entry",
+				markdown: "# Audio Entry",
 			});
 
 			const file = new File(["data"], "voice.m4a", { type: "audio/m4a" });
@@ -494,7 +501,7 @@ describe("error paths", () => {
 	it("entryApi.history returns revisions", async () => {
 		resetMockData();
 		seedSpace({ id: "ws-history", name: "H", created_at: "2025-01-01T00:00:00Z" });
-		const created = await entryApi.create("ws-history", { content: "# Entry" });
+		const created = await entryApi.create("ws-history", { markdown: "# Entry" });
 		const history = await entryApi.history("ws-history", created.id);
 		expect(history.revisions).toBeDefined();
 	});
@@ -502,7 +509,7 @@ describe("error paths", () => {
 	it("entryApi.getRevision returns a revision", async () => {
 		resetMockData();
 		seedSpace({ id: "ws-rev", name: "R", created_at: "2025-01-01T00:00:00Z" });
-		const created = await entryApi.create("ws-rev", { content: "# Entry" });
+		const created = await entryApi.create("ws-rev", { markdown: "# Entry" });
 		const entry = await entryApi.get("ws-rev", created.id);
 		const revision = await entryApi.getRevision("ws-rev", created.id, entry.revision_id);
 		expect(revision.revision_id).toBe(entry.revision_id);
@@ -511,7 +518,7 @@ describe("error paths", () => {
 	it("entryApi.restore succeeds", async () => {
 		resetMockData();
 		seedSpace({ id: "ws-restore", name: "RR", created_at: "2025-01-01T00:00:00Z" });
-		const created = await entryApi.create("ws-restore", { content: "# Entry" });
+		const created = await entryApi.create("ws-restore", { markdown: "# Entry" });
 		const entry = await entryApi.get("ws-restore", created.id);
 		const restored = await entryApi.restore("ws-restore", created.id, entry.revision_id);
 		expect(restored).toBeDefined();

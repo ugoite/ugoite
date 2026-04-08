@@ -61,14 +61,17 @@ def _extract_json_code_block(section: str, context: str) -> object:
     return json.loads(json_block)
 
 
-def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
-    """REQ-ENTRY-001: create-entry docs use the implemented `content` request field."""
+def test_docs_req_entry_001_create_entry_payload_uses_markdown_field() -> None:
+    """REQ-ENTRY-001: create-entry docs use the canonical `markdown` request field."""
     rest_text = _read_text(API_REST_PATH)
     details: list[str] = []
 
     rest_fragments = (
-        '"content": "---\\nform: Entry\\n---\\n# My Entry\\n\\n## Body\\nValue"',
-        "Create request bodies submit entry Markdown via the `content` field.",
+        '"markdown": "---\\nform: Entry\\n---\\n# My Entry\\n\\n## Body\\nValue"',
+        (
+            "Create request bodies submit entry Markdown via the canonical "
+            "`markdown` field."
+        ),
     )
     details.extend(
         f"api/rest.md missing fragment: {fragment!r}"
@@ -108,27 +111,27 @@ def test_docs_req_entry_001_create_entry_payload_uses_content_field() -> None:
     required = schema.get("required")
     example = _require_mapping(app_json.get("example"), "create-entry example")
 
-    if not isinstance(required, list) or "content" not in required:
+    if not isinstance(required, list) or "markdown" not in required:
         details.append(
-            "api/openapi.yaml create-entry schema must require the content field",
+            "api/openapi.yaml create-entry schema must require the markdown field",
         )
-    if "content" not in properties:
+    if "markdown" not in properties:
         details.append(
-            "api/openapi.yaml create-entry schema must define the content property",
+            "api/openapi.yaml create-entry schema must define the markdown property",
         )
-    if "markdown" in properties:
+    if "content" in properties:
         details.append(
-            "api/openapi.yaml create-entry schema must not advertise markdown",
+            "api/openapi.yaml create-entry schema must not advertise content",
         )
-    if "content" not in example:
+    if "markdown" not in example:
         details.append(
-            "api/openapi.yaml create-entry example must use the content field",
+            "api/openapi.yaml create-entry example must use the markdown field",
         )
-    if "markdown" in example:
+    if "content" in example:
         details.append(
-            "api/openapi.yaml create-entry example must not use markdown",
+            "api/openapi.yaml create-entry example must not use content",
         )
-    example_content = example.get("content")
+    example_content = example.get("markdown")
     if not isinstance(example_content, str) or "form: Entry" not in example_content:
         details.append(
             "api/openapi.yaml create-entry example must include form frontmatter",

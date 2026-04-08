@@ -23,7 +23,7 @@ test.describe("UI page screenshot export @screenshot", () => {
 		const entryTitle = `E2E Screenshot Entry ${Date.now()}`;
 		const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 			data: {
-				content: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nScreenshot seed entry.`,
+				markdown: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nScreenshot seed entry.`,
 			},
 		});
 		expect(entryRes.status()).toBe(201);

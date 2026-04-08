@@ -138,8 +138,10 @@ oathtool --totp -b "${UGOITE_DEV_2FA_SECRET:-JBSWY3DPEHPK3PXP}"
 The browser receives a signed bearer token only **after** the login form is
 submitted successfully. The frontend proxy attaches the local
 `UGOITE_DEV_PASSKEY_CONTEXT` automatically, then stores the resulting bearer
-token in a local session cookie for `/api/*`, so protected pages can render
-normally after login.
+token in an HttpOnly local session cookie for `/api/*` so frontend JavaScript
+never reads the raw token and protected pages can render normally after login.
+Repeated invalid passkey + 2FA submissions temporarily return `429 Too Many Requests`
+with a `Retry-After` header so the local login surface cannot be hammered indefinitely.
 That login also grants the configured user access to the reserved
 `admin-space`, which is what authorizes space creation in local development.
 
@@ -164,6 +166,8 @@ The command prints an `export UGOITE_AUTH_BEARER_TOKEN=...` line for the current
 shell. That token is minted only after the backend validates the username + 2FA
 input together with the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the
 authenticated admin user can then create additional spaces.
+Repeated invalid login attempts hit the same temporary `429 Too Many Requests`
+throttle the browser flow uses.
 
 ## 7) Local demo login (`mock-oauth`) mode
 

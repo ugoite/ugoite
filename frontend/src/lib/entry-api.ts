@@ -10,13 +10,19 @@ import { apiFetch } from "./api";
 import { normalizeTimestamp } from "./date-format";
 import { buildEntryMarkdownByMode } from "./entry-input";
 
+type EntryResponse = Omit<Entry, "content"> & {
+	content?: string;
+	markdown?: string;
+};
+
 const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
 	...entry,
 	updated_at: normalizeTimestamp(entry.updated_at),
 });
 
-const normalizeEntry = (entry: Entry): Entry => ({
+const normalizeEntry = (entry: EntryResponse): Entry => ({
 	...entry,
+	content: entry.content ?? entry.markdown ?? "",
 	created_at: normalizeTimestamp(entry.created_at),
 	updated_at: normalizeTimestamp(entry.updated_at),
 });
@@ -51,7 +57,7 @@ export const entryApi = {
 			}
 			throw new Error(`Failed to get entry: ${detail}`);
 		}
-		return normalizeEntry((await res.json()) as Entry);
+		return normalizeEntry((await res.json()) as EntryResponse);
 	},
 
 	/** Create a new entry */
@@ -79,7 +85,7 @@ export const entryApi = {
 		markdown: string,
 		id?: string,
 	): Promise<{ id: string; revision_id: string }> {
-		return await this.create(spaceId, { id, content: markdown });
+		return await this.create(spaceId, { id, markdown });
 	},
 
 	/** Create a new entry from webform field input */
@@ -91,7 +97,7 @@ export const entryApi = {
 		id?: string,
 	): Promise<{ id: string; revision_id: string }> {
 		const markdown = buildEntryMarkdownByMode(formDef, title, fieldValues, "webform");
-		return await this.create(spaceId, { id, content: markdown });
+		return await this.create(spaceId, { id, markdown });
 	},
 
 	/** Create a new entry from chat-style Q&A input */
@@ -103,7 +109,7 @@ export const entryApi = {
 		id?: string,
 	): Promise<{ id: string; revision_id: string }> {
 		const markdown = buildEntryMarkdownByMode(formDef, title, answers, "chat");
-		return await this.create(spaceId, { id, content: markdown });
+		return await this.create(spaceId, { id, markdown });
 	},
 
 	/** Update a entry (requires parent_revision_id for optimistic locking) */
@@ -170,7 +176,7 @@ export const entryApi = {
 		if (!res.ok) {
 			throw new Error(`Failed to get entry revision: ${res.statusText}`);
 		}
-		return normalizeEntry((await res.json()) as Entry);
+		return normalizeEntry((await res.json()) as EntryResponse);
 	},
 
 	/** Restore entry to a previous revision */
@@ -189,7 +195,7 @@ export const entryApi = {
 			throw new Error(error.detail || `Failed to restore entry: ${res.statusText}`);
 			/* v8 ignore stop */
 		}
-		return normalizeEntry((await res.json()) as Entry);
+		return normalizeEntry((await res.json()) as EntryResponse);
 	},
 };
 

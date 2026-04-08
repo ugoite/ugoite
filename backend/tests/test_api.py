@@ -236,6 +236,31 @@ def test_list_spaces_req_api_001_admin_sees_admin_space(
     assert ugoite_core.admin_space_id() in space_ids
 
 
+def test_list_spaces_req_api_001_flags_reserved_admin_space_and_keeps_default_first(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-API-001: /spaces flags reserved admin-space and keeps it behind default."""
+    default_response = test_client.post("/spaces", json={"name": "default"})
+    assert default_response.status_code == 201
+    workspace_response = test_client.post("/spaces", json={"name": "workspace-a"})
+    assert workspace_response.status_code == 201
+
+    response = test_client.get("/spaces")
+
+    assert response.status_code == 200
+    spaces = response.json()
+    assert [space["id"] for space in spaces] == [
+        "default",
+        "workspace-a",
+        ugoite_core.admin_space_id(),
+    ]
+    flags = {space["id"]: space["is_admin_space"] for space in spaces}
+    assert flags["default"] is False
+    assert flags["workspace-a"] is False
+    assert flags[ugoite_core.admin_space_id()] is True
+
+
 def test_list_spaces_req_api_001_non_admin_cannot_see_admin_space(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -402,7 +427,7 @@ def test_create_entry(test_client: TestClient, temp_space_root: Path) -> None:
     _create_form(test_client, "test-ws")
 
     entry_payload = {
-        "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nSome content",
+        "markdown": "---\nform: Entry\n---\n# My Entry\n\n## Body\nSome content",
     }
 
     response = test_client.post("/spaces/test-ws/entries", json=entry_payload)
@@ -415,6 +440,7 @@ def test_create_entry(test_client: TestClient, temp_space_root: Path) -> None:
     # Verify retrieval
     get_response = test_client.get(f"/spaces/test-ws/entries/{entry_id}")
     assert get_response.status_code == 200
+    assert get_response.json()["markdown"] == entry_payload["markdown"]
 
 
 def test_create_entry_conflict(
@@ -562,7 +588,7 @@ def test_get_entry(
     data = response.json()
     assert data["id"] == "test-entry"
     assert data["title"] == "Test Entry"
-    # Entry: get_entry returns "content" field (not "markdown")
+    assert "# Test Entry" in data["markdown"]
     assert "# Test Entry" in data["content"]
 
 
@@ -622,7 +648,7 @@ Original body""",
     get_response = test_client.get("/spaces/test-ws/entries/test-entry")
     updated_entry = get_response.json()
     assert updated_entry["title"] == "Updated Title"
-    # Entry: get_entry returns "content" field (not "markdown")
+    assert "New content" in updated_entry["markdown"]
     assert "New content" in updated_entry["content"]
 
 
@@ -1077,6 +1103,68 @@ def test_upload_asset_and_link_to_entry(
     assert any(a["id"] == asset["id"] for a in content.get("assets", []))
 
 
+def test_upload_asset_strips_traversal_segments_from_filename(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-ENTRY-008: asset upload normalizes traversal-like filenames."""
+    test_client.post("/spaces", json={"name": "source-ws"})
+    test_client.post("/spaces", json={"name": "victim-ws"})
+
+    victim_meta_path = temp_space_root / "spaces" / "victim-ws" / "meta.json"
+    victim_meta_before = victim_meta_path.read_text(encoding="utf-8")
+
+    response = test_client.post(
+        "/spaces/source-ws/assets",
+        files={
+            "file": (
+                "../../../../victim-ws/meta.json",
+                io.BytesIO(b"safe asset"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "meta.json"
+    assert asset["path"].startswith("assets/")
+    assert ".." not in asset["path"]
+    assert "/" not in asset["path"][len("assets/") :]
+    assert (temp_space_root / "spaces" / "source-ws" / asset["path"]).exists()
+    assert victim_meta_path.read_text(encoding="utf-8") == victim_meta_before
+
+
+def test_upload_asset_req_asset_001_normalizes_markdown_heading_filename(
+    test_client: TestClient,
+) -> None:
+    """REQ-ASSET-001: asset upload normalizes metadata-spoofing filenames."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    response = test_client.post(
+        "/spaces/test-ws/assets",
+        files={
+            "file": (
+                "## uploaded_at.txt",
+                io.BytesIO(b"hello"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "uploaded_at.txt"
+    assert asset["path"] == f"assets/{asset['id']}_uploaded_at.txt"
+
+    entry_response = test_client.get(f"/spaces/test-ws/entries/{asset['id']}")
+    assert entry_response.status_code == 200
+    content = entry_response.json()["content"]
+    assert "## name\nuploaded_at.txt" in content
+    assert f"## link\nugoite://asset/{asset['id']}" in content
+    assert "## name\n## uploaded_at.txt" not in content
+
+
 def test_delete_asset_referenced_fails(
     test_client: TestClient,
     temp_space_root: Path,
@@ -1239,6 +1327,20 @@ def test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https(
     """REQ-SEC-002: untrusted forwarded proto headers must not enable HSTS."""
     monkeypatch.delenv("UGOITE_TRUST_PROXY_HEADERS", raising=False)
     response = test_client.get("/", headers={"x-forwarded-proto": "https"})
+    assert "Strict-Transport-Security" not in response.headers
+
+
+def test_middleware_headers_req_sec_002_ignores_spoofed_remote_forwarded_https(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-002: remote clients cannot spoof HTTPS with X-Forwarded-Proto alone."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-proto": "https"})
+
+    assert response.status_code == 200
     assert "Strict-Transport-Security" not in response.headers
 
 
@@ -1465,6 +1567,20 @@ def test_middleware_blocks_remote_clients_when_proxy_headers_trusted(
     """REQ-SEC-001: trusted proxy mode enforces forwarded remote blocking."""
     monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
     response = test_client.get("/", headers={"x-forwarded-for": "203.0.113.10"})
+    assert response.status_code == 403
+    assert "Remote access is disabled" in response.json()["detail"]
+    assert "X-Ugoite-Signature" in response.headers
+
+
+def test_middleware_blocks_spoofed_loopback_forwarded_for_when_proxy_headers_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQ-SEC-001: spoofed loopback X-Forwarded-For must not bypass remote blocking."""
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    client = TestClient(app, client=("198.51.100.20", 50000))
+
+    response = client.get("/", headers={"x-forwarded-for": "127.0.0.1"})
+
     assert response.status_code == 403
     assert "Remote access is disabled" in response.json()["detail"]
     assert "X-Ugoite-Signature" in response.headers
