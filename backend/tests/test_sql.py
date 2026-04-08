@@ -900,7 +900,8 @@ def test_sql_sessions_req_api_008_filter_auxiliary_tables_by_acl(
         json={
             "id": "restricted-z",
             "content": (
-                "---\nform: RestrictedTask\n---\n# Restricted Z\n\n## Summary\nRestricted Z\n"
+                "---\nform: RestrictedTask\n---\n"
+                "# Restricted Z\n\n## Summary\nRestricted Z\n"
             ),
         },
     )
