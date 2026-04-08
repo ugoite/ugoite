@@ -92,7 +92,7 @@ The helper validates that code against `UGOITE_DEV_2FA_SECRET`, then stores the
 resulting **login context** in `~/.ugoite/dev-auth.json` with owner-only
 permissions (`0600`). The file contains the selected mode, username, signing
 material, and a reusable `UGOITE_DEV_PASSKEY_CONTEXT` value. The frontend proxy
-and CLI forward that passkey-bound local context automatically during
+and CLI forward that passkey-bound local context automatically for loopback
 `passkey-totp` login requests. The file does **not** store an authenticated
 bearer token and it does **not** start the app already logged in.
 
@@ -170,6 +170,14 @@ the local `UGOITE_DEV_PASSKEY_CONTEXT`, and the authenticated admin user can
 then create additional spaces.
 Repeated invalid login attempts hit the same temporary `429 Too Many Requests`
 throttle the browser flow uses.
+
+If you run the CLI from a fresh shell after `mise run dev`, it first checks the
+current `UGOITE_DEV_PASSKEY_CONTEXT` export and then falls back to the cached
+local dev auth file at `~/.ugoite/dev-auth.json` (or `UGOITE_DEV_AUTH_FILE` when
+you override it). If that cache is missing or stale, rerun
+`eval "$(bash scripts/dev-auth-env.sh)"` from the repo root before
+`ugoite auth login` so the current shell sees the same passkey-bound local
+context as the running backend.
 
 ## 7) Local demo login (`mock-oauth`) mode
 
