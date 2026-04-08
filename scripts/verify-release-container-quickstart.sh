@@ -84,6 +84,7 @@ PLAYWRIGHT_TESTS=(
 )
 
 mkdir -p "$STACK_DIR/spaces" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
+chmod 0777 "$STACK_DIR/spaces"
 
 cleanup() {
   status=$?
