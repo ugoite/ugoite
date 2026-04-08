@@ -38,6 +38,7 @@ requirements:
       - test_docs_req_ops_001_shell_blocks_parse
       - test_docs_req_ops_001_backend_targeted_pytest_path_is_documented
       - test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack
+      - test_docs_req_ops_001_source_compose_frontend_stays_loopback_only
       - test_docs_req_ops_001_env_matrix_matches_runtime_usage
       - test_docs_req_ops_001_mise_versions_match_ci_pins
 - set_id: REQCAT-OPS
@@ -564,13 +565,23 @@ requirements:
 
     login context with owner-only permissions, require a passkey-bound local
 
-    context in addition to the 2FA code during explicit browser/CLI login,
+    context in addition to the 2FA code during explicit browser/CLI login, keep
 
-    keep `GET /auth/config` read-only so login discovery cannot recreate
+    `GET /auth/config` read-only so login discovery cannot recreate admin-space
 
-    admin-space or other storage state, and
+    or other storage state, apply temporary throttling after repeated failed
 
-    complete an explicit login step before a bearer token is issued. `mock-oauth`
+    `passkey-totp` login attempts so the endpoint cannot be hammered
+
+    indefinitely, and
+
+    complete an explicit login step before a bearer token is issued. Browser
+
+    login MUST terminate through the frontend proxy, which stores the resulting
+
+    bearer token in an HttpOnly session cookie instead of exposing it to
+
+    frontend JavaScript. `mock-oauth`
 
     MAY remain as an explicit development-only OAuth-style login path, but no dev
 
@@ -607,12 +618,16 @@ requirements:
       - test_dev_auth_req_ops_015_auth_config_remains_read_only
       - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
       - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
+      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures
+      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures
+      - test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window
       - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
       - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
       - test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context
       - test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context
       - test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context
       - test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context
+      - test_dev_auth_req_ops_015_rejects_spoofed_loopback_forwarded_for
       - test_dev_auth_req_ops_015_allows_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token
       - test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token
@@ -626,13 +641,17 @@ requirements:
     vitest:
     - file: frontend/src/routes/login.test.tsx
       tests:
-      - 'REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie'
-      - 'REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection'
+      - 'REQ-OPS-015: signs in with passkey-totp without exposing a readable auth cookie'
+      - 'REQ-OPS-015: uses explicit mock-oauth browser login without exposing a readable auth cookie'
       - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
       - 'REQ-OPS-015: keeps the /spaces shortcut out of signed-out login screens'
       - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
       - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
       - 'REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows'
+    - file: frontend/src/routes/api/[...path].test.ts
+      tests:
+      - 'REQ-OPS-015: proxy login stores browser auth in an HttpOnly cookie and redacts the bearer token'
+      - 'REQ-OPS-015: proxy login marks auth cookies Secure when HTTPS is forwarded'
     - file: frontend/src/lib/api.test.ts
       tests:
       - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
@@ -642,6 +661,12 @@ requirements:
       - 'REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset'
       - 'REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured'
       - 'REQ-OPS-015: does not derive the SSR API origin from the incoming request'
+    - file: frontend/src/lib/auth-cookie.test.ts
+      tests:
+      - 'REQ-OPS-015: reads auth cookies from browser request headers'
+      - 'REQ-OPS-015: treats missing, blank, and undecodable auth cookies safely'
+      - 'REQ-OPS-015: builds HttpOnly auth cookies with explicit expiry'
+      - 'REQ-OPS-015: omits auth cookie expiry when the browser session should stay transient'
     - file: frontend/src/lib/frontend-origin.test.ts
       tests:
       - 'REQ-OPS-015: falls back to the default frontend test origin when process env is unavailable'
@@ -653,9 +678,6 @@ requirements:
     - file: frontend/src/lib/auth-api.test.ts
       tests:
       - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'
-      - 'REQ-OPS-015: writes and clears browser auth cookies with explicit expiry'
-      - 'REQ-OPS-015: writes and clears browser auth cookies with explicit expiry safely when document is unavailable'
-      - 'REQ-OPS-015: no-ops when cookie descriptors are unavailable'
     - file: frontend/src/routes/spaces/index.test.tsx
       tests:
       - 'REQ-OPS-015: redirects unauthenticated users to the explicit login route'
@@ -676,6 +698,7 @@ requirements:
     e2e:
     - file: e2e/smoke.test.ts
       tests:
+      - 'REQ-OPS-015: browser mock-oauth login reaches /spaces with an HttpOnly auth cookie and default ahead of reserved admin-space'
       - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
     - file: e2e/public-pages.test.ts
       tests:

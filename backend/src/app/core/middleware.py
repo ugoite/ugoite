@@ -70,7 +70,8 @@ def _request_uses_https(
     trust_proxy_headers: bool,
 ) -> bool:
     """Determine whether the effective request scheme is HTTPS."""
-    if trust_proxy_headers:
+    direct_client_host = request.client.host if request.client else None
+    if trust_proxy_headers and is_local_host(direct_client_host):
         forwarded_proto = request.headers.get("x-forwarded-proto", "")
         effective_proto = forwarded_proto.split(",", 1)[0].strip().lower()
         if effective_proto:

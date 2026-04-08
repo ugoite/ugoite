@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.api import router as api_router
+from app.api.endpoints.auth import configure_dev_auth_bearer_env
 from app.core.config import get_root_path
 from app.core.middleware import security_middleware
 from app.core.storage import storage_config_from_root
@@ -74,6 +75,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan context manager for startup/shutdown events."""
     # Startup
     _validate_cors_configuration(_cors_allowed_origins())
+    configure_dev_auth_bearer_env()
     root_path: Path | str = get_root_path()
     storage_config = storage_config_from_root(root_path)
     dev_auth_mode = os.environ.get("UGOITE_DEV_AUTH_MODE", "").strip()
@@ -89,6 +91,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         os.environ.get("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "false").lower() == "true"
     )
     if should_bootstrap_default_space:
+        # Dev auth still bootstraps admin-space for creation permissions, while
+        # newcomer browser flows rely on a separate user-facing default space.
         try:
             await ugoite_core.create_space(storage_config, "default")
             logger.info("Created default space at startup")

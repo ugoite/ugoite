@@ -32,7 +32,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content: `---\nform: Entry\n---\n# E2E Test Entry ${timestamp}\n\n## Body\nCreated at ${new Date().toISOString()}`,
+					markdown: `---\nform: Entry\n---\n# E2E Test Entry ${timestamp}\n\n## Body\nCreated at ${new Date().toISOString()}`,
 				},
 			},
 		);
@@ -59,7 +59,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Initial Content\n\n## Body\nThis is the first version.",
 				},
 			},
@@ -104,7 +104,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Conflict Test\n\n## Body\nTesting revision conflicts.",
 				},
 			},
@@ -146,7 +146,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Persistence Test\n\n## Body\nOriginal content.",
 				},
 			},
@@ -212,7 +212,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Detail Route Test\n\n## Body\nRoute render check.",
 				},
 			},
@@ -272,7 +272,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content: `---\nform: Entry\n---\n# ${title}\n\n## Body\nTesting special chars in title.`,
+					markdown: `---\nform: Entry\n---\n# ${title}\n\n## Body\nTesting special chars in title.`,
 				},
 			},
 		);
@@ -293,17 +293,17 @@ test.describe("Entries CRUD", () => {
 		const formEntries = await Promise.all([
 			request.post(getBackendUrl("/spaces/default/entries"), {
 				data: {
-					content: "---\nform: Entry\n---\n# Entry A\n\n## Body\nContent A",
+					markdown: "---\nform: Entry\n---\n# Entry A\n\n## Body\nContent A",
 				},
 			}),
 			request.post(getBackendUrl("/spaces/default/entries"), {
 				data: {
-					content: "---\nform: Entry\n---\n# Entry B\n\n## Body\nContent B",
+					markdown: "---\nform: Entry\n---\n# Entry B\n\n## Body\nContent B",
 				},
 			}),
 			request.post(getBackendUrl("/spaces/default/entries"), {
 				data: {
-					content: "---\nform: Entry\n---\n# Entry C\n\n## Body\nContent C",
+					markdown: "---\nform: Entry\n---\n# Entry C\n\n## Body\nContent C",
 				},
 			}),
 		]);
@@ -342,7 +342,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Timeout Recovery Test\n\n## Body\nEnsure navigation resolves.",
 				},
 			},
@@ -365,7 +365,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Update Test Entry\n\n## Body\nOriginal content",
 				},
 			},
@@ -398,7 +398,7 @@ test.describe("Entries CRUD", () => {
 			getBackendUrl("/spaces/default/entries"),
 			{
 				data: {
-					content:
+					markdown:
 						"---\nform: Entry\n---\n# Delete Test Entry\n\n## Body\nTo be deleted",
 				},
 			},

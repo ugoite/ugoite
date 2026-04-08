@@ -30,7 +30,7 @@ test.describe("UI theme flows", () => {
 			try {
 				const entryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 					data: {
-						content: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
+						markdown: `---\nform: Entry\n---\n# ${entryTitle}\n\n## Body\nTheme flow test.`,
 					},
 				});
 				expect(entryRes.status()).toBe(201);

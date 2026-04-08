@@ -72,6 +72,9 @@ Content-Type: application/json
 }
 ```
 
+Repeated invalid `passkey-totp` login attempts temporarily return
+`429 Too Many Requests` with a `Retry-After` header.
+
 Authorization policy baseline:
 
 - Every request resolves an authenticated `user_id` in the target space.
@@ -107,12 +110,19 @@ GET /spaces
 ```json
 [
   {
-    "id": "ws-main",
-    "name": "Personal Knowledge",
-    "created_at": "2025-08-12T12:00:00Z"
+    "id": "default",
+    "name": "default",
+    "created_at": "2025-08-12T12:00:00Z",
+    "is_admin_space": false
   }
 ]
 ```
+
+Notes:
+
+- `default` stays ahead of reserved bootstrap spaces in list responses.
+- Reserved bootstrap spaces include `is_admin_space: true` so browser clients can
+  keep newcomer-facing workspace lists separate from internal admin workflows.
 
 #### Create Space
 ```http
@@ -154,6 +164,11 @@ Content-Type: application/json
 
 **Response**: `200 OK`
 
+Notes:
+- `storage_config` updates saved connector metadata only. The backend continues
+  writing through the deployment storage root until per-space routing or
+  migration support is available.
+
 #### Test Connection
 ```http
 POST /spaces/{id}/test-connection
@@ -170,6 +185,8 @@ Content-Type: application/json
 **Response**: `200 OK` or `400 Bad Request`
 
 Notes:
+- Test Connection validates a proposed connector target only; it does not switch
+  the space's active write location.
 - `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`, or be a plain local path starting with `/` or `.`.
 - `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
 
@@ -203,7 +220,7 @@ POST /spaces/{space_id}/entries
 Content-Type: application/json
 
 {
-  "content": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
+  "markdown": "---\nform: Entry\n---\n# My Entry\n\n## Body\nValue"
 }
 ```
 
@@ -220,7 +237,7 @@ or extracted properties resolve a `form`, the adapter MUST enforce that Form's
 write ACL before mutating storage; otherwise it falls back to the space-level
 `entry_write` permission.
 
-Create request bodies submit entry Markdown via the `content` field.
+Create request bodies submit entry Markdown via the canonical `markdown` field.
 Create responses return only the generated `id` and `revision_id`; fetch the
 entry afterward if a client needs extracted title or properties.
 

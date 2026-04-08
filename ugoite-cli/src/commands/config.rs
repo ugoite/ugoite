@@ -1,6 +1,6 @@
 use crate::config::{
-    endpoint_transport_warning, load_config, print_json, save_config, validate_server_endpoint_url,
-    EndpointMode,
+    endpoint_transport_warning, load_config, print_json, save_config,
+    validate_active_remote_endpoint, validate_server_endpoint_url, EndpointMode,
 };
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -19,7 +19,7 @@ pub enum ConfigSubCmd {
     Current,
     /// Save endpoint config (mode, backend URL, API URL)
     #[command(
-        long_about = "Save endpoint configuration.\n\nWhich mode should you use?\n  core     - Default. Use when you are working directly with a local checkout or local spaces/ directory.\n  backend  - Use when you want the CLI to talk to a backend server directly.\n  api      - Use when you want the CLI to use the same proxied /api surface as the frontend.\n\nWhy core is the default:\n  core keeps the CLI local-first. Commands read and write your filesystem directly, with no server required.\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (same proxied /api surface as the frontend)\n  ugoite config set --mode api --api-url https://example.com/api\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
+        long_about = "Save endpoint configuration.\n\nWhich mode should you use?\n  core     - Default. Use when you are working directly with a local checkout or local spaces/ directory.\n  backend  - Use when you want the CLI to talk to a backend server directly.\n  api      - Use when you want the CLI to use the same proxied /api surface as the frontend.\n\nWhy core is the default:\n  core keeps the CLI local-first. Commands read and write your filesystem directly, with no server required.\n\nRemote credentialed endpoints MUST use HTTPS. Cleartext http:// is only accepted for loopback development hosts (`localhost`, `127.0.0.1`, `[::1]`).\n\nExamples:\n  # Core mode (default, uses local filesystem)\n  ugoite config set --mode core\n\n  # Backend mode (connect to local backend)\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # API mode (same proxied /api surface as the frontend)\n  ugoite config set --mode api --api-url https://example.com/api\n\n  # Update only the backend URL (keep current mode)\n  ugoite config set --backend-url http://localhost:9000"
     )]
     Set {
         #[arg(
@@ -29,10 +29,13 @@ pub enum ConfigSubCmd {
         mode: Option<String>,
         #[arg(
             long,
-            help = "Backend server URL (used in backend mode, e.g. http://localhost:8000)"
+            help = "Backend server URL (used in backend mode; use https:// for non-loopback hosts, e.g. http://localhost:8000)"
         )]
         backend_url: Option<String>,
-        #[arg(long, help = "API endpoint URL (used in api mode)")]
+        #[arg(
+            long,
+            help = "API endpoint URL (used in api mode; use https:// for non-loopback hosts)"
+        )]
         api_url: Option<String>,
     },
 }
@@ -70,15 +73,7 @@ pub async fn run(cmd: ConfigCmd) -> Result<()> {
                 validate_server_endpoint_url(&u, "API endpoint")?;
                 config.api_url = u;
             }
-            match config.mode {
-                EndpointMode::Backend => {
-                    validate_server_endpoint_url(&config.backend_url, "Backend endpoint")?;
-                }
-                EndpointMode::Api => {
-                    validate_server_endpoint_url(&config.api_url, "API endpoint")?;
-                }
-                EndpointMode::Core => {}
-            }
+            validate_active_remote_endpoint(&config)?;
             print_mode_transition_notice(&previous_mode, &config.mode, &config);
             let path = save_config(&config)?;
             print_json(&serde_json::json!({

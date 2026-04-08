@@ -93,6 +93,24 @@ Restricted task
     return response.json()["id"]
 
 
+def _invite_and_accept_viewer(
+    owner_client: TestClient,
+    viewer_client: TestClient,
+    space_id: str,
+) -> None:
+    invite_response = owner_client.post(
+        f"/spaces/{space_id}/members/invitations",
+        json={"user_id": "viewer-user", "role": "viewer"},
+    )
+    assert invite_response.status_code == 201
+
+    accept_response = viewer_client.post(
+        f"/spaces/{space_id}/members/accept",
+        json={"token": invite_response.json()["invitation"]["token"]},
+    )
+    assert accept_response.status_code == 200
+
+
 def test_form_acl_denies_unauthorized_read_access(
     auth_clients: dict[str, TestClient],
 ) -> None:
@@ -119,19 +137,7 @@ def test_form_acl_denies_unauthorized_write_access(
     owner = auth_clients["owner"]
     viewer = auth_clients["viewer"]
     space_id = _create_space(owner, "acl-write-ws")
-
-    patch_response = owner.patch(
-        f"/spaces/{space_id}",
-        json={
-            "settings": {
-                "member_roles": {
-                    "owner-user": "owner",
-                    "viewer-user": "viewer",
-                },
-            },
-        },
-    )
-    assert patch_response.status_code == 200
+    _invite_and_accept_viewer(owner, viewer, space_id)
 
     form_payload = {
         "name": "EditorOnly",
@@ -154,16 +160,13 @@ def test_form_acl_allows_group_principal_access(
     owner = auth_clients["owner"]
     viewer = auth_clients["viewer"]
     space_id = _create_space(owner, "acl-group-ws")
+    _invite_and_accept_viewer(owner, viewer, space_id)
 
     patch_response = owner.patch(
         f"/spaces/{space_id}",
         json={
             "settings": {
                 "user_groups": {"viewer-user": ["eng"]},
-                "member_roles": {
-                    "owner-user": "owner",
-                    "viewer-user": "viewer",
-                },
             },
         },
     )

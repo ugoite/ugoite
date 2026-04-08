@@ -1,6 +1,7 @@
 """Local development login endpoint tests.
 
 REQ-OPS-015: Local dev auth mode selection.
+REQ-SEC-001: Local-only defaults and container auth-secret protections.
 """
 
 from __future__ import annotations
@@ -8,16 +9,22 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import os
 import shutil
 import subprocess
+import threading
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, redirect_stderr
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 import ugoite_core
 from fastapi.testclient import TestClient
 
+from app.api.endpoints import auth as auth_endpoints
 from app.core.auth import clear_auth_manager_cache
 from app.main import app
 
@@ -28,6 +35,7 @@ DEFAULT_TEST_PASSKEY_CONTEXT = "{}-{}-{}".format("dev", "passkey", "context")
 TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
+LOCAL_SMOKE_CHECK_SCRIPT_PATH = REPO_ROOT / "scripts" / "local-smoke-check.sh"
 
 
 def _totp_code(secret: str, timestamp: int) -> str:
@@ -70,10 +78,79 @@ def _configure_dev_auth_env(
     monkeypatch.setenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", env["UGOITE_DEV_SIGNING_KID"])
 
 
+@contextmanager
+def _serve_http(
+    response_factory: Callable[[str, dict[str, str]], tuple[int, bytes, str]],
+) -> Iterator[tuple[str, list[tuple[str, dict[str, str]]]]]:
+    requests: list[tuple[str, dict[str, str]]] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            headers = dict(self.headers.items())
+            requests.append((self.path, headers))
+            status_code, body, content_type = response_factory(self.path, headers)
+            self.send_response(status_code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+
+    def _serve_quietly() -> None:
+        with redirect_stderr(io.StringIO()):
+            server.serve_forever()
+
+    thread = threading.Thread(target=_serve_quietly, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", requests
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def _run_local_smoke_check(
+    *,
+    backend_url: str,
+    frontend_url: str,
+    bearer_token: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "BACKEND_URL": backend_url,
+            "FRONTEND_URL": frontend_url,
+        },
+    )
+    env.pop("UGOITE_AUTH_API_KEY", None)
+    if bearer_token is None:
+        env.pop("UGOITE_AUTH_BEARER_TOKEN", None)
+    else:
+        env["UGOITE_AUTH_BEARER_TOKEN"] = bearer_token
+    return subprocess.run(
+        ["/bin/bash", str(LOCAL_SMOKE_CHECK_SCRIPT_PATH)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
 def _passkey_headers(
     context: str = DEFAULT_TEST_PASSKEY_CONTEXT,
 ) -> dict[str, str]:
     return {"x-ugoite-dev-passkey-context": context}
+
+
+@pytest.fixture(autouse=True)
+def _clear_dev_login_attempts() -> Iterator[None]:
+    auth_endpoints.clear_login_attempts()
+    yield
+    auth_endpoints.clear_login_attempts()
 
 
 def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(
@@ -98,6 +175,59 @@ def test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode(
         "supports_passkey_totp": True,
         "supports_mock_oauth": False,
     }
+
+
+def test_dev_auth_req_sec_001_startup_derives_bearer_env_from_signing_material(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: containerized dev auth derives bearer verification state."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", raising=False)
+    clear_auth_manager_cache()
+
+    with TestClient(app) as client:
+        login_response = client.post("/auth/mock-oauth")
+        assert login_response.status_code == 200
+        assert (
+            os.environ["UGOITE_AUTH_BEARER_SECRETS"]
+            == f"{DEFAULT_TEST_SIGNING_KID}:{DEFAULT_TEST_SIGNING_SECRET}"
+        )
+        assert os.environ["UGOITE_AUTH_BEARER_ACTIVE_KIDS"] == DEFAULT_TEST_SIGNING_KID
+
+        token = login_response.json()["bearer_token"]
+        spaces_response = client.get(
+            "/spaces",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert spaces_response.status_code == 200
+
+
+def test_dev_auth_req_sec_001_skips_bearer_derivation_without_signing_material(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: startup skips derived bearer auth without signing material."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", " ")
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
+    monkeypatch.delenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", raising=False)
+    clear_auth_manager_cache()
+
+    auth_endpoints.configure_dev_auth_bearer_env()
+
+    assert "UGOITE_AUTH_BEARER_SECRETS" not in os.environ
+    assert "UGOITE_AUTH_BEARER_ACTIVE_KIDS" not in os.environ
 
 
 def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
@@ -367,6 +497,117 @@ def test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack(
         assert space_response.json()["id"] == space_id
 
 
+def test_local_smoke_check_req_ops_015_uses_auth_config_without_token() -> None:
+    """REQ-OPS-015: local smoke checks stay non-interactive without a bearer token."""
+
+    def backend_response(path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
+        if path == "/health":
+            return 200, b"ok", "text/plain; charset=utf-8"
+        if path == "/auth/config":
+            return 200, b'{"mode":"mock-oauth"}', "application/json"
+        if path == "/spaces":
+            return 401, b'{"detail":"missing bearer token"}', "application/json"
+        return 404, b"not found", "text/plain; charset=utf-8"
+
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
+        return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
+
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
+        result = _run_local_smoke_check(
+            backend_url=backend_url,
+            frontend_url=frontend_url,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert [path for path, _headers in backend_requests] == ["/health", "/auth/config"]
+    assert [path for path, _headers in frontend_requests] == ["/"]
+    assert "Checking backend auth config" in result.stdout
+    assert "Local smoke check passed" in result.stdout
+
+
+def test_local_smoke_check_req_ops_015_fails_when_auth_config_errors() -> None:
+    """REQ-OPS-015: local smoke checks fail when the auth config probe fails."""
+
+    def backend_response(path: str, _headers: dict[str, str]) -> tuple[int, bytes, str]:
+        if path == "/health":
+            return 200, b"ok", "text/plain; charset=utf-8"
+        if path == "/auth/config":
+            return 503, b'{"detail":"auth config unavailable"}', "application/json"
+        return 404, b"not found", "text/plain; charset=utf-8"
+
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
+        return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
+
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
+        result = _run_local_smoke_check(
+            backend_url=backend_url,
+            frontend_url=frontend_url,
+        )
+
+    assert result.returncode != 0
+    assert [path for path, _headers in backend_requests] == ["/health", "/auth/config"]
+    assert frontend_requests == []
+    assert "Checking backend auth config" in result.stdout
+    assert "503" in result.stderr
+
+
+def test_local_smoke_check_req_ops_015_uses_spaces_with_bearer_token() -> None:
+    """REQ-OPS-015: local smoke checks may probe spaces when auth is explicit."""
+    bearer_token = "dev-local-token"
+
+    def backend_response(path: str, headers: dict[str, str]) -> tuple[int, bytes, str]:
+        if path == "/health":
+            return 200, b"ok", "text/plain; charset=utf-8"
+        if path == "/auth/config":
+            return 200, b'{"mode":"mock-oauth"}', "application/json"
+        if path == "/spaces":
+            if headers.get("Authorization") == f"Bearer {bearer_token}":
+                return 200, b"[]", "application/json"
+            return 401, b'{"detail":"missing bearer token"}', "application/json"
+        return 404, b"not found", "text/plain; charset=utf-8"
+
+    def frontend_response(
+        _path: str,
+        _headers: dict[str, str],
+    ) -> tuple[int, bytes, str]:
+        return 200, b"<!doctype html><title>Ugoite</title>", "text/html; charset=utf-8"
+
+    with (
+        _serve_http(backend_response) as (backend_url, backend_requests),
+        _serve_http(
+            frontend_response,
+        ) as (frontend_url, frontend_requests),
+    ):
+        result = _run_local_smoke_check(
+            backend_url=backend_url,
+            frontend_url=frontend_url,
+            bearer_token=bearer_token,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert [path for path, _headers in backend_requests] == ["/health", "/spaces"]
+    assert [path for path, _headers in frontend_requests] == ["/"]
+    assert backend_requests[1][1]["Authorization"] == f"Bearer {bearer_token}"
+    assert "Checking backend spaces endpoint" in result.stdout
+    assert "Local smoke check passed" in result.stdout
+
+
 def test_dev_auth_req_ops_015_config_rejects_unsupported_mode(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
@@ -429,6 +670,7 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_wrong_username(
 ) -> None:
     """REQ-OPS-015: manual login rejects usernames outside the terminal context."""
     timestamp = int(time.time())
+    monotonic = 30_000.0
     secret = TEST_TOTP_SECRET
     _configure_dev_auth_env(
         monkeypatch,
@@ -437,16 +679,32 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_wrong_username(
     )
     monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
     monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
     clear_auth_manager_cache()
 
-    response = TestClient(app).post(
+    client = TestClient(app)
+    payload = {"username": "other-user", "totp_code": _totp_code(secret, timestamp)}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        response = client.post(
+            "/auth/login",
+            json=payload,
+            headers=_passkey_headers(),
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid username or 2FA code."
+        monotonic += 1.0
+
+    throttled_response = client.post(
         "/auth/login",
-        json={"username": "other-user", "totp_code": _totp_code(secret, timestamp)},
+        json=payload,
         headers=_passkey_headers(),
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid username or 2FA code."
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
 
 
 def test_dev_auth_req_ops_015_rejects_remote_clients(
@@ -464,6 +722,30 @@ def test_dev_auth_req_ops_015_rejects_remote_clients(
 
     client = TestClient(app, client=("198.51.100.20", 50000))
     response = client.get("/auth/config")
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "Explicit login endpoints are only available from loopback clients."
+    )
+
+
+def test_dev_auth_req_ops_015_rejects_spoofed_loopback_forwarded_for(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: dev auth ignores spoofed loopback forwarded headers."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
+    monkeypatch.setenv("UGOITE_TRUST_PROXY_HEADERS", "true")
+    clear_auth_manager_cache()
+
+    client = TestClient(app, client=("198.51.100.20", 50000))
+    response = client.get("/auth/config", headers={"x-forwarded-for": "127.0.0.1"})
 
     assert response.status_code == 403
     assert (
@@ -622,6 +904,181 @@ def test_dev_auth_req_ops_015_passkey_login_rejects_invalid_totp_code(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or 2FA code."
+
+
+def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: repeated invalid passkey login attempts temporarily return 429."""
+    monotonic = 10_000.0
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", TEST_TOTP_SECRET)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    invalid_payload = {"username": "dev-alice", "totp_code": "000000"}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        response = client.post(
+            "/auth/login",
+            json=invalid_payload,
+            headers=_passkey_headers(),
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid username or 2FA code."
+        monotonic += 1.0
+
+    throttled_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
+    assert throttled_response.headers["retry-after"] == "60"
+
+    follow_up_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert follow_up_response.status_code == 429
+    assert follow_up_response.headers["retry-after"] == "60"
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_detail"),
+    [
+        (None, "Passkey-bound local context is missing or invalid."),
+        (
+            _passkey_headers("wrong-context"),
+            "Passkey-bound local context is missing or invalid.",
+        ),
+        (
+            _passkey_headers("   "),
+            "Passkey-bound local context is missing or invalid.",
+        ),
+    ],
+    ids=["missing", "wrong", "blank"],
+)
+def test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+    headers: dict[str, str] | None,
+    expected_detail: str,
+) -> None:
+    """REQ-OPS-015: passkey-totp login throttles repeated local-context failures."""
+    timestamp = 1_700_000_000
+    monotonic = 15_000.0
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    valid_payload = {
+        "username": "dev-alice",
+        "totp_code": _totp_code(secret, timestamp),
+    }
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT - 1):
+        if headers is None:
+            response = client.post("/auth/login", json=valid_payload)
+        else:
+            response = client.post(
+                "/auth/login",
+                json=valid_payload,
+                headers=headers,
+            )
+        assert response.status_code == 401
+        assert response.json()["detail"] == expected_detail
+        monotonic += 1.0
+
+    if headers is None:
+        throttled_response = client.post("/auth/login", json=valid_payload)
+    else:
+        throttled_response = client.post(
+            "/auth/login",
+            json=valid_payload,
+            headers=headers,
+        )
+    assert throttled_response.status_code == 429
+    assert throttled_response.json()["detail"] == (
+        "Too many failed login attempts. Try again in 60 seconds."
+    )
+    assert throttled_response.headers["retry-after"] == "60"
+
+
+def test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-OPS-015: passkey-totp login clears the temporary throttle after the wait."""
+    timestamp = 1_700_000_000
+    monotonic = 20_000.0
+    secret = TEST_TOTP_SECRET
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="passkey-totp",
+    )
+    monkeypatch.setenv("UGOITE_DEV_2FA_SECRET", secret)
+    monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
+    monkeypatch.setattr("ugoite_core.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.time", lambda: timestamp)
+    monkeypatch.setattr("app.api.endpoints.auth.time.monotonic", lambda: monotonic)
+    clear_auth_manager_cache()
+
+    client = TestClient(app)
+    invalid_payload = {"username": "dev-alice", "totp_code": "000000"}
+
+    for _ in range(auth_endpoints.LOGIN_FAILURE_LIMIT):
+        response = client.post(
+            "/auth/login",
+            json=invalid_payload,
+            headers=_passkey_headers(),
+        )
+        monotonic += 1.0
+
+    assert response.status_code == 429
+    monotonic += auth_endpoints.LOGIN_LOCKOUT_SECONDS + 1.0
+
+    successful_response = client.post(
+        "/auth/login",
+        json={
+            "username": "dev-alice",
+            "totp_code": _totp_code(secret, timestamp),
+        },
+        headers=_passkey_headers(),
+    )
+
+    assert successful_response.status_code == 200
+
+    monotonic += 1.0
+    next_failure_response = client.post(
+        "/auth/login",
+        json=invalid_payload,
+        headers=_passkey_headers(),
+    )
+
+    assert next_failure_response.status_code == 401
+    assert next_failure_response.json()["detail"] == "Invalid username or 2FA code."
 
 
 def test_dev_auth_req_ops_015_passkey_login_requires_signing_material(

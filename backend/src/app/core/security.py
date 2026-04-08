@@ -32,13 +32,14 @@ def resolve_client_host(
     Args:
         headers: Request headers (case-insensitive mapping provided by Starlette).
         client_host: Host extracted from the ASGI scope.
-        trust_proxy_headers: Whether to honor `X-Forwarded-For` from trusted proxies.
+        trust_proxy_headers: Whether to honor `X-Forwarded-For` from loopback
+            reverse proxies.
 
     Returns:
         The best-effort remote address string or ``None`` when unavailable.
 
     """
-    if trust_proxy_headers:
+    if trust_proxy_headers and is_local_host(client_host):
         forwarded = headers.get("x-forwarded-for")
         if forwarded:
             candidate = forwarded.split(",", 1)[0].strip()

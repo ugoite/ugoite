@@ -4,10 +4,24 @@
  */
 
 /** Space metadata */
+export interface SpaceStorage {
+	type?: string;
+	root?: string;
+}
+
+/** Space metadata */
+export interface SpaceStorage {
+	type?: string;
+	root?: string;
+}
+
+/** Space metadata */
 export interface Space {
 	id: string;
 	name: string;
 	created_at: string;
+	is_admin_space?: boolean;
+	storage?: SpaceStorage;
 	storage_config?: Record<string, unknown>;
 	settings?: Record<string, unknown>;
 }
@@ -123,6 +137,7 @@ export interface Entry {
 	tags?: string[];
 	canvas_position?: CanvasPosition;
 	content: string;
+	markdown?: string;
 	revision_id: string;
 	created_at: string;
 	updated_at: string;
@@ -138,7 +153,7 @@ export interface EntryRevision {
 /** Create entry payload */
 export interface EntryCreatePayload {
 	id?: string;
-	content: string;
+	markdown: string;
 }
 
 /** Update entry payload */

@@ -1,10 +1,9 @@
 import { createSignal } from "solid-js";
 import { readLocalPreferences, writeLocalPreferences } from "./preferences-local";
 import { portablePreferences, setSelectedSpacePreference } from "~/lib/preferences-store";
+import { DEFAULT_SPACE_ID, isReservedAdminSpace, sortSpaces } from "./space-list";
 import type { Space } from "./types";
 import { spaceApi } from "./space-api";
-
-const DEFAULT_SPACE_ID = "default";
 
 /**
  * Creates a reactive space store.
@@ -43,35 +42,38 @@ export function createSpaceStore() {
 		setLoading(true);
 		setError(null);
 		try {
-			const fetchedSpaces = await spaceApi.list();
+			const fetchedSpaces = sortSpaces(await spaceApi.list());
 			setSpaces(fetchedSpaces);
+			const selectableSpaces = fetchedSpaces.filter((space) => !isReservedAdminSpace(space));
 
 			// Try to restore persisted space selection
 			const persistedId = getPersistedSpaceId();
-			if (persistedId && fetchedSpaces.some((space) => space.id === persistedId)) {
+			const repairingPersistedSelection =
+				persistedId !== null && !selectableSpaces.some((space) => space.id === persistedId);
+			if (persistedId && selectableSpaces.some((space) => space.id === persistedId)) {
 				setSelectedSpaceId(persistedId, false);
 				setInitialized(true);
 				return persistedId;
 			}
 
 			// If default space exists, select it
-			const defaultSpace = fetchedSpaces.find((space) => space.id === DEFAULT_SPACE_ID);
+			const defaultSpace = selectableSpaces.find((space) => space.id === DEFAULT_SPACE_ID);
 			if (defaultSpace) {
-				setSelectedSpaceId(DEFAULT_SPACE_ID, false);
+				setSelectedSpaceId(DEFAULT_SPACE_ID, repairingPersistedSelection);
 				setInitialized(true);
 				return DEFAULT_SPACE_ID;
 			}
 
-			// No client-side space creation; remain unselected when list is empty
-			if (fetchedSpaces.length === 0) {
-				setSelectedSpaceIdInternal(null);
+			// No client-side space creation; remain unselected when no user-facing spaces exist
+			if (selectableSpaces.length === 0) {
+				setSelectedSpaceId(null, repairingPersistedSelection);
 				setInitialized(true);
 				return "";
 			}
 
-			// Otherwise, select the first available space
-			const firstSpace = fetchedSpaces[0];
-			setSelectedSpaceId(firstSpace.id, false);
+			// Otherwise, select the first available user-facing space
+			const firstSpace = selectableSpaces[0];
+			setSelectedSpaceId(firstSpace.id, repairingPersistedSelection);
 			setInitialized(true);
 			return firstSpace.id;
 		} catch (e) {
