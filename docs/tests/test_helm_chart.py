@@ -137,7 +137,7 @@ REQUIRED_BACKEND_DOCKERFILE_HARDENING_FRAGMENTS = {
     'groupadd --system --gid "${UGOITE_GID}" ugoite',
     'useradd --system --uid "${UGOITE_UID}" --gid "${UGOITE_GID}"',
     "mkdir -p /data",
-    "chown -R ugoite:ugoite /app /data /home/ugoite",
+    "chown -R ugoite:ugoite /app /data /home/ugoite /ugoite-core /ugoite-minimum /ugoite-cli",
     "ENV HOME=/home/ugoite",
     "USER ugoite:ugoite",
 }
