@@ -38,7 +38,7 @@ ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 # Install backend dependencies
 RUN uv sync --locked \
 	&& mkdir -p /data \
-	&& chown -R ugoite:ugoite /app /data /home/ugoite
+	&& chown -R ugoite:ugoite /app /data /home/ugoite /ugoite-core /ugoite-minimum /ugoite-cli
 
 # Set the entrypoint for the backend application
 ENV HOME=/home/ugoite
