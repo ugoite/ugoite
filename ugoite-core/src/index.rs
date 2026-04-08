@@ -657,6 +657,7 @@ async fn build_sql_tables(
         tables.insert(form_name.to_lowercase(), rows);
     }
 
+    let visible_entry_ids: HashSet<String> = entries_map.keys().cloned().collect();
     let mut entry_form_map: HashMap<String, String> = HashMap::new();
     for (entry_id, entry_value) in entries_map {
         if let Some(form) = entry_value.get("form").and_then(|v| v.as_str()) {
@@ -668,10 +669,15 @@ async fn build_sql_tables(
     let entry_rows = entry::list_entry_rows(op, ws_path).await?;
     let mut link_rows = Vec::new();
     for (_form_name, row) in entry_rows {
-        if row.deleted {
+        if row.deleted || !visible_entry_ids.contains(&row.entry_id) {
             continue;
         }
         for link_item in row.links {
+            if !visible_entry_ids.contains(&link_item.source)
+                || !visible_entry_ids.contains(&link_item.target)
+            {
+                continue;
+            }
             let source_form = entry_form_map.get(&link_item.source).cloned();
             let target_form = entry_form_map.get(&link_item.target).cloned();
             link_rows.push(serde_json::json!({
