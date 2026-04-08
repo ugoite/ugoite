@@ -4,6 +4,7 @@
 mod support;
 
 use serde_json::json;
+use std::net::TcpListener;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -184,6 +185,66 @@ async fn test_cli_req_ops_006_http_helpers_surface_error_bodies() {
     assert!(delete_err.to_string().contains("delete failed"));
 }
 
+/// REQ-OPS-006: http_get must fail when a successful response body is not valid JSON.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_get_rejects_invalid_json_success_body() {
+    let (base, _requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", "not-json");
+    let get_err = http_get(&format!("{base}/items"))
+        .await
+        .expect_err("http_get should fail on invalid JSON");
+    handle.join().expect("join invalid json server");
+    assert!(
+        !get_err.to_string().is_empty(),
+        "invalid JSON should surface a decoding error"
+    );
+}
+
+/// REQ-OPS-006: HTTP helpers must surface transport errors when loopback endpoints are unreachable.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_helpers_surface_unreachable_loopback_transport_errors() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind closed-port probe");
+    let addr = listener.local_addr().expect("probe local addr");
+    drop(listener);
+    let closed_url = format!("http://{addr}/items");
+
+    let get_err = http_get(&closed_url)
+        .await
+        .expect_err("http_get should fail when loopback endpoint is unreachable");
+    let post_err = http_post(&closed_url, &json!({"name": "demo"}))
+        .await
+        .expect_err("http_post should fail when loopback endpoint is unreachable");
+    let proxy_post_err = http_post_with_dev_auth_proxy(&closed_url, &json!({}))
+        .await
+        .expect_err(
+            "http_post_with_dev_auth_proxy should fail when loopback endpoint is unreachable",
+        );
+    let put_err = http_put(&closed_url, &json!({"name": "updated"}))
+        .await
+        .expect_err("http_put should fail when loopback endpoint is unreachable");
+    let patch_err = http_patch(&closed_url, &json!({"name": "patched"}))
+        .await
+        .expect_err("http_patch should fail when loopback endpoint is unreachable");
+    let delete_err = http_delete(&closed_url)
+        .await
+        .expect_err("http_delete should fail when loopback endpoint is unreachable");
+
+    for err in [
+        get_err,
+        post_err,
+        proxy_post_err,
+        put_err,
+        patch_err,
+        delete_err,
+    ] {
+        assert!(
+            !err.to_string().is_empty(),
+            "transport failures should return a visible error"
+        );
+    }
+}
+
 /// REQ-OPS-006: HTTP helpers must reject unsafe non-loopback cleartext endpoints.
 #[tokio::test]
 async fn test_cli_req_ops_006_http_helpers_reject_unsafe_remote_urls() {
@@ -230,6 +291,18 @@ async fn test_cli_req_ops_006_http_helpers_reject_unsafe_remote_urls() {
     assert!(delete_err
         .to_string()
         .contains("Remote request URL http://example.com/items uses cleartext http://"));
+}
+
+/// REQ-OPS-006: the dev-auth proxy helper must reject invalid endpoint URLs before any request is sent.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_post_with_dev_auth_proxy_rejects_invalid_url() {
+    let err = http_post_with_dev_auth_proxy("not-a-url", &json!({}))
+        .await
+        .expect_err("http_post_with_dev_auth_proxy should reject invalid url");
+
+    assert!(err
+        .to_string()
+        .contains("Remote request URL \"not-a-url\" is invalid"));
 }
 
 /// REQ-OPS-006: auth headers must prefer bearer tokens and fall back to API keys.
@@ -374,6 +447,37 @@ async fn test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header() {
     assert!(!proxy_request
         .to_ascii_lowercase()
         .contains("x-ugoite-dev-passkey-context: cached-passkey-context\r\n"));
+}
+
+/// REQ-OPS-015: loopback auth helpers must ignore malformed cached dev auth files.
+#[tokio::test]
+async fn test_cli_req_ops_015_http_helpers_ignore_malformed_cached_dev_auth_file() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let malformed_auth_file = dir.path().join("malformed-dev-auth.json");
+    std::fs::write(&malformed_auth_file, "{not-json").expect("write malformed dev auth file");
+
+    std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+    std::env::set_var("UGOITE_DEV_AUTH_FILE", &malformed_auth_file);
+    std::env::remove_var("UGOITE_DEV_PASSKEY_CONTEXT");
+    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"ok":true}"#);
+    http_post_with_dev_auth_proxy(&format!("{base}/auth/mock-oauth"), &json!({}))
+        .await
+        .expect("malformed cached auth file request should succeed");
+    let request_text = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("malformed cached auth file request text");
+    handle
+        .join()
+        .expect("join malformed cached auth file request server");
+
+    assert!(request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-auth-proxy-token: proxy-secret\r\n"));
+    assert!(!request_text
+        .to_ascii_lowercase()
+        .contains("x-ugoite-dev-passkey-context:"));
 }
 
 /// REQ-OPS-006: explicit auth POST helpers must surface proxy-auth errors with response text.

@@ -17,7 +17,10 @@ pub async fn http_get(url: &str) -> Result<serde_json::Value> {
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.get(url));
-    let resp = req.send().await?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -29,7 +32,10 @@ pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.post(url).json(body));
-    let resp = req.send().await?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -41,10 +47,13 @@ pub async fn http_post_with_dev_auth_proxy(
     url: &str,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_dev_local_auth_headers(url, add_auth_headers(client.post(url).json(body)));
-    let resp = req.send().await?;
+    ensure_safe_remote_request_url(url)?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -56,7 +65,10 @@ pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json:
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.put(url).json(body));
-    let resp = req.send().await?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -68,7 +80,10 @@ pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_jso
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.patch(url).json(body));
-    let resp = req.send().await?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -80,7 +95,10 @@ pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
     ensure_safe_remote_request_url(url)?;
     let client = reqwest::Client::new();
     let req = add_auth_headers(client.delete(url));
-    let resp = req.send().await?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(error) => return Err(error.into()),
+    };
     if !resp.status().is_success() {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
@@ -210,6 +228,63 @@ mod tests {
         let request = add_dev_local_auth_headers(
             "https://example.com/auth/login",
             client.post("https://example.com/auth/login"),
+        )
+        .build()
+        .expect("build request");
+
+        assert!(request.headers().get(DEV_AUTH_PROXY_HEADER_NAME).is_none());
+        assert!(request
+            .headers()
+            .get(DEV_PASSKEY_CONTEXT_HEADER_NAME)
+            .is_none());
+
+        std::env::remove_var("UGOITE_DEV_AUTH_PROXY_TOKEN");
+        std::env::remove_var("UGOITE_DEV_PASSKEY_CONTEXT");
+    }
+
+    #[test]
+    fn test_dev_local_auth_headers_req_ops_015_add_loopback_headers() {
+        let _guard = env_lock().lock().expect("env lock");
+        std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+        std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
+
+        let client = reqwest::Client::new();
+        let request = add_dev_local_auth_headers(
+            "http://127.0.0.1:8000/auth/login",
+            client.post("http://127.0.0.1:8000/auth/login"),
+        )
+        .build()
+        .expect("build request");
+
+        assert_eq!(
+            request
+                .headers()
+                .get(DEV_AUTH_PROXY_HEADER_NAME)
+                .expect("proxy header"),
+            "proxy-secret"
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get(DEV_PASSKEY_CONTEXT_HEADER_NAME)
+                .expect("passkey context header"),
+            "passkey-context"
+        );
+
+        std::env::remove_var("UGOITE_DEV_AUTH_PROXY_TOKEN");
+        std::env::remove_var("UGOITE_DEV_PASSKEY_CONTEXT");
+    }
+
+    #[test]
+    fn test_dev_local_auth_headers_req_ops_015_skip_invalid_urls() {
+        let _guard = env_lock().lock().expect("env lock");
+        std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
+        std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
+
+        let client = reqwest::Client::new();
+        let request = add_dev_local_auth_headers(
+            "not-a-url",
+            client.post("http://127.0.0.1:8000/auth/login"),
         )
         .build()
         .expect("build request");
