@@ -30,7 +30,9 @@ const applyLocaleAttributes = (nextLocale: Locale) => {
 };
 
 const localeStore = createRoot(() => {
-	const [locale, setLocaleInternal] = createSignal<Locale>("en");
+	const [locale, setLocaleInternal] = createSignal<Locale>(readStoredLocale() ?? "en", {
+		equals: false,
+	});
 
 	const setLocale = (nextLocale: Locale) => {
 		if (!availableLocales.has(nextLocale)) {

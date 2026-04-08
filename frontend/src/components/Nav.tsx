@@ -1,30 +1,72 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { createEffect, createSignal, onCleanup } from "solid-js";
-import {
-	authSessionChangedEventName,
-	clearAuthTokenCookie,
-	hasAuthTokenCookie,
-} from "~/lib/auth-session";
+import { createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js";
+import { authApi } from "~/lib/auth-api";
 import { t } from "~/lib/i18n";
+
+const toMessage = (error: unknown, fallback: string): string => {
+	if (error instanceof Error && error.message.trim()) {
+		return error.message;
+	}
+	return fallback;
+};
 
 export default function Nav() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const active = (path: string) => path === location.pathname;
-	const [authenticated, setAuthenticated] = createSignal(false);
-	const syncAuthState = () => setAuthenticated(hasAuthTokenCookie());
+	// The browser auth cookie is HttpOnly, so the nav has to ask the server whether
+	// the current request still carries a session cookie instead of reading it in JS.
+	const [authSession, { refetch }] = createResource(
+		() => location.pathname,
+		() => authApi.getSession(),
+	);
+	const [sessionError, setSessionError] = createSignal("");
+	const homeLabel = createMemo(() => t("nav.home"), undefined, { equals: false });
+	const spacesLabel = createMemo(() => t("nav.spaces"), undefined, { equals: false });
+	const loginLabel = createMemo(() => t("nav.login"), undefined, { equals: false });
+	const aboutLabel = createMemo(() => t("nav.about"), undefined, { equals: false });
+	const authenticated = () => authSession()?.authenticated ?? false;
 
 	createEffect(() => {
-		location.pathname;
-		syncAuthState();
+		const error = authSession.error;
+		if (error) {
+			setSessionError(toMessage(error, "Failed to load auth session."));
+			return;
+		}
+		if (!authSession.loading) {
+			setSessionError("");
+		}
 	});
 
 	if (typeof window !== "undefined") {
-		window.addEventListener(authSessionChangedEventName, syncAuthState);
+		const refreshAuthState = () => {
+			void refetch();
+		};
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				refreshAuthState();
+			}
+		};
+		const intervalId = window.setInterval(refreshAuthState, 30_000);
+		window.addEventListener("focus", refreshAuthState);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
 		onCleanup(() => {
-			window.removeEventListener(authSessionChangedEventName, syncAuthState);
+			window.clearInterval(intervalId);
+			window.removeEventListener("focus", refreshAuthState);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
 		});
 	}
+
+	const handleSignOut = async () => {
+		setSessionError("");
+		try {
+			await authApi.clearSession();
+			await refetch();
+			navigate("/login", { replace: true });
+		} catch (error) {
+			setSessionError(toMessage(error, "Failed to sign out."));
+		}
+	};
 
 	const isSpaceExplorer =
 		location.pathname.includes("/spaces/") && !location.pathname.endsWith("/spaces");
@@ -39,7 +81,7 @@ export default function Nav() {
 			<ul class="ui-nav-list">
 				<li>
 					<a href="/" class="ui-nav-link" classList={{ "ui-nav-link-active": active("/") }}>
-						{t("nav.home")}
+						<span>{homeLabel()}</span>
 					</a>
 				</li>
 				<li>
@@ -48,7 +90,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/spaces") }}
 					>
-						{t("nav.spaces")}
+						<span>{spacesLabel()}</span>
 					</a>
 				</li>
 				<li>
@@ -57,7 +99,7 @@ export default function Nav() {
 						class="ui-nav-link"
 						classList={{ "ui-nav-link-active": active("/about") }}
 					>
-						{t("nav.about")}
+						<span>{aboutLabel()}</span>
 					</a>
 				</li>
 				<li class="ui-nav-session">
@@ -70,9 +112,7 @@ export default function Nav() {
 								type="button"
 								class="ui-button ui-button-secondary ui-button-sm"
 								onClick={() => {
-									clearAuthTokenCookie();
-									setAuthenticated(false);
-									void navigate("/login", { replace: true });
+									void handleSignOut();
 								}}
 							>
 								{t("nav.signOut")}
@@ -84,9 +124,14 @@ export default function Nav() {
 							class="ui-nav-link"
 							classList={{ "ui-nav-link-active": active("/login") }}
 						>
-							{t("nav.login")}
+							{loginLabel()}
 						</a>
 					)}
+					{sessionError() ? (
+						<p class="ui-alert ui-alert-error text-xs" role="alert">
+							{sessionError()}
+						</p>
+					) : null}
 				</li>
 			</ul>
 		</nav>

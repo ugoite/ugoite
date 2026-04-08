@@ -52,6 +52,34 @@ fn build_asset_entry_content(name: &str, link: &str, uploaded_at: &str) -> Strin
     )
 }
 
+fn normalize_asset_basename(segment: &str) -> Option<String> {
+    let trimmed = segment.trim();
+    if trimmed.is_empty() || matches!(trimmed, "." | "..") {
+        return None;
+    }
+
+    let flattened = trimmed
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>();
+    let single_line = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+    let metadata_safe = single_line.trim_start_matches('#').trim_start();
+
+    if metadata_safe.is_empty() {
+        None
+    } else {
+        Some(metadata_safe.to_string())
+    }
+}
+
+fn normalize_asset_filename(filename: &str, fallback_name: &str) -> String {
+    let basename = filename
+        .rsplit(['/', '\\'])
+        .find(|segment| !segment.is_empty())
+        .unwrap_or("");
+    normalize_asset_basename(basename).unwrap_or_else(|| fallback_name.to_string())
+}
+
 pub async fn save_asset(
     op: &Operator,
     ws_path: &str,
@@ -60,11 +88,7 @@ pub async fn save_asset(
 ) -> Result<AssetInfo> {
     ensure_asset_form(op, ws_path).await?;
     let asset_id = Uuid::new_v4().to_string();
-    let safe_name = if filename.is_empty() {
-        asset_id.clone()
-    } else {
-        filename.to_string()
-    };
+    let safe_name = normalize_asset_filename(filename, &asset_id);
     let relative_path = format!("assets/{}_{}", asset_id, safe_name);
     let asset_path = format!("{}/{}", ws_path, relative_path);
     let link = format!("ugoite://asset/{asset_id}");

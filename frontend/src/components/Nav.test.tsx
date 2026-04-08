@@ -4,14 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createRoot } from "solid-js";
 import Nav from "./Nav";
-import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 
 let mockPathname = "/";
 const navigateMock = vi.fn();
+const getSessionMock = vi.fn();
+const clearSessionMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
 	useLocation: () => ({ pathname: mockPathname }),
 	useNavigate: () => navigateMock,
+}));
+
+vi.mock("~/lib/auth-api", () => ({
+	authApi: {
+		getSession: (...args: unknown[]) => getSessionMock(...args),
+		clearSession: (...args: unknown[]) => clearSessionMock(...args),
+	},
 }));
 
 describe("Nav", () => {
@@ -22,24 +30,27 @@ describe("Nav", () => {
 	beforeEach(() => {
 		mockPathname = "/";
 		navigateMock.mockReset();
-		clearAuthTokenCookie();
+		getSessionMock.mockReset();
+		clearSessionMock.mockReset();
+		getSessionMock.mockResolvedValue({ authenticated: false });
+		clearSessionMock.mockResolvedValue(undefined);
 	});
 
-	it("REQ-FE-066: signed-out nav shows primary routes and a login link", () => {
+	it("REQ-FE-066: signed-out nav shows primary routes and a login link", async () => {
 		mockPathname = "/";
 		render(() => <Nav />);
 		expect(screen.getByText("Home")).toBeInTheDocument();
 		expect(screen.getByText("Spaces")).toBeInTheDocument();
 		expect(screen.getByText("About")).toBeInTheDocument();
-		expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
+		expect(await screen.findByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
 		expect(screen.queryByText("Signed in")).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 	});
 
-	it("REQ-FE-066: active state tracks the current route for signed-out nav links", () => {
+	it("REQ-FE-066: active state tracks the current route for signed-out nav links", async () => {
 		mockPathname = "/login";
 		render(() => <Nav />);
-		const loginLink = screen.getByRole("link", { name: "Login" });
+		const loginLink = await screen.findByRole("link", { name: "Login" });
 		expect(loginLink).toHaveClass("ui-nav-link-active");
 	});
 
@@ -50,7 +61,7 @@ describe("Nav", () => {
 	});
 
 	it("REQ-FE-066: signed-in nav swaps Login for session status and sign-out", async () => {
-		setAuthTokenCookie("existing-browser-session", 1_900_000_000);
+		getSessionMock.mockResolvedValue({ authenticated: true });
 		mockPathname = "/spaces";
 		render(() => <Nav />);
 		expect(screen.getByText("Spaces")).toBeInTheDocument();
@@ -62,14 +73,18 @@ describe("Nav", () => {
 	});
 
 	it("REQ-FE-066: sign-out clears the auth cookie and redirects to login", async () => {
-		setAuthTokenCookie("existing-browser-session", 1_900_000_000);
+		getSessionMock.mockResolvedValue({ authenticated: true });
 		mockPathname = "/spaces";
 		render(() => <Nav />);
 
 		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 
-		expect(document.cookie).not.toContain("ugoite_auth_bearer_token=");
-		expect(navigateMock).toHaveBeenCalledWith("/login", { replace: true });
+		await waitFor(() => {
+			expect(clearSessionMock).toHaveBeenCalledTimes(1);
+		});
+		await waitFor(() => {
+			expect(navigateMock).toHaveBeenCalledWith("/login", { replace: true });
+		});
 	});
 
 	it("REQ-FE-066: safely initializes without a browser window during SSR", () => {

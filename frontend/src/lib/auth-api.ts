@@ -8,9 +8,12 @@ export type AuthConfig = {
 };
 
 export type AuthLoginResponse = {
-	bearerToken: string;
 	userId: string;
 	expiresAt: number;
+};
+
+export type AuthSessionState = {
+	authenticated: boolean;
 };
 
 const formatAuthError = async (response: Response, fallback: string): Promise<string> => {
@@ -53,6 +56,19 @@ const readNumber = (payload: Record<string, unknown>, key: string): number => {
 };
 
 export const authApi = {
+	async getSession(): Promise<AuthSessionState> {
+		const response = await apiFetch("/auth/session", { trackLoading: false });
+		if (!response.ok) {
+			throw new Error(
+				await formatAuthError(response, `Failed to load auth session: ${response.statusText}`),
+			);
+		}
+		const payload = (await response.json()) as Record<string, unknown>;
+		return {
+			authenticated: readBoolean(payload, "authenticated"),
+		};
+	},
+
 	async getConfig(): Promise<AuthConfig> {
 		const response = await apiFetch("/auth/config", { trackLoading: false });
 		if (!response.ok) {
@@ -84,7 +100,6 @@ export const authApi = {
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {
-			bearerToken: readString(payload, "bearer_token"),
 			userId: readString(payload, "user_id"),
 			expiresAt: readNumber(payload, "expires_at"),
 		};
@@ -101,9 +116,20 @@ export const authApi = {
 		}
 		const payload = (await response.json()) as Record<string, unknown>;
 		return {
-			bearerToken: readString(payload, "bearer_token"),
 			userId: readString(payload, "user_id"),
 			expiresAt: readNumber(payload, "expires_at"),
 		};
+	},
+
+	async clearSession(): Promise<void> {
+		const response = await apiFetch("/auth/session", {
+			method: "DELETE",
+			trackLoading: false,
+		});
+		if (!response.ok) {
+			throw new Error(
+				await formatAuthError(response, `Failed to clear auth session: ${response.statusText}`),
+			);
+		}
 	},
 };
