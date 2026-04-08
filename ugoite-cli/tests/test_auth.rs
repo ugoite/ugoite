@@ -326,6 +326,62 @@ fn test_cli_auth_login_req_ops_015_supports_powershell_env_output() {
     );
 }
 
+/// REQ-OPS-015: auth login guidance must cover POSIX shell variants without changing export syntax.
+#[test]
+fn test_cli_auth_login_req_ops_015_supports_posix_shell_variants() {
+    for shell in ["sh", "bash", "zsh"] {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        let (base, requests, handle) = spawn_recording_server(
+            "HTTP/1.1 200 OK",
+            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+        );
+
+        let set_output = Command::new(ugoite_bin())
+            .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .output()
+            .expect("failed to execute");
+        assert!(set_output.status.success());
+
+        let output = Command::new(ugoite_bin())
+            .args([
+                "auth",
+                "login",
+                "--shell",
+                shell,
+                "--username",
+                "dev-alice",
+                "--totp-code",
+                "123456",
+            ])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .env("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+            .env("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context")
+            .output()
+            .expect("failed to execute");
+        assert!(output.status.success(), "shell {shell} failed");
+
+        let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
+        assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("export UGOITE_AUTH_BEARER_TOKEN='issued-token'"),
+            "stdout was {stdout}"
+        );
+
+        let expected_command = if shell == "sh" {
+            "ugoite auth login --username USER --totp-code CODE".to_string()
+        } else {
+            format!("ugoite auth login --shell {shell} --username USER --totp-code CODE")
+        };
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&expected_command), "stderr was {stderr}");
+    }
+}
+
 #[test]
 fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
     let dir = tempfile::tempdir().unwrap();
@@ -548,6 +604,148 @@ fn test_cli_auth_login_req_ops_015_persists_cli_session_for_followup_commands() 
         .contains("authorization: bearer issued-token"));
 }
 
+/// REQ-OPS-015: auth login must reject invalid stored backend endpoints before any request runs.
+#[test]
+fn test_cli_auth_login_req_ops_015_rejects_invalid_stored_backend_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    std::fs::write(
+        &config_path,
+        serde_json::json!({
+            "mode": "backend",
+            "backend_url": "http://example.com",
+            "api_url": "http://localhost:3000/api",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "auth",
+            "login",
+            "--username",
+            "dev-alice",
+            "--totp-code",
+            "123456",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("uses cleartext http:// for a non-loopback host"),
+        "stderr was {stderr}"
+    );
+}
+
+/// REQ-OPS-015: auth login must surface username prompt flush failures in the subprocess path.
+#[test]
+fn test_cli_auth_login_req_ops_015_surfaces_username_prompt_flush_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    std::fs::write(
+        &config_path,
+        serde_json::json!({
+            "mode": "backend",
+            "backend_url": "http://127.0.0.1:8000",
+            "api_url": "http://localhost:3000/api",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--totp-code", "123456"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .stdout(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/full")
+                .unwrap(),
+        )
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    assert!(
+        stderr.contains("no space left on device") || stderr.contains("os error 28"),
+        "stderr was {stderr}"
+    );
+}
+
+/// REQ-OPS-015: auth login must surface 2FA prompt flush failures in the subprocess path.
+#[test]
+fn test_cli_auth_login_req_ops_015_surfaces_totp_prompt_flush_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    std::fs::write(
+        &config_path,
+        serde_json::json!({
+            "mode": "backend",
+            "backend_url": "http://127.0.0.1:8000",
+            "api_url": "http://localhost:3000/api",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--username", "dev-alice"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .stdout(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/full")
+                .unwrap(),
+        )
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    assert!(
+        stderr.contains("no space left on device") || stderr.contains("os error 28"),
+        "stderr was {stderr}"
+    );
+}
+
+/// REQ-OPS-015: auth login must surface CLI session write failures in the subprocess path.
+#[test]
+fn test_cli_auth_login_req_ops_015_surfaces_cli_session_write_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_session_path = auth_session_path_for_config(&config_path);
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+    std::fs::create_dir(&auth_session_path).unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--mock-oauth"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    let login_request = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(login_request.starts_with("POST /auth/mock-oauth HTTP/1.1"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    assert!(stderr.contains("is a directory"), "stderr was {stderr}");
+}
+
 #[test]
 fn test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session() {
     let dir = tempfile::tempdir().unwrap();
@@ -612,6 +810,25 @@ fn test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session() {
     assert!(profile_payload
         .get("UGOITE_AUTH_BEARER_TOKEN")
         .is_some_and(Value::is_null));
+}
+
+/// REQ-OPS-015: auth token-clear must surface CLI session removal failures in the subprocess path.
+#[test]
+fn test_cli_auth_token_clear_req_ops_015_surfaces_cli_session_remove_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_session_path = auth_session_path_for_config(&config_path);
+    std::fs::create_dir(&auth_session_path).unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args(["auth", "token-clear"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    assert!(stderr.contains("is a directory"), "stderr was {stderr}");
 }
 
 /// REQ-OPS-015: auth profile distinguishes local-first core mode from backend auth states.
