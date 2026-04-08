@@ -162,10 +162,11 @@ cargo run -q -p ugoite-cli -- auth login --username dev-local-user --totp-code 1
 If you installed the published CLI, run the equivalent `ugoite auth login`
 command with the same flags.
 
-The command prints shell-ready environment commands for the current shell. By
-default it emits a POSIX `export UGOITE_AUTH_BEARER_TOKEN=...` line. Use
-`--shell fish` or `--shell powershell` when you want shell-native output
-instead:
+The command saves a CLI session so later `ugoite` commands stay authenticated
+without extra shell setup, and it also prints shell-ready environment commands
+for the current shell. By default it emits a POSIX
+`export UGOITE_AUTH_BEARER_TOKEN=...` line. Use `--shell fish` or
+`--shell powershell` when you want shell-native output instead:
 
 ```fish
 cargo run -q -p ugoite-cli -- auth login --shell fish --username dev-local-user --totp-code 123456 | source
