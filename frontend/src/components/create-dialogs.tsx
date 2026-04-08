@@ -909,12 +909,10 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 								<div class="ui-stack-sm mt-3">
 									<For each={webFormFields()}>
 										{([name, def], index) => {
+											const fieldId = createFieldInputId("webform", name, index());
 											return (
 												<div class="ui-field">
-													<label
-														class="ui-label"
-														for={createFieldInputId("webform", name, index())}
-													>
+													<label class="ui-label" for={fieldId}>
 														{name}
 														<span class="ui-muted ml-2 text-xs">
 															{t(

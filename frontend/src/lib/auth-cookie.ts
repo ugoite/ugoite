@@ -50,3 +50,18 @@ export const buildServerAuthCookie = (
 	}
 	return segments.join("; ");
 };
+
+export const buildClearedAuthCookie = (options: { secure: boolean }): string => {
+	const segments = [
+		`${authCookieName}=`,
+		"Path=/",
+		"HttpOnly",
+		"SameSite=Lax",
+		"Max-Age=0",
+		"Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+	];
+	if (options.secure) {
+		segments.push("Secure");
+	}
+	return segments.join("; ");
+};

@@ -46,7 +46,8 @@ GitHub without comparing two different onboarding maps.
   requirements, APIs, or machine-readable specs.
 
 For a brand-new browser space, the first productive in-app sequence is:
-**open the space, create a form, then create entries from that form**.
+**open the space, write a first note with the starter Entry form, then add
+custom forms when you want stricter structure**.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +

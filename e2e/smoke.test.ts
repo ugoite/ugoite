@@ -36,7 +36,10 @@ test.describe("Smoke Tests", () => {
 		expect(body.toLowerCase()).toContain("<!doctype html>");
 	});
 
-	test("GET /spaces/default/entries/:id returns HTML", async ({ page, request }) => {
+	test("GET /spaces/default/entries/:id returns HTML", async ({
+		page,
+		request,
+	}) => {
 		const createRes = await request.post(
 			getBackendUrl("/spaces/default/entries"),
 			{
@@ -69,12 +72,16 @@ test.describe("Smoke Tests", () => {
 		browser,
 	}) => {
 		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
-		const context = await browser.newContext();
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+		});
 		const page = await context.newPage();
 
 		try {
 			await page.goto("/login");
-			await page.getByRole("button", { name: "Continue with Local Demo Login" }).click();
+			await page
+				.getByRole("button", { name: "Continue with Local Demo Login" })
+				.click();
 			await expect(page).toHaveURL(/\/spaces$/);
 			await expect(page.getByText("Available Spaces")).toBeVisible();
 			const userSpaces = page.getByRole("list", { name: "User spaces" });
@@ -82,13 +89,20 @@ test.describe("Smoke Tests", () => {
 			await expect(userSpaces).not.toContainText("admin-space");
 			const adminSpaces = page.getByRole("list", { name: "Admin spaces" });
 			await expect(adminSpaces).toContainText("admin-space");
-			await userSpaces.getByRole("link", { name: "Open Space" }).first().click();
+			await userSpaces
+				.getByRole("link", { name: "Open Space" })
+				.first()
+				.click();
 			await expect(page).toHaveURL(/\/spaces\/default\/dashboard$/);
 			const cookies = await context.cookies(frontendUrl);
-			const authCookie = cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token");
+			const authCookie = cookies.find(
+				(cookie) => cookie.name === "ugoite_auth_bearer_token",
+			);
 			expect(authCookie).toBeDefined();
 			expect(authCookie?.httpOnly).toBe(true);
-			expect(await page.evaluate(() => document.cookie)).not.toContain("ugoite_auth_bearer_token=");
+			expect(await page.evaluate(() => document.cookie)).not.toContain(
+				"ugoite_auth_bearer_token=",
+			);
 		} finally {
 			await context.close();
 		}
@@ -117,11 +131,47 @@ test.describe("Smoke Tests", () => {
 		try {
 			await page.goto("/login");
 			await page.waitForLoadState("networkidle");
-			await expect(page.getByRole("button", { name: "Continue with Local Demo Login" })).toBeVisible();
+			await expect(
+				page.getByRole("button", { name: "Continue with Local Demo Login" }),
+			).toBeVisible();
 			const cookies = await context.cookies(frontendUrl);
 			expect(
-				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")?.value,
+				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")
+					?.value,
 			).toBe("existing-browser-session");
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("REQ-FE-066: signed-in browser nav exposes sign-out and returns to login", async ({
+		browser,
+	}) => {
+		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+		});
+		const page = await context.newPage();
+
+		try {
+			await page.goto("/login");
+			await page
+				.getByRole("button", { name: "Continue with Local Demo Login" })
+				.click();
+			await expect(page).toHaveURL(/\/spaces$/);
+			await expect(page.getByText("Signed in")).toBeVisible();
+			await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+			await expect(page.getByRole("link", { name: "Login" })).toHaveCount(0);
+
+			await page.getByRole("button", { name: "Sign out" }).click();
+			await expect(page).toHaveURL(/\/login$/);
+			const cookies = await context.cookies(frontendUrl);
+			expect(
+				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token"),
+			).toBeUndefined();
+			await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
+			await expect(page.getByText("Signed in")).toHaveCount(0);
+			await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
 		} finally {
 			await context.close();
 		}
@@ -151,9 +201,7 @@ test.describe("Smoke Tests", () => {
 	});
 
 	test("GET /nonexistent-api returns 404", async ({ request }) => {
-		const res = await request.get(
-			getBackendUrl("/nonexistent-endpoint-xyz"),
-		);
+		const res = await request.get(getBackendUrl("/nonexistent-endpoint-xyz"));
 		expect(res.status()).toBe(404);
 	});
 });

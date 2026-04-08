@@ -5,7 +5,7 @@ use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use ugoite_minimum::text::compute_word_count;
 use uuid::Uuid;
 
@@ -52,6 +52,22 @@ pub async fn execute_sql_query(
     let entries_map = collect_entries(op, ws_path, &forms).await?;
     let parsed = sql::parse_sql(sql_query)?;
     let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
+    sql::filter_entries_by_sql(&tables, &parsed)
+}
+
+pub async fn execute_sql_query_scoped(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Result<Vec<Value>> {
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map = collect_entries(op, ws_path, &forms).await?;
+    let scoped_entries =
+        filter_entries_for_sql_scope(entries_map, readable_forms, include_untyped_entries);
+    let parsed = sql::parse_sql(sql_query)?;
+    let tables = build_sql_tables(op, ws_path, &forms, &scoped_entries).await?;
     sql::filter_entries_by_sql(&tables, &parsed)
 }
 
@@ -555,6 +571,27 @@ async fn collect_entries(
     Ok(entries)
 }
 
+fn filter_entries_for_sql_scope(
+    entries_map: Map<String, Value>,
+    readable_forms: &[String],
+    include_untyped_entries: bool,
+) -> Map<String, Value> {
+    let readable_form_set: HashSet<String> = readable_forms
+        .iter()
+        .map(|form_name| form_name.to_lowercase())
+        .collect();
+
+    entries_map
+        .into_iter()
+        .filter(|(_entry_id, entry_value)| {
+            match entry_value.get("form").and_then(|value| value.as_str()) {
+                Some(form_name) => readable_form_set.contains(&form_name.to_lowercase()),
+                None => include_untyped_entries,
+            }
+        })
+        .collect()
+}
+
 async fn build_record(
     ws_path: &str,
     form_name: &str,
@@ -620,6 +657,7 @@ async fn build_sql_tables(
         tables.insert(form_name.to_lowercase(), rows);
     }
 
+    let visible_entry_ids: HashSet<String> = entries_map.keys().cloned().collect();
     let mut entry_form_map: HashMap<String, String> = HashMap::new();
     for (entry_id, entry_value) in entries_map {
         if let Some(form) = entry_value.get("form").and_then(|v| v.as_str()) {
@@ -631,10 +669,15 @@ async fn build_sql_tables(
     let entry_rows = entry::list_entry_rows(op, ws_path).await?;
     let mut link_rows = Vec::new();
     for (_form_name, row) in entry_rows {
-        if row.deleted {
+        if row.deleted || !visible_entry_ids.contains(&row.entry_id) {
             continue;
         }
         for link_item in row.links {
+            if !visible_entry_ids.contains(&link_item.source)
+                || !visible_entry_ids.contains(&link_item.target)
+            {
+                continue;
+            }
             let source_form = entry_form_map.get(&link_item.source).cloned();
             let target_form = entry_form_map.get(&link_item.target).cloned();
             link_rows.push(serde_json::json!({
