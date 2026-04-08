@@ -155,7 +155,7 @@ E2E_AUTH_BEARER_TOKEN="$(
   python3 - <<'PY'
 import http.cookies
 import json
-import sys
+from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
 request = Request("http://127.0.0.1:3000/api/auth/mock-oauth", method="POST")
@@ -171,7 +171,7 @@ with urlopen(request) as response:
         cookie.load(set_cookie)
         morsel = cookie.get("ugoite_auth_bearer_token")
         if morsel is not None and morsel.value:
-            print(morsel.value)
+            print(unquote(morsel.value))
             raise SystemExit(0)
 
 raise SystemExit(
