@@ -130,4 +130,45 @@ describe("authApi", () => {
 			"Invalid auth response: expires_at must be a number.",
 		);
 	});
+
+	it("REQ-FE-066: loads and clears browser auth session state through the frontend session route", async () => {
+		server.use(
+			http.get(testApiUrl("/auth/session"), () =>
+				HttpResponse.json({ authenticated: true }, { status: 200 }),
+			),
+			http.delete(testApiUrl("/auth/session"), () => new HttpResponse(null, { status: 204 })),
+		);
+
+		await expect(authApi.getSession()).resolves.toEqual({ authenticated: true });
+		await expect(authApi.clearSession()).resolves.toBeUndefined();
+
+		server.use(
+			http.get(testApiUrl("/auth/session"), () =>
+				HttpResponse.json({ authenticated: "yes" }, { status: 200 }),
+			),
+		);
+		await expect(authApi.getSession()).rejects.toThrow(
+			"Invalid auth response: authenticated must be a boolean.",
+		);
+
+		server.use(
+			http.get(
+				testApiUrl("/auth/session"),
+				() => new HttpResponse(null, { status: 503, statusText: "Service Unavailable" }),
+			),
+		);
+		await expect(authApi.getSession()).rejects.toThrow(
+			"Failed to load auth session: Service Unavailable",
+		);
+
+		server.use(
+			http.delete(testApiUrl("/auth/session"), () =>
+				HttpResponse.json(
+					{ detail: "Failed to clear browser auth session." },
+					{ status: 500, statusText: "Internal Server Error" },
+				),
+			),
+		);
+		await expect(authApi.clearSession()).rejects.toThrow("Failed to clear browser auth session.");
+	});
 });
