@@ -5,7 +5,9 @@
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
@@ -126,6 +128,13 @@ fn write_dev_auth_file(path: &Path, passkey_context: &str) {
         .to_string(),
     )
     .expect("write dev auth file");
+}
+
+fn auth_session_path_for_config(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("cli-auth.json")
 }
 
 #[test]
@@ -478,6 +487,183 @@ fn test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports() {
         stdout.contains("export UGOITE_AUTH_BEARER_TOKEN=''"),
         "stdout was {stdout}"
     );
+}
+
+#[test]
+fn test_cli_auth_login_req_ops_015_persists_cli_session_for_followup_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_session_path = auth_session_path_for_config(&config_path);
+    let (login_base, login_requests, login_handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &login_base,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let login_output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--mock-oauth"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(login_output.status.success());
+
+    let login_request = login_requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    login_handle.join().unwrap();
+    assert!(login_request.starts_with("POST /auth/mock-oauth HTTP/1.1"));
+
+    let stdout = String::from_utf8_lossy(&login_output.stdout);
+    assert!(stdout.contains("export UGOITE_AUTH_BEARER_TOKEN='issued-token'"));
+
+    let stderr = String::from_utf8_lossy(&login_output.stderr);
+    assert!(stderr.contains("Saved CLI session"), "stderr was {stderr}");
+    assert!(
+        auth_session_path.exists(),
+        "expected saved session at {}",
+        auth_session_path.display()
+    );
+    let session_text = std::fs::read_to_string(&auth_session_path).unwrap();
+    assert!(session_text.contains(r#""bearer_token": "issued-token""#));
+
+    #[cfg(unix)]
+    {
+        let mode = std::fs::metadata(&auth_session_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    let profile_output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_AUTH_BEARER_TOKEN")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(profile_output.status.success());
+
+    let profile_payload = parse_stdout_json(&profile_output);
+    assert_eq!(
+        profile_payload
+            .get("credential_state")
+            .and_then(Value::as_str),
+        Some("bearer_token")
+    );
+    assert_eq!(
+        profile_payload
+            .get("UGOITE_AUTH_BEARER_TOKEN")
+            .and_then(Value::as_str),
+        Some("issu...")
+    );
+
+    let (space_base, space_requests, space_handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", "[]");
+    let reset_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--backend-url", &space_base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(reset_output.status.success());
+
+    let list_output = Command::new(ugoite_bin())
+        .args(["space", "list"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_AUTH_BEARER_TOKEN")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        list_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&list_output.stderr)
+    );
+
+    let list_request = space_requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    space_handle.join().unwrap();
+    assert!(list_request.starts_with("GET /spaces HTTP/1.1"));
+    assert!(list_request
+        .to_ascii_lowercase()
+        .contains("authorization: bearer issued-token"));
+}
+
+#[test]
+fn test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let auth_session_path = auth_session_path_for_config(&config_path);
+    let (base, requests, handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args(["config", "set", "--mode", "backend", "--backend-url", &base])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let login_output = Command::new(ugoite_bin())
+        .args(["auth", "login", "--mock-oauth"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(login_output.status.success());
+    requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    handle.join().unwrap();
+    assert!(auth_session_path.exists());
+
+    let token_clear_output = Command::new(ugoite_bin())
+        .args(["auth", "token-clear"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(token_clear_output.status.success());
+    assert!(!auth_session_path.exists());
+
+    let clear_stdout = String::from_utf8_lossy(&token_clear_output.stdout);
+    assert!(clear_stdout.contains("unset UGOITE_AUTH_BEARER_TOKEN"));
+    assert!(clear_stdout.contains("unset UGOITE_AUTH_API_KEY"));
+
+    let clear_stderr = String::from_utf8_lossy(&token_clear_output.stderr);
+    assert!(
+        clear_stderr.contains("Cleared the saved CLI session"),
+        "stderr was {clear_stderr}"
+    );
+
+    let profile_output = Command::new(ugoite_bin())
+        .args(["auth", "profile"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_AUTH_BEARER_TOKEN")
+        .env_remove("UGOITE_AUTH_API_KEY")
+        .output()
+        .expect("failed to execute");
+    assert!(profile_output.status.success());
+
+    let profile_payload = parse_stdout_json(&profile_output);
+    assert_eq!(
+        profile_payload
+            .get("credential_state")
+            .and_then(Value::as_str),
+        Some("none")
+    );
+    assert!(profile_payload
+        .get("UGOITE_AUTH_BEARER_TOKEN")
+        .is_some_and(Value::is_null));
 }
 
 /// REQ-OPS-015: auth profile distinguishes local-first core mode from backend auth states.
