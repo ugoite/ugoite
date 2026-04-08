@@ -54,26 +54,13 @@ async def test_bindings_file_backend(tmp_path: pathlib.Path) -> None:
     spaces = await ugoite_core.list_spaces(config)
     assert "sp-1" in spaces
 
-    # List Forms (Empty)
-    forms = await ugoite_core.list_forms(config, "sp-1")
-    assert forms == []
-
-    # Upsert Form
-    form_def = json.dumps(
-        {
-            "name": "Entry",
-            "template": "# Entry\n\n## Body\n",
-            "fields": {"Body": {"type": "markdown"}},
-        },
-    )
-    await ugoite_core.upsert_form(config, "sp-1", form_def)
-
+    # List Forms (starter Entry form)
     forms = await ugoite_core.list_forms(config, "sp-1")
     assert len(forms) == 1
     assert forms[0]["name"] == "Entry"
+    assert forms[0]["allow_extra_attributes"] == "allow_columns"
 
     # Create Entry
-    # Expects "Author" to be passed optional? Signature says Option<String>.
     entry = await ugoite_core.create_entry(
         config,
         "sp-1",
@@ -83,7 +70,7 @@ form: Entry
 ---
 # Content
 
-## Body
+## Notes
 Body text""",
         author="tester",
     )

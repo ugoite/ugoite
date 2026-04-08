@@ -65,6 +65,10 @@ metadata and the per-space integrity key used for entry/revision signing.
 }
 ```
 
+New spaces bootstrap a user-creatable `Entry` form under `forms/` and keep
+`settings.default_form` pointed at that starter form until the space owner
+changes it.
+
 ### `hmac.json`
 
 `hmac.json` is created lazily the first time response signing is used. It is
