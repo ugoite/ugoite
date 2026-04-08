@@ -1114,6 +1114,36 @@ def test_upload_asset_strips_traversal_segments_from_filename(
     assert victim_meta_path.read_text(encoding="utf-8") == victim_meta_before
 
 
+def test_upload_asset_req_asset_001_normalizes_markdown_heading_filename(
+    test_client: TestClient,
+) -> None:
+    """REQ-ASSET-001: asset upload normalizes metadata-spoofing filenames."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    response = test_client.post(
+        "/spaces/test-ws/assets",
+        files={
+            "file": (
+                "## uploaded_at.txt",
+                io.BytesIO(b"hello"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "uploaded_at.txt"
+    assert asset["path"] == f"assets/{asset['id']}_uploaded_at.txt"
+
+    entry_response = test_client.get(f"/spaces/test-ws/entries/{asset['id']}")
+    assert entry_response.status_code == 200
+    content = entry_response.json()["content"]
+    assert "## name\nuploaded_at.txt" in content
+    assert f"## link\nugoite://asset/{asset['id']}" in content
+    assert "## name\n## uploaded_at.txt" not in content
+
+
 def test_delete_asset_referenced_fails(
     test_client: TestClient,
     temp_space_root: Path,
