@@ -26,12 +26,15 @@ the workspace:
 ```bash
 git clone https://github.com/ugoite/ugoite.git
 cd ugoite
+HELM_AUTH_SIGNING_SECRET="$(openssl rand -hex 32)"
+HELM_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"
 cat > values.local.yaml <<EOF
 image:
   tag: stable
 auth:
   devUserId: dev-local-user
-  proxyToken: release-compose-auth-proxy
+  signingSecret: ${HELM_AUTH_SIGNING_SECRET}
+  proxyToken: ${HELM_AUTH_PROXY_TOKEN}
 backend:
   persistence:
     size: 10Gi
@@ -49,6 +52,7 @@ By default the chart uses:
 - a backend volume mounted at `/data`
 - local demo login (`mock-oauth`) defaults that match the release Compose quick
   start
+- install-specific auth secrets that you supply through `values.local.yaml`
 - a computed `BACKEND_URL` equivalent to `http://backend:8000`, but scoped to
   the generated Kubernetes service name for the current release
 
@@ -83,9 +87,9 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 | `backend.persistence.storageClassName` | empty | Optional storage class override for the backend PVC. |
 | `backend.persistence.existingClaim` | empty | Reuse an existing PVC instead of creating a new one. |
 | `auth.devUserId` | `dev-local-user` | Local demo login user id for the shipped login flow. |
-| `auth.proxyToken` | `release-compose-auth-proxy` | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
+| `auth.proxyToken` | empty (required unique value) | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
 | `auth.signingKid` | `release-compose-local-v1` | Signing key id for the default bearer-token setup. |
-| `auth.signingSecret` | `release-compose-local-secret` | Signing secret used to mint the default bearer-token secret. |
+| `auth.signingSecret` | empty (required unique value) | Signing secret used to mint the dev bearer-token secret for this install. |
 | `auth.bearerSecrets` | computed from signing values | Override `UGOITE_AUTH_BEARER_SECRETS` directly when needed. |
 | `auth.bearerActiveKids` | `["release-compose-local-v1"]` | Active bearer-token key ids exposed to the backend. |
 | `frontend.backendUrl` | computed | Override the frontend `BACKEND_URL` instead of using the generated backend Service URL. |
@@ -96,6 +100,8 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 - Publication or automatic cluster deployment is intentionally out of scope for this chart today. The repository keeps the chart in-tree, but it does not yet publish it to an OCI registry or install it from CI.
 - The chart deliberately stays limited to the existing backend + frontend
   topology from `docker-compose.release.yaml`.
+- Generate a fresh `auth.signingSecret` and `auth.proxyToken` for every install
+  so exposed clusters do not rely on repository-known development secrets.
 - If your cluster already has a durable claim, set
   `backend.persistence.existingClaim` instead of creating a new one.
 - If you need a fixed backend host instead of the computed chart-equivalent

@@ -49,8 +49,8 @@ auth:
   mode: mock-oauth
   devUserId: dev-local-user
   signingKid: release-compose-local-v1
-  signingSecret: release-compose-local-secret
+  signingSecret: ""
   bearerSecrets: ""
   bearerActiveKids:
     - release-compose-local-v1
-  proxyToken: release-compose-auth-proxy
+  proxyToken: ""

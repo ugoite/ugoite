@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import LoginRoute from "./login";
-import { clearAuthTokenCookie, setAuthTokenCookie } from "~/lib/auth-session";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 
@@ -11,6 +10,22 @@ const navigateMock = vi.fn();
 const containerQuickStartGuideUrl =
 	"https://ugoite.github.io/ugoite/docs/guide/container-quickstart";
 const localDevAuthGuideUrl = "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+
+const findCookieDescriptor = () => {
+	let target: object | null = document;
+	while (target) {
+		const descriptor = Object.getOwnPropertyDescriptor(target, "cookie");
+		if (descriptor) {
+			return descriptor;
+		}
+		target = Object.getPrototypeOf(target);
+	}
+	return null;
+};
+
+const writeCookie = (value: string) => {
+	findCookieDescriptor()?.set?.call(document, value);
+};
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
@@ -26,10 +41,10 @@ describe("/login", () => {
 	beforeEach(() => {
 		navigateMock.mockReset();
 		resetMockData();
-		clearAuthTokenCookie();
+		writeCookie("ugoite_auth_bearer_token=; Path=/; Max-Age=0; SameSite=Lax");
 	});
 
-	it("REQ-OPS-015: signs in with passkey-totp and stores a browser auth cookie", async () => {
+	it("REQ-OPS-015: signs in with passkey-totp without exposing a readable auth cookie", async () => {
 		seedDevAuthConfig({
 			mode: "passkey-totp",
 			username_hint: "dev-alice",
@@ -53,10 +68,10 @@ describe("/login", () => {
 		await waitFor(() => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
 		});
-		expect(document.cookie).toContain("ugoite_auth_bearer_token=frontend-test-token");
+		expect(document.cookie).not.toContain("ugoite_auth_bearer_token=");
 	});
 
-	it("REQ-OPS-015: uses explicit mock-oauth browser login without startup auth injection", async () => {
+	it("REQ-OPS-015: uses explicit mock-oauth browser login without exposing a readable auth cookie", async () => {
 		seedDevAuthConfig({
 			mode: "mock-oauth",
 			username_hint: "dev-oauth-user",
@@ -76,7 +91,7 @@ describe("/login", () => {
 		await waitFor(() => {
 			expect(navigateMock).toHaveBeenCalledWith("/spaces", { replace: true });
 		});
-		expect(document.cookie).toContain("ugoite_auth_bearer_token=frontend-test-token");
+		expect(document.cookie).not.toContain("ugoite_auth_bearer_token=");
 	});
 
 	it("REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes", async () => {
@@ -86,7 +101,7 @@ describe("/login", () => {
 			supports_passkey_totp: false,
 			supports_mock_oauth: true,
 		});
-		setAuthTokenCookie("existing-browser-session", 1_900_000_000);
+		writeCookie("ugoite_auth_bearer_token=existing-browser-session; Path=/; SameSite=Lax");
 
 		render(() => <LoginRoute />);
 
