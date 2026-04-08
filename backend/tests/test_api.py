@@ -1243,6 +1243,65 @@ def test_search_rejects_oversized_query(
     assert "Query too long" in search_res.json()["detail"]
 
 
+def test_entry_options_req_fe_065_returns_bounded_form_scoped_matches(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    # REQ-FE-065: row_reference picker options stay form-scoped,
+    # query-aware, and bounded.
+    """REQ-FE-065: row_reference picker options stay form-scoped and bounded."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    _create_form(
+        test_client,
+        "test-ws",
+        "Project",
+        {"Summary": {"type": "string", "required": False}},
+    )
+    for entry_id, title in [
+        ("project-alpha", "Alpha Project"),
+        ("project-beta", "Beta Project"),
+        ("project-gamma", "Gamma Project"),
+    ]:
+        response = test_client.post(
+            "/spaces/test-ws/entries",
+            json={
+                "id": entry_id,
+                "markdown": (
+                    f"---\nform: Project\n---\n# {title}\n\n## Summary\nReference"
+                ),
+            },
+        )
+        assert response.status_code == 201
+    _create_form(
+        test_client,
+        "test-ws",
+        "Task",
+        {"Summary": {"type": "string", "required": False}},
+    )
+    task_response = test_client.post(
+        "/spaces/test-ws/entries",
+        json={
+            "id": "task-alpha",
+            "markdown": "---\nform: Task\n---\n# Alpha Task\n\n## Summary\nOther form",
+        },
+    )
+    assert task_response.status_code == 201
+
+    options_res = test_client.get(
+        "/spaces/test-ws/entries/options",
+        params={"form": "Project", "q": "alpha", "limit": 1},
+    )
+
+    assert options_res.status_code == 200
+    assert options_res.json() == [
+        {
+            "id": "project-alpha",
+            "title": "Alpha Project",
+            "form": "Project",
+        },
+    ]
+
+
 def test_update_space_storage_connector(
     test_client: TestClient,
     temp_space_root: Path,
@@ -3124,3 +3183,41 @@ def test_search_endpoint_authorization_error(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/search-authz-ws/search?q=test")
     assert response.status_code == 403
+
+
+def test_entry_options_endpoint_authorization_error(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-006: entry picker options endpoint returns 403 on auth failure."""
+    test_client.post("/spaces", json={"name": "entry-options-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "entry_read",
+            ),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-options-authz-ws/entries/options",
+            params={"form": "Project"},
+        )
+    assert response.status_code == 403
+
+
+def test_entry_options_req_fe_065_generic_exception(
+    test_client: TestClient,
+) -> None:
+    """REQ-FE-065: entry picker options endpoint returns 500 on unexpected errors."""
+    test_client.post("/spaces", json={"name": "entry-options-exc-ws"})
+    with patch(
+        "ugoite_core.list_entry_summaries",
+        _amock(side_effect=RuntimeError("unexpected storage error")),
+    ):
+        response = test_client.get(
+            "/spaces/entry-options-exc-ws/entries/options",
+            params={"form": "Project"},
+        )
+    assert response.status_code == 500

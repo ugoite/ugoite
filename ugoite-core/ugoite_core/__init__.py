@@ -117,6 +117,7 @@ get_user_preferences = _core_any.get_user_preferences
 list_assets = _core_any.list_assets
 list_column_types = _core_any.list_column_types
 list_entries = _core_any.list_entries
+list_entry_summaries = _core_any.list_entry_summaries
 list_forms = _core_any.list_forms
 list_sample_scenarios = _core_any.list_sample_scenarios
 list_spaces = _core_any.list_spaces
@@ -222,6 +223,7 @@ __all__ = [
     "list_audit_events",
     "list_column_types",
     "list_entries",
+    "list_entry_summaries",
     "list_forms",
     "list_members",
     "list_sample_scenarios",

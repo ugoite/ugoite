@@ -34,6 +34,7 @@ UGOITE_DEV_USER_ID=dev-local-user
 UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
 EOF
 mkdir -p ./spaces
+chmod 0777 ./spaces
 ```
 
 Pull and start the published stack:
@@ -101,6 +102,9 @@ spaces directory, not into a hosted database.
 - By default, that host path is `./spaces`.
 - If you override `UGOITE_SPACES_DIR`, inspect or back up that host path
   instead.
+- On Linux bind mounts, keep that directory writable for the non-root backend
+  image user before the first startup; the quick-start example above does this
+  with `chmod 0777 ./spaces`.
 - This is what "local-first" means for the published browser path: you can
   examine and copy the underlying data directory yourself.
 
