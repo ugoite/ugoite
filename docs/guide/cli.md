@@ -276,6 +276,11 @@ cargo run -q -p ugoite-cli -- auth profile
 cargo run -q -p ugoite-cli -- auth token-clear
 ```
 
+`ugoite auth login` saves a CLI-owned bearer-token session under the config home
+(for example `~/.ugoite/cli-auth.json`) so follow-up `ugoite` commands stay
+authenticated without `eval`. It still prints shell exports when you also want
+the current shell to reuse the same token.
+
 By default `ugoite auth login` and `ugoite auth token-clear` print POSIX
 `export` / `unset` lines. When you use fish or PowerShell, request shell-native
 output instead:
@@ -293,9 +298,14 @@ The same `--shell` flag also works with `ugoite auth logout`.
 `ugoite auth profile` distinguishes `core` mode (no backend credential required)
 from `backend` / `api` modes. In server-backed modes it tells you whether a
 bearer token or API key is already present, and whether the next step is
-`ugoite auth login`, `eval "$(ugoite auth token-clear)"` to apply the printed
-credential unsets from `ugoite auth token-clear` in POSIX shells, or a
-shell-native variant such as `ugoite auth token-clear --shell fish | source` or
+`ugoite auth login`, `ugoite auth token-clear`, or
+`eval "$(ugoite auth token-clear)"` to clear the saved CLI session and apply the
+printed credential unsets in your current shell.
+
+In POSIX shells, `eval "$(ugoite auth token-clear)"` applies the printed
+credential unsets to your current shell. In fish or PowerShell, use the
+matching shell-native variant instead, such as
+`ugoite auth token-clear --shell fish | source` or
 `ugoite auth token-clear --shell powershell | Invoke-Expression`.
 
 When the backend runs inside Docker/Compose and you target its published

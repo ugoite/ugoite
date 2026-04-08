@@ -4,9 +4,10 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use ugoite_cli::config::{
-    base_url, config_path, effective_format_for_stdout, load_config, normalize_space_root,
-    operator_for_path, parse_space_path, print_json, print_json_table, resolve_space_reference,
-    save_config, space_ws_path, validate_server_endpoint_url, EndpointConfig, EndpointMode, Format,
+    auth_session_path, base_url, clear_auth_session, config_path, effective_format_for_stdout,
+    load_auth_session, load_config, normalize_space_root, operator_for_path, parse_space_path,
+    print_json, print_json_table, resolve_space_reference, save_auth_session, save_config,
+    space_ws_path, validate_server_endpoint_url, AuthSession, EndpointConfig, EndpointMode, Format,
 };
 
 fn env_lock() -> &'static Mutex<()> {
@@ -176,6 +177,63 @@ fn test_cli_req_ops_006_save_config_creates_parent_dirs_and_roundtrips() {
     assert!(
         parent_err_text.contains("directory") || parent_err_text.contains("exists"),
         "unexpected parent creation error: {parent_err_text}"
+    );
+}
+
+/// REQ-OPS-015: auth session helpers must create parent dirs, ignore unreadable session files, and fail loudly on invalid clears.
+#[test]
+fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() {
+    let _guard = env_lock().lock().expect("env lock");
+    let _env = EnvState::capture();
+    EnvState::clear_known_vars();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let nested_config_path = temp.path().join("nested").join("cli").join("config.json");
+    std::env::set_var("UGOITE_CLI_CONFIG_PATH", &nested_config_path);
+
+    let session = AuthSession {
+        bearer_token: Some("issued-token".to_string()),
+    };
+    let session_path = auth_session_path();
+    let saved_path = save_auth_session(&session).expect("save auth session");
+    assert_eq!(saved_path, session_path);
+    assert!(saved_path.exists(), "auth session should be written");
+    assert_eq!(
+        load_auth_session().bearer_token.as_deref(),
+        Some("issued-token")
+    );
+
+    assert!(clear_auth_session().expect("clear saved auth session"));
+    assert!(!session_path.exists(), "auth session should be removed");
+    assert!(
+        !clear_auth_session().expect("missing auth session should report false"),
+        "missing auth session should not report a deletion"
+    );
+
+    let blocking_parent = temp.path().join("not-a-directory");
+    std::fs::write(&blocking_parent, "blocker").expect("write blocking parent file");
+    std::env::set_var(
+        "UGOITE_CLI_CONFIG_PATH",
+        blocking_parent.join("config.json").display().to_string(),
+    );
+    let save_err =
+        save_auth_session(&session).expect_err("file parent should block auth-session creation");
+    let save_err_text = save_err.to_string().to_lowercase();
+    assert!(
+        save_err_text.contains("directory") || save_err_text.contains("exists"),
+        "unexpected save-auth-session error: {save_err_text}"
+    );
+
+    std::env::set_var("UGOITE_CLI_CONFIG_PATH", &nested_config_path);
+    std::fs::create_dir_all(&session_path).expect("create unreadable auth-session directory");
+    assert_eq!(load_auth_session(), AuthSession::default());
+
+    let clear_err =
+        clear_auth_session().expect_err("directory auth-session path should fail to clear");
+    let clear_err_text = clear_err.to_string().to_lowercase();
+    assert!(
+        clear_err_text.contains("directory") || clear_err_text.contains("is a directory"),
+        "unexpected clear-auth-session error: {clear_err_text}"
     );
 }
 
