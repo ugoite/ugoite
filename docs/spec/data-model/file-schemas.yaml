@@ -55,6 +55,8 @@ schemas:
       properties:
         default_form:
           type: string
+          description: Starter/user-selected form surfaced to clients for
+            first-entry authoring; bootstrapped to Entry for new spaces.
         editor_theme:
           type: string
           enum: [light, dark]

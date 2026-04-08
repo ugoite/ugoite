@@ -65,9 +65,10 @@ They help people enter consistent information, and they help the browser, CLI,
 and automation flows understand what each entry is supposed to contain.
 
 For browser-first users, that makes the first-run workflow concrete: create or
-open a space, create a form, then create entries that use it. A new space
-becomes meaningfully authorable once at least one form exists, because the form
-is what tells Ugoite how new structured entries should start.
+open a space, write a first note with the starter `Entry` form, then add custom
+forms when you want stricter structure. A new space is immediately authorable
+because it bootstraps a default form while still leaving room for more specific
+schemas later.
 
 You can absolutely start with a lightweight note, but as soon as you want
 stable extracted fields, validation, or reliable queries, the Form becomes the

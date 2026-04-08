@@ -11,6 +11,7 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
         "name": "Entry",
         "template": "# Entry\n\n## Body\n",
         "fields": {"Body": {"type": "markdown"}},
+        "allow_extra_attributes": "allow_columns",
     });
     form::upsert_form(op, ws_path, &form_def).await?;
     Ok(())

@@ -73,6 +73,23 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     assert (ws_path / "meta.json").exists()
 
 
+def test_create_space_req_sto_002_bootstraps_starter_entry_form(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-002: create space bootstraps starter entry authoring assets."""
+    response = test_client.post("/spaces", json={"name": "starter-ws"})
+    assert response.status_code == 201
+
+    ws_path = temp_space_root / "spaces" / "starter-ws"
+    settings = json.loads((ws_path / "settings.json").read_text())
+    assert settings["default_form"] == "Entry"
+
+    forms_response = test_client.get("/spaces/starter-ws/forms")
+    assert forms_response.status_code == 200
+    assert {item["name"] for item in forms_response.json()} == {"Entry"}
+
+
 def test_health_endpoint(test_client: TestClient) -> None:
     """REQ-OPS-001: health endpoint returns service readiness."""
     response = test_client.get("/health")
