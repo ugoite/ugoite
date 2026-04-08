@@ -1,4 +1,7 @@
-use crate::config::{load_config, print_json, validated_base_url, EndpointConfig, EndpointMode};
+use crate::config::{
+    clear_auth_session, effective_api_key, effective_bearer_token, load_config, print_json,
+    save_auth_session, validated_base_url, AuthSession, EndpointConfig, EndpointMode,
+};
 use crate::http;
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
@@ -91,6 +94,9 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
             };
 
             if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
+                let session_path = save_auth_session(&AuthSession {
+                    bearer_token: Some(token.to_string()),
+                })?;
                 let apply_args = if mock_oauth {
                     " --mock-oauth"
                 } else {
@@ -99,13 +105,18 @@ pub async fn run(cmd: AuthCmd) -> Result<()> {
                 let quoted_token = posix_shell_quote(token);
                 println!("export UGOITE_AUTH_BEARER_TOKEN={quoted_token}");
                 eprintln!(
-                    "# Output uses POSIX shell quoting.\n# To apply: eval \"$(ugoite auth login{apply_args})\"\n# Or copy the export line above into your shell."
+                    "# Saved CLI session to {} with owner-only permissions where supported.\n# Future `ugoite` commands will use it automatically.\n# Output uses POSIX shell quoting.\n# To apply: eval \"$(ugoite auth login{apply_args})\"\n# Or copy the export line above into your shell.",
+                    session_path.display()
                 );
             }
         }
         AuthSubCmd::TokenClear | AuthSubCmd::Logout => {
+            let cleared_saved_session = clear_auth_session()?;
             println!("unset UGOITE_AUTH_BEARER_TOKEN");
             println!("unset UGOITE_AUTH_API_KEY");
+            if cleared_saved_session {
+                eprintln!("# Cleared the saved CLI session.");
+            }
         }
         AuthSubCmd::Overview => {
             let caps = ugoite_core::auth::auth_capabilities_snapshot(None, None, None, None, None);
@@ -138,8 +149,8 @@ fn mask_token(t: &str) -> String {
 }
 
 fn auth_profile_snapshot(config: &EndpointConfig) -> serde_json::Value {
-    let bearer = non_empty_env("UGOITE_AUTH_BEARER_TOKEN");
-    let api_key = non_empty_env("UGOITE_AUTH_API_KEY");
+    let bearer = effective_bearer_token();
+    let api_key = effective_api_key();
     let credential_state = credential_state_label(bearer.as_deref(), api_key.as_deref());
 
     let (topology, endpoint_url) = match &config.mode {
@@ -190,7 +201,7 @@ fn auth_profile_status(mode: &EndpointMode, credential_state: &str) -> String {
             if credential_state == "none" {
                 "Core mode does not require backend authentication.".to_string()
             } else {
-                "Core mode does not require backend authentication. Token env vars are present but only matter after switching to backend or api mode.".to_string()
+                "Core mode does not require backend authentication. Saved or exported server credentials are present but only matter after switching to backend or api mode.".to_string()
             }
         }
         EndpointMode::Backend => server_auth_status("Backend", credential_state),
@@ -216,20 +227,10 @@ fn auth_profile_next_action(config: &EndpointConfig, credential_state: &str) -> 
             if credential_state == "none" {
                 "Run `ugoite auth login` for a bearer token, or export `UGOITE_AUTH_API_KEY` before using server-backed commands.".to_string()
             } else {
-                "Continue with server-backed commands, or run `eval \"$(ugoite auth token-clear)\"` to print and apply credential unsets in your current shell.".to_string()
+                "Continue with server-backed commands, or run `eval \"$(ugoite auth token-clear)\"` to clear any saved CLI session and print credential unsets for your current shell.".to_string()
             }
         }
     }
-}
-
-fn non_empty_env(key: &str) -> Option<String> {
-    std::env::var(key).ok().and_then(|value| {
-        if value.trim().is_empty() {
-            None
-        } else {
-            Some(value)
-        }
-    })
 }
 
 fn posix_shell_quote(value: &str) -> String {
