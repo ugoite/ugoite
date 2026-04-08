@@ -158,7 +158,7 @@ import json
 import sys
 from urllib.request import Request, urlopen
 
-request = Request("http://127.0.0.1:8000/auth/mock-oauth", method="POST")
+request = Request("http://127.0.0.1:3000/api/auth/mock-oauth", method="POST")
 with urlopen(request) as response:
     payload = json.load(response)
     bearer_token = payload.get("bearer_token")
