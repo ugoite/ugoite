@@ -1058,7 +1058,7 @@ def test_docs_req_ops_001_guides_exist() -> None:
 
 
 def test_docs_req_sec_009_service_account_guide_explains_id_handoff() -> None:
-    """REQ-SEC-009: service-account guide must show how operators capture the created id."""
+    """REQ-SEC-009: guide must show how operators capture the created id."""
     guide_text = (GUIDE_DIR / "service-accounts.md").read_text(encoding="utf-8")
     required_fragments = {
         "The create command prints JSON that",
@@ -1066,7 +1066,9 @@ def test_docs_req_sec_009_service_account_guide_explains_id_handoff() -> None:
         "jq -r '.id'",
         'ugoite space service-account-list "$SPACE_ID"',
     }
-    missing = sorted(fragment for fragment in required_fragments if fragment not in guide_text)
+    missing = sorted(
+        fragment for fragment in required_fragments if fragment not in guide_text
+    )
     if missing:
         raise AssertionError(
             "service-accounts.md must explain how to capture the created id: "
