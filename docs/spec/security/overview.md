@@ -24,6 +24,9 @@ targets an **Authenticated Access by Default** model.
 - Shipped release Compose and Helm surfaces require operator-supplied auth
   secrets, and local-demo `mock-oauth` remains an explicit opt-in instead of
   the manifest default.
+- CLI endpoint configuration only allows cleartext `http://` for loopback
+  development hosts (`localhost`, `127.0.0.1`, `[::1]`); remote credentialed
+  endpoints MUST use `https://`.
 - Space creation is further restricted to active admins of the reserved
   `admin-space`, and the creator of each non-admin space becomes that space's
   initial admin.
@@ -71,6 +74,9 @@ targets an **Authenticated Access by Default** model.
 ### Input Sanitization
 - All inputs validated via Pydantic models
 - Path traversal prevention in file operations
+- Asset upload filenames are reduced to a single metadata-safe basename before
+  storage writes so traversal segments, control characters, and Markdown heading
+  prefixes cannot escape or spoof a space's `assets/` directory metadata
 - SQL injection not applicable (no SQL database)
 
 ## Software Supply Chain Security

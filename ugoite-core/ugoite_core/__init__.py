@@ -78,6 +78,12 @@ from .sql_rules import (
     load_sql_rules,
     sql_completions,
 )
+from .sql_sessions import (
+    SqlSessionPageInput,
+    get_sql_session_count_for_identity,
+    get_sql_session_rows_all_for_identity,
+    get_sql_session_rows_for_identity,
+)
 from .storage_validation import validate_test_storage_config
 
 with suppress(ImportError):
@@ -111,6 +117,7 @@ get_user_preferences = _core_any.get_user_preferences
 list_assets = _core_any.list_assets
 list_column_types = _core_any.list_column_types
 list_entries = _core_any.list_entries
+list_entry_summaries = _core_any.list_entry_summaries
 list_forms = _core_any.list_forms
 list_sample_scenarios = _core_any.list_sample_scenarios
 list_spaces = _core_any.list_spaces
@@ -162,6 +169,7 @@ __all__ = [
     "RoleName",
     "RotateServiceAccountKeyInput",
     "SqlLintDiagnostic",
+    "SqlSessionPageInput",
     "TokenOnlyInvitationProvider",
     "UpdateMemberRoleInput",
     "accept_invitation",
@@ -202,8 +210,11 @@ __all__ = [
     "get_space",
     "get_sql",
     "get_sql_session_count",
+    "get_sql_session_count_for_identity",
     "get_sql_session_rows",
     "get_sql_session_rows_all",
+    "get_sql_session_rows_all_for_identity",
+    "get_sql_session_rows_for_identity",
     "get_sql_session_status",
     "get_user_preferences",
     "is_active_member",
@@ -212,6 +223,7 @@ __all__ = [
     "list_audit_events",
     "list_column_types",
     "list_entries",
+    "list_entry_summaries",
     "list_forms",
     "list_members",
     "list_sample_scenarios",

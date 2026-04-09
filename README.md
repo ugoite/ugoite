@@ -46,7 +46,8 @@ GitHub without comparing two different onboarding maps.
   requirements, APIs, or machine-readable specs.
 
 For a brand-new browser space, the first productive in-app sequence is:
-**open the space, create a form, then create entries from that form**.
+**open the space, write a first note with the starter Entry form, then add
+custom forms when you want stricter structure**.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
@@ -381,6 +382,7 @@ Tag conventions:
 | `UGOITE_DEV_SIGNING_KID`      | `release-compose-local-v1`   | Key id paired with the install-specific bearer signing material                                                                                                                       |
 | `UGOITE_DEV_SIGNING_SECRET`   | `required unique value`      | Secret used to mint dev bearer tokens for this install                                                                                                                                 |
 | `UGOITE_AUTH_BEARER_SECRETS`  | `required unique value`      | Bearer verification secret set accepted by the backend                                                                                                                                 |
+| `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids accepted by the backend; keep this aligned with the signing key ids you expose for this install                                                          |
 | `UGOITE_DEV_AUTH_PROXY_TOKEN` | `required unique value`      | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see

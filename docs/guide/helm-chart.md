@@ -52,6 +52,9 @@ By default the chart uses:
 - `ghcr.io/ugoite/ugoite/backend:${image.tag}`
 - `ghcr.io/ugoite/ugoite/frontend:${image.tag}`
 - a backend volume mounted at `/data`
+- non-root runtime defaults for backend + frontend containers, including
+  disabled privilege escalation, dropped Linux capabilities, and backend volume
+  write access via `backend.podSecurityContext.fsGroup`
 - `passkey-totp` as the safer shipped auth-mode default until you explicitly opt
   into local demo login
 - install-specific auth secrets that you supply through `values.local.yaml`
@@ -90,6 +93,9 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 | `backend.persistence.existingClaim` | empty | Reuse an existing PVC instead of creating a new one. |
 | `auth.mode` | `passkey-totp` | Shipped auth-mode default. Set it to `mock-oauth` only for an explicit local demo flow. |
 | `auth.devUserId` | empty | Username/user id hint for the explicit login flow you enable. |
+| `backend.podSecurityContext.fsGroup` | `10001` | Keeps the mounted `/data` volume writable for the backend's non-root image user. |
+| `backend.securityContext` | non-root + `allowPrivilegeEscalation: false` + `drop: ["ALL"]` + `RuntimeDefault` seccomp | Baseline hardening defaults for the backend container. |
+| `frontend.securityContext` | non-root + `allowPrivilegeEscalation: false` + `drop: ["ALL"]` + `RuntimeDefault` seccomp | Baseline hardening defaults for the frontend container. |
 | `auth.proxyToken` | empty (required unique value) | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
 | `auth.signingKid` | `release-compose-local-v1` | Signing key id for the default bearer-token setup. |
 | `auth.signingSecret` | empty (required unique value) | Signing secret used to mint the dev bearer-token secret for this install. |
@@ -109,5 +115,8 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
   so exposed clusters do not rely on repository-known development secrets.
 - If your cluster already has a durable claim, set
   `backend.persistence.existingClaim` instead of creating a new one.
+- Override `backend.securityContext`, `backend.podSecurityContext`, or
+  `frontend.securityContext` only when your cluster already provides equivalent
+  non-root/container hardening guardrails.
 - If you need a fixed backend host instead of the computed chart-equivalent
   service URL, set `frontend.backendUrl`.

@@ -3,9 +3,11 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@solidjs/testing-library";
 import { CreateFormDialog, EditFormDialog, CreateEntryDialog } from "./create-dialogs";
 import { setLocale } from "~/lib/i18n";
+import { searchApi } from "~/lib/search-api";
 import type { Form } from "~/lib/types";
 
 beforeEach(() => {
+	vi.restoreAllMocks();
 	setLocale("en");
 });
 
@@ -610,7 +612,9 @@ describe("CreateEntryDialog", () => {
 			screen.getByText("Use true/false, yes/no, on/off, or 1/0 for boolean fields."),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText("Enter the target form's entry_id for row_reference fields."),
+			screen.getByText(
+				"In web/chat mode, search the target form and choose a match. Ugoite still stores the stable entry_id underneath.",
+			),
 		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Markdown" }));
@@ -622,12 +626,557 @@ describe("CreateEntryDialog", () => {
 				"Markdown content is saved as-is (the backend validates frontmatter/form consistency).",
 			),
 		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Markdown mode keeps row_reference values as stable entry_id strings under the matching `## field` heading.",
+			),
+		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
 		expect(
 			screen.getByText(
 				"Chat walks through each field one at a time. Required fields must be answered before creation, and optional fields can be skipped.",
 			),
+		).toBeInTheDocument();
+	});
+
+	it("REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
+			{
+				id: "project-alpha",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-14T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+			{
+				id: "project-beta",
+				title: "Beta Project",
+				form: "Project",
+				updated_at: "2026-02-15T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+		]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: true, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+			{
+				name: "Project",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Project\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task linked to Alpha" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Summary/), { target: { value: "Track the launch" } });
+
+		const projectInput = screen.getByLabelText(/Project/);
+		fireEvent.input(projectInput, { target: { value: "alpha" } });
+
+		fireEvent.click(await screen.findByRole("button", { name: /Alpha Project/i }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Task linked to Alpha",
+			"Task",
+			expect.objectContaining({
+				Summary: "Track the launch",
+				Project: "project-alpha",
+			}),
+			"webform",
+		);
+		await waitFor(() => {
+			expect(searchApi.rowReferenceOptions).toHaveBeenCalledWith("default", "Project", "alpha", 8);
+		});
+	});
+
+	it("REQ-FE-065: chat mode stores the selected row_reference entry id", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
+			{
+				id: "project-alpha",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-14T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+			{
+				id: "project-beta",
+				title: "Beta Project",
+				form: "Project",
+				updated_at: "2026-02-15T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+		]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: true, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+			{
+				name: "Project",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Project\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Chat-linked task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Use the picker inside chat mode" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+
+		fireEvent.input(screen.getByLabelText(/Project/), { target: { value: "beta" } });
+		fireEvent.click(await screen.findByRole("button", { name: /Beta Project/i }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Chat-linked task",
+			"Task",
+			expect.objectContaining({
+				Summary: "Use the picker inside chat mode",
+				Project: "project-beta",
+			}),
+			"chat",
+		);
+	});
+
+	it("REQ-FE-065: clearing a selected row_reference removes the saved entry id", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
+			{
+				id: "project-alpha",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-14T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+		]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+			{
+				name: "Project",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Project\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task after clearing selection" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Only keep the human summary" },
+		});
+		fireEvent.input(screen.getByLabelText(/Project/), { target: { value: "alpha" } });
+		fireEvent.click(await screen.findByRole("button", { name: /Alpha Project/i }));
+		fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Task after clearing selection",
+			"Task",
+			{
+				Summary: "Only keep the human summary",
+			},
+			"webform",
+		);
+		expect(screen.queryByRole("button", { name: "Clear selection" })).not.toBeInTheDocument();
+	});
+
+	it("REQ-FE-065: row_reference pickers fall back to entry ids and sort duplicate titles by id", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
+			{
+				id: "project-2",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-15T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+			{
+				id: "project-blank",
+				title: "   ",
+				form: "Project",
+				updated_at: "2026-02-16T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+			{
+				id: "project-1",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-14T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+		]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Project\n",
+			},
+			{
+				name: "Project",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Project\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Sorted references" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		await waitFor(() => {
+			expect(searchApi.rowReferenceOptions).toHaveBeenCalledWith("default", "Project", "", 8);
+		});
+
+		await waitFor(() => {
+			expect(
+				Array.from(document.querySelectorAll<HTMLButtonElement>(".ui-reference-picker-button")).map(
+					(button) => {
+						if (button.textContent?.includes("project-1")) return "project-1";
+						if (button.textContent?.includes("project-2")) return "project-2";
+						return "project-blank";
+					},
+				),
+			).toEqual(["project-1", "project-2", "project-blank"]);
+		});
+		expect(screen.getAllByText("project-blank")).toHaveLength(2);
+	});
+
+	it("REQ-FE-065: row_reference pickers show an empty-state hint when searches have no matches", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Project/), {
+			target: { value: "alpha" },
+		});
+
+		expect(
+			await screen.findByText("No Project entries matched that search yet."),
+		).toBeInTheDocument();
+	});
+
+	it("REQ-FE-065: row_reference fields without target_form keep raw text entry", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const optionsSpy = vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: false },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Raw reference task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Use a raw reference string" },
+		});
+		fireEvent.input(screen.getByLabelText(/Project/), {
+			target: { value: "legacy-project-id" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Raw reference task",
+			"Task",
+			{
+				Summary: "Use a raw reference string",
+				Project: "legacy-project-id",
+			},
+			"webform",
+		);
+		expect(optionsSpy).not.toHaveBeenCalled();
+	});
+
+	it("REQ-FE-065: row_reference fields fall back to raw text when no space id is available", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const optionsSpy = vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog open={true} forms={forms} onClose={onClose} onSubmit={onSubmit} />
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Offline reference task" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Capture a raw reference without space context" },
+		});
+		fireEvent.input(screen.getByLabelText(/Project/), {
+			target: { value: "alpha" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).toHaveBeenCalledWith(
+			"Offline reference task",
+			"Task",
+			{
+				Summary: "Capture a raw reference without space context",
+				Project: "alpha",
+			},
+			"webform",
+		);
+		expect(optionsSpy).not.toHaveBeenCalled();
+	});
+
+	it("REQ-FE-065: row_reference pickers surface load errors when reference lookup fails", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		const rejectedOptions = Promise.reject(new Error("boom"));
+		rejectedOptions.catch(() => undefined);
+		vi.spyOn(searchApi, "rowReferenceOptions").mockReturnValue(rejectedOptions);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Project\n",
+			},
+			{
+				name: "Project",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+				template: "# Project\n\n## Summary\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Broken references" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+
+		await waitFor(() => {
+			expect(
+				screen.getByText(
+					"Couldn't load Project entries. Switch to Markdown if you need to paste a stable entry_id manually.",
+				),
+			).toBeInTheDocument();
+		});
+	});
+
+	it("REQ-FE-065: row_reference searches must resolve to a saved entry before submit", async () => {
+		const onSubmit = vi.fn();
+		const onClose = vi.fn();
+		vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([
+			{
+				id: "project-alpha",
+				title: "Alpha Project",
+				form: "Project",
+				updated_at: "2026-02-14T09:30:00Z",
+				properties: {},
+				tags: [],
+				links: [],
+			},
+		]);
+		const forms: Form[] = [
+			{
+				name: "Task",
+				version: 1,
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: false, target_form: "Project" },
+				},
+				template: "# Task\n\n## Summary\n\n## Project\n",
+			},
+		];
+
+		render(() => (
+			<CreateEntryDialog
+				open={true}
+				forms={forms}
+				spaceId="default"
+				onClose={onClose}
+				onSubmit={onSubmit}
+			/>
+		));
+
+		fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+			target: { value: "Task linked to search text" },
+		});
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "Task" } });
+		fireEvent.input(screen.getByLabelText(/Summary/), {
+			target: { value: "Investigate query guard" },
+		});
+		fireEvent.input(screen.getByLabelText(/Project/), { target: { value: "alpha" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(
+			screen.getByText("Please select a saved entry for row_reference field: Project."),
 		).toBeInTheDocument();
 	});
 
