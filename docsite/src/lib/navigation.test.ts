@@ -171,6 +171,10 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 							href: "/docs/guide/log-redaction",
 						},
 						{
+							title: "Space Settings & Storage",
+							href: "/docs/guide/space-settings-storage",
+						},
+						{
 							title: "Storage Cleanup",
 							href: "/docs/guide/storage-cleanup",
 						},

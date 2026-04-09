@@ -19,6 +19,8 @@ stack healthy, diagnosable, and safe to evolve.
 
 ## Maintain storage safely
 
+- [Space Settings & Storage](space-settings-storage.md) for a beginner-friendly
+  explanation of the storage summary, connector metadata, and when to leave the defaults alone.
 - [Storage Cleanup](storage-cleanup.md) for reclaiming generated state without
   guessing which paths are safe to remove.
 - [Storage Migration](storage-migration.md) when you need to move or reshape a
