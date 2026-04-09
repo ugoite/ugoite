@@ -142,8 +142,8 @@ apis:
       file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
       function: SpaceEntriesIndexPane
     ugoite_core:
-      file: ugoite-core/src/sql_session.rs
-      function: get_sql_session_count
+      file: ugoite-core/ugoite_core/sql_sessions.py
+      function: get_sql_session_count_for_identity
     ugoite_cli:
       command: ugoite query --sql
       file: ugoite-cli/src/commands/sql.rs
@@ -160,8 +160,8 @@ apis:
       file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
       function: SpaceEntriesIndexPane
     ugoite_core:
-      file: ugoite-core/src/sql_session.rs
-      function: get_sql_session_rows
+      file: ugoite-core/ugoite_core/sql_sessions.py
+      function: get_sql_session_rows_for_identity
     ugoite_cli:
       command: ugoite query --sql
       file: ugoite-cli/src/commands/sql.rs

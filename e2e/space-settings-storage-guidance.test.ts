@@ -21,9 +21,8 @@ test.describe("Space settings storage guidance", () => {
 			waitUntil: "networkidle",
 		});
 
-		await expect(
-			page.getByText(/local paths keep control and offline access on this machine/i),
-		).toBeVisible();
+		await expect(page.getByText(/saved uri below is migration metadata/i)).toBeVisible();
+		await expect(page.getByText(/local paths keep control and offline access on this machine/i)).toBeVisible();
 		await expect(
 			page.getByText(/does not migrate existing entries or assets to the new location/i),
 		).toBeVisible();

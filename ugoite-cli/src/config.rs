@@ -1,9 +1,11 @@
 use anyhow::{anyhow, bail, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -22,6 +24,12 @@ pub struct EndpointConfig {
     pub backend_url: String,
     #[serde(default = "default_api_url")]
     pub api_url: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuthSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bearer_token: Option<String>,
 }
 
 fn default_backend_url() -> String {
@@ -55,6 +63,13 @@ pub fn config_path() -> PathBuf {
     dirs_home().join(".ugoite").join("cli-endpoints.json")
 }
 
+pub fn auth_session_path() -> PathBuf {
+    config_path()
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("cli-auth.json")
+}
+
 fn non_empty_env_path(key: &str) -> Option<PathBuf> {
     std::env::var(key).ok().and_then(|value| {
         if value.trim().is_empty() {
@@ -72,6 +87,18 @@ fn dirs_home() -> PathBuf {
     }
 }
 
+fn non_empty_string(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+pub fn non_empty_env_value(key: &str) -> Option<String> {
+    std::env::var(key).ok().and_then(non_empty_string)
+}
+
 pub fn load_config() -> EndpointConfig {
     let path = config_path();
     if !path.exists() {
@@ -85,6 +112,21 @@ pub fn load_config() -> EndpointConfig {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
+pub fn load_auth_session() -> AuthSession {
+    let path = auth_session_path();
+    if !path.exists() {
+        return AuthSession::default();
+    }
+    let read_text = std::fs::read_to_string(&path);
+    let text = match read_text {
+        Ok(text) => text,
+        Err(_) => return AuthSession::default(),
+    };
+    let mut session: AuthSession = serde_json::from_str(&text).unwrap_or_default();
+    session.bearer_token = session.bearer_token.and_then(non_empty_string);
+    session
+}
+
 pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
     let path = config_path();
     if let Some(parent) = path.parent() {
@@ -94,6 +136,71 @@ pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
         serde_json::to_string_pretty(config).expect("EndpointConfig serialization is infallible");
     std::fs::write(&path, text)?;
     Ok(path)
+}
+
+pub fn save_auth_session(session: &AuthSession) -> Result<PathBuf> {
+    let path = auth_session_path();
+    let parent = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let normalized = AuthSession {
+        bearer_token: session.bearer_token.clone().and_then(non_empty_string),
+    };
+    let text =
+        serde_json::to_string_pretty(&normalized).expect("AuthSession serialization is infallible");
+    write_auth_session_text(&path, &text)?;
+    set_owner_only_permissions(&path)?;
+    Ok(path)
+}
+
+pub fn clear_auth_session() -> Result<bool> {
+    let path = auth_session_path();
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn effective_bearer_token() -> Option<String> {
+    non_empty_env_value("UGOITE_AUTH_BEARER_TOKEN").or_else(|| load_auth_session().bearer_token)
+}
+
+pub fn effective_api_key() -> Option<String> {
+    non_empty_env_value("UGOITE_AUTH_API_KEY")
+}
+
+#[cfg(unix)]
+fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_auth_session_text(path: &Path, text: &str) -> Result<()> {
+    std::fs::write(path, text)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_owner_only_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_permissions(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
@@ -208,6 +315,7 @@ pub fn base_url(config: &EndpointConfig) -> Option<String> {
 }
 
 fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_end_matches('.');
     let normalized = host
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
@@ -234,6 +342,13 @@ pub fn validate_server_endpoint_url(url: &str, label: &str) -> Result<()> {
         }
         scheme => bail!("{label} URL {url} must use http:// or https://, not {scheme}://."),
     }
+}
+
+pub fn validate_active_remote_endpoint(config: &EndpointConfig) -> Result<()> {
+    let Some(endpoint) = selected_server_endpoint(config) else {
+        return Ok(());
+    };
+    validate_server_endpoint_url(endpoint.url, endpoint.label)
 }
 
 pub fn endpoint_transport_warning(url: &str, label: &str) -> Option<String> {

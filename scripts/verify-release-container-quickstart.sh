@@ -84,6 +84,7 @@ PLAYWRIGHT_TESTS=(
 )
 
 mkdir -p "$STACK_DIR/spaces" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
+chmod 0777 "$STACK_DIR/spaces"
 
 cleanup() {
   status=$?
@@ -153,12 +154,30 @@ bash "$SCRIPT_DIR/wait-for-http.sh" \
 
 E2E_AUTH_BEARER_TOKEN="$(
   python3 - <<'PY'
+import http.cookies
 import json
+from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
 request = Request("http://127.0.0.1:3000/api/auth/mock-oauth", method="POST")
 with urlopen(request) as response:
-    print(json.load(response)["bearer_token"])
+    payload = json.load(response)
+    bearer_token = payload.get("bearer_token")
+    if isinstance(bearer_token, str) and bearer_token:
+        print(bearer_token)
+        raise SystemExit(0)
+
+    for set_cookie in response.headers.get_all("Set-Cookie", []):
+        cookie = http.cookies.SimpleCookie()
+        cookie.load(set_cookie)
+        morsel = cookie.get("ugoite_auth_bearer_token")
+        if morsel is not None and morsel.value:
+            print(unquote(morsel.value))
+            raise SystemExit(0)
+
+raise SystemExit(
+    "release quick-start auth proxy did not return a bearer_token or auth cookie"
+)
 PY
 )"
 export E2E_AUTH_BEARER_TOKEN

@@ -97,9 +97,9 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 				<div class="border-t pt-6">
 					<h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
 					<p class="text-sm ui-muted">
-						Review the saved storage connector metadata for this space. Today the backend still
-						writes through the deployment-wide storage root, so this URI is best treated as
-						manual migration planning plus connection-validation metadata.
+						See where this space currently writes data. The saved URI below is migration metadata:
+						today the backend still writes through the deployment-wide storage root, so updating it
+						does not reroute writes until per-space routing or migration support lands.
 					</p>
 
 					<div class="space-y-4">
@@ -120,7 +120,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 						</section>
 						<div class="ui-field">
 							<label for="storage-uri" class="ui-label">
-								Storage URI
+								Saved Storage URI (metadata only)
 							</label>
 							<input
 								id="storage-uri"
@@ -132,30 +132,32 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 								required
 							/>
 							<p class="text-sm ui-muted">
-								Supported: <code>file://</code> (local), <code>s3://</code> (S3 bucket)
+								Supported planning targets: <code>file://</code> (local), <code>s3://</code> (S3
+								bucket)
 							</p>
 							<div class="ui-card mt-3 space-y-3">
 								<div>
-									<h4 class="text-sm font-semibold">Choose the storage model deliberately</h4>
+									<h4 class="text-sm font-semibold">Plan connector metadata deliberately</h4>
 									<ul class="mt-2 list-disc pl-5 text-sm ui-muted space-y-1">
 										<li>
-											<code>file://</code> keeps the space local-first on this machine with no cloud
-											storage bill.
+											<code>file://</code> records a local path you may want to migrate this space
+											to later, so local paths keep control and offline access on this machine.
 										</li>
 										<li>
-											<code>s3://</code> records an object-storage target that can support later
-											migration, team access, and backups, but it adds cloud credentials and usage
-											costs.
+											<code>s3://</code> records an object-storage target you may want to validate
+											or migrate to later. It can support team access and backups, but it adds cloud
+											credentials and usage costs.
 										</li>
 									</ul>
 								</div>
 								<p class="text-sm ui-muted">
-									Changing the storage URI saves connector metadata for this space. It does not
-									reroute current entry or asset writes, and it does not migrate existing data for
-									you.
+									Changing the saved storage URI only updates this space&apos;s metadata. It does
+									not migrate existing entries or assets to the new location, and Ugoite keeps
+									writing through the storage root shown above until per-space routing or migration
+									support lands.
 								</p>
 								<p class="text-sm ui-muted">
-									Before switching, review the{" "}
+									Before saving a new URI, review the{" "}
 									<a
 										href={storageMigrationGuideUrl}
 										target="_blank"
@@ -164,8 +166,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									>
 										storage migration guide
 									</a>{" "}
-									and use Test Connection to validate the target before saving metadata or planning
-									a manual migration.
+									and use Test Connection as a preflight check for the target credentials and
+									reachability before you plan a manual migration.
 								</p>
 							</div>
 						</div>

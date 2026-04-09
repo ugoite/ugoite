@@ -776,14 +776,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-017
   title: Space Storage Configuration
-  description: 'Space settings MUST allow saving per-space storage connector metadata
+  description: 'Space settings MUST allow saving storage connector metadata (local,
 
-    (local, S3, remote) with connection validation before saving.
+    S3, remote) with connection validation before saving.
 
+    The UI MUST explain that changing `storage_config.uri` updates saved metadata
 
-    Until backend I/O honors per-space routing, the UI MUST describe the URI as
-
-    saved connector metadata rather than the active write location.
+    only until per-space routing or migration support is implemented.
 
     '
   related_spec:
@@ -801,8 +800,8 @@ requirements:
       - should display success message after test connection
       - should display error message on test connection failure
       - should save storage config
-      - 'REQ-FE-017: explains storage trade-offs before changing the URI'
-      - 'REQ-FE-017: warns that changing the URI only saves metadata until a manual migration happens'
+      - 'REQ-FE-017: explains that saved storage URIs are metadata-only before migration'
+      - 'REQ-FE-017: frames connector URIs as future migration targets'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1151,12 +1150,16 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-037
-  title: Form-first Entry Creation UI
-  description: 'Creating a new entry MUST require selecting a Form. The create dialog
+  title: Starter-form Entry Creation UI
+  description: 'Creating a new entry MUST require selecting a Form. New spaces
 
-    MUST show the selected Form fields and generate the entry from the
+    MUST surface a user-creatable default Form so first-entry authoring works
 
-    Form template with the correct frontmatter. Reserved metadata forms MUST NOT
+    without designing a custom schema first. The create dialog MUST show the
+
+    selected Form fields and generate the entry from the Form template with the
+
+    correct frontmatter. Reserved metadata forms MUST NOT
 
     be presented as ordinary user-selectable forms in entry creation flows.
 
@@ -1195,8 +1198,15 @@ requirements:
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
       - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
+      - 'REQ-FE-037: dashboard opens the starter entry flow for a new space'
       - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
-      - 'REQ-FE-037: dashboard promotes form creation when a new space has no creatable forms'
+      - 'REQ-FE-037: dashboard promotes form creation when a space has no creatable forms'
+    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+      tests:
+      - 'REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist'
+      - 'REQ-FE-037: entries route opens the starter entry flow for a new space'
+      - 'REQ-FE-037: entries route guides spaces with no creatable forms toward form creation'
+      - 'REQ-FE-037: entries route opens the create-entry dialog when creatable forms exist'
     - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
@@ -1204,7 +1214,10 @@ requirements:
     e2e:
     - file: e2e/dashboard-first-form.test.ts
       tests:
-      - 'REQ-FE-037: dashboard guides first-run spaces toward form creation'
+      - 'REQ-FE-037: dashboard lets a new space create a first entry with the starter form'
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-037: entries route opens the starter entry flow for new spaces'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1666,15 +1679,17 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-060
   title: Space Storage Topology Visibility
-  description: 'Authenticated frontend surfaces MUST show saved per-space storage
+  description: 'Authenticated frontend surfaces MUST show the current storage topology
 
-    connector metadata using user-facing labels and the configured URI when available.
+    for the current space using backend-reported storage metadata and user-facing
 
-    The dashboard MUST provide a direct path to space settings so users can inspect
+    labels.
 
-    or edit the stored connector metadata without implying that current writes
+    Space settings MUST separate that current topology from any saved
 
-    have already moved.
+    `storage_config.uri` migration metadata so users can review the active root
+
+    before editing future targets.
 
     '
   related_spec:
@@ -1685,17 +1700,19 @@ requirements:
     vitest:
     - file: frontend/src/lib/storage-topology.test.ts
       tests:
-      - 'REQ-FE-060: summarizes file-backed spaces as saved local metadata'
-      - 'REQ-FE-060: summarizes s3-backed spaces as saved object-store metadata'
-      - 'REQ-FE-060: falls back to backend-managed storage when no URI is present'
-      - 'REQ-FE-060: ignores blank storage URIs when summarizing saved metadata'
-      - 'REQ-FE-060: treats unrecognized storage URIs as backend-managed metadata'
+      - 'REQ-FE-060: summarizes backend local storage as local filesystem'
+      - 'REQ-FE-060: preserves already formatted backend storage URIs'
+      - 'REQ-FE-060: preserves relative local storage roots verbatim'
+      - 'REQ-FE-060: summarizes backend s3 storage as remote object store'
+      - 'REQ-FE-060: falls back to backend API when no backend storage metadata is present'
+      - 'REQ-FE-060: ignores blank backend storage roots when summarizing topology'
+      - 'REQ-FE-060: treats unrecognized backend storage types as backend-managed topology'
     - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
       tests:
-      - 'REQ-FE-060: dashboard surfaces saved storage metadata with a settings link'
+      - 'REQ-FE-060: dashboard surfaces the active storage topology with a settings link'
     - file: frontend/src/components/SpaceSettings.test.tsx
       tests:
-      - 'REQ-FE-060: settings show saved storage metadata before editing'
+      - 'REQ-FE-060: settings show the current storage topology before editing'
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1838,3 +1855,94 @@ requirements:
       tests:
       - 'REQ-FE-064: home page localizes public copy through the shared dictionary'
       - 'REQ-FE-064: about page localizes public copy through the shared dictionary'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-065
+  title: Searchable Row Reference Picker
+  description: 'Create-entry flows for `row_reference` fields MUST let users search
+
+    and choose target-form entries by human-readable metadata while still storing
+
+    the stable referenced `entry_id` in the generated entry content. Web and chat
+
+    modes MUST block submission when a user typed a row-reference search but has
+
+    not actually selected a saved target entry yet.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  - data-model/overview.md#content-column-types--markdown-parsing
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/entries.test.ts
+      tests:
+      - 'REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id'
+    vitest:
+    - file: frontend/src/components/create-dialogs.test.tsx
+      tests:
+      - 'REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids'
+      - 'REQ-FE-065: chat mode stores the selected row_reference entry id'
+      - 'REQ-FE-065: row_reference searches must resolve to a saved entry before submit'
+      - 'REQ-FE-065: row_reference pickers surface load errors when reference lookup fails'
+      - 'REQ-FE-065: clearing a selected row_reference removes the saved entry id'
+      - 'REQ-FE-065: row_reference fields without target_form keep raw text entry'
+      - 'REQ-FE-065: row_reference pickers fall back to entry ids and sort duplicate titles by id'
+    - file: frontend/src/lib/client.test.ts
+      tests:
+      - 'REQ-FE-065: row_reference picker options request bounded form-scoped summaries'
+    - file: backend/tests/test_api.py
+      tests:
+      - 'REQ-FE-065: row_reference picker options stay form-scoped and bounded'
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-066
+  title: Auth-Aware Global Navigation Session Controls
+  description: 'The global frontend navigation MUST show `Login` only when the browser
+
+    does not currently have an auth session cookie. Once a browser session exists,
+
+    the nav MUST replace that link with an explicit signed-in state and a sign-out
+
+    control that clears the cookie and returns the user to `/login`.
+
+    '
+  related_spec:
+  - architecture/frontend-backend-interface.md
+  priority: medium
+  status: implemented
+  tests:
+    e2e:
+    - file: e2e/smoke.test.ts
+      tests:
+      - 'REQ-FE-066: signed-in browser nav exposes sign-out and returns to login'
+    vitest:
+    - file: frontend/src/components/Nav.test.tsx
+      tests:
+      - 'REQ-FE-066: signed-out nav shows primary routes and a login link'
+      - 'REQ-FE-066: active state tracks the current route for signed-out nav links'
+      - 'REQ-FE-066: stays hidden on space explorer pages'
+      - 'REQ-FE-066: signed-in nav swaps Login for session status and sign-out'
+      - 'REQ-FE-066: sign-out clears the auth cookie and redirects to login'

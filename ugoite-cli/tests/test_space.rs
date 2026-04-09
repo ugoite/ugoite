@@ -44,6 +44,25 @@ fn test_create_space_scaffolding() {
     // Verify the space directory was created
     let space_dir = space_path;
     assert!(space_dir.exists(), "Space directory should be created");
+
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(space_dir.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(settings["default_form"], "Entry");
+
+    let forms_output = Command::new(ugoite_bin())
+        .args(["form", "list", space_dir.to_str().unwrap()])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to list starter forms");
+    assert!(
+        forms_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&forms_output.stderr)
+    );
+    let forms: serde_json::Value = serde_json::from_slice(&forms_output.stdout).unwrap();
+    assert!(forms
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["name"] == "Entry")));
 }
 
 #[cfg(unix)]

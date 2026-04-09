@@ -73,6 +73,23 @@ def test_create_space(test_client: TestClient, temp_space_root: Path) -> None:
     assert (ws_path / "meta.json").exists()
 
 
+def test_create_space_req_sto_002_bootstraps_starter_entry_form(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-002: create space bootstraps starter entry authoring assets."""
+    response = test_client.post("/spaces", json={"name": "starter-ws"})
+    assert response.status_code == 201
+
+    ws_path = temp_space_root / "spaces" / "starter-ws"
+    settings = json.loads((ws_path / "settings.json").read_text())
+    assert settings["default_form"] == "Entry"
+
+    forms_response = test_client.get("/spaces/starter-ws/forms")
+    assert forms_response.status_code == 200
+    assert {item["name"] for item in forms_response.json()} == {"Entry"}
+
+
 def test_health_endpoint(test_client: TestClient) -> None:
     """REQ-OPS-001: health endpoint returns service readiness."""
     response = test_client.get("/health")
@@ -986,12 +1003,12 @@ def test_sql_session_stream_uses_incremental_row_paging(
     async def _paged_rows(
         _config: dict[str, str],
         _space_id: str,
+        _identity: object,
         _session_id: str,
-        offset: int,
-        _limit: int,
+        page: ugoite_core.SqlSessionPageInput,
     ) -> dict[str, object]:
-        call_offsets.append(offset)
-        if offset == 0:
+        call_offsets.append(page.offset)
+        if page.offset == 0:
             return {
                 "rows": [
                     {"id": "entry-1", "title": "Alpha"},
@@ -1001,12 +1018,7 @@ def test_sql_session_stream_uses_incremental_row_paging(
             }
         return {"rows": [], "total_count": 2}
 
-    async def _rows_all(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
-        msg = "rows_all must not be called"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows", _paged_rows)
-    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_all", _rows_all)
+    monkeypatch.setattr(ugoite_core, "get_sql_session_rows_for_identity", _paged_rows)
 
     response = test_client.get("/spaces/test-ws/sql-sessions/session-1/stream")
     assert response.status_code == 200
@@ -1118,6 +1130,36 @@ def test_upload_asset_strips_traversal_segments_from_filename(
     assert victim_meta_path.read_text(encoding="utf-8") == victim_meta_before
 
 
+def test_upload_asset_req_asset_001_normalizes_markdown_heading_filename(
+    test_client: TestClient,
+) -> None:
+    """REQ-ASSET-001: asset upload normalizes metadata-spoofing filenames."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+
+    response = test_client.post(
+        "/spaces/test-ws/assets",
+        files={
+            "file": (
+                "## uploaded_at.txt",
+                io.BytesIO(b"hello"),
+                "text/plain",
+            ),
+        },
+    )
+    assert response.status_code == 201
+
+    asset = response.json()
+    assert asset["name"] == "uploaded_at.txt"
+    assert asset["path"] == f"assets/{asset['id']}_uploaded_at.txt"
+
+    entry_response = test_client.get(f"/spaces/test-ws/entries/{asset['id']}")
+    assert entry_response.status_code == 200
+    content = entry_response.json()["content"]
+    assert "## name\nuploaded_at.txt" in content
+    assert f"## link\nugoite://asset/{asset['id']}" in content
+    assert "## name\n## uploaded_at.txt" not in content
+
+
 def test_delete_asset_referenced_fails(
     test_client: TestClient,
     temp_space_root: Path,
@@ -1199,6 +1241,65 @@ def test_search_rejects_oversized_query(
     search_res = test_client.get("/spaces/test-ws/search", params={"q": oversized})
     assert search_res.status_code == 400
     assert "Query too long" in search_res.json()["detail"]
+
+
+def test_entry_options_req_fe_065_returns_bounded_form_scoped_matches(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    # REQ-FE-065: row_reference picker options stay form-scoped,
+    # query-aware, and bounded.
+    """REQ-FE-065: row_reference picker options stay form-scoped and bounded."""
+    test_client.post("/spaces", json={"name": "test-ws"})
+    _create_form(
+        test_client,
+        "test-ws",
+        "Project",
+        {"Summary": {"type": "string", "required": False}},
+    )
+    for entry_id, title in [
+        ("project-alpha", "Alpha Project"),
+        ("project-beta", "Beta Project"),
+        ("project-gamma", "Gamma Project"),
+    ]:
+        response = test_client.post(
+            "/spaces/test-ws/entries",
+            json={
+                "id": entry_id,
+                "markdown": (
+                    f"---\nform: Project\n---\n# {title}\n\n## Summary\nReference"
+                ),
+            },
+        )
+        assert response.status_code == 201
+    _create_form(
+        test_client,
+        "test-ws",
+        "Task",
+        {"Summary": {"type": "string", "required": False}},
+    )
+    task_response = test_client.post(
+        "/spaces/test-ws/entries",
+        json={
+            "id": "task-alpha",
+            "markdown": "---\nform: Task\n---\n# Alpha Task\n\n## Summary\nOther form",
+        },
+    )
+    assert task_response.status_code == 201
+
+    options_res = test_client.get(
+        "/spaces/test-ws/entries/options",
+        params={"form": "Project", "q": "alpha", "limit": 1},
+    )
+
+    assert options_res.status_code == 200
+    assert options_res.json() == [
+        {
+            "id": "project-alpha",
+            "title": "Alpha Project",
+            "form": "Project",
+        },
+    ]
 
 
 def test_update_space_storage_connector(
@@ -3082,3 +3183,41 @@ def test_search_endpoint_authorization_error(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/search-authz-ws/search?q=test")
     assert response.status_code == 403
+
+
+def test_entry_options_endpoint_authorization_error(
+    test_client: TestClient,
+) -> None:
+    """REQ-SEC-006: entry picker options endpoint returns 403 on auth failure."""
+    test_client.post("/spaces", json={"name": "entry-options-authz-ws"})
+    with patch(
+        "ugoite_core.require_space_action",
+        _amock(
+            side_effect=ugoite_core.AuthorizationError(
+                "forbidden",
+                "no access",
+                "entry_read",
+            ),
+        ),
+    ):
+        response = test_client.get(
+            "/spaces/entry-options-authz-ws/entries/options",
+            params={"form": "Project"},
+        )
+    assert response.status_code == 403
+
+
+def test_entry_options_req_fe_065_generic_exception(
+    test_client: TestClient,
+) -> None:
+    """REQ-FE-065: entry picker options endpoint returns 500 on unexpected errors."""
+    test_client.post("/spaces", json={"name": "entry-options-exc-ws"})
+    with patch(
+        "ugoite_core.list_entry_summaries",
+        _amock(side_effect=RuntimeError("unexpected storage error")),
+    ):
+        response = test_client.get(
+            "/spaces/entry-options-exc-ws/entries/options",
+            params={"form": "Project"},
+        )
+    assert response.status_code == 500

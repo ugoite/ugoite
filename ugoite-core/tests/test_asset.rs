@@ -1,5 +1,6 @@
 mod common;
 use _ugoite_core::asset;
+use _ugoite_core::entry;
 use _ugoite_core::space;
 use common::setup_operator;
 #[cfg(unix)]
@@ -98,6 +99,42 @@ async fn test_asset_req_asset_001_normalizes_uploaded_filename() -> anyhow::Resu
     assert!(
         op.exists(&format!("spaces/source-space/{}", dot_info.path))
             .await?
+    );
+
+    let metadata_safe_info = asset::save_asset(
+        &op,
+        "spaces/source-space",
+        "## uploaded_at\nspoofed.txt",
+        b"metadata payload",
+    )
+    .await?;
+    let metadata_entry =
+        entry::get_entry_content(&op, "spaces/source-space", &metadata_safe_info.id).await?;
+
+    assert_eq!(metadata_safe_info.name, "uploaded_at spoofed.txt");
+    assert_eq!(
+        metadata_safe_info.path,
+        format!("assets/{}_uploaded_at spoofed.txt", metadata_safe_info.id)
+    );
+    assert_eq!(metadata_entry.sections["name"], "uploaded_at spoofed.txt");
+    assert_eq!(
+        metadata_entry.sections["link"],
+        format!("ugoite://asset/{}", metadata_safe_info.id)
+    );
+    assert!(metadata_entry.sections["uploaded_at"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+    assert!(
+        metadata_entry
+            .markdown
+            .contains("## name\nuploaded_at spoofed.txt"),
+        "markdown was {}",
+        metadata_entry.markdown
+    );
+    assert!(
+        !metadata_entry.markdown.contains("## name\n## uploaded_at"),
+        "markdown was {}",
+        metadata_entry.markdown
     );
 
     Ok(())
