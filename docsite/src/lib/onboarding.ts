@@ -85,12 +85,12 @@ export const primaryStartCards = [
 
 export const nextStepCards = [
 	{
-		badge: "Browser",
+		badge: "Browser walkthrough",
 		description:
-			"After the stack is running and you have completed login, open a space, create a form first, then add entries and explore search from that shared structure.",
-		href: "/app/frontend",
+			"After login, follow the concrete `/spaces` -> space -> form -> entry path, including when to create a new space and why the first form unlocks structured browser workflows.",
+		href: "/docs/guide/browser-first-entry",
 		icon: "🖥️",
-		title: "Explore the browser app",
+		title: "Create your first space, form, and entry",
 	},
 	{
 		badge: "Access",

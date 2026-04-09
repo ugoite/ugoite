@@ -1210,7 +1210,7 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         "Run from source",
         "Use the CLI",
         "Understand core concepts",
-        "Explore the browser app",
+        "Create your first space, form, and entry",
         "Understand auth and access",
         "Read design and source docs",
     ]
