@@ -7,7 +7,7 @@ import path from "node:path";
 
 const toc = [
   { id: "overview", title: "Overview" },
-  { id: "setup", title: "Setup" },
+  { id: "setup", title: "Quick Start" },
   { id: "examples", title: "Command Outputs" },
   { id: "commands", title: "Commands" },
 ];
@@ -35,21 +35,28 @@ const commandOutputs = await fs
   </section>
 
   <section id="setup" class="doc-card">
-    <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Setup</h2>
-    <div style="display: grid; gap: 0.75rem;">
-      <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Install dependencies</p>
-        <TerminalCommand command="mise run setup" />
+      <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Quick Start</h2>
+      <div style="display: grid; gap: 0.75rem;">
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Published install (recommended)</p>
+          <TerminalCommand command="npm install -g ugoite && ugoite-install && ugoite --help" />
+          <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+            Use this when you want the released CLI without cloning the repository. For the full installer and archive options, continue to the canonical <a href={withBasePath("/docs/guide/cli")}>CLI Guide</a>.
+          </p>
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Build from source (contributors)</p>
+          <TerminalCommand command="mise run setup" />
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Check the CLI from source</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- --help" />
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. List spaces from source</p>
+          <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
+        </div>
       </div>
-      <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Check the CLI is available</p>
-        <TerminalCommand command="cargo run -q -p ugoite-cli -- --help" />
-      </div>
-      <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. List spaces</p>
-        <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
-      </div>
-    </div>
   </section>
 
   {commandOutputs.length > 0 && (
