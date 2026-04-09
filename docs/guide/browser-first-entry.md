@@ -92,7 +92,8 @@ space surfaces without guesswork:
 - Need the mental model behind spaces, entries, forms, and derived structure?
   Read [Core Concepts](concepts.md).
 - Need to inspect storage or other space configuration? Use the **Settings**
-  link from the spaces list or the dashboard storage summary card.
+  link from the spaces list or the dashboard storage summary card, then read
+  [Space Settings & Storage](space-settings-storage.md) before changing anything.
 - Need browser/CLI/API auth context after the first entry? Read
   [Authentication Overview](auth-overview.md).
 - Need integrations or server-backed automation next? Read the

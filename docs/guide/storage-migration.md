@@ -1,6 +1,8 @@
 # Storage Migration Guide
 
 Use this guide before you change the saved storage URI metadata for a space.
+If you are still deciding whether to touch those settings at all, start with
+[Space Settings & Storage](space-settings-storage.md) first.
 
 ## What changing the URI does today
 

@@ -1,5 +1,9 @@
 """Guide validation tests.
 
+REQ-FE-017: Space settings storage docs must explain metadata-only connector
+planning clearly.
+REQ-FE-060: Browser walkthrough docs must route storage-summary users to the
+beginner guide.
 REQ-SEC-001: Local-only container guides must keep loopback/default
 secret protections explicit.
 REQ-OPS-001: Developer guides must be present with valid bash snippets.
@@ -125,6 +129,7 @@ FRONTEND_MISE_PATH = REPO_ROOT / "frontend" / "mise.toml"
 DOCSITE_MISE_PATH = REPO_ROOT / "docsite" / "mise.toml"
 E2E_MISE_PATH = REPO_ROOT / "e2e" / "mise.toml"
 CLI_GUIDE_PATH = GUIDE_DIR / "cli.md"
+BROWSER_FIRST_ENTRY_GUIDE_PATH = GUIDE_DIR / "browser-first-entry.md"
 INSTALL_CLI_SCRIPT_PATH = REPO_ROOT / "scripts" / "install-ugoite-cli.sh"
 RELEASE_INSTALLER_RENDERER_PATH = (
     REPO_ROOT / "scripts" / "render-cli-release-installer.sh"
@@ -140,11 +145,14 @@ RELEASE_CHANGELOG_ENTRYPOINT_PATH = (
     REPO_ROOT / "docs" / "spec" / "versions" / "changelog.md"
 )
 CONTAINER_QUICKSTART_GUIDE_PATH = GUIDE_DIR / "container-quickstart.md"
+OPERATIONS_GUIDE_PATH = GUIDE_DIR / "operations.md"
 DEV_SEED_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev-seed.sh"
 ENV_MATRIX_PATH = GUIDE_DIR / "env-matrix.md"
 LOCAL_DEV_AUTH_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "local-dev-auth-login.md"
 AUTH_OVERVIEW_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "auth-overview.md"
 CONCEPTS_GUIDE_PATH = GUIDE_DIR / "concepts.md"
+SPACE_SETTINGS_STORAGE_GUIDE_PATH = GUIDE_DIR / "space-settings-storage.md"
+STORAGE_MIGRATION_GUIDE_PATH = GUIDE_DIR / "storage-migration.md"
 DOCSITE_HOME_PAGE_PATH = REPO_ROOT / "docsite" / "src" / "pages" / "index.astro"
 DOCSITE_GETTING_STARTED_PAGE_PATH = (
     REPO_ROOT / "docsite" / "src" / "pages" / "getting-started" / "index.astro"
@@ -2553,6 +2561,78 @@ def test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step() -> Non
         text=auth_overview_text,
         required_fragments=REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS,
         prefix="auth-overview.md missing auth profile guidance fragments: ",
+    )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_fe_017_space_settings_guide_explains_metadata_defaults() -> None:
+    """REQ-FE-017: Space settings guide must explain metadata defaults."""
+    guide_text = SPACE_SETTINGS_STORAGE_GUIDE_PATH.read_text(encoding="utf-8")
+    migration_text = STORAGE_MIGRATION_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=guide_text,
+        required_fragments={
+            "# Space Settings & Storage",
+            "storage summary",
+            "Saved Storage URI",
+            "connector metadata",
+            "leave the defaults alone",
+            "Test Connection",
+            "[Storage Migration Guide](storage-migration.md)",
+        },
+        prefix="space-settings-storage.md missing first-run storage guidance: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=migration_text,
+        required_fragments={"[Space Settings & Storage](space-settings-storage.md)"},
+        prefix=(
+            "storage-migration.md must point first-time settings users to the "
+            "intro guide: "
+        ),
+    )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_fe_060_browser_walkthrough_points_storage_summary_to_intro() -> None:
+    """REQ-FE-060: Browser walkthrough must link storage summary to the intro."""
+    browser_text = BROWSER_FIRST_ENTRY_GUIDE_PATH.read_text(encoding="utf-8")
+    operations_text = OPERATIONS_GUIDE_PATH.read_text(encoding="utf-8")
+    nav_text = (REPO_ROOT / "docsite" / "src" / "lib" / "navigation.ts").read_text(
+        encoding="utf-8",
+    )
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=browser_text,
+        required_fragments={
+            "[Space Settings & Storage](space-settings-storage.md)",
+            "dashboard storage summary card",
+            "before changing anything",
+        },
+        prefix="browser-first-entry.md missing storage-settings breadcrumb: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=operations_text,
+        required_fragments={
+            "[Space Settings & Storage](space-settings-storage.md)",
+            "storage summary",
+            "leave the defaults alone",
+        },
+        prefix="operations.md missing beginner storage guide pointer: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=nav_text,
+        required_fragments={"/docs/guide/space-settings-storage"},
+        prefix="docsite navigation missing space-settings-storage route: ",
     )
     if details:
         raise AssertionError("; ".join(details))
