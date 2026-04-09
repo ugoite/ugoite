@@ -824,6 +824,9 @@ requirements:
     - file: docs/tests/test_guides.py
       tests:
       - test_docs_req_ops_017_release_publish_exports_container_assets
+    - file: docs/tests/test_release_compose_auth_secrets.py
+      tests:
+      - test_docs_req_ops_017_release_compose_requires_install_specific_auth_values
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
