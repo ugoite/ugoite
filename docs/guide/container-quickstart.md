@@ -47,12 +47,19 @@ print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")
 print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")
 PY
 mkdir -p ./spaces
-chmod 0777 ./spaces
+sudo chown 10001:10001 ./spaces
+chmod 0750 ./spaces
 ```
 
 The shipped manifest itself now stays on the safer `passkey-totp` default and
 requires operator-supplied auth values. The example above explicitly opts into
 loopback-only `mock-oauth` for the published local demo flow.
+
+The published backend container runs as uid/gid `10001`, so that ownership-aware
+setup keeps the mount writable without opening it to every local user. If you
+want to keep the host ownership unchanged and you have ACL tools available, a
+targeted rule such as `setfacl -m u:10001:rwx ./spaces` is a narrower
+alternative. Keep `chmod 0777` as a last-resort troubleshooting step only.
 
 If you do not have `python3` locally, generate equivalent random values with
 your preferred secret tool before writing `.env`.
@@ -125,8 +132,9 @@ spaces directory, not into a hosted database.
 - If you override `UGOITE_SPACES_DIR`, inspect or back up that host path
   instead.
 - On Linux bind mounts, keep that directory writable for the non-root backend
-  image user before the first startup; the quick-start example above does this
-  with `chmod 0777 ./spaces`.
+  image user before the first startup; the quick-start example above assigns the
+  published backend uid/gid (`10001:10001`) and keeps the mode at `0750`
+  instead of making the directory world-writable.
 - This is what "local-first" means for the published browser path: you can
   examine and copy the underlying data directory yourself.
 
