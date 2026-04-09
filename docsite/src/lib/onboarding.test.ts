@@ -4,6 +4,7 @@ import {
 	browserPathCaveat,
 	conceptPrimerCard,
 	coreConceptSummaries,
+	landingLead,
 	nextStepCards,
 	primaryStartCards,
 } from "./onboarding";
@@ -48,6 +49,10 @@ test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference 
 });
 
 test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-first paths", () => {
+	expect(landingLead).toContain(
+		"CLI `core` mode is the lowest-setup local-first path today",
+	);
+	expect(landingLead).toContain("backend + frontend stack");
 	expect(browserPathCaveat).toEqual({
 		badge: "Browser caveat today",
 		description:

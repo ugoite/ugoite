@@ -11,6 +11,9 @@ export type ConceptSummary = {
 	title: string;
 };
 
+export const landingLead =
+	"A private, portable knowledge space you can keep on infrastructure you control: CLI `core` mode is the lowest-setup local-first path today, while the current browser route still runs on the backend + frontend stack you launch with Docker or `mise run dev`.";
+
 export const browserPathCaveat = {
 	badge: "Browser caveat today",
 	description:
