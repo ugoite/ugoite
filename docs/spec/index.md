@@ -136,9 +136,12 @@ which ones are required, and how Markdown content maps onto structured data.
 Forms are the bridge between writing-friendly editing and reliable automation.
 
 ### Search and indexes
-Search and indexes are derived from entries and forms; they are not the primary
-source of truth. That keeps the system local-first and easier to reason about,
-because the canonical data stays in the space itself.
+Search and derived indexes are read-optimized artifacts built from entries and
+forms; they are not the primary source of truth. That keeps the system
+local-first and easier to reason about, because the canonical data stays in the
+space itself. When this spec refers to the `Indexer` requirements set
+(`REQ-IDX-*`), it means the structured-extraction and indexing pipeline that
+produces or refreshes those derived artifacts.
 
 ---
 
