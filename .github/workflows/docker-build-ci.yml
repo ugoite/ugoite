@@ -26,7 +26,9 @@ jobs:
       - name: Validate compose files
         env:
           UGOITE_VERSION: ci-validate
+          UGOITE_DEV_USER_ID: ci-validate-user
           UGOITE_DEV_SIGNING_SECRET: ci-validate-signing-secret
+          UGOITE_AUTH_BEARER_SECRETS: release-compose-local-v1:ci-validate-signing-secret
           UGOITE_DEV_AUTH_PROXY_TOKEN: ci-validate-auth-proxy-token
         run: |
           docker compose -f docker-compose.yaml config

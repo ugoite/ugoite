@@ -316,20 +316,33 @@ Start here if you want the quickest way to try a published Ugoite release.
 This path uses the shipped release compose file plus published GHCR images and
 does not require cloning the repository or building images from source.
 
-Prepare the compose file and `.env`, then pull and start the published stack:
+Prepare the compose file and an `.env` file with install-specific auth values,
+then pull and start the published stack:
 
 ```bash
 mkdir -p ugoite-release
 cd ugoite-release
 curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-compose.release.yaml"
-cat > .env <<EOF
-UGOITE_VERSION=stable
-UGOITE_SPACES_DIR=./spaces
-UGOITE_FRONTEND_PORT=3000
-UGOITE_BACKEND_PORT=8000
-UGOITE_DEV_USER_ID=dev-local-user
-UGOITE_DEV_AUTH_PROXY_TOKEN=release-compose-auth-proxy
-EOF
+python3 - <<PY > .env
+import secrets
+
+demo_mode = "mock-oauth"
+signing_kid = "release-compose-local-v1"
+signing_secret = secrets.token_urlsafe(32)
+proxy_token = secrets.token_urlsafe(32)
+
+print("UGOITE_VERSION=stable")
+print("UGOITE_SPACES_DIR=./spaces")
+print("UGOITE_FRONTEND_PORT=3000")
+print("UGOITE_BACKEND_PORT=8000")
+print(f"UGOITE_DEV_AUTH_MODE={demo_mode}")
+print("UGOITE_DEV_USER_ID=dev-local-user")
+print(f"UGOITE_DEV_SIGNING_KID={signing_kid}")
+print(f"UGOITE_DEV_SIGNING_SECRET={signing_secret}")
+print(f"UGOITE_AUTH_BEARER_SECRETS={signing_kid}:{signing_secret}")
+print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")
+print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")
+PY
 mkdir -p ./spaces
 docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
@@ -338,7 +351,9 @@ docker compose -f docker-compose.release.yaml up -d
 Then open `http://localhost:3000/login`, click
 **Continue with Local Demo Login**, and you will land on `/spaces`. The shipped
 compose file bootstraps the `default` space at startup so the first browser and
-CLI session both have a ready workspace.
+CLI session both have a ready workspace. The shipped manifest itself stays on
+the safer `passkey-totp` default; the example above explicitly opts into
+loopback-only `mock-oauth` with install-specific secrets.
 For more background on the explicit browser login flow, see
 [Local Dev Auth Login](docs/guide/local-dev-auth-login.md).
 
@@ -362,8 +377,13 @@ Tag conventions:
 | `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the backend container at `/data`                                                                                                                               |
 | `UGOITE_FRONTEND_PORT`        | `3000`                       | Host port that exposes the frontend UI                                                                                                                                                |
 | `UGOITE_BACKEND_PORT`         | `8000`                       | Host port that exposes the backend API                                                                                                                                                |
-| `UGOITE_DEV_USER_ID`          | `dev-local-user`             | Local demo login user id bootstrapped as the shipped quick-start admin-space admin                                                                                                    |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `release-compose-auth-proxy` | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
+| `UGOITE_DEV_AUTH_MODE`        | `passkey-totp`               | Shipped auth-mode default; set it to `mock-oauth` only for an explicit local demo flow                                                                                               |
+| `UGOITE_DEV_USER_ID`          | `required`                   | Username/user id for the explicit login flow you enable; the quick-start example sets `dev-local-user`                                                                               |
+| `UGOITE_DEV_SIGNING_KID`      | `release-compose-local-v1`   | Key id paired with the install-specific bearer signing material                                                                                                                       |
+| `UGOITE_DEV_SIGNING_SECRET`   | `required unique value`      | Secret used to mint dev bearer tokens for this install                                                                                                                                 |
+| `UGOITE_AUTH_BEARER_SECRETS`  | `required unique value`      | Bearer verification secret set accepted by the backend                                                                                                                                 |
+| `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids accepted by the backend; keep this aligned with the signing key ids you expose for this install                                                          |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `required unique value`      | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).

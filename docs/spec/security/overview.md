@@ -21,6 +21,9 @@ targets an **Authenticated Access by Default** model.
 - Local development obtains browser/CLI bearer tokens through explicit
   `passkey-totp` or `mock-oauth` login endpoints after startup instead of
   injecting an authenticated token before the app starts.
+- Shipped release Compose and Helm surfaces require operator-supplied auth
+  secrets, and local-demo `mock-oauth` remains an explicit opt-in instead of
+  the manifest default.
 - CLI endpoint configuration only allows cleartext `http://` for loopback
   development hosts (`localhost`, `127.0.0.1`, `[::1]`); remote credentialed
   endpoints MUST use `https://`.
