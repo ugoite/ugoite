@@ -67,7 +67,7 @@ def test_preferences_me_rejects_invalid_selected_space_id(
         json={"selected_space_id": "invalid space"},
     )
     assert response.status_code == 400
-    assert "Invalid selected_space_id" in response.json()["detail"]
+    assert response.json()["detail"] == "Invalid selected_space_id"
 
 
 def test_preferences_me_accepts_null_selected_space_id(

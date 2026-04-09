@@ -44,7 +44,7 @@ def test_server_error_detail_with_failed_prefix_is_sanitized_and_logged(
         raise RuntimeError(msg)
 
     monkeypatch.setattr(ugoite_core, "list_members", _raise)
-    caplog.set_level(logging.ERROR, logger="app.main")
+    caplog.set_level(logging.WARNING)
 
     response = test_client.get("/spaces/members-ws/members")
 
