@@ -99,7 +99,8 @@ bearer token and it does **not** start the app already logged in.
 At backend startup, that configured user is also bootstrapped into the reserved
 `admin-space`. Only active admins of `admin-space` can create additional spaces,
 and each new space still makes its creator the initial admin for that
-space.
+space. For the operator model behind that rule, read
+[Admin-space Operations](admin-space-operations.md).
 
 Force a fresh prompt:
 
