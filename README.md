@@ -2,6 +2,11 @@
 
 **"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
+> **Positioning today:** local-first most directly describes Ugoite's storage
+> model and CLI `core` path today. The current browser route is still
+> server-backed, runs through the backend + frontend stack, and requires an
+> explicit `/login` flow.
+
 ## Vision
 
 Ugoite is a knowledge management system built on three core principles:
