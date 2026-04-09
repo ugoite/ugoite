@@ -1,0 +1,122 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { withBasePath } from "../../../lib/base-path";
+
+const toc = [
+	{ id: "overview", title: "Overview" },
+	{ id: "choose", title: "When to Choose MCP" },
+	{ id: "surface", title: "Current Surface" },
+	{ id: "next-steps", title: "Next Steps" },
+];
+---
+
+<BaseLayout
+	title="MCP | Ugoite"
+	description="Resource-first MCP surface for AI clients that need the current shipped contract."
+	toc={toc}
+	related={[
+		{ href: "/app", label: "App Overview" },
+		{ href: "/docs/spec/api/mcp", label: "MCP API Spec" },
+		{ href: "/app/api-storage", label: "API & Storage" },
+	]}
+>
+	<section id="overview" class="doc-card-hero">
+		<div style="position: relative; z-index: 1;">
+			<span class="doc-pill">MCP</span>
+			<h1
+				style="font-size: 2rem; font-weight: 800; margin-top: 0.75rem; letter-spacing: -0.02em;"
+			>
+				Resource-First AI Client Access
+			</h1>
+			<p
+				style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 42rem; line-height: 1.6;"
+			>
+				Choose MCP when an AI client should browse Ugoite through a stable
+				resource contract instead of hand-rolled REST glue or local CLI process
+				invocation. The shipped surface stays intentionally small and
+				resource-first.
+			</p>
+		</div>
+	</section>
+
+	<section id="choose" class="doc-card">
+		<h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">
+			When to Choose MCP
+		</h2>
+		<div class="doc-grid">
+			<div class="doc-card">
+				<h3 style="font-size: 1rem; font-weight: 700;">Use MCP when</h3>
+				<p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">
+					An AI client needs authenticated resource browsing with the same
+					server-managed data model, but you do not want to build a custom REST
+					integration first.
+				</p>
+			</div>
+			<div class="doc-card">
+				<h3 style="font-size: 1rem; font-weight: 700;">Use REST when</h3>
+				<p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">
+					You need explicit endpoint-by-endpoint control, broader HTTP tooling,
+					or non-MCP automation against the backend surface.
+				</p>
+			</div>
+			<div class="doc-card">
+				<h3 style="font-size: 1rem; font-weight: 700;">Use CLI when</h3>
+				<p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">
+					You want terminal-native workflows, local core-mode filesystem access,
+					or scripted commands inside shells and CI jobs.
+				</p>
+			</div>
+		</div>
+	</section>
+
+	<section id="surface" class="doc-card">
+		<h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">
+			Current Surface
+		</h2>
+		<p style="font-size: 0.875rem; color: var(--doc-muted); line-height: 1.7;">
+			The shipped MCP surface is a resource-first baseline: one registered
+			resource, no MCP tools, and no prompts. That keeps the current contract easy
+			to reason about while the broader AI surface is still being shaped.
+		</p>
+		<pre
+			style="margin-top: 1rem; font-size: 0.8125rem; padding: 0.75rem; border-radius: var(--doc-radius-md); background: var(--doc-bg-subtle); overflow-x: auto;"
+		><code>ugoite://{"{space_id}"}/entries/list</code></pre>
+		<ul style="margin-top: 1rem; color: var(--doc-muted); line-height: 1.7; padding-left: 1.25rem;">
+			<li>The current contract exposes entry-list resources only.</li>
+			<li>The shipped build includes no MCP tools or prompts yet.</li>
+			<li>Broader MCP resource and tool coverage is planned as v0.2 work, not current behavior.</li>
+		</ul>
+	</section>
+
+	<section id="next-steps" class="doc-card">
+		<h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">
+			Next Steps
+		</h2>
+		<div class="doc-grid">
+			<a
+				href={withBasePath("/docs/spec/api/mcp")}
+				class="doc-card doc-card-hover"
+				style="text-decoration: none; color: inherit;"
+			>
+				<div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📘</div>
+				<h3 style="font-size: 1rem; font-weight: 700;">Read the MCP spec</h3>
+				<p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">
+					Current-state protocol details, naming, and framing rules for the shipped
+					resource-first surface.
+				</p>
+			</a>
+			<a
+				href={withBasePath("/app/api-storage")}
+				class="doc-card doc-card-hover"
+				style="text-decoration: none; color: inherit;"
+			>
+				<div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔌</div>
+				<h3 style="font-size: 1rem; font-weight: 700;">Compare with REST</h3>
+				<p style="font-size: 0.8125rem; color: var(--doc-muted); margin-top: 0.375rem;">
+					See when the broader backend/API surface is a better fit than the
+					resource-scoped MCP contract.
+				</p>
+			</a>
+		</div>
+	</section>
+</BaseLayout>

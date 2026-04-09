@@ -211,6 +211,7 @@ requirements:
       tests:
       - 'REQ-E2E-006: navigation helpers build child docsite links from spec data'
       - 'REQ-E2E-006: navigation helpers tolerate missing child anchors without mutating shared nav state'
+      - 'REQ-E2E-006: application navigation keeps MCP as a first-class docsite route'
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
