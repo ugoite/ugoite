@@ -26,16 +26,30 @@ From there, take the path that matches what you see:
 If `admin-space` is visible, treat it as the reserved admin workspace. Create or
 open a normal user-facing space for your first real content flow.
 
-## 2) Create the first form
+## 2) Create the first entry with the starter `Entry` form
 
-When the space dashboard opens, the browser UI guides you toward the first form.
-If entry creation is still disabled, that is expected: the current browser flow
-uses a Form to define the first structured entry shape.
+Fresh spaces already bootstrap a user-creatable `Entry` form, so you do **not**
+need to design a custom form before the first note.
+
+1. Click **New Entry** on the dashboard or the Entries view.
+2. Choose the starter **Entry** form if the dialog asks for a form.
+3. Enter a title such as `Kickoff Notes`.
+4. Add the first body content you actually want to keep.
+5. Submit the dialog to create the entry.
+
+The browser should open the new entry detail page. From there you can keep
+editing Markdown content, save revisions, and confirm that the starter entry is
+now part of the space.
+
+## 3) Add a custom form when you want stricter structure
+
+Once the first note exists, add a custom form if you want queryable fields or a
+repeatable template for a specific entry type.
 
 Click either:
 
-- **Create first form** from the entry guidance warning, or
-- **Create form** / **New Form** from the dashboard or Forms view.
+- **Create form** / **New Form** from the dashboard or Forms view, or
+- the form-specific prompt if the current page surfaces one.
 
 In the form dialog:
 
@@ -46,34 +60,23 @@ In the form dialog:
    - `next_steps` with type `markdown`
 4. Click **Create**.
 
-Why this matters: the Form gives the browser a predictable entry shape, keeps
-fields queryable later, and makes the first entry easier to extend without
-guessing the structure every time.
-
-## 3) Create the first entry
-
-Now create content from the structure you just defined:
-
-1. Click **New Entry** on the dashboard or the Entries view.
-2. Choose the Form you just created.
-3. Enter a title such as `Kickoff Notes`.
-4. Fill any required fields.
-5. Submit the dialog to create the entry.
-
-The browser should open the new entry detail page. From there you can keep
-editing Markdown content, save revisions, and confirm that the form-backed
-fields are now part of the entry's structured shape.
+Why this matters: a custom Form gives the browser a predictable entry shape,
+keeps fields queryable later, and makes follow-up entries easier to extend
+without guessing the structure every time.
 
 ## 4) Confirm the browser workflow is now unlocked
 
 After that first successful entry, you should be able to move through the main
 space surfaces without guesswork:
 
-- **Dashboard**: quick-create another entry or form.
-- **Entries**: browse the records in the space.
-- **Forms**: refine the schema and add more entry types.
-- **Search**: use the top tab to verify that the space is now discoverable
-  beyond a single page.
+- **Dashboard**: the landing surface for quick-create actions, recent activity,
+  and high-level space status.
+- **Entries**: the record list when you want to browse or reopen content that is
+  already in the space.
+- **Forms**: the schema workspace for adding entry types, refining fields, and
+  deciding how future records stay structured.
+- **Search**: the cross-space lookup surface when you want to confirm that the
+  space is now discoverable beyond a single page.
 
 ## 5) Where to go next
 
