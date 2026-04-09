@@ -62,6 +62,10 @@ export const navSections: NavSection[] = [
 						href: "/docs/guide/log-redaction",
 					},
 					{
+						title: "Space Settings & Storage",
+						href: "/docs/guide/space-settings-storage",
+					},
+					{
 						title: "Storage Cleanup",
 						href: "/docs/guide/storage-cleanup",
 					},
