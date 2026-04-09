@@ -1287,11 +1287,14 @@ def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
     """REQ-E2E-008: README start-here keeps the browser caveat prominent."""
     readme = README_PATH.read_text(encoding="utf-8")
     intro = " ".join(
-        readme.split("## Start Here", maxsplit=1)[0].replace(">", " ").split()
+        readme.split("## Start Here", maxsplit=1)[0].replace(">", " ").split(),
     )
     intro_fragments = [
         "**Positioning today:**",
-        "local-first most directly describes Ugoite's storage model and CLI `core` path today",
+        (
+            "local-first most directly describes Ugoite's storage model and CLI "
+            "`core` path today"
+        ),
         "server-backed",
         "explicit `/login` flow",
     ]
