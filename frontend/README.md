@@ -102,7 +102,9 @@ frontend, and docsite together, return to the repository root and run
 `mise run dev` as described in the main [README](../README.md#setup--development-mise).
 
 Use the command below only when you intentionally want frontend-isolated
-iteration and already have a reachable local backend:
+iteration and already have a reachable local backend. If the frontend throws a
+`BACKEND_URL must be set` startup error, that is your cue to go back to the
+repository root and use `mise run dev` instead:
 
 ```bash
 # Start the frontend-only dev server
