@@ -130,6 +130,13 @@ pub struct RevisionRow {
     pub restored_from: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct EntrySummary {
+    pub id: String,
+    pub title: String,
+    pub form: String,
+}
+
 pub(crate) fn now_ts() -> f64 {
     Utc::now().timestamp_millis() as f64 / 1000.0
 }
@@ -1966,6 +1973,49 @@ pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
             "updated_at": row.updated_at,
         }));
     }
+    Ok(entries)
+}
+
+pub async fn list_entry_summaries(
+    op: &Operator,
+    ws_path: &str,
+    form_filter: Option<&str>,
+    query: Option<&str>,
+    limit: usize,
+) -> Result<Vec<EntrySummary>> {
+    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
+    let normalized_query = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let mut entries = Vec::new();
+    for (form_name, row) in list_entry_rows(op, ws_path).await? {
+        if row.deleted {
+            continue;
+        }
+        if let Some(expected_form) = normalized_form {
+            if form_name != expected_form {
+                continue;
+            }
+        }
+        if let Some(expected_query) = normalized_query.as_deref() {
+            let search_text = format!("{}\n{}", row.title, row.entry_id).to_lowercase();
+            if !search_text.contains(expected_query) {
+                continue;
+            }
+        }
+        entries.push(EntrySummary {
+            id: row.entry_id,
+            title: row.title,
+            form: form_name,
+        });
+    }
+    entries.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    entries.truncate(limit);
     Ok(entries)
 }
 

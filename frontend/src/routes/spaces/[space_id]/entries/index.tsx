@@ -281,6 +281,7 @@ export default function SpaceEntriesIndexPane() {
 				open={showCreateEntryDialog()}
 				forms={creatableForms()}
 				defaultForm={creatableForms()[0]?.name}
+				spaceId={spaceId()}
 				onClose={() => setShowCreateEntryDialog(false)}
 				onSubmit={handleCreateEntry}
 			/>

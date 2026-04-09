@@ -7,8 +7,13 @@ import type { Space } from "~/lib/types";
 const mockSpace: Space = {
 	id: "ws-1",
 	name: "Test Space",
+	created_at: "2025-01-01T00:00:00Z",
+	storage: {
+		type: "local",
+		root: "/var/lib/ugoite/current",
+	},
 	storage_config: {
-		uri: "file:///local/path",
+		uri: "s3://planned-bucket/test-space",
 	},
 };
 
@@ -20,7 +25,7 @@ describe("SpaceSettings", () => {
 
 	it("should display storage config", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
-		expect(screen.getByDisplayValue("file:///local/path")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("s3://planned-bucket/test-space")).toBeInTheDocument();
 	});
 
 	it("should call onSave when save button is clicked", async () => {
@@ -36,7 +41,7 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Updated Space",
-				storage_config: { uri: "file:///local/path" },
+				storage_config: { uri: "s3://planned-bucket/test-space" },
 			});
 		});
 	});
@@ -51,7 +56,7 @@ describe("SpaceSettings", () => {
 		fireEvent.click(testButton);
 
 		await waitFor(() => {
-			expect(onTestConnection).toHaveBeenCalledWith({ uri: "file:///local/path" });
+			expect(onTestConnection).toHaveBeenCalledWith({ uri: "s3://planned-bucket/test-space" });
 		});
 	});
 
@@ -88,7 +93,7 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={onSave} />);
 
 		const uriInput = screen.getByLabelText(/storage uri/i);
-		fireEvent.input(uriInput, { target: { value: "s3://my-bucket/ugoite" } });
+		fireEvent.input(uriInput, { target: { value: "file:///var/lib/ugoite/migrated" } });
 
 		const saveButton = screen.getByRole("button", { name: /save/i });
 		fireEvent.click(saveButton);
@@ -96,7 +101,7 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Test Space",
-				storage_config: { uri: "s3://my-bucket/ugoite" },
+				storage_config: { uri: "file:///var/lib/ugoite/migrated" },
 			});
 		});
 	});
@@ -125,26 +130,37 @@ describe("SpaceSettings", () => {
 		expect(screen.queryByRole("button", { name: /test connection/i })).not.toBeInTheDocument();
 	});
 
-	it("REQ-FE-017: explains storage trade-offs before changing the URI", () => {
+	it("REQ-FE-017: explains that saved storage URIs are metadata-only before migration", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
+		expect(screen.getByText(/saved uri below is migration metadata/i)).toBeInTheDocument();
 		expect(
 			screen.getByText(/backend still writes through the deployment-wide storage root/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/manual migration planning plus connection-validation metadata/i),
+			screen.getByText(/does not migrate existing entries or assets to the new location/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/team access, and backups, but it adds cloud credentials and usage costs/i),
+			screen.getByText(
+				/does not reroute writes until per-space routing or migration support lands/i,
+			),
 		).toBeInTheDocument();
 	});
 
-	it("REQ-FE-017: warns that changing the URI only saves metadata until a manual migration happens", () => {
+	it("REQ-FE-017: frames connector URIs as future migration targets", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(
-			screen.getByText(/saves connector metadata for this space/i),
+			screen.getByText(/records a local path you may want to migrate this space to later/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/does not reroute current entry or asset writes/i),
+			screen.getByText(/local paths keep control and offline access on this machine/i),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/records an object-storage target you may want to validate or migrate to later/i,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/team access and backups, but it adds cloud credentials and usage costs/i),
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /storage migration guide/i })).toHaveAttribute(
 			"href",
@@ -152,10 +168,11 @@ describe("SpaceSettings", () => {
 		);
 	});
 
-	it("REQ-FE-060: settings show saved storage metadata before editing", () => {
+	it("REQ-FE-060: settings show the current storage topology before editing", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
-		expect(screen.getByText("Saved storage connector")).toBeInTheDocument();
-		expect(screen.getByText("Saved local filesystem URI")).toBeInTheDocument();
-		expect(screen.getByText("file:///local/path")).toBeInTheDocument();
+		expect(screen.getByText("Storage topology")).toBeInTheDocument();
+		expect(screen.getByText("Local filesystem")).toBeInTheDocument();
+		expect(screen.getByText("file:///var/lib/ugoite/current")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("s3://planned-bucket/test-space")).toBeInTheDocument();
 	});
 });

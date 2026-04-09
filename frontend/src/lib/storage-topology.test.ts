@@ -14,68 +14,93 @@ describe("summarizeSpaceStorage", () => {
 		setLocale("en");
 	});
 
-	it("REQ-FE-060: summarizes file-backed spaces as saved local metadata", () => {
+	it("REQ-FE-060: summarizes backend local storage as local filesystem", () => {
 		expect(
 			summarizeSpaceStorage({
 				...baseSpace,
-				storage_config: { uri: "file:///var/lib/ugoite/demo" },
+				storage: { type: "local", root: "/var/lib/ugoite/demo" },
 			}),
 		).toEqual({
-			label: "Saved local filesystem URI",
+			label: "Local filesystem",
 			description:
-				"This space metadata includes a local filesystem URI. Current writes still use the storage configured by this backend deployment.",
+				"This space currently writes through the backend deployment's local filesystem root.",
 			uri: "file:///var/lib/ugoite/demo",
 		});
 	});
 
-	it("REQ-FE-060: summarizes s3-backed spaces as saved object-store metadata", () => {
+	it("REQ-FE-060: preserves already formatted backend storage URIs", () => {
 		expect(
 			summarizeSpaceStorage({
 				...baseSpace,
-				storage_config: { uri: "s3://ugoite-prod/spaces/demo" },
+				storage: { type: "local", root: "file:///var/lib/ugoite/demo" },
 			}),
 		).toEqual({
-			label: "Saved object-store URI",
+			label: "Local filesystem",
 			description:
-				"This space metadata includes an object-store URI. Current writes still use the storage configured by this backend deployment.",
+				"This space currently writes through the backend deployment's local filesystem root.",
+			uri: "file:///var/lib/ugoite/demo",
+		});
+	});
+
+	it("REQ-FE-060: preserves relative local storage roots verbatim", () => {
+		expect(
+			summarizeSpaceStorage({
+				...baseSpace,
+				storage: { type: "fs", root: "./relative/demo" },
+			}),
+		).toEqual({
+			label: "Local filesystem",
+			description:
+				"This space currently writes through the backend deployment's local filesystem root.",
+			uri: "./relative/demo",
+		});
+	});
+
+	it("REQ-FE-060: summarizes backend s3 storage as remote object store", () => {
+		expect(
+			summarizeSpaceStorage({
+				...baseSpace,
+				storage: { type: "s3", root: "ugoite-prod/spaces/demo" },
+			}),
+		).toEqual({
+			label: "Remote object store",
+			description:
+				"This space currently writes through the backend deployment's object storage root.",
 			uri: "s3://ugoite-prod/spaces/demo",
 		});
 	});
 
-	it("REQ-FE-060: falls back to backend-managed storage when no URI is present", () => {
+	it("REQ-FE-060: falls back to backend API when no backend storage metadata is present", () => {
 		expect(summarizeSpaceStorage(baseSpace)).toEqual({
-			label: "Backend-managed storage",
-			description:
-				"No per-space storage URI is saved, so current writes use the storage configured by this backend deployment.",
+			label: "Backend API",
+			description: "This space currently uses the storage configured by this backend deployment.",
 			uri: null,
 		});
 	});
 
-	it("REQ-FE-060: ignores blank storage URIs when summarizing saved metadata", () => {
+	it("REQ-FE-060: ignores blank backend storage roots when summarizing topology", () => {
 		expect(
 			summarizeSpaceStorage({
 				...baseSpace,
-				storage_config: { uri: "   " },
+				storage: { type: "local", root: "   " },
 			}),
 		).toEqual({
-			label: "Backend-managed storage",
-			description:
-				"No per-space storage URI is saved, so current writes use the storage configured by this backend deployment.",
+			label: "Backend API",
+			description: "This space currently uses the storage configured by this backend deployment.",
 			uri: null,
 		});
 	});
 
-	it("REQ-FE-060: treats unrecognized storage URIs as backend-managed metadata", () => {
+	it("REQ-FE-060: treats unrecognized backend storage types as backend-managed topology", () => {
 		expect(
 			summarizeSpaceStorage({
 				...baseSpace,
-				storage_config: { uri: "https://backend.example.internal/spaces/demo" },
+				storage: { type: "webdav", root: "files.example.internal/spaces/demo" },
 			}),
 		).toEqual({
-			label: "Backend-managed storage",
-			description:
-				"No per-space storage URI is saved, so current writes use the storage configured by this backend deployment.",
-			uri: "https://backend.example.internal/spaces/demo",
+			label: "Backend API",
+			description: "This space currently uses the storage configured by this backend deployment.",
+			uri: "webdav://files.example.internal/spaces/demo",
 		});
 	});
 });

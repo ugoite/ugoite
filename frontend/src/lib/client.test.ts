@@ -293,6 +293,52 @@ describe("entryApi", () => {
 			expect(matches.find((m) => m.id === created.id)).toBeDefined();
 		});
 
+		it("REQ-FE-065: row_reference picker options request bounded form-scoped summaries", async () => {
+			server.use(
+				http.get(testApiUrl("/spaces/test-ws/entries/options"), ({ request }) => {
+					const url = new URL(request.url);
+					expect(url.searchParams.get("form")).toBe("Project");
+					expect(url.searchParams.get("q")).toBe("alpha");
+					expect(url.searchParams.get("limit")).toBe("8");
+					return HttpResponse.json([
+						{ id: "project-alpha", title: "Alpha Project", form: "Project" },
+					]);
+				}),
+			);
+
+			const matches = await searchApi.rowReferenceOptions("test-ws", "Project", "alpha", 8);
+			expect(matches).toEqual([{ id: "project-alpha", title: "Alpha Project", form: "Project" }]);
+		});
+
+		it("REQ-FE-065: row_reference picker options omit blank keyword queries", async () => {
+			server.use(
+				http.get(testApiUrl("/spaces/test-ws/entries/options"), ({ request }) => {
+					const url = new URL(request.url);
+					expect(url.searchParams.get("form")).toBe("Project");
+					expect(url.searchParams.get("q")).toBeNull();
+					expect(url.searchParams.get("limit")).toBe("8");
+					return HttpResponse.json([
+						{ id: "project-alpha", title: "Alpha Project", form: "Project" },
+					]);
+				}),
+			);
+
+			const matches = await searchApi.rowReferenceOptions("test-ws", "Project", "   ", 8);
+			expect(matches).toEqual([{ id: "project-alpha", title: "Alpha Project", form: "Project" }]);
+		});
+
+		it("REQ-FE-065: row_reference picker options surface backend load failures", async () => {
+			server.use(
+				http.get(testApiUrl("/spaces/test-ws/entries/options"), () =>
+					HttpResponse.json({ detail: "lookup failed" }, { status: 502 }),
+				),
+			);
+
+			await expect(searchApi.rowReferenceOptions("test-ws", "Project", "alpha", 8)).rejects.toThrow(
+				"Failed to load row_reference options: Bad Gateway",
+			);
+		});
+
 		it("uploads asset and blocks deletion when referenced", async () => {
 			const { id, revision_id } = await entryApi.create("test-ws", {
 				markdown: "# Audio Entry",

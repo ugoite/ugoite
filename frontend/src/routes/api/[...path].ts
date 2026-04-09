@@ -10,6 +10,8 @@ const devPasskeyContextHeader = "x-ugoite-dev-passkey-context";
 const proxyTokenAuthPaths = new Set(["/auth/config", "/auth/login", "/auth/mock-oauth"]);
 const passkeyContextAuthPaths = new Set(["/auth/login"]);
 const authCookieProxyPaths = new Set(["/auth/login", "/auth/mock-oauth"]);
+const invalidProxyPathMessage = "Invalid API proxy path";
+const invalidBackendUrlMessage = "BACKEND_URL is invalid";
 
 const hopByHopHeaders = new Set([
 	"connection",
@@ -78,11 +80,15 @@ const ensureRequestId = (headers: Headers): string => {
 	return requestId;
 };
 
-const buildTargetUrl = (requestUrl: string, baseUrl: string): URL => {
+const buildTargetUrl = (requestUrl: string, baseUrl: URL): URL => {
 	const url = new URL(requestUrl);
 	const path = url.pathname.replace(/^\/api/, "");
 	const targetPath = path.length > 0 ? path : "/";
-	return new URL(`${targetPath}${url.search}`, baseUrl);
+	const targetUrl = new URL(`${targetPath}${url.search}`, baseUrl);
+	if (targetUrl.origin !== baseUrl.origin) {
+		throw new Error("cross-origin proxy target is not allowed");
+	}
+	return targetUrl;
 };
 
 const resolveProxyTimeoutMs = (): number => {
@@ -212,13 +218,43 @@ const rewriteAuthProxyResponse = async (
 	});
 };
 
+const handleInvalidTargetPath = (
+	error: unknown,
+	requestMethod: string,
+	requestUrl: string,
+): Response => {
+	const message =
+		`API proxy rejected invalid target method=${requestMethod} request=${requestUrl} ` +
+		`error=${error instanceof Error ? error.message : String(error)}\n`;
+	process.stderr.write(message);
+	return new Response(invalidProxyPathMessage, { status: 400 });
+};
+
+const handleInvalidBackendUrl = (error: unknown): Response => {
+	process.stderr.write(
+		`API proxy backend misconfiguration error=${error instanceof Error ? error.message : String(error)}\n`,
+	);
+	return new Response(invalidBackendUrlMessage, { status: 500 });
+};
+
 const proxyRequest = async (event: APIEvent): Promise<Response> => {
 	if (!backendUrl) {
 		return new Response("BACKEND_URL is not configured", { status: 500 });
 	}
 
 	const request = event.request;
-	const targetUrl = buildTargetUrl(request.url, backendUrl);
+	let backendBaseUrl: URL;
+	try {
+		backendBaseUrl = new URL(backendUrl);
+	} catch (error) {
+		return handleInvalidBackendUrl(error);
+	}
+	let targetUrl: URL;
+	try {
+		targetUrl = buildTargetUrl(request.url, backendBaseUrl);
+	} catch (error) {
+		return handleInvalidTargetPath(error, request.method, request.url);
+	}
 	const headers = filterRequestHeaders(request.headers);
 	const requestId = ensureRequestId(headers);
 	applyProxyCredentials(headers, request.headers.get("cookie"));

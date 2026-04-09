@@ -78,11 +78,16 @@ One quick write test:
 ```bash
 SPACE_PATH="${UGOITE_SPACES_DIR:-./spaces}"
 mkdir -p "$SPACE_PATH"
+chmod 0777 "$SPACE_PATH"
 touch "$SPACE_PATH/.ugoite-write-test" && rm "$SPACE_PATH/.ugoite-write-test"
 ```
 
-If that write test fails, fix the directory ownership or permissions on the
-host before retrying the stack.
+The published release quick start uses a non-root backend image. On Linux bind
+mounts, a host directory that still has the usual `0755` mode can reject writes
+from that container user even when your shell user created the directory.
+
+If that write test still fails after the `chmod`, fix the directory ownership or
+permissions on the host before retrying the stack.
 
 ## 5. Reset stale services, networks, and partial startup state
 
