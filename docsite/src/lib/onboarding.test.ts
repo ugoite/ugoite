@@ -71,6 +71,16 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(nextStepCards[0]?.description).toContain("browser surface");
 });
 
+test("REQ-E2E-008: onboarding content keeps the browser next step aligned to the walkthrough", () => {
+	expect(nextStepCards[0]).toMatchObject({
+		badge: "Browser walkthrough",
+		href: "/docs/guide/browser-first-entry",
+	});
+	expect(nextStepCards[0]?.description).toContain("starter entry");
+	expect(nextStepCards[0]?.description).toContain("After login");
+	expect(nextStepCards[0]?.description).not.toContain("create a form first");
+});
+
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
 	expect(conceptPrimerCard).toEqual({
 		badge: "Concept primer",
