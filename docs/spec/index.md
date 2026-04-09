@@ -33,6 +33,7 @@ future work.
 - [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path, with backend + frontend runtime and explicit login
 - [CLI Guide](../guide/cli.md) - Lightest local-first path when you want direct filesystem access in `core` mode
 - [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow for source development
+- [Browser Walkthrough](../guide/browser-first-entry.md) - Concrete post-login path for the first space, form, and entry
 
 ### Entry-Path Trade-offs
 

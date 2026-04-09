@@ -1110,13 +1110,18 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         )
     );
 
+    let backend_api_mode_hint = "Run `ugoite config current` to inspect the active mode, then switch with `ugoite config set --mode backend --backend-url http://localhost:8000` or `ugoite config set --mode api --api-url http://localhost:3000/api`.";
+
     let service_account_list_core = cli_command(&config_path)
         .args(["space", "service-account-list", "space-local"])
         .output()
         .expect("space service-account-list core");
     assert!(!service_account_list_core.status.success());
-    assert!(String::from_utf8_lossy(&service_account_list_core.stderr)
-        .contains("service-account-list requires backend or api mode"));
+    let service_account_list_stderr = String::from_utf8_lossy(&service_account_list_core.stderr);
+    assert!(
+        service_account_list_stderr.contains("service-account-list requires backend or api mode")
+    );
+    assert!(service_account_list_stderr.contains(backend_api_mode_hint));
 
     let service_account_create_core = cli_command(&config_path)
         .args([
@@ -1131,24 +1136,29 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         .output()
         .expect("space service-account-create core");
     assert!(!service_account_create_core.status.success());
-    assert!(String::from_utf8_lossy(&service_account_create_core.stderr)
+    let service_account_create_stderr =
+        String::from_utf8_lossy(&service_account_create_core.stderr);
+    assert!(service_account_create_stderr
         .contains("service-account-create requires backend or api mode"));
+    assert!(service_account_create_stderr.contains(backend_api_mode_hint));
 
     let members_core = cli_command(&config_path)
         .args(["space", "members", &space_path])
         .output()
         .expect("space members core");
     assert!(!members_core.status.success());
-    assert!(String::from_utf8_lossy(&members_core.stderr)
-        .contains("members requires backend or api mode"));
+    let members_stderr = String::from_utf8_lossy(&members_core.stderr);
+    assert!(members_stderr.contains("members requires backend or api mode"));
+    assert!(members_stderr.contains(backend_api_mode_hint));
 
     let audit_events_core = cli_command(&config_path)
         .args(["space", "audit-events", &space_path])
         .output()
         .expect("space audit-events core");
     assert!(!audit_events_core.status.success());
-    assert!(String::from_utf8_lossy(&audit_events_core.stderr)
-        .contains("audit-events requires backend or api mode"));
+    let audit_events_stderr = String::from_utf8_lossy(&audit_events_core.stderr);
+    assert!(audit_events_stderr.contains("audit-events requires backend or api mode"));
+    assert!(audit_events_stderr.contains(backend_api_mode_hint));
 
     let remote_config_path = dir.path().join("remote-space-config.json");
     let (base, requests, handle) =
