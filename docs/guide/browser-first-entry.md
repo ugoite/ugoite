@@ -95,5 +95,9 @@ space surfaces without guesswork:
   link from the spaces list or the dashboard storage summary card.
 - Need browser/CLI/API auth context after the first entry? Read
   [Authentication Overview](auth-overview.md).
+- Need integrations or server-backed automation next? Read the
+  [REST API](../spec/api/rest.md) and then pair it with
+  [Authentication Overview](auth-overview.md) for the auth model behind browser,
+  CLI, and API clients.
 - Want the lighter local-first path after trying the browser once? Switch to the
   [CLI Guide](cli.md).
