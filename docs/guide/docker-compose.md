@@ -17,6 +17,9 @@ If you want pre-built release images from GHCR instead of local builds, use
 
 ## Start the stack
 
+If you skip the exports below, `docker compose up --build` fails immediately
+with the missing-variable error from `docker-compose.yaml`.
+
 ```bash
 export UGOITE_DEV_SIGNING_SECRET="$(openssl rand -hex 32)"
 export UGOITE_DEV_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"
