@@ -31,6 +31,10 @@ GitHub without comparing two different onboarding maps.
   backend, frontend, and docsite together; the shortest contributor path is
   `mise run setup` (dependencies + repo hooks), then `mise run dev`, followed
   by the explicit `/login` flow.
+  If you intentionally use the repo-root `docker compose up --build` path
+  instead, export `UGOITE_DEV_SIGNING_SECRET` and
+  `UGOITE_DEV_AUTH_PROXY_TOKEN` first or startup will fail fast. The exact
+  commands live in the [Docker Compose Guide](docs/guide/docker-compose.md).
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 ### After your first step

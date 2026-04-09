@@ -1277,6 +1277,14 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
             "README Start Here section must not keep the outdated Run from source "
             "docker-compose guide link",
         ),
+        (
+            "docker compose up --build" not in section
+            or "UGOITE_DEV_SIGNING_SECRET" not in section
+            or "UGOITE_DEV_AUTH_PROXY_TOKEN" not in section
+            or "(docs/guide/docker-compose.md)" not in section,
+            "README Start Here section must surface source compose secret "
+            "prerequisites before repo-root compose startup",
+        ),
     )
     details = [message for condition, message in detail_candidates if condition]
     if details:
