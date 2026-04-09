@@ -870,6 +870,9 @@ requirements:
       - test_docs_req_ops_018_platform_installer_asset_validates_prerelease
       - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
       - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
+    - file: docs/tests/test_cli_verify_first_install.py
+      tests:
+      - test_docs_req_ops_018_cli_guide_leads_with_verify_first_release_install
     rust:
     - file: ugoite-cli/tests/integration_test.rs
       tests:

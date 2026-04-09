@@ -9,6 +9,39 @@ Docker stack, frontend process, or browser login flow.
 
 ## Install the released CLI (recommended)
 
+### Verify-first archive install
+
+If you want the most auditable published path, install from an exact release
+archive and verify its checksum before you extract or run anything:
+
+```bash
+VERSION=0.1.0
+TARGET=x86_64-unknown-linux-gnu
+BASE_URL="https://github.com/ugoite/ugoite/releases/download/v${VERSION}"
+
+curl -fsSLO "${BASE_URL}/ugoite-v${VERSION}-${TARGET}.tar.gz"
+curl -fsSLO "${BASE_URL}/ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"
+
+# Linux
+sha256sum -c "ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"
+# macOS
+shasum -a 256 -c "ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"
+
+tar -xzf "ugoite-v${VERSION}-${TARGET}.tar.gz"
+install -m 0755 ugoite "$HOME/.local/bin/ugoite"
+ugoite --help
+```
+
+Swap `TARGET` for one of the published release targets listed below. This path
+keeps checksum verification ahead of extraction and ahead of any installer
+script execution.
+
+### Bootstrap helpers (secondary)
+
+If you want fewer manual steps and you already trust the bootstrap helper
+itself, use one of these shortcuts after considering the verify-first archive
+path above.
+
 Install the public `ugoite` npm bootstrap package:
 
 ```bash
@@ -27,10 +60,11 @@ ugoite --help
 
 The published package metadata lives in `packages/ugoite/package.json`, while
 the repository root `package.json` stays private tooling for Husky/commitlint
-and release automation.
+and release automation. The shared helper script behind the npm bootstrap and
+rendered release installers lives at `scripts/install-ugoite-cli.sh`.
 
-If you prefer the direct shell bootstrap, install the latest stable release with
-a one-liner:
+If you still prefer the direct shell bootstrap, keep it as an explicit
+trust-the-script shortcut rather than the default recommendation:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | bash
