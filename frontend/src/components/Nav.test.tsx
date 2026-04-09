@@ -1,47 +1,160 @@
-// REQ-FE-010: Nav component
+// REQ-FE-066: Auth-aware global navigation
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createRoot } from "solid-js";
 import Nav from "./Nav";
 
 let mockPathname = "/";
+const navigateMock = vi.fn();
+const getSessionMock = vi.fn();
+const clearSessionMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
 	useLocation: () => ({ pathname: mockPathname }),
+	useNavigate: () => navigateMock,
+}));
+
+vi.mock("~/lib/auth-api", () => ({
+	authApi: {
+		getSession: (...args: unknown[]) => getSessionMock(...args),
+		clearSession: (...args: unknown[]) => clearSessionMock(...args),
+	},
 }));
 
 describe("Nav", () => {
-	it("renders navigation links", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	beforeEach(() => {
+		mockPathname = "/";
+		navigateMock.mockReset();
+		getSessionMock.mockReset();
+		clearSessionMock.mockReset();
+		getSessionMock.mockResolvedValue({ authenticated: false });
+		clearSessionMock.mockResolvedValue(undefined);
+	});
+
+	it("REQ-FE-066: signed-out nav shows primary routes and a login link", async () => {
 		mockPathname = "/";
 		render(() => <Nav />);
 		expect(screen.getByText("Home")).toBeInTheDocument();
 		expect(screen.getByText("Spaces")).toBeInTheDocument();
 		expect(screen.getByText("About")).toBeInTheDocument();
+		expect(await screen.findByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
+		expect(screen.queryByText("Signed in")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 	});
 
-	it("applies active class to current path", () => {
-		mockPathname = "/";
+	it("REQ-FE-066: active state tracks the current route for signed-out nav links", async () => {
+		mockPathname = "/login";
 		render(() => <Nav />);
-		const homeLink = screen.getByText("Home").closest("a");
-		expect(homeLink).toHaveClass("ui-nav-link-active");
+		const loginLink = await screen.findByRole("link", { name: "Login" });
+		expect(loginLink).toHaveClass("ui-nav-link-active");
 	});
 
-	it("returns null on space explorer pages", () => {
+	it("REQ-FE-066: stays hidden on space explorer pages", () => {
 		mockPathname = "/spaces/my-space/entries";
 		const { container } = render(() => <Nav />);
 		expect(container.firstChild).toBeNull();
 	});
 
-	it("shows nav on spaces list page", () => {
+	it("REQ-FE-066: signed-in nav swaps Login for session status and sign-out", async () => {
+		getSessionMock.mockResolvedValue({ authenticated: true });
 		mockPathname = "/spaces";
 		render(() => <Nav />);
 		expect(screen.getByText("Spaces")).toBeInTheDocument();
+		expect(await screen.findByText("Signed in")).toBeInTheDocument();
+		expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.queryByRole("link", { name: "Login" })).not.toBeInTheDocument();
+		});
 	});
 
-	it("applies active class to about page", () => {
-		mockPathname = "/about";
+	it("REQ-FE-066: sign-out clears the auth cookie and redirects to login", async () => {
+		getSessionMock.mockResolvedValue({ authenticated: true });
+		mockPathname = "/spaces";
 		render(() => <Nav />);
-		const aboutLink = screen.getByText("About").closest("a");
-		expect(aboutLink).toHaveClass("ui-nav-link-active");
+
+		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+		await waitFor(() => {
+			expect(clearSessionMock).toHaveBeenCalledTimes(1);
+		});
+		await waitFor(() => {
+			expect(navigateMock).toHaveBeenCalledWith("/login", { replace: true });
+		});
+	});
+
+	it("REQ-FE-066: surfaces auth session load failures in the nav", async () => {
+		getSessionMock.mockRejectedValueOnce(new Error("Session lookup failed."));
+		render(() => <Nav />);
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("Session lookup failed.");
+	});
+
+	it("REQ-FE-066: retries auth session detection when the window regains focus", async () => {
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		window.dispatchEvent(new Event("focus"));
+
+		await waitFor(() => {
+			expect(getSessionMock).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("REQ-FE-066: retries auth session detection when the tab becomes visible again", async () => {
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			get: () => "visible",
+		});
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		await waitFor(() => {
+			expect(getSessionMock).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("REQ-FE-066: ignores hidden-tab visibility changes until the tab is visible again", async () => {
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			get: () => "hidden",
+		});
+		render(() => <Nav />);
+		await screen.findByRole("link", { name: "Login" });
+
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		expect(getSessionMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("REQ-FE-066: surfaces sign-out failures without navigating away", async () => {
+		getSessionMock.mockResolvedValue({ authenticated: true });
+		clearSessionMock.mockRejectedValueOnce("network unavailable");
+		mockPathname = "/spaces";
+		render(() => <Nav />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("Failed to sign out.");
+		expect(navigateMock).not.toHaveBeenCalled();
+	});
+
+	it("REQ-FE-066: safely initializes without a browser window during SSR", () => {
+		vi.stubGlobal("window", undefined);
+		mockPathname = "/";
+
+		expect(() => {
+			const dispose = createRoot((dispose) => {
+				Nav();
+				return dispose;
+			});
+			dispose();
+		}).not.toThrow();
 	});
 });

@@ -72,9 +72,6 @@ Content-Type: application/json
 }
 ```
 
-Repeated invalid `passkey-totp` login attempts temporarily return
-`429 Too Many Requests` with a `Retry-After` header.
-
 Authorization policy baseline:
 
 - Every request resolves an authenticated `user_id` in the target space.
@@ -110,19 +107,12 @@ GET /spaces
 ```json
 [
   {
-    "id": "default",
-    "name": "default",
-    "created_at": "2025-08-12T12:00:00Z",
-    "is_admin_space": false
+    "id": "ws-main",
+    "name": "Personal Knowledge",
+    "created_at": "2025-08-12T12:00:00Z"
   }
 ]
 ```
-
-Notes:
-
-- `default` stays ahead of reserved bootstrap spaces in list responses.
-- Reserved bootstrap spaces include `is_admin_space: true` so browser clients can
-  keep newcomer-facing workspace lists separate from internal admin workflows.
 
 #### Create Space
 ```http
@@ -139,6 +129,9 @@ Content-Type: application/json
 
 **Authorization**: caller must be an active admin of the reserved `admin-space`.
 The reserved `admin-space` id itself cannot be created through the public API.
+New spaces bootstrap a user-creatable `Entry` form and set
+`settings.default_form = "Entry"` so clients can open a starter entry flow
+without an extra first-form setup step.
 
 #### Get Space
 ```http
@@ -161,6 +154,11 @@ Content-Type: application/json
 
 **Response**: `200 OK`
 
+Notes:
+- `storage_config` updates saved connector metadata only. The backend continues
+  writing through the deployment storage root until per-space routing or
+  migration support is available.
+
 #### Test Connection
 ```http
 POST /spaces/{id}/test-connection
@@ -177,6 +175,8 @@ Content-Type: application/json
 **Response**: `200 OK` or `400 Bad Request`
 
 Notes:
+- Test Connection validates a proposed connector target only; it does not switch
+  the space's active write location.
 - `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`, or be a plain local path starting with `/` or `.`.
 - `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
 
@@ -203,6 +203,27 @@ GET /spaces/{space_id}/entries
   }
 ]
 ```
+
+#### List Entry Picker Options
+```http
+GET /spaces/{space_id}/entries/options?form=Project&q=alpha&limit=8
+```
+
+**Response**: `200 OK`
+```json
+[
+  {
+    "id": "project-alpha",
+    "title": "Alpha Project",
+    "form": "Project"
+  }
+]
+```
+
+Notes:
+- `form` scopes the picker to one target form.
+- `q` is optional and filters by human-readable title or stable entry id.
+- `limit` defaults to `8` and is capped at `20` so UI pickers fetch a bounded payload.
 
 #### Create Entry
 ```http

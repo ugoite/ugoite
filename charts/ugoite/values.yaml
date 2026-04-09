@@ -24,7 +24,19 @@ backend:
     size: 10Gi
   extraEnv: []
   podAnnotations: {}
+  podSecurityContext:
+    fsGroup: 10001
   resources: {}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -41,6 +53,14 @@ frontend:
   extraEnv: []
   podAnnotations: {}
   resources: {}
+  securityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
   nodeSelector: {}
   tolerations: []
   affinity: {}

@@ -4,19 +4,23 @@ import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client";
 async function settleUiLoading(page: Page): Promise<void> {
 	await page.waitForTimeout(150);
 	await page
-		.waitForFunction(() => !document.querySelector(".ui-loading-bar"), undefined, {
-			timeout: 5_000,
-		})
+		.waitForFunction(
+			() => !document.querySelector(".ui-loading-bar"),
+			undefined,
+			{
+				timeout: 5_000,
+			},
+		)
 		.catch(() => undefined);
 	await page.waitForTimeout(150);
 }
 
-test.describe("Dashboard first-form onboarding", () => {
+test.describe("Dashboard starter-entry onboarding", () => {
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
 	});
 
-	test("REQ-FE-037: dashboard guides first-run spaces toward form creation", async ({
+	test("REQ-FE-037: dashboard lets a new space create a first entry with the starter form", async ({
 		page,
 		request,
 	}) => {
@@ -32,18 +36,26 @@ test.describe("Dashboard first-form onboarding", () => {
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 
-		await expect(page.getByText("Start by creating your first form.")).toBeVisible();
+		await expect(page.getByRole("button", { name: "New entry" })).toBeEnabled();
 		await expect(
-			page.getByText(
-				"Entries depend on form templates and fields. Create one form first, then come back to add entries.",
-			),
-		).toBeVisible();
-		await expect(page.getByText("Recommended first step")).toBeVisible();
+			page.getByText("Start by creating your first form."),
+		).toHaveCount(0);
 
-		await page.getByRole("button", { name: "Create your first form" }).click();
+		await page.getByRole("button", { name: "New entry" }).click();
 
-		await expect(page.getByRole("heading", { name: "Create New Form" })).toBeVisible({
+		await expect(
+			page.getByRole("heading", { name: "Create New Entry" }),
+		).toBeVisible({
 			timeout: 10_000,
 		});
+		await expect(page.locator("#entry-form")).toHaveValue("Entry");
+		await page.getByLabel("Title").fill("Starter quick note");
+		await page.getByRole("button", { name: "Create" }).click();
+		await page.waitForURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`), {
+			timeout: 10_000,
+		});
+		await expect(
+			page.getByRole("heading", { name: "Starter quick note", level: 1 }),
+		).toBeVisible();
 	});
 });

@@ -177,7 +177,7 @@ test.describe("Entries CRUD", () => {
 		);
 	});
 
-	test("REQ-FE-037: entries route guides first-run spaces toward form creation", async ({
+	test("REQ-FE-037: entries route opens the starter entry flow for new spaces", async ({
 		page,
 		request,
 	}) => {
@@ -193,19 +193,123 @@ test.describe("Entries CRUD", () => {
 		await expect(page.locator("body")).toBeVisible();
 		await settleUiLoading(page);
 
-		await expect(page.getByText("Start by creating your first form.")).toBeVisible();
+		await expect(page.getByRole("button", { name: "New entry" })).toBeEnabled();
 		await expect(
-			page.getByText(
-				"Entries depend on form templates and fields. Create one form first, then come back to add entries.",
-			),
-		).toBeVisible();
-		await expect(page.getByRole("button", { name: "New entry" })).toBeDisabled();
+			page.getByText("Start by creating your first form."),
+		).toHaveCount(0);
 
-		await page.getByRole("button", { name: "Create your first form" }).click();
-
-		await expect(page.getByRole("heading", { name: "Create New Form" })).toBeVisible({
+		await page.getByRole("button", { name: "New entry" }).click();
+		await expect(
+			page.getByRole("heading", { name: "Create New Entry" }),
+		).toBeVisible({
 			timeout: 10_000,
 		});
+		await expect(page.locator("#entry-form")).toHaveValue("Entry");
+	});
+
+	test("REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id", async ({
+		page,
+		request,
+	}) => {
+		const timestamp = Date.now();
+		const spaceId = `row-reference-picker-${timestamp}`;
+		const projectAlphaId = `project-alpha-${timestamp}`;
+		const projectBetaId = `project-beta-${timestamp}`;
+		const taskTitle = `Task referencing alpha project ${timestamp}`;
+		const createSpace = await request.post(getBackendUrl("/spaces"), {
+			data: { name: spaceId },
+		});
+		expect([200, 201, 409]).toContain(createSpace.status());
+
+		const createProjectForm = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
+			data: {
+				name: "Project",
+				template: "# Project\n\n## Summary\n",
+				fields: {
+					Summary: { type: "string", required: true },
+				},
+			},
+		});
+		expect(createProjectForm.status()).toBe(201);
+
+		const createTaskForm = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
+			data: {
+				name: "Task",
+				template: "# Task\n\n## Summary\n\n## Project\n",
+				fields: {
+					Summary: { type: "string", required: true },
+					Project: { type: "row_reference", required: true, target_form: "Project" },
+				},
+			},
+		});
+		expect(createTaskForm.status()).toBe(201);
+
+		const createAlphaProject = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
+			data: {
+				id: projectAlphaId,
+				markdown: `---\nform: Project\n---\n# Alpha Project ${timestamp}\n\n## Summary\nPrimary project`,
+			},
+		});
+		expect(createAlphaProject.status()).toBe(201);
+
+		const createBetaProject = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
+			data: {
+				id: projectBetaId,
+				markdown: `---\nform: Project\n---\n# Beta Project ${timestamp}\n\n## Summary\nSecondary project`,
+			},
+		});
+		expect(createBetaProject.status()).toBe(201);
+
+		await page.goto(getFrontendUrl(`/spaces/${spaceId}/entries`), {
+			waitUntil: "domcontentloaded",
+		});
+		await expect(page.locator("body")).toBeVisible();
+		await settleUiLoading(page);
+		await page.waitForLoadState("networkidle");
+
+		const newEntryButton = page.getByRole("button", { name: "New entry" });
+		const createEntryDialog = page.getByRole("dialog");
+		await expect(newEntryButton).toBeEnabled();
+		await newEntryButton.click();
+		await expect(
+			createEntryDialog.getByRole("heading", { name: "Create New Entry" }),
+		).toBeVisible({ timeout: 10_000 });
+
+		await createEntryDialog.getByLabel("Title").fill(taskTitle);
+		await createEntryDialog.getByLabel("Form").selectOption("Task");
+		const summaryInput = createEntryDialog.locator("#webform-1-summary");
+		const projectInput = createEntryDialog.locator("#webform-0-project");
+		await expect(summaryInput).toBeVisible();
+		await summaryInput.fill("Choose the alpha project by search");
+		await expect(summaryInput).toHaveValue("Choose the alpha project by search");
+		await projectInput.fill("alpha");
+
+		const alphaOption = createEntryDialog.getByRole("button", {
+			name: new RegExp(`Alpha Project ${timestamp}.*${projectAlphaId}`),
+		});
+		await expect(alphaOption).toBeVisible();
+		await alphaOption.click();
+		await expect(createEntryDialog.getByText(projectAlphaId)).toBeVisible();
+		await expect(summaryInput).toHaveValue("Choose the alpha project by search");
+
+		await createEntryDialog.getByRole("button", { name: "Create" }).click();
+		await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries/[^/]+$`));
+
+		const entriesResponse = await request.get(getBackendUrl(`/spaces/${spaceId}/entries`));
+		expect(entriesResponse.ok()).toBeTruthy();
+		const entries = (await entriesResponse.json()) as Array<{ id: string; title: string }>;
+		const createdTask = entries.find((entry) => entry.title === taskTitle);
+		expect(createdTask).toBeTruthy();
+		if (!createdTask) {
+			throw new Error("Created task entry was not found in the index response");
+		}
+
+		const entryResponse = await request.get(getBackendUrl(`/spaces/${spaceId}/entries/${createdTask.id}`));
+		expect(entryResponse.ok()).toBeTruthy();
+		const entry = (await entryResponse.json()) as { content: string };
+		expect(entry.content).toContain("## Project");
+		expect(entry.content).toContain(projectAlphaId);
+		expect(entry.content).not.toContain(projectBetaId);
 	});
 
 	test("REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)", async ({ page, request }) => {

@@ -127,9 +127,10 @@ async def get_sql_session_count_endpoint(
             identity,
             "sql_read",
         )
-        count = await ugoite_core.get_sql_session_count(
+        count = await ugoite_core.get_sql_session_count_for_identity(
             storage_config,
             space_id,
+            identity,
             session_id,
         )
     except ugoite_core.AuthorizationError as exc:
@@ -166,12 +167,12 @@ async def get_sql_session_rows_endpoint(
             identity,
             "sql_read",
         )
-        return await ugoite_core.get_sql_session_rows(
+        return await ugoite_core.get_sql_session_rows_for_identity(
             storage_config,
             space_id,
+            identity,
             session_id,
-            offset,
-            limit,
+            ugoite_core.SqlSessionPageInput(offset=offset, limit=limit),
         )
     except ugoite_core.AuthorizationError as exc:
         raise_authorization_http_error(exc, space_id=space_id)
@@ -210,12 +211,15 @@ async def get_sql_session_stream_endpoint(
         offset = 0
         page_size = 200
         while True:
-            page = await ugoite_core.get_sql_session_rows(
+            page = await ugoite_core.get_sql_session_rows_for_identity(
                 storage_config,
                 space_id,
+                identity,
                 session_id,
-                offset,
-                page_size,
+                ugoite_core.SqlSessionPageInput(
+                    offset=offset,
+                    limit=page_size,
+                ),
             )
             rows_obj = page.get("rows") if isinstance(page, dict) else None
             rows = rows_obj if isinstance(rows_obj, list) else []
