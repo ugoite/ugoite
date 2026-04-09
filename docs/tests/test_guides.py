@@ -667,6 +667,7 @@ REQUIRED_LOCAL_DEV_AUTH_GUIDE_FRAGMENTS = {
     "waits for `http://localhost:8000/health`",
     "UGOITE_ROOT=<repo root>",
     "`./spaces` tree",
+    "[Admin-space Operations](admin-space-operations.md)",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
@@ -1020,7 +1021,11 @@ def _bash_syntax_check(script: str, source: Path) -> None:
 
 def test_docs_req_ops_001_guides_exist() -> None:
     """REQ-OPS-001: Required guide files must exist."""
-    expected = {GUIDE_DIR / "docker-compose.md", GUIDE_DIR / "cli.md"}
+    expected = {
+        GUIDE_DIR / "docker-compose.md",
+        GUIDE_DIR / "cli.md",
+        GUIDE_DIR / "admin-space-operations.md",
+    }
     missing = [path for path in expected if not path.exists()]
     if missing:
         missing_list = ", ".join(str(path.relative_to(REPO_ROOT)) for path in missing)
