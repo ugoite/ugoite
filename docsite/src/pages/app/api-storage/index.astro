@@ -118,7 +118,11 @@ const toc = [
       </div>
       <div>
         <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. Verify the API</p>
-        <TerminalCommand command="curl http://localhost:8000/spaces" />
+        <TerminalCommand command="curl -sS http://localhost:8000/health" />
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+          Use the health endpoint for the unauthenticated readiness check. Authenticated routes such as <code>/spaces</code> require the browser or CLI login flow from{" "}
+          <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a>.
+        </p>
       </div>
     </div>
   </section>
