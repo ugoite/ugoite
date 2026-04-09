@@ -22,7 +22,7 @@ if (backendUrl && useViteProxy) {
 	};
 } else if (env.NODE_ENV === "development") {
 	throw new Error(
-		"BACKEND_URL must be set for development (e.g., BACKEND_URL=http://localhost:8000).",
+		"BACKEND_URL must be set for frontend-only development. Use `mise run dev` from the repository root for the canonical auth-aware workflow, or set BACKEND_URL=http://localhost:8000 only when you intentionally run `mise run //frontend:dev` against an already reachable backend.",
 	);
 }
 
