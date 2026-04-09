@@ -1,10 +1,11 @@
-# SQL Sessions & Materialized Views
+# SQL Sessions & Materialized View Metadata
 
 **Updated**: 2026-02
 
-This document defines how Ugoite manages SQL execution without persisting
-large result sets. The design is **stateless except for OpenDAL storage** and
-avoids RDBs, external job queues, or NFS-based shared disks.
+This document defines how Ugoite manages SQL execution metadata and current
+materialized-view placeholders without persisting large result sets. The design
+is **stateless except for OpenDAL storage** and avoids RDBs, external job
+queues, or NFS-based shared disks.
 
 ## Constraints
 
@@ -14,7 +15,7 @@ avoids RDBs, external job queues, or NFS-based shared disks.
 - **Short-lived sessions** (target: ~10 minutes).
 - **Multiple API servers** may serve the same session concurrently.
 
-## Materialized Views
+## Materialized View Metadata (Current Placeholder State)
 
 When a saved SQL is created (`create_sql`), a corresponding **materialized view
 metadata record** MUST be created under:
