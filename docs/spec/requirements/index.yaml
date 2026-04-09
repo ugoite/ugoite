@@ -3,7 +3,7 @@ prefix: REQ-IDX
 requirements:
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -39,7 +39,7 @@ requirements:
       - test_index_req_idx_001_extract_properties_returns_object
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -70,7 +70,7 @@ requirements:
       - test_index_req_idx_002_validate_properties
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -104,7 +104,7 @@ requirements:
       - test_index_req_idx_003_query_index
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -133,7 +133,7 @@ requirements:
       - test_index_req_idx_004_inverted_index_generation
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -165,7 +165,7 @@ requirements:
       - test_text_req_idx_005_word_count_portable
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -190,7 +190,7 @@ requirements:
       - test_indexer_watch_loop_triggers_run
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -218,7 +218,7 @@ requirements:
       - test_search_returns_matches
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -250,7 +250,7 @@ requirements:
       - test_index_req_idx_008_query_sql
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002
@@ -279,7 +279,7 @@ requirements:
       - test_index_req_idx_009_query_sql_joins
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
-  scope: Indexing and query engine behavior requirements.
+  scope: Structured extraction plus derived index/query artifact behavior requirements.
   linked_policies:
   - POL-001
   - POL-002

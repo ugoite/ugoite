@@ -71,7 +71,7 @@ The adapter crate depends on `ugoite-minimum` and keeps the heavier integrations
 | `space.rs` | Space CRUD, directory scaffolding |
 | `entry.rs` | Entry CRUD via Iceberg tables, revision history, conflict detection |
 | `form.rs` | Iceberg form schema management |
-| `index.rs` | Structured data extraction, derived indexes |
+| `index.rs` | Structured data extraction plus derived search/index artifacts |
 | `asset.rs` | Binary file storage, deduplication |
 | `link.rs` | Entry-to-entry relationships |
 | `integrity.rs` | HMAC signing, checksum verification |
@@ -116,7 +116,7 @@ Ugoite bridges the gap between Markdown freedom and database structure:
 1. **Parse**: Scan Markdown for H2 headers (`## Key`)
 2. **Extract**: Convert headers + content to structured properties
 3. **Validate**: Check against Form definition (if assigned)
-4. **Index**: Update derived indexes for fast queries
+4. **Index**: Update derived search indexes and other query artifacts for fast reads
 
 This enables "Markdown sections as database fields" without complex forms.
 
