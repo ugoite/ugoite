@@ -279,6 +279,26 @@ def test_docs_req_api_004_feature_readme_inventory_matches_manifest() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_api_004_feature_readme_links_browser_modes_to_specs() -> None:
+    """REQ-API-004: Feature README must explain where browser authoring modes live."""
+    readme = _read_text(FEATURES_DIR / "README.md")
+    required_fragments = (
+        "../architecture/frontend-backend-interface.md",
+        "../requirements/frontend.yaml",
+        "Markdown, Web form, and Chat Q&A",
+        "REQ-FE-037",
+        "REQ-FE-057",
+        "API-operation oriented",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in readme]
+    if missing:
+        message = (
+            "docs/spec/features/README.md must point browser authoring modes to "
+            "their canonical frontend specs: " + ", ".join(missing)
+        )
+        raise AssertionError(message)
+
+
 def test_docs_req_api_004_docsite_feature_pages_use_manifest_loader() -> None:
     """REQ-API-004: Docsite feature pages must use the manifest-backed loader."""
     spec_data = _read_text(DOCSITE_SPEC_DATA)
