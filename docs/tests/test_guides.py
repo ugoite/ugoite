@@ -1286,6 +1286,23 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
 def test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat() -> None:
     """REQ-E2E-008: README start-here keeps the browser caveat prominent."""
     readme = README_PATH.read_text(encoding="utf-8")
+    intro = " ".join(
+        readme.split("## Start Here", maxsplit=1)[0].replace(">", " ").split()
+    )
+    intro_fragments = [
+        "**Positioning today:**",
+        "local-first most directly describes Ugoite's storage model and CLI `core` path today",
+        "server-backed",
+        "explicit `/login` flow",
+    ]
+    missing_intro = [fragment for fragment in intro_fragments if fragment not in intro]
+    if missing_intro:
+        message = (
+            "README intro positioning is missing browser/local-first caveat fragments: "
+            + ", ".join(missing_intro)
+        )
+        raise AssertionError(message)
+
     match = re.search(r"## Start Here\n(?P<section>.*?)(?:\n## |\Z)", readme, re.DOTALL)
     if match is None:
         message = "README must keep a Start Here section"
