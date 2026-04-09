@@ -212,6 +212,30 @@ ugoite space list .
 
 Backend and API modes still accept bare space IDs such as `demo`.
 
+## Migration: hidden deprecated command names
+
+Two older command names still exist only as hidden compatibility shims. Update
+older snippets to the supported forms below instead of copying the deprecated
+names forward:
+
+| Hidden command | Replace it with | How to update old examples |
+| --- | --- | --- |
+| `ugoite create-space <SPACE_ID>` | `ugoite space create <SPACE_ID_OR_PATH>` | In `core` mode, pass the full local target such as `./spaces/demo` or `/root/spaces/demo`. In `backend` and `api` modes, keep using a bare space ID such as `demo`. Run `ugoite config current` first if you are unsure which mode is active. |
+| `ugoite link create`, `ugoite link list`, `ugoite link delete` | Form-backed entry relationships using `row_reference` fields | Define the relationship in the Form itself, for example `{ "type": "row_reference", "target_form": "Project" }`, then create or update entries through the normal form-backed entry flow instead of managing standalone link records. |
+
+If you still have old automation that uses `create-space`, these examples show
+the exact migration:
+
+```bash
+# Before
+ugoite create-space demo --root .
+ugoite create-space demo
+
+# After
+ugoite space create ./spaces/demo
+ugoite space create demo
+```
+
 ## Endpoint routing mode
 
 CLI can run in three modes, and stores the selection in `~/.ugoite/cli-endpoints.json`.
