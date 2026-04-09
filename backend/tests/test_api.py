@@ -101,7 +101,7 @@ def test_create_space_rejects_invalid_name(test_client: TestClient) -> None:
     """REQ-API-001: create space rejects names violating identifier rules."""
     response = test_client.post("/spaces", json={"name": "invalid space"})
     assert response.status_code == 400
-    assert "Invalid space_id" in response.json()["detail"]
+    assert response.json()["detail"] == "Invalid space_id"
 
 
 def test_create_space_req_api_001_requires_admin_space_admin(
@@ -418,6 +418,7 @@ def test_get_space_not_found(
     """Test getting a non-existent space."""
     response = test_client.get("/spaces/nonexistent")
     assert response.status_code == 404
+    assert response.json()["detail"] == "Space not found: nonexistent"
 
 
 def test_create_entry(test_client: TestClient, temp_space_root: Path) -> None:

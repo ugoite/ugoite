@@ -1,5 +1,6 @@
 """Space member and invitation endpoints."""
 
+import logging
 from typing import Any
 
 import ugoite_core
@@ -18,6 +19,7 @@ from app.models.payloads import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/spaces/{space_id}/members")
@@ -45,11 +47,12 @@ async def list_members_endpoint(
         if "not found" in str(exc).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(exc),
+                detail=f"Space not found: {space_id}",
             ) from exc
+        logger.warning("Failed to list members for %s: %s", space_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to list members",
         ) from exc
 
 
@@ -92,19 +95,30 @@ async def invite_member_endpoint(
     except RuntimeError as exc:
         message = str(exc)
         lowered = message.lower()
+        if "user not found" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User not found: {payload.user_id}",
+            ) from exc
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail=f"Space not found: {space_id}",
             ) from exc
         if "already active" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=message,
+                detail=f"Member already active: {payload.user_id}",
             ) from exc
+        logger.warning(
+            "Failed to create invitation for %s in %s: %s",
+            payload.user_id,
+            space_id,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid member invitation request",
         ) from exc
 
 
@@ -135,16 +149,17 @@ async def accept_member_invitation_endpoint(
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail="Invitation not found",
             ) from exc
         if "expired" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
-                detail=message,
+                detail="Invitation expired",
             ) from exc
+        logger.warning("Failed to accept invitation in %s: %s", space_id, exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid invitation token",
         ) from exc
 
 
@@ -183,19 +198,30 @@ async def update_member_role_endpoint(
     except RuntimeError as exc:
         message = str(exc)
         lowered = message.lower()
+        if "member not found" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Member not found: {member_user_id}",
+            ) from exc
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail=f"Space not found: {space_id}",
             ) from exc
         if "at least one active admin" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=message,
+                detail="Space must retain at least one active admin",
             ) from exc
+        logger.warning(
+            "Failed to update role for %s in %s: %s",
+            member_user_id,
+            space_id,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Failed to update member role",
         ) from exc
 
 
@@ -232,17 +258,28 @@ async def revoke_member_endpoint(
     except RuntimeError as exc:
         message = str(exc)
         lowered = message.lower()
+        if "member not found" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Member not found: {member_user_id}",
+            ) from exc
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail=f"Space not found: {space_id}",
             ) from exc
         if "at least one active admin" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=message,
+                detail="Space must retain at least one active admin",
             ) from exc
+        logger.warning(
+            "Failed to revoke member %s in %s: %s",
+            member_user_id,
+            space_id,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Failed to revoke member",
         ) from exc
