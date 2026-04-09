@@ -9,8 +9,8 @@ const specDataMocks = vi.hoisted(() => ({
 vi.mock("./spec-data", () => specDataMocks);
 
 import {
-	getNewcomerNavSections,
 	getNavSectionsWithChildren,
+	getNewcomerNavSections,
 	navSections,
 	titleFromSegment,
 	topLinks,
@@ -144,6 +144,10 @@ test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started c
 					href: "/docs/guide/container-quickstart",
 				},
 				{ title: "Run from source", href: "/docs/guide/local-dev-auth-login" },
+				{
+					title: "Browser Walkthrough",
+					href: "/docs/guide/browser-first-entry",
+				},
 				{ title: "CLI Guide", href: "/docs/guide/cli" },
 				{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
 				{

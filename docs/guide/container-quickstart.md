@@ -67,6 +67,8 @@ the first browser and CLI session both have a ready workspace. The reserved
 separate admin section so the first visible workspace path stays newcomer-friendly.
 For more detail on the explicit browser login flow, see
 [Local Dev Auth Login](local-dev-auth-login.md).
+For the concrete post-login space -> form -> entry path, continue to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 
 This published quick start intentionally differs from `mise run dev`: it
 defaults to the local demo login mode (`mock-oauth`) so first-time browser
@@ -120,11 +122,11 @@ find ./spaces -maxdepth 2 -type f | head
 - The `default` space is the starter workspace that the published quick start
   bootstraps for you after login. The reserved `admin-space` stays separate in
   the UI for admin tasks.
-- Try creating one plain Markdown entry in that space first. You do **not** need
-  to define a Form before the first note.
+- Follow [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md)
+  when you want the exact post-login path through the first useful browser task.
 - Read [Core Concepts](concepts.md) once you want the mental model for spaces,
   entries, forms, and search behind the browser workflow you just started. If you skipped the primer earlier, do that before exploring more of the UI or the deeper docs.
-- After that first browser-created note, inspect `./spaces` (or your overridden
+- After that first browser-created entry, inspect `./spaces` (or your overridden
   `UGOITE_SPACES_DIR`) to see where the data now lives on the host.
 - Switch to the [CLI Guide](cli.md) when you want a lighter terminal-first
   workflow, or to the [Docker Compose Guide](docker-compose.md) when you want
