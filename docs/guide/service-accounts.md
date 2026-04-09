@@ -38,14 +38,28 @@ ugoite space service-account-create my-space --display-name "CI Read Bot" --scop
 ugoite space service-account-list my-space
 ```
 
-That creates the service principal itself. Key lifecycle actions are still most
-straightforward through the REST endpoints below.
+That creates the service principal itself. The create command prints JSON that
+includes the new service account `id`, so capture it once and reuse it in the
+later key-management calls:
+
+```bash
+export SPACE_ID=my-space
+export SERVICE_ACCOUNT_ID=$(
+  ugoite space service-account-create "$SPACE_ID" \
+    --display-name "CI Read Bot" \
+    --scopes entry_read | jq -r '.id'
+)
+
+ugoite space service-account-list "$SPACE_ID"
+```
+
+If you already created the service account, read the `id` from
+`ugoite space service-account-list "$SPACE_ID"` output instead. Key lifecycle
+actions are still most straightforward through the REST endpoints below.
 
 ## 4) Create the first API key
 
 ```bash
-export SPACE_ID=my-space
-export SERVICE_ACCOUNT_ID=svc-account-id
 export UGOITE_TOKEN=user-bearer-token
 
 curl -sS -X POST \
