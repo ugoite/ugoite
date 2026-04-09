@@ -86,6 +86,10 @@ session cookie for proxied `/api/*` requests. Frontend JavaScript does not read
 the raw token directly. That is why protected pages such as `/spaces` work only
 after the login step succeeds.
 
+Once `/spaces` loads, continue to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md) for
+the exact newcomer path from login to the first useful space content.
+
 ## CLI login in plain language
 
 The CLI only uses the backend login flow when it is pointed at a server:
@@ -130,6 +134,8 @@ keys."
 
 - Need the operator lifecycle for automation keys? Read
   [Service Account Operations](service-accounts.md).
+- Need the concrete post-login browser path? Read
+  [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 - Need the exact local login steps? Read
   [Local Development Authentication and Login](local-dev-auth-login.md).
 - Need CLI usage details? Read [CLI Guide](cli.md).

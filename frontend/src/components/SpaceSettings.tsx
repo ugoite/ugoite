@@ -97,8 +97,9 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 				<div class="border-t pt-6">
 					<h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
 					<p class="text-sm ui-muted">
-						See where this space currently writes data. The saved URI below is migration metadata,
-						so updating it does not reroute writes until per-space routing support lands.
+						See where this space currently writes data. The saved URI below is migration metadata:
+						today the backend still writes through the deployment-wide storage root, so updating it
+						does not reroute writes until per-space routing or migration support lands.
 					</p>
 
 					<div class="space-y-4">
@@ -144,7 +145,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 										</li>
 										<li>
 											<code>s3://</code> records an object-storage target you may want to validate
-											or migrate to later.
+											or migrate to later. It can support team access and backups, but it adds cloud
+											credentials and usage costs.
 										</li>
 									</ul>
 								</div>
@@ -165,7 +167,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 										storage migration guide
 									</a>{" "}
 									and use Test Connection as a preflight check for the target credentials and
-									reachability.
+									reachability before you plan a manual migration.
 								</p>
 							</div>
 						</div>

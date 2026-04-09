@@ -16,13 +16,13 @@ without an external provider. In every case, the browser and CLI must sign in
 explicitly after startup.
 
 That default intentionally differs from the published
-[`docker-compose.release.yaml` quick start](container-quickstart.md), which
-uses the local demo login mode (`mock-oauth`) so newcomers can evaluate the
-browser flow faster. Source development keeps `passkey-totp` on by default so
-contributors exercise the explicit passkey + 2FA login path that
-`mise run dev` wires through `scripts/dev-auth-env.sh`. If you want source
-development to mirror the release quick start instead, set
-`UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
+[`docker-compose.release.yaml` quick start](container-quickstart.md), whose
+example flow explicitly opts into the local demo login mode (`mock-oauth`) with
+install-specific secrets so newcomers can evaluate the browser flow faster.
+Source development keeps `passkey-totp` on by default so contributors exercise
+the explicit passkey + 2FA login path that `mise run dev` wires through
+`scripts/dev-auth-env.sh`. If you want source development to mirror that demo
+flow instead, set `UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
 
 ## 1) Auth modes at a glance
 
@@ -145,6 +145,11 @@ with a `Retry-After` header so the local login surface cannot be hammered indefi
 That login also grants the configured user access to the reserved
 `admin-space`, which is what authorizes space creation in local development.
 
+Once `/spaces` loads, continue to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md) for
+the concrete post-login path from the first space to the first form-backed
+entry.
+
 ## 6) CLI login (`passkey-totp`)
 
 Configure the CLI to target the backend directly:
@@ -227,6 +232,10 @@ curl -i http://localhost:8000/health
 ```
 
 Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
+
+After that verification, move to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md) so
+the next steps stay action-oriented instead of scattered across multiple guides.
 
 ## 9) Start one service at a time
 
