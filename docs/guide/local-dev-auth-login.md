@@ -145,6 +145,11 @@ with a `Retry-After` header so the local login surface cannot be hammered indefi
 That login also grants the configured user access to the reserved
 `admin-space`, which is what authorizes space creation in local development.
 
+Once `/spaces` loads, continue to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md) for
+the concrete post-login path from the first space to the first form-backed
+entry.
+
 ## 6) CLI login (`passkey-totp`)
 
 Configure the CLI to target the backend directly:
@@ -227,6 +232,10 @@ curl -i http://localhost:8000/health
 ```
 
 Expected response: `HTTP/1.1 200 OK` with body `{"status":"ok"}`.
+
+After that verification, move to
+[Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md) so
+the next steps stay action-oriented instead of scattered across multiple guides.
 
 ## 9) Start one service at a time
 

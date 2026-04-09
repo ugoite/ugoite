@@ -38,6 +38,7 @@ export const navSections: NavSection[] = [
 				href: "/docs/guide/container-quickstart",
 			},
 			{ title: "Run from source", href: "/docs/guide/local-dev-auth-login" },
+			{ title: "Browser Walkthrough", href: "/docs/guide/browser-first-entry" },
 			{ title: "CLI Guide", href: "/docs/guide/cli" },
 			{ title: "Auth Overview", href: "/docs/guide/auth-overview" },
 			{

@@ -38,16 +38,16 @@ GitHub without comparing two different onboarding maps.
 - [Understand core concepts](docs/guide/concepts.md) when you want the mental
   model behind spaces, entries, forms, and search before you go deeper into
   auth or the specs.
-- **Explore the browser app** by opening `/login` from the published quick
-  start or source workflow, then continuing to `/spaces`.
+- [Create your first space, form, and entry](docs/guide/browser-first-entry.md)
+  once `/login` succeeds and you want the exact `/spaces` -> form -> entry path.
 - [Understand auth and access](docs/guide/auth-overview.md) before rollout or
   scripting across the browser, CLI, and API.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
 
-For a brand-new browser space, the first productive in-app sequence is:
-**open the space, write a first note with the starter Entry form, then add
-custom forms when you want stricter structure**.
+For a brand-new browser space, use the
+[Browser Walkthrough](docs/guide/browser-first-entry.md) when you want the
+concrete first productive in-app sequence after login.
 
 Local-first applies most directly to Ugoite's storage model and the CLI's
 `core` mode today. The current browser path still needs a running backend +
