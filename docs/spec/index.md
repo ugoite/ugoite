@@ -62,7 +62,7 @@ future work.
 ### Data Model
 - [Data Model Overview](data-model/overview.md) - How data is stored and structured
 - [Directory Structure](data-model/directory-structure.md) - Space layout conventions
-- [SQL Sessions & Materialized Views](data-model/sql-sessions.md) - SQL execution metadata
+- [SQL Sessions & Materialized View Metadata](data-model/sql-sessions.md) - SQL execution metadata and current view placeholders
 
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
