@@ -257,6 +257,7 @@ jobs:
   verify-container-quickstart:
     - download the exact release compose file and backend/frontend image archives
     - docker load the published images
+    - generate an install-specific release `.env` file for the explicit demo flow
     - UGOITE_VERSION=<version> docker compose -f docker-compose.release.yaml up -d
     - npx playwright test smoke.test.ts search-ui.test.ts
     - install the released CLI and verify backend-mode auth + `space create`
@@ -266,8 +267,9 @@ jobs:
 `./.github/workflows/release-quickstart-verify.yml`. It is both manually
 dispatchable for an existing release and reusable from `Release Publish`. The
 browser job runs `scripts/verify-release-container-quickstart.sh`, which
-downloads the exact release assets, starts `docker-compose.release.yaml`, waits
-for `/health` and `/login`, runs the published browser stories with
+downloads the exact release assets, writes an install-specific `.env` file,
+starts `docker-compose.release.yaml`, waits for `/health` and `/login`, runs the
+published browser stories with
 `smoke.test.ts` and `search-ui.test.ts`, then installs the released CLI and
 verifies `auth login --mock-oauth`, `space list`, and `space create` against
 the running release backend. The CLI job separately runs

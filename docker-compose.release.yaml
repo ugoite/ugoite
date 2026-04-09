@@ -13,13 +13,15 @@ services:
       # Keep a newcomer-facing workspace ready; admin-space stays separate in
       # the browser UI after mock-oauth login.
       - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
-      - UGOITE_DEV_AUTH_MODE=mock-oauth
-      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
-      - UGOITE_DEV_SIGNING_KID=release-compose-local-v1
-      - UGOITE_DEV_SIGNING_SECRET=release-compose-local-secret
-      - UGOITE_AUTH_BEARER_SECRETS=release-compose-local-v1:release-compose-local-secret
-      - UGOITE_AUTH_BEARER_ACTIVE_KIDS=release-compose-local-v1
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}
+      # Safer default: keep the shipped manifest on passkey-totp unless an
+      # operator explicitly opts into local demo auth with unique secrets.
+      - UGOITE_DEV_AUTH_MODE=${UGOITE_DEV_AUTH_MODE:-passkey-totp}
+      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:?set UGOITE_DEV_USER_ID}
+      - UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID:-release-compose-local-v1}
+      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:?set UGOITE_DEV_SIGNING_SECRET}
+      - UGOITE_AUTH_BEARER_SECRETS=${UGOITE_AUTH_BEARER_SECRETS:?set UGOITE_AUTH_BEARER_SECRETS}
+      - UGOITE_AUTH_BEARER_ACTIVE_KIDS=${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-release-compose-local-v1}
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
 
   frontend:
     image: ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION:?set UGOITE_VERSION}
@@ -27,6 +29,6 @@ services:
       - "127.0.0.1:${UGOITE_FRONTEND_PORT:-3000}:3000"
     environment:
       - BACKEND_URL=http://backend:8000
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:-release-compose-auth-proxy}
+      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
     depends_on:
       - backend
