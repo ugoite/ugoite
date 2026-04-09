@@ -41,6 +41,11 @@ The browser should open the new entry detail page. From there you can keep
 editing Markdown content, save revisions, and confirm that the starter entry is
 now part of the space.
 
+Before moving on, look for the confidence checks that prove the first-run path
+worked: the entry detail page is open, the new record can be reopened from
+**Entries**, and the space now has content that the derived **Search** surface
+can discover.
+
 ## 3) Add a custom form when you want stricter structure
 
 Once the first note exists, add a custom form if you want queryable fields or a
@@ -64,6 +69,10 @@ Why this matters: a custom Form gives the browser a predictable entry shape,
 keeps fields queryable later, and makes follow-up entries easier to extend
 without guessing the structure every time.
 
+The example field types are intentionally different: `summary` works well as a
+`string` when you want short list-friendly text, while `next_steps` as
+`markdown` leaves room for longer formatted follow-up notes.
+
 ## 4) Confirm the browser workflow is now unlocked
 
 After that first successful entry, you should be able to move through the main
@@ -73,10 +82,10 @@ space surfaces without guesswork:
   and high-level space status.
 - **Entries**: the record list when you want to browse or reopen content that is
   already in the space.
-- **Forms**: the schema workspace for adding entry types, refining fields, and
+- **Forms**: the Form workspace for adding entry types, refining fields, and
   deciding how future records stay structured.
-- **Search**: the cross-space lookup surface when you want to confirm that the
-  space is now discoverable beyond a single page.
+- **Search**: the derived search surface built from entries and Forms when you
+  want to confirm that the space is now discoverable beyond a single page.
 
 ## 5) Where to go next
 
