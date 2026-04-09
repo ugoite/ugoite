@@ -202,6 +202,10 @@ managed tool versions. Use that shared toolchain story first, then treat
 package README prerequisites as workflow notes on top of the same managed
 environment.
 
+For the full contributor workflow around specs, REQ traceability, docsite
+navigation wiring, and CI-parity checks, see
+[Contributor Workflow](CONTRIBUTING.md).
+
 ```bash
 mise run setup
 ```
