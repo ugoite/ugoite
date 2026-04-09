@@ -1,4 +1,4 @@
-FROM python:3.14.3-slim-trixie@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+FROM python:3.14.4-slim-trixie@sha256:13c5640e79ce15c280f6a3d63c6e17d14420d26821e406c211a7cc332e9782b2
 
 ARG UGOITE_UID=10001
 ARG UGOITE_GID=10001
@@ -13,6 +13,7 @@ RUN apt-get update \
 		build-essential \
 		pkg-config \
 		libssl-dev \
+		libffi-dev \
 		curl \
 		ca-certificates \
 	&& rm -rf /var/lib/apt/lists/* \
