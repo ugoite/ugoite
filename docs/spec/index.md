@@ -51,7 +51,7 @@ future work.
 - [Future-Proofing](architecture/future-proofing.md) - Experimental direction (BYOAI, multi-platform core)
 
 ### Features & Stories
-- [Features Registry](features/README.md) - API-level feature registry across modules
+- [Features Registry](features/README.md) - API-level feature registry across modules; browser authoring modes stay in interface/frontend specs
 - [Ugoite SQL](features/sql.md) - SQL dialect for structured queries
 - [Core Stories](stories/core.yaml) - Essential user scenarios
 - [Advanced Stories](stories/advanced.yaml) - Power user and experimental features

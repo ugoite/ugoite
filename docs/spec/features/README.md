@@ -23,6 +23,12 @@ must stay in sync with it.
 - [links.yaml](links.yaml) - Legacy link API registry kept for traceability after
   the product moved to `row_reference` fields instead of dedicated link APIs
 - [sql.md](sql.md) - Ugoite SQL dialect reference used by the saved SQL features
+- [Frontend–Backend Interface](../architecture/frontend-backend-interface.md) -
+  Canonical browser authoring-mode contract for Markdown, Web form, and Chat
+  Q&A submission behavior
+- [frontend.yaml](../requirements/frontend.yaml) - Frontend interaction
+  requirements, including REQ-FE-037 for create-entry modes and REQ-FE-057 for
+  the chat create-entry flow
 
 ## Purpose
 
@@ -35,6 +41,12 @@ The features registry serves multiple purposes:
 ## Registry Structure
 
 The registry is API-operation oriented.
+
+That means it is the canonical inventory for backend/frontend/API path surfaces,
+not the full catalog of browser authoring behaviors. Browser entry authoring
+modes such as Markdown, Web form, and Chat Q&A are intentionally tracked in the
+Frontend–Backend Interface contract plus the frontend requirements set instead
+of this API manifest.
 
 Each operation entry includes:
 
