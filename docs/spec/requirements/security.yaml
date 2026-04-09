@@ -246,7 +246,7 @@ requirements:
   - data-model/overview.md#form-level-access-control-metadata
   - api/rest.md#entries
   - architecture/frontend-backend-interface.md#entry-creation--indexing
-  - data-model/sql-sessions.md#materialized-views
+  - data-model/sql-sessions.md#materialized-view-metadata-current-placeholder-state
   - stories/experimental.yaml
   priority: high
   status: implemented
