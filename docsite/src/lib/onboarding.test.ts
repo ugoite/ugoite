@@ -28,19 +28,19 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 
 test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference docs available after the first step", () => {
 	expect(nextStepCards.map((card) => card.title)).toEqual([
-		"Explore the browser app",
+		"Create your first space, form, and entry",
 		"Understand auth and access",
 		"Read design and source docs",
 		"Run and troubleshoot the stack",
 	]);
 	expect(nextStepCards.map((card) => card.href)).toEqual([
-		"/app/frontend",
+		"/docs/guide/browser-first-entry",
 		"/docs/guide/auth-overview",
 		"/docs/spec/index",
 		"/docs/guide/operations",
 	]);
 	expect(nextStepCards.map((card) => card.badge)).toEqual([
-		"Browser",
+		"Browser walkthrough",
 		"Access",
 		"Reference",
 		"Ops",
@@ -65,9 +65,10 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(primaryStartCards[2]?.description).toContain(
 		"avoid container infrastructure",
 	);
-	expect(nextStepCards[0]?.description).toContain("completed login");
+	expect(nextStepCards[0]?.description).toContain("After login");
 	expect(nextStepCards[3]?.description).toContain("health checks");
-	expect(nextStepCards[0]?.description).toContain("create a form first");
+	expect(nextStepCards[0]?.description).toContain("starter entry");
+	expect(nextStepCards[0]?.description).toContain("browser surface");
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
