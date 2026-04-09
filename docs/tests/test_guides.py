@@ -700,6 +700,7 @@ REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
     "`ugoite auth profile`",
     "whether the current mode needs backend credentials",
+    "[Service Account Operations](service-accounts.md)",
 }
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
@@ -1020,7 +1021,11 @@ def _bash_syntax_check(script: str, source: Path) -> None:
 
 def test_docs_req_ops_001_guides_exist() -> None:
     """REQ-OPS-001: Required guide files must exist."""
-    expected = {GUIDE_DIR / "docker-compose.md", GUIDE_DIR / "cli.md"}
+    expected = {
+        GUIDE_DIR / "docker-compose.md",
+        GUIDE_DIR / "cli.md",
+        GUIDE_DIR / "service-accounts.md",
+    }
     missing = [path for path in expected if not path.exists()]
     if missing:
         missing_list = ", ".join(str(path.relative_to(REPO_ROOT)) for path in missing)
