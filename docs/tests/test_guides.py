@@ -1033,6 +1033,23 @@ def test_docs_req_ops_001_guides_exist() -> None:
         raise AssertionError(message)
 
 
+def test_docs_req_sec_009_service_account_guide_explains_id_handoff() -> None:
+    """REQ-SEC-009: service-account guide must show how operators capture the created id."""
+    guide_text = (GUIDE_DIR / "service-accounts.md").read_text(encoding="utf-8")
+    required_fragments = {
+        "The create command prints JSON that",
+        "SERVICE_ACCOUNT_ID",
+        "jq -r '.id'",
+        'ugoite space service-account-list "$SPACE_ID"',
+    }
+    missing = sorted(fragment for fragment in required_fragments if fragment not in guide_text)
+    if missing:
+        raise AssertionError(
+            "service-accounts.md must explain how to capture the created id: "
+            + ", ".join(missing),
+        )
+
+
 def test_docs_req_ops_001_shell_blocks_parse() -> None:
     """REQ-OPS-001: Bash code blocks must be syntactically valid."""
     guide_files = sorted(GUIDE_DIR.glob("*.md"))
