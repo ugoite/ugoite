@@ -134,10 +134,15 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(screen.getByText(/saved uri below is migration metadata/i)).toBeInTheDocument();
 		expect(
+			screen.getByText(/backend still writes through the deployment-wide storage root/i),
+		).toBeInTheDocument();
+		expect(
 			screen.getByText(/does not migrate existing entries or assets to the new location/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/does not reroute writes until per-space routing support lands/i),
+			screen.getByText(
+				/does not reroute writes until per-space routing or migration support lands/i,
+			),
 		).toBeInTheDocument();
 	});
 
@@ -150,7 +155,12 @@ describe("SpaceSettings", () => {
 			screen.getByText(/local paths keep control and offline access on this machine/i),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/records an object-storage target you may want to validate or migrate/i),
+			screen.getByText(
+				/records an object-storage target you may want to validate or migrate to later/i,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/team access and backups, but it adds cloud credentials and usage costs/i),
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /storage migration guide/i })).toHaveAttribute(
 			"href",
