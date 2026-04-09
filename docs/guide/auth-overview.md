@@ -128,6 +128,8 @@ keys."
 
 ## Where to go next
 
+- Need the operator lifecycle for automation keys? Read
+  [Service Account Operations](service-accounts.md).
 - Need the exact local login steps? Read
   [Local Development Authentication and Login](local-dev-auth-login.md).
 - Need CLI usage details? Read [CLI Guide](cli.md).
