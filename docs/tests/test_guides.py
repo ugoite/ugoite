@@ -733,6 +733,7 @@ REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
     "`ugoite config current`",
     "`ugoite auth profile`",
     "whether the current mode needs backend credentials",
+    "[Service Account Operations](service-accounts.md)",
 }
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
@@ -1057,6 +1058,7 @@ def test_docs_req_ops_001_guides_exist() -> None:
         GUIDE_DIR / "docker-compose.md",
         GUIDE_DIR / "cli.md",
         GUIDE_DIR / "admin-space-operations.md",
+        GUIDE_DIR / "service-accounts.md",
     }
     missing = [path for path in expected if not path.exists()]
     if missing:

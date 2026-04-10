@@ -132,6 +132,8 @@ keys."
 
 ## Where to go next
 
+- Need the operator lifecycle for automation keys? Read
+  [Service Account Operations](service-accounts.md).
 - Need the concrete post-login browser path? Read
   [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 - Need the exact local login steps? Read
