@@ -8,10 +8,16 @@ const cliPage = readFileSync(
 );
 
 test("REQ-OPS-018: app CLI landing page exposes the released install path before source builds", () => {
-	expect(cliPage).toContain("Published install (recommended)");
+	const publishedHeading = "Published install (recommended)";
+	const sourceHeading = "Build from source (contributors)";
+
+	expect(cliPage).toContain(publishedHeading);
 	expect(cliPage).toContain(
 		"npm install -g ugoite && ugoite-install && ugoite --help",
 	);
-	expect(cliPage).toContain("Build from source (contributors)");
+	expect(cliPage).toContain(sourceHeading);
 	expect(cliPage).toContain('href={withBasePath("/docs/guide/cli")}');
+	expect(cliPage.indexOf(publishedHeading)).toBeLessThan(
+		cliPage.indexOf(sourceHeading),
+	);
 });
