@@ -78,7 +78,10 @@ test("REQ-E2E-008: onboarding content keeps the browser next step aligned to the
 	});
 	expect(nextStepCards[0]?.description).toContain("starter entry");
 	expect(nextStepCards[0]?.description).toContain("After login");
-	expect(nextStepCards[0]?.description).not.toContain("create a form first");
+	expect(nextStepCards[0]?.description).toContain("forms/search path");
+	expect(nextStepCards[0]?.description).toContain(
+		"what each main browser surface is for",
+	);
 });
 
 test("REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references", () => {
