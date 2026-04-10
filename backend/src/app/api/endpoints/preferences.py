@@ -31,7 +31,7 @@ def _validate_selected_space_id(selected_space_id: str | None) -> None:
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail="Invalid selected_space_id",
         ) from exc
 
 

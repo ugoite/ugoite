@@ -44,9 +44,10 @@ async def _ensure_space_exists(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Space not found: {space_id}",
             ) from exc
+        logger.warning("Failed to load space %s: %s", space_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to load space",
         ) from exc
 
 
@@ -120,7 +121,7 @@ def _validate_path_id(identifier: str, name: str) -> None:
     except ValueError as exc:  # pragma: no cover - exercised via API tests
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail=f"Invalid {name}",
         ) from exc
 
 
@@ -220,7 +221,7 @@ async def list_spaces_endpoint(request: Request) -> list[dict[str, Any]]:
         logger.exception("Failed to list spaces")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            detail="Failed to list spaces",
         ) from exc
 
     results: list[dict[str, Any]] = []
@@ -274,15 +275,16 @@ async def create_space_endpoint(
     except RuntimeError as e:
         if "already exists" in str(e).lower():
             raise _space_exists_conflict_error(space_id) from e
+        logger.warning("Failed to create space %s: %s", space_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create space",
         ) from e
     except Exception as e:
         logger.exception("Failed to create space")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create space",
         ) from e
 
     return {
@@ -313,17 +315,18 @@ async def get_space_endpoint(space_id: str, request: Request) -> dict[str, Any]:
         if "not found" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
+                detail=f"Space not found: {space_id}",
             ) from e
+        logger.warning("Failed to get space %s: %s", space_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load space",
         ) from e
     except Exception as e:
         logger.exception("Failed to get space")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load space",
         ) from e
 
 
@@ -369,17 +372,18 @@ async def patch_space_endpoint(
         if "not found" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
+                detail=f"Space not found: {space_id}",
             ) from e
+        logger.warning("Failed to update space %s: %s", space_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to update space",
         ) from e
     except Exception as e:
         logger.exception("Failed to patch space")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to update space",
         ) from e
 
 
