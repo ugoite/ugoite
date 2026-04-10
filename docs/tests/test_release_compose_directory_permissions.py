@@ -18,7 +18,7 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
         message
         for condition, message in (
             (
-                'setfacl -m u:10001:rwx,d:u:10001:rwx ./spaces' not in quickstart_text,
+                "setfacl -m u:10001:rwx,d:u:10001:rwx ./spaces" not in quickstart_text,
                 (
                     "container-quickstart.md must prefer ACL-based access for the "
                     "published backend user"
@@ -55,10 +55,7 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
             (
                 'setfacl -m u:10001:rwx,d:u:10001:rwx "$SPACE_PATH"'
                 not in troubleshooting_text,
-                (
-                    "troubleshooting-compose-startup.md must try ACL-based "
-                    "writes first"
-                ),
+                ("troubleshooting-compose-startup.md must try ACL-based writes first"),
             ),
             (
                 'sudo chown "$(id -u)":10001 "$SPACE_PATH"' not in troubleshooting_text,
