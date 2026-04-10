@@ -37,16 +37,32 @@ need to design a custom form before the first note.
 4. Add the first body content you actually want to keep.
 5. Submit the dialog to create the entry.
 
-The browser should open the new entry detail page. From there you can keep
-editing Markdown content, save revisions, and confirm that the starter entry is
-now part of the space.
+The browser should open the new entry detail page. That page is the Markdown
+editor you will use for follow-up revisions on the same record.
 
 Before moving on, look for the confidence checks that prove the first-run path
 worked: the entry detail page is open, the new record can be reopened from
 **Entries**, and the space now has content that the derived **Search** surface
 can discover.
 
-## 3) Add a custom form when you want stricter structure
+## 3) Make one follow-up edit in the entry detail editor
+
+1. Stay on the new entry detail page, or reopen the same record from
+   **Entries**.
+2. Edit the left Markdown pane. The right preview pane updates from the same
+   content so you can confirm headings, lists, and emphasis before saving.
+3. After you type, look for the **Unsaved changes** indicator in the editor
+   toolbar.
+4. Click **Save** or press `Cmd/Ctrl+S`.
+5. Confirm the **Unsaved changes** indicator disappears and the editor stays on
+   the same entry detail page.
+6. Open **Entries** again and reopen the record to verify the updated text is still there.
+
+Why this matters: the browser keeps the Markdown editor and preview together, so
+the next edit after first-entry creation is the fastest way to confirm that
+future revisions are working end to end.
+
+## 4) Add a custom form when you want stricter structure
 
 Once the first note exists, add a custom form if you want queryable fields or a
 repeatable template for a specific entry type.
@@ -73,7 +89,7 @@ The example field types are intentionally different: `summary` works well as a
 `string` when you want short list-friendly text, while `next_steps` as
 `markdown` leaves room for longer formatted follow-up notes.
 
-## 4) Confirm the browser workflow is now unlocked
+## 5) Confirm the browser workflow is now unlocked
 
 After that first successful entry, you should be able to move through the main
 space surfaces without guesswork:
@@ -87,7 +103,7 @@ space surfaces without guesswork:
 - **Search**: the derived search surface built from entries and Forms when you
   want to confirm that the space is now discoverable beyond a single page.
 
-## 5) Where to go next
+## 6) Where to go next
 
 - Need the mental model behind spaces, entries, forms, and derived structure?
   Read [Core Concepts](concepts.md).

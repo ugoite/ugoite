@@ -1,7 +1,11 @@
 """Guide validation tests.
 
+REQ-FE-005: Browser walkthrough docs must explain the Markdown editor follow-up
+flow.
 REQ-FE-017: Space settings storage docs must explain metadata-only connector
 planning clearly.
+REQ-FE-033: Browser walkthrough docs must explain reopening saved entries from
+the list.
 REQ-FE-060: Browser walkthrough docs must route storage-summary users to the
 beginner guide.
 REQ-SEC-001: Local-only container guides must keep loopback/default
@@ -2668,6 +2672,47 @@ def test_docs_req_fe_060_browser_walkthrough_points_storage_summary_to_intro() -
         text=nav_text,
         required_fragments={"/docs/guide/space-settings-storage"},
         prefix="docsite navigation missing space-settings-storage route: ",
+    )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_fe_005_browser_walkthrough_explains_follow_up_editor_flow() -> None:
+    """REQ-FE-005: Browser walkthrough must explain the follow-up editor flow."""
+    browser_text = BROWSER_FIRST_ENTRY_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=browser_text,
+        required_fragments={
+            "left Markdown pane",
+            "right preview pane",
+            "**Unsaved changes**",
+            "**Save**",
+            "`Cmd/Ctrl+S`",
+        },
+        prefix="browser-first-entry.md missing Markdown editor follow-up guidance: ",
+    )
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_fe_033_browser_walkthrough_explains_reopening_saved_entries() -> None:
+    """REQ-FE-033: Browser walkthrough must explain reopening saved entries."""
+    browser_text = BROWSER_FIRST_ENTRY_GUIDE_PATH.read_text(encoding="utf-8")
+
+    details: list[str] = []
+    _append_missing_fragment_detail(
+        details,
+        text=browser_text,
+        required_fragments={
+            "reopen the same record from",
+            "**Entries**",
+            "same entry detail page",
+            "verify the updated text is still there",
+        },
+        prefix="browser-first-entry.md missing reopen-and-verify guidance: ",
     )
     if details:
         raise AssertionError("; ".join(details))
