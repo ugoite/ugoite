@@ -22,7 +22,8 @@ Ugoite is a knowledge management system built on three core principles:
 
 Today the shipped AI surface is **resource-first MCP access**: one read-only
 resource is available now, while prompts and tool-style MCP workflows remain
-future work.
+future work. See [Operator Surface Positioning](api/operator-surfaces.md) for
+when to choose MCP, CLI, or REST.
 
 ---
 
@@ -67,6 +68,7 @@ future work.
 ### API Reference
 - [REST API](api/rest.md) - HTTP endpoints for frontend integration
 - [MCP Protocol](api/mcp.md) - Current resource-first MCP surface for AI agents; prompts and tool-style workflows remain future work
+- [Operator Surface Positioning](api/operator-surfaces.md) - Governance-backed guide for choosing MCP, CLI, or REST
 - [OpenAPI Spec](api/openapi.yaml) - Machine-readable API definition
 
 ### Requirements
