@@ -24,6 +24,10 @@ def test_docs_req_ops_017_release_compose_requires_install_specific_auth_values(
             "${UGOITE_AUTH_BEARER_SECRETS:?set UGOITE_AUTH_BEARER_SECRETS}"
         ),
         (
+            "UGOITE_AUTH_BEARER_ACTIVE_KIDS="
+            "${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-release-compose-local-v1}"
+        ),
+        (
             "UGOITE_DEV_AUTH_PROXY_TOKEN="
             "${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}"
         ),
@@ -58,10 +62,15 @@ def test_docs_req_ops_017_release_compose_requires_install_specific_auth_values(
     required_quickstart_fragments = (
         "signing_secret = secrets.token_urlsafe(32)",
         "proxy_token = secrets.token_urlsafe(32)",
+        'print(f"UGOITE_DEV_SIGNING_KID={signing_kid}")',
         'print(f"UGOITE_DEV_SIGNING_SECRET={signing_secret}")',
+        'print(f"UGOITE_AUTH_BEARER_SECRETS={signing_kid}:{signing_secret}")',
+        'print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")',
         'print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")',
         "requires operator-supplied auth values",
+        "| `UGOITE_DEV_SIGNING_KID` | `release-compose-local-v1` |",
         "| `UGOITE_DEV_SIGNING_SECRET` | required unique value |",
+        "| `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` |",
         "| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required unique value |",
     )
     details.extend(
