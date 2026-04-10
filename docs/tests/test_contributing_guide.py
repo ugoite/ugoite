@@ -24,8 +24,34 @@ def test_docs_req_ops_036_contributor_workflow_guide_stays_traceable() -> None:
                 "README.md must link to CONTRIBUTING.md from the setup section",
             ),
             (
+                "[`ugoite-minimum`](ugoite-minimum/README.md)" not in readme_text,
+                "README.md must surface the portable ugoite-minimum entry path",
+            ),
+            (
                 "mise run setup" not in contributing_text,
                 "CONTRIBUTING.md must lead with the managed setup path",
+            ),
+            (
+                "ugoite-minimum/README.md" not in contributing_text,
+                "CONTRIBUTING.md must link to the ugoite-minimum boundary guide",
+            ),
+            (
+                "docs/spec/architecture/future-proofing.md" not in contributing_text,
+                (
+                    "CONTRIBUTING.md must link to the portability goals for "
+                    "ugoite-minimum work"
+                ),
+            ),
+            (
+                "mise run //ugoite-minimum:test" not in contributing_text,
+                (
+                    "CONTRIBUTING.md must mention the package-local "
+                    "ugoite-minimum quality gate"
+                ),
+            ),
+            (
+                "mise run //ugoite-minimum:build:wasm" not in contributing_text,
+                "CONTRIBUTING.md must mention the ugoite-minimum WASM build gate",
             ),
             (
                 "uvx pre-commit install" not in contributing_text,

@@ -1591,8 +1591,10 @@ requirements:
 
     that explains when to update `docs/spec/features`, `docs/spec/requirements`,
     user guides, and docsite surfaces; how REQ-* traceability maps tests back to
-    requirements; which local commands mirror CI; and which docsite navigation
-    files must change when routes or guide entry points move.
+    requirements; which local commands mirror CI; which docsite navigation files
+    must change when routes or guide entry points move; and when contributors
+    should choose the narrower `ugoite-minimum` path plus its package-local
+    quality gates instead of the full stack.
 
     '
   related_spec:
