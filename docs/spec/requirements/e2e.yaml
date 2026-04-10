@@ -283,6 +283,7 @@ requirements:
       - 'REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the first entry choices'
       - 'REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference docs available after the first step'
       - 'REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-first paths'
+      - 'REQ-E2E-008: onboarding content keeps the browser next step aligned to the walkthrough'
       - 'REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references'
       - 'REQ-E2E-008: onboarding content keeps core concepts ready for the follow-up primer'
     pytest:
