@@ -1211,10 +1211,6 @@ requirements:
       tests:
       - 'REQ-FE-037: form grid defaults to the first creatable form'
       - 'REQ-FE-037: form grid shows empty state when only reserved metadata forms exist'
-    pytest:
-    - file: docs/tests/test_browser_walkthrough_form_terminology.py
-      tests:
-      - test_docs_req_fe_037_browser_walkthrough_uses_form_terminology
     e2e:
     - file: e2e/dashboard-first-form.test.ts
       tests:
