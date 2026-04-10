@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -286,6 +287,7 @@ def test_list_members_not_found_runtime_error(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/members-notfound-ws/members")
     assert response.status_code == 404
+    assert response.json()["detail"] == "Space not found: members-notfound-ws"
 
 
 def test_list_members_generic_runtime_error(test_client: TestClient) -> None:
@@ -297,6 +299,10 @@ def test_list_members_generic_runtime_error(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/members-rt-ws/members")
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_invite_member_already_active(test_client: TestClient) -> None:
@@ -311,6 +317,7 @@ def test_invite_member_already_active(test_client: TestClient) -> None:
             json={"user_id": "alice", "role": "viewer"},
         )
     assert response.status_code == 409
+    assert response.json()["detail"] == "Member already active: alice"
 
 
 def test_invite_member_not_found(test_client: TestClient) -> None:
@@ -325,6 +332,22 @@ def test_invite_member_not_found(test_client: TestClient) -> None:
             json={"user_id": "unknown-user", "role": "viewer"},
         )
     assert response.status_code == 404
+    assert response.json()["detail"] == "User not found: unknown-user"
+
+
+def test_invite_member_space_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: invite member returns a stable 404 when the space is missing."""
+    test_client.post("/spaces", json={"name": "members-inv-space-404-ws"})
+    with patch(
+        "ugoite_core.create_invitation",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.post(
+            "/spaces/members-inv-space-404-ws/members/invitations",
+            json={"user_id": "alice-space", "role": "viewer"},
+        )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Space not found: members-inv-space-404-ws"
 
 
 def test_invite_member_generic_runtime_error(test_client: TestClient) -> None:
@@ -339,6 +362,7 @@ def test_invite_member_generic_runtime_error(test_client: TestClient) -> None:
             json={"user_id": "alice-x", "role": "viewer"},
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid member invitation request"
 
 
 def test_invite_member_authorization_error(test_client: TestClient) -> None:
@@ -373,6 +397,7 @@ def test_accept_invitation_expired(test_client: TestClient) -> None:
             json={"token": "expired-token"},
         )
     assert response.status_code == 410
+    assert response.json()["detail"] == "Invitation expired"
 
 
 def test_accept_invitation_not_found(test_client: TestClient) -> None:
@@ -387,20 +412,32 @@ def test_accept_invitation_not_found(test_client: TestClient) -> None:
             json={"token": "bad-token"},
         )
     assert response.status_code == 404
+    assert response.json()["detail"] == "Invitation not found"
 
 
-def test_accept_invitation_generic_runtime_error(test_client: TestClient) -> None:
-    """REQ-SEC-007: accept invitation returns 400 on generic runtime error."""
+def test_accept_invitation_generic_runtime_error(
+    test_client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """REQ-SEC-007: accept invitation returns 400 with sanitized generic failures."""
     test_client.post("/spaces", json={"name": "members-accept-rt-ws"})
+    raw_message = "token validation failed for bad-token"
+    caplog.set_level(logging.WARNING)
     with patch(
         "ugoite_core.accept_invitation",
-        _amock(side_effect=RuntimeError("bad request")),
+        _amock(side_effect=RuntimeError(raw_message)),
     ):
         response = test_client.post(
             "/spaces/members-accept-rt-ws/members/accept",
             json={"token": "bad-token"},
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid invitation token"
+    assert raw_message not in caplog.text
+    assert (
+        "Failed to accept invitation in members-accept-rt-ws: "
+        "invalid_invitation_token" in caplog.text
+    )
 
 
 def test_update_member_role_not_found(test_client: TestClient) -> None:
@@ -415,6 +452,22 @@ def test_update_member_role_not_found(test_client: TestClient) -> None:
             json={"role": "editor"},
         )
     assert response.status_code == 404
+    assert response.json()["detail"] == "Member not found: absent-user"
+
+
+def test_update_member_role_space_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: update member role returns a stable 404 for a missing space."""
+    test_client.post("/spaces", json={"name": "members-role-space-404-ws"})
+    with patch(
+        "ugoite_core.update_member_role",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.post(
+            "/spaces/members-role-space-404-ws/members/alice/role",
+            json={"role": "editor"},
+        )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Space not found: members-role-space-404-ws"
 
 
 def test_update_member_role_generic_runtime_error(test_client: TestClient) -> None:
@@ -429,6 +482,7 @@ def test_update_member_role_generic_runtime_error(test_client: TestClient) -> No
             json={"role": "editor"},
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Failed to update member role"
 
 
 def test_update_member_role_authorization_error(test_client: TestClient) -> None:
@@ -462,6 +516,21 @@ def test_revoke_member_not_found(test_client: TestClient) -> None:
             "/spaces/members-revoke-404-ws/members/absent-user",
         )
     assert response.status_code == 404
+    assert response.json()["detail"] == "Member not found: absent-user"
+
+
+def test_revoke_member_space_not_found(test_client: TestClient) -> None:
+    """REQ-SEC-007: revoke member returns a stable 404 when the space is missing."""
+    test_client.post("/spaces", json={"name": "members-revoke-space-404-ws"})
+    with patch(
+        "ugoite_core.revoke_member",
+        _amock(side_effect=RuntimeError("space not found")),
+    ):
+        response = test_client.delete(
+            "/spaces/members-revoke-space-404-ws/members/alice",
+        )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Space not found: members-revoke-space-404-ws"
 
 
 def test_revoke_member_generic_runtime_error(test_client: TestClient) -> None:
@@ -475,6 +544,7 @@ def test_revoke_member_generic_runtime_error(test_client: TestClient) -> None:
             "/spaces/members-revoke-rt-ws/members/alice",
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Failed to revoke member"
 
 
 def test_update_member_role_last_admin_conflict(test_client: TestClient) -> None:
@@ -489,6 +559,7 @@ def test_update_member_role_last_admin_conflict(test_client: TestClient) -> None
             json={"role": "viewer"},
         )
     assert response.status_code == 409
+    assert response.json()["detail"] == "Space must retain at least one active admin"
 
 
 def test_revoke_member_last_admin_conflict(test_client: TestClient) -> None:
@@ -502,6 +573,7 @@ def test_revoke_member_last_admin_conflict(test_client: TestClient) -> None:
             "/spaces/members-revoke-admin-conflict-ws/members/alice",
         )
     assert response.status_code == 409
+    assert response.json()["detail"] == "Space must retain at least one active admin"
 
 
 def test_revoke_member_authorization_error(test_client: TestClient) -> None:
