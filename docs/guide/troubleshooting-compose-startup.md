@@ -78,8 +78,12 @@ One quick write test:
 ```bash
 SPACE_PATH="${UGOITE_SPACES_DIR:-./spaces}"
 mkdir -p "$SPACE_PATH"
-sudo chown 10001:10001 "$SPACE_PATH"
-chmod 0750 "$SPACE_PATH"
+if command -v setfacl >/dev/null 2>&1; then
+  setfacl -m u:10001:rwx,d:u:10001:rwx "$SPACE_PATH"
+else
+  sudo chown "$(id -u)":10001 "$SPACE_PATH"
+  chmod 0770 "$SPACE_PATH"
+fi
 touch "$SPACE_PATH/.ugoite-write-test" && rm "$SPACE_PATH/.ugoite-write-test"
 ```
 
@@ -87,8 +91,10 @@ The published release quick start uses a non-root backend image. On Linux bind
 mounts, a host directory that still has the usual `0755` mode can reject writes
 from that container user even when your shell user created the directory.
 
-If you cannot change ownership but your host has ACL tooling, try a narrower
-rule such as `setfacl -m u:10001:rwx "$SPACE_PATH"` before broadening the mode.
+The preferred fix is to preserve your host-user ownership and grant the
+published backend user write access through an ACL. If ACL tooling is not
+available, keep your current user as the owner and grant gid `10001` write
+access instead of handing the directory to the container user.
 Use a world-writable fallback only as a last resort:
 
 ```bash

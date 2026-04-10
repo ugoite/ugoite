@@ -47,19 +47,23 @@ print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")
 print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")
 PY
 mkdir -p ./spaces
-sudo chown 10001:10001 ./spaces
-chmod 0750 ./spaces
+if command -v setfacl >/dev/null 2>&1; then
+  setfacl -m u:10001:rwx,d:u:10001:rwx ./spaces
+else
+  sudo chown "$(id -u)":10001 ./spaces
+  chmod 0770 ./spaces
+fi
 ```
 
 The shipped manifest itself now stays on the safer `passkey-totp` default and
 requires operator-supplied auth values. The example above explicitly opts into
 loopback-only `mock-oauth` for the published local demo flow.
 
-The published backend container runs as uid/gid `10001`, so that ownership-aware
-setup keeps the mount writable without opening it to every local user. If you
-want to keep the host ownership unchanged and you have ACL tools available, a
-targeted rule such as `setfacl -m u:10001:rwx ./spaces` is a narrower
-alternative. Keep `chmod 0777` as a last-resort troubleshooting step only.
+The published backend container runs as uid/gid `10001`. Prefer an ACL when the
+host supports it, because that keeps the host user in control of `./spaces`
+while still granting the published backend image write access. If ACL tooling is
+not available, keep your current user as the owner and grant gid `10001` write
+access instead. Keep `chmod 0777` as a last-resort troubleshooting step only.
 
 If you do not have `python3` locally, generate equivalent random values with
 your preferred secret tool before writing `.env`.
