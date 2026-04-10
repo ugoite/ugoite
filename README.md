@@ -33,9 +33,12 @@ GitHub without comparing two different onboarding maps.
   fastest browser-based evaluation path, while still running the browser stack
   with an explicit login step.
 - [Run from source](docs/guide/local-dev-auth-login.md) when you want the current
-  backend, frontend, and docsite together; the shortest contributor path is
-  `mise run setup` (dependencies + repo hooks), then `mise run dev`, followed
-  by the explicit `/login` flow.
+  backend, frontend, and docsite together; choose the repo Devcontainer /
+  GitHub Codespaces path when you want the preloaded contributor environment
+  (`mise`, `gh`, `oathtool`, `mise install`, `mise run setup`, and
+  `npx playwright install --with-deps chromium`), or run `mise run setup` on
+  your host when you already manage the toolchain yourself; both paths continue
+  with `mise run dev`, followed by the explicit `/login` flow.
   If you intentionally use the repo-root `docker compose up --build` path
   instead, export `UGOITE_DEV_SIGNING_SECRET` and
   `UGOITE_DEV_AUTH_PROXY_TOKEN` first with at least 32 characters of random
@@ -212,16 +215,23 @@ For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
 ## Setup & Development (mise)
 
-Install dependencies and repository pre-commit hooks:
-
 The repository root `mise.toml` is the contributor-facing source of truth for
-managed tool versions. Use that shared toolchain story first, then treat
-package README prerequisites as workflow notes on top of the same managed
-environment.
+managed tool versions across both supported setup paths. Use that shared
+toolchain story first, then treat package README prerequisites as workflow notes
+on top of the same managed environment.
 
 For the full contributor workflow around specs, REQ traceability, docsite
 navigation wiring, and CI-parity checks, see
 [Contributor Workflow](CONTRIBUTING.md).
+
+Choose the contributor setup path that matches your machine:
+
+| Path | Choose it when | What it handles for you |
+| --- | --- | --- |
+| Host-managed toolchain | You already want the repo toolchain on your machine or you are not using VS Code/Codespaces | You run `mise run setup` yourself to install dependencies and `uvx pre-commit install`, then continue with `mise run dev`. |
+| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
+
+Install dependencies and repository pre-commit hooks:
 
 ```bash
 mise run setup
@@ -229,6 +239,9 @@ mise run setup
 
 The setup task also runs `uvx pre-commit install` so local commits use the same
 hook chain as CI by default.
+
+The devcontainer path runs that same bootstrap for you during container
+creation, so both contributor setups land on the same local commands and hooks.
 
 Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
 
@@ -316,18 +329,24 @@ bun dev
 
 ---
 
-## Dev Container (VS Code) vs Docker Compose (deployment)
+## Devcontainer / GitHub Codespaces vs Docker Compose (deployment)
 
 Important: this repo provides two distinct container-based workflows:
 
-- Dev Container (development):
-  - `.devcontainer/devcontainer.json` creates a reproducible environment for developers, installs `oathtool` for manual TOTP flows, and runs `mise install` as part of the setup.
-  - Use Dev Container for onboarding, local development, and consistent dev tooling.
+- Devcontainer / GitHub Codespaces (development):
+  - `.devcontainer/devcontainer.json` is the supported contributor container
+    path. It preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`,
+    `mise run setup`, and `npx playwright install --with-deps chromium` for
+    you.
+  - Use the devcontainer when you want onboarding or day-to-day development in
+    a reproducible VS Code/Codespaces workspace without installing the full
+    toolchain on your host.
 
 - Docker Compose (deployment / CI):
   - `docker-compose.yaml` is for containerized deployments or CI systems. If you use this for production, verify commands and configuration (e.g., remove `--reload` or `bun dev` and opt for production servers and built frontend assets).
 
-These two environments are separate and intended for different uses—use the Dev Container for development and Docker Compose for deployments.
+These two environments are separate and intended for different uses—use the
+devcontainer for contributor development and Docker Compose for deployments.
 
 ---
 
@@ -504,8 +523,10 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 ## Contributing
 
 Contributions welcome! Start with [Run from source](docs/guide/local-dev-auth-login.md)
-for the canonical `mise run setup` -> `mise run dev` -> `/login` workflow. If
-you are using an AI coding agent in this repository, also read
+for the canonical contributor workflow, or open the repo Devcontainer / GitHub
+Codespaces path when you want the preloaded contributor environment before
+continuing with `mise run dev` and `/login`. If you are using an AI coding
+agent in this repository, also read
 [AGENTS.md](AGENTS.md).
 
 1. Check [open issues](https://github.com/ugoite/ugoite/issues) and [pull requests](https://github.com/ugoite/ugoite/pulls) for current work items
