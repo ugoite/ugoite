@@ -127,6 +127,17 @@ test("REQ-E2E-006: navigation helpers tolerate missing child anchors without mut
 	expect(specDataMocks.getUiPages).toHaveBeenCalledTimes(1);
 });
 
+test("REQ-E2E-006: application navigation keeps MCP as a first-class docsite route", () => {
+	const applicationSection = navSections.find(
+		(section) => section.title === "Application",
+	);
+
+	expect(applicationSection?.items.map((item) => item.href)).toContain(
+		"/app/mcp",
+	);
+	expect(applicationSection?.items.map((item) => item.title)).toContain("MCP");
+});
+
 test("REQ-E2E-008: newcomer navigation limits deep sections to getting-started content", () => {
 	expect(getNewcomerNavSections()).toEqual([
 		{

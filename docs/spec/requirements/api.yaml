@@ -651,3 +651,7 @@ requirements:
     - file: docs/tests/test_mcp_docs.py
       tests:
       - test_docs_req_api_013_current_mcp_surface_stays_resource_first
+    vitest:
+    - file: docsite/src/lib/app-mcp-page.test.ts
+      tests:
+      - 'REQ-API-013: app MCP page keeps the shipped surface resource-first and clearly scoped'
