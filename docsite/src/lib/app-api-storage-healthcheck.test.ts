@@ -8,9 +8,12 @@ const apiStoragePage = readFileSync(
 );
 
 test("REQ-OPS-010: app API & Storage page verifies readiness with the health endpoint first", () => {
-	expect(apiStoragePage).toContain("curl -sS http://localhost:8000/health");
-	expect(apiStoragePage).not.toContain(
-		'TerminalCommand command="curl http://localhost:8000/spaces"',
+	const readinessCommand =
+		'<TerminalCommand command="curl -sS http://localhost:8000/health" />';
+
+	expect(apiStoragePage).toContain(readinessCommand);
+	expect(apiStoragePage).not.toMatch(
+		/<TerminalCommand command="curl[^"]*http:\/\/localhost:8000\/(?!health)[^"]*"/,
 	);
 	expect(apiStoragePage).toContain(
 		"Authenticated routes such as <code>/spaces</code> require",
