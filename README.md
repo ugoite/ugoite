@@ -42,6 +42,10 @@ GitHub without comparing two different onboarding maps.
   commands live in the [Docker Compose Guide](docs/guide/docker-compose.md).
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
+If you only need the portable Rust layer for WASM, embedding, or pure helper
+work, start with [`ugoite-minimum`](ugoite-minimum/README.md) and the portable
+contributor notes in [Contributor Workflow](CONTRIBUTING.md).
+
 ### After your first step
 
 - [Understand core concepts](docs/guide/concepts.md) when you want the mental
@@ -75,6 +79,7 @@ demo login mode (`mock-oauth`) by default so browser evaluators can reach
 | --- | --- | --- | --- |
 | [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
 | [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
+| [Work on `ugoite-minimum`](ugoite-minimum/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-minimum` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
 | [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full contributor surface, but also the heaviest path |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP

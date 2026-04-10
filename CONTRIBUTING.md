@@ -25,6 +25,22 @@ mise run test
 Before adding a new workflow-specific command, check `.github/workflows/` and
 prefer the exact local command shape CI already uses.
 
+### Portable Rust / embedding path
+
+Use `ugoite-minimum` when the change must stay pure, portable, and small enough
+for WASM-oriented or embedding consumers instead of depending on storage
+adapters, indexing engines, Python bindings, or HTTP routes.
+
+- Start with `ugoite-minimum/README.md` for the responsibility boundary and
+  `docs/spec/architecture/future-proofing.md` for the portability goals.
+- Run `mise run //ugoite-minimum:test` for the package-local Rust quality gates.
+- Run `mise run //ugoite-minimum:build:wasm` when the change touches portable
+  APIs or other browser/embedding-facing surfaces.
+
+If the change needs OpenDAL-backed workflows, backend endpoints, or CLI UX, keep
+it in `ugoite-core`, `backend`, or `ugoite-cli` instead of pushing adapter logic
+down into `ugoite-minimum`.
+
 ## 2. Decide which source of truth must change
 
 When behavior changes, update the canonical layer first:
