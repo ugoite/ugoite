@@ -1598,3 +1598,36 @@ requirements:
     - file: docs/tests/test_contributing_guide.py
       tests:
       - test_docs_req_ops_036_contributor_workflow_guide_stays_traceable
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-037
+  title: Browser Walkthrough Keeps Form Terminology
+  description: 'The browser walkthrough guide MUST keep newcomer-facing Form terminology
+
+    in the starter-entry flow and MUST NOT reintroduce legacy schema wording in
+
+    that guide.
+
+    '
+  related_spec:
+  - ../guide/browser-first-entry.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_browser_walkthrough_form_terminology.py
+      tests:
+      - test_docs_req_ops_037_browser_walkthrough_uses_form_terminology
