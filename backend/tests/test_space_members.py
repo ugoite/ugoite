@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -414,12 +415,17 @@ def test_accept_invitation_not_found(test_client: TestClient) -> None:
     assert response.json()["detail"] == "Invitation not found"
 
 
-def test_accept_invitation_generic_runtime_error(test_client: TestClient) -> None:
-    """REQ-SEC-007: accept invitation returns 400 on generic runtime error."""
+def test_accept_invitation_generic_runtime_error(
+    test_client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """REQ-SEC-007: accept invitation returns 400 with sanitized generic failures."""
     test_client.post("/spaces", json={"name": "members-accept-rt-ws"})
+    raw_message = "token validation failed for bad-token"
+    caplog.set_level(logging.WARNING)
     with patch(
         "ugoite_core.accept_invitation",
-        _amock(side_effect=RuntimeError("bad request")),
+        _amock(side_effect=RuntimeError(raw_message)),
     ):
         response = test_client.post(
             "/spaces/members-accept-rt-ws/members/accept",
@@ -427,6 +433,11 @@ def test_accept_invitation_generic_runtime_error(test_client: TestClient) -> Non
         )
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid invitation token"
+    assert raw_message not in caplog.text
+    assert (
+        "Failed to accept invitation in members-accept-rt-ws: "
+        "invalid_invitation_token" in caplog.text
+    )
 
 
 def test_update_member_role_not_found(test_client: TestClient) -> None:
