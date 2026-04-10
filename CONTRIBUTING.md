@@ -79,9 +79,9 @@ Examples:
 
 - `mise run test` for the repository-wide baseline
 - targeted `uv run pytest ...` for docs/backend/core changes when iterating
-- `cd docsite && npx vitest run ...` for docsite regressions
-- `cd frontend && npx vitest run ...` or the CI-aligned frontend checks when UI
-  behavior changes
+- `cd docsite && bun run test:coverage` for docsite regressions
+- `cd frontend && biome ci . && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1`
+  when UI behavior changes
 
 If you add a new docsite page or navigation path, include the matching vitest or
 docs regression so the route and copy stay wired.
