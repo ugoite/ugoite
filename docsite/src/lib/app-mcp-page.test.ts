@@ -14,7 +14,7 @@ const appMcpPage = readFileSync(
 test("REQ-API-013: app MCP page keeps the shipped surface resource-first and clearly scoped", () => {
 	expect(appOverviewPage).toContain('href={withBasePath("/app/mcp")}');
 	expect(appMcpPage).toContain("resource-first baseline");
-	expect(appMcpPage).toContain('ugoite://{"{space_id}"}/entries/list');
+	expect(appMcpPage).toContain("ugoite://&#123;space_id&#125;/entries/list");
 	expect(appMcpPage).toContain("no MCP tools or prompts yet");
 	expect(appMcpPage).toContain("planned as v0.2 work");
 	expect(appMcpPage).toContain('href={withBasePath("/docs/spec/api/mcp")}');
