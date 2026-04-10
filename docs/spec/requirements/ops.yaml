@@ -659,6 +659,9 @@ requirements:
       - test_validate_totp_code_req_ops_015_rejects_replayed_code
       - test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay
     vitest:
+    - file: docsite/src/lib/app-cli-backend-mode.test.ts
+      tests:
+      - 'REQ-OPS-015: CLI landing page shows backend-mode routing and auth before remote space commands'
     - file: frontend/src/routes/login.test.tsx
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp without exposing a readable auth cookie'
