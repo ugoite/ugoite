@@ -90,6 +90,7 @@ export const navSections: NavSection[] = [
 			{ title: "UI Pages", href: "/app/frontend/pages", items: [] },
 			{ title: "API & Storage", href: "/app/api-storage" },
 			{ title: "CLI", href: "/app/cli" },
+			{ title: "MCP", href: "/app/mcp" },
 			{ title: "CLI Commands", href: "/app/cli/commands" },
 			{ title: "Data Model", href: "/app/api-storage/data-model" },
 			{ title: "API Catalog", href: "/app/api-storage/apis" },
