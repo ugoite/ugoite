@@ -18,17 +18,24 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
         message
         for condition, message in (
             (
-                "sudo chown 10001:10001 ./spaces" not in quickstart_text,
+                'setfacl -m u:10001:rwx,d:u:10001:rwx ./spaces' not in quickstart_text,
                 (
-                    "container-quickstart.md must grant the published backend "
-                    "uid/gid ownership"
+                    "container-quickstart.md must prefer ACL-based access for the "
+                    "published backend user"
                 ),
             ),
             (
-                "chmod 0750 ./spaces" not in quickstart_text,
+                'sudo chown "$(id -u)":10001 ./spaces' not in quickstart_text,
                 (
-                    "container-quickstart.md must keep the published spaces "
-                    "directory at 0750"
+                    "container-quickstart.md must keep the host user as the "
+                    "directory owner when ACLs are unavailable"
+                ),
+            ),
+            (
+                "chmod 0770 ./spaces" not in quickstart_text,
+                (
+                    "container-quickstart.md must keep the fallback group "
+                    "writeable without opening the directory to everyone"
                 ),
             ),
             (
@@ -39,30 +46,40 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
                 ),
             ),
             (
-                "Keep `chmod 0777` as a last-resort troubleshooting step only."
-                not in quickstart_text,
+                "host user in control of `./spaces`" not in quickstart_text,
                 (
-                    "container-quickstart.md must demote 0777 to last-resort "
-                    "troubleshooting"
+                    "container-quickstart.md must explain that the safer path "
+                    "preserves local-first host access"
                 ),
             ),
             (
-                'sudo chown 10001:10001 "$SPACE_PATH"' not in troubleshooting_text,
+                'setfacl -m u:10001:rwx,d:u:10001:rwx "$SPACE_PATH"'
+                not in troubleshooting_text,
                 (
-                    "troubleshooting-compose-startup.md must try ownership-aware "
+                    "troubleshooting-compose-startup.md must try ACL-based "
                     "writes first"
                 ),
             ),
             (
-                'chmod 0750 "$SPACE_PATH"' not in troubleshooting_text,
+                'sudo chown "$(id -u)":10001 "$SPACE_PATH"' not in troubleshooting_text,
                 (
-                    "troubleshooting-compose-startup.md must keep the "
-                    "troubleshooting mode at 0750 first"
+                    "troubleshooting-compose-startup.md must keep the host user "
+                    "as owner when ACLs are unavailable"
                 ),
             ),
             (
-                'setfacl -m u:10001:rwx "$SPACE_PATH"' not in troubleshooting_text,
-                ("troubleshooting-compose-startup.md must mention the ACL fallback"),
+                'chmod 0770 "$SPACE_PATH"' not in troubleshooting_text,
+                (
+                    "troubleshooting-compose-startup.md must keep the fallback "
+                    "group-writeable before reaching for 0777"
+                ),
+            ),
+            (
+                "keep your current user as the owner" not in troubleshooting_text,
+                (
+                    "troubleshooting-compose-startup.md must explain why the "
+                    "fallback preserves host ownership"
+                ),
             ),
             (
                 'chmod 0777 "$SPACE_PATH"' not in troubleshooting_text,
