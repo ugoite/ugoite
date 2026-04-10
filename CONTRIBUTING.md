@@ -78,10 +78,15 @@ match the current workflows under `.github/workflows/`.
 Examples:
 
 - `mise run test` for the repository-wide baseline
+- `mise run test:docs` before pushing docs, spec, or REQ-traceability changes
 - targeted `uv run pytest ...` for docs/backend/core changes when iterating
 - `cd docsite && bun run test:coverage` for docsite regressions
 - `cd frontend && biome ci . && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1`
   when UI behavior changes
+
+Use `mise run test:docs` when `README.md`, `CONTRIBUTING.md`, `docs/spec/`,
+or `docs/tests/` change so the docs consistency suite catches guide drift and
+REQ mapping regressions locally first.
 
 If you add a new docsite page or navigation path, include the matching vitest or
 docs regression so the route and copy stay wired.
