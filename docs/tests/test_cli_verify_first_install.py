@@ -44,6 +44,10 @@ def test_docs_req_ops_018_cli_guide_leads_with_verify_first_release_install() ->
                 "cli.md is missing the macOS checksum verification command",
             ),
             (
+                'mkdir -p "$HOME/.local/bin"' not in guide_text,
+                "cli.md must create ~/.local/bin before installing the binary",
+            ),
+            (
                 raw_bootstrap_command not in guide_text,
                 "cli.md must still document the direct shell bootstrap shortcut",
             ),
