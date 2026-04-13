@@ -28,7 +28,7 @@ uuid = { version = "1.23.0", features = ["v4", "serde"] }
 futures = { version = "0.3.32", features = ["std"] }
 thiserror = "2.0.18"
 base64 = "0.22.1"
-rand = "0.10.0"
+rand = "0.10.1"
 serde_yaml = "0.9.34"
 regex = "1.12.3"
 sha2 = "0.10"
