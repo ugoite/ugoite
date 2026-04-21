@@ -47,6 +47,21 @@ fn test_help_req_ops_018_shows_task_oriented_quick_start() {
     }
 }
 
+/// REQ-OPS-019: top-level CLI version flags must report the installed version.
+#[test]
+fn test_version_flag_reports_installed_version() {
+    let output = Command::new(ugoite_bin())
+        .arg("--version")
+        .output()
+        .expect("failed to execute process");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(env!("CARGO_PKG_VERSION")),
+        "expected version output to include the crate version, got: {stdout}"
+    );
+}
+
 #[test]
 fn test_config_show() {
     let dir = tempfile::tempdir().unwrap();
