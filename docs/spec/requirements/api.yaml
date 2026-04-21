@@ -14,10 +14,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -77,10 +79,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -135,10 +139,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -180,10 +186,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -227,10 +235,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -273,10 +283,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -319,10 +331,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -367,10 +381,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -425,10 +441,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -477,10 +495,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -521,10 +541,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -570,10 +592,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -615,10 +639,12 @@ requirements:
   - POL-011
   - POL-013
   - POL-014
+  - POL-015
   linked_specifications:
   - SPEC-API-REST
   - SPEC-API-OPENAPI
   - SPEC-API-MCP
+  - SPEC-API-SURFACES
   - SPEC-ARCH-INTERFACE
   - SPEC-ARCH-DECISIONS
   - SPEC-ARCH-FUTURE
@@ -655,3 +681,55 @@ requirements:
     - file: docsite/src/lib/app-mcp-page.test.ts
       tests:
       - 'REQ-API-013: app MCP page keeps the shipped surface resource-first and clearly scoped'
+- set_id: REQCAT-API
+  source_file: requirements/api.yaml
+  scope: REST API contracts and service behavior requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-004
+  - POL-006
+  - POL-008
+  - POL-010
+  - POL-011
+  - POL-013
+  - POL-014
+  - POL-015
+  linked_specifications:
+  - SPEC-API-REST
+  - SPEC-API-OPENAPI
+  - SPEC-API-MCP
+  - SPEC-API-SURFACES
+  - SPEC-ARCH-INTERFACE
+  - SPEC-ARCH-DECISIONS
+  - SPEC-ARCH-FUTURE
+  - SPEC-DM-SQL-SESSIONS
+  - SPEC-STORIES-EXPERIMENTAL
+  id: REQ-API-014
+  title: Operator Surface Positioning Guide
+  description: 'Specification docs MUST position MCP as the governed AI-facing
+
+    operator surface, CLI as the explicit human/operator automation surface,
+
+    and REST as the application/frontend integration surface.
+
+    The positioning guide MUST trace PHIL-004 through policies and requirements,
+
+    and it MUST keep today''s MCP scope framed as the current resource-first
+
+    baseline rather than broader future capability.
+
+    '
+  related_spec:
+  - philosophy/foundation.yaml
+  - policies/policies.yaml
+  - index.md
+  - api/mcp.md
+  - api/operator-surfaces.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_mcp_docs.py
+      tests:
+      - test_docs_req_api_014_surface_guide_traces_mcp_cli_and_rest

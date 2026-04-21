@@ -2,6 +2,7 @@
 
 REQ-API-012: MCP resource input safety.
 REQ-API-013: Current MCP surface documentation.
+REQ-API-014: Operator-surface positioning guidance.
 """
 
 from __future__ import annotations
@@ -165,5 +166,58 @@ def test_docs_req_api_013_current_mcp_surface_stays_resource_first() -> None:
         )
         if not ok
     ]
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_api_014_surface_guide_traces_mcp_cli_and_rest() -> None:
+    """REQ-API-014: operator-surface docs position MCP, CLI, and REST."""
+    guide = (REPO_ROOT / "docs" / "spec" / "api" / "operator-surfaces.md").read_text(
+        encoding="utf-8",
+    )
+    spec_index = (REPO_ROOT / "docs" / "spec" / "index.md").read_text(
+        encoding="utf-8",
+    )
+    mcp_doc = (REPO_ROOT / "docs" / "spec" / "api" / "mcp.md").read_text(
+        encoding="utf-8",
+    )
+
+    details = [
+        f"docs/spec/api/operator-surfaces.md missing fragment: {fragment!r}"
+        for fragment in (
+            "PHIL-004",
+            "POL-015",
+            "POL-010",
+            "POL-005",
+            "POL-004",
+            "REQ-API-012",
+            "REQ-API-013",
+            "REQ-API-014",
+            "| **MCP** |",
+            "| **CLI** |",
+            "| **REST API** |",
+            "Use **MCP** when",
+            "Use **CLI** when",
+            "Use **REST** when",
+            "AI-facing operator surface",
+            "resource-first baseline",
+            "no prompts, no tools",
+        )
+        if fragment not in guide
+    ]
+
+    for ok, message in (
+        (
+            "[Operator Surface Positioning](api/operator-surfaces.md)" in spec_index,
+            "docs/spec/index.md must link to the operator-surface positioning guide",
+        ),
+        (
+            "[Operator Surface Positioning](operator-surfaces.md)" in mcp_doc,
+            "docs/spec/api/mcp.md must link to the operator-surface positioning guide",
+        ),
+    ):
+        if not ok:
+            details.append(message)
+
     if details:
         raise AssertionError("; ".join(details))
