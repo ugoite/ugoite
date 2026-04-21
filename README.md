@@ -38,8 +38,9 @@ GitHub without comparing two different onboarding maps.
   by the explicit `/login` flow.
   If you intentionally use the repo-root `docker compose up --build` path
   instead, export `UGOITE_DEV_SIGNING_SECRET` and
-  `UGOITE_DEV_AUTH_PROXY_TOKEN` first or startup will fail fast. The exact
-  commands live in the [Docker Compose Guide](docs/guide/docker-compose.md).
+  `UGOITE_DEV_AUTH_PROXY_TOKEN` first with at least 32 characters of random
+  secret material or startup will fail fast. The exact commands live in the
+  [Docker Compose Guide](docs/guide/docker-compose.md).
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 If you only need the portable Rust layer for WASM, embedding, or pure helper
@@ -400,10 +401,10 @@ Tag conventions:
 | `UGOITE_DEV_AUTH_MODE`        | `passkey-totp`               | Shipped auth-mode default; set it to `mock-oauth` only for an explicit local demo flow                                                                                               |
 | `UGOITE_DEV_USER_ID`          | `required`                   | Username/user id for the explicit login flow you enable; the quick-start example sets `dev-local-user`                                                                               |
 | `UGOITE_DEV_SIGNING_KID`      | `release-compose-local-v1`   | Key id paired with the install-specific bearer signing material                                                                                                                       |
-| `UGOITE_DEV_SIGNING_SECRET`   | `required unique value`      | Secret used to mint dev bearer tokens for this install                                                                                                                                 |
-| `UGOITE_AUTH_BEARER_SECRETS`  | `required unique value`      | Bearer verification secret set accepted by the backend                                                                                                                                 |
+| `UGOITE_DEV_SIGNING_SECRET`   | `required 32-byte random secret` | Secret used to mint dev bearer tokens for this install                                                                                                                                 |
+| `UGOITE_AUTH_BEARER_SECRETS`  | `required 32-byte random secret` | Bearer verification secret set accepted by the backend                                                                                                                                 |
 | `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids accepted by the backend; keep this aligned with the signing key ids you expose for this install                                                          |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `required unique value`      | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `required 32-byte random secret` | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).
