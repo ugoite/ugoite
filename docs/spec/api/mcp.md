@@ -2,13 +2,17 @@
 
 ## Overview
 
-Ugoite implements the Model Context Protocol (MCP) as a resource-first
-integration that lets AI clients read knowledge-base data through explicit
-trust boundaries. The current server is mounted at `/mcp` via SSE transport.
+Ugoite implements the Model Context Protocol (MCP) as the AI-facing,
+resource-first operator surface that lets clients read knowledge-base data
+through explicit trust boundaries. The current server is mounted at `/mcp` via
+SSE transport.
 
 In `v0.1`, the shipped MCP server exposes a single read-only resource. Broader
 resource coverage, prompts, and tools are planned for `v0.2`; they are not part
 of the current server surface.
+
+For when to choose MCP over the CLI or REST API, see
+[Operator Surface Positioning](operator-surfaces.md).
 
 ## Resources
 
