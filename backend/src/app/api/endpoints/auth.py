@@ -30,6 +30,7 @@ LOGIN_FAILURE_LIMIT = 5
 LOGIN_FAILURE_WINDOW_SECONDS = 60.0
 LOGIN_LOCKOUT_SECONDS = 60.0
 TRUSTED_DEV_AUTH_PROXY_SCOPE = "trusted-dev-auth-proxy"
+MIN_DEV_SECRET_LENGTH = 32
 
 
 @dataclass(slots=True)
@@ -73,9 +74,16 @@ def _dev_user_id() -> str:
 def _dev_signing_material() -> tuple[str, str]:
     key_id = os.environ.get("UGOITE_DEV_SIGNING_KID", _default_dev_token_kid()).strip()
     secret = os.environ.get("UGOITE_DEV_SIGNING_SECRET", "").strip()
-    if not key_id or not secret:
+    if not key_id:
+        message = "UGOITE_DEV_SIGNING_KID must be configured for explicit login."
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=message,
+        )
+    if len(secret) < MIN_DEV_SECRET_LENGTH:
         message = (
-            "Passwordless login is unavailable because signing material is missing."
+            "UGOITE_DEV_SIGNING_SECRET must be at least 32 characters of random "
+            "secret material."
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -90,10 +98,8 @@ def configure_dev_auth_bearer_env() -> None:
     if raw_mode not in {"passkey-totp", "mock-oauth"}:
         return
 
-    try:
-        key_id, secret = _dev_signing_material()
-    except HTTPException:
-        return
+    key_id, secret = _dev_signing_material()
+    _trusted_dev_auth_proxy_token()
 
     changed = False
     if not os.environ.get("UGOITE_AUTH_BEARER_SECRETS", "").strip():
@@ -134,7 +140,16 @@ def _trusted_dev_auth_proxy_token() -> str | None:
     if token is None:
         return None
     normalized = token.strip()
-    return normalized or None
+    if len(normalized) < MIN_DEV_SECRET_LENGTH:
+        message = (
+            "UGOITE_DEV_AUTH_PROXY_TOKEN must be at least 32 characters of "
+            "random secret material."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=message,
+        )
+    return normalized
 
 
 def _required_dev_passkey_context() -> str:

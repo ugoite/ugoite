@@ -20,10 +20,10 @@ refers to the CI-parity compose helper in `e2e/scripts/run-e2e-compose.sh`.
 | UGOITE_DEV_AUTH_FORCE_LOGIN | optional | n/a | n/a | n/a |
 | UGOITE_DEV_AUTH_MODE | optional | required (`mock-oauth`) | required (`mock-oauth`) | optional |
 | UGOITE_DEV_PASSKEY_CONTEXT | auto-managed by `dev-auth-env.sh` for `passkey-totp` local login | n/a | n/a | optional |
-| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` and direct CLI auth flows | required for compose e2e | required unique value | optional |
+| UGOITE_DEV_AUTH_PROXY_TOKEN | optional for containerized `/login` and direct CLI auth flows | required for compose e2e | required 32-byte random secret | optional |
 | UGOITE_DEV_USER_ID | optional | required | required | optional |
 | UGOITE_DEV_2FA_SECRET | optional | n/a | n/a | n/a |
-| UGOITE_DEV_SIGNING_SECRET | auto-managed by `dev-auth-env.sh` | required | required unique value | optional |
+| UGOITE_DEV_SIGNING_SECRET | auto-managed by `dev-auth-env.sh` | required | required 32-byte random secret | optional |
 | UGOITE_DEV_SIGNING_KID | auto-managed by `dev-auth-env.sh` | required | required | optional |
 | E2E_AUTH_BEARER_TOKEN | n/a | generated after mock-oauth login | generated after mock-oauth login | required for e2e jobs |
 | E2E_STORAGE_ROOT | n/a | required | n/a | optional |
