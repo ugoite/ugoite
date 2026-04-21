@@ -89,6 +89,14 @@ def test_docs_req_ops_036_contributor_workflow_guide_stays_traceable() -> None:
                 "mise run test" not in contributing_text,
                 "CONTRIBUTING.md must mention the repo-wide validation command",
             ),
+            (
+                "mise run test:docs" not in contributing_text,
+                "CONTRIBUTING.md must mention the docs consistency validation command",
+            ),
+            (
+                "docs, spec, or REQ-traceability changes" not in contributing_text,
+                "CONTRIBUTING.md must explain when to run the docs validation command",
+            ),
         )
         if condition
     ]
