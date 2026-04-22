@@ -709,6 +709,7 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "passkey-totp",
     "mock-oauth",
+    "canonical reference for the `passkey-totp` vs `mock-oauth` split",
     "UGOITE_DEV_USER_ID",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "UGOITE_DEV_PASSKEY_CONTEXT",
@@ -723,6 +724,8 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
 REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "passkey-totp",
     "mock-oauth",
+    "canonical auth-mode reference",
+    "local-dev-auth-login.md",
 }
 REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "Inspect active auth setup, endpoint mode, and the next useful auth action",
@@ -741,11 +744,20 @@ REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
 }
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
+    "| Mode | What it is for | How login happens |",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "Local Dev Auth/Login",
-    "canonical `mise run dev` workflow",
+    "canonical auth-mode reference",
     "/login",
+    "passkey-totp",
+    "mock-oauth",
+}
+REQUIRED_CONTAINER_QUICKSTART_AUTH_REFERENCE_FRAGMENTS = {
+    "Local Development Authentication and Login",
+    "local-dev-auth-login.md",
+    "canonical auth-mode comparison",
+    "mock-oauth",
 }
 REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS = {
     "sudo apt-get update",
@@ -2495,6 +2507,9 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     """REQ-OPS-015: Local dev auth docs stay canonical for supported modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
+    container_quickstart_text = CONTAINER_QUICKSTART_GUIDE_PATH.read_text(
+        encoding="utf-8",
+    )
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
     devcontainer_text = (REPO_ROOT / ".devcontainer" / "devcontainer.json").read_text(
@@ -2560,6 +2575,12 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
         text=env_matrix_text,
         required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS,
         prefix="env-matrix.md missing auth mode vars: ",
+    )
+    _append_missing_fragment_detail(
+        details,
+        text=container_quickstart_text,
+        required_fragments=REQUIRED_CONTAINER_QUICKSTART_AUTH_REFERENCE_FRAGMENTS,
+        prefix="container-quickstart.md missing canonical auth reference fragments: ",
     )
     _append_missing_fragment_detail(
         details,
