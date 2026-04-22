@@ -186,10 +186,10 @@ These are the supported release-compose environment variables for the shipped
 | `UGOITE_DEV_AUTH_MODE` | `passkey-totp` | Dev login mode inside the shipped manifest. Set it to `mock-oauth` only for an explicit local demo flow. |
 | `UGOITE_DEV_USER_ID` | required | Username/user id for the explicit login flow you enable. The quick-start example above sets `dev-local-user` explicitly. |
 | `UGOITE_DEV_SIGNING_KID` | `release-compose-local-v1` | Key id paired with your install-specific bearer signing material. |
-| `UGOITE_DEV_SIGNING_SECRET` | required unique value | Secret used to mint dev bearer tokens for this install. |
-| `UGOITE_AUTH_BEARER_SECRETS` | required unique value | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
+| `UGOITE_DEV_SIGNING_SECRET` | required 32-byte random secret | Secret used to mint dev bearer tokens for this install. |
+| `UGOITE_AUTH_BEARER_SECRETS` | required 32-byte random secret | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
 | `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids exposed to the backend. |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required unique value | Shared token between frontend and backend so `/login` can reach the explicit auth endpoints. |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required 32-byte random secret | Shared token between frontend and backend so `/login` can reach the explicit auth endpoints. |
 
 The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
 the Compose network. By default it stays on `passkey-totp`; the quick-start

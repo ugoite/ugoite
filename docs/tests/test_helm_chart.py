@@ -406,7 +406,7 @@ def test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets() -> None:
         'HELM_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"',
         "signingSecret: ${HELM_AUTH_SIGNING_SECRET}",
         "proxyToken: ${HELM_AUTH_PROXY_TOKEN}",
-        "empty (required unique value)",
+        "empty (required 32-byte random secret)",
     }
     missing_guide_fragments = _missing_fragments(
         guide_text,
