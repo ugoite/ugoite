@@ -6,6 +6,7 @@ use ugoite_cli::commands;
 #[command(
     name = "ugoite",
     about = "Ugoite CLI - Knowledge base management",
+    version = env!("CARGO_PKG_VERSION"),
     long_about = "Ugoite CLI - Knowledge base management\n\nQuick start (local-first / core mode):\n  # Inspect the spaces in your current workspace\n  ugoite space list .\n\n  # Create your first space with an explicit local spaces path\n  ugoite space create /path/to/workspace/spaces/demo\n\nQuick start (backend / API mode):\n  # Point the CLI at your backend\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\n  # Authenticate, then list spaces from the backend\n  ugoite auth login\n  ugoite space list"
 )]
 struct Cli {
