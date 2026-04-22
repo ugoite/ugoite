@@ -4,18 +4,27 @@ Use this guide when you are changing code, docs, specs, or tests in Ugoite. It
 connects the repository workflow, REQ-* traceability, and CI expectations in one
 place so a local green change stays aligned with the shipped product docs.
 
-## 1. Start from the canonical setup path
+## 1. Choose a supported contributor setup path
 
-Use the repository-managed toolchain first:
+Ugoite supports two contributor setup paths that converge on the same local
+commands, hooks, and CI-parity checks:
+
+| Path | Choose it when | What it does for you |
+| --- | --- | --- |
+| Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies and `uvx pre-commit install`, so local commits use the same pre-commit gate that CI enforces. |
+| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
+
+If you are on the managed host toolchain path, start with:
 
 ```bash
 mise run setup
 ```
 
 That path installs the shared dependencies and runs `uvx pre-commit install`, so
-local commits use the same pre-commit gate that CI enforces.
+local commits use the same pre-commit gate that CI enforces. The devcontainer
+runs that same bootstrap for you during container creation.
 
-Common follow-up commands:
+Common follow-up commands inside either setup:
 
 ```bash
 mise run dev
