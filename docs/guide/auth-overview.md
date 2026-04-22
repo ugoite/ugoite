@@ -59,7 +59,7 @@ whether the current mode needs backend credentials or already has one available.
 When you run `mise run dev`, the backend exposes one of two explicit login
 experiences:
 
-| Mode | What it is for | How login happens |
+| Auth mode | What it is for | How login happens |
 | --- | --- | --- |
 | `passkey-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
 | `mock-oauth` | Development-only local demo login path | You still sign in explicitly after startup, but the backend issues a bearer token through the local demo login route instead of username + TOTP. No external OAuth provider is involved. |
