@@ -47,9 +47,9 @@ fn test_help_req_ops_018_shows_task_oriented_quick_start() {
     }
 }
 
-/// REQ-OPS-019: top-level CLI version flags must report the installed version.
+/// REQ-OPS-018: top-level CLI version flags must report the installed version.
 #[test]
-fn test_version_flag_reports_installed_version() {
+fn test_version_req_ops_018_reports_installed_version() {
     let output = Command::new(ugoite_bin())
         .arg("--version")
         .output()
