@@ -30,7 +30,7 @@ shasum -a 256 -c "ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"
 tar -xzf "ugoite-v${VERSION}-${TARGET}.tar.gz"
 mkdir -p "$HOME/.local/bin"
 install -m 0755 ugoite "$HOME/.local/bin/ugoite"
-ugoite --version
+$HOME/.local/bin/ugoite --version
 ugoite --help
 ```
 
