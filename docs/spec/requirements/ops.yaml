@@ -1661,6 +1661,39 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-040
+  title: Browser Walkthrough Explains Example Field Types
+  description: 'The browser walkthrough guide MUST explain why the example form field
+
+    types differ so newcomers understand the tradeoff between short structured
+
+    text and longer formatted notes.
+
+    '
+  related_spec:
+  - ../guide/browser-first-entry.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_browser_walkthrough_field_types.py
+      tests:
+      - test_docs_req_ops_040_browser_walkthrough_explains_example_field_types
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-041
   title: Browser Walkthrough Maps Main Surfaces
   description: 'The browser walkthrough guide MUST explain the main post-entry browser
