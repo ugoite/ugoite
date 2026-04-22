@@ -1646,3 +1646,36 @@ requirements:
     - file: docs/tests/test_browser_walkthrough_form_terminology.py
       tests:
       - test_docs_req_ops_037_browser_walkthrough_uses_form_terminology
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-041
+  title: Browser Walkthrough Maps Main Surfaces
+  description: 'The browser walkthrough guide MUST explain the main post-entry browser
+
+    surfaces so newcomers can tell what Dashboard, Entries, Forms, and Search
+
+    are for.
+
+    '
+  related_spec:
+  - ../guide/browser-first-entry.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_browser_walkthrough_surface_glossary.py
+      tests:
+      - test_docs_req_ops_041_browser_walkthrough_maps_core_surfaces
