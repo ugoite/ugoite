@@ -58,17 +58,17 @@ async def create_sql_session_endpoint(
         if msg.startswith("UGOITE_SQL_VALIDATION"):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=msg,
+                detail="UGOITE_SQL_VALIDATION: Invalid SQL session query",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to create SQL session",
         ) from exc
     except Exception as e:
         logger.exception("Failed to create SQL session")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create SQL session",
         ) from e
 
 
@@ -103,7 +103,7 @@ async def get_sql_session_endpoint(
         logger.exception("Failed to load SQL session")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load SQL session",
         ) from e
 
 
@@ -139,7 +139,7 @@ async def get_sql_session_count_endpoint(
         logger.exception("Failed to load SQL session count")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load SQL session count",
         ) from e
     else:
         return {"count": count}
@@ -180,7 +180,7 @@ async def get_sql_session_rows_endpoint(
         logger.exception("Failed to load SQL session rows")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load SQL session rows",
         ) from e
 
 

@@ -24,8 +24,34 @@ def test_docs_req_ops_036_contributor_workflow_guide_stays_traceable() -> None:
                 "README.md must link to CONTRIBUTING.md from the setup section",
             ),
             (
+                "[`ugoite-minimum`](ugoite-minimum/README.md)" not in readme_text,
+                "README.md must surface the portable ugoite-minimum entry path",
+            ),
+            (
                 "mise run setup" not in contributing_text,
-                "CONTRIBUTING.md must lead with the managed setup path",
+                "CONTRIBUTING.md must keep the managed host setup path explicit",
+            ),
+            (
+                "ugoite-minimum/README.md" not in contributing_text,
+                "CONTRIBUTING.md must link to the ugoite-minimum boundary guide",
+            ),
+            (
+                "docs/spec/architecture/future-proofing.md" not in contributing_text,
+                (
+                    "CONTRIBUTING.md must link to the portability goals for "
+                    "ugoite-minimum work"
+                ),
+            ),
+            (
+                "mise run //ugoite-minimum:test" not in contributing_text,
+                (
+                    "CONTRIBUTING.md must mention the package-local "
+                    "ugoite-minimum quality gate"
+                ),
+            ),
+            (
+                "mise run //ugoite-minimum:build:wasm" not in contributing_text,
+                "CONTRIBUTING.md must mention the ugoite-minimum WASM build gate",
             ),
             (
                 "uvx pre-commit install" not in contributing_text,
@@ -63,8 +89,50 @@ def test_docs_req_ops_036_contributor_workflow_guide_stays_traceable() -> None:
                 "mise run test" not in contributing_text,
                 "CONTRIBUTING.md must mention the repo-wide validation command",
             ),
+            (
+                "mise run test:docs" not in contributing_text,
+                "CONTRIBUTING.md must mention the docs consistency validation command",
+            ),
+            (
+                "docs, spec, or REQ-traceability changes" not in contributing_text,
+                "CONTRIBUTING.md must explain when to run the docs validation command",
+            ),
         )
         if condition
+    ]
+
+    if details:
+        raise AssertionError("; ".join(details))
+
+
+def test_docs_req_ops_036_contributor_docs_surface_devcontainer_setup_path() -> None:
+    """REQ-OPS-036: contributor docs keep the devcontainer setup path explicit."""
+    readme_text = README.read_text(encoding="utf-8")
+    contributing_text = CONTRIBUTING.read_text(encoding="utf-8")
+
+    expected_fragments = [
+        "Devcontainer / GitHub Codespaces",
+        ".devcontainer/devcontainer.json",
+        "reproducible VS Code/Codespaces workspace",
+        "toolchain on your host",
+        "`mise`",
+        "`gh`",
+        "`oathtool`",
+        "`mise install`",
+        "`mise run setup`",
+        "`npx playwright install --with-deps chromium`",
+    ]
+    details = [
+        f"{label} missing devcontainer setup fragments: {', '.join(missing)}"
+        for label, text in (
+            ("README.md", readme_text),
+            ("CONTRIBUTING.md", contributing_text),
+        )
+        if (
+            missing := [
+                fragment for fragment in expected_fragments if fragment not in text
+            ]
+        )
     ]
 
     if details:

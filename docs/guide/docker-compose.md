@@ -36,6 +36,7 @@ folder to reset local data.
 
 The source Compose file expects unique values for
 `UGOITE_DEV_SIGNING_SECRET` and `UGOITE_DEV_AUTH_PROXY_TOKEN` before startup.
+Use at least 32 characters of random secret material for both values.
 The backend derives `UGOITE_AUTH_BEARER_SECRETS` and
 `UGOITE_AUTH_BEARER_ACTIVE_KIDS` from that signing material automatically, so
 you only need to export the signing secret and proxy token once per local stack.
