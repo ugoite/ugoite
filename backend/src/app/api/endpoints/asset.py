@@ -56,7 +56,7 @@ async def upload_asset_endpoint(
         logger.exception("Failed to save asset")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to save asset",
         ) from e
 
 
@@ -85,7 +85,7 @@ async def list_assets_endpoint(
         logger.exception("Failed to list assets")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list assets",
         ) from e
 
 
@@ -126,13 +126,13 @@ async def delete_asset_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to delete asset",
         ) from e
     except Exception as e:
         logger.exception("Failed to delete asset")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to delete asset",
         ) from e
     else:
         return {"status": "deleted", "id": asset_id}

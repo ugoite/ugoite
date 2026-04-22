@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 import ugoite_core
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.endpoints import auth as auth_endpoints
@@ -30,7 +31,14 @@ from app.main import app
 
 DEFAULT_TEST_USER_ID = "dev-alice"
 DEFAULT_TEST_SIGNING_KID = "{}-{}-{}".format("dev", "local", "v1")
-DEFAULT_TEST_SIGNING_SECRET = "{}-{}-{}".format("dev", "signing", "secret")
+DEFAULT_TEST_SIGNING_SECRET = (
+    "{}-{}-{}".format(
+        "dev",
+        "signing",
+        "secret",
+    )
+    + "-material-0123456789"
+)
 DEFAULT_TEST_PASSKEY_CONTEXT = "{}-{}-{}".format("dev", "passkey", "context")
 TEST_TOTP_SECRET = base64.b32encode(b"local-dev-auth-secret").decode("ascii")
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -209,25 +217,66 @@ def test_dev_auth_req_sec_001_startup_derives_bearer_env_from_signing_material(
     assert spaces_response.status_code == 200
 
 
-def test_dev_auth_req_sec_001_skips_bearer_derivation_without_signing_material(
+def test_dev_auth_req_sec_001_rejects_short_dev_signing_secret(
     monkeypatch: pytest.MonkeyPatch,
     temp_space_root: Path,
 ) -> None:
-    """REQ-SEC-001: startup skips derived bearer auth without signing material."""
+    """REQ-SEC-001: startup rejects weak dev signing secrets."""
     _configure_dev_auth_env(
         monkeypatch,
         temp_space_root,
         mode="mock-oauth",
     )
-    monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", " ")
+    monkeypatch.setenv("UGOITE_DEV_SIGNING_SECRET", "too-short-secret")
     monkeypatch.delenv("UGOITE_AUTH_BEARER_SECRETS", raising=False)
     monkeypatch.delenv("UGOITE_AUTH_BEARER_ACTIVE_KIDS", raising=False)
     clear_auth_manager_cache()
 
-    auth_endpoints.configure_dev_auth_bearer_env()
+    with pytest.raises(HTTPException) as exc_info:
+        auth_endpoints.configure_dev_auth_bearer_env()
 
-    assert "UGOITE_AUTH_BEARER_SECRETS" not in os.environ
-    assert "UGOITE_AUTH_BEARER_ACTIVE_KIDS" not in os.environ
+    assert exc_info.value.status_code == 503
+    assert "32 characters" in str(exc_info.value.detail)
+
+
+def test_dev_auth_req_sec_001_rejects_short_dev_auth_proxy_token(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: startup rejects weak dev auth proxy tokens."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "too-short-token")
+    clear_auth_manager_cache()
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth_endpoints.configure_dev_auth_bearer_env()
+
+    assert exc_info.value.status_code == 503
+    assert "32 characters" in str(exc_info.value.detail)
+
+
+def test_dev_auth_req_sec_001_rejects_blank_dev_signing_kid(
+    monkeypatch: pytest.MonkeyPatch,
+    temp_space_root: Path,
+) -> None:
+    """REQ-SEC-001: startup rejects a blank dev signing key id."""
+    _configure_dev_auth_env(
+        monkeypatch,
+        temp_space_root,
+        mode="mock-oauth",
+    )
+    monkeypatch.setenv("UGOITE_DEV_SIGNING_KID", "   ")
+    clear_auth_manager_cache()
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth_endpoints.configure_dev_auth_bearer_env()
+
+    assert exc_info.value.status_code == 503
+    assert "UGOITE_DEV_SIGNING_KID" in str(exc_info.value.detail)
 
 
 def test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token(
@@ -332,7 +381,8 @@ def test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token(
                 "oauth",
                 "signing",
                 "secret",
-            ),
+            )
+            + "-material-0123456789",
         },
     )
     monkeypatch.setenv("UGOITE_DEV_AUTH_TTL_SECONDS", "3600")
@@ -765,13 +815,18 @@ def test_dev_auth_req_ops_015_allows_trusted_proxy_token(
         mode="mock-oauth",
     )
     monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
-    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    monkeypatch.setenv(
+        "UGOITE_DEV_AUTH_PROXY_TOKEN",
+        "proxy-secret-material-0123456789",
+    )
     clear_auth_manager_cache()
 
     client = TestClient(app, client=("198.51.100.20", 50000))
     response = client.get(
         "/auth/config",
-        headers={"x-ugoite-dev-auth-proxy-token": "proxy-secret"},
+        headers={
+            "x-ugoite-dev-auth-proxy-token": "proxy-secret-material-0123456789",
+        },
     )
 
     assert response.status_code == 200
@@ -789,7 +844,10 @@ def test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token(
         mode="mock-oauth",
     )
     monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
-    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    monkeypatch.setenv(
+        "UGOITE_DEV_AUTH_PROXY_TOKEN",
+        "proxy-secret-material-0123456789",
+    )
     clear_auth_manager_cache()
 
     client = TestClient(app, client=("198.51.100.20", 50000))
@@ -816,7 +874,10 @@ def test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token(
         mode="mock-oauth",
     )
     monkeypatch.setenv("UGOITE_ALLOW_REMOTE", "true")
-    monkeypatch.setenv("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret")
+    monkeypatch.setenv(
+        "UGOITE_DEV_AUTH_PROXY_TOKEN",
+        "proxy-secret-material-0123456789",
+    )
     clear_auth_manager_cache()
 
     client = TestClient(app, client=("198.51.100.20", 50000))

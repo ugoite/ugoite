@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 import ugoite_core
@@ -16,6 +17,7 @@ from app.api.endpoints.space import (
 from app.core.authorization import raise_authorization_http_error, request_identity
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class AuditQueryParams(BaseModel):
@@ -64,16 +66,18 @@ async def list_audit_events_endpoint(
         message = str(exc)
         lowered = message.lower()
         if "integrity" in lowered or "chain" in lowered:
+            logger.warning("Failed to list audit events for %s: %s", space_id, exc)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=message,
+                detail="Audit event chain integrity check failed",
             ) from exc
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail=f"Audit events not found for space: {space_id}",
             ) from exc
+        logger.warning("Failed to list audit events for %s: %s", space_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=message,
+            detail="Failed to list audit events",
         ) from exc

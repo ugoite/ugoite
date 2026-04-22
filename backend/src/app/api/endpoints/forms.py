@@ -102,7 +102,7 @@ async def list_forms_endpoint(space_id: str, request: Request) -> list[dict[str,
         logger.exception("Failed to list forms")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list forms",
         ) from e
     else:
         return visible_forms
@@ -132,7 +132,7 @@ async def list_form_types_endpoint(space_id: str, request: Request) -> list[str]
         logger.exception("Failed to list form types")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list form types",
         ) from e
 
 
@@ -167,7 +167,7 @@ async def get_form_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load form definition",
         ) from e
 
 
