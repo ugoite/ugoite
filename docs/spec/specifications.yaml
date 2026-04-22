@@ -53,6 +53,16 @@
   source_file: api/mcp.md
   linked_policies:
   - POL-011
+  - POL-015
+  linked_requirements:
+  - REQCAT-API
+- id: SPEC-API-SURFACES
+  source_file: api/operator-surfaces.md
+  linked_policies:
+  - POL-004
+  - POL-005
+  - POL-010
+  - POL-015
   linked_requirements:
   - REQCAT-API
 - id: SPEC-API-OPENAPI
