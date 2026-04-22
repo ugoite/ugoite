@@ -123,5 +123,5 @@ async def search_endpoint(
         logger.exception("Search failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to search entries",
         ) from e
