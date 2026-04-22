@@ -118,6 +118,8 @@ ugoite-cli/         # Command-line interface for power users
   └─ src/
 ugoite-core/        # Rust core logic + Python bindings
   └─ src/
+ugoite-minimum/     # Portable Rust core layer for embedding/WASM-focused use
+  └─ src/
 docs/
   ├─ guide/         # User-facing guides and operator workflows
   ├─ spec/          # Technical specifications (YAML + Markdown)
