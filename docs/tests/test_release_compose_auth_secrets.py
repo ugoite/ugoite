@@ -69,9 +69,9 @@ def test_docs_req_ops_017_release_compose_requires_install_specific_auth_values(
         'print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")',
         "requires operator-supplied auth values",
         "| `UGOITE_DEV_SIGNING_KID` | `release-compose-local-v1` |",
-        "| `UGOITE_DEV_SIGNING_SECRET` | required unique value |",
+        "| `UGOITE_DEV_SIGNING_SECRET` | required 32-byte random secret |",
         "| `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` |",
-        "| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required unique value |",
+        "| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required 32-byte random secret |",
     )
     details.extend(
         [
