@@ -1340,6 +1340,19 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
             "README Start Here section must surface source compose secret "
             "prerequisites before repo-root compose startup",
         ),
+        (
+            "[Contributor Workflow](CONTRIBUTING.md)" not in section
+            or "targeted commands" not in section
+            or "docs, frontend, backend, or core" not in section,
+            "README Start Here section must split source contributor guidance "
+            "into a dedicated targeted-workflow row",
+        ),
+        (
+            "You are contributing, debugging, or want the full repo surfaces "
+            "together" in section,
+            "README Start Here table must not collapse contributor and "
+            "source-evaluation guidance into one row",
+        ),
     )
     details = [message for condition, message in detail_candidates if condition]
     if details:

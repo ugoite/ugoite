@@ -33,12 +33,15 @@ GitHub without comparing two different onboarding maps.
   fastest browser-based evaluation path, while still running the browser stack
   with an explicit login step.
 - [Run from source](docs/guide/local-dev-auth-login.md) when you want the current
-  backend, frontend, and docsite together; choose the repo Devcontainer /
-  GitHub Codespaces path when you want the preloaded contributor environment
-  (`mise`, `gh`, `oathtool`, `mise install`, `mise run setup`, and
-  `npx playwright install --with-deps chromium`), or run `mise run setup` on
-  your host when you already manage the toolchain yourself; both paths continue
-  with `mise run dev`, followed by the explicit `/login` flow.
+  backend, frontend, and docsite together for full-stack evaluation or
+  debugging; choose the repo Devcontainer / GitHub Codespaces path when you
+  want the preloaded contributor environment (`mise`, `gh`, `oathtool`,
+  `mise install`, `mise run setup`, and `npx playwright install --with-deps
+  chromium`), or run `mise run setup` on your host when you already manage the
+  toolchain yourself; both paths continue with `mise run dev`, followed by the
+  explicit `/login` flow. If you are contributing to one surface at a time, use
+  the [Contributor Workflow](CONTRIBUTING.md) after setup for targeted commands
+  and validation.
   If you intentionally use the repo-root `docker compose up --build` path
   instead, export `UGOITE_DEV_SIGNING_SECRET` and
   `UGOITE_DEV_AUTH_PROXY_TOKEN` first with at least 32 characters of random
@@ -87,7 +90,8 @@ and why source and published defaults differ.
 | [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
 | [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
 | [Work on `ugoite-minimum`](ugoite-minimum/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-minimum` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
-| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You are contributing, debugging, or want the full repo surfaces together | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full contributor surface, but also the heaviest path |
+| [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You want the current backend, frontend, and docsite together for source-based evaluation or full-stack debugging | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full repo surface, but also the heaviest path |
+| [Contributor Workflow](CONTRIBUTING.md) | You are changing docs, frontend, backend, or core and want the canonical setup plus targeted commands | Medium: source checkout + `mise run setup`; add only the surface-specific commands or services you need | Flexible contributor path, but cross-surface or auth changes may still need the full `mise run dev` stack |
 
 Today's shipped AI surface is resource-first MCP access. Read-oriented MCP
 resources are available now; broader tool-driven AI workflows remain part of
