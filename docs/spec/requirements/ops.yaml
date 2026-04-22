@@ -659,6 +659,9 @@ requirements:
       - test_validate_totp_code_req_ops_015_rejects_replayed_code
       - test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay
     vitest:
+    - file: docsite/src/lib/app-cli-backend-mode.test.ts
+      tests:
+      - 'REQ-OPS-015: CLI landing page shows backend-mode routing and auth before remote space commands'
     - file: frontend/src/routes/login.test.tsx
       tests:
       - 'REQ-OPS-015: signs in with passkey-totp without exposing a readable auth cookie'
@@ -1676,3 +1679,36 @@ requirements:
     - file: docs/tests/test_browser_walkthrough_search_surface.py
       tests:
       - test_docs_req_ops_038_browser_walkthrough_explains_search_surface
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies:
+  - POL-003
+  - POL-005
+  - POL-008
+  - POL-009
+  - POL-010
+  - POL-013
+  linked_specifications:
+  - SPEC-TESTING-CICD
+  - SPEC-TESTING-STRATEGY
+  - SPEC-ARCH-STACK
+  - SPEC-PRODUCT-METRICS
+  id: REQ-OPS-041
+  title: Browser Walkthrough Maps Main Surfaces
+  description: 'The browser walkthrough guide MUST explain the main post-entry browser
+
+    surfaces so newcomers can tell what Dashboard, Entries, Forms, and Search
+
+    are for.
+
+    '
+  related_spec:
+  - ../guide/browser-first-entry.md
+  priority: medium
+  status: implemented
+  tests:
+    pytest:
+    - file: docs/tests/test_browser_walkthrough_surface_glossary.py
+      tests:
+      - test_docs_req_ops_041_browser_walkthrough_maps_core_surfaces
