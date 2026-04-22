@@ -5,6 +5,8 @@ import { withBasePath } from "../../../lib/base-path";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const localDevAuthGuideHref = withBasePath("/docs/guide/local-dev-auth-login");
+
 const toc = [
   { id: "overview", title: "Overview" },
   { id: "setup", title: "Quick Start" },
@@ -57,6 +59,17 @@ const commandOutputs = await fs
           <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
         </div>
       </div>
+      <div>
+        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. Switch to backend mode</p>
+        <TerminalCommand command="cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://127.0.0.1:8000" />
+        <TerminalCommand command="cargo run -q -p ugoite-cli -- auth login --mock-oauth" />
+        <TerminalCommand command="cargo run -q -p ugoite-cli -- config current && cargo run -q -p ugoite-cli -- space list" />
+        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+          Backend mode drops the local-root argument because the CLI now talks to the server. Use <code>config current</code> before copy-pasting commands when you switch between modes, and follow{" "}
+          <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a> for the full browser + CLI auth walkthrough.
+        </p>
+      </div>
+    </div>
   </section>
 
   {commandOutputs.length > 0 && (
