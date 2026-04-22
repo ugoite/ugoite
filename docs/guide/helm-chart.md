@@ -96,9 +96,9 @@ Click **Continue with Local Demo Login** to reach `/spaces`.
 | `backend.podSecurityContext.fsGroup` | `10001` | Keeps the mounted `/data` volume writable for the backend's non-root image user. |
 | `backend.securityContext` | non-root + `allowPrivilegeEscalation: false` + `drop: ["ALL"]` + `RuntimeDefault` seccomp | Baseline hardening defaults for the backend container. |
 | `frontend.securityContext` | non-root + `allowPrivilegeEscalation: false` + `drop: ["ALL"]` + `RuntimeDefault` seccomp | Baseline hardening defaults for the frontend container. |
-| `auth.proxyToken` | empty (required unique value) | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
+| `auth.proxyToken` | empty (required 32-byte random secret) | Shared token for frontend proxy and backend dev auth wiring (`UGOITE_DEV_AUTH_PROXY_TOKEN`). |
 | `auth.signingKid` | `release-compose-local-v1` | Signing key id for the default bearer-token setup. |
-| `auth.signingSecret` | empty (required unique value) | Signing secret used to mint the dev bearer-token secret for this install. |
+| `auth.signingSecret` | empty (required 32-byte random secret) | Signing secret used to mint the dev bearer-token secret for this install. |
 | `auth.bearerSecrets` | computed from signing values | Override `UGOITE_AUTH_BEARER_SECRETS` directly when needed. |
 | `auth.bearerActiveKids` | `["release-compose-local-v1"]` | Active bearer-token key ids exposed to the backend. |
 | `frontend.backendUrl` | computed | Override the frontend `BACKEND_URL` instead of using the generated backend Service URL. |
