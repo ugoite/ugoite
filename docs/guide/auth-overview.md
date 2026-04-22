@@ -3,12 +3,12 @@
 Use this guide when you want the human-facing explanation of how authentication
 works across the browser, CLI, and backend today.
 
-This guide explains the current auth model. If you want the practical
-step-by-step setup flow, continue to
-[Local Development Authentication and Login](local-dev-auth-login.md) next,
-whether you have already started the stack or are still deciding how to do it.
-That guide is the hands-on workflow for `mise run dev`, `/login`, and
-`ugoite auth login`.
+This guide explains the current auth model. If you need the exact
+`passkey-totp` vs `mock-oauth` comparison or why source and published defaults
+differ, use [Local Development Authentication and Login](local-dev-auth-login.md)
+as the canonical auth-mode reference. If you are actively running the local
+development stack, read that guide next: it is the step-by-step workflow for
+`mise run dev`, `/login`, and `ugoite auth login`.
 
 If you need the machine-readable snapshot of the current auth contract, run:
 
@@ -54,7 +54,7 @@ For CLI troubleshooting, pair `ugoite config current` with `ugoite auth profile`
 the first command tells you which topology is active, and the second tells you
 whether the current mode needs backend credentials or already has one available.
 
-## Local development modes at a glance
+## Local development keeps auth explicit
 
 When you run `mise run dev`, the backend exposes one of two explicit login
 experiences:
@@ -80,6 +80,9 @@ In `passkey-totp`, the form asks for the same username and current 2FA code that
 match your local development setup.
 
 In `mock-oauth`, the page offers an explicit local demo login action instead.
+The login page follows whichever explicit local auth mode the backend
+advertises. Use the canonical local auth guide above for the exact
+`passkey-totp` and `mock-oauth` steps.
 
 After login, the frontend proxy stores the bearer token in an HttpOnly browser
 session cookie for proxied `/api/*` requests. Frontend JavaScript does not read

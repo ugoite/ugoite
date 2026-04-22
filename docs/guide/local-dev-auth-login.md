@@ -1,9 +1,11 @@
 # Local Development Authentication and Login
 
-This is the canonical guide for the auth-aware `mise run dev` workflow.
+This is the canonical guide for the auth-aware `mise run dev` workflow and the
+canonical reference for the `passkey-totp` vs `mock-oauth` split used across
+the README, auth overview, and published browser quick start.
 `mise run dev` always routes auth setup through `scripts/dev-auth-env.sh`, and
-README/docsite/developer-facing UI should link here instead of repeating
-mode-specific auth steps inline.
+developer-facing docs should link here instead of repeating mode-specific auth
+explanations inline.
 
 The helper now prepares a **login context**, not an already-authenticated
 session. The browser and CLI must sign in explicitly after startup, so local
@@ -24,7 +26,7 @@ the explicit passkey + 2FA login path that `mise run dev` wires through
 `scripts/dev-auth-env.sh`. If you want source development to mirror that demo
 flow instead, set `UGOITE_DEV_AUTH_MODE=mock-oauth` before startup.
 
-## 1) Auth modes at a glance
+## 1) Canonical auth mode reference
 
 | Mode | How to enable | What it does |
 |---|---|---|
