@@ -46,11 +46,11 @@ async def list_service_accounts_endpoint(
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail="Service account not found",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid service account request",
         ) from exc
 
 
@@ -89,11 +89,11 @@ async def create_service_account_endpoint(
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail="Service account not found",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid service account request",
         ) from exc
 
 
@@ -137,11 +137,11 @@ async def create_service_account_key_endpoint(
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail="Service account key not found",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid service account key request",
         ) from exc
 
 
@@ -188,11 +188,11 @@ async def rotate_service_account_key_endpoint(
         if "not found" in lowered:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=message,
+                detail="Service account key not found",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message,
+            detail="Invalid service account key request",
         ) from exc
 
 

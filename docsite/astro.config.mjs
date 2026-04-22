@@ -17,6 +17,9 @@ export default defineConfig({
 	base,
 	vite: {
 		plugins: [tailwindcss()],
+		resolve: {
+			tsconfigPaths: true,
+		},
 		server: {
 			fs: {
 				allow: ["../docs", "../shared", "."],

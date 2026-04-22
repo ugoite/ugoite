@@ -62,7 +62,7 @@ jobs:
 
       - name: Build backend image for CI
         if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build backend image for artifact export
         if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build frontend image for CI
         if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -116,7 +116,7 @@ jobs:
 
       - name: Build frontend image for artifact export
         if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload local Docker image archives
         if: ${{ inputs.export_artifacts }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ inputs.artifact_name != '' && inputs.artifact_name || 'docker-images-ci' }}
           path: exported-images
@@ -214,7 +214,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build backend image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -265,7 +265,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build frontend image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile

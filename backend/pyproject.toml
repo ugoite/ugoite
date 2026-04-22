@@ -6,11 +6,11 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.121.1",
+    "fastapi>=0.136.0",
     "ugoite-core",
     "mcp>=1.0.0",
     "pyjwt>=2.12.0",
-    "uvicorn>=0.38.0",
+    "uvicorn>=0.45.0",
 ]
 
 [dependency-groups]
@@ -18,12 +18,12 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.1",
     "pytest-cov>=7.0.0",
-    "ruff>=0.14.7",
-    "ty>=0.0.1a26",
+    "ruff>=0.15.11",
+    "ty>=0.0.32",
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4,<0.12.0"]
+requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv]

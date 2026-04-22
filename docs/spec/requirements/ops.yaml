@@ -1591,8 +1591,12 @@ requirements:
 
     that explains when to update `docs/spec/features`, `docs/spec/requirements`,
     user guides, and docsite surfaces; how REQ-* traceability maps tests back to
-    requirements; which local commands mirror CI; and which docsite navigation
-    files must change when routes or guide entry points move.
+    requirements; which local commands mirror CI; which docsite navigation files
+    must change when routes or guide entry points move; which supported
+    contributor setup paths exist, including when to choose the repo
+    devcontainer and which tools/bootstrap steps it provides; and when
+    contributors should choose the narrower `ugoite-minimum` path plus its
+    package-local quality gates instead of the full stack.
 
     '
   related_spec:
@@ -1605,6 +1609,7 @@ requirements:
     - file: docs/tests/test_contributing_guide.py
       tests:
       - test_docs_req_ops_036_contributor_workflow_guide_stays_traceable
+      - test_docs_req_ops_036_contributor_docs_surface_devcontainer_setup_path
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

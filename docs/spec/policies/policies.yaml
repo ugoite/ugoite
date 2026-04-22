@@ -80,6 +80,7 @@ policies:
   - SPEC-ARCH-INTERFACE
   - SPEC-API-REST
   - SPEC-API-OPENAPI
+  - SPEC-API-SURFACES
 - id: POL-005
   title: CLI as First-Class Operator Surface
   summary: Use CLI workflows to keep automation explicit, inspectable, and scriptable.
@@ -98,6 +99,7 @@ policies:
   - REQCAT-INTEGRITY
   linked_specifications:
   - SPEC-ARCH-STACK
+  - SPEC-API-SURFACES
   - SPEC-TESTING-STRATEGY
   - SPEC-TESTING-CICD
 - id: POL-006
@@ -195,6 +197,7 @@ policies:
   - SPEC-SECURITY-OVERVIEW
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-FUTURE
+  - SPEC-API-SURFACES
 - id: POL-011
   title: Security and Isolation by Default
   summary: Design for secure defaults, bounded execution, and explicit trust boundaries.
@@ -274,3 +277,20 @@ policies:
   - SPEC-ARCH-FUTURE
   - SPEC-API-OPENAPI
   - SPEC-DM-DIRECTORY
+- id: POL-015
+  title: MCP as Governed AI Operator Surface
+  summary: Position MCP as the AI-facing operator surface with explicit scope and trust boundaries.
+  description: |
+    This policy defines MCP as the operator surface for AI clients when they
+    need structured, protocol-level access to Ugoite resources inside explicit
+    trust boundaries. It keeps the current resource-first scope visible,
+    separates AI-facing access from CLI-driven human automation and REST
+    application integration, and requires expansion through documented,
+    reviewable contracts.
+  linked_philosophies:
+  - PHIL-004
+  linked_requirements:
+  - REQCAT-API
+  linked_specifications:
+  - SPEC-API-MCP
+  - SPEC-API-SURFACES
