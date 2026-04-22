@@ -393,9 +393,7 @@ docker compose -f docker-compose.release.yaml up -d
 ```
 
 Then open `http://localhost:3000/login`, click **Continue with Local Demo Login**,
-and you will land on `/spaces`. The shipped compose file bootstraps the `default`
-space at startup so the first browser and CLI session both have a ready
-workspace. The shipped manifest itself stays on the safer `passkey-totp`
+and you will land on `/spaces`. The shipped compose file bootstraps the `default` space at startup so the first browser and CLI session both have a ready workspace. The shipped manifest itself stays on the safer `passkey-totp`
 default; the example above explicitly opts into loopback-only `mock-oauth` with
 install-specific secrets. For more background on the explicit browser login
 flow, see [Local Development Authentication and Login](docs/guide/local-dev-auth-login.md).
