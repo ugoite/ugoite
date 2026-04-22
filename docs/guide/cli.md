@@ -171,10 +171,11 @@ a backend or API instead of the local filesystem.
 ## Command reference
 
 Beyond the `space`, `entry`, `auth`, and `config` commands the quick-start
-covers, the CLI ships five more top-level command families. Each one takes a
-`SPACE_ID_OR_PATH` positional - use `/root/spaces/<id>` in core mode and a bare
-`SPACE_ID` in backend/api mode. Run `ugoite config current` if you're not sure
-which mode you're in.
+covers, the CLI ships five more top-level command families. The space-targeting
+commands below use the same `SPACE_ID_OR_PATH` convention as the rest of the
+CLI: pass `/root/spaces/<id>` in core mode and a bare `SPACE_ID` in
+backend/api mode. `sql lint` is the one text-only helper here. Run `ugoite
+config current` if you're not sure which mode you're in.
 
 Every subcommand below has its own `--help` page (for example
 `ugoite form list --help`) with full flag details.
@@ -201,7 +202,7 @@ against it.
 
 ### `ugoite search` - keyword search over entries
 
-- `ugoite search keyword <SPACE> <QUERY>` - full-text keyword search
+- `ugoite search keyword <SPACE> <QUERY>` - plain-text keyword search over indexed entry content
 
 Example:
 
@@ -210,11 +211,11 @@ ugoite search keyword /root/spaces/demo "meeting notes"
 ```
 
 Reach for `query` (below) when you need structured filters; reach for `search
-keyword` when you want fuzzy hits across titles and bodies.
+keyword` when you want a plain-text match over entry content.
 
 ### `ugoite sql` - SQL tooling and saved queries
 
-- `ugoite sql lint` - lint a SQL statement (SQLite dialect, same surface as `query`)
+- `ugoite sql lint` - lint a SQL statement (currently a basic SELECT check)
 - `ugoite sql saved-list` - list saved queries for a space
 - `ugoite sql saved-get`, `saved-create`, `saved-update`, `saved-delete` - manage individual saved queries
 
