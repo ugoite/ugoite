@@ -4,7 +4,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256 as LegacySha256};
+use sha2_hmac::Sha256 as Pbkdf2Sha256;
 use subtle::ConstantTimeEq;
 
 use super::*;
@@ -17,7 +18,7 @@ const API_KEY_HASH_ITERATIONS: u32 = 240_000;
 fn hash_service_api_key_secret_impl(secret: &str, salt: &str) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     let mut derived = [0_u8; 32];
-    pbkdf2::pbkdf2_hmac::<Sha256>(
+    pbkdf2::pbkdf2_hmac::<Pbkdf2Sha256>(
         secret.as_bytes(),
         salt.as_bytes(),
         API_KEY_HASH_ITERATIONS,
@@ -34,7 +35,7 @@ fn verify_digest(stored: &str, computed: &str) -> bool {
 }
 
 fn hash_legacy_service_api_key_secret(secret: &str) -> String {
-    let mut hasher = Sha256::new();
+    let mut hasher = LegacySha256::new();
     hasher.update(secret.as_bytes());
     hex::encode(hasher.finalize())
 }
