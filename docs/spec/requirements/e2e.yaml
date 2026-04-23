@@ -297,6 +297,9 @@ requirements:
     - file: docs/tests/test_browser_walkthrough_search_surface.py
       tests:
       - test_docs_req_e2e_008_browser_walkthrough_explains_search_surface
+    - file: docs/tests/test_browser_walkthrough_post_entry_recap.py
+      tests:
+      - test_docs_req_e2e_008_browser_walkthrough_recap_after_first_entry
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
