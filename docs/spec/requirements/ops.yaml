@@ -1676,7 +1676,6 @@ requirements:
   status: implemented
   tests:
     pytest:
-<<<<<<< HEAD
     - file: docs/tests/test_browser_walkthrough_field_types.py
       tests:
       - test_docs_req_ops_040_browser_walkthrough_explains_example_field_types
@@ -1713,8 +1712,3 @@ requirements:
     - file: docs/tests/test_browser_walkthrough_surface_glossary.py
       tests:
       - test_docs_req_ops_041_browser_walkthrough_maps_core_surfaces
-=======
-    - file: docs/tests/test_browser_walkthrough_api_next_steps.py
-      tests:
-      - test_docs_req_ops_042_browser_walkthrough_points_to_api_and_automation
->>>>>>> 30b7f96f (test(docs): trace browser walkthrough API next steps)
