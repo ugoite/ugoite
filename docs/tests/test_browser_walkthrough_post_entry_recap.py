@@ -1,4 +1,4 @@
-"""REQ-OPS-039: Browser walkthrough recaps a successful first entry."""
+"""REQ-E2E-008: Browser walkthrough recaps a successful first entry."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BROWSER_FIRST_ENTRY_GUIDE_PATH = REPO_ROOT / "docs" / "guide" / "browser-first-entry.md"
 
 
-def test_docs_req_ops_039_browser_walkthrough_recap_after_first_entry() -> None:
-    """REQ-OPS-039: Browser walkthrough must add a first-entry recap."""
+def test_docs_req_e2e_008_browser_walkthrough_recap_after_first_entry() -> None:
+    """REQ-E2E-008: Browser walkthrough must add a first-entry recap."""
     guide_text = " ".join(
         BROWSER_FIRST_ENTRY_GUIDE_PATH.read_text(encoding="utf-8").split(),
     )
