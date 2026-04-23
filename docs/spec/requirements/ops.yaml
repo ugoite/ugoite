@@ -1661,39 +1661,6 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-038
-  title: Browser Walkthrough Explains Search Surface
-  description: 'The browser walkthrough guide MUST explain the Search surface as a
-
-    derived view of space content and MUST make the discoverability value of that
-
-    surface clear to newcomers.
-
-    '
-  related_spec:
-  - ../guide/browser-first-entry.md
-  priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_browser_walkthrough_search_surface.py
-      tests:
-      - test_docs_req_ops_038_browser_walkthrough_explains_search_surface
-- set_id: REQCAT-OPS
-  source_file: requirements/ops.yaml
-  scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
   id: REQ-OPS-041
   title: Browser Walkthrough Maps Main Surfaces
   description: 'The browser walkthrough guide MUST explain the main post-entry browser
