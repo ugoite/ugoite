@@ -294,6 +294,9 @@ requirements:
       - test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs
       - test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs
       - test_docs_req_e2e_008_concepts_primer_order_stays_consistent
+    - file: docs/tests/test_browser_walkthrough_search_surface.py
+      tests:
+      - test_docs_req_e2e_008_browser_walkthrough_explains_search_surface
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
