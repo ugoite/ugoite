@@ -169,6 +169,86 @@ entries, forms, and search, or jump to
 [Endpoint routing mode](#endpoint-routing-mode) when you want the CLI to talk to
 a backend or API instead of the local filesystem.
 
+## Command reference
+
+Beyond the `space`, `entry`, `auth`, and `config` commands the quick-start
+covers, the CLI ships five more top-level command families. Each one takes a
+`SPACE_ID_OR_PATH` positional - use `/root/spaces/<id>` in core mode and a bare
+`SPACE_ID` in backend/api mode. Run `ugoite config current` if you're not sure
+which mode you're in.
+
+Every subcommand below has its own `--help` page (for example
+`ugoite form list --help`) with full flag details.
+
+### `ugoite form` - structured content types
+
+Forms define the columns an entry can have (title, body, tags, custom fields).
+
+- `ugoite form list <SPACE>` - list forms defined in the space
+- `ugoite form get <SPACE> <FORM>` - show one form's schema
+- `ugoite form update <SPACE> <FORM_FILE>` - upsert from a JSON file
+- `ugoite form list-types` - list built-in column types you can compose
+
+Example:
+
+```bash
+ugoite form list /root/spaces/demo
+```
+
+Use `form list-types` first to discover which column types you can put in your
+schema, then `form update` to define a form, then pass `form: <FormName>` in
+the entry frontmatter when you `entry create` so the new entry validates
+against it.
+
+### `ugoite search` - keyword search over entries
+
+- `ugoite search keyword <SPACE> <QUERY>` - full-text keyword search
+
+Example:
+
+```bash
+ugoite search keyword /root/spaces/demo "meeting notes"
+```
+
+Reach for `query` (below) when you need structured filters; reach for `search
+keyword` when you want fuzzy hits across titles and bodies.
+
+### `ugoite sql` - SQL tooling and saved queries
+
+- `ugoite sql lint` - lint a SQL statement (SQLite dialect, same surface as `query`)
+- `ugoite sql saved-list` - list saved queries for a space
+- `ugoite sql saved-get`, `saved-create`, `saved-update`, `saved-delete` - manage individual saved queries
+
+Use this family to keep your SQL snippets alongside the space instead of a
+shell history. Run `ugoite sql <subcommand> --help` for arguments.
+
+### `ugoite index` - run and inspect the indexer
+
+- `ugoite index run <SPACE>` - rebuild the search/query index from the
+  current on-disk state of the space
+- `ugoite index stats <SPACE>` - aggregated index stats (entry counts,
+  form breakdown, last rebuild)
+
+Run `index run` whenever you need to rebuild after an out-of-band edit (for
+example a bulk change with another tool). `search keyword` and `query` both
+read the indexer's output.
+
+### `ugoite query` - run SQL over the index
+
+```bash
+ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries LIMIT 10"
+```
+
+The queryable table is `entries`. Standard columns: `id`, `title`, `form`,
+`updated_at`, `space_id`, `word_count`, `tags`. Form fields can also be
+referenced directly by field name or through `properties.<field>`.
+
+Filter by form type:
+
+```bash
+ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries WHERE form='note'"
+```
+
 ## Contributor-only shortcut: seed local sample data
 
 If you installed a released CLI and only want the basic local workflow, you can
