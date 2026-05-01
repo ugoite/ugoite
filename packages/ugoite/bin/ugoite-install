@@ -42,7 +42,7 @@ Bootstrap the released Ugoite Rust CLI from the public installer package.
 
 Usage:
   ugoite-install
-  UGOITE_VERSION=0.1.0 ugoite-install
+  UGOITE_VERSION=0.0.1-beta.13 ugoite-install
 
 Environment:
   UGOITE_VERSION                  Exact CLI release to install. Defaults to the package version.

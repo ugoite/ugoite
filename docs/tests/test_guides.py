@@ -357,17 +357,17 @@ REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
     "shasum -a 256",
 }
 REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
-    "ugoite-v0.1.0-x86_64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-aarch64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-x86_64-apple-darwin.install.sh",
-    "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
+    "ugoite-v0.0.1-beta.13-x86_64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.0.1-beta.13-aarch64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.0.1-beta.13-x86_64-apple-darwin.install.sh",
+    "ugoite-v0.0.1-beta.13-aarch64-apple-darwin.install.sh",
 }
 REQUIRED_CLI_README_FRAGMENTS = {
     "npm install -g ugoite",
     "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
-    "UGOITE_VERSION=0.1.0",
+    "UGOITE_VERSION=0.0.1-beta.13",
     *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
