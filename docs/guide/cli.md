@@ -171,11 +171,11 @@ a backend or API instead of the local filesystem.
 ## Command reference
 
 Beyond the `space`, `entry`, `auth`, and `config` commands the quick-start
-covers, the CLI ships five more top-level command families. The space-targeting
-commands below use the same `SPACE_ID_OR_PATH` convention as the rest of the
-CLI: pass `/root/spaces/<id>` in core mode and a bare `SPACE_ID` in
-backend/api mode. `sql lint` is the one text-only helper here. Run `ugoite
-config current` if you're not sure which mode you're in.
+covers, the CLI ships five more top-level command families. Most of them take a
+`SPACE_ID_OR_PATH` positional - use `/root/spaces/<id>` in core mode and a bare
+`SPACE_ID` in backend/api mode. Run `ugoite config current` if you're not sure
+which mode you're in; `form list-types` and `sql lint` do not take a space
+argument.
 
 Every subcommand below has its own `--help` page (for example
 `ugoite form list --help`) with full flag details.
@@ -200,9 +200,9 @@ schema, then `form update` to define a form, then pass `form: <FormName>` in
 the entry frontmatter when you `entry create` so the new entry validates
 against it.
 
-### `ugoite search` - keyword search over entries
+### `ugoite search` - substring search over entries
 
-- `ugoite search keyword <SPACE> <QUERY>` - plain-text keyword search over indexed entry content
+- `ugoite search keyword <SPACE> <QUERY>` - substring search over entry rows
 
 Example:
 
@@ -210,12 +210,13 @@ Example:
 ugoite search keyword /root/spaces/demo "meeting notes"
 ```
 
-Reach for `query` (below) when you need structured filters; reach for `search
-keyword` when you want a plain-text match over entry content.
+Reach for `query` (below) when you need structured filters or index-backed
+queries; reach for `search keyword` when you want a direct substring scan across
+titles and bodies.
 
 ### `ugoite sql` - SQL tooling and saved queries
 
-- `ugoite sql lint` - lint a SQL statement (currently a basic SELECT check)
+- `ugoite sql lint` - lightweight SELECT-only lint for a SQL statement
 - `ugoite sql saved-list` - list saved queries for a space
 - `ugoite sql saved-get`, `saved-create`, `saved-update`, `saved-delete` - manage individual saved queries
 
@@ -230,8 +231,8 @@ shell history. Run `ugoite sql <subcommand> --help` for arguments.
   form breakdown, last rebuild)
 
 Run `index run` whenever you need to rebuild after an out-of-band edit (for
-example a bulk change with another tool). `search keyword` and `query` both
-read the indexer's output.
+example a bulk change with another tool). `query` reads the indexer's output;
+`search keyword` scans entry rows directly.
 
 ### `ugoite query` - run SQL over the index
 
