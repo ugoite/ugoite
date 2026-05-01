@@ -1,8 +1,20 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { render, screen, waitFor } from "@solidjs/testing-library";
 import About from "./about";
 import { setLocale } from "~/lib/i18n";
+
+type AuthApiMock = {
+	getSession: ReturnType<typeof vi.fn>;
+};
+
+const getSessionMock = () => {
+	const mock = (globalThis as typeof globalThis & { authApiMock?: AuthApiMock }).authApiMock;
+	if (!mock) {
+		throw new Error("authApiMock is not initialized");
+	}
+	return mock.getSession;
+};
 
 vi.mock("@solidjs/router", () => ({
 	A: (props: { href: string; class?: string; children: unknown }) => (
@@ -12,20 +24,38 @@ vi.mock("@solidjs/router", () => ({
 	),
 }));
 
+vi.mock("~/lib/auth-api", () => ({
+	authApi: (() => {
+		const authApiMock: AuthApiMock = {
+			getSession: vi.fn(),
+		};
+		(globalThis as typeof globalThis & { authApiMock?: AuthApiMock }).authApiMock = authApiMock;
+		return authApiMock;
+	})(),
+}));
+
 describe("/about", () => {
 	beforeEach(() => {
 		localStorage.clear();
 		setLocale("en");
+		getSessionMock().mockReset();
 	});
 
-	it("REQ-FE-044: localizes about route copy in Japanese", () => {
+	it("REQ-FE-044: localizes about route copy in Japanese", async () => {
+		getSessionMock().mockResolvedValue({ authenticated: false });
+
 		render(() => <About />);
 
 		expect(screen.getByText("FastAPI (Python 3.13+)")).toBeInTheDocument();
 		setLocale("ja");
 
 		expect(screen.getByRole("heading", { name: "Ugoite について" })).toBeInTheDocument();
-		expect(screen.getByRole("link", { name: "スペースを開く" })).toHaveAttribute("href", "/spaces");
+		await waitFor(() => {
+			expect(screen.getByRole("link", { name: "スペースを開く" })).toHaveAttribute(
+				"href",
+				"/login?next=%2Fspaces",
+			);
+		});
 		expect(screen.getByRole("link", { name: "ホームに戻る" })).toHaveAttribute("href", "/");
 		expect(screen.getByText(/柔軟な構造と高速な検索/u)).toBeInTheDocument();
 		expect(screen.getByText("ローカルファーストの所有権")).toBeInTheDocument();
@@ -33,5 +63,15 @@ describe("/about", () => {
 		expect(screen.getByText("技術スタック")).toBeInTheDocument();
 		expect(screen.getByText("SolidStart + Tailwind CSS")).toBeInTheDocument();
 		expect(screen.getByText("FastAPI (Python 3.13+)")).toBeInTheDocument();
+	});
+
+	it("REQ-OPS-015: authenticated about page keeps Open Spaces on /spaces", async () => {
+		getSessionMock().mockResolvedValue({ authenticated: true });
+
+		render(() => <About />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("link", { name: "Open Spaces" })).toHaveAttribute("href", "/spaces");
+		});
 	});
 });
