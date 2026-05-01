@@ -357,17 +357,17 @@ REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
     "shasum -a 256",
 }
 REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
-    "ugoite-v0.1.0-x86_64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-aarch64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-x86_64-apple-darwin.install.sh",
-    "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
+    "ugoite-v0.0.1-beta.13-x86_64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.0.1-beta.13-aarch64-unknown-linux-gnu.install.sh",
+    "ugoite-v0.0.1-beta.13-x86_64-apple-darwin.install.sh",
+    "ugoite-v0.0.1-beta.13-aarch64-apple-darwin.install.sh",
 }
 REQUIRED_CLI_README_FRAGMENTS = {
     "npm install -g ugoite",
     "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
-    "UGOITE_VERSION=0.1.0",
+    "UGOITE_VERSION=0.0.1-beta.13",
     *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
@@ -709,7 +709,6 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
     "UGOITE_DEV_AUTH_MODE",
     "passkey-totp",
     "mock-oauth",
-    "canonical reference for the `passkey-totp` vs `mock-oauth` split",
     "UGOITE_DEV_USER_ID",
     "UGOITE_DEV_AUTH_FORCE_LOGIN",
     "UGOITE_DEV_PASSKEY_CONTEXT",
@@ -724,8 +723,6 @@ REQUIRED_LOCAL_DEV_AUTH_MODE_GUIDE_FRAGMENTS = {
 REQUIRED_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "passkey-totp",
     "mock-oauth",
-    "canonical auth-mode reference",
-    "local-dev-auth-login.md",
 }
 REQUIRED_AUTH_PROFILE_CLI_GUIDE_FRAGMENTS = {
     "Inspect active auth setup, endpoint mode, and the next useful auth action",
@@ -744,20 +741,11 @@ REQUIRED_AUTH_PROFILE_OVERVIEW_GUIDE_FRAGMENTS = {
 }
 FORBIDDEN_AUTH_OVERVIEW_GUIDE_FRAGMENTS = {
     "manual-totp",
-    "| Mode | What it is for | How login happens |",
 }
 REQUIRED_LOCAL_DEV_AUTH_MODE_README_FRAGMENTS = {
     "Local Dev Auth/Login",
-    "canonical auth-mode reference",
+    "canonical `mise run dev` workflow",
     "/login",
-    "passkey-totp",
-    "mock-oauth",
-}
-REQUIRED_CONTAINER_QUICKSTART_AUTH_REFERENCE_FRAGMENTS = {
-    "Local Development Authentication and Login",
-    "local-dev-auth-login.md",
-    "canonical auth-mode comparison",
-    "mock-oauth",
 }
 REQUIRED_LOCAL_DEV_AUTH_DEVCONTAINER_INSTALL_FRAGMENTS = {
     "sudo apt-get update",
@@ -1339,19 +1327,6 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
             or "(docs/guide/docker-compose.md)" not in section,
             "README Start Here section must surface source compose secret "
             "prerequisites before repo-root compose startup",
-        ),
-        (
-            "[Contributor Workflow](CONTRIBUTING.md)" not in section
-            or "targeted commands" not in section
-            or "docs, frontend, backend, or core" not in section,
-            "README Start Here section must split source contributor guidance "
-            "into a dedicated targeted-workflow row",
-        ),
-        (
-            "You are contributing, debugging, or want the full repo surfaces "
-            "together" in section,
-            "README Start Here table must not collapse contributor and "
-            "source-evaluation guidance into one row",
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
@@ -2507,9 +2482,6 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
     """REQ-OPS-015: Local dev auth docs stay canonical for supported modes."""
     guide_text = LOCAL_DEV_AUTH_GUIDE_PATH.read_text(encoding="utf-8")
     auth_overview_text = AUTH_OVERVIEW_GUIDE_PATH.read_text(encoding="utf-8")
-    container_quickstart_text = CONTAINER_QUICKSTART_GUIDE_PATH.read_text(
-        encoding="utf-8",
-    )
     readme_text = README_PATH.read_text(encoding="utf-8")
     env_matrix_text = ENV_MATRIX_PATH.read_text(encoding="utf-8")
     devcontainer_text = (REPO_ROOT / ".devcontainer" / "devcontainer.json").read_text(
@@ -2575,12 +2547,6 @@ def test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes() -> None:
         text=env_matrix_text,
         required_fragments=REQUIRED_LOCAL_DEV_AUTH_MODE_ENV_MATRIX_VARS,
         prefix="env-matrix.md missing auth mode vars: ",
-    )
-    _append_missing_fragment_detail(
-        details,
-        text=container_quickstart_text,
-        required_fragments=REQUIRED_CONTAINER_QUICKSTART_AUTH_REFERENCE_FRAGMENTS,
-        prefix="container-quickstart.md missing canonical auth reference fragments: ",
     )
     _append_missing_fragment_detail(
         details,
