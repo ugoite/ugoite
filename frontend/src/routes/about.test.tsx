@@ -41,7 +41,7 @@ describe("/about", () => {
 		getSessionMock().mockReset();
 	});
 
-	it("REQ-FE-044: localizes about route copy in Japanese", () => {
+	it("REQ-FE-044: localizes about route copy in Japanese", async () => {
 		getSessionMock().mockResolvedValue({ authenticated: false });
 
 		render(() => <About />);
@@ -50,10 +50,12 @@ describe("/about", () => {
 		setLocale("ja");
 
 		expect(screen.getByRole("heading", { name: "Ugoite について" })).toBeInTheDocument();
-		expect(screen.getByRole("link", { name: "スペースを開く" })).toHaveAttribute(
-			"href",
-			"/login?next=%2Fspaces",
-		);
+		await waitFor(() => {
+			expect(screen.getByRole("link", { name: "スペースを開く" })).toHaveAttribute(
+				"href",
+				"/login?next=%2Fspaces",
+			);
+		});
 		expect(screen.getByRole("link", { name: "ホームに戻る" })).toHaveAttribute("href", "/");
 		expect(screen.getByText(/柔軟な構造と高速な検索/u)).toBeInTheDocument();
 		expect(screen.getByText("ローカルファーストの所有権")).toBeInTheDocument();
