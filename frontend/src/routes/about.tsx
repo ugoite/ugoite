@@ -1,8 +1,16 @@
 import { A } from "@solidjs/router";
-import { createMemo } from "solid-js";
+import { createMemo, createResource } from "solid-js";
+import { authApi } from "~/lib/auth-api";
 import { t } from "~/lib/i18n";
 
 export default function About() {
+	const [authSession] = createResource(async () => {
+		try {
+			return await authApi.getSession();
+		} catch {
+			return { authenticated: false };
+		}
+	});
 	const copy = createMemo(() => ({
 		title: t("aboutPage.title"),
 		subtitle: t("aboutPage.subtitle"),
@@ -36,6 +44,9 @@ export default function About() {
 		stackAiLabel: t("aboutPage.stack.ai.label"),
 		stackAiValue: t("aboutPage.stack.ai.value"),
 	}));
+	const openSpacesHref = createMemo(() =>
+		authSession()?.authenticated === false ? "/login?next=%2Fspaces" : "/spaces",
+	);
 
 	return (
 		<main class="ui-page mx-auto">
@@ -45,7 +56,7 @@ export default function About() {
 				</h1>
 				<p class="text-base sm:text-xl ui-muted max-w-3xl mx-auto">{copy().subtitle}</p>
 				<div class="mt-8 flex justify-center gap-3 flex-wrap">
-					<A href="/spaces" class="ui-button ui-button-primary">
+					<A href={openSpacesHref()} class="ui-button ui-button-primary">
 						{copy().openSpaces}
 					</A>
 					<A href="/" class="ui-button ui-button-secondary">
