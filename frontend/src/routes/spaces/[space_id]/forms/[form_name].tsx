@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "@solidjs/router";
+import { A, useParams, useNavigate } from "@solidjs/router";
 import { Show, createEffect, createMemo, createResource, createSignal } from "solid-js";
 import { FormTable } from "~/components/FormTable";
 import { EditFormDialog } from "~/components/create-dialogs";
@@ -71,8 +71,13 @@ export default function SpaceFormDetailRoute() {
 				>
 					{(s) => (
 						<div class="h-full flex flex-col">
-							<div class="ui-card ui-card-header flex flex-wrap items-center justify-between gap-2 p-4">
-								<h1 class="text-xl font-bold">{s.name}</h1>
+							<div class="ui-card ui-card-header flex flex-wrap items-start justify-between gap-3 p-4">
+								<div class="space-y-1">
+									<A href={`/spaces/${ctx.spaceId()}/forms`} class="text-sm ui-link">
+										Back to Forms
+									</A>
+									<h1 class="text-xl font-bold">{s.name}</h1>
+								</div>
 								<button
 									type="button"
 									onClick={() => setShowEditDialog(true)}

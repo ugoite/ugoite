@@ -97,4 +97,38 @@ describe("/spaces/:space_id/forms/:form_name", () => {
 
 		expect(navigateMock).toHaveBeenCalledWith("/spaces/default/entries/entry%2Fwith%20space");
 	});
+
+	it("REQ-FE-033: form detail route keeps a visible route back to Forms", async () => {
+		render(() => {
+			const entryStore = createEntryStore(() => "default");
+			const spaceStore = createSpaceStore();
+			const [forms] = createSignal<Form[]>([
+				{
+					name: "Project",
+					fields: { status: { type: "text" } },
+				},
+			]);
+			const [loadingForms] = createSignal(false);
+			const [columnTypes] = createSignal<string[]>([]);
+
+			return (
+				<EntriesRouteContext.Provider
+					value={{
+						spaceStore,
+						spaceId: () => "default",
+						entryStore,
+						forms: createMemo(() => forms()),
+						loadingForms,
+						columnTypes,
+						refetchForms: () => undefined,
+					}}
+				>
+					<SpaceFormDetailRoute />
+				</EntriesRouteContext.Provider>
+			);
+		});
+
+		const backLink = await screen.findByRole("link", { name: "Back to Forms" });
+		expect(backLink).toHaveAttribute("href", "/spaces/default/forms");
+	});
 });
