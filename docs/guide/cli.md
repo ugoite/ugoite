@@ -210,9 +210,9 @@ Example:
 ugoite search keyword /root/spaces/demo "meeting notes"
 ```
 
-Reach for `query` (below) when you need structured filters or index-backed
-queries; reach for `search keyword` when you want a direct substring scan across
-titles and bodies.
+Reach for `query` (below) when you need structured filters over the current
+entries; reach for `search keyword` when you want a direct substring scan
+across entry rows.
 
 ### `ugoite sql` - SQL tooling and saved queries
 
@@ -225,29 +225,30 @@ shell history. Run `ugoite sql <subcommand> --help` for arguments.
 
 ### `ugoite index` - run and inspect the indexer
 
-- `ugoite index run <SPACE>` - rebuild the search/query index from the
+- `ugoite index run <SPACE>` - refresh the derived search data from the
   current on-disk state of the space
 - `ugoite index stats <SPACE>` - aggregated index stats (entry counts,
   form breakdown, last rebuild)
 
 Run `index run` whenever you need to rebuild after an out-of-band edit (for
-example a bulk change with another tool). `query` reads the indexer's output;
-`search keyword` scans entry rows directly.
+example a bulk change with another tool). `query` reads the current entries
+directly; `search keyword` scans entry rows directly.
 
-### `ugoite query` - run SQL over the index
+### `ugoite query` - run SQL over entries
 
 ```bash
-ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries LIMIT 10"
+ugoite query /root/spaces/demo --sql "SELECT * FROM entries LIMIT 10"
 ```
 
-The queryable table is `entries`. Standard columns: `id`, `title`, `form`,
-`updated_at`, `space_id`, `word_count`, `tags`. Form fields can also be
-referenced directly by field name or through `properties.<field>`.
+Only `SELECT *` queries are supported today. The queryable table is `entries`.
+Standard columns: `id`, `title`, `form`, `updated_at`, `space_id`,
+`word_count`, `tags`. Form fields can also be referenced directly by field
+name or through `properties.<field>`.
 
 Filter by form type:
 
 ```bash
-ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries WHERE form='note'"
+ugoite query /root/spaces/demo --sql "SELECT * FROM entries WHERE form='note'"
 ```
 
 ## Contributor-only shortcut: seed local sample data
