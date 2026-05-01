@@ -45,7 +45,7 @@ export default function About() {
 		stackAiValue: t("aboutPage.stack.ai.value"),
 	}));
 	const openSpacesHref = createMemo(() =>
-		authSession()?.authenticated ? "/spaces" : "/login?next=%2Fspaces",
+		authSession()?.authenticated === false ? "/login?next=%2Fspaces" : "/spaces",
 	);
 
 	return (
