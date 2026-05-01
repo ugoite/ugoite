@@ -1,5 +1,6 @@
 import { A } from "@solidjs/router";
-import { createMemo } from "solid-js";
+import { createMemo, createResource } from "solid-js";
+import { authApi } from "~/lib/auth-api";
 import { t } from "~/lib/i18n";
 
 const learnMoreHref =
@@ -8,6 +9,13 @@ const learnMoreHref =
 		: "https://ugoite.github.io/ugoite/getting-started";
 
 export default function Home() {
+	const [authSession] = createResource(async () => {
+		try {
+			return await authApi.getSession();
+		} catch {
+			return { authenticated: false };
+		}
+	});
 	const copy = createMemo(() => ({
 		subtitle: t("homePage.subtitle"),
 		login: t("homePage.login"),
@@ -21,6 +29,9 @@ export default function Home() {
 		localFirstTitle: t("homePage.card.localFirst.title"),
 		localFirstDescription: t("homePage.card.localFirst.description"),
 	}));
+	const openSpacesHref = createMemo(() =>
+		authSession()?.authenticated ? "/spaces" : "/login?next=%2Fspaces",
+	);
 
 	return (
 		<main class="ui-page text-center mx-auto">
@@ -30,7 +41,7 @@ export default function Home() {
 				<A href="/login" class="ui-button ui-button-primary">
 					{copy().login}
 				</A>
-				<A href="/spaces" class="ui-button ui-button-secondary">
+				<A href={openSpacesHref()} class="ui-button ui-button-secondary">
 					{copy().openSpaces}
 				</A>
 				<a href={learnMoreHref} class="ui-button ui-button-secondary">
