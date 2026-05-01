@@ -120,12 +120,14 @@ POST /spaces
 Content-Type: application/json
 
 {
-  "id": "space-new",
-  "name": "New Space"
+  "name": "space-new"
 }
 ```
 
 **Response**: `201 Created`
+
+`SpaceCreate` currently accepts only `name`, and the backend derives the new
+space id from that value.
 
 **Authorization**: caller must be an active admin of the reserved `admin-space`.
 The reserved `admin-space` id itself cannot be created through the public API.
