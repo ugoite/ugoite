@@ -8,6 +8,7 @@ import {
 	For,
 } from "solid-js";
 import type { Accessor } from "solid-js";
+import { A } from "@solidjs/router";
 import { isServer } from "solid-js/web";
 import { AssetUploader } from "~/components/AssetUploader";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
@@ -463,8 +464,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 			>
 				{(currentEntry) => (
 					<div class="flex-1 flex flex-col overflow-hidden">
-						<div class="ui-card flex items-center justify-between">
-							<div>
+						<div class="ui-card flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+							<div class="space-y-1">
+								<A href={`/spaces/${props.spaceId()}/entries`} class="text-sm ui-link">
+									Back to Entries
+								</A>
 								<h2 class="font-semibold">{currentEntry().title || "Untitled"}</h2>
 								<Show when={currentEntry().form}>
 									<span class="text-sm ui-muted">Form: {currentEntry().form}</span>

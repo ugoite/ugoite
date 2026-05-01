@@ -8,6 +8,14 @@ import { assetApi } from "~/lib/asset-api";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
+vi.mock("@solidjs/router", () => ({
+	A: (props: { href: string; class?: string; children: unknown }) => (
+		<a href={props.href} class={props.class}>
+			{props.children}
+		</a>
+	),
+}));
+
 vi.mock("~/lib/entry-api", () => {
 	class RevisionConflictError extends Error {}
 	return {
@@ -251,6 +259,26 @@ describe("EntryDetailPane", () => {
 		);
 		expect(guidanceText).toHaveTextContent(/フォーム:\s*Task\s*\/\s*例:\s*##\s*Summary/);
 		expect(guidanceText).not.toHaveTextContent(/Example:/);
+	});
+
+	it("REQ-FE-033: entry detail success path shows a visible route back to Entries", async () => {
+		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+			id: "entry-1",
+			title: "Test Entry",
+			form: null,
+			content: "# Test Entry",
+			revision_id: "rev-1",
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+		});
+
+		render(() => (
+			<EntryDetailPane spaceId={() => "default"} entryId={() => "entry-1"} onDeleted={vi.fn()} />
+		));
+
+		const backLink = await screen.findByRole("link", { name: "Back to Entries" });
+
+		expect(backLink).toHaveAttribute("href", "/spaces/default/entries");
 	});
 	it("REQ-FE-038: renders form validation warnings", async () => {
 		(entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
