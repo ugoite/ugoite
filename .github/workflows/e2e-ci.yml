@@ -56,7 +56,7 @@ jobs:
           from pathlib import PurePosixPath
 
           event_name = os.environ["EVENT_NAME"]
-            if event_name == "merge_group":
+          if event_name == "merge_group":
               test_type = "full"
               selection_reason = "merge_group requires full E2E coverage"
           else:

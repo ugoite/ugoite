@@ -83,21 +83,23 @@ jobs:
           if event_name == "merge_group":
               should_run = True
               selection_reason = "merge_group always runs devcontainer smoke"
-            else:
+          else:
               base_sha = os.environ["PR_BASE_SHA"].strip()
               if not base_sha:
-                raise SystemExit("pull_request tiering requires PR_BASE_SHA")
+                  raise SystemExit("pull_request tiering requires PR_BASE_SHA")
 
               raw = subprocess.check_output(
-                ["git", "diff", "--name-only", f"{base_sha}...{head_sha}"],
-                text=True,
+                  ["git", "diff", "--name-only", f"{base_sha}...{head_sha}"],
+                  text=True,
               )
-              changed_files = [line.strip() for line in raw.splitlines() if line.strip()]
+              changed_files = [
+                  line.strip() for line in raw.splitlines() if line.strip()
+              ]
               should_run = any(matches(path) for path in changed_files)
               selection_reason = (
-                f"{event_name} touched devcontainer or setup inputs"
-                if should_run
-                else f"{event_name} skipped devcontainer smoke because no tracked inputs changed"
+                  f"{event_name} touched devcontainer or setup inputs"
+                  if should_run
+                  else f"{event_name} skipped devcontainer smoke because no tracked inputs changed"
               )
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
