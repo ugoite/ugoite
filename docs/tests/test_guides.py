@@ -4641,10 +4641,7 @@ def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> N
 
 
 def test_docs_req_ops_034_local_e2e_runner_default_signing_secret_length() -> None:
-    """REQ-OPS-034: local direct-process E2E runner defaults must provide
-
-    a valid secret.
-    """
+    """REQ-OPS-034: local direct-process E2E runner must default to a valid secret."""
     run_e2e_text = (REPO_ROOT / "e2e/scripts/run-e2e.sh").read_text(encoding="utf-8")
     match = re.search(
         r'DEV_SIGNING_SECRET="\$\{UGOITE_DEV_SIGNING_SECRET:-([^\"]+)\}"',
