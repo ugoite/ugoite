@@ -4640,6 +4640,27 @@ def test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup() -> N
         raise AssertionError("; ".join(details))
 
 
+def test_docs_req_ops_034_local_e2e_runner_default_signing_secret_length() -> None:
+    """REQ-OPS-034: local direct-process E2E runner must default to a valid secret."""
+    run_e2e_text = (REPO_ROOT / "e2e/scripts/run-e2e.sh").read_text(encoding="utf-8")
+    match = re.search(
+        r'DEV_SIGNING_SECRET="\$\{UGOITE_DEV_SIGNING_SECRET:-([^\"]+)\}"',
+        run_e2e_text,
+    )
+    if match is None:
+        message = "run-e2e.sh must define a default UGOITE_DEV_SIGNING_SECRET"
+        raise AssertionError(message)
+    default_value = match.group(1)
+    minimum_secret_length = 32
+    if len(default_value) < minimum_secret_length:
+        message = (
+            "run-e2e.sh default UGOITE_DEV_SIGNING_SECRET must be at least "
+            + str(minimum_secret_length)
+            + " characters"
+        )
+        raise AssertionError(message)
+
+
 def _collect_native_required_checks_details() -> list[str]:
     if LEGACY_ALL_TESTS_WORKFLOW_PATH.exists():
         message = (
