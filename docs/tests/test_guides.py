@@ -4655,10 +4655,12 @@ def test_docs_req_ops_034_local_e2e_runner_default_signing_secret_length() -> No
     default_value = match.group(1)
     minimum_secret_length = 32
     if len(default_value) < minimum_secret_length:
-        raise AssertionError(
+        message = (
             "run-e2e.sh default UGOITE_DEV_SIGNING_SECRET must be at least "
-            f"{minimum_secret_length} characters"
+            + str(minimum_secret_length)
+            + " characters"
         )
+        raise AssertionError(message)
 
 
 def _collect_native_required_checks_details() -> list[str]:
