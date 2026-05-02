@@ -74,7 +74,11 @@ const verifyFirstCommand = [
           <TerminalCommand command="cargo run -q -p ugoite-cli -- --help" />
         </div>
         <div>
-          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. List spaces from source</p>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. Switch to backend mode</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://127.0.0.1:8000" />
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">6. List spaces from source</p>
           <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
         </div>
       </div>
