@@ -131,8 +131,9 @@ truth, keep `docs/spec/testing/ci-cd.md` as the human-readable policy, and
 update both whenever a workflow moves between those event buckets.
 
 local validation maps to the same CI event split: use `mise run test` for the
-repo baseline, `mise run test:docs` for docs or policy changes, `mise run e2e`
-for browser flows, and focused surface commands when only one package changed.
+repo baseline, `mise run test:docs` for docs, spec, or REQ-traceability changes,
+`mise run e2e` for browser flows, and focused surface commands when only one
+package changed.
 
 ## 7. Prepare the PR as one coherent change
 
