@@ -121,6 +121,7 @@ PR_TEMPLATE_WORKFLOW_PATH = (
 PRE_COMMIT_CONFIG_PATH = REPO_ROOT / ".pre-commit-config.yaml"
 PR_TEMPLATE_PATH = REPO_ROOT / ".github" / "pull_request_template.md"
 README_PATH = REPO_ROOT / "README.md"
+CONTRIBUTING_PATH = REPO_ROOT / "CONTRIBUTING.md"
 BACKEND_README_PATH = REPO_ROOT / "backend" / "README.md"
 BACKEND_PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 STACK_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "architecture" / "stack.md"
@@ -226,10 +227,7 @@ REQUIRED_PRE_COMMIT_CI_WORKFLOW_FRAGMENTS = {
     "uvx pre-commit run --all-files",
 }
 REQUIRED_PRE_COMMIT_CI_DOC_FRAGMENTS = {
-    (
-        "| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Push on `main`, "
-        "PR, merge queue |"
-    ),
+    "| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Merge queue |",
     (
         "Bootstrap pinned toolchains, perform strict lockfile installs, and run "
         "the full `pre-commit` hook chain"
@@ -618,8 +616,6 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_DOC_FRAGMENTS = {
     "search-ui.test.ts",
 }
 REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_FRAGMENTS = {
-    "push:",
-    "pull_request:",
     "merge_group:",
     "Build release-like Docker images",
     "Build release-like CLI archive",
@@ -640,13 +636,13 @@ REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_WORKFLOW_FRAGMENTS = {
 REQUIRED_RELEASE_QUICKSTART_VERIFY_CI_DOC_FRAGMENTS = {
     (
         "| Release Quickstart Verify CI | "
-        "`.github/workflows/release-quickstart-verify-ci.yml` |"
+        "`.github/workflows/release-quickstart-verify-ci.yml` | Merge queue |"
     ),
     "./.github/workflows/release-quickstart-verify-ci.yml",
-    "Build current-branch release-like Docker and CLI assets",
+    "Build current-branch release-like Docker and CLI assets before merge",
     "UGOITE_RELEASE_ASSET_BASE_URL",
     "UGOITE_DOWNLOAD_BASE_URL",
-    "pre-merge path adds coverage without replacing release verification",
+    "merge-queue final gate",
 }
 REQUIRED_RELEASE_CHANGELOG_WORKFLOW_FRAGMENTS = {
     "scripts/render_release_notes.py",
@@ -818,10 +814,22 @@ REQUIRED_NATIVE_CODE_SCANNING_TOOLS = {"CodeQL"}
 REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "| Required Status Checks | `.github/required-status-checks.json` |",
     "GitHub-native required status checks",
+    "push on `main` is reserved for fast, low-noise checks and post-merge automation",
+    "`pull_request` keeps the normal developer feedback set",
+    "`merge_group` is the final gate for expensive validation",
     "summary check",
+    "machine-readable policy lives in `.github/required-status-checks.json`",
+    "human-readable policy lives in `CONTRIBUTING.md`",
     "Release CI",
     "Release Publish",
     "CodeQL",
+}
+REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
+    "push on `main` is reserved for fast, low-noise checks and post-merge automation",
+    "`pull_request` keeps the normal developer feedback set",
+    "`merge_group` is the final gate for expensive validation",
+    ".github/required-status-checks.json",
+    "local validation maps to the same CI event split",
 }
 REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS = {
     "in-workflow change detector",
@@ -3774,7 +3782,7 @@ def test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> 
     ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
 
     workflow_fragments = {
-        'event_name in {"merge_group", "push"}',
+        'event_name == "merge_group"',
         "docs/**",
         "docsite/**",
         (
@@ -3789,10 +3797,9 @@ def test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue() -> 
 
     doc_fragments = {
         "Pull requests only",
-        "`merge_group` and",
-        "pushes to `main` always run the full compose-backed suite.",
+        "`merge_group` always runs the full compose-backed suite.",
         "pull_request with docs/docsite-only paths => smoke",
-        "| E2E Tests | `.github/workflows/e2e-ci.yml` | Push, PR, merge queue |",
+        "| E2E Tests | `.github/workflows/e2e-ci.yml` | PR, merge queue |",
     }
     missing_doc_fragments = sorted(
         fragment for fragment in doc_fragments if fragment not in ci_cd_text
@@ -5060,12 +5067,23 @@ def _collect_required_status_check_doc_details() -> list[str]:
         for fragment in REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS
         if fragment not in guide_text
     )
+    contributing_text = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+    missing_contributing_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS
+        if fragment not in contributing_text
+    )
 
     details: list[str] = []
     if missing_doc_fragments:
         details.append(
             "ci-cd guide missing native required-check fragments: "
             + ", ".join(missing_doc_fragments),
+        )
+    if missing_contributing_fragments:
+        details.append(
+            "CONTRIBUTING.md missing native required-check fragments: "
+            + ", ".join(missing_contributing_fragments),
         )
     if "All Tests Status" in guide_text:
         details.append(
@@ -5719,7 +5737,7 @@ def _collect_release_quickstart_verify_ci_details() -> list[str]:
     )
 
     details: list[str] = []
-    for event_name in ("push", "pull_request", "merge_group"):
+    for event_name in ("merge_group",):
         details.extend(
             _collect_required_status_check_event_details(
                 workflow,

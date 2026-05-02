@@ -1,6 +1,9 @@
 name: README Command Guard
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
