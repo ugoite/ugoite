@@ -502,8 +502,8 @@ requirements:
   description: 'Default-branch pull request and merge queue protection MUST use
     GitHub-native required status checks mapped directly to workflow summary jobs,
     keep that contract versioned in-repo, exclude release/publish automation
-    workflows (at minimum `Release CI` and `Release Publish`), and rely on the
-    native CodeQL code-scanning rule instead of a polling rollup workflow.
+    workflows (at minimum `Release CI` and `Release Publish`), and keep CodeQL as
+    a separate workflow instead of a required status check.
 
     '
   related_spec:

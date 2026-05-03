@@ -97,11 +97,5 @@
       "events": ["push", "pull_request", "merge_group"]
     }
   ],
-  "native_code_scanning": [
-    {
-      "tool": "CodeQL",
-      "workflow": ".github/workflows/codeql.yml"
-    }
-  ],
   "excluded_from_required_status_checks": ["Release CI", "Release Publish"]
 }
