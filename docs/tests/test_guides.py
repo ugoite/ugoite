@@ -820,7 +820,7 @@ REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "Release CI",
     "Release Publish",
     "a separate workflow instead of a required status check",
-    "CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual",
+    "CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue",
 }
 REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
     "push on `main` is reserved for fast, low-noise checks and post-merge automation",
