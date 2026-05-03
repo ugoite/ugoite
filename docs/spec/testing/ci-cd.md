@@ -18,9 +18,9 @@
 | Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | Push on `main`, PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
-| CodeQL | `.github/workflows/codeql.yml` | Push on `main`, schedule, manual | Native code scanning follow-up for Actions, JavaScript/TypeScript, Python, and Rust |
+| CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual | Automated code scanning workflow for Actions, JavaScript/TypeScript, Python, and Rust |
 | PR Template Validation | `.github/workflows/pr-require-close-issue.yml` | PR body events via `pull_request_target` | Enforce required PR sections and accepted close/closes issue links |
-| Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks, exclusions, and native code-scanning handoff |
+| Required Status Checks | `.github/required-status-checks.json` | Repository ruleset on `main` pull requests and merge queue | Versioned source of truth for direct workflow summary checks and exclusions |
 | Release CI | `.github/workflows/release-ci.yml` | Push on `main` | Create/update release PR with release-please (no auto publish) |
 | Docsite Pages | `.github/workflows/docsite-pages.yml` | Push on `main`, manual | Publish the docsite after merge without blocking the merge queue |
 | Release Publish | `.github/workflows/release-publish.yml` | Manual (`workflow_dispatch`) | Human-approved stable/alpha/beta GitHub release publish with GHCR image push and CLI release assets |
@@ -41,9 +41,8 @@ Required workflows must not depend on top-level `paths` filters that would make
 a check disappear. Path-aware workflows such as Devcontainer CI perform
 in-workflow change detection and still emit their summary check when the
 expensive job is skipped. Release automation (`Release CI`, `Docsite Pages`,
-`Release Publish`) stays excluded from required status checks, and CodeQL
-remains enforced through the repository's native code-scanning rule rather than
-the required-status-check list.
+`Release Publish`) stays excluded from required status checks, and CodeQL runs
+as a separate workflow rather than a required status check.
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
@@ -84,7 +83,7 @@ E2E CI selects a deterministic tier before running tests. `merge_group` always r
 The event split is deliberately simple:
 
 push on `main` is reserved for fast, low-noise checks and post-merge automation.
-`pull_request` keeps the normal developer feedback set.
+`pull_request` keeps the normal developer feedback set, and CodeQL also runs here as a separate workflow.
 `merge_group` is the final gate for expensive validation.
 The machine-readable policy lives in `.github/required-status-checks.json`.
 The human-readable policy lives in `CONTRIBUTING.md`.
@@ -111,7 +110,6 @@ That JSON file is the source of truth for:
 
 - which direct workflow summary checks the `main only pr` ruleset requires
 - which workflows are explicitly excluded from required status checks
-- which code-scanning tools stay enforced through GitHub-native code-scanning rules
 
 Repository settings must stay aligned by applying ruleset updates from that JSON
 contract with `gh api` whenever the required-check list changes.
@@ -517,7 +515,7 @@ The root `mise.toml` also declares explicit `[monorepo].config_roots` for packag
 
 1. **Conventional Commits** are required locally (Husky + Commitlint) and in CI (`commitlint-ci`).
 2. **Static checks and tests** must pass through existing CI workflows and the native required checks declared in `.github/required-status-checks.json`.
-3. **GitHub-native required status checks** must map directly to workflow summary jobs, keep `.github/required-status-checks.json` as the machine-readable source of truth, exclude release/publish automation (`Release CI`, `Docsite Pages`, `Release Publish`), and leave CodeQL on the repository code-scanning rule instead of a synthetic rollup workflow.
+3. **GitHub-native required status checks** must map directly to workflow summary jobs, keep `.github/required-status-checks.json` as the machine-readable source of truth, exclude release/publish automation (`Release CI`, `Docsite Pages`, `Release Publish`), and keep CodeQL as a separate workflow instead of a required status check.
 4. **Release CI** runs on pushes to `main` and uses release-please to create/update a release PR with SemVer planning when `RELEASE_PLEASE_TOKEN` is configured.
 5. **Release automation bootstrap** is seeded from `.github/.release-please-manifest.json`, `packages/ugoite/package.json`, and `.github/release-please-config.json`'s `bootstrap-sha`; the manifest/package versions must start at `0.0.1`, the repository root `package.json` must stay private tooling for Husky/commitlint only, and `bootstrap-sha` bounds pre-release-please history so old merge titles do not decide current release planning.
 6. **Release CI authentication** must use a dedicated `RELEASE_PLEASE_TOKEN`. If that secret is unavailable, the workflow must no-op cleanly instead of falling back to `GITHUB_TOKEN` and turning `main` red on repository-level PR permission errors.
