@@ -817,6 +817,9 @@ REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "summary check",
     "machine-readable policy lives in `.github/required-status-checks.json`",
     "human-readable policy lives in `CONTRIBUTING.md`",
+    "PR 1557 did not unblock until the live GitHub repository ruleset named",
+    "The checked-in JSON",
+    "merge queue and the `main` merge path were verified again",
     "Release CI",
     "Release Publish",
     "a separate workflow instead of a required status check",
@@ -829,6 +832,8 @@ REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
     ".github/required-status-checks.json",
     "local validation maps to the same CI event split",
     "CodeQL also runs here as a separate workflow",
+    "update the live repository ruleset as well as the checked-in JSON",
+    "merge queue plus `main` merge were re-verified",
 }
 REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS = {
     "in-workflow change detector",

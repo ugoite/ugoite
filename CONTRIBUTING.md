@@ -130,6 +130,12 @@ Keep `.github/required-status-checks.json` as the machine-readable source of
 truth, keep `docs/spec/testing/ci-cd.md` as the human-readable policy, and
 update both whenever a workflow moves between those event buckets.
 
+When CodeQL or other branch-protection policy changes depend on GitHub ruleset
+state, update the live repository ruleset as well as the checked-in JSON. PR
+1557 only unblocked after the live `main only pr` ruleset was changed to allow
+CodeQL code scanning, and merge queue plus `main` merge were re-verified after
+that repository-side update.
+
 local validation maps to the same CI event split: use `mise run test` for the
 repo baseline, `mise run test:docs` for docs, spec, or REQ-traceability changes,
 `mise run e2e` for browser flows, and focused surface commands when only one
