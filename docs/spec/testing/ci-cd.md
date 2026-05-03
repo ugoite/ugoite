@@ -44,6 +44,12 @@ expensive job is skipped. Release automation (`Release CI`, `Docsite Pages`,
 `Release Publish`) stays excluded from required status checks, and CodeQL runs
 as a separate workflow rather than a required status check.
 
+Note: PR 1557 did not unblock until the live GitHub repository ruleset named
+`main only pr` was updated to allow CodeQL code scanning. The checked-in JSON
+remains the versioned contract, but GitHub evaluates the live ruleset, so a
+workflow-only change was not enough. After that repository ruleset change,
+merge queue and the `main` merge path were verified again.
+
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
 `ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
 resolve inside the container build. Docker Build CI, E2E CI, SBOM CI, and
