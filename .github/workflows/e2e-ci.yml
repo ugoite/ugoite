@@ -1,9 +1,6 @@
 name: E2E Tests
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
@@ -59,9 +56,9 @@ jobs:
           from pathlib import PurePosixPath
 
           event_name = os.environ["EVENT_NAME"]
-          if event_name in {"merge_group", "push"}:
+          if event_name == "merge_group":
               test_type = "full"
-              selection_reason = f"{event_name} requires full E2E coverage"
+              selection_reason = "merge_group requires full E2E coverage"
           else:
               base_sha = os.environ["PR_BASE_SHA"].strip()
               head_sha = os.environ["HEAD_SHA"].strip()

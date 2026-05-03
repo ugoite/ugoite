@@ -102,11 +102,6 @@ match the current workflows under `.github/workflows/`.
 
 Examples:
 
-- `mise run test` for the repository-wide baseline
-- `mise run test:docs` before pushing docs, spec, or REQ-traceability changes
-- targeted `uv run pytest ...` for docs/backend/core changes when iterating
-- `cd docsite && bun run test:coverage` for docsite regressions
-- `cd frontend && biome ci . && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1`
   when UI behavior changes
 
 Use `mise run test:docs` when `README.md`, `CONTRIBUTING.md`, `docs/spec/`,
@@ -116,7 +111,31 @@ REQ mapping regressions locally first.
 If you add a new docsite page or navigation path, include the matching vitest or
 docs regression so the route and copy stay wired.
 
-## 6. Prepare the PR as one coherent change
+## 6. Match CI events to the review stage
+
+Ugoite splits CI by event so the expensive gates only run when they add real
+value:
+
+| Event | What it covers |
+| --- | --- |
+| `push` on `main` | Fast, low-noise checks plus post-merge automation such as `Shell CI`, `YAML Workflow CI`, `README Command Guard`, `Release CI`, `Docsite Pages`, and `CodeQL` |
+| `pull_request` | The normal developer feedback set: `Commitlint CI`, `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the cheap static checks |
+| `merge_group` | The final gate before `main`: `Docker Build CI`, `E2E Tests`, `Pre-commit CI`, `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI` |
+
+push on `main` is reserved for fast, low-noise checks and post-merge automation.
+`pull_request` keeps the normal developer feedback set.
+`merge_group` is the final gate for expensive validation.
+
+Keep `.github/required-status-checks.json` as the machine-readable source of
+truth, keep `docs/spec/testing/ci-cd.md` as the human-readable policy, and
+update both whenever a workflow moves between those event buckets.
+
+local validation maps to the same CI event split: use `mise run test` for the
+repo baseline, `mise run test:docs` for docs, spec, or REQ-traceability changes,
+`mise run e2e` for browser flows, and focused surface commands when only one
+package changed.
+
+## 7. Prepare the PR as one coherent change
 
 Before opening the PR:
 
