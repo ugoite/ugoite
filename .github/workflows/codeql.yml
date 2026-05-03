@@ -4,12 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-  merge_group:
-    branches:
-      - main
   schedule:
     - cron: "16 5 * * 0"
   workflow_dispatch:

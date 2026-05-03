@@ -16,73 +16,73 @@
       "context": "Devcontainer CI",
       "workflow": ".github/workflows/devcontainer-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["pull_request", "merge_group"]
     },
     {
       "context": "Docker Build CI",
       "workflow": ".github/workflows/docker-build-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "Docsite CI",
       "workflow": ".github/workflows/docsite-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["pull_request", "merge_group"]
     },
     {
       "context": "E2E Tests",
       "workflow": ".github/workflows/e2e-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["pull_request", "merge_group"]
     },
     {
       "context": "Frontend CI",
       "workflow": ".github/workflows/frontend-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["pull_request", "merge_group"]
     },
     {
       "context": "Pre-commit CI",
       "workflow": ".github/workflows/pre-commit-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "Python CI",
       "workflow": ".github/workflows/python-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["pull_request", "merge_group"]
     },
     {
       "context": "Release Quickstart Verify CI",
       "workflow": ".github/workflows/release-quickstart-verify-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "README Command Guard",
       "workflow": ".github/workflows/readme-command-guard.yml",
       "job_id": "required-check",
-      "events": ["pull_request", "merge_group"]
+      "events": ["push", "pull_request", "merge_group"]
     },
     {
       "context": "Rust CI",
       "workflow": ".github/workflows/rust-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "SBOM CI",
       "workflow": ".github/workflows/sbom-ci.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "ScanCode",
       "workflow": ".github/workflows/scancode.yml",
       "job_id": "required-check",
-      "events": ["push", "pull_request", "merge_group"]
+      "events": ["merge_group"]
     },
     {
       "context": "Shell CI",
