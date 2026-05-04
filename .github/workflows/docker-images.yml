@@ -3,134 +3,98 @@ name: Docker Images
 on:
   workflow_call:
     inputs:
-      push:
-        description: "Push images to GHCR"
-        required: true
-        type: boolean
-      target:
-        description: "Git ref (branch, tag, or SHA) to build"
-        required: false
-        type: string
-        default: ""
-      version:
-        description: "Release version without the leading v"
-        required: false
-        type: string
-        default: ""
-      channel:
-        description: "Release channel for publish aliases"
-        required: false
-        type: string
-        default: ""
-      export_artifacts:
-        description: "Export locally tagged Docker image tarballs as artifacts"
-        required: false
-        type: boolean
-        default: false
-      artifact_name:
-        description: "Artifact name for exported local images"
-        required: false
-        type: string
-        default: ""
-      backend_local_tag:
-        description: "Local backend image tag to export when export_artifacts=true"
-        required: false
-        type: string
-        default: "ugoite-backend:ci"
-      frontend_local_tag:
-        description: "Local frontend image tag to export when export_artifacts=true"
-        required: false
-        type: string
-        default: "ugoite-frontend:ci"
+      docker-images-publish:
+        name: Docker images (${{ matrix.image }})
+        if: ${{ inputs.push }}
+        strategy:
+          fail-fast: false
+          matrix:
+            include:
+              - image: backend
+                context: ./backend
+                dockerfile: ./backend/Dockerfile
+                cache_scope: backend-image
+                build_contexts: |
+                  core=./ugoite-core
+                  minimum=./ugoite-minimum
+                  module=./ugoite-cli
+              - image: frontend
+                context: ./frontend
+                dockerfile: ./frontend/Dockerfile
+                cache_scope: frontend-image
+                build_contexts: |
+                  shared=./shared
+        runs-on: ubuntu-24.04
+        timeout-minutes: 80
+        permissions:
+          contents: read
+          packages: write
+        steps:
+          - name: Checkout
+            uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+            with:
+              ref: ${{ inputs.target != '' && inputs.target || github.sha }}
 
-jobs:
-  docker-images-ci:
-    name: Docker images (CI)
-    if: ${{ inputs.push == false }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+          - name: Set up QEMU emulation for cross-platform builds
+            uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
 
-      - name: Build backend image for CI
-        if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: false
-          cache-from: |
-            type=gha,scope=backend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=backend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            core=./ugoite-core
-            minimum=./ugoite-minimum
-            module=./ugoite-cli
+          - name: Authenticate GHCR pushes
+            uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+            with:
+              registry: ghcr.io
+              username: ${{ github.actor }}
+              password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build backend image for artifact export
-        if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: false
-          load: true
-          tags: ${{ inputs.backend_local_tag }}
-          cache-from: |
-            type=gha,scope=backend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=backend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            core=./ugoite-core
-            minimum=./ugoite-minimum
-            module=./ugoite-cli
+          - name: Compute GHCR tags
+            id: tags
+            env:
+              CHANNEL: ${{ inputs.channel }}
+              IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+              VERSION: ${{ inputs.version }}
+            run: |
+              set -euo pipefail
+              if [ -z "$VERSION" ]; then
+                echo "version input is required when push=true" >&2
+                exit 1
+              fi
 
-      - name: Build frontend image for CI
-        if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: false
-          cache-from: |
-            type=gha,scope=frontend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=frontend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            shared=./shared
+              tags=("$IMAGE:$VERSION")
+              case "$CHANNEL" in
+                stable)
+                  tags+=("$IMAGE:latest" "$IMAGE:stable")
+                  ;;
+                alpha|beta)
+                  tags+=("$IMAGE:$CHANNEL")
+                  ;;
+                *)
+                  echo "unsupported channel: $CHANNEL" >&2
+                  exit 1
+                  ;;
+              esac
 
-      - name: Build frontend image for artifact export
-        if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: false
-          load: true
-          tags: ${{ inputs.frontend_local_tag }}
-          cache-from: |
-            type=gha,scope=frontend-image
-            type=gha,scope=docker-build-common
-          cache-to: |
-            type=gha,mode=max,scope=frontend-image
-            type=gha,mode=max,scope=docker-build-common
-          build-contexts: |
-            shared=./shared
+              {
+                echo "tags<<EOF"
+                printf '%s\n' "${tags[@]}"
+                echo "EOF"
+              } >>"$GITHUB_OUTPUT"
+
+          - name: Build ${{ matrix.image }} image
+            uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+            with:
+              context: ${{ matrix.context }}
+              file: ${{ matrix.dockerfile }}
+              push: true
+              platforms: linux/amd64,linux/arm64
+              tags: ${{ steps.tags.outputs.tags }}
+              cache-from: |
+                type=gha,scope=${{ matrix.cache_scope }}
+                type=gha,scope=docker-build-common
+              cache-to: |
+                type=gha,mode=max,scope=${{ matrix.cache_scope }}
+              build-contexts: ${{ matrix.build_contexts }}
 
       - name: Export local Docker image archives
         if: ${{ inputs.export_artifacts }}
@@ -157,8 +121,26 @@ jobs:
           if-no-files-found: error
 
   docker-images-publish:
-    name: Docker images
+    name: Docker images (${{ matrix.image }})
     if: ${{ inputs.push }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            cache_scope: backend-image
+            build_contexts: |
+              core=./ugoite-core
+              minimum=./ugoite-minimum
+              module=./ugoite-cli
+          - image: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            cache_scope: frontend-image
+            build_contexts: |
+              shared=./shared
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     permissions:
@@ -183,11 +165,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute backend GHCR tags
-        id: backend-tags
+      - name: Compute GHCR tags
+        id: tags
         env:
           CHANNEL: ${{ inputs.channel }}
-          IMAGE: ghcr.io/${{ github.repository }}/backend
+          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
@@ -216,18 +198,23 @@ jobs:
             echo "EOF"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Build backend image
+      - name: Build ${{ matrix.image }} image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
+<<<<<<< HEAD
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.backend-tags.outputs.tags }}
+=======
+          tags: ${{ steps.tags.outputs.tags }}
+>>>>>>> de6a6d8e (fix: split release docker image publishing)
           cache-from: |
-            type=gha,scope=backend-image
+            type=gha,scope=${{ matrix.cache_scope }}
             type=gha,scope=docker-build-common
           cache-to: |
+<<<<<<< HEAD
             type=gha,mode=max,scope=backend-image
             type=gha,mode=max,scope=docker-build-common
           build-contexts: |
@@ -284,3 +271,7 @@ jobs:
             type=gha,mode=max,scope=docker-build-common
           build-contexts: |
             shared=./shared
+=======
+            type=gha,mode=max,scope=${{ matrix.cache_scope }}
+          build-contexts: ${{ matrix.build_contexts }}
+>>>>>>> de6a6d8e (fix: split release docker image publishing)
