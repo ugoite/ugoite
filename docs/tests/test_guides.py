@@ -83,8 +83,6 @@ YAML_WORKFLOW_CI_WORKFLOW_PATH = (
 )
 PRE_COMMIT_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "pre-commit-ci.yml"
 RELEASE_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release-ci.yml"
-CODEQL_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "codeql.yml"
-CODEQL_CONFIG_PATH = REPO_ROOT / ".github" / "codeql" / "codeql-config.yml"
 RELEASE_PUBLISH_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "release-publish.yml"
 )
@@ -810,7 +808,6 @@ REQUIRED_NATIVE_REQUIRED_CHECKS = {
     "YAML Workflow CI",
 }
 REQUIRED_NATIVE_REQUIRED_CHECK_EXCLUSIONS = {"Release CI", "Release Publish"}
-REQUIRED_NATIVE_CODE_SCANNING_TOOLS = {"CodeQL"}
 REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "| Required Status Checks | `.github/required-status-checks.json` |",
     "GitHub-native required status checks",
@@ -820,9 +817,13 @@ REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "summary check",
     "machine-readable policy lives in `.github/required-status-checks.json`",
     "human-readable policy lives in `CONTRIBUTING.md`",
+    "PR 1557 did not unblock until the live GitHub repository ruleset named",
+    "The checked-in JSON",
+    "merge queue and the `main` merge path were verified again",
     "Release CI",
     "Release Publish",
-    "CodeQL",
+    "a separate workflow instead of a required status check",
+    "CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue",
 }
 REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
     "push on `main` is reserved for fast, low-noise checks and post-merge automation",
@@ -830,6 +831,9 @@ REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
     "`merge_group` is the final gate for expensive validation",
     ".github/required-status-checks.json",
     "local validation maps to the same CI event split",
+    "CodeQL also runs here as a separate workflow",
+    "update the live repository ruleset as well as the checked-in JSON",
+    "merge queue plus `main` merge were re-verified",
 }
 REQUIRED_DEVCONTAINER_CHANGE_DETECTION_DOC_FRAGMENTS = {
     "in-workflow change detector",
@@ -4903,7 +4907,6 @@ def _collect_required_status_check_config_details(
         )
 
     details.extend(_collect_required_status_check_exclusion_details(config))
-    details.extend(_collect_required_status_check_code_scanning_details(config))
     details.extend(_collect_required_status_check_ruleset_details(config))
     return details
 
@@ -4930,112 +4933,6 @@ def _collect_required_status_check_exclusion_details(
         missing_exclusions,
     )
     return [message]
-
-
-def _collect_required_status_check_code_scanning_details(
-    config: dict[str, object],
-) -> list[str]:
-    native_code_scanning = config.get("native_code_scanning", [])
-    if not isinstance(native_code_scanning, list):
-        message = "required-status-checks.json native_code_scanning must be a list"
-        raise TypeError(message)
-
-    configured_tools = {
-        tool_entry.get("tool")
-        for tool_entry in native_code_scanning
-        if isinstance(tool_entry, dict) and isinstance(tool_entry.get("tool"), str)
-    }
-    missing_tools = sorted(
-        REQUIRED_NATIVE_CODE_SCANNING_TOOLS.difference(configured_tools),
-    )
-    details: list[str] = []
-    if missing_tools:
-        details.append(
-            "required-status-checks.json missing native code-scanning tools: "
-            + ", ".join(missing_tools),
-        )
-
-    if not CODEQL_CONFIG_PATH.exists():
-        details.append(
-            ".github/codeql/codeql-config.yml must exist for CodeQL config",
-        )
-        return details
-
-    details.extend(_collect_codeql_workflow_config_details())
-
-    codeql_config = _load_yaml_base_mapping(CODEQL_CONFIG_PATH)
-    ignored_paths = codeql_config.get("paths-ignore", [])
-    if not isinstance(ignored_paths, list):
-        message = ".github/codeql/codeql-config.yml paths-ignore must be a list"
-        raise TypeError(message)
-    required_ignored_paths = {
-        "vendor/reqsign/**",
-        "ugoite-core/vendor/reqsign/**",
-    }
-    missing_ignored_paths = sorted(
-        required_ignored_paths.difference(
-            path for path in ignored_paths if isinstance(path, str)
-        ),
-    )
-    if missing_ignored_paths:
-        details.append(
-            ".github/codeql/codeql-config.yml must ignore vendored reqsign paths "
-            "to avoid third-party alerts blocking native CodeQL status: "
-            + ", ".join(missing_ignored_paths),
-        )
-
-    return details
-
-
-def _collect_codeql_workflow_config_details() -> list[str]:
-    codeql_workflow = _load_yaml_base_mapping(CODEQL_WORKFLOW_PATH)
-    jobs = codeql_workflow.get("jobs", {})
-    if not isinstance(jobs, dict):
-        message = ".github/workflows/codeql.yml must define jobs"
-        raise TypeError(message)
-    analyze_job = jobs.get("analyze", {})
-    if not isinstance(analyze_job, dict):
-        message = ".github/workflows/codeql.yml must define analyze job"
-        raise TypeError(message)
-
-    initialize_step = _find_codeql_initialize_step(analyze_job)
-    if not isinstance(initialize_step, dict):
-        return [
-            (
-                "codeql.yml must initialize CodeQL with "
-                "github/codeql-action/init pinned to a commit SHA"
-            ),
-        ]
-
-    with_block = initialize_step.get("with", {})
-    if not isinstance(with_block, dict):
-        return ["codeql.yml Initialize CodeQL step must define with block"]
-    if with_block.get("config-file") != "./.github/codeql/codeql-config.yml":
-        return [
-            "codeql.yml Initialize CodeQL step must use "
-            "./.github/codeql/codeql-config.yml",
-        ]
-    return []
-
-
-def _find_codeql_initialize_step(
-    analyze_job: dict[object, object],
-) -> dict[object, object] | None:
-    steps = analyze_job.get("steps", [])
-    if not isinstance(steps, list):
-        message = ".github/workflows/codeql.yml analyze job must define steps"
-        raise TypeError(message)
-
-    return next(
-        (
-            step
-            for step in steps
-            if isinstance(step, dict)
-            and step.get("name") == "Initialize CodeQL"
-            and _uses_pinned_action(step.get("uses"), "github/codeql-action/init")
-        ),
-        None,
-    )
 
 
 def _collect_required_status_check_ruleset_details(
