@@ -22,7 +22,7 @@
 		"@astrojs/check": "^0.9.9",
 		"@tailwindcss/vite": "4.2.4",
 		"astro": "^6.1.9",
-		"marked": "^18.0.2",
+		"marked": "^18.0.3",
 		"prismjs": "1.30.0",
 		"tailwindcss": "4.2.4",
 		"yaml": "^2.8.4"
