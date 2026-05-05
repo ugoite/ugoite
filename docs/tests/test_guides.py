@@ -2851,7 +2851,6 @@ def test_docs_req_ops_013_native_required_checks_contract() -> None:
         raise AssertionError("; ".join(details))
 
 
-
 def test_docs_req_ops_016_dev_seed_workflow_is_declared() -> None:
     """REQ-OPS-016: Root dev tasks must expose local sample-data seeding."""
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
