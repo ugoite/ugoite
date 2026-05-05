@@ -164,6 +164,7 @@ jobs:
       matrix:
         include:
           - image: backend
+            image_repository: ghcr.io/${{ github.repository }}/backend
             context: ./backend
             dockerfile: ./backend/Dockerfile
             cache_scope: backend-image
@@ -172,6 +173,7 @@ jobs:
               minimum=./ugoite-minimum
               module=./ugoite-cli
           - image: frontend
+            image_repository: ghcr.io/${{ github.repository }}/frontend
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
             cache_scope: frontend-image
@@ -205,7 +207,7 @@ jobs:
         id: tags
         env:
           CHANNEL: ${{ inputs.channel }}
-          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          IMAGE: ${{ matrix.image_repository }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
