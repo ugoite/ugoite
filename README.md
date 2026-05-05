@@ -245,7 +245,7 @@ mise run setup
 ```
 
 The setup task also runs `uvx pre-commit install` so local commits use the same
-hook chain as CI by default.
+hook chain by default.
 
 The devcontainer path runs that same bootstrap for you during container
 creation, so both contributor setups land on the same local commands and hooks.

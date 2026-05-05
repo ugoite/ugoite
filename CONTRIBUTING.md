@@ -11,7 +11,7 @@ commands, hooks, and CI-parity checks:
 
 | Path | Choose it when | What it does for you |
 | --- | --- | --- |
-| Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies and `uvx pre-commit install`, so local commits use the same pre-commit gate that CI enforces. |
+| Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies and `uvx pre-commit install`, so local commits use the same hook chain by default. |
 | Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
 
 If you are on the managed host toolchain path, start with:
@@ -21,8 +21,8 @@ mise run setup
 ```
 
 That path installs the shared dependencies and runs `uvx pre-commit install`, so
-local commits use the same pre-commit gate that CI enforces. The devcontainer
-runs that same bootstrap for you during container creation.
+local commits use the same hook chain by default. The devcontainer runs that
+same bootstrap for you during container creation.
 
 Common follow-up commands inside either setup:
 
@@ -120,7 +120,7 @@ value:
 | --- | --- |
 | `push` on `main` | Fast, low-noise checks plus post-merge automation such as `Shell CI`, `YAML Workflow CI`, `README Command Guard`, `Release CI`, `Docsite Pages`, and `CodeQL` |
 | `pull_request` | The normal developer feedback set: `Commitlint CI`, `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the cheap static checks. CodeQL also runs here as a separate workflow |
-| `merge_group` | The final gate before `main`: `Docker Build CI`, `E2E Tests`, `Pre-commit CI`, `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI` |
+| `merge_group` | The final gate before `main`: `Docker Build CI`, `E2E Tests`, `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI` |
 
 push on `main` is reserved for fast, low-noise checks and post-merge automation.
 `pull_request` keeps the normal developer feedback set.

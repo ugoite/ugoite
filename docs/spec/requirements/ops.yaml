@@ -1307,32 +1307,32 @@ requirements:
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-029
-  title: Required CI Validation of the Full Pre-commit Hook Chain
-  description: 'The repository MUST run a dedicated required workflow that executes
+  id: REQ-OPS-030
+  title: Pre-Merge Release Quick-Start Verification
+  description: 'Repository automation MUST provide a required pre-merge workflow
 
-    the full `.pre-commit-config.yaml` hook chain on pull requests, pushes to
+    that builds current-branch release-like Docker and CLI assets, exercises the
 
-    `main`, and merge-queue events. That workflow MUST bootstrap the repository''s
+    documented release quick-start path before merge, verifies both browser and
 
-    pinned Rust, uv, Node, and Bun toolchains, use strict lockfile-backed install
+    CLI/auth flows against those assets, and keeps the post-publish
 
-    commands for dependencies it prepares, run `uvx pre-commit run --all-files`,
+    `Release Quickstart Verify` workflow as the exact published-release
 
-    and publish a direct summary check through `.github/required-status-checks.json`
-
-    so contributor hook orchestration stays continuously verifiable in CI.
+    validation path.
 
     '
   related_spec:
   - testing/ci-cd.md
+  - ../guide/container-quickstart.md
+  - ../guide/cli.md
   priority: medium
   status: implemented
   tests:
     pytest:
     - file: docs/tests/test_guides.py
       tests:
-      - test_docs_req_ops_029_pre_commit_ci_is_required
+      - test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -1433,8 +1433,8 @@ requirements:
     dependencies and enable the repo-local pre-commit hook chain by default.
     Root `mise run setup` MUST clear any repo-local `core.hooksPath` override
     before running `uvx pre-commit install`, and contributor-facing setup docs
-    MUST describe that `mise run setup` prepares the same pre-commit gate that
-    CI enforces. The repository MUST also keep local Conventional Commit
+    MUST describe that `mise run setup` prepares the same pre-commit hook chain
+    by default. The repository MUST also keep local Conventional Commit
     enforcement wired through the private root tooling package and a Husky
     `commit-msg` hook that runs `commitlint --edit` without deprecated bootstrap
     lines, so contributor commits stay warning-free on current Husky releases
