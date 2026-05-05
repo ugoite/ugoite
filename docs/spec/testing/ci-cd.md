@@ -407,11 +407,10 @@ health cannot depend on a disappearing required check. The canonical
 devcontainer also uses exact version tags for its base image and public
 Features, and `.github/dependabot.yml` tracks `package-ecosystem: "devcontainers"`
 at `/` so Feature updates stay reviewable in normal PR flow while the base
-image tag stays explicitly pinned in `devcontainer.json`.
-
-The canonical devcontainer also uses exact version tags for its base image and public Features.
-`.github/dependabot.yml` tracks `package-ecosystem: "devcontainers"` at `/`.
-The base image tag stays explicitly pinned in `devcontainer.json`.
+image tag stays explicitly pinned in `devcontainer.json`. Devcontainer CI also
+sets `UGOITE_SKIP_PLAYWRIGHT_DEPS=1` so the CI-only smoke path can skip the apt
+and browser-dependency install while contributor bootstrap keeps the full
+`npx playwright install --with-deps chromium` step.
 
 ## Rust CI
 
