@@ -52,7 +52,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-          HEAD_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 - <<'PY'
           from __future__ import annotations
