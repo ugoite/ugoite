@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     permissions:
       contents: read
     steps:
@@ -74,7 +74,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - ci
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     permissions: {}
     steps:
       - name: Check upstream job results
