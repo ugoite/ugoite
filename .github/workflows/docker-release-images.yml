@@ -1,0 +1,246 @@
+name: Release Docker Images
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Git ref (branch, tag, or SHA) to build"
+        required: false
+        type: string
+        default: ""
+      version:
+        description: "Release version without the leading v"
+        required: true
+        type: string
+      channel:
+        description: "Release channel for publish aliases"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-release-image-metadata:
+    name: Prepare release image metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      backend_image: ${{ steps.metadata.outputs.backend_image }}
+      frontend_image: ${{ steps.metadata.outputs.frontend_image }}
+      backend_tags_json: ${{ steps.metadata.outputs.backend_tags_json }}
+      frontend_tags_json: ${{ steps.metadata.outputs.frontend_tags_json }}
+    steps:
+      - name: Compute GHCR repositories and tags
+        id: metadata
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          channel = os.environ["CHANNEL"]
+          repository = os.environ["REPOSITORY"]
+
+          def build_tags(image: str) -> list[str]:
+              base = f"ghcr.io/{repository}/{image}"
+              tags = [f"{base}:{version}"]
+              if channel == "stable":
+                  tags.extend((f"{base}:latest", f"{base}:stable"))
+              elif channel in {"alpha", "beta"}:
+                  tags.append(f"{base}:{channel}")
+              else:
+                  raise SystemExit(f"unsupported channel: {channel}")
+              return tags
+
+          outputs = {
+              "backend_image": f"ghcr.io/{repository}/backend",
+              "frontend_image": f"ghcr.io/{repository}/frontend",
+              "backend_tags_json": json.dumps(build_tags("backend")),
+              "frontend_tags_json": json.dumps(build_tags("frontend")),
+          }
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as handle:
+              for key, value in outputs.items():
+                  handle.write(f"{key}={value}\n")
+          PY
+
+  publish-backend-by-platform:
+    name: Publish backend image (${{ matrix.platform }})
+    needs: prepare-release-image-metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            platform_slug: linux-amd64
+            cache_scope: backend-release-linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            platform_slug: linux-arm64
+            cache_scope: backend-release-linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image by digest
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ needs.prepare-release-image-metadata.outputs.backend_image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: |
+            type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: |
+            type=gha,mode=max,scope=${{ matrix.cache_scope }}
+          build-contexts: |
+            core=./ugoite-core
+            minimum=./ugoite-minimum
+            module=./ugoite-cli
+
+      - name: Record backend image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST_DIR: ${{ runner.temp }}/backend-digests
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIGEST_DIR"
+          touch "$DIGEST_DIR/${DIGEST#sha256:}"
+
+      - name: Upload backend digest artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backend-digest-${{ matrix.platform_slug }}
+          path: ${{ runner.temp }}/backend-digests/*
+          if-no-files-found: error
+
+  publish-backend-manifest:
+    name: Publish backend image manifest
+    needs:
+      - prepare-release-image-metadata
+      - publish-backend-by-platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download backend digest artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: backend-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/backend-digests
+
+      - name: Create backend multi-arch manifest
+        env:
+          BACKEND_IMAGE: ${{ needs.prepare-release-image-metadata.outputs.backend_image }}
+          BACKEND_TAGS_JSON: ${{ needs.prepare-release-image-metadata.outputs.backend_tags_json }}
+          DIGEST_DIR: ${{ runner.temp }}/backend-digests
+        run: |
+          set -euo pipefail
+          refs=()
+          while IFS= read -r digest_path; do
+            [ -n "$digest_path" ] || continue
+            refs+=("${BACKEND_IMAGE}@sha256:$(basename "$digest_path")")
+          done < <(find "$DIGEST_DIR" -maxdepth 1 -type f -print | sort)
+          if [ "${#refs[@]}" -eq 0 ]; then
+            echo "no backend image digests were downloaded" >&2
+            exit 1
+          fi
+          mapfile -t tags < <(python3 - <<'PY'
+          import json
+          import os
+
+          for tag in json.loads(os.environ["BACKEND_TAGS_JSON"]):
+              print(tag)
+          PY
+          )
+          cmd=(docker buildx imagetools create)
+          for tag in "${tags[@]}"; do
+            cmd+=( -t "$tag" )
+          done
+          cmd+=("${refs[@]}")
+          "${cmd[@]}"
+          docker buildx imagetools inspect "${tags[0]}"
+
+  publish-frontend-image:
+    name: Publish frontend image
+    needs: prepare-release-image-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Set up QEMU emulation for cross-platform builds
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ join(fromJSON(needs.prepare-release-image-metadata.outputs.frontend_tags_json), '\n') }}
+          cache-from: |
+            type=gha,scope=frontend-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-image
+          build-contexts: |
+            shared=./shared
