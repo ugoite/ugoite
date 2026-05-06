@@ -33,7 +33,10 @@ jobs:
 
       - name: Validate commit messages
         run: |
-          npx --yes @commitlint/cli@19.8.1 \
+          npx --yes \
+            --package @commitlint/cli@19.8.1 \
+            --package @commitlint/config-conventional@19.8.1 \
+            commitlint \
             --config .commitlintrc.cjs \
             --from origin/main \
             --to HEAD

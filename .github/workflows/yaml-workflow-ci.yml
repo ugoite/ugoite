@@ -23,7 +23,7 @@ jobs:
       - name: Install actionlint
         run: |
           set -euo pipefail
-          version=1.7.7
+          version=1.7.12
           arch=amd64
           if [[ "$(uname -m)" == "arm64" ]]; then
             arch=arm64
