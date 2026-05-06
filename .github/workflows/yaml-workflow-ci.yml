@@ -20,6 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          version=1.7.7
+          arch=amd64
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            arch=arm64
+          fi
+          tmpdir="$(mktemp -d)"
+          curl -fsSL -o "$tmpdir/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_${arch}.tar.gz"
+          tar -xzf "$tmpdir/actionlint.tar.gz" -C "$tmpdir"
+          sudo install -m 0755 "$tmpdir/actionlint" /usr/local/bin/actionlint
+
       - name: Check root artifact hygiene
         run: bash scripts/check-root-artifact-hygiene.sh
 
@@ -41,7 +55,7 @@ jobs:
               -d "{extends: relaxed, rules: {line-length: disable}}"
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1
+        run: actionlint
 
   required-check:
     name: YAML Workflow CI
