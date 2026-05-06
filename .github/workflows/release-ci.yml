@@ -13,7 +13,7 @@ permissions:
 jobs:
   release-pr:
     name: Release Please PR
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     timeout-minutes: 20
     env:
       RELEASE_PLEASE_ENABLED: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
