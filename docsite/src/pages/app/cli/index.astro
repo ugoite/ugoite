@@ -19,6 +19,20 @@ const commandOutputs = await fs
   .readFile(generatedPath, "utf-8")
   .then((raw) => JSON.parse(raw) as { command: string; output: string }[])
   .catch(() => []);
+
+const verifyFirstCommand = [
+  "VERSION=0.0.1-beta.13",
+  "TARGET=x86_64-unknown-linux-gnu",
+  'BASE_URL="https://github.com/ugoite/ugoite/releases/download/v${VERSION}"',
+  "",
+  'curl -fsSLO "${BASE_URL}/ugoite-v${VERSION}-${TARGET}.tar.gz"',
+  'curl -fsSLO "${BASE_URL}/ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"',
+  'sha256sum -c "ugoite-v${VERSION}-${TARGET}.tar.gz.sha256"',
+  'tar -xzf "ugoite-v${VERSION}-${TARGET}.tar.gz"',
+  'mkdir -p "$HOME/.local/bin"',
+  'install -m 0755 ugoite "$HOME/.local/bin/ugoite"',
+  "ugoite --help",
+].join("\n");
 ---
 
 <BaseLayout title="CLI | Ugoite" description="Command-line interface for scriptable knowledge management." toc={toc}
@@ -40,36 +54,45 @@ const commandOutputs = await fs
       <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">Quick Start</h2>
       <div style="display: grid; gap: 0.75rem;">
         <div>
-          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Published install (recommended)</p>
-          <TerminalCommand command="npm install -g ugoite && ugoite-install && ugoite --help" />
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Verify-first archive install (recommended)</p>
+          <TerminalCommand command={verifyFirstCommand} />
           <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
-            Use this when you want the released CLI without cloning the repository. For the full installer and archive options, continue to the canonical <a href={withBasePath("/docs/guide/cli")}>CLI Guide</a>.
+            This Linux x86_64 example matches the checksum-first release flow in the canonical <a href={withBasePath("/docs/guide/cli")}>CLI Guide</a>. Swap <code>TARGET</code> for your platform's published archive before copying it on macOS, or use the bootstrap helper below if you already trust the installer script.
           </p>
         </div>
         <div>
-          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Build from source (contributors)</p>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">2. Bootstrap helper (secondary)</p>
+          <TerminalCommand command="npm install -g ugoite && ugoite-install && ugoite --help" />
+          <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+            Use this when you already trust the helper and want the quicker handoff to the shared installer script.
+          </p>
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Build from source (contributors)</p>
           <TerminalCommand command="mise run setup" />
         </div>
         <div>
-          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">3. Check the CLI from source</p>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. Check the CLI from source</p>
           <TerminalCommand command="cargo run -q -p ugoite-cli -- --help" />
         </div>
         <div>
-          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">4. List spaces from source</p>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. Switch to backend mode</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://127.0.0.1:8000" />
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">6. Authenticate against the backend</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- auth login --mock-oauth" />
+        </div>
+        <div>
+          <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">7. List spaces from source</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- config current && cargo run -q -p ugoite-cli -- space list" />
           <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
+          <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+            Backend mode drops the local-root argument because the CLI now talks to the server. Use <code>config current</code> before copy-pasting commands when you switch between modes, and follow{" "}
+            <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a> for the full browser + CLI auth walkthrough.
+          </p>
         </div>
       </div>
-      <div>
-        <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">5. Switch to backend mode</p>
-        <TerminalCommand command="cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://127.0.0.1:8000" />
-        <TerminalCommand command="cargo run -q -p ugoite-cli -- auth login --mock-oauth" />
-        <TerminalCommand command="cargo run -q -p ugoite-cli -- config current && cargo run -q -p ugoite-cli -- space list" />
-        <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
-          Backend mode drops the local-root argument because the CLI now talks to the server. Use <code>config current</code> before copy-pasting commands when you switch between modes, and follow{" "}
-          <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a> for the full browser + CLI auth walkthrough.
-        </p>
-      </div>
-    </div>
   </section>
 
   {commandOutputs.length > 0 && (
