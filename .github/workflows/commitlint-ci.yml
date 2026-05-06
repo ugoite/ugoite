@@ -31,12 +31,12 @@ jobs:
       - name: Fetch main branch
         run: git fetch origin main --depth=1
 
+      - name: Install commitlint dependencies
+        run: npm ci --ignore-scripts
+
       - name: Validate commit messages
         run: |
-          npx --yes \
-            --package @commitlint/cli@19.8.1 \
-            --package @commitlint/config-conventional@19.8.1 \
-            commitlint \
+          npx commitlint \
             --config .commitlintrc.cjs \
             --from origin/main \
             --to HEAD
