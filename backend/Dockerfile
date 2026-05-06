@@ -1,11 +1,11 @@
-FROM python:3.14.4-slim-trixie@sha256:a28758f9978680d6aa6145e75cb3032b1b9fe4dcd3abc46471b3a6bda57f0daf
+FROM python:3.14.4-slim-trixie@sha256:c11aee3b3cae066f55d1e9318fc812673aa6557073b0db0d792b59491b262e0c
 
 ARG UGOITE_UID=10001
 ARG UGOITE_GID=10001
 
 WORKDIR /app
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /uvx /bin/
+# Install uv using the base Python interpreter so the build uses the same Python version
+RUN python3 -m pip install --upgrade pip setuptools wheel uv==0.10.10
 
 # Build essentials and Rust toolchain for compiling ugoite-core (Rust native modules)
 RUN apt-get update \
