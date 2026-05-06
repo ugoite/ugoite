@@ -5,10 +5,10 @@ the normal login flow. It covers the earlier failure modes that happen before
 [Troubleshooting Unauthorized Spaces Page](troubleshooting-unauthorized-spaces.md)
 becomes relevant.
 
-On Docker Desktop for macOS or Windows, and on WSL, start by checking the shared
-filesystem path that your platform mounts into containers. The Linux ACL and
-ownership commands below are the native bind-mount repair path, not the first
-step for those desktop setups.
+On Docker Desktop for macOS or Windows, start by checking the shared filesystem
+path that your platform mounts into containers. If you're on WSL, start by
+checking the distro-local Linux filesystem path that your WSL instance mounts
+into containers. The Linux ACL and ownership commands below are the native bind-mount repair path, not the first step for those desktop setups.
 
 Use the same Compose command prefix that you used to start the stack:
 

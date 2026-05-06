@@ -11,11 +11,12 @@ it still needs Docker, published image pulls, and a two-service stack. If you
 want the lightest local-first start, use the [CLI Guide](cli.md) in `core`
 mode instead.
 
-If you're using Docker Desktop on macOS or Windows, or running the stack from
-WSL, keep the shared bind-mount path inside the filesystem location that your
-platform already exposes to containers. The permission repair commands below
-are the native Linux bind-mount path, not the default first step on those
-desktop platforms.
+If you're using Docker Desktop on macOS or Windows, keep the shared bind-mount
+path inside the filesystem location that your platform already exposes to
+containers. If you're running the stack from WSL, keep the path inside the
+distro-local Linux filesystem that your WSL distro exposes to containers. The
+permission repair commands below are the native Linux bind-mount path, not the
+default first step on those desktop platforms.
 
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
@@ -102,8 +103,9 @@ involved. The shipped compose file bootstraps the `default` space at startup so
 the first browser and CLI session both have a ready workspace. The reserved
 `admin-space` still exists for admin-only workflows, but `/spaces` keeps it in a
 separate admin section so the first visible workspace path stays newcomer-friendly.
-For more detail on the explicit browser login flow, see
-[Local Dev Auth Login](local-dev-auth-login.md).
+For more detail on the explicit browser login flow and the canonical auth-mode
+comparison, see [Local Development Authentication and Login]
+(local-dev-auth-login.md).
 For the concrete post-login space -> form -> entry path, continue to
 [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 
@@ -192,16 +194,17 @@ These are the supported release-compose environment variables for the shipped
 | `UGOITE_DEV_AUTH_MODE` | `passkey-totp` | Dev login mode inside the shipped manifest. Set it to `mock-oauth` only for an explicit local demo flow. |
 | `UGOITE_DEV_USER_ID` | required | Username/user id for the explicit login flow you enable. The quick-start example above sets `dev-local-user` explicitly. |
 | `UGOITE_DEV_SIGNING_KID` | `release-compose-local-v1` | Key id paired with your install-specific bearer signing material. |
-| `UGOITE_DEV_SIGNING_SECRET` | required unique value | Secret used to mint dev bearer tokens for this install. |
-| `UGOITE_AUTH_BEARER_SECRETS` | required unique value | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
+| `UGOITE_DEV_SIGNING_SECRET` | required 32-byte random secret | Secret used to mint dev bearer tokens for this install. |
+| `UGOITE_AUTH_BEARER_SECRETS` | required 32-byte random secret | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
 | `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids exposed to the backend. |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required unique value | Shared token between frontend and backend so `/login` can reach the explicit auth endpoints. |
+| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required 32-byte random secret | Shared token between frontend and backend so `/login` can reach the explicit auth endpoints. |
 
 The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
 the Compose network. By default it stays on `passkey-totp`; the quick-start
 example above opts into `mock-oauth` only after generating install-specific
-secrets. For a broader mode-by-mode reference, see
-[Environment Variable Matrix](env-matrix.md).
+secrets. For the canonical auth-mode comparison, see
+[Local Development Authentication and Login](local-dev-auth-login.md). For a
+broader mode-by-mode reference, see [Environment Variable Matrix](env-matrix.md).
 
 ## Version selectors
 
