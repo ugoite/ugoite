@@ -11,6 +11,13 @@ it still needs Docker, published image pulls, and a two-service stack. If you
 want the lightest local-first start, use the [CLI Guide](cli.md) in `core`
 mode instead.
 
+If you're using Docker Desktop on macOS or Windows, keep the shared bind-mount
+path inside the filesystem location that your platform already exposes to
+containers. If you're running the stack from WSL, keep the path inside the
+distro-local Linux filesystem that your WSL distro exposes to containers. The
+permission repair commands below are the native Linux bind-mount path, not the
+default first step on those desktop platforms.
+
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
 If you want the same published two-service topology on Kubernetes, use
@@ -96,8 +103,9 @@ involved. The shipped compose file bootstraps the `default` space at startup so
 the first browser and CLI session both have a ready workspace. The reserved
 `admin-space` still exists for admin-only workflows, but `/spaces` keeps it in a
 separate admin section so the first visible workspace path stays newcomer-friendly.
-For more detail on the explicit browser login flow, see
-[Local Development Authentication and Login](local-dev-auth-login.md).
+For more detail on the explicit browser login flow and the canonical auth-mode
+comparison, see [Local Development Authentication and Login]
+(local-dev-auth-login.md).
 For the concrete post-login space -> form -> entry path, continue to
 [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 
@@ -149,14 +157,6 @@ ls ./spaces
 find ./spaces -maxdepth 2 -type f | head
 ```
 
-Click **Continue with Mock OAuth** to reach `/spaces`. The shipped compose file
-bootstraps the `default` space at startup so the first browser and CLI session
-both have a ready workspace. For the canonical auth-mode comparison and more
-detail on the explicit browser login flow, see
-[Local Development Authentication and Login](local-dev-auth-login.md).
-
-This published quick start intentionally advertises `mock-oauth`.
-
 ## Next steps
 
 - The `default` space is the starter workspace that the published quick start
@@ -202,10 +202,9 @@ These are the supported release-compose environment variables for the shipped
 The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
 the Compose network. By default it stays on `passkey-totp`; the quick-start
 example above opts into `mock-oauth` only after generating install-specific
-secrets. It also pre-wires the signing/bearer settings needed for the explicit
-`mock-oauth` browser login flow. For the canonical auth-mode comparison, see
+secrets. For the canonical auth-mode comparison, see
 [Local Development Authentication and Login](local-dev-auth-login.md). For a
-broader environment reference, see [Environment Variable Matrix](env-matrix.md).
+broader mode-by-mode reference, see [Environment Variable Matrix](env-matrix.md).
 
 ## Version selectors
 

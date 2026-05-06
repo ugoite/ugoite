@@ -53,6 +53,20 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
                 ),
             ),
             (
+                "Docker Desktop on macOS or Windows" not in quickstart_text,
+                (
+                    "container-quickstart.md must call out the Docker Desktop and "
+                    "WSL path separately from Linux bind mounts"
+                ),
+            ),
+            (
+                "native Linux bind-mount path" not in quickstart_text,
+                (
+                    "container-quickstart.md must say the permission repair "
+                    "commands are Linux-only guidance"
+                ),
+            ),
+            (
                 'setfacl -m u:10001:rwx,d:u:10001:rwx "$SPACE_PATH"'
                 not in troubleshooting_text,
                 ("troubleshooting-compose-startup.md must try ACL-based writes first"),
@@ -76,6 +90,20 @@ def test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces() -> N
                 (
                     "troubleshooting-compose-startup.md must explain why the "
                     "fallback preserves host ownership"
+                ),
+            ),
+            (
+                "Docker Desktop for macOS or Windows" not in troubleshooting_text,
+                (
+                    "troubleshooting-compose-startup.md must call out the "
+                    "Docker Desktop and WSL path separately from Linux bind mounts"
+                ),
+            ),
+            (
+                "native bind-mount repair path" not in troubleshooting_text,
+                (
+                    "troubleshooting-compose-startup.md must say the repair "
+                    "commands are Linux-only guidance"
                 ),
             ),
             (
