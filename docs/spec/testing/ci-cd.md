@@ -15,7 +15,6 @@
 | ScanCode | `.github/workflows/scancode.yml` | Merge queue, manual | Run license/compliance and vulnerability scanning |
 | Shell CI | `.github/workflows/shell-ci.yml` | Push on `main`, PR, merge queue | Run shell formatting, lint, and syntax checks |
 | YAML Workflow CI | `.github/workflows/yaml-workflow-ci.yml` | Push on `main`, PR, merge queue | Run repository artifact hygiene, GitHub Action SHA pinning checks, yamllint, and actionlint |
-| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Merge queue | Bootstrap pinned toolchains, perform strict lockfile installs, and run the full `pre-commit` hook chain |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | Push on `main`, PR, merge queue | Keep canonical root commands documented |
 | Commitlint CI | `.github/workflows/commitlint-ci.yml` | PR, merge queue | Enforce Conventional Commits |
 | CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue, schedule, manual | Automated code scanning workflow for Actions, JavaScript/TypeScript, Python, and Rust |
@@ -101,8 +100,7 @@ The human-readable policy lives in `CONTRIBUTING.md`.
   `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the fast
   static checks that are cheap to rerun.
 - `merge_group` is the final gate before `main`: `Docker Build CI`, `E2E Tests`,
-  `Pre-commit CI`, `Rust CI`, `SBOM CI`, `ScanCode`, and
-  `Release Quickstart Verify CI`.
+  `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI`.
 
 Local validation should mirror the same split. Use `mise run test` for the
 routine repo-wide baseline, `mise run test:docs` when `README.md`,
@@ -134,7 +132,6 @@ path-aware no-op.
 | Docsite CI | `.github/workflows/docsite-ci.yml` | PR, merge queue | Direct summary check for docsite quality gates |
 | E2E Tests | `.github/workflows/e2e-ci.yml` | PR, merge queue | Summary check covers image export, tier selection, and Playwright execution |
 | Frontend CI | `.github/workflows/frontend-ci.yml` | PR, merge queue | Direct summary check for Biome + Vitest coverage |
-| Pre-commit CI | `.github/workflows/pre-commit-ci.yml` | Merge queue | Direct summary check for the full `.pre-commit-config.yaml` hook chain |
 | Python CI | `.github/workflows/python-ci.yml` | PR, merge queue | Direct summary check for Ruff, ty, backend pytest, local dev seed runtime coverage, and docs tests |
 | Release Quickstart Verify CI | `.github/workflows/release-quickstart-verify-ci.yml` | Merge queue | Direct summary check for current-branch release quickstart coverage |
 | README Command Guard | `.github/workflows/readme-command-guard.yml` | Push on `main`, PR, merge queue | Direct summary check for canonical root commands |
@@ -470,8 +467,8 @@ uvx pre-commit run --all-files
 ```
 
 `mise run setup` installs dependencies and runs `uvx pre-commit install`, so
-local commits use the same hook chain as CI by default. Re-run
-`uvx pre-commit install` manually only if the hooks need repair.
+local commits use the same hook chain by default. Re-run `uvx pre-commit
+install` manually only if the hooks need repair.
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Ruff**: Auto-formats and lints Python
@@ -491,29 +488,6 @@ npm run prepare
 
 This enables a Husky v9-compatible `commit-msg` hook and runs `commitlint`
 before commit is accepted.
-
-## Pre-commit CI
-
-```yaml
-jobs:
-  ci:
-    - Install shfmt + shellcheck
-    - Install Rust 1.93.0 with rustfmt, clippy, llvm-tools-preview
-    - Install uv 0.10.10
-    - Install Node.js 22.12.0 and Bun 1.3.8
-    - cd frontend && bun install --frozen-lockfile
-    - cd docsite && bun install --frozen-lockfile
-    - cd backend && uv sync --locked
-    - cd ugoite-core && uv sync --locked
-    - cargo install cargo-llvm-cov --locked
-    - uvx pre-commit run --all-files
-```
-
-Pre-commit CI keeps `.pre-commit-config.yaml` itself continuously executable in CI instead of only relying on the individual workflows behind each hook. The
-workflow is merge-queue only, so it acts as the final hook-level gate before
-`main`. It bootstraps the same pinned toolchains used elsewhere in the
-repository, uses strict lockfile-backed installs for Bun and uv projects, and
-exposes a direct summary check through `.github/required-status-checks.json`.
 
 The root `mise.toml` also declares explicit `[monorepo].config_roots` for package-level task configs so top-level `mise run dev`, `mise run test`, and `mise run e2e` stay warning-free on current mise releases.
 
