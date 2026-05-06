@@ -5,6 +5,8 @@ import { withBasePath } from "../../../lib/base-path";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const localDevAuthGuideHref = withBasePath("/docs/guide/local-dev-auth-login");
+
 const toc = [
   { id: "overview", title: "Overview" },
   { id: "setup", title: "Quick Start" },
@@ -55,7 +57,7 @@ const verifyFirstCommand = [
           <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">1. Verify-first archive install (recommended)</p>
           <TerminalCommand command={verifyFirstCommand} />
           <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
-            This matches the checksum-first release flow in the canonical <a href={withBasePath("/docs/guide/cli")}>CLI Guide</a>. If you want fewer steps after trusting the helper itself, use the bootstrap helper below instead.
+            This Linux x86_64 example matches the checksum-first release flow in the canonical <a href={withBasePath("/docs/guide/cli")}>CLI Guide</a>. Swap <code>TARGET</code> for your platform's published archive before copying it on macOS, or use the bootstrap helper below if you already trust the installer script.
           </p>
         </div>
         <div>
@@ -83,7 +85,12 @@ const verifyFirstCommand = [
         </div>
         <div>
           <p style="font-size: 0.8125rem; font-weight: 600; margin-bottom: 0.375rem;">7. List spaces from source</p>
+          <TerminalCommand command="cargo run -q -p ugoite-cli -- config current && cargo run -q -p ugoite-cli -- space list" />
           <TerminalCommand command="mkdir -p ./spaces && cargo run -q -p ugoite-cli -- space list ./spaces" />
+          <p style="font-size: 0.75rem; color: var(--doc-muted); margin-top: 0.5rem; line-height: 1.6;">
+            Backend mode drops the local-root argument because the CLI now talks to the server. Use <code>config current</code> before copy-pasting commands when you switch between modes, and follow{" "}
+            <a href={localDevAuthGuideHref} target="_blank" rel="noreferrer">Local Dev Auth/Login</a> for the full browser + CLI auth walkthrough.
+          </p>
         </div>
       </div>
   </section>
