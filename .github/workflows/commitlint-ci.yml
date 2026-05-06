@@ -15,7 +15,7 @@ permissions:
 jobs:
   commitlint:
     name: Conventional Commit Check
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -23,30 +23,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: 22.12.0
-
-      - name: Fetch main branch
-        run: git fetch origin main --depth=1
-
-      - name: Install commitlint dependencies
-        run: npm ci --ignore-scripts
-
       - name: Validate commit messages
-        run: |
-          npx commitlint \
-            --config .commitlintrc.cjs \
-            --from origin/main \
-            --to HEAD
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6
+        with:
+          configFile: .commitlintrc.cjs
 
   required-check:
     name: Commitlint CI
     if: ${{ always() }}
     needs:
       - commitlint
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     steps:
       - name: Check upstream job results
         env:
