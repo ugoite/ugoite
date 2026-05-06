@@ -15,7 +15,7 @@
 		"@codemirror/autocomplete": "^6.20.2",
 		"@codemirror/lang-sql": "^6.10.0",
 		"@codemirror/language": "^6.12.3",
-		"@codemirror/lint": "^6.9.5",
+		"@codemirror/lint": "^6.9.6",
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.42.0",
 		"@solidjs/router": "^0.16.1",
