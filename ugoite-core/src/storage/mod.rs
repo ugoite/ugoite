@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use opendal::services::{Fs, Memory};
 use opendal::{EntryMode, Operator};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -12,6 +13,15 @@ fn memory_cache() -> &'static Mutex<HashMap<String, Operator>> {
     MEMORY_OPERATORS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn local_operator_from_uri(uri: &str) -> Result<Operator> {
+    let root = uri
+        .strip_prefix("fs://")
+        .or_else(|| uri.strip_prefix("file://"))
+        .unwrap_or(uri);
+    let op = Operator::new(Fs::default().root(root))?.finish();
+    Ok(op)
+}
+
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
     if uri.starts_with("memory://") {
         let mut cache = memory_cache()
@@ -20,12 +30,47 @@ pub fn operator_from_uri(uri: &str) -> Result<Operator> {
         if let Some(op) = cache.get(uri) {
             return Ok(op.clone());
         }
-        let op = Operator::from_uri(uri)?;
+        let op = Operator::new(Memory::default())?.finish();
         cache.insert(uri.to_string(), op.clone());
         return Ok(op);
     }
 
+    if uri.starts_with("fs://")
+        || uri.starts_with("file://")
+        || uri.starts_with('/')
+        || uri.starts_with('.')
+    {
+        return local_operator_from_uri(uri);
+    }
+
     Ok(Operator::from_uri(uri)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::operator_from_uri;
+    use anyhow::Result;
+
+    #[tokio::test]
+    async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let fs_uri = format!("fs://{}", temp_dir.path().display());
+        let fs_operator = operator_from_uri(&fs_uri)?;
+        fs_operator
+            .write("hello.txt", b"hello world".to_vec())
+            .await?;
+        let fs_bytes = fs_operator.read("hello.txt").await?.to_vec();
+        assert_eq!(fs_bytes, b"hello world");
+
+        let memory_operator = operator_from_uri("memory://")?;
+        memory_operator
+            .write("hello.txt", b"hello world".to_vec())
+            .await?;
+        let memory_bytes = memory_operator.read("hello.txt").await?.to_vec();
+        assert_eq!(memory_bytes, b"hello world");
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
