@@ -49,6 +49,12 @@ Make the smallest change that restores CI, keep the fix scoped to the affected w
 2. Keep Python base images pinned with an exact version tag and sha256 digest.
 3. Verify with `uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_002_container_external_refs_are_pinned -v`.
 
+### Devcontainer smoke hits a release API limit
+
+1. If `devcontainers/ci` fails while installing a feature with `HTTP Error 403: rate limit exceeded`, rerun the workflow once before editing files.
+2. Treat the failure as flaky unless the same trace repeats after a rerun.
+3. Only change `.devcontainer/devcontainer.json` or feature pins if the rerun reproduces the same install failure.
+
 ### Rust storage failures like `scheme fs is not registered`
 
 1. Update `ugoite-core/src/storage/mod.rs` to build local `fs://` and `memory://` operators explicitly.
