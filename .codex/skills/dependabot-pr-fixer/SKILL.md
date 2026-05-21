@@ -20,6 +20,7 @@ Make the smallest change that restores CI, keep the fix scoped to the affected w
    - a workspace-specific dependency mismatch
    - a real code regression
    - a stale check that only needs a rerun
+4. If the PR was green but merge queue rejected it, assume the base moved and rebase onto `origin/main` before changing anything else.
 
 ## Common Fixes
 
@@ -79,8 +80,9 @@ Make the smallest change that restores CI, keep the fix scoped to the affected w
 ## Queueing
 
 1. Wait for all required checks to pass.
-2. Enqueue the PR using GitHub's merge queue mutation or the repo's normal merge-queue flow.
-3. Use the current head OID when queuing so stale revisions are rejected.
+2. Enqueue the PR with `gh pr merge <number>` or the repo's normal merge-queue flow once the checks are green.
+3. Use `--match-head-commit <sha>` when you want GitHub to reject stale revisions instead of queueing an old head.
+4. If the branch was rebased to fix queue drift, push with `--force-with-lease` and then re-run the queue step.
 
 ## Rules Of Thumb
 
