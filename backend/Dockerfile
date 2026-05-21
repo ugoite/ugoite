@@ -1,10 +1,10 @@
-FROM python:3.14.4-slim-trixie@sha256:13c5640e79ce15c280f6a3d63c6e17d14420d26821e406c211a7cc332e9782b2
+FROM python:3.14.4-slim-trixie@sha256:c11aee3b3cae066f55d1e9318fc812673aa6557073b0db0d792b59491b262e0c
 
 ARG UGOITE_UID=10001
 ARG UGOITE_GID=10001
 
 WORKDIR /app
-# Install uv
+# Install uv from a pinned release image.
 COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /uvx /bin/
 
 # Build essentials and Rust toolchain for compiling ugoite-core (Rust native modules)
