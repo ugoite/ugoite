@@ -29,6 +29,7 @@ Common follow-up commands inside either setup:
 ```bash
 mise run dev
 mise run test
+mise run test:low-memory
 ```
 
 Before adding a new workflow-specific command, check `.github/workflows/` and
@@ -137,7 +138,8 @@ CodeQL code scanning, and merge queue plus `main` merge were re-verified after
 that repository-side update.
 
 local validation maps to the same CI event split: use `mise run test` for the
-repo baseline, `mise run test:docs` for docs, spec, or REQ-traceability changes,
+repo baseline, `mise run test:low-memory` for devcontainers, Codespaces, and
+memory-constrained machines, `mise run test:docs` for docs, spec, or REQ-traceability changes,
 `mise run e2e` for browser flows, and focused surface commands when only one
 package changed.
 

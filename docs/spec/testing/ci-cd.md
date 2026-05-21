@@ -103,9 +103,11 @@ The human-readable policy lives in `CONTRIBUTING.md`.
   `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI`.
 
 Local validation should mirror the same split. Use `mise run test` for the
-routine repo-wide baseline, `mise run test:docs` when `README.md`,
-`CONTRIBUTING.md`, `docs/spec/`, or `docs/tests/` change, and target the
-surface-specific commands when you are iterating on a narrower area.
+routine repo-wide baseline, `mise run test:low-memory` for devcontainers,
+Codespaces, and memory-constrained machines, `mise run test:docs` when
+`README.md`, `CONTRIBUTING.md`, `docs/spec/`, or `docs/tests/` change, and
+target the surface-specific commands when you are iterating on a narrower
+area.
 
 ## Native Required Status Checks
 
@@ -223,6 +225,10 @@ jobs:
 The root `mise run test` contract must enforce the same frontend 100% coverage
 gate by depending on `//frontend:test:coverage`, so local verification and CI
 fail for the same coverage regressions.
+The low-memory root contract depends on
+`//frontend:test:coverage:low-memory`, which keeps the same coverage gate while
+making the constrained execution profile explicit for devcontainers and
+Codespaces.
 Dependabot groups frontend `vitest` and `@vitest/*` Bun updates together so the
 coverage runner packages stay aligned and cannot quietly drift into mixed-version
 warnings during that enforced coverage path.
@@ -243,6 +249,10 @@ jobs:
 The root `mise run test` contract must enforce the same docsite 100% coverage
 gate by depending on `//docsite:test:coverage`, so local verification and CI
 fail for the same coverage regressions.
+The low-memory root contract depends on
+`//docsite:test:coverage:low-memory`, which keeps the same coverage gate while
+making the constrained execution profile explicit for devcontainers and
+Codespaces.
 
 ## E2E CI
 

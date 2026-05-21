@@ -90,6 +90,13 @@ def test_docs_req_ops_036_contributor_workflow_guide_stays_traceable() -> None:
                 "CONTRIBUTING.md must mention the repo-wide validation command",
             ),
             (
+                "mise run test:low-memory" not in contributing_text,
+                (
+                    "CONTRIBUTING.md must mention the low-memory repo-wide "
+                    "validation command"
+                ),
+            ),
+            (
                 "mise run test:docs" not in contributing_text,
                 "CONTRIBUTING.md must mention the docs consistency validation command",
             ),
