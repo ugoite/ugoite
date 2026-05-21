@@ -4,8 +4,8 @@ ARG UGOITE_UID=10001
 ARG UGOITE_GID=10001
 
 WORKDIR /app
-# Install uv using the base Python interpreter so the build uses the same Python version
-RUN python3 -m pip install --upgrade pip setuptools wheel uv==0.10.10
+# Install uv from a pinned release image.
+COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /uvx /bin/
 
 # Build essentials and Rust toolchain for compiling ugoite-core (Rust native modules)
 RUN apt-get update \
