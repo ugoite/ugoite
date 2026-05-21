@@ -39,9 +39,10 @@ Make the smallest change that restores CI, keep the fix scoped to the affected w
 
 ### Backend `uv.lock` keeps snapping back
 
-1. If `uv lock` normalizes a Dependabot bump back to the old value, update the source requirement in `ugoite-core/pyproject.toml`.
-2. Regenerate both `ugoite-core/uv.lock` and `backend/uv.lock`.
-3. Verify with `cd backend && uv sync --locked`.
+1. Check whether `backend` is resolving through `ugoite-core/pyproject.toml` or another sibling workspace pin.
+2. If the resolved version is intentionally lower, keep the normalized `backend/uv.lock` and do not force the Dependabot version into the lockfile.
+3. If you actually need the newer version across the workspace, raise the source requirement in `ugoite-core/pyproject.toml`, then regenerate both `ugoite-core/uv.lock` and `backend/uv.lock`.
+4. Verify with `cd backend && uv sync --locked`.
 
 ### Backend Dockerfile pinning failures
 
