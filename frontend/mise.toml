@@ -13,3 +13,7 @@ description = "Run frontend unit/component tests with Vitest"
 [tasks."test:coverage"]
 run = "bash ../scripts/ensure-bun-package-install.sh && node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
 description = "Run frontend unit/component tests with 100% coverage enforcement"
+
+[tasks."test:coverage:low-memory"]
+run = "bash ../scripts/ensure-bun-package-install.sh && NODE_OPTIONS=\"--max-old-space-size=2048\" VITEST_MAX_WORKERS=1 node ./node_modules/vitest/vitest.mjs run --coverage --maxWorkers=1"
+description = "Run frontend unit/component tests with 100% coverage enforcement under low-memory settings"
