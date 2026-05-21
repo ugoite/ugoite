@@ -31,6 +31,24 @@ Make the smallest change that restores CI, keep the fix scoped to the affected w
 4. Commit only the lockfile diff.
 5. Verify with `uv sync --locked`.
 
+### Bun lockfiles need to be refreshed
+
+1. Run `bun install` in the affected workspace, usually `docsite/` or `frontend/`.
+2. Keep the `package.json` and `bun.lock` pair in sync.
+3. Verify with `bun install --frozen-lockfile`.
+
+### Backend `uv.lock` keeps snapping back
+
+1. If `uv lock` normalizes a Dependabot bump back to the old value, update the source requirement in `ugoite-core/pyproject.toml`.
+2. Regenerate both `ugoite-core/uv.lock` and `backend/uv.lock`.
+3. Verify with `cd backend && uv sync --locked`.
+
+### Backend Dockerfile pinning failures
+
+1. Keep the `COPY --from=ghcr.io/astral-sh/uv:<version> /uv /uvx /bin/` line pinned to an exact version tag.
+2. Keep Python base images pinned with an exact version tag and sha256 digest.
+3. Verify with `uv run --with pytest --with pyyaml --with bashlex pytest -W error docs/tests/test_guides.py::test_docs_req_ops_002_container_external_refs_are_pinned -v`.
+
 ### Rust storage failures like `scheme fs is not registered`
 
 1. Update `ugoite-core/src/storage/mod.rs` to build local `fs://` and `memory://` operators explicitly.
