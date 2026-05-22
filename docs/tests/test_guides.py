@@ -199,6 +199,7 @@ REQUIRED_YAML_WORKFLOW_CI_STEPS = {
     "Run actionlint",
 }
 REQUIRED_PRE_COMMIT_SETUP_COMMAND = "uvx pre-commit install"
+REQUIRED_PRE_COMMIT_SETUP_PRE_PUSH_COMMAND = "--hook-type pre-push"
 REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
     "if git config --local --get core.hooksPath >/dev/null; "
     "then git config --local --unset-all "
@@ -206,14 +207,25 @@ REQUIRED_PRE_COMMIT_SETUP_RESET_COMMAND = (
 )
 REQUIRED_PRE_COMMIT_SETUP_README_FRAGMENTS = {
     "Install dependencies and repository pre-commit hooks:",
-    "The setup task also runs `uvx pre-commit install` so local commits use the same",
-    "hook chain by default.",
+    "The setup task also runs `uvx pre-commit install` and installs the pre-push",
+    "hook so local commits stay fast while the heavier coverage gates still run",
+    "before push.",
+    "pre-push hook",
+    "coverage gates still run before push",
 }
 REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS = {
     "The canonical contributor bootstrap is:",
     "mise run setup",
-    "`mise run setup` installs dependencies and runs `uvx pre-commit install`, so",
-    "local commits use the same hook chain by default.",
+    "`mise run setup` installs dependencies and runs `uvx pre-commit install`, and",
+    "also installs the pre-push hook, so local commits stay fast while the heavier",
+    "coverage gates still run before push.",
+    "pre-push hook",
+    "uvx pre-commit run --hook-stage pre-push --all-files",
+}
+REQUIRED_PRE_COMMIT_SETUP_CONTRIBUTING_FRAGMENTS = {
+    "Local hooks follow the same split:",
+    "uvx pre-commit run --hook-stage pre-push --all-files",
+    "uvx pre-commit install --hook-type pre-push",
 }
 REQUIRED_PYTHON_TEST_STRICTNESS_DOC_FRAGMENTS = {
     "Local backend, ugoite-core, and docs pytest tasks also",
@@ -1905,9 +1917,26 @@ def _collect_req_ops_006_rust_precommit_parity_details() -> list[str]:
 
 def _collect_req_ops_006_pre_commit_details() -> list[str]:
     pre_commit = _load_pre_commit_config()
+    return [
+        *_collect_req_ops_006_pre_commit_hook_details(pre_commit),
+        *_collect_req_ops_006_pre_commit_command_details(pre_commit),
+        *_collect_req_ops_006_pre_commit_stage_details(pre_commit),
+    ]
+
+
+def _collect_req_ops_006_pre_commit_hook_details(
+    pre_commit: dict[str, object],
+) -> list[str]:
     configured_hooks = _collect_pre_commit_hook_ids(pre_commit)
     missing_hooks = sorted(REQUIRED_RUST_PRE_COMMIT_HOOKS.difference(configured_hooks))
+    if not missing_hooks:
+        return []
+    return ["pre-commit missing hooks: " + ", ".join(missing_hooks)]
 
+
+def _collect_req_ops_006_pre_commit_command_details(
+    pre_commit: dict[str, object],
+) -> list[str]:
     hook_entries = _collect_pre_commit_hooks(pre_commit)
     clippy_cli_entry = ""
     cargo_clippy_cli = hook_entries.get("cargo-clippy-cli")
@@ -1923,19 +1952,42 @@ def _collect_req_ops_006_pre_commit_details() -> list[str]:
     if isinstance(cargo_llvm_cov_cli, dict):
         cli_cov_entry = str(cargo_llvm_cov_cli.get("entry", ""))
 
-    missing_parts: list[str] = []
-    if missing_hooks:
-        missing_parts.append("pre-commit missing hooks: " + ", ".join(missing_hooks))
+    details: list[str] = []
     if "--no-default-features" not in clippy_cli_entry:
-        missing_parts.append("cargo-clippy-cli must pass --no-default-features")
+        details.append("cargo-clippy-cli must pass --no-default-features")
     if REQUIRED_MINIMUM_COVERAGE_COMMAND not in minimum_cov_entry:
-        missing_parts.append("cargo-llvm-cov-minimum must run the wrapper")
+        details.append("cargo-llvm-cov-minimum must run the wrapper")
     if "--fail-under-lines 100" not in cli_cov_entry:
-        missing_parts.append("cargo-llvm-cov-cli must enforce 100% line coverage")
+        details.append("cargo-llvm-cov-cli must enforce 100% line coverage")
     if "--no-default-features" not in cli_cov_entry:
-        missing_parts.append("cargo-llvm-cov-cli must pass --no-default-features")
+        details.append("cargo-llvm-cov-cli must pass --no-default-features")
+    return details
 
-    return missing_parts
+
+def _collect_req_ops_006_pre_commit_stage_details(
+    pre_commit: dict[str, object],
+) -> list[str]:
+    minimum_cov_stages = _collect_pre_commit_hook_stages(
+        pre_commit,
+        "cargo-llvm-cov-minimum",
+    )
+    core_cov_stages = _collect_pre_commit_hook_stages(
+        pre_commit,
+        "cargo-llvm-cov-core",
+    )
+    cli_cov_stages = _collect_pre_commit_hook_stages(
+        pre_commit,
+        "cargo-llvm-cov-cli",
+    )
+
+    details: list[str] = []
+    if "pre-push" not in minimum_cov_stages:
+        details.append("cargo-llvm-cov-minimum must run at pre-push")
+    if "pre-push" not in core_cov_stages:
+        details.append("cargo-llvm-cov-core must run at pre-push")
+    if "pre-push" not in cli_cov_stages:
+        details.append("cargo-llvm-cov-cli must run at pre-push")
+    return details
 
 
 def _collect_req_ops_006_ci_details() -> list[str]:
@@ -3487,6 +3539,7 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     frontend_mise = tomllib.loads(FRONTEND_MISE_PATH.read_text(encoding="utf-8"))
+    pre_commit = _load_pre_commit_config()
     frontend_package = _load_json_mapping(FRONTEND_PACKAGE_JSON_PATH)
     frontend_bun_lock = _read_required_text(
         FRONTEND_BUN_LOCK_PATH,
@@ -3506,6 +3559,10 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         FRONTEND_CI_WORKFLOW_PATH,
         job_name="ci",
         step_name=REQUIRED_FRONTEND_COVERAGE_STEP_NAME,
+    )
+    coverage_stages = _collect_pre_commit_hook_stages(
+        pre_commit,
+        "frontend-vitest-coverage",
     )
     guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
     missing_doc_fragments = sorted(
@@ -3576,6 +3633,10 @@ def test_docs_req_ops_021_frontend_coverage_gate_is_explicit() -> None:
         (
             REQUIRED_FRONTEND_COVERAGE_COMMAND not in coverage_run,
             'frontend/mise.toml [tasks."test:coverage"] must run node vitest coverage',
+        ),
+        (
+            "pre-push" not in coverage_stages,
+            "frontend-vitest-coverage must run at pre-push",
         ),
         (
             coverage_step_run is None,
@@ -3933,6 +3994,7 @@ def test_docs_req_ops_024_docsite_coverage_gate_is_explicit() -> None:
     root_mise = tomllib.loads(MISE_PATH.read_text(encoding="utf-8"))
     root_runs = _get_task_run_commands(root_mise, "test")
     docsite_mise = tomllib.loads(DOCSITE_MISE_PATH.read_text(encoding="utf-8"))
+    pre_commit = _load_pre_commit_config()
     coverage_task = _load_mise_task_mapping(
         docsite_mise,
         task_name="test:coverage",
@@ -3946,6 +4008,10 @@ def test_docs_req_ops_024_docsite_coverage_gate_is_explicit() -> None:
         DOCSITE_CI_WORKFLOW_PATH,
         job_name="ci",
         step_name=REQUIRED_DOCSITE_COVERAGE_STEP_NAME,
+    )
+    coverage_stages = _collect_pre_commit_hook_stages(
+        pre_commit,
+        "docsite-vitest-coverage",
     )
     guide_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
     missing_doc_fragments = sorted(
@@ -3962,6 +4028,10 @@ def test_docs_req_ops_024_docsite_coverage_gate_is_explicit() -> None:
         (
             REQUIRED_DOCSITE_COVERAGE_COMMAND not in coverage_run,
             'docsite/mise.toml [tasks."test:coverage"] must run node vitest coverage',
+        ),
+        (
+            "pre-push" not in coverage_stages,
+            "docsite-vitest-coverage must run at pre-push",
         ),
         (
             coverage_step_run is None,
@@ -4186,6 +4256,7 @@ def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
     devcontainer = _load_json_mapping(DEVCONTAINER_JSON_PATH)
     readme_text = README_PATH.read_text(encoding="utf-8")
     ci_cd_text = CI_CD_SPEC_PATH.read_text(encoding="utf-8")
+    contributing_text = CONTRIBUTING_PATH.read_text(encoding="utf-8")
 
     root_setup_runs = _get_task_run_commands(root_mise, "setup")
     on_create_command = devcontainer.get("onCreateCommand")
@@ -4199,6 +4270,11 @@ def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
         for fragment in REQUIRED_PRE_COMMIT_SETUP_DOC_FRAGMENTS
         if fragment not in ci_cd_text
     )
+    missing_contributing_fragments = sorted(
+        fragment
+        for fragment in REQUIRED_PRE_COMMIT_SETUP_CONTRIBUTING_FRAGMENTS
+        if fragment not in contributing_text
+    )
 
     detail_candidates = (
         (
@@ -4209,6 +4285,13 @@ def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
         (
             REQUIRED_PRE_COMMIT_SETUP_COMMAND not in root_setup_runs,
             "root mise.toml tasks.setup must install pre-commit hooks",
+        ),
+        (
+            not any(
+                REQUIRED_PRE_COMMIT_SETUP_PRE_PUSH_COMMAND in command
+                for command in root_setup_runs
+            ),
+            "root mise.toml tasks.setup must install the pre-push hook",
         ),
         (
             not isinstance(on_create_command, str),
@@ -4235,6 +4318,11 @@ def test_docs_req_ops_032_setup_installs_pre_commit_hooks() -> None:
             bool(missing_doc_fragments),
             "ci-cd guide missing setup hook fragments: "
             + ", ".join(missing_doc_fragments),
+        ),
+        (
+            bool(missing_contributing_fragments),
+            "CONTRIBUTING.md missing setup hook fragments: "
+            + ", ".join(missing_contributing_fragments),
         ),
     )
     details = [message for condition, message in detail_candidates if condition]
@@ -5934,6 +6022,19 @@ def _collect_pre_commit_hooks(
 
 def _collect_pre_commit_hook_ids(config: dict[str, object]) -> set[str]:
     return set(_collect_pre_commit_hooks(config))
+
+
+def _collect_pre_commit_hook_stages(
+    config: dict[str, object],
+    hook_id: str,
+) -> tuple[str, ...]:
+    hook = _collect_pre_commit_hooks(config).get(hook_id)
+    if not isinstance(hook, dict):
+        return ()
+    stages = hook.get("stages", [])
+    if isinstance(stages, list):
+        return tuple(item for item in stages if isinstance(item, str))
+    return ()
 
 
 def _get_env_value(config: dict[str, object], key: str) -> str | None:

@@ -11,7 +11,7 @@ commands, hooks, and CI-parity checks:
 
 | Path | Choose it when | What it does for you |
 | --- | --- | --- |
-| Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies and `uvx pre-commit install`, so local commits use the same hook chain by default. |
+| Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies, the fast default hook chain, and the heavier pre-push coverage hook, so local commits stay quick by default. |
 | Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
 
 If you are on the managed host toolchain path, start with:
@@ -20,15 +20,17 @@ If you are on the managed host toolchain path, start with:
 mise run setup
 ```
 
-That path installs the shared dependencies and runs `uvx pre-commit install`, so
-local commits use the same hook chain by default. The devcontainer runs that
-same bootstrap for you during container creation.
+That path installs the shared dependencies and runs `uvx pre-commit install`
+plus the pre-push hook install, so local commits use the fast hook chain by
+default while the heavier coverage gates still run before push. The devcontainer
+runs that same bootstrap for you during container creation.
 
 Common follow-up commands inside either setup:
 
 ```bash
 mise run dev
 mise run test
+mise run test:low-memory
 ```
 
 Before adding a new workflow-specific command, check `.github/workflows/` and
@@ -130,6 +132,14 @@ Keep `.github/required-status-checks.json` as the machine-readable source of
 truth, keep `docs/spec/testing/ci-cd.md` as the human-readable policy, and
 update both whenever a workflow moves between those event buckets.
 
+Local hooks follow the same split:
+
+- `uvx pre-commit run --all-files` is the fast default commit-time path
+- `uvx pre-commit run --hook-stage pre-push --all-files` exercises the heavier
+  coverage gates before push
+- `uvx pre-commit install --hook-type pre-push` keeps the heavier stage
+  available automatically after `mise run setup`
+
 When CodeQL or other branch-protection policy changes depend on GitHub ruleset
 state, update the live repository ruleset as well as the checked-in JSON. PR
 1557 only unblocked after the live `main only pr` ruleset was changed to allow
@@ -137,7 +147,8 @@ CodeQL code scanning, and merge queue plus `main` merge were re-verified after
 that repository-side update.
 
 local validation maps to the same CI event split: use `mise run test` for the
-repo baseline, `mise run test:docs` for docs, spec, or REQ-traceability changes,
+repo baseline, `mise run test:low-memory` for devcontainers, Codespaces, and
+memory-constrained machines, `mise run test:docs` for docs, spec, or REQ-traceability changes,
 `mise run e2e` for browser flows, and focused surface commands when only one
 package changed.
 
