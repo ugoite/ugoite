@@ -55,6 +55,13 @@ Before marking any task as complete:
 
 ---
 
+## 🤖 Codex Skills
+
+Repo-local Codex skills live under `.codex/skills/` and should be treated as the
+preferred task-specific playbooks for this repository. Use the orientation,
+implementation, validation, and release skills when they match the task, and
+keep them aligned with `README.md`, `docs/spec/`, and `.github/workflows/`.
+
 ## 💡 Best Practices
 
 - **2025 Standards**: Research current best practices before implementing new features
