@@ -223,11 +223,13 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-006
   title: Rust Pre-commit and CI Coverage Parity
-  description: 'Rust pre-commit hooks MUST enforce format, lint, and coverage gates
+  description: 'Rust default hooks MUST enforce format and lint gates across
 
-    across ugoite-minimum, ugoite-core, and ugoite-cli, including 100% line-coverage
+    ugoite-minimum, ugoite-core, and ugoite-cli, while the heavier coverage gates
 
-    parity for both ugoite-minimum and ugoite-cli with Rust CI and the local
+    move to a pre-push/manual hook stage that still keeps 100% line-coverage parity
+
+    for both ugoite-minimum and ugoite-cli with Rust CI and the local
 
     `mise run test` path.
 
@@ -274,11 +276,11 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-007
   title: Docsite Format/Lint/Test Parity
-  description: 'Docsite quality gates MUST define explicit format, lint, typecheck,
+  description: 'Docsite quality gates MUST define explicit format, lint,
 
-    build validation, and behavior-test coverage validation in both pre-commit
+    typecheck, build validation, and behavior-test coverage validation across the
 
-    hooks and Docsite CI.
+    default pre-commit hooks, the heavier pre-push coverage hook, and Docsite CI.
 
     '
   related_spec:
