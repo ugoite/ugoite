@@ -30,12 +30,18 @@ GitHub branch protection and merge queue now rely on GitHub-native required stat
 checks declared in `.github/required-status-checks.json`. Each required workflow
 emits a stable summary check with the workflow name, so the repository ruleset
 can require direct workflow health instead of a polling rollup workflow.
-The split is intentional: push on `main` stays small and mostly covers fast
-static checks plus post-merge automation, pull requests carry the normal
-developer feedback set, and `merge_group` is the final gate for the expensive
-cross-surface validation that protects `main`. The machine-readable policy
-lives in `.github/required-status-checks.json`, and the human-readable policy
-lives in `CONTRIBUTING.md`.
+The split is intentional:
+
+- local pre-commit stays fast and mostly covers formatting, linting, root
+  hygiene, and targeted file-surface checks
+- heavy coverage hooks stay available as pre-push checks so they do not slow
+  every commit
+- pull requests carry the normal developer feedback set
+- `merge_group` is the final gate for the expensive cross-surface validation
+  that protects `main`
+
+The machine-readable policy lives in `.github/required-status-checks.json`, and
+the human-readable policy lives in `CONTRIBUTING.md`.
 Required workflows must not depend on top-level `paths` filters that would make
 a check disappear. Path-aware workflows such as Devcontainer CI perform
 in-workflow change detection and still emit their summary check when the
@@ -107,7 +113,9 @@ routine repo-wide baseline, `mise run test:low-memory` for devcontainers,
 Codespaces, and memory-constrained machines, `mise run test:docs` when
 `README.md`, `CONTRIBUTING.md`, `docs/spec/`, or `docs/tests/` change, and
 target the surface-specific commands when you are iterating on a narrower
-area.
+area. For the hook chain, `uvx pre-commit run --all-files` exercises the fast
+default hooks, while `uvx pre-commit run --hook-stage pre-push --all-files`
+exercises the heavier coverage gates before pushing.
 
 ## Native Required Status Checks
 
@@ -474,20 +482,17 @@ The canonical contributor bootstrap is:
 ```bash
 mise run setup
 uvx pre-commit run --all-files
+uvx pre-commit run --hook-stage pre-push --all-files
 ```
 
-`mise run setup` installs dependencies and runs `uvx pre-commit install`, so
-local commits use the same hook chain by default. Re-run `uvx pre-commit
-install` manually only if the hooks need repair.
+`mise run setup` installs dependencies and runs `uvx pre-commit install`, and
+also installs the pre-push hook, so local commits stay fast while the heavier
+coverage gates still run before push. Re-run `uvx pre-commit install` manually
+only if the hooks need repair.
 
 Hooks configured in `.pre-commit-config.yaml`:
-- **Ruff**: Auto-formats and lints Python
-- **Rust fmt/lint/test parity**: `ugoite-minimum`, `ugoite-core`, and `ugoite-cli` run Rust quality gates before commit, with both `ugoite-minimum` and `ugoite-cli` enforcing 100% line coverage via `cargo llvm-cov`
-- **Docsite parity hooks**: Lint, format check, typecheck, validation build, and 100% Vitest coverage for `docsite/`
-- **Yamllint**: Validates YAML syntax/style on committed YAML files
-- **Actionlint**: Validates `.github/workflows/*` syntax and workflow semantics
-- **Root artifact hygiene**: Blocks placeholder files, tracked+ignored paths, generated dependency trees, and oversized tracked artifacts
-- **Ty**: Type checks Python projects (`backend/` and `ugoite-core/`)
+- **Fast default hooks**: Ruff, Yamllint, Actionlint, root artifact hygiene, shell quality, Rust fmt/clippy, backend ty, and docsite lint/typecheck/validation
+- **Pre-push coverage hooks**: Rust coverage gates for `ugoite-minimum`, `ugoite-core`, and `ugoite-cli`, plus 100% Vitest coverage for `frontend/` and `docsite/`
 
 Conventional Commit enforcement (local):
 

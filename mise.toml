@@ -35,6 +35,7 @@ run = [
 	"mise run //e2e:install",
 	"if git config --local --get core.hooksPath >/dev/null; then git config --local --unset-all core.hooksPath; fi",
 	"uvx pre-commit install",
+	"uvx pre-commit install --hook-type pre-push",
 ]
 
 [tasks.dev]
