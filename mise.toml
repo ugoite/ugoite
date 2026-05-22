@@ -35,6 +35,7 @@ run = [
 	"mise run //e2e:install",
 	"if git config --local --get core.hooksPath >/dev/null; then git config --local --unset-all core.hooksPath; fi",
 	"uvx pre-commit install",
+	"uvx pre-commit install --hook-type pre-push",
 ]
 
 [tasks.dev]
@@ -64,6 +65,31 @@ run = [
 	"mise run test:docs",
 ]
 description = "Run tests for all packages (ugoite-minimum, ugoite-core, backend, frontend, docsite, ugoite-cli)"
+
+[tasks."test:low-memory"]
+description = "Run the repo-wide test gate with conservative parallelism and memory usage"
+run = """
+bash -lc '
+set -euo pipefail
+export MISE_JOBS=1
+export CARGO_BUILD_JOBS=1
+export CARGO_INCREMENTAL=0
+export CARGO_PROFILE_DEV_DEBUG=0
+export CARGO_PROFILE_TEST_DEBUG=0
+export RUSTFLAGS="-C debuginfo=0"
+export VITEST_MAX_WORKERS=1
+export NODE_OPTIONS="--max-old-space-size=2048"
+
+mise run //ugoite-core:build
+mise run //backend:test:no-build
+mise run //frontend:test:coverage:low-memory
+mise run //docsite:test:coverage:low-memory
+mise run //ugoite-cli:test:coverage
+mise run //ugoite-core:test:no-build
+mise run //ugoite-minimum:test
+mise run test:docs
+'
+"""
 
 [tasks."test:docs"]
 description = "Check consistency between documentation and implementation"

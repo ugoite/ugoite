@@ -235,7 +235,7 @@ Choose the contributor setup path that matches your machine:
 
 | Path | Choose it when | What it handles for you |
 | --- | --- | --- |
-| Host-managed toolchain | You already want the repo toolchain on your machine or you are not using VS Code/Codespaces | You run `mise run setup` yourself to install dependencies and `uvx pre-commit install`, then continue with `mise run dev`. |
+| Host-managed toolchain | You already want the repo toolchain on your machine or you are not using VS Code/Codespaces | You run `mise run setup` yourself to install dependencies plus the fast pre-commit hook chain and the heavier pre-push coverage hook, then continue with `mise run dev`. |
 | Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
 
 Install dependencies and repository pre-commit hooks:
@@ -244,8 +244,7 @@ Install dependencies and repository pre-commit hooks:
 mise run setup
 ```
 
-The setup task also runs `uvx pre-commit install` so local commits use the same
-hook chain by default.
+The setup task also runs `uvx pre-commit install` and installs the pre-push hook so local commits stay fast while the heavier coverage gates still run before push.
 
 The devcontainer path runs that same bootstrap for you during container
 creation, so both contributor setups land on the same local commands and hooks.
