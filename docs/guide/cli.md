@@ -171,7 +171,7 @@ a backend or API instead of the local filesystem.
 ## Command reference
 
 Beyond the `space`, `entry`, `auth`, and `config` commands the quick-start
-covers, the CLI ships five more top-level command families. Most of them take a
+covers, the CLI ships six more top-level command families. Most of them take a
 `SPACE_ID_OR_PATH` positional - use `/root/spaces/<id>` in core mode and a bare
 `SPACE_ID` in backend/api mode. Run `ugoite config current` if you're not sure
 which mode you're in; `form list-types` and `sql lint` do not take a space
@@ -200,9 +200,25 @@ schema, then `form update` to define a form, then pass `form: <FormName>` in
 the entry frontmatter when you `entry create` so the new entry validates
 against it.
 
-### `ugoite search` - substring search over entries
+### `ugoite asset` - manage binary assets
 
-- `ugoite search keyword <SPACE> <QUERY>` - substring search over entry rows
+- `ugoite asset list <SPACE>` - list assets stored in the space
+- `ugoite asset upload <SPACE> <FILE>` - upload a binary asset
+- `ugoite asset delete <SPACE> <ASSET_ID>` - delete an asset by id
+
+Example:
+
+```bash
+ugoite asset list /root/spaces/demo
+```
+
+Use `asset upload` when you need to add a file to the space, and `asset delete`
+when you want to remove an unreferenced asset after a cleanup pass.
+
+### `ugoite search` - substring scan across serialized entry rows
+
+- `ugoite search keyword <SPACE> <QUERY>` - substring scan across serialized
+  entry rows
 
 Example:
 
@@ -210,9 +226,9 @@ Example:
 ugoite search keyword /root/spaces/demo "meeting notes"
 ```
 
-Reach for `query` (below) when you need structured filters or index-backed
-queries; reach for `search keyword` when you want a direct substring scan across
-titles and bodies.
+`search keyword` lowercases the serialized row, so titles, bodies, tags, links,
+and other stored fields can match. Reach for `query` (below) when you need
+structured filters or SQL over the current entry snapshot.
 
 ### `ugoite sql` - SQL tooling and saved queries
 
@@ -223,26 +239,26 @@ titles and bodies.
 Use this family to keep your SQL snippets alongside the space instead of a
 shell history. Run `ugoite sql <subcommand> --help` for arguments.
 
-### `ugoite index` - run and inspect the indexer
+### `ugoite index` - index maintenance commands
 
-- `ugoite index run <SPACE>` - rebuild the search/query index from the
-  current on-disk state of the space
+- `ugoite index run <SPACE>` - currently only acknowledges the command for a
+  space
 - `ugoite index stats <SPACE>` - aggregated index stats (entry counts,
-  form breakdown, last rebuild)
+  form breakdown, tag counts)
 
-Run `index run` whenever you need to rebuild after an out-of-band edit (for
-example a bulk change with another tool). `query` reads the indexer's output;
-`search keyword` scans entry rows directly.
+Use `index stats` to inspect the current snapshot; `index run` does not rebuild
+persisted data yet.
 
-### `ugoite query` - run SQL over the index
+### `ugoite query` - run SQL over the current entry snapshot
 
 ```bash
 ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries LIMIT 10"
 ```
 
-The queryable table is `entries`. Standard columns: `id`, `title`, `form`,
-`updated_at`, `space_id`, `word_count`, `tags`. Form fields can also be
-referenced directly by field name or through `properties.<field>`.
+The queryable table is `entries`, built from the current space contents.
+Standard columns: `id`, `title`, `form`, `updated_at`, `space_id`,
+`word_count`, `tags`. Form fields can also be referenced directly by field
+name or through `properties.<field>`.
 
 Filter by form type:
 
