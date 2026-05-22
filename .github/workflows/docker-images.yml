@@ -62,7 +62,7 @@ jobs:
 
       - name: Build backend image for CI
         if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build backend image for artifact export
         if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build frontend image for CI
         if: ${{ inputs.export_artifacts == false }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -116,7 +116,7 @@ jobs:
 
       - name: Build frontend image for artifact export
         if: ${{ inputs.export_artifacts }}
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -237,7 +237,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build ${{ matrix.image }} image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
