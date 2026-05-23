@@ -175,10 +175,11 @@ ugoite-install
 ugoite --help
 ```
 
-Pin an exact published package version when needed:
+Pin the current published package version when needed:
 
 ```bash
-npm install -g ugoite@0.1.0
+VERSION="$(npm view ugoite version)"
+npm install -g "ugoite@${VERSION}"
 ugoite-install
 ugoite --help
 ```
@@ -195,10 +196,11 @@ curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-
 ugoite --help
 ```
 
-Pin an exact release when you do not want the newest stable build:
+Pin an exact release when you do not want the newest published build:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.1.0 bash
+VERSION="$(npm view ugoite version)"
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION="${VERSION}" bash
 ugoite --help
 ```
 
@@ -206,16 +208,17 @@ Install an exact release with a platform-specific one-liner:
 
 ```bash
 # Linux x86_64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.1.0/ugoite-v0.1.0-x86_64-unknown-linux-gnu.install.sh | bash
+VERSION="$(npm view ugoite version)"
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-x86_64-unknown-linux-gnu.install.sh" | bash
 
 # Linux arm64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.1.0/ugoite-v0.1.0-aarch64-unknown-linux-gnu.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-aarch64-unknown-linux-gnu.install.sh" | bash
 
 # macOS x86_64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.1.0/ugoite-v0.1.0-x86_64-apple-darwin.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-x86_64-apple-darwin.install.sh" | bash
 
 # macOS arm64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.1.0/ugoite-v0.1.0-aarch64-apple-darwin.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-aarch64-apple-darwin.install.sh" | bash
 ```
 
 For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).

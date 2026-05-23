@@ -37,11 +37,10 @@ jobs:
       - name: Setup Biome
         uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2
         with:
-          version: 2.3.15
+          version: 2.4.15
       - name: Run Biome
         working-directory: ./frontend
         run: biome ci .
-
       - name: Install dependencies
         working-directory: ./frontend
         run: bun install --frozen-lockfile
