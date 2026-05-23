@@ -116,7 +116,7 @@ def build_gh_command(
 
 def ensure_clean_worktree() -> None:
     """Reject PR creation if the worktree still has unstaged or uncommitted files."""
-    git_status_command = ["git", "status", "--porcelain=v1", "--untracked-files=no"]
+    git_status_command = ["git", "status", "--porcelain=v1"]
     completed = subprocess.run(
         git_status_command,
         capture_output=True,
