@@ -30,6 +30,7 @@ These tests ensure:
 | `test_helm_chart.py` | Verify Helm chart docs/topology stay aligned with repository-owned deployment artifacts |
 | `test_cli_language_docs.py` | Verify top-level docs and SBOM metadata classify `ugoite-cli` consistently as Rust |
 | `test_artifact_hygiene.py` | Verify repository hygiene guard scripts catch dirty-tree artifacts correctly |
+| `test_pr_creation.py` | Verify script-driven PR creation validates body files and uses file-backed `gh pr create` transport |
 
 ## Running Tests
 
