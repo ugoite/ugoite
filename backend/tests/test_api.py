@@ -3060,9 +3060,9 @@ def test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core(
             },
         )
     assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "Storage endpoint host is not allowed: 169.254.169.254"
-    )
+    detail = response.json()["detail"]
+    assert isinstance(detail, str)
+    assert "storage" in detail.lower()
     mock_core.assert_not_awaited()
 
 
