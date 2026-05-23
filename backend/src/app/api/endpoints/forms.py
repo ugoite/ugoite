@@ -242,11 +242,11 @@ async def create_form_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to save form",
         ) from e
     except Exception as e:
         logger.exception("Failed to upsert form")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to save form",
         ) from e

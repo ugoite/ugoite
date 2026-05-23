@@ -86,13 +86,13 @@ async def create_entry_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create entry",
         ) from e
     except Exception as e:
         logger.exception("Failed to create entry")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create entry",
         ) from e
 
     return {"id": entry_id, "revision_id": entry_data.get("revision_id", "")}
@@ -129,7 +129,7 @@ async def list_entries_endpoint(
         logger.exception("Failed to list entries")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list entries",
         ) from e
 
 
@@ -173,7 +173,7 @@ async def list_entry_options_endpoint(
         logger.exception("Failed to list entry picker options")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list entry picker options",
         ) from e
 
 
@@ -203,13 +203,13 @@ async def get_entry_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry",
         ) from e
     except Exception as e:
         logger.exception("Failed to get entry")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry",
         ) from e
     else:
         return _entry_response(entry)
@@ -300,7 +300,7 @@ async def update_entry_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to update entry",
         ) from e
     except HTTPException:
         raise
@@ -308,7 +308,7 @@ async def update_entry_endpoint(
         logger.exception("Failed to update entry")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to update entry",
         ) from e
 
 
@@ -344,13 +344,13 @@ async def delete_entry_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to delete entry",
         ) from e
     except Exception as e:
         logger.exception("Failed to delete entry")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to delete entry",
         ) from e
     else:
         return {"id": entry_id, "status": "deleted"}
@@ -388,13 +388,13 @@ async def get_entry_history_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry history",
         ) from e
     except Exception as e:
         logger.exception("Failed to get entry history")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry history",
         ) from e
 
 
@@ -439,13 +439,13 @@ async def get_entry_revision_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry revision",
         ) from e
     except Exception as e:
         logger.exception("Failed to get entry revision")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load entry revision",
         ) from e
 
 
@@ -495,13 +495,13 @@ async def restore_entry_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to restore entry",
         ) from e
     except Exception as e:
         logger.exception("Failed to restore entry")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to restore entry",
         ) from e
 
     return _entry_response(entry_data)

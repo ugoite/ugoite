@@ -82,7 +82,11 @@ async def query_endpoint(
         )
         raise HTTPException(
             status_code=status_code,
-            detail=detail,
+            detail=(
+                detail
+                if status_code == status.HTTP_400_BAD_REQUEST
+                else "Failed to query entries"
+            ),
         ) from e
 
 
