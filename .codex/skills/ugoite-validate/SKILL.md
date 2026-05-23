@@ -18,14 +18,16 @@ triage.
 ## Surface checks
 
 - `backend`: `cd backend && uv run ty check .`
-- `backend`: `cd backend && uv run pytest -W error`
+- `backend`: `cd backend && uv run pytest -W error --junitxml=../backend-pytest.xml`
+- `backend`: `python3 scripts/check_pytest_no_skips.py backend-pytest.xml "backend tests"`
 - `frontend`: `cd frontend && biome ci .`
 - `frontend`: `mise run //frontend:test:coverage`
 - `docsite`: `mise run //docsite:test:coverage`
 - `ugoite-core`: `cd ugoite-core && uv run ty check .`
 - `ugoite-core`: `cd ugoite-core && cargo fmt --check`
 - `ugoite-core`: `cd ugoite-core && cargo clippy -- -D warnings`
-- `ugoite-core`: `cd ugoite-core && uv run pytest -W error`
+- `ugoite-core`: `cd ugoite-core && uv run pytest -W error --junitxml=../core-pytest.xml`
+- `ugoite-core`: `python3 scripts/check_pytest_no_skips.py core-pytest.xml "ugoite-core tests"`
 - `ugoite-cli`: `cd ugoite-cli && cargo fmt --check`
 - `ugoite-cli`: `cd ugoite-cli && cargo clippy --no-default-features -- -D warnings`
 - `ugoite-cli`: `mise run //ugoite-cli:test:coverage`
@@ -39,4 +41,3 @@ triage.
   the repo-wide test task.
 - If CI and local results disagree, check workflow pins, lockfiles, and
   `mise.toml` versions before changing implementation.
-
