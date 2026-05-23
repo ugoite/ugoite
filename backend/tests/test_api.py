@@ -3007,7 +3007,7 @@ def test_patch_space_generic_exception(test_client: TestClient) -> None:
     assert response.status_code == 500
 
 
-def test_test_connection_value_error(test_client: TestClient) -> None:
+def test_test_connection_value_error_legacy_response(test_client: TestClient) -> None:
     """REQ-STO-006: test-connection returns 400 when storage config is invalid."""
     test_client.post("/spaces", json={"name": "conn-test-ws"})
     with patch(
