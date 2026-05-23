@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-from shutil import which
 from pathlib import Path
+from shutil import which
 
 REQUIRED_SECTIONS = (
     "## Summary",
@@ -48,30 +48,40 @@ def parse_args() -> argparse.Namespace:
 
 def extract_body_section(body: str, title: str) -> str:
     """Return the trimmed text inside a markdown section."""
-    pattern = re.compile(SECTION_PATTERN_TEMPLATE.format(title=re.escape(title)), re.I)
+    pattern = re.compile(
+        SECTION_PATTERN_TEMPLATE.format(title=re.escape(title)),
+        re.IGNORECASE,
+    )
     match = pattern.search(body)
     return match.group(1).strip() if match else ""
 
 
 def validate_pr_body(body: str) -> list[str]:
     """Return validation errors for a pull request body."""
-    errors: list[str] = []
     lowered = body.lower()
-    for section in REQUIRED_SECTIONS:
-        if section.lower() not in lowered:
-            errors.append(f"Missing required section: {section}")
+    errors = [
+        f"Missing required section: {section}"
+        for section in REQUIRED_SECTIONS
+        if section.lower() not in lowered
+    ]
 
     summary_text = extract_body_section(body, "Summary")
-    if not summary_text or summary_text == SUMMARY_PLACEHOLDER or re.fullmatch(
-        r"-\s*",
-        summary_text,
+    if (
+        not summary_text
+        or summary_text == SUMMARY_PLACEHOLDER
+        or re.fullmatch(
+            r"-\s*",
+            summary_text,
+        )
     ):
         errors.append(
             "Summary section must be filled in and cannot remain the '-' placeholder.",
         )
 
     if not ISSUE_LINK_PATTERN.search(body):
-        errors.append("Related Issue must include either `close: #123` or `closes #123`.")
+        errors.append(
+            "Related Issue must include either `close: #123` or `closes #123`.",
+        )
 
     testing_text = extract_body_section(body, "Testing")
     if not re.search(r"(?m)^- \[(?: |x|X)\]", testing_text):
@@ -106,25 +116,30 @@ def build_gh_command(
 
 def ensure_clean_worktree() -> None:
     """Reject PR creation if the worktree still has unstaged or uncommitted files."""
+    git_status_command = ["git", "status", "--porcelain=v1", "--untracked-files=no"]
     completed = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=no"],
+        git_status_command,
         capture_output=True,
         check=True,
         text=True,
     )
     if completed.stdout.strip():
-        raise SystemExit(
-            "Working tree must be clean before creating a PR. Commit or stash changes first.",
+        message = (
+            "Working tree must be clean before creating a PR. Commit or stash "
+            "changes first."
         )
+        raise SystemExit(message)
 
 
 def main() -> int:
     """Validate the PR body file and create the PR."""
     args = parse_args()
     if not args.body_file.exists():
-        raise SystemExit(f"PR body file not found: {args.body_file}")
+        message = f"PR body file not found: {args.body_file}"
+        raise SystemExit(message)
     if which("gh") is None:
-        raise SystemExit("Required command not found: gh")
+        message = "Required command not found: gh"
+        raise SystemExit(message)
 
     body = args.body_file.read_text(encoding="utf-8")
     errors = validate_pr_body(body)

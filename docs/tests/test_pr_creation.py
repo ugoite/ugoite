@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CREATE_PR_PATH = REPO_ROOT / "scripts" / "create_pr.py"
 
 
-def _load_create_pr_module():
+def _load_create_pr_module() -> object:
     spec = importlib.util.spec_from_file_location("create_pr", CREATE_PR_PATH)
     if spec is None or spec.loader is None:
         message = f"Could not load helper module from {CREATE_PR_PATH}"
