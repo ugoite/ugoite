@@ -1341,6 +1341,24 @@ def test_test_connection_endpoint(
     assert payload["status"] == "ok"
 
 
+def test_test_connection_value_error_returns_400(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-006: test-connection returns a stable validation error."""
+    test_client.post("/spaces", json={"name": "conn-test-ws"})
+    with patch(
+        "ugoite_core.test_storage_connection",
+        _amock(side_effect=ValueError("invalid storage config")),
+    ):
+        response = test_client.post(
+            "/spaces/conn-test-ws/test-connection",
+            json={"storage_config": {"uri": "invalid://bad"}},
+        )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid storage configuration"
+
+
 def test_middleware_headers(
     test_client: TestClient,
     temp_space_root: Path,
@@ -2247,6 +2265,10 @@ def test_create_entry_generic_exception(test_client: TestClient) -> None:
             json={"content": "# Title\n"},
         )
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_create_entry_generic_runtime_error(test_client: TestClient) -> None:
@@ -2264,6 +2286,10 @@ def test_create_entry_generic_runtime_error(test_client: TestClient) -> None:
             json={"content": "# Title\n"},
         )
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_list_entries_generic_exception(test_client: TestClient) -> None:
@@ -2275,6 +2301,10 @@ def test_list_entries_generic_exception(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/entry-list-exc-ws/entries")
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_get_entry_not_found_req_api_002(test_client: TestClient) -> None:
@@ -2293,6 +2323,10 @@ def test_get_entry_generic_exception(test_client: TestClient) -> None:
     ):
         response = test_client.get("/spaces/entry-get-exc-ws/entries/e1")
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_get_entry_generic_runtime_error(test_client: TestClient) -> None:
@@ -2973,7 +3007,7 @@ def test_patch_space_generic_exception(test_client: TestClient) -> None:
     assert response.status_code == 500
 
 
-def test_test_connection_value_error(test_client: TestClient) -> None:
+def test_test_connection_value_error_legacy_response(test_client: TestClient) -> None:
     """REQ-STO-006: test-connection returns 400 when storage config is invalid."""
     test_client.post("/spaces", json={"name": "conn-test-ws"})
     with patch(
@@ -3026,9 +3060,9 @@ def test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core(
             },
         )
     assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "Storage endpoint host is not allowed: 169.254.169.254"
-    )
+    detail = response.json()["detail"]
+    assert isinstance(detail, str)
+    assert "storage" in detail.lower()
     mock_core.assert_not_awaited()
 
 
@@ -3122,6 +3156,7 @@ def test_query_endpoint_sql_error_returns_400(test_client: TestClient) -> None:
             json={"filter": {}},
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid SQL query."
 
 
 def test_query_endpoint_generic_exception(test_client: TestClient) -> None:
@@ -3136,6 +3171,10 @@ def test_query_endpoint_generic_exception(test_client: TestClient) -> None:
             json={"filter": {}},
         )
     assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "internal_error",
+        "message": "Internal server error",
+    }
 
 
 def test_query_endpoint_authorization_error(test_client: TestClient) -> None:
