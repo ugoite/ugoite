@@ -45,7 +45,7 @@ async def list_sql_endpoint(space_id: str, request: Request) -> list[dict[str, A
         logger.exception("Failed to list saved SQL")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to list saved SQL",
         ) from e
 
 
@@ -102,13 +102,13 @@ async def create_sql_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to create saved SQL",
         ) from e
     except Exception as e:
         logger.exception("Failed to create saved SQL")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to create saved SQL",
         ) from e
 
 
@@ -144,13 +144,13 @@ async def get_sql_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to load saved SQL",
         ) from e
     except Exception as e:
         logger.exception("Failed to get saved SQL")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to load saved SQL",
         ) from e
 
 
@@ -211,13 +211,13 @@ async def update_sql_endpoint(
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to update saved SQL",
         ) from e
     except Exception as e:
         logger.exception("Failed to update saved SQL")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to update saved SQL",
         ) from e
 
 
@@ -252,11 +252,11 @@ async def delete_sql_endpoint(space_id: str, sql_id: str, request: Request) -> N
             ) from e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=msg,
+            detail="Failed to delete saved SQL",
         ) from e
     except Exception as e:
         logger.exception("Failed to delete saved SQL")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Failed to delete saved SQL",
         ) from e
