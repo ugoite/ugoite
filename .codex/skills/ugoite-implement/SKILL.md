@@ -37,9 +37,15 @@ Use this skill when you are making a change rather than just investigating.
 - Do not rename public interfaces, command flags, or file layouts unless the
   task requires it.
 
+## Pull Request Creation
+
+- When the task ends with opening a PR, write the PR body to a file and use
+  `scripts/create_pr.py` instead of composing the body inline.
+- Keep the PR body aligned with `.github/pull_request_template.md` so the repo's
+  PR validation gate stays green on the first attempt.
+
 ## OpenAI guidance
 
 - When the task is about AI guidance rather than repo code, follow the current
   official OpenAI docs and model guidance instead of embedding a fixed model id
   in repo instructions.
-
