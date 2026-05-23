@@ -4,7 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-mapfile -t placeholder_files < <(
+placeholder_files=()
+while IFS= read -r placeholder_file; do
+  placeholder_files+=("$placeholder_file")
+done < <(
   python3 - <<'PY'
 from pathlib import Path
 
