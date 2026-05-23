@@ -88,20 +88,20 @@ export const primaryStartCards = [
 
 export const nextStepCards = [
 	{
-		badge: "Browser walkthrough",
-		description:
-			"After login, follow the concrete `/spaces` -> space -> starter entry -> forms/search path, including when to create a new space and what each main browser surface is for.",
-		href: "/docs/guide/browser-first-entry",
-		icon: "🖥️",
-		title: "Create your first space, form, and entry",
-	},
-	{
 		badge: "Access",
 		description:
 			"Review browser, CLI, and API sign-in flows before rollout or scripting.",
 		href: "/docs/guide/auth-overview",
 		icon: "🔐",
 		title: "Understand auth and access",
+	},
+	{
+		badge: "Browser walkthrough",
+		description:
+			"After login, follow the concrete `/spaces` -> space -> starter entry -> forms/search path, including when to create a new space and what each main browser surface is for.",
+		href: "/docs/guide/browser-first-entry",
+		icon: "🖥️",
+		title: "Create your first space, form, and entry",
 	},
 	{
 		badge: "Reference",

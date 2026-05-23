@@ -29,20 +29,20 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 
 test("REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference docs available after the first step", () => {
 	expect(nextStepCards.map((card) => card.title)).toEqual([
-		"Create your first space, form, and entry",
 		"Understand auth and access",
+		"Create your first space, form, and entry",
 		"Read design and source docs",
 		"Run and troubleshoot the stack",
 	]);
 	expect(nextStepCards.map((card) => card.href)).toEqual([
-		"/docs/guide/browser-first-entry",
 		"/docs/guide/auth-overview",
+		"/docs/guide/browser-first-entry",
 		"/docs/spec/index",
 		"/docs/guide/operations",
 	]);
 	expect(nextStepCards.map((card) => card.badge)).toEqual([
-		"Browser walkthrough",
 		"Access",
+		"Browser walkthrough",
 		"Reference",
 		"Ops",
 	]);
@@ -70,21 +70,21 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 	expect(primaryStartCards[2]?.description).toContain(
 		"avoid container infrastructure",
 	);
-	expect(nextStepCards[0]?.description).toContain("After login");
+	expect(nextStepCards[1]?.description).toContain("After login");
 	expect(nextStepCards[3]?.description).toContain("health checks");
-	expect(nextStepCards[0]?.description).toContain("starter entry");
-	expect(nextStepCards[0]?.description).toContain("browser surface");
+	expect(nextStepCards[1]?.description).toContain("starter entry");
+	expect(nextStepCards[1]?.description).toContain("browser surface");
 });
 
 test("REQ-E2E-008: onboarding content keeps the browser next step aligned to the walkthrough", () => {
 	expect(nextStepCards[0]).toMatchObject({
-		badge: "Browser walkthrough",
-		href: "/docs/guide/browser-first-entry",
+		badge: "Access",
+		href: "/docs/guide/auth-overview",
 	});
-	expect(nextStepCards[0]?.description).toContain("starter entry");
-	expect(nextStepCards[0]?.description).toContain("After login");
-	expect(nextStepCards[0]?.description).toContain("forms/search path");
-	expect(nextStepCards[0]?.description).toContain(
+	expect(nextStepCards[1]?.description).toContain("starter entry");
+	expect(nextStepCards[1]?.description).toContain("After login");
+	expect(nextStepCards[1]?.description).toContain("forms/search path");
+	expect(nextStepCards[1]?.description).toContain(
 		"what each main browser surface is for",
 	);
 });
