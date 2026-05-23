@@ -1341,7 +1341,7 @@ def test_test_connection_endpoint(
     assert payload["status"] == "ok"
 
 
-def test_test_connection_value_error(
+def test_test_connection_value_error_returns_400(
     test_client: TestClient,
     temp_space_root: Path,
 ) -> None:
@@ -3156,6 +3156,7 @@ def test_query_endpoint_sql_error_returns_400(test_client: TestClient) -> None:
             json={"filter": {}},
         )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid SQL query."
 
 
 def test_query_endpoint_generic_exception(test_client: TestClient) -> None:
