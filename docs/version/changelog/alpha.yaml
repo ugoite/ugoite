@@ -6,9 +6,9 @@ summary: >
   experimentation stays explicit and reviewable.
 release_notes:
   intro: >
-    Alpha releases use SemVer prerelease tags such as 0.0.1-alpha.1 and are the
-    fastest-moving channel for previewing validated changes before broader beta
-    review.
+    Alpha releases use SemVer prerelease tags such as <version>-alpha.N and are
+    the fastest-moving channel for previewing validated changes before broader
+    beta review.
   expectations:
     - Use exact alpha versions or the alpha image alias only for preview and experimentation.
     - Focus notes on explicit risk, experimental guidance, and what needs more validation.

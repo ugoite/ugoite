@@ -10,7 +10,7 @@ release_notes:
     point for operators and local-first teams that want supported behavior
     without prerelease risk.
   expectations:
-    - Use exact versions such as 0.0.1 and the stable/latest image aliases for supported rollouts.
+    - Use exact versions from the current published stream and the stable/latest image aliases for supported rollouts.
     - Focus notes on deployable behavior, upgrade impact, and operator guidance.
     - Keep prerelease experiments out of the stable narrative until they are ready for support.
   added:
