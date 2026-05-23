@@ -15,7 +15,7 @@ If you want the most auditable published path, install from an exact release
 archive and verify its checksum before you extract or run anything:
 
 ```bash
-VERSION=0.0.1-beta.15
+VERSION="$(npm view ugoite version)"
 TARGET=x86_64-unknown-linux-gnu
 BASE_URL="https://github.com/ugoite/ugoite/releases/download/v${VERSION}"
 
@@ -52,10 +52,11 @@ ugoite-install
 ugoite --help
 ```
 
-Pin an exact package version when you want the matching published release:
+Pin the current package version when you want the matching published release:
 
 ```bash
-npm install -g ugoite@0.0.1-beta.15
+VERSION="$(npm view ugoite version)"
+npm install -g "ugoite@${VERSION}"
 ugoite-install
 ugoite --help
 ```
@@ -76,7 +77,8 @@ ugoite --help
 Pin an exact version when you want a specific published build:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION=0.0.1-beta.15 bash
+VERSION="$(npm view ugoite version)"
+curl -fsSL https://raw.githubusercontent.com/ugoite/ugoite/main/scripts/install-ugoite-cli.sh | env UGOITE_VERSION="${VERSION}" bash
 ugoite --help
 ```
 
@@ -84,16 +86,17 @@ Install an exact release with a platform-specific one-liner:
 
 ```bash
 # Linux x86_64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.0.1-beta.15/ugoite-v0.0.1-beta.15-x86_64-unknown-linux-gnu.install.sh | bash
+VERSION="$(npm view ugoite version)"
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-x86_64-unknown-linux-gnu.install.sh" | bash
 
 # Linux arm64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.0.1-beta.15/ugoite-v0.0.1-beta.15-aarch64-unknown-linux-gnu.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-aarch64-unknown-linux-gnu.install.sh" | bash
 
 # macOS x86_64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.0.1-beta.15/ugoite-v0.0.1-beta.15-x86_64-apple-darwin.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-x86_64-apple-darwin.install.sh" | bash
 
 # macOS arm64
-curl -fsSL https://github.com/ugoite/ugoite/releases/download/v0.0.1-beta.15/ugoite-v0.0.1-beta.15-aarch64-apple-darwin.install.sh | bash
+curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoite-v${VERSION}-aarch64-apple-darwin.install.sh" | bash
 ```
 
 The installer writes `ugoite` into `~/.local/bin` by default. Override the
@@ -107,9 +110,9 @@ Supported release artifacts currently target:
 - `aarch64-apple-darwin`
 
 Release archives use predictable names such as
-`ugoite-v0.0.1-beta.15-x86_64-unknown-linux-gnu.tar.gz` plus a matching `.sha256`
+`ugoite-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz` plus a matching `.sha256`
 checksum file. Matching one-liner installer assets use predictable names such as
-`ugoite-v0.0.1-beta.15-x86_64-unknown-linux-gnu.install.sh`.
+`ugoite-v${VERSION}-x86_64-unknown-linux-gnu.install.sh`.
 
 ## Build from source (contributors)
 

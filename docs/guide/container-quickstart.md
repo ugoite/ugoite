@@ -187,7 +187,7 @@ These are the supported release-compose environment variables for the shipped
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version such as `0.0.1` to pin the stack. |
+| `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact published version to pin the stack. |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
 | `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
 | `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
@@ -213,8 +213,8 @@ Choose the release channel that matches your goal:
 - `stable` or `latest` for the newest stable release
 - `alpha` for the newest alpha prerelease
 - `beta` for the newest beta prerelease
-- an exact version such as `0.0.1`, `0.0.1-beta.7`, or `0.0.1-alpha.3` when
-  you need a specific published build
+- an exact published version when you need a specific build, including
+  prerelease tags from the same SemVer stream
 
 ## Notes
 
