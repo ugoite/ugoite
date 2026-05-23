@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CREATE_PR_PATH = REPO_ROOT / "scripts" / "create_pr.py"
@@ -60,3 +63,20 @@ def test_docs_req_ops_042_pr_helper_requires_file_transport() -> None:
         "--body-file",
         str(body_file),
     ]
+
+
+def test_docs_req_ops_042_pr_helper_rejects_untracked_files() -> None:
+    """REQ-OPS-042: PR helper must treat untracked files as a dirty worktree."""
+    create_pr = _load_create_pr_module()
+    completed = MagicMock(stdout="?? scratch.txt\n")
+
+    with patch.object(create_pr.subprocess, "run", return_value=completed) as run:
+        with pytest.raises(SystemExit, match="Working tree must be clean"):
+            create_pr.ensure_clean_worktree()
+
+    run.assert_called_once_with(
+        ["git", "status", "--porcelain=v1"],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
