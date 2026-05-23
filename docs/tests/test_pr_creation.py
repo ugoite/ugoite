@@ -70,8 +70,9 @@ def test_docs_req_ops_042_pr_helper_rejects_untracked_files() -> None:
     create_pr = _load_create_pr_module()
     completed = MagicMock(stdout="?? scratch.txt\n")
 
-    with patch.object(create_pr.subprocess, "run", return_value=completed) as run, (
-        pytest.raises(SystemExit, match="Working tree must be clean")
+    with (
+        patch.object(create_pr.subprocess, "run", return_value=completed) as run,
+        pytest.raises(SystemExit, match="Working tree must be clean"),
     ):
         create_pr.ensure_clean_worktree()
 
