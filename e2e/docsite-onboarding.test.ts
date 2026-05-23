@@ -43,8 +43,8 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Use the CLI",
 		]);
 		await expect(page.locator("#next-steps a h3")).toHaveText([
-			"Create your first space, form, and entry",
 			"Understand auth and access",
+			"Create your first space, form, and entry",
 			"Read design and source docs",
 			"Run and troubleshoot the stack",
 		]);
@@ -65,8 +65,8 @@ test.describe("Docsite onboarding-first navigation", () => {
 			"Use the CLI",
 		]);
 		await expect(page.locator("#next .doc-card h3")).toHaveText([
-			"Create your first space, form, and entry",
 			"Understand auth and access",
+			"Create your first space, form, and entry",
 			"Read design and source docs",
 			"Run and troubleshoot the stack",
 		]);

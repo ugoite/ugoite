@@ -58,10 +58,10 @@ contributor notes in [Contributor Workflow](CONTRIBUTING.md).
 - [Understand core concepts](docs/guide/concepts.md) when you want the mental
   model behind spaces, entries, forms, and search before you go deeper into
   auth or the specs.
-- [Create your first space, form, and entry](docs/guide/browser-first-entry.md)
-  once `/login` succeeds and you want the exact `/spaces` -> form -> entry path.
-- [Understand auth and access](docs/guide/auth-overview.md) before rollout or
-  scripting across the browser, CLI, and API.
+  - [Understand auth and access](docs/guide/auth-overview.md) before rollout or
+    scripting across the browser, CLI, and API.
+  - [Create your first space, form, and entry](docs/guide/browser-first-entry.md)
+    once `/login` succeeds and you want the exact `/spaces` -> form -> entry path.
 - [Read design and source docs](docs/spec/index.md) when you need philosophy,
   requirements, APIs, or machine-readable specs.
 

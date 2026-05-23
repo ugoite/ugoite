@@ -1,8 +1,10 @@
 # Browser Walkthrough: First Space, Form, and Entry
 
-Use this guide after you have already completed the browser login flow and can
-reach `/spaces`. It is the concrete post-login path for the browser route's
-**time-to-first-entry** experience.
+## Before you start
+
+Complete the browser login flow and confirm that you can reach `/spaces`
+before using this guide. It is the concrete post-login path for the browser
+route's **time-to-first-entry** experience.
 
 If you have not signed in yet, start with either
 [Container Quick Start](container-quickstart.md) or
