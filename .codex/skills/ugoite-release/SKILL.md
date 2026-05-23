@@ -10,6 +10,7 @@ installed, or deployed.
 
 ## Read first
 
+- `docs/spec/testing/ci-cd.md`
 - `docs/guide/docker-compose.md`
 - `docs/guide/container-quickstart.md`
 - `docs/guide/helm-chart.md`
@@ -38,4 +39,3 @@ installed, or deployed.
   changes
 - `bash scripts/verify-release-container-quickstart.sh` when browser release
   behavior changes
-
