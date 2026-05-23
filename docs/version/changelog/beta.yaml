@@ -6,7 +6,7 @@ summary: >
   broader validation before operator-facing support.
 release_notes:
   intro: >
-    Beta releases use SemVer prerelease tags such as 0.0.1-beta.1 and give
+    Beta releases use SemVer prerelease tags such as <version>-beta.N and give
     operators and contributors a wider validation window before stable rollout.
   expectations:
     - Use exact beta versions or the beta image alias when validating prerelease behavior.

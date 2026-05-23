@@ -172,6 +172,9 @@ PUBLIC_PACKAGE_JSON_PATH = PUBLIC_PACKAGE_DIR / "package.json"
 PUBLIC_PACKAGE_README_PATH = PUBLIC_PACKAGE_DIR / "README.md"
 PUBLIC_PACKAGE_LICENSE_PATH = PUBLIC_PACKAGE_DIR / "LICENSE"
 PUBLIC_PACKAGE_INSTALLER_PATH = PUBLIC_PACKAGE_DIR / "bin" / "ugoite-install"
+PUBLIC_PACKAGE_VERSION = str(
+    json.loads(PUBLIC_PACKAGE_JSON_PATH.read_text(encoding="utf-8")).get("version", ""),
+)
 CI_CD_SPEC_PATH = REPO_ROOT / "docs" / "spec" / "testing" / "ci-cd.md"
 SPEC_INDEX_PATH = REPO_ROOT / "docs" / "spec" / "index.md"
 RELEASE_COMPOSE_PATH = REPO_ROOT / "docker-compose.release.yaml"
@@ -285,7 +288,6 @@ REQUIRED_RELEASE_CI_DOC_FRAGMENTS = {
     "RELEASE_PLEASE_TOKEN",
     "no-op cleanly",
     "bootstrap-sha",
-    "0.0.1",
     "packages/ugoite/package.json",
     "root `package.json` must stay private tooling",
 }
@@ -326,17 +328,18 @@ REQUIRED_INSTALL_CLI_SCRIPT_FRAGMENTS = {
     "shasum -a 256",
 }
 REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS = {
-    "ugoite-v0.1.0-x86_64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-aarch64-unknown-linux-gnu.install.sh",
-    "ugoite-v0.1.0-x86_64-apple-darwin.install.sh",
-    "ugoite-v0.1.0-aarch64-apple-darwin.install.sh",
+    "ugoite-v${VERSION}-x86_64-unknown-linux-gnu.install.sh",
+    "ugoite-v${VERSION}-aarch64-unknown-linux-gnu.install.sh",
+    "ugoite-v${VERSION}-x86_64-apple-darwin.install.sh",
+    "ugoite-v${VERSION}-aarch64-apple-darwin.install.sh",
 }
 REQUIRED_CLI_README_FRAGMENTS = {
     "npm install -g ugoite",
     "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
-    "UGOITE_VERSION=0.1.0",
+    'VERSION="$(npm view ugoite version)"',
+    'UGOITE_VERSION="${VERSION}"',
     *REQUIRED_CLI_INSTALLER_ASSET_FRAGMENTS,
 }
 REQUIRED_CLI_GUIDE_FRAGMENTS = {
@@ -344,6 +347,8 @@ REQUIRED_CLI_GUIDE_FRAGMENTS = {
     "ugoite-install",
     "install-ugoite-cli.sh",
     "ugoite --help",
+    'VERSION="$(npm view ugoite version)"',
+    'UGOITE_VERSION="${VERSION}"',
     "cargo build",
     "cargo run -q -p ugoite-cli -- --help",
     "x86_64-unknown-linux-gnu",
@@ -2990,7 +2995,7 @@ def test_docs_req_ops_018_install_script_supports_prerelease_quick_start(
     tmp_path: Path,
 ) -> None:
     """REQ-OPS-018: Installer supports prerelease quick-start commands."""
-    version = "0.0.1-beta.1"
+    version = f"{PUBLIC_PACKAGE_VERSION}-beta.1"
     release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
     home_dir = tmp_path / "home"
     work_dir = tmp_path / "work"
@@ -3113,7 +3118,7 @@ def test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease(
     tmp_path: Path,
 ) -> None:
     """REQ-OPS-018: Release quick-start smoke script validates a prerelease."""
-    version = "0.0.1-beta.2"
+    version = f"{PUBLIC_PACKAGE_VERSION}-beta.2"
     release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
     work_dir = tmp_path / "quick-start-smoke"
 
@@ -3130,7 +3135,7 @@ def test_docs_req_ops_018_platform_installer_asset_validates_prerelease(
     tmp_path: Path,
 ) -> None:
     """REQ-OPS-018: Platform installer asset validates a prerelease quick-start."""
-    version = "0.0.1-beta.3"
+    version = f"{PUBLIC_PACKAGE_VERSION}-beta.3"
     release_dir = _create_fake_cli_release_dir(tmp_path, version=version)
     work_dir = tmp_path / "quick-start-asset-smoke"
     target = _detect_install_cli_target()
@@ -3230,9 +3235,9 @@ def test_docs_req_ops_026_release_publish_uses_channel_changelog_sources() -> No
     ]
 
     version_by_channel = {
-        "stable": "0.0.1",
-        "beta": "0.0.1-beta.1",
-        "alpha": "0.0.1-alpha.1",
+        "stable": PUBLIC_PACKAGE_VERSION,
+        "beta": f"{PUBLIC_PACKAGE_VERSION}-beta.1",
+        "alpha": f"{PUBLIC_PACKAGE_VERSION}-alpha.1",
     }
     for channel, version in version_by_channel.items():
         result = subprocess.run(
@@ -3334,13 +3339,16 @@ def test_docs_req_ops_026_release_renderer_accepts_yaml_comments(
     module.REPO_ROOT = temp_repo_root
     module.CHANGELOG_DIR = changelog_dir
     try:
-        rendered = module.render_release_notes(channel="stable", version="0.0.1")
+        rendered = module.render_release_notes(
+            channel="stable",
+            version=PUBLIC_PACKAGE_VERSION,
+        )
     finally:
         module.REPO_ROOT = original_repo_root
         module.CHANGELOG_DIR = original_changelog_dir
 
     for fragment in (
-        "# v0.0.1 Stable Channel Changelog",
+        f"# v{PUBLIC_PACKAGE_VERSION} Stable Channel Changelog",
         "Stable releases communicate the supported slice. With durable guidance.",
         "Stable releases use exact versions. Operators can trust these notes.",
         "- Use exact versions.",
@@ -5026,14 +5034,14 @@ def _collect_release_ci_requirement_details() -> list[str]:
             "release-please-config.json must define non-empty bootstrap-sha",
         ),
         (
-            manifest_version != "0.0.1",
-            f"release manifest must start at 0.0.1 (got {manifest_version!r})",
+            not manifest_version or not package_version,
+            "release manifest and packages/ugoite package.json must define versions",
         ),
         (
-            package_version != "0.0.1",
+            manifest_version != package_version,
             (
-                "packages/ugoite/package.json version must start at 0.0.1 "
-                f"(got {package_version!r})"
+                "release manifest and packages/ugoite package.json version must "
+                f"stay aligned (got {manifest_version!r} vs {package_version!r})"
             ),
         ),
         (
