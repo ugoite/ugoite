@@ -9,7 +9,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "ugoite-core",
     "mcp>=1.27.1",
-    "pyjwt>=2.12.0",
+    "pyjwt>=2.13.0",
     "uvicorn>=0.47.0",
 ]
 
