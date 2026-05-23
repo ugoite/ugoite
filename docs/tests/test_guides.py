@@ -1249,8 +1249,8 @@ def test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy() -> None:
         "Run from source",
         "Use the CLI",
         "Understand core concepts",
-        "Create your first space, form, and entry",
         "Understand auth and access",
+        "Create your first space, form, and entry",
         "Read design and source docs",
     ]
     missing = [fragment for fragment in required_fragments if fragment not in section]
