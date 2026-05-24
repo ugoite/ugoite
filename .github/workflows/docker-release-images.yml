@@ -236,7 +236,7 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ join(fromJSON(needs.prepare-release-image-metadata.outputs.frontend_tags_json), '\n') }}
+          tags: ${{ join(fromJSON(needs.prepare-release-image-metadata.outputs.frontend_tags_json), ',') }}
           cache-from: |
             type=gha,scope=frontend-image
             type=gha,scope=docker-build-common

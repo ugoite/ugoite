@@ -472,7 +472,7 @@ REQUIRED_DOCKER_RELEASE_IMAGES_REUSABLE_FRAGMENTS = {
     "push-by-digest=true",
     "docker buildx imagetools create",
     "join(fromJSON(needs.prepare-release-image-metadata.outputs.frontend_tags_json), "
-    "'\\n')",
+    "',')",
 }
 REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "docker-compose.release.yaml",
