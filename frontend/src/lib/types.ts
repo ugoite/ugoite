@@ -15,6 +15,12 @@ export interface SpaceStorage {
 	root?: string;
 }
 
+export interface StorageConnectionConfig {
+	uri: string;
+	endpoint?: string;
+	[key: string]: unknown;
+}
+
 /** Space metadata */
 export interface Space {
 	id: string;
@@ -22,14 +28,14 @@ export interface Space {
 	created_at: string;
 	is_admin_space?: boolean;
 	storage?: SpaceStorage;
-	storage_config?: Record<string, unknown>;
+	storage_config?: StorageConnectionConfig;
 	settings?: Record<string, unknown>;
 }
 
 /** Space patch payload */
 export interface SpacePatchPayload {
 	name?: string;
-	storage_config?: Record<string, unknown>;
+	storage_config?: StorageConnectionConfig;
 	settings?: Record<string, unknown>;
 }
 
@@ -45,7 +51,7 @@ export type UserPreferencesPatchPayload = Partial<UserPreferences>;
 
 /** Test connection payload */
 export interface TestConnectionPayload {
-	storage_config: Record<string, unknown>;
+	storage_config: StorageConnectionConfig;
 }
 
 export interface SpaceMember {

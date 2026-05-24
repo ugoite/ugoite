@@ -51,6 +51,38 @@ fn get_operator(_py: Python<'_>, config: &Bound<'_, PyDict>) -> PyResult<Operato
     storage::operator_from_uri(&uri).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+fn get_storage_connection_operator(config: &Bound<'_, PyDict>) -> PyResult<Operator> {
+    let uri = config
+        .get_item("uri")?
+        .ok_or_else(|| PyValueError::new_err("Missing 'uri' in storage config"))?
+        .extract::<String>()?;
+
+    let mut extra_options = Vec::new();
+    for key in [
+        "endpoint",
+        "region",
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+    ] {
+        let Some(raw_value) = config.get_item(key)? else {
+            continue;
+        };
+        let value = raw_value.extract::<String>()?;
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            extra_options.push((key.to_string(), trimmed.to_string()));
+        }
+    }
+
+    if extra_options.is_empty() {
+        storage::operator_from_uri(&uri).map_err(|e| PyValueError::new_err(e.to_string()))
+    } else {
+        Operator::from_uri((uri.as_str(), extra_options))
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
 pub(crate) fn json_to_py(py: Python<'_>, value: Value) -> PyResult<PyObject> {
     match value {
         Value::Null => Ok(py.None()),
@@ -310,21 +342,25 @@ fn test_storage_connection_py<'a>(
         .get_item("uri")?
         .ok_or_else(|| PyValueError::new_err("Missing 'uri'"))?
         .extract()?;
-    let payload = if uri.starts_with("memory://") {
-        serde_json::json!({"status": "ok", "mode": "memory"})
+    let mode = if uri.starts_with("memory://") {
+        "memory"
     } else if uri.starts_with("file://")
         || uri.starts_with("fs://")
         || uri.starts_with('/')
         || uri.starts_with('.')
     {
-        serde_json::json!({"status": "ok", "mode": "local"})
+        "local"
     } else if uri.starts_with("s3://") {
-        serde_json::json!({"status": "ok", "mode": "s3"})
+        "s3"
     } else {
-        return Err(PyValueError::new_err("Unsupported storage connector"));
+        "unknown"
     };
+    let op = get_storage_connection_operator(&storage_config)?;
     pyo3_async_runtimes::tokio::future_into_py(py, async move {
-        Python::with_gil(|py| json_to_py(py, payload))
+        op.check()
+            .await
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Python::with_gil(|py| json_to_py(py, serde_json::json!({"status": "ok", "mode": mode})))
     })
 }
 
