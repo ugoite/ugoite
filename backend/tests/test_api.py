@@ -1377,7 +1377,12 @@ def test_test_connection_runtime_error_returns_502(
     ):
         response = test_client.post(
             "/spaces/conn-runtime-ws/test-connection",
-            json={"storage_config": {"uri": "s3://bucket", "endpoint": "https://storage.example.com"}},
+            json={
+                "storage_config": {
+                    "uri": "s3://bucket",
+                    "endpoint": "https://storage.example.com",
+                },
+            },
         )
     assert response.status_code == 502
     assert response.json()["detail"] == "Storage connection test failed"
