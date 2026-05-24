@@ -121,7 +121,7 @@ value:
 | Event | What it covers |
 | --- | --- |
 | `push` on `main` | Fast, low-noise checks plus post-merge automation such as `Shell CI`, `YAML Workflow CI`, `README Command Guard`, `Release CI`, `Docsite Pages`, and `CodeQL` |
-| `pull_request` | The normal developer feedback set: `Commitlint CI`, `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the cheap static checks. CodeQL also runs here as a separate workflow |
+| `pull_request` | The normal developer feedback set: `Commitlint CI`, `CodeQL`, `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the cheap static checks |
 | `merge_group` | The final gate before `main`: `Docker Build CI`, `E2E Tests`, `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI` |
 
 push on `main` is reserved for fast, low-noise checks and post-merge automation.
@@ -142,9 +142,7 @@ Local hooks follow the same split:
 
 When CodeQL or other branch-protection policy changes depend on GitHub ruleset
 state, update the live repository ruleset as well as the checked-in JSON. PR
-1557 only unblocked after the live `main only pr` ruleset was changed to allow
-CodeQL code scanning, and merge queue plus `main` merge were re-verified after
-that repository-side update.
+1559 switched `main only pr` to require the `CodeQL` summary check directly so the branch gate no longer depends on the separate code-quality rule, and merge queue plus `main` merge were re-verified after that repository-side update.
 
 local validation maps to the same CI event split: use `mise run test` for the
 repo baseline, `mise run test:low-memory` for devcontainers, Codespaces, and
