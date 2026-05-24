@@ -138,9 +138,9 @@ apis:
       file: backend/src/app/api/endpoints/members.py
       function: accept_member_invitation_endpoint
     frontend:
-      path: /spaces/{space_id}/settings
-      file: frontend/src/routes/spaces/[space_id]/settings.tsx
-      function: SpaceSettingsRoute
+      path: /spaces/join
+      file: frontend/src/routes/spaces/join.tsx
+      function: SpaceInvitationJoinRoute
     ugoite_core:
       file: ugoite-core/ugoite_core/membership.py
       function: accept_invitation
