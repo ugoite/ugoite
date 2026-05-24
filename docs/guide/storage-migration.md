@@ -24,6 +24,8 @@ manual prep**, not a live location switch.
    - `s3://` changes the trust, cost, and credential model to cloud object
      storage.
 2. Validate the destination first with **Test Connection** in Space Settings.
+   For remote targets, provide the endpoint so the backend can probe the
+   configured service before you cut over.
 3. Copy the existing space data with tooling that matches your current storage
    backend.
 4. Update the saved Storage URI only after you know the new location is

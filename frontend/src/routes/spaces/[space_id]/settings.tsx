@@ -4,7 +4,7 @@ import { SpaceShell } from "~/components/SpaceShell";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/space-api";
-import type { SpaceMember, SpacePatchPayload } from "~/lib/types";
+import type { SpaceMember, SpacePatchPayload, StorageConnectionConfig } from "~/lib/types";
 
 const localDevAuthGuideUrl = getDocsiteHref(
 	"/docs/guide/local-dev-auth-login",
@@ -69,10 +69,9 @@ export default function SpaceSettingsRoute() {
 		await refetch();
 	};
 
-	const handleTestConnection = async (config: Record<string, unknown>) => {
-		const uri = typeof config.uri === "string" ? config.uri : "";
+	const handleTestConnection = async (config: StorageConnectionConfig) => {
 		return await spaceApi.testConnection(spaceId(), {
-			storage_config: { uri },
+			storage_config: config,
 		});
 	};
 

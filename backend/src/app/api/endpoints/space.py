@@ -393,7 +393,7 @@ async def test_connection_endpoint(
     payload: SpaceConnectionRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Validate the provided storage connector (stubbed for Milestone 6)."""
+    """Validate the provided storage connector."""
     identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
@@ -414,3 +414,9 @@ async def test_connection_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid storage configuration",
         ) from e
+    except RuntimeError as exc:
+        logger.warning("Storage connection test failed for %s: %s", space_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Storage connection test failed",
+        ) from exc

@@ -174,13 +174,17 @@ Content-Type: application/json
 }
 ```
 
-**Response**: `200 OK` or `400 Bad Request`
+**Response**: `200 OK`, `400 Bad Request`, or `502 Bad Gateway`
 
 Notes:
-- Test Connection validates a proposed connector target only; it does not switch
-  the space's active write location or move existing data.
+- Test Connection validates a proposed connector target by building an
+  OpenDAL operator from the supplied URI and options, then running a storage
+  health check; it does not switch the space's active write location or move
+  existing data.
 - `storage_config.uri` must use a supported connector scheme such as `memory://`, `fs://`, or `s3://`, or be a plain local path starting with `/` or `.`.
 - `storage_config.endpoint`, when provided, must be an `http` or `https` URL and must not target loopback or link-local hosts.
+- Connectivity failures return `502 Bad Gateway` so callers can distinguish
+  invalid configuration from an unreachable target.
 
 ---
 
