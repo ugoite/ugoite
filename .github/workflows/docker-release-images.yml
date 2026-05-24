@@ -1,0 +1,184 @@
+name: Docker Release Images
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: "Git ref (branch, tag, or SHA) to build"
+        required: false
+        type: string
+        default: ""
+      version:
+        description: "Release version without the leading v"
+        required: true
+        type: string
+      channel:
+        description: "Release channel for publish aliases"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-backend-image:
+    name: Publish backend image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 80
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build backend image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          platforms: ${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository }}/backend:${{ inputs.version }}-${{ matrix.arch }}
+          cache-from: |
+            type=gha,scope=backend-release-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=backend-release-image
+          build-contexts: |
+            core=./ugoite-core
+            minimum=./ugoite-minimum
+            module=./ugoite-cli
+
+  publish-backend-manifest:
+    name: Publish backend manifest
+    needs:
+      - publish-backend-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish backend manifest tags
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          IMAGE: ghcr.io/${{ github.repository }}/backend
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tags=("$IMAGE:$VERSION")
+          case "$CHANNEL" in
+            stable)
+              tags+=("$IMAGE:latest" "$IMAGE:stable")
+              ;;
+            alpha|beta)
+              tags+=("$IMAGE:$CHANNEL")
+              ;;
+            *)
+              echo "unsupported channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          sources=("$IMAGE:${VERSION}-amd64" "$IMAGE:${VERSION}-arm64")
+          args=()
+          for tag in "${tags[@]}"; do
+            args+=("-t" "$tag")
+          done
+
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+
+  publish-frontend-image:
+    name: Publish frontend image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.target != '' && inputs.target || github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Set up QEMU emulation for cross-platform builds
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
+
+      - name: Authenticate GHCR pushes
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute GHCR tags
+        id: tags
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          IMAGE: ghcr.io/${{ github.repository }}/frontend
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tags=("$IMAGE:$VERSION")
+          case "$CHANNEL" in
+            stable)
+              tags+=("$IMAGE:latest" "$IMAGE:stable")
+              ;;
+            alpha|beta)
+              tags+=("$IMAGE:$CHANNEL")
+              ;;
+            *)
+              echo "unsupported channel: $CHANNEL" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Build frontend image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: |
+            type=gha,scope=frontend-release-image
+            type=gha,scope=docker-build-common
+          cache-to: |
+            type=gha,mode=max,scope=frontend-release-image
+          build-contexts: |
+            shared=./shared

@@ -106,9 +106,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ./.github/workflows/docker-images.yml
+    uses: ./.github/workflows/docker-release-images.yml
     with:
-      push: true
       target: ${{ inputs.target }}
       version: ${{ inputs.version }}
       channel: ${{ inputs.channel }}
@@ -121,7 +120,6 @@ jobs:
       packages: write
     uses: ./.github/workflows/docker-images.yml
     with:
-      push: false
       target: ${{ inputs.target }}
       export_artifacts: true
       artifact_name: release-docker-images

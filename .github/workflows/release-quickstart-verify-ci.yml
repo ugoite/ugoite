@@ -20,7 +20,6 @@ jobs:
       packages: write
     uses: ./.github/workflows/docker-images.yml
     with:
-      push: false
       export_artifacts: true
       artifact_name: release-quickstart-images
       backend_local_tag: ghcr.io/${{ github.repository }}/backend:ci-quickstart

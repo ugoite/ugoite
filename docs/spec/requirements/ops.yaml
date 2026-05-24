@@ -807,7 +807,9 @@ requirements:
 
     to GHCR with deterministic stable/alpha/beta tags aligned to the requested
 
-    SemVer, attach exact-version backend/frontend container image archives plus
+    SemVer, publish the backend image on native amd64 and arm64 runners before
+
+    merging a manifest, attach exact-version backend/frontend container image archives plus
 
     `docker-compose.release.yaml` to the GitHub Release, and repository/docs
 
