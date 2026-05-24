@@ -19,7 +19,16 @@ const safeStorage = () => {
 	/* v8 ignore start */
 	if (isServer || typeof window === "undefined") return null;
 	/* v8 ignore stop */
-	return window.localStorage;
+	const storage = window.localStorage;
+	if (
+		!storage ||
+		typeof storage.getItem !== "function" ||
+		typeof storage.setItem !== "function" ||
+		typeof storage.removeItem !== "function"
+	) {
+		return null;
+	}
+	return storage;
 };
 
 const readAllowedValue = <T extends string>(key: string, allowed: readonly T[]): T | null => {

@@ -778,7 +778,8 @@ requirements:
   title: Space Storage Configuration
   description: 'Space settings MUST allow saving storage connector metadata (local,
 
-    S3, remote) with connection validation before saving.
+    S3, remote) with connection validation before saving. The test flow MUST
+    surface any optional remote endpoint needed for a real backend probe.
 
     The UI MUST explain that changing `storage_config.uri` updates saved metadata
 

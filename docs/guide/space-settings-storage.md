@@ -50,6 +50,10 @@ Open **Settings** when you want to:
 3. save connector metadata for a planned migration
 4. rename the space or inspect other space-level configuration
 
+**Test Connection** validates the target using the saved URI plus any optional
+endpoint you enter, then runs a storage probe through the backend. It reports a
+connection failure if the target cannot be reached.
+
 ## What to read next if you are changing storage
 
 If you are preparing an actual cutover, continue with the

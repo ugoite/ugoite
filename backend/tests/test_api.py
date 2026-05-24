@@ -1315,6 +1315,7 @@ def test_update_space_storage_connector(
         json={
             "storage_config": {
                 "uri": "s3://bucket/path",
+                "endpoint": "https://s3.example.com",
                 "credentials_profile": "default",
             },
             "settings": {"default_form": "Meeting"},
@@ -1323,6 +1324,7 @@ def test_update_space_storage_connector(
     assert patch_res.status_code == 200
     data = patch_res.json()
     assert data["storage_config"]["uri"] == "s3://bucket/path"
+    assert data["storage_config"]["endpoint"] == "https://s3.example.com"
     assert data["settings"]["default_form"] == "Meeting"
 
 
@@ -1334,7 +1336,11 @@ def test_test_connection_endpoint(
     test_client.post("/spaces", json={"name": "test-ws"})
     res = test_client.post(
         "/spaces/test-ws/test-connection",
-        json={"storage_config": {"uri": "file:///tmp"}},
+        json={
+            "storage_config": {
+                "uri": "file:///tmp",
+            },
+        },
     )
     assert res.status_code == 200
     payload = res.json()
@@ -1357,6 +1363,24 @@ def test_test_connection_value_error_returns_400(
         )
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid storage configuration"
+
+
+def test_test_connection_runtime_error_returns_502(
+    test_client: TestClient,
+    temp_space_root: Path,
+) -> None:
+    """REQ-STO-006: runtime storage failures return a connectivity error."""
+    test_client.post("/spaces", json={"name": "conn-runtime-ws"})
+    with patch(
+        "ugoite_core.test_storage_connection",
+        _amock(side_effect=RuntimeError("connectivity failed")),
+    ):
+        response = test_client.post(
+            "/spaces/conn-runtime-ws/test-connection",
+            json={"storage_config": {"uri": "s3://bucket", "endpoint": "https://storage.example.com"}},
+        )
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Storage connection test failed"
 
 
 def test_middleware_headers(
