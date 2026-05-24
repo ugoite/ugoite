@@ -791,6 +791,7 @@ REQUIRED_LOCAL_DEV_AUTH_SCRIPT_FRAGMENTS = {
 }
 REQUIRED_NATIVE_REQUIRED_CHECKS = {
     "Commitlint CI",
+    "CodeQL",
     "Devcontainer CI",
     "Docker Build CI",
     "Docsite CI",
@@ -815,12 +816,10 @@ REQUIRED_NATIVE_REQUIRED_CHECK_DOC_FRAGMENTS = {
     "summary check",
     "machine-readable policy lives in `.github/required-status-checks.json`",
     "human-readable policy lives in `CONTRIBUTING.md`",
-    "PR 1557 did not unblock until the live GitHub repository ruleset named",
-    "The checked-in JSON",
-    "merge queue and the `main` merge path were verified again",
+    "CodeQL is required through its direct summary job",
+    "the code-quality gate must not become a stale second blocker",
     "Release CI",
     "Release Publish",
-    "a separate workflow instead of a required status check",
     "CodeQL | `.github/workflows/codeql.yml` | Push on `main`, PR, merge queue",
 }
 REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
@@ -829,7 +828,7 @@ REQUIRED_NATIVE_REQUIRED_CHECK_CONTRIBUTING_FRAGMENTS = {
     "`merge_group` is the final gate for expensive validation",
     ".github/required-status-checks.json",
     "local validation maps to the same CI event split",
-    "CodeQL also runs here as a separate workflow",
+    "require the `CodeQL` summary check directly",
     "update the live repository ruleset as well as the checked-in JSON",
     "merge queue plus `main` merge were re-verified",
 }

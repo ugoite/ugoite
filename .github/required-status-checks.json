@@ -13,6 +13,12 @@
       "events": ["pull_request", "merge_group"]
     },
     {
+      "context": "CodeQL",
+      "workflow": ".github/workflows/codeql.yml",
+      "job_id": "required-check",
+      "events": ["push", "pull_request", "merge_group"]
+    },
+    {
       "context": "Devcontainer CI",
       "workflow": ".github/workflows/devcontainer-ci.yml",
       "job_id": "required-check",
