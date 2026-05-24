@@ -1,3 +1,6 @@
+// REQ-FE-003: Portable selected space preferences with local fallback
+// REQ-FE-044: Portable locale preferences with local fallback
+// REQ-FE-059: Portable theme preferences with local fallback
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("preferences-local", () => {
