@@ -62,10 +62,9 @@ the reusable `.github/workflows/docker-images.yml` image-definition contract for
 CI validation and local-image artifact export, while Release Publish uses
 `.github/workflows/docker-release-images.yml` for native-arm64 backend
 publishing and `.github/workflows/docker-images.yml` for exact-version archive
-export. Repository Dockerfiles pin external base/tool images to exact version
-tags, and base-image references should carry digests when public registries
-expose them, so local and CI builds stay reproducible under Dependabot-managed
-Docker update PRs.
+export. Repository Dockerfiles pin external base/tool images to exact version tags,
+and base-image references should carry digests when public registries expose
+them, so local and CI builds stay reproducible under Dependabot-managed Docker update PRs.
 
 The root `mise.toml` `[tools]` table and workflow bootstrap steps also pin
 exact patch versions for Node, Bun, Python, Biome, Rust, and uv. `setup-node`,
