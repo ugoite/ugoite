@@ -102,6 +102,9 @@ SBOM_CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sbom-ci.yml"
 DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "docker-images.yml"
 )
+DOCKER_RELEASE_IMAGES_REUSABLE_WORKFLOW_PATH = (
+    REPO_ROOT / ".github" / "workflows" / "docker-release-images.yml"
+)
 DEVCONTAINER_CI_WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "devcontainer-ci.yml"
 )
@@ -379,8 +382,8 @@ REQUIRED_RELEASE_PUBLISH_PERMISSIONS = {
     "packages": "write",
 }
 REQUIRED_RELEASE_PUBLISH_WORKFLOW_FRAGMENTS = {
+    "./.github/workflows/docker-release-images.yml",
     "./.github/workflows/docker-images.yml",
-    "push: true",
     "export_artifacts: true",
     "artifact_name: release-docker-images",
     (
@@ -432,10 +435,6 @@ REQUIRED_PUBLIC_PACKAGE_INSTALLER_FRAGMENTS = {
 }
 REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
     "workflow_call",
-    "docker/login-action@",
-    "registry: ghcr.io",
-    "ghcr.io/${{ github.repository }}/backend",
-    "ghcr.io/${{ github.repository }}/frontend",
     "export_artifacts:",
     "artifact_name:",
     "backend_local_tag:",
@@ -449,9 +448,31 @@ REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS = {
         "exported-images/frontend-image.tar.gz"
     ),
     "actions/upload-artifact@",
-    "$IMAGE:latest",
-    "$IMAGE:stable",
-    "$IMAGE:$CHANNEL",
+    "Docker images (CI)",
+    "Export local Docker image archives",
+}
+REQUIRED_DOCKER_RELEASE_IMAGES_REUSABLE_FRAGMENTS = {
+    "workflow_call",
+    "Prepare release image metadata",
+    "backend_tags_json",
+    "frontend_tags_json",
+    'backend_image": f"ghcr.io/{repository}/backend"',
+    'frontend_image": f"ghcr.io/{repository}/frontend"',
+    "publish-backend-by-platform",
+    "platform_slug",
+    "linux/amd64",
+    "ubuntu-24.04-arm",
+    "linux/arm64",
+    "publish-backend-manifest",
+    "publish-frontend-image",
+    "docker/setup-buildx-action@",
+    "docker/setup-qemu-action@",
+    "docker/login-action@",
+    "docker/build-push-action@",
+    "push-by-digest=true",
+    "docker buildx imagetools create",
+    "join(fromJSON(needs.prepare-release-image-metadata.outputs.frontend_tags_json), "
+    "'\\n')",
 }
 REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS = {
     "docker-compose.release.yaml",
@@ -5218,6 +5239,10 @@ def _collect_release_publish_container_details() -> list[str]:
         DOCKER_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
         REQUIRED_DOCKER_IMAGES_REUSABLE_FRAGMENTS,
     )
+    missing_release_reusable_fragments = _missing_required_fragments(
+        DOCKER_RELEASE_IMAGES_REUSABLE_WORKFLOW_PATH.read_text(encoding="utf-8"),
+        REQUIRED_DOCKER_RELEASE_IMAGES_REUSABLE_FRAGMENTS,
+    )
     missing_readme_fragments = _missing_required_fragments(
         README_PATH.read_text(encoding="utf-8"),
         REQUIRED_RELEASE_QUICKSTART_README_FRAGMENTS,
@@ -5241,8 +5266,8 @@ def _collect_release_publish_container_details() -> list[str]:
             "release-publish permissions mismatch: " + ", ".join(missing_permissions),
         ),
         (
-            publish_images_uses != "./.github/workflows/docker-images.yml",
-            "release-publish must delegate image builds to docker-images.yml",
+            publish_images_uses != "./.github/workflows/docker-release-images.yml",
+            "release-publish must delegate image builds to docker-release-images.yml",
         ),
         (
             export_images_uses != "./.github/workflows/docker-images.yml",
@@ -5275,6 +5300,11 @@ def _collect_release_publish_container_details() -> list[str]:
             bool(missing_reusable_fragments),
             "docker-images reusable workflow missing fragments: "
             + ", ".join(missing_reusable_fragments),
+        ),
+        (
+            bool(missing_release_reusable_fragments),
+            "docker-release-images reusable workflow missing fragments: "
+            + ", ".join(missing_release_reusable_fragments),
         ),
         (
             bool(missing_readme_fragments),
