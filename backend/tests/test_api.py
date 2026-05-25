@@ -1385,7 +1385,7 @@ def test_test_connection_runtime_error_returns_502(
             },
         )
     assert response.status_code == 502
-    assert response.json()["detail"] == "Storage connection test failed"
+    assert response.json()["detail"] == "Storage connection test failed: connectivity failed"
 
 
 def test_middleware_headers(

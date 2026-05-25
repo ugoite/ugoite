@@ -15,6 +15,8 @@ const mockSpace: Space = {
 	storage_config: {
 		uri: "s3://planned-bucket/test-space",
 		endpoint: "https://s3.example.com",
+		credentials_profile: "default",
+		region: "us-west-2",
 	},
 };
 
@@ -51,6 +53,8 @@ describe("SpaceSettings", () => {
 				storage_config: {
 					uri: "s3://planned-bucket/test-space",
 					endpoint: "https://s3-backup.example.com",
+					credentials_profile: "default",
+					region: "us-west-2",
 				},
 			});
 		});
@@ -62,6 +66,8 @@ describe("SpaceSettings", () => {
 			expect(onTestConnection).toHaveBeenCalledWith({
 				uri: "s3://planned-bucket/test-space",
 				endpoint: "https://s3-backup.example.com",
+				credentials_profile: "default",
+				region: "us-west-2",
 			});
 		});
 	});
@@ -82,6 +88,8 @@ describe("SpaceSettings", () => {
 				storage_config: {
 					uri: "s3://planned-bucket/test-space",
 					endpoint: "https://s3.example.com",
+					credentials_profile: "default",
+					region: "us-west-2",
 				},
 			});
 		});
@@ -100,6 +108,8 @@ describe("SpaceSettings", () => {
 			expect(onTestConnection).toHaveBeenCalledWith({
 				uri: "s3://planned-bucket/test-space",
 				endpoint: "https://s3.example.com",
+				credentials_profile: "default",
+				region: "us-west-2",
 			});
 		});
 	});
@@ -145,7 +155,11 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Test Space",
-				storage_config: { uri: "file:///var/lib/ugoite/migrated" },
+				storage_config: {
+					uri: "file:///var/lib/ugoite/migrated",
+					credentials_profile: "default",
+					region: "us-west-2",
+				},
 			});
 		});
 	});
