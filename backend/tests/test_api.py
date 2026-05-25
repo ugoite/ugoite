@@ -21,6 +21,7 @@ from starlette.responses import Response, StreamingResponse
 from app.api.endpoints.search import _is_sql_error
 from app.api.endpoints.space import (
     _sanitize_space_meta,
+    _storage_connection_error_detail,
     _validate_entry_markdown_against_form,
 )
 from app.core.auth import clear_auth_manager_cache
@@ -1385,7 +1386,16 @@ def test_test_connection_runtime_error_returns_502(
             },
         )
     assert response.status_code == 502
-    assert response.json()["detail"] == "Storage connection test failed: connectivity failed"
+    assert response.json()["detail"] == (
+        "Storage connection test failed: connectivity failed"
+    )
+
+
+def test_storage_connection_error_detail_falls_back_without_message() -> None:
+    """REQ-STO-006: empty storage errors use a stable fallback message."""
+    assert _storage_connection_error_detail(RuntimeError()) == (
+        "Storage connection test failed"
+    )
 
 
 def test_middleware_headers(
