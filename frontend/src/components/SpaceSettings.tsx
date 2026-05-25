@@ -35,11 +35,18 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 	const buildStorageConfig = (): StorageConnectionConfig => {
 		const uri = storageUri().trim();
 		const storage_config: StorageConnectionConfig = {
+			...(props.space.storage_config ?? {}),
 			uri,
 		};
 		const endpoint = storageEndpoint().trim();
-		if (uri.toLowerCase().startsWith("s3://") && endpoint) {
-			storage_config.endpoint = endpoint;
+		if (uri.toLowerCase().startsWith("s3://")) {
+			if (endpoint) {
+				storage_config.endpoint = endpoint;
+			} else {
+				delete storage_config.endpoint;
+			}
+		} else {
+			delete storage_config.endpoint;
 		}
 		return storage_config;
 	};

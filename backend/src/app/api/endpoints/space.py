@@ -142,6 +142,14 @@ def _validate_patch_settings(settings: dict[str, Any] | None) -> None:
         )
 
 
+def _storage_connection_error_detail(exc: Exception) -> str:
+    """Return a user-facing storage connection error message."""
+    message = str(exc).strip()
+    if message:
+        return f"Storage connection test failed: {message}"
+    return "Storage connection test failed"
+
+
 def _space_uri(space_id: str) -> str:
     """Return space URI/path for API responses."""
     return space_uri(get_root_path(), space_id)
@@ -418,5 +426,5 @@ async def test_connection_endpoint(
         logger.warning("Storage connection test failed for %s: %s", space_id, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Storage connection test failed",
+            detail=_storage_connection_error_detail(exc),
         ) from exc
