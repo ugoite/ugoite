@@ -2,7 +2,7 @@ import { createMemo, createSignal, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { t } from "~/lib/i18n";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
-import type { Space, SpacePatchPayload } from "~/lib/types";
+import type { Space, SpacePatchPayload, StorageConnectionConfig } from "~/lib/types";
 
 const storageMigrationGuideUrl = getDocsiteHref(
 	"/docs/guide/storage-migration",
@@ -12,7 +12,7 @@ const storageMigrationGuideUrl = getDocsiteHref(
 export interface SpaceSettingsProps {
 	space: Space;
 	onSave: (payload: SpacePatchPayload) => Promise<void>;
-	onTestConnection?: (config: Record<string, unknown>) => Promise<{ status: string }>;
+	onTestConnection?: (config: StorageConnectionConfig) => Promise<{ status: string }>;
 }
 
 /**
@@ -22,12 +22,34 @@ export interface SpaceSettingsProps {
 export function SpaceSettings(props: SpaceSettingsProps) {
 	const [name, setName] = createSignal(props.space.name);
 	const [storageUri, setStorageUri] = createSignal(props.space.storage_config?.uri || "");
+	const [storageEndpoint, setStorageEndpoint] = createSignal(
+		props.space.storage_config?.endpoint || "",
+	);
 	const [isSaving, setIsSaving] = createSignal(false);
 	const [isTesting, setIsTesting] = createSignal(false);
 	const [testStatus, setTestStatus] = createSignal<"success" | "error" | null>(null);
 	const [testMessage, setTestMessage] = createSignal<string>("");
 	const [saveError, setSaveError] = createSignal<string | null>(null);
 	const storageSummary = createMemo(() => summarizeSpaceStorage(props.space));
+
+	const buildStorageConfig = (): StorageConnectionConfig => {
+		const uri = storageUri().trim();
+		const storage_config: StorageConnectionConfig = {
+			...(props.space.storage_config ?? {}),
+			uri,
+		};
+		const endpoint = storageEndpoint().trim();
+		if (uri.toLowerCase().startsWith("s3://")) {
+			if (endpoint) {
+				storage_config.endpoint = endpoint;
+			} else {
+				delete storage_config.endpoint;
+			}
+		} else {
+			delete storage_config.endpoint;
+		}
+		return storage_config;
+	};
 
 	const handleSave = async (e: Event) => {
 		e.preventDefault();
@@ -37,9 +59,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 		try {
 			await props.onSave({
 				name: name(),
-				storage_config: {
-					uri: storageUri(),
-				},
+				storage_config: buildStorageConfig(),
 			});
 		} catch (err) {
 			/* v8 ignore start */
@@ -60,7 +80,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 		setTestMessage("");
 
 		try {
-			const result = await props.onTestConnection({ uri: storageUri() });
+			const result = await props.onTestConnection(buildStorageConfig());
 			setTestStatus("success");
 			setTestMessage(`Connection successful (${result.status})`);
 		} catch (err) {
@@ -135,6 +155,23 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 								Supported planning targets: <code>file://</code> (local), <code>s3://</code> (S3
 								bucket)
 							</p>
+							<div class="ui-field">
+								<label for="storage-endpoint" class="ui-label">
+									Storage Endpoint (optional)
+								</label>
+								<input
+									id="storage-endpoint"
+									type="url"
+									value={storageEndpoint()}
+									onInput={(e) => setStorageEndpoint(e.currentTarget.value)}
+									placeholder="https://s3.example.com"
+									class="ui-input"
+								/>
+								<p class="text-sm ui-muted">
+									Use this for remote storage services that need an explicit HTTP or HTTPS endpoint.
+									Leave it blank for local paths and memory-backed test targets.
+								</p>
+							</div>
 							<div class="ui-card mt-3 space-y-3">
 								<div>
 									<h4 class="text-sm font-semibold">Plan connector metadata deliberately</h4>
@@ -166,8 +203,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 									>
 										storage migration guide
 									</a>{" "}
-									and use Test Connection as a preflight check for the target credentials and
-									reachability before you plan a manual migration.
+									and use Test Connection to probe the configured target before you plan a manual
+									migration.
 								</p>
 							</div>
 						</div>
@@ -177,7 +214,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
 							<button
 								type="button"
 								onClick={handleTestConnection}
-								disabled={isTesting() || !storageUri()}
+								disabled={isTesting() || !storageUri().trim()}
 								class="ui-button ui-button-secondary"
 							>
 								<Show when={isTesting()} fallback="Test Connection">
