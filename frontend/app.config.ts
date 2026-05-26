@@ -1,10 +1,40 @@
-import { defineConfig } from "@solidjs/start/config";
-import tailwindcss from "@tailwindcss/vite";
 import type { ProxyOptions } from "vite";
-import { VitePWA } from "vite-plugin-pwa";
 
-const env =
-	(globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+type ProcessLike = {
+	env?: Record<string, string | undefined>;
+};
+
+const processLike = globalThis.process as ProcessLike | undefined;
+const currentEnv = processLike?.env;
+if (!currentEnv || typeof currentEnv !== "object") {
+	/* v8 ignore start */
+	if (processLike) {
+		Object.defineProperty(processLike, "env", {
+			configurable: true,
+			writable: true,
+			value: {},
+		});
+	} else {
+		Object.defineProperty(globalThis, "process", {
+			configurable: true,
+			writable: true,
+			value: {
+				env: {},
+				cwd: () => new URL(".", import.meta.url).pathname,
+			},
+		});
+	}
+	/* v8 ignore stop */
+}
+
+/* v8 ignore next */
+const env = (globalThis.process as ProcessLike | undefined)?.env ?? {};
+
+const [{ defineConfig }, { default: tailwindcss }, { VitePWA }] = await Promise.all([
+	import("@solidjs/start/config"),
+	import("@tailwindcss/vite"),
+	import("vite-plugin-pwa"),
+]);
 
 const backendUrl = env.BACKEND_URL;
 const useViteProxy = env.VITE_API_PROXY === "true";

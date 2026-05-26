@@ -14,6 +14,9 @@ const mockSpace: Space = {
 	},
 	storage_config: {
 		uri: "s3://planned-bucket/test-space",
+		endpoint: "https://s3.example.com",
+		credentials_profile: "default",
+		region: "us-west-2",
 	},
 };
 
@@ -26,6 +29,71 @@ describe("SpaceSettings", () => {
 	it("should display storage config", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(screen.getByDisplayValue("s3://planned-bucket/test-space")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("https://s3.example.com")).toBeInTheDocument();
+	});
+
+	it("should include an edited endpoint when saving and testing remote storage", async () => {
+		const onSave = vi.fn().mockResolvedValue({});
+		const onTestConnection = vi.fn().mockResolvedValue({ status: "ok" });
+		render(() => (
+			<SpaceSettings space={mockSpace} onSave={onSave} onTestConnection={onTestConnection} />
+		));
+
+		const endpointInput = screen.getByLabelText(/storage endpoint/i);
+		fireEvent.input(endpointInput, {
+			target: { value: "https://s3-backup.example.com" },
+		});
+
+		const saveButton = screen.getByRole("button", { name: /save/i });
+		fireEvent.click(saveButton);
+
+		await waitFor(() => {
+			expect(onSave).toHaveBeenCalledWith({
+				name: "Test Space",
+				storage_config: {
+					uri: "s3://planned-bucket/test-space",
+					endpoint: "https://s3-backup.example.com",
+					credentials_profile: "default",
+					region: "us-west-2",
+				},
+			});
+		});
+
+		const testButton = screen.getByRole("button", { name: /test connection/i });
+		fireEvent.click(testButton);
+
+		await waitFor(() => {
+			expect(onTestConnection).toHaveBeenCalledWith({
+				uri: "s3://planned-bucket/test-space",
+				endpoint: "https://s3-backup.example.com",
+				credentials_profile: "default",
+				region: "us-west-2",
+			});
+		});
+	});
+
+	it("should omit the endpoint when saving remote storage without one", async () => {
+		const onSave = vi.fn().mockResolvedValue({});
+		render(() => <SpaceSettings space={mockSpace} onSave={onSave} />);
+
+		const endpointInput = screen.getByLabelText(/storage endpoint/i);
+		fireEvent.input(endpointInput, {
+			target: { value: "" },
+		});
+
+		const saveButton = screen.getByRole("button", { name: /save/i });
+		fireEvent.click(saveButton);
+
+		await waitFor(() => {
+			expect(onSave).toHaveBeenCalledWith({
+				name: "Test Space",
+				storage_config: {
+					uri: "s3://planned-bucket/test-space",
+					credentials_profile: "default",
+					region: "us-west-2",
+				},
+			});
+		});
 	});
 
 	it("should call onSave when save button is clicked", async () => {
@@ -41,7 +109,12 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Updated Space",
-				storage_config: { uri: "s3://planned-bucket/test-space" },
+				storage_config: {
+					uri: "s3://planned-bucket/test-space",
+					endpoint: "https://s3.example.com",
+					credentials_profile: "default",
+					region: "us-west-2",
+				},
 			});
 		});
 	});
@@ -56,7 +129,12 @@ describe("SpaceSettings", () => {
 		fireEvent.click(testButton);
 
 		await waitFor(() => {
-			expect(onTestConnection).toHaveBeenCalledWith({ uri: "s3://planned-bucket/test-space" });
+			expect(onTestConnection).toHaveBeenCalledWith({
+				uri: "s3://planned-bucket/test-space",
+				endpoint: "https://s3.example.com",
+				credentials_profile: "default",
+				region: "us-west-2",
+			});
 		});
 	});
 
@@ -101,7 +179,11 @@ describe("SpaceSettings", () => {
 		await waitFor(() => {
 			expect(onSave).toHaveBeenCalledWith({
 				name: "Test Space",
-				storage_config: { uri: "file:///var/lib/ugoite/migrated" },
+				storage_config: {
+					uri: "file:///var/lib/ugoite/migrated",
+					credentials_profile: "default",
+					region: "us-west-2",
+				},
 			});
 		});
 	});
@@ -123,6 +205,27 @@ describe("SpaceSettings", () => {
 		render(() => <SpaceSettings space={space as any} onSave={vi.fn()} />);
 		const uriInput = screen.getByPlaceholderText(/file:\/\/\/local\/path/i);
 		expect(uriInput).toHaveValue("");
+	});
+
+	it("should save a new local storage config when no existing config is present", async () => {
+		const onSave = vi.fn().mockResolvedValue({});
+		const space = { id: "test", name: "Test", created_at: "2025-01-01T00:00:00Z" };
+		render(() => <SpaceSettings space={space as any} onSave={onSave} />);
+
+		const uriInput = screen.getByLabelText(/storage uri/i);
+		fireEvent.input(uriInput, { target: { value: "file:///var/lib/ugoite/fresh" } });
+
+		const saveButton = screen.getByRole("button", { name: /save/i });
+		fireEvent.click(saveButton);
+
+		await waitFor(() => {
+			expect(onSave).toHaveBeenCalledWith({
+				name: "Test",
+				storage_config: {
+					uri: "file:///var/lib/ugoite/fresh",
+				},
+			});
+		});
 	});
 
 	it("test connection button not shown when onTestConnection not provided", () => {

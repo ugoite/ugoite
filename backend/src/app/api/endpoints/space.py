@@ -142,6 +142,14 @@ def _validate_patch_settings(settings: dict[str, Any] | None) -> None:
         )
 
 
+def _storage_connection_error_detail(exc: Exception) -> str:
+    """Return a user-facing storage connection error message."""
+    message = str(exc).strip()
+    if message:
+        return f"Storage connection test failed: {message}"
+    return "Storage connection test failed"
+
+
 def _space_uri(space_id: str) -> str:
     """Return space URI/path for API responses."""
     return space_uri(get_root_path(), space_id)
@@ -393,7 +401,7 @@ async def test_connection_endpoint(
     payload: SpaceConnectionRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Validate the provided storage connector (stubbed for Milestone 6)."""
+    """Validate the provided storage connector."""
     identity = request_identity(request)
     _validate_path_id(space_id, "space_id")
     storage_config = _storage_config()
@@ -414,3 +422,9 @@ async def test_connection_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid storage configuration",
         ) from e
+    except RuntimeError as exc:
+        logger.warning("Storage connection test failed for %s: %s", space_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_storage_connection_error_detail(exc),
+        ) from exc

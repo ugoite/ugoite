@@ -138,33 +138,24 @@ async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Resu
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test]
 /// REQ-STO-002
 async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Result<()> {
-    let result = space::test_storage_connection("/tmp/test").await?;
+    let dir = tempdir()?;
+    let local_uri = format!("file://{}", dir.path().display());
+    let result = space::test_storage_connection(&local_uri).await?;
     assert_eq!(result["status"], "ok");
     assert_eq!(result["mode"], "local");
 
-    let result2 = space::test_storage_connection("./relative").await?;
-    assert_eq!(result2["mode"], "local");
-
     Ok(())
 }
 
 #[tokio::test]
-/// REQ-STO-002
-async fn test_space_req_sto_002_test_storage_connection_s3() -> anyhow::Result<()> {
-    let result = space::test_storage_connection("s3://my-bucket/path").await?;
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["mode"], "s3");
-    Ok(())
-}
-
-#[tokio::test]
-/// REQ-STO-002
-async fn test_space_req_sto_002_test_storage_connection_unknown() -> anyhow::Result<()> {
-    let result = space::test_storage_connection("ftp://somehost").await?;
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["mode"], "unknown");
+/// REQ-STO-006
+async fn test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme(
+) -> anyhow::Result<()> {
+    let result = space::test_storage_connection("ftp://somehost").await;
+    assert!(result.is_err());
     Ok(())
 }

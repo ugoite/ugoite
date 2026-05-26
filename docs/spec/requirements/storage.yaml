@@ -252,7 +252,8 @@ requirements:
 
     such as loopback or link-local hosts MUST be rejected before the core binding
 
-    attempts a connection test.
+    attempts a connection test, and unreachable targets MUST return a
+    connectivity failure rather than a false success.
 
     '
   related_spec:
@@ -267,10 +268,14 @@ requirements:
       - test_update_space_storage_connector
       - test_test_connection_endpoint
       - test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core
+      - test_test_connection_runtime_error_returns_502
     - file: ugoite-core/tests/test_bindings.py
       tests:
       - test_storage_req_sto_006_rejects_link_local_endpoint
       - test_storage_req_sto_006_strips_inputs_before_validation
+    - file: ugoite-core/tests/test_space.rs
+      tests:
+      - test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
