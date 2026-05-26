@@ -737,9 +737,10 @@ export const handlers = [
 		const spaceId = params.spaceId as string;
 		if (!mockSpaces.has(spaceId))
 			return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-		const body = (await request.json()) as { token: string; user_id: string };
+		const body = (await request.json()) as { token: string; user_id?: string };
+		const userId = body.user_id || "accepted-user";
 		return HttpResponse.json({
-			member: { user_id: body.user_id, role: "editor", state: "active" },
+			member: { user_id: userId, role: "editor", state: "active" },
 		});
 	}),
 	testHttp.post("/spaces/:spaceId/members/:userId/role", async ({ params, request }) => {

@@ -158,6 +158,9 @@ export default function SpacesIndexRoute() {
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<h1 class="ui-page-title">Spaces</h1>
 				<div class="flex flex-wrap items-center gap-2">
+					<A href="/spaces/join" class="ui-button ui-button-secondary text-sm">
+						Join with invitation
+					</A>
 					<Show when={!spacesError() && !showCreateForm() && !hasNoSpaces()}>
 						<button
 							type="button"

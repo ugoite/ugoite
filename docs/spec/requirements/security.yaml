@@ -307,6 +307,10 @@ requirements:
       - test_space_member_invite_and_accept_transitions_to_active
       - test_space_member_role_change_controls_admin_permissions
       - test_space_member_revoke_removes_access
+    vitest:
+    - file: frontend/src/routes/spaces/join.test.tsx
+      tests:
+      - "REQ-SEC-007: accepts an invitation token and confirms the joined membership"
     e2e:
     - file: e2e/space-membership.test.ts
       tests:
