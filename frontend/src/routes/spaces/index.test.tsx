@@ -39,6 +39,10 @@ describe("/spaces", () => {
 		});
 
 		expect(screen.getByRole("button", { name: "Create space" })).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Join with invitation" })).toHaveAttribute(
+			"href",
+			"/spaces/join",
+		);
 		expect(spaceApi.create).not.toHaveBeenCalled();
 	});
 

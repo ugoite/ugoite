@@ -428,8 +428,8 @@ describe("spaceApi members", () => {
 	it("accepts invitation", async () => {
 		resetMockData();
 		await spaceApi.create("ws-accept");
-		const result = await spaceApi.acceptInvitation("ws-accept", { token: "tok", user_id: "u1" });
-		expect(result.member.user_id).toBe("u1");
+		const result = await spaceApi.acceptInvitation("ws-accept", { token: "tok" });
+		expect(result.member.state).toBe("active");
 	});
 
 	it("updates member role", async () => {
@@ -519,9 +519,7 @@ describe("error paths", () => {
 				HttpResponse.json({ detail: "Not found" }, { status: 404 }),
 			),
 		);
-		await expect(
-			spaceApi.acceptInvitation("nonexistent", { token: "tok", user_id: "u1" }),
-		).rejects.toThrow();
+		await expect(spaceApi.acceptInvitation("nonexistent", { token: "tok" })).rejects.toThrow();
 	});
 
 	it("spaceApi.updateMemberRole throws on failure", async () => {
