@@ -10,7 +10,7 @@ dependencies = [
     "ugoite-core",
     "mcp>=1.27.1",
     "pyjwt>=2.13.0",
-    "uvicorn>=0.47.0",
+    "uvicorn>=0.48.0",
 ]
 
 [dependency-groups]
