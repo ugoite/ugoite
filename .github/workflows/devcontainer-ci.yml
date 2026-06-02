@@ -163,7 +163,7 @@ jobs:
         run: echo "${{ needs.detect-devcontainer-inputs.outputs.selection_reason }}"
 
       - name: Build and smoke test devcontainer
-        uses: devcontainers/ci@b63b30de439b47a52267f241112c5b453b673db5 # v0.3
+        uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
         with:
           env: |
             UGOITE_SKIP_PLAYWRIGHT_DEPS=1
