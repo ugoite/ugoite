@@ -298,6 +298,6 @@ pub async fn test_storage_connection(uri: &str) -> Result<serde_json::Value> {
     } else if uri.starts_with("s3://") {
         Ok(serde_json::json!({"status": "ok", "mode": "s3"}))
     } else {
-        Ok(serde_json::json!({"status": "ok", "mode": "unknown"}))
+        Err(anyhow!("unsupported storage scheme for URI: {uri}"))
     }
 }
