@@ -1,12 +1,22 @@
+---
 version: 2
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: "daily"
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "bun"
     directory: "/frontend"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
     groups:
@@ -17,31 +27,43 @@ updates:
 
   - package-ecosystem: "bun"
     directory: "/docsite"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "npm"
     directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "npm"
     directory: "/e2e"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "uv"
     directory: "/backend"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "uv"
     directory: "/ugoite-core"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "cargo"
     directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
     groups:
@@ -52,25 +74,39 @@ updates:
           - "iceberg"
     ignore:
       - dependency-name: "arrow-array"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
       - dependency-name: "arrow-schema"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
       - dependency-name: "parquet"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
       - dependency-name: "iceberg"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "docker"
     directory: "/backend"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "docker"
     directory: "/frontend"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
   - package-ecosystem: "devcontainers"
     directory: "/"
+    patterns: ["*"]
+    multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
