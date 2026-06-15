@@ -1,46 +1,41 @@
 {
-	"name": "mise",
-	"image": "mcr.microsoft.com/devcontainers/base:2.1.7-ubuntu24.04",
-	"features": {
-		"ghcr.io/devcontainers-extra/features/mise:1.0.0": {},
-		"ghcr.io/devcontainers/features/github-cli:1.1.0": {}
-	},
-	"customizations": {
-		"vscode": {
-			"extensions": [
-				"ms-python.python",
-				"biomejs.biome",
-				"charliermarsh.ruff",
-				"astral-sh.ty",
-				"hverlin.mise-vscode",
-				"tombi-toml.tombi",
-				"MermaidChart.vscode-mermaid-chart",
-				"GitHub.vscode-pull-request-github",
-				"github.vscode-github-actions",
-				"ms-vscode.vscode-websearchforcopilot",
-				"GitHub.vscode-codeql",
-				"github.copilot",
-				"github.copilot-chat"
-			]
-		}
-	},
-	"workspaceFolder": "/workspace",
-	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-	"mounts": [
-		"source=frontend_node_modules,target=/workspace/frontend/node_modules,type=volume",
-		"source=backend_venv,target=/workspace/backend/.venv,type=volume"
-	],
-	"remoteUser": "vscode",
-	"containerEnv": {
-		"BUN_TEST_TIMEOUT_MS": "15000",
-		"E2E_TIMEOUT": "15000",
-		"E2E_FRONTEND_MODE": "prod"
-	},
-	"remoteEnv": {
-		"MISE_EXPERIMENTAL": "1",
-		"GH_TOKEN": "${localEnv:GH_TOKEN}",
-		"GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
-	},
-	"postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends oathtool shfmt shellcheck && sudo rm -rf /var/lib/apt/lists/*",
-	"onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules /workspace/backend/.venv && mise trust -- --non-interactive && mise install --yes && mise run setup && cd /workspace/e2e && npx playwright --version && if [ -z \"${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}\" ]; then npx playwright install --with-deps chromium; fi"
+  "name": "mise",
+  "image": "mcr.microsoft.com/devcontainers/base:2.1.7-ubuntu24.04",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/mise:1.0.0": {},
+    "ghcr.io/devcontainers/features/github-cli:1.1.0": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hverlin.mise-vscode",
+        "tombi-toml.tombi",
+        "MermaidChart.vscode-mermaid-chart",
+        "GitHub.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        "ms-vscode.vscode-websearchforcopilot",
+        "GitHub.vscode-codeql",
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    }
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "mounts": [
+    "source=frontend_node_modules,target=/workspace/frontend/node_modules,type=volume"
+  ],
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "BUN_TEST_TIMEOUT_MS": "15000",
+    "E2E_TIMEOUT": "15000",
+    "E2E_FRONTEND_MODE": "prod"
+  },
+  "remoteEnv": {
+    "MISE_EXPERIMENTAL": "1",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+  "postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends oathtool shfmt shellcheck && sudo rm -rf /var/lib/apt/lists/*",
+  "onCreateCommand": "eval \"$(mise activate bash --shims)\" >> ~/.bashrc && sudo chown -R vscode:vscode /workspace/frontend/node_modules && mise trust -- --non-interactive && mise install --yes && mise run setup"
 }

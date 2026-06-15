@@ -48,3 +48,28 @@ Deno.test("Phase 1 removes legacy root and subdirectory tool entrypoints", async
     }
   }
 });
+
+Deno.test("Phase 4 removes Python from tracked source and contributor tooling", async () => {
+  const command = new Deno.Command("git", {
+    args: ["ls-files", "*.py", "**/uv.lock"],
+    stdout: "piped",
+  });
+  const output = await command.output();
+  assertEquals(new TextDecoder().decode(output.stdout).trim(), "");
+
+  for (
+    const path of [
+      "mise.toml",
+      ".devcontainer/devcontainer.json",
+      ".github/workflows/ci.yml",
+      ".github/workflows/codeql.yml",
+    ]
+  ) {
+    const contents = await Deno.readTextFile(path);
+    assertEquals(
+      /\b(?:python|python3|uv|pytest)\b/i.test(contents),
+      false,
+      path,
+    );
+  }
+});
