@@ -246,7 +246,7 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
     assert_eq!(casted_obj.get("Done").and_then(|v| v.as_bool()), Some(true));
     assert_eq!(casted_obj.get("Count").and_then(|v| v.as_i64()), Some(42));
     let rate = casted_obj.get("Rate").and_then(|v| v.as_f64()).unwrap();
-    assert!((rate - 3.14).abs() < 0.0001);
+    assert!((rate - (314.0 / 100.0)).abs() < 0.0001);
     assert_eq!(
         casted_obj.get("Event").and_then(|v| v.as_str()),
         Some("2025-01-02T03:04:05+00:00")
