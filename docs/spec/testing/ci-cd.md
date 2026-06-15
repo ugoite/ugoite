@@ -5,9 +5,9 @@
 The formal release architecture converges on two required checks:
 `ci-required` and `codeql-required`. Root `mise.toml` is the only task entry
 point and defines `mise run ci`, `mise run ci:merge`, and
-`mise run ci:release`. During Phase 0/1, legacy workflows remain transitional;
-repository rules and workflows will converge on the two-check contract as the
-later server and CI migration phases land.
+`mise run ci:release`. The live repository ruleset and workflows use this
+two-check contract. Phase 3 moves source development to `ugoite-server`; the
+Python backend remains only as a temporary Phase 4 comparison/removal surface.
 
 See [`../../architecture/release-rearchitecture.md`](../../architecture/release-rearchitecture.md)
 for the target architecture and deletion policy.

@@ -7,14 +7,24 @@
     "coverage": "deno run -A npm:vitest run --coverage --maxWorkers=1"
   },
   "imports": {
+    "@oslojs/encoding": "npm:@oslojs/encoding@^1.1.0",
     "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.0",
     "astro": "npm:astro@^6.4.2",
     "astro/": "npm:astro@^6.4.2/",
+    "clsx": "npm:clsx@^2.1.1",
+    "cookie": "npm:cookie@^1.0.2",
+    "devalue": "npm:devalue@^5.6.3",
+    "es-module-lexer": "npm:es-module-lexer@^2.0.0",
+    "html-escaper": "npm:html-escaper@^3.0.3",
     "marked": "npm:marked@^18.0.4",
+    "piccolore": "npm:piccolore@^0.1.3",
     "std-env": "npm:std-env@^3.10.0",
+    "unstorage": "npm:unstorage@^1.17.5",
     "vite": "npm:vite@8.0.16",
     "vitest": "npm:vitest@^4.1.8",
     "vitest/": "npm:vitest@^4.1.8/",
-    "yaml": "npm:yaml@^2.9.0"
+    "yaml": "npm:yaml@^2.9.0",
+    "zod": "npm:zod@^4.4.3",
+    "zod/v4": "npm:zod@^4.4.3/v4"
   }
 }

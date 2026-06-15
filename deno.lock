@@ -10,6 +10,7 @@
     "npm:@codemirror/lint@^6.9.6": "6.9.7",
     "npm:@codemirror/state@^6.6.0": "6.6.0",
     "npm:@codemirror/view@^6.43.0": "6.43.1",
+    "npm:@oslojs/encoding@^1.1.0": "1.1.0",
     "npm:@playwright/test@^1.60.0": "1.60.0",
     "npm:@solidjs/router@~0.16.1": "0.16.1_solid-js@1.9.13",
     "npm:@solidjs/start@^1.3.2": "1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.9.1_@types+node@25.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0",
@@ -21,13 +22,20 @@
     "npm:@types/node@25.9.1": "25.9.1",
     "npm:@types/node@^25.9.1": "25.9.1",
     "npm:@vitest/coverage-v8@^4.1.8": "4.1.8_vitest@4.1.8_@types+node@25.9.1_jsdom@29.1.1_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0",
+    "npm:astro@*": "6.4.6_@types+node@25.9.1_yaml@2.9.0",
     "npm:astro@^6.4.2": "6.4.6_@types+node@25.9.1_yaml@2.9.0",
     "npm:baseline-browser-mapping@^2.10.33": "2.10.37",
     "npm:browserslist@^4.28.2": "4.28.2",
+    "npm:clsx@^2.1.1": "2.1.1",
+    "npm:cookie@^1.0.2": "1.1.1",
+    "npm:devalue@^5.6.3": "5.8.1",
+    "npm:es-module-lexer@2": "2.1.0",
+    "npm:html-escaper@^3.0.3": "3.0.3",
     "npm:js-tokens@10": "10.0.0",
     "npm:jsdom@^29.1.1": "29.1.1",
     "npm:marked@^18.0.4": "18.0.5",
     "npm:msw@^2.14.6": "2.14.6_typescript@6.0.3_@types+node@25.9.1",
+    "npm:piccolore@~0.1.3": "0.1.3",
     "npm:playwright@*": "1.60.0",
     "npm:prismjs@1.30.0": "1.30.0",
     "npm:solid-js@^1.9.13": "1.9.13",
@@ -35,6 +43,8 @@
     "npm:tailwindcss@4.3.0": "4.3.0",
     "npm:tailwindcss@^4.3.0": "4.3.0",
     "npm:typescript@^6.0.3": "6.0.3",
+    "npm:unstorage@^1.17.5": "1.17.5_db0@0.3.4_ioredis@5.11.1",
+    "npm:vinxi@*": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
     "npm:vinxi@~0.5.11": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
     "npm:vite-plugin-pwa@^1.3.0": "1.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1_@types+node@25.9.1_yaml@2.9.0",
     "npm:vite-plugin-solid@^2.11.12": "2.11.12_@testing-library+jest-dom@6.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
@@ -43,7 +53,8 @@
     "npm:vitefu@^1.1.2": "1.1.3_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
     "npm:vitest@*": "4.1.8_@types+node@25.9.1_@vitest+coverage-v8@4.1.8_jsdom@29.1.1_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_yaml@2.9.0",
     "npm:vitest@^4.1.8": "4.1.8_@types+node@25.9.1_@vitest+coverage-v8@4.1.8_jsdom@29.1.1_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_yaml@2.9.0",
-    "npm:yaml@^2.9.0": "2.9.0"
+    "npm:yaml@^2.9.0": "2.9.0",
+    "npm:zod@^4.4.3": "4.4.3"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -8399,13 +8410,22 @@
     "members": {
       "docsite": {
         "dependencies": [
+          "npm:@oslojs/encoding@^1.1.0",
           "npm:@tailwindcss/vite@4.3.0",
           "npm:astro@^6.4.2",
+          "npm:clsx@^2.1.1",
+          "npm:cookie@^1.0.2",
+          "npm:devalue@^5.6.3",
+          "npm:es-module-lexer@2",
+          "npm:html-escaper@^3.0.3",
           "npm:marked@^18.0.4",
+          "npm:piccolore@~0.1.3",
           "npm:std-env@^3.10.0",
+          "npm:unstorage@^1.17.5",
           "npm:vite@8.0.16",
           "npm:vitest@^4.1.8",
-          "npm:yaml@^2.9.0"
+          "npm:yaml@^2.9.0",
+          "npm:zod@^4.4.3"
         ],
         "packageJson": {
           "dependencies": [
