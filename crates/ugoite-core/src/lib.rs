@@ -16,6 +16,7 @@ pub mod preferences;
 pub mod sample_data;
 pub mod saved_sql;
 pub mod search;
+pub mod service;
 pub mod space;
 pub mod sql;
 pub mod sql_session;

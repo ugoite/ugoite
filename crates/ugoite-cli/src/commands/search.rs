@@ -1,10 +1,8 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct SearchCmd {
@@ -43,9 +41,8 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let results = ugoite_core::search::search_entries(&op, &ws, &query).await?;
+            let service = UgoiteService::new(&root)?;
+            let results = service.search_entries(&space_id, &query).await?;
             print_json(&results);
         }
     }

@@ -5,6 +5,7 @@ use crate::config::{
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct EntryCmd {
@@ -167,9 +168,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let entries = ugoite_core::entry::list_entries(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            let entries = service.list_entries(&space_id).await?;
             if fmt != Format::Json {
                 let rows: Vec<serde_json::Value> = entries
                     .iter()
@@ -196,9 +196,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let entry = ugoite_core::entry::get_entry(&op, &ws, &entry_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let entry = service.get_entry(&space_id, &entry_id).await?;
             print_json(&entry);
         }
         EntrySubCmd::Create {
@@ -223,14 +222,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 return Ok(());
             }
             let author = author.unwrap_or_else(|| "cli".to_string());
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity =
-                ugoite_core::integrity::RealIntegrityProvider::from_space(&op, &space_id).await?;
-            let meta = ugoite_core::entry::create_entry(
-                &op, &ws, &entry_id, &content, &author, &integrity,
-            )
-            .await?;
+            let service = UgoiteService::new(&root)?;
+            let meta = service
+                .create_entry(&space_id, &entry_id, &content, &author)
+                .await?;
             print_json(&meta);
         }
         EntrySubCmd::Update {
