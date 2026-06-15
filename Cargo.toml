@@ -1,10 +1,22 @@
 [workspace]
 members = [
-    "ugoite-core",
-    "ugoite-cli",
-    "ugoite-minimum",
+    "crates/ugoite-domain",
+    "crates/ugoite-storage",
+    "crates/ugoite-core",
+    "crates/ugoite-server",
+    "crates/ugoite-cli",
+    "crates/ugoite-wasm",
+    "crates/xtask",
 ]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0"
 
 [patch.crates-io]
 reqsign = { path = "vendor/reqsign" }
