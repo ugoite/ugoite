@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  required:
+    name: ci-required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v3
+        with:
+          install: true
+          cache: true
+
+      - name: Run pull request gate
+        if: github.event_name == 'pull_request'
+        run: mise run ci
+
+      - name: Run merge gate
+        if: github.event_name == 'merge_group' || github.event_name == 'push'
+        run: mise run ci:merge

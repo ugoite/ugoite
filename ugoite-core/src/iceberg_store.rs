@@ -879,7 +879,7 @@ pub async fn drop_form_tables(op: &Operator, ws_path: &str, form_name: &str) -> 
         let fs_root = format!("{}/{}/forms/{}", root, ws_path, form_name);
         let _ = std::fs::remove_dir_all(&fs_root);
     } else {
-        let _ = op.remove_all(&form_root).await;
+        let _ = op.delete_with(&form_root).recursive(true).await;
     }
 
     let warehouse = warehouse_uri(op, ws_path)?;

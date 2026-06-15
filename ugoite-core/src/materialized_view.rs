@@ -77,7 +77,7 @@ pub async fn create_or_update_view(
 pub async fn delete_view(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()> {
     let dir = format!("{}/", view_path(ws_path, sql_id));
     if op.exists(&dir).await? {
-        op.remove_all(&dir).await?;
+        op.delete_with(&dir).recursive(true).await?;
     }
     Ok(())
 }

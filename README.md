@@ -223,12 +223,13 @@ curl -fsSL "https://github.com/ugoite/ugoite/releases/download/v${VERSION}/ugoit
 
 For contributor-oriented Cargo workflows, see [CLI Guide](docs/guide/cli.md).
 
-## Setup & Development (mise)
+## Setup & Development (Rust + Deno)
 
-The repository root `mise.toml` is the contributor-facing source of truth for
-managed tool versions across both supported setup paths. Use that shared
-toolchain story first, then treat package README prerequisites as workflow notes
-on top of the same managed environment.
+The repository root `mise.toml` is the only contributor-facing toolchain entry
+point. It pins Rust and Deno; Cargo owns Rust work and Deno owns repository
+TypeScript tasks. See
+[the pre-release rearchitecture decision](docs/architecture/release-rearchitecture.md)
+for the migration boundary and target state.
 
 For the full contributor workflow around specs, REQ traceability, docsite
 navigation wiring, and CI-parity checks, see
@@ -241,13 +242,14 @@ Choose the contributor setup path that matches your machine:
 | Host-managed toolchain | You already want the repo toolchain on your machine or you are not using VS Code/Codespaces | You run `mise run setup` yourself to install dependencies plus the fast pre-commit hook chain and the heavier pre-push coverage hook, then continue with `mise run dev`. |
 | Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
 
-Install dependencies and repository pre-commit hooks:
+Install and cache the minimal development toolchain:
 
 ```bash
 mise run setup
 ```
 
-The setup task also runs `uvx pre-commit install` and installs the pre-push hook so local commits stay fast while the heavier coverage gates still run before push.
+Git hooks are optional and are not installed by setup. The canonical quality
+gates are `mise run ci`, `mise run ci:merge`, and `mise run ci:release`.
 
 The devcontainer path runs that same bootstrap for you during container
 creation, so both contributor setups land on the same local commands and hooks.

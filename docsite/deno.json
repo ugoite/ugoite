@@ -1,0 +1,20 @@
+{
+  "tasks": {
+    "dev": "deno run -A npm:astro dev --host 127.0.0.1 --strictPort --port 4321",
+    "build": "deno run -A npm:astro build",
+    "check": "deno run -A npm:astro check",
+    "test": "deno run -A npm:vitest run",
+    "coverage": "deno run -A npm:vitest run --coverage --maxWorkers=1"
+  },
+  "imports": {
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@4.3.0",
+    "astro": "npm:astro@^6.4.2",
+    "astro/": "npm:astro@^6.4.2/",
+    "marked": "npm:marked@^18.0.4",
+    "std-env": "npm:std-env@^3.10.0",
+    "vite": "npm:vite@8.0.16",
+    "vitest": "npm:vitest@^4.1.8",
+    "vitest/": "npm:vitest@^4.1.8/",
+    "yaml": "npm:yaml@^2.9.0"
+  }
+}
