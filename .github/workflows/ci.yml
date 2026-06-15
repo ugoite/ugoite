@@ -29,6 +29,9 @@ jobs:
           install: true
           cache: true
 
+      - name: Install Rust CI components
+        run: rustup component add rustfmt clippy && rustup target add wasm32-unknown-unknown
+
       - name: Run pull request gate
         if: github.event_name == 'pull_request'
         run: mise run ci
