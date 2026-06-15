@@ -1,1 +1,0 @@
-"""Documentation consistency tests package."""
