@@ -4,6 +4,7 @@
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "npm:@astrojs/check@~0.9.9": "0.9.9_typescript@6.0.3",
+    "npm:@astrojs/internal-helpers@0.10.0": "0.10.0",
     "npm:@astrojs/markdown-remark@^7.2.0": "7.2.0",
     "npm:@babel/core@^7.29.0": "7.29.7",
     "npm:@codemirror/autocomplete@^6.20.2": "6.20.3",
@@ -8425,6 +8426,7 @@
       "docsite": {
         "dependencies": [
           "npm:@astrojs/check@~0.9.9",
+          "npm:@astrojs/internal-helpers@0.10.0",
           "npm:@astrojs/markdown-remark@^7.2.0",
           "npm:@oslojs/encoding@^1.1.0",
           "npm:@tailwindcss/node@4.3.0",
