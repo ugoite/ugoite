@@ -29,13 +29,13 @@ Ugoite follows **Test-Driven Development (TDD)**:
 | ugoite-domain | cargo test | `ugoite-domain/tests/` |
 | ugoite-core | cargo test + pytest | `crates/ugoite-core/tests/` |
 | ugoite-cli | cargo test | `crates/ugoite-cli/tests/` |
-| backend | pytest | `backend/tests/` |
+| ugoite-server | cargo test | `crates/ugoite-server/tests/` |
 | frontend | vitest | `frontend/src/**/*.test.ts(x)` |
 | docsite | vitest | `docsite/src/**/*.test.ts` |
 
 ### Integration Tests
 
-- Backend: FastAPI TestClient with memory filesystem
+- Server: Axum router contract tests with memory storage
 - Frontend: Component tests with mocked API
 
 ### End-to-End Tests
