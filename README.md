@@ -50,7 +50,7 @@ GitHub without comparing two different onboarding maps.
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 If you only need the portable Rust layer for WASM, embedding, or pure helper
-work, start with [`ugoite-minimum`](ugoite-minimum/README.md) and the portable
+work, start with [`ugoite-domain`](ugoite-domain/README.md) and the portable
 contributor notes in [Contributor Workflow](CONTRIBUTING.md).
 
 ### After your first step
@@ -89,7 +89,7 @@ and why source and published defaults differ.
 | --- | --- | --- | --- |
 | [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
 | [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Work on `ugoite-minimum`](ugoite-minimum/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-minimum` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
+| [Work on `ugoite-domain`](ugoite-domain/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-domain` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
 | [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You want the current backend, frontend, and docsite together for source-based evaluation or full-stack debugging | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full repo surface, but also the heaviest path |
 | [Contributor Workflow](CONTRIBUTING.md) | You are changing docs, frontend, backend, or core and want the canonical setup plus targeted commands | Medium: source checkout + `mise run setup`; add only the surface-specific commands or services you need | Flexible contributor path, but cross-surface or auth changes may still need the full `mise run dev` stack |
 
@@ -111,7 +111,7 @@ the `v0.2` roadmap.
 | ------------ | ------------------------------------ |
 | Frontend     | Bun + SolidStart + TailwindCSS       |
 | Backend      | Python 3.13+ (FastAPI)               |
-| Core         | Rust (ugoite-core via pyo3 bindings) |
+| Core         | Rust (`ugoite-domain` + `ugoite-core`) |
 | Storage      | OpenDAL + Apache Iceberg             |
 | AI Interface | MCP (resource-first integration today) |
 
@@ -125,11 +125,11 @@ frontend/           # SolidStart frontend
   └─ public/
 backend/            # FastAPI backend (REST & MCP server)
   └─ src/
-ugoite-cli/         # Command-line interface for power users
+crates/ugoite-cli/         # Command-line interface for power users
   └─ src/
-ugoite-core/        # Rust core logic + Python bindings
+crates/ugoite-core/        # Rust core logic + Python bindings
   └─ src/
-ugoite-minimum/     # Portable Rust core layer for embedding/WASM-focused use
+ugoite-domain/     # Portable Rust core layer for embedding/WASM-focused use
   └─ src/
 docs/
   ├─ guide/         # User-facing guides and operator workflows
@@ -502,7 +502,7 @@ mise run e2e:dev
 Where you can run this:
 
 - Dev Container: everything needed to run tests is available; run `mise run test`.
-- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `ugoite-cli/`.
+- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `crates/ugoite-cli/`.
 - Local (non-container): install `uv`, then run the commands above.
 
 Frontend tests: check `frontend/package.json`.

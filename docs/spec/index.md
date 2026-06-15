@@ -102,7 +102,7 @@ when to choose MCP, CLI, or REST.
 
 | Module | Responsibility | Language |
 |--------|----------------|----------|
-| `ugoite-minimum` | Portable domain models, integrity primitives, storage traits | Rust |
+| `ugoite-domain` | Portable domain models, integrity primitives, storage traits | Rust |
 | `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
 | `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
