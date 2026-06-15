@@ -4,6 +4,8 @@
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "npm:@astrojs/check@~0.9.9": "0.9.9_typescript@6.0.3",
+    "npm:@astrojs/markdown-remark@^7.2.0": "7.2.0",
+    "npm:@babel/core@^7.29.0": "7.29.7",
     "npm:@codemirror/autocomplete@^6.20.2": "6.20.3",
     "npm:@codemirror/lang-sql@^6.10.0": "6.10.0",
     "npm:@codemirror/language@^6.12.3": "6.12.3",
@@ -13,45 +15,49 @@
     "npm:@oslojs/encoding@^1.1.0": "1.1.0",
     "npm:@playwright/test@^1.60.0": "1.60.0",
     "npm:@solidjs/router@~0.16.1": "0.16.1_solid-js@1.9.13",
-    "npm:@solidjs/start@^1.3.2": "1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.9.1_@types+node@25.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0",
+    "npm:@solidjs/start@^1.3.2": "1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.6.3",
     "npm:@solidjs/testing-library@~0.8.10": "0.8.10_@solidjs+router@0.16.1__solid-js@1.9.13_solid-js@1.9.13",
-    "npm:@tailwindcss/vite@4.3.0": "4.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
-    "npm:@tailwindcss/vite@^4.3.0": "4.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
+    "npm:@tailwindcss/node@4.3.0": "4.3.0",
+    "npm:@tailwindcss/oxide@4.3.0": "4.3.0",
+    "npm:@tailwindcss/vite@4.3.0": "4.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0",
     "npm:@testing-library/dom@^10.4.0": "10.4.1",
-    "npm:@testing-library/jest-dom@^6.6.3": "6.9.1",
-    "npm:@types/node@25.9.1": "25.9.1",
-    "npm:@types/node@^25.9.1": "25.9.1",
+    "npm:@testing-library/jest-dom@6.6.3": "6.6.3",
+    "npm:@testing-library/jest-dom@^6.6.3": "6.6.3",
     "npm:@vitest/coverage-v8@^4.1.8": "4.1.8_vitest@4.1.8_@types+node@25.9.1_jsdom@29.1.1_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0",
-    "npm:astro@*": "6.4.6_@types+node@25.9.1_yaml@2.9.0",
-    "npm:astro@^6.4.2": "6.4.6_@types+node@25.9.1_yaml@2.9.0",
-    "npm:baseline-browser-mapping@^2.10.33": "2.10.37",
-    "npm:browserslist@^4.28.2": "4.28.2",
+    "npm:astro@*": "6.4.2_yaml@2.9.0",
+    "npm:astro@6.4.2": "6.4.2_yaml@2.9.0",
+    "npm:astro@^6.4.2": "6.4.2_yaml@2.9.0",
+    "npm:babel-preset-solid@^1.9.12": "1.9.12_@babel+core@7.29.7_solid-js@1.9.13",
     "npm:clsx@^2.1.1": "2.1.1",
     "npm:cookie@^1.0.2": "1.1.1",
+    "npm:css.escape@^1.5.1": "1.5.1",
     "npm:devalue@^5.6.3": "5.8.1",
     "npm:es-module-lexer@2": "2.1.0",
+    "npm:fontace@~0.4.1": "0.4.1",
     "npm:html-escaper@^3.0.3": "3.0.3",
-    "npm:js-tokens@10": "10.0.0",
     "npm:jsdom@^29.1.1": "29.1.1",
     "npm:marked@^18.0.4": "18.0.5",
+    "npm:merge-anything@^5.1.7": "5.1.7",
     "npm:msw@^2.14.6": "2.14.6_typescript@6.0.3_@types+node@25.9.1",
     "npm:piccolore@~0.1.3": "0.1.3",
     "npm:playwright@*": "1.60.0",
     "npm:prismjs@1.30.0": "1.30.0",
+    "npm:shiki@^4.2.0": "4.2.0",
     "npm:solid-js@^1.9.13": "1.9.13",
-    "npm:std-env@^3.10.0": "3.10.0",
-    "npm:tailwindcss@4.3.0": "4.3.0",
-    "npm:tailwindcss@^4.3.0": "4.3.0",
-    "npm:typescript@^6.0.3": "6.0.3",
+    "npm:solid-refresh@~0.6.3": "0.6.3_solid-js@1.9.13",
+    "npm:std-env@^4.1.0": "4.1.0",
+    "npm:unifont@~0.7.4": "0.7.4",
     "npm:unstorage@^1.17.5": "1.17.5_db0@0.3.4_ioredis@5.11.1",
     "npm:vinxi@*": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
     "npm:vinxi@~0.5.11": "0.5.11_@types+node@25.9.1_yaml@2.9.0",
-    "npm:vite-plugin-pwa@^1.3.0": "1.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1_@types+node@25.9.1_yaml@2.9.0",
-    "npm:vite-plugin-solid@^2.11.12": "2.11.12_@testing-library+jest-dom@6.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
+    "npm:vite-plugin-pwa@^1.3.0": "1.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1",
+    "npm:vite-plugin-solid@2.11.12": "2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0",
+    "npm:vite-plugin-solid@^2.11.12": "2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0",
     "npm:vite@8.0.16": "8.0.16_@types+node@25.9.1_yaml@2.9.0",
     "npm:vite@^8.0.16": "8.0.16_@types+node@25.9.1_yaml@2.9.0",
     "npm:vitefu@^1.1.2": "1.1.3_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
     "npm:vitest@*": "4.1.8_@types+node@25.9.1_@vitest+coverage-v8@4.1.8_jsdom@29.1.1_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_yaml@2.9.0",
+    "npm:vitest@4.1.8": "4.1.8_@types+node@25.9.1_@vitest+coverage-v8@4.1.8_jsdom@29.1.1_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_yaml@2.9.0",
     "npm:vitest@^4.1.8": "4.1.8_@types+node@25.9.1_@vitest+coverage-v8@4.1.8_jsdom@29.1.1_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_msw@2.14.6__typescript@6.0.3__@types+node@25.9.1_typescript@6.0.3_yaml@2.9.0",
     "npm:yaml@^2.9.0": "2.9.0",
     "npm:zod@^4.4.3": "4.4.3"
@@ -2483,7 +2489,7 @@
         "solid-js"
       ]
     },
-    "@solidjs/start@1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.9.1_@types+node@25.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0": {
+    "@solidjs/start@1.3.2_vinxi@0.5.11__@types+node@25.9.1__yaml@2.9.0_@testing-library+jest-dom@6.6.3": {
       "integrity": "sha512-tasDl3utVbtP0rr4InB3ntBIFV2upvEiFrOOCkRrAA3yBfjx9elpxnc94sJQXo65PNYdAAAkPIC6h93vLrtwHg==",
       "dependencies": [
         "@tanstack/server-functions-plugin",
@@ -2609,7 +2615,7 @@
         "@tailwindcss/oxide-win32-x64-msvc"
       ]
     },
-    "@tailwindcss/vite@4.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0": {
+    "@tailwindcss/vite@4.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0": {
       "integrity": "sha512-t6J3OrB5Fc0ExuhohouH0fWUGMYL6PTLhW+E7zIk/pdbnJARZDCwjBznFnkh5ynRnIRSI4YjtTH0t6USjJISrw==",
       "dependencies": [
         "@tailwindcss/node",
@@ -2672,14 +2678,15 @@
         "pretty-format"
       ]
     },
-    "@testing-library/jest-dom@6.9.1": {
-      "integrity": "sha512-zIcONa+hVtVSSep9UT3jZ5rizo2BsxgyDYU7WFD5eICBE7no3881HGeb/QkGfsJs6JTkY1aQhT7rIPC7e+0nnA==",
+    "@testing-library/jest-dom@6.6.3": {
+      "integrity": "sha512-IteBhl4XqYNkM54f4ejhLRJiZNqcSCoXUOG2CPK7qbD322KjQozM4kHQOfkG2oln9b9HTYqs+Sae8vBATubxxA==",
       "dependencies": [
         "@adobe/css-tools",
         "aria-query@5.3.2",
+        "chalk@3.0.0",
         "css.escape",
         "dom-accessibility-api@0.6.3",
-        "picocolors",
+        "lodash",
         "redent"
       ]
     },
@@ -3184,8 +3191,8 @@
       "integrity": "sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==",
       "bin": true
     },
-    "astro@6.4.6_@types+node@25.9.1_yaml@2.9.0": {
-      "integrity": "sha512-48OBTBKR9ctbf+DQxpOuxGl8ebfn59zTuNQMBzptmG/Mi/H8IdfMSbJgGuX1I/4U6g9yazG1p4BHlf4+2hWU4Q==",
+    "astro@6.4.2_yaml@2.9.0": {
+      "integrity": "sha512-8H89CH2dKL5SCU99OCqdU9BGjmPkSJqaPurywj5XMo7eMFGUFD3vsNhdEKnEh4mK4LgGje3/QDTTSIIGst0G0Q==",
       "dependencies": [
         "@astrojs/compiler@4.0.0",
         "@astrojs/internal-helpers",
@@ -3238,7 +3245,7 @@
         "unstorage",
         "vfile",
         "vite@7.3.5_@types+node@25.9.1_yaml@2.9.0",
-        "vitefu@1.1.3_vite@7.3.5__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0",
+        "vitefu@1.1.3_vite@7.3.5__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0",
         "xxhash-wasm",
         "yargs-parser@22.0.0",
         "zod"
@@ -3403,7 +3410,7 @@
       "dependencies": [
         "ansi-align",
         "camelcase",
-        "chalk",
+        "chalk@5.6.2",
         "cli-boxes",
         "string-width@7.2.0",
         "type-fest@4.41.0",
@@ -3514,6 +3521,13 @@
     },
     "chai@6.2.2": {
       "integrity": "sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg=="
+    },
+    "chalk@3.0.0": {
+      "integrity": "sha512-4D3B6Wf41KOYRFdszmDqMCGq5VV/uMAB273JILmO+3jAlh8X4qDtdtgCR3fxtbLEMzSx22QdhnDcJvu2u1fVwg==",
+      "dependencies": [
+        "ansi-styles@4.3.0",
+        "supports-color@7.2.0"
+      ]
     },
     "chalk@5.6.2": {
       "integrity": "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="
@@ -7722,7 +7736,7 @@
       ],
       "bin": true
     },
-    "vite-plugin-pwa@1.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1_@types+node@25.9.1_yaml@2.9.0": {
+    "vite-plugin-pwa@1.3.0_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_workbox-build@7.4.1_workbox-window@7.4.1": {
       "integrity": "sha512-c5kMgN+ITrOtHXp8PAtk2uOIEea6XjP/unCGxOWWBzQ6qa65qj/awHg0wf+QF9E/2u9vh86LqxPwzEPNbM2r5A==",
       "dependencies": [
         "debug@4.4.3",
@@ -7733,7 +7747,7 @@
         "workbox-window"
       ]
     },
-    "vite-plugin-solid@2.11.12_@testing-library+jest-dom@6.9.1_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0": {
+    "vite-plugin-solid@2.11.12_@testing-library+jest-dom@6.6.3_solid-js@1.9.13_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0": {
       "integrity": "sha512-FgjPcx2OwX9h6f28jli7A4bG7PP3te8uyakE5iqsmpq3Jqi1TWLgSroC9N6cMfGRU2zXsl4Q6ISvTr2VL0QHpA==",
       "dependencies": [
         "@babel/core",
@@ -7812,7 +7826,7 @@
       ],
       "bin": true
     },
-    "vitefu@1.1.3_vite@7.3.5__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0": {
+    "vitefu@1.1.3_vite@7.3.5__@types+node@25.9.1__yaml@2.9.0_yaml@2.9.0": {
       "integrity": "sha512-ub4okH7Z5KLjb6hDyjqrGXqWtWvoYdU3IGm/NorpgHncKoLTCfRIbvlhBm7r0YstIaQRYlp4yEbFqDcKSzXSSg=="
     },
     "vitefu@1.1.3_vite@8.0.16__@types+node@25.9.1__yaml@2.9.0_@types+node@25.9.1_yaml@2.9.0": {
@@ -8410,54 +8424,41 @@
     "members": {
       "docsite": {
         "dependencies": [
+          "npm:@astrojs/check@~0.9.9",
+          "npm:@astrojs/markdown-remark@^7.2.0",
           "npm:@oslojs/encoding@^1.1.0",
+          "npm:@tailwindcss/node@4.3.0",
+          "npm:@tailwindcss/oxide@4.3.0",
           "npm:@tailwindcss/vite@4.3.0",
+          "npm:@vitest/coverage-v8@^4.1.8",
           "npm:astro@^6.4.2",
           "npm:clsx@^2.1.1",
           "npm:cookie@^1.0.2",
           "npm:devalue@^5.6.3",
           "npm:es-module-lexer@2",
+          "npm:fontace@~0.4.1",
           "npm:html-escaper@^3.0.3",
           "npm:marked@^18.0.4",
           "npm:piccolore@~0.1.3",
-          "npm:std-env@^3.10.0",
+          "npm:prismjs@1.30.0",
+          "npm:shiki@^4.2.0",
+          "npm:std-env@^4.1.0",
+          "npm:unifont@~0.7.4",
           "npm:unstorage@^1.17.5",
           "npm:vite@8.0.16",
           "npm:vitest@^4.1.8",
           "npm:yaml@^2.9.0",
           "npm:zod@^4.4.3"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@astrojs/check@~0.9.9",
-            "npm:@tailwindcss/vite@4.3.0",
-            "npm:@types/node@25.9.1",
-            "npm:@vitest/coverage-v8@^4.1.8",
-            "npm:astro@^6.4.2",
-            "npm:marked@^18.0.4",
-            "npm:prismjs@1.30.0",
-            "npm:tailwindcss@4.3.0",
-            "npm:typescript@^6.0.3",
-            "npm:vite@8.0.16",
-            "npm:vitest@^4.1.8",
-            "npm:yaml@^2.9.0"
-          ]
-        }
+        ]
       },
       "e2e": {
         "dependencies": [
           "npm:@playwright/test@^1.60.0"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@playwright/test@^1.60.0",
-            "npm:@types/node@^25.9.1",
-            "npm:typescript@^6.0.3"
-          ]
-        }
+        ]
       },
       "frontend": {
         "dependencies": [
+          "npm:@babel/core@^7.29.0",
           "npm:@codemirror/autocomplete@^6.20.2",
           "npm:@codemirror/lang-sql@^6.10.0",
           "npm:@codemirror/language@^6.12.3",
@@ -8467,47 +8468,26 @@
           "npm:@solidjs/router@~0.16.1",
           "npm:@solidjs/start@^1.3.2",
           "npm:@solidjs/testing-library@~0.8.10",
+          "npm:@tailwindcss/vite@4.3.0",
+          "npm:@testing-library/dom@^10.4.0",
           "npm:@testing-library/jest-dom@^6.6.3",
+          "npm:@vitest/coverage-v8@^4.1.8",
+          "npm:babel-preset-solid@^1.9.12",
+          "npm:css.escape@^1.5.1",
+          "npm:jsdom@^29.1.1",
+          "npm:merge-anything@^5.1.7",
           "npm:msw@^2.14.6",
           "npm:solid-js@^1.9.13",
-          "npm:std-env@^3.10.0",
+          "npm:solid-refresh@~0.6.3",
+          "npm:std-env@^4.1.0",
           "npm:vinxi@~0.5.11",
+          "npm:vite-plugin-pwa@^1.3.0",
           "npm:vite-plugin-solid@^2.11.12",
           "npm:vite@^8.0.16",
           "npm:vitefu@^1.1.2",
           "npm:vitest@^4.1.8",
           "npm:yaml@^2.9.0"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@codemirror/autocomplete@^6.20.2",
-            "npm:@codemirror/lang-sql@^6.10.0",
-            "npm:@codemirror/language@^6.12.3",
-            "npm:@codemirror/lint@^6.9.6",
-            "npm:@codemirror/state@^6.6.0",
-            "npm:@codemirror/view@^6.43.0",
-            "npm:@solidjs/router@~0.16.1",
-            "npm:@solidjs/start@^1.3.2",
-            "npm:@solidjs/testing-library@~0.8.10",
-            "npm:@tailwindcss/vite@^4.3.0",
-            "npm:@testing-library/dom@^10.4.0",
-            "npm:@testing-library/jest-dom@^6.6.3",
-            "npm:@vitest/coverage-v8@^4.1.8",
-            "npm:baseline-browser-mapping@^2.10.33",
-            "npm:browserslist@^4.28.2",
-            "npm:js-tokens@10",
-            "npm:jsdom@^29.1.1",
-            "npm:msw@^2.14.6",
-            "npm:solid-js@^1.9.13",
-            "npm:tailwindcss@^4.3.0",
-            "npm:vinxi@~0.5.11",
-            "npm:vite-plugin-pwa@^1.3.0",
-            "npm:vite-plugin-solid@^2.11.12",
-            "npm:vite@^8.0.16",
-            "npm:vitest@^4.1.8",
-            "npm:yaml@^2.9.0"
-          ]
-        }
+        ]
       },
       "tools": {
         "dependencies": [
