@@ -1,0 +1,13 @@
+{
+  "tasks": {
+    "install:browsers": "deno run -A npm:playwright install chromium",
+    "smoke": "deno run -A npm:playwright test smoke.test.ts",
+    "entries": "deno run -A npm:playwright test entries.test.ts",
+    "forms": "deno run -A npm:playwright test forms.test.ts",
+    "full": "deno run -A npm:playwright test --grep-invert @screenshot",
+    "screenshot": "deno run -A npm:playwright test ui-pages-screenshots.test.ts"
+  },
+  "imports": {
+    "@playwright/test": "npm:@playwright/test@^1.60.0"
+  }
+}

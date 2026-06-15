@@ -1,0 +1,8 @@
+{
+  "name": "@ugoite/tools",
+  "version": "0.0.0",
+  "exports": "./dev.ts",
+  "imports": {
+    "@std/assert/equals": "jsr:@std/assert@1/equals"
+  }
+}

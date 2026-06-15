@@ -30,8 +30,6 @@ jobs:
         include:
           - language: javascript-typescript
             build-mode: none
-          - language: python
-            build-mode: none
           - language: rust
             build-mode: none
           - language: actions
@@ -53,7 +51,7 @@ jobs:
           category: /language:${{ matrix.language }}
 
   required-check:
-    name: CodeQL
+    name: codeql-required
     if: ${{ always() }}
     needs:
       - analyze
@@ -64,20 +62,9 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-
-          needs = json.loads(os.environ["NEEDS_JSON"])
-          failures = {
-              job: data.get("result", "missing")
-              for job, data in needs.items()
-              if data.get("result") not in {"success", "skipped"}
-          }
-          if failures:
-              details = ", ".join(
-                  f"{job}={result}" for job, result in sorted(failures.items())
-              )
-              raise SystemExit(f"Required CI jobs failed or were cancelled: {details}")
-          print("Required CI jobs succeeded.")
-          PY
+          failures="$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"' <<<"$NEEDS_JSON")"
+          if [[ -n "$failures" ]]; then
+            printf 'Required CI jobs failed or were cancelled:\n%s\n' "$failures" >&2
+            exit 1
+          fi
+          echo "Required CI jobs succeeded."

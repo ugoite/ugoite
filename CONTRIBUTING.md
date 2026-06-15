@@ -4,6 +4,14 @@ Use this guide when you are changing code, docs, specs, or tests in Ugoite. It
 connects the repository workflow, REQ-* traceability, and CI expectations in one
 place so a local green change stays aligned with the shipped product docs.
 
+Root `mise.toml` is the only managed-tool entry point and pins only Rust and
+Deno. Use `mise run setup`, then `mise run ci` for pull requests,
+`mise run ci:merge` for the merge/main gate, and `mise run ci:release` for
+release artifacts. Required checks converge on `ci-required` and
+`codeql-required`. See
+[`docs/architecture/release-rearchitecture.md`](docs/architecture/release-rearchitecture.md)
+for the target architecture and migration boundary.
+
 ## 1. Choose a supported contributor setup path
 
 Ugoite supports two contributor setup paths that converge on the same local
