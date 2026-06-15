@@ -1,0 +1,19 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ugoite Rust Server API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {},
+    "/auth/config": {},
+    "/spaces": {},
+    "/spaces/{space_id}": {},
+    "/spaces/{space_id}/entries": {},
+    "/spaces/{space_id}/search": {},
+    "/spaces/{space_id}/query": {},
+    "/spaces/{space_id}/sql": {},
+    "/spaces/{space_id}/assets": {},
+    "/mcp/resources/{space_id}/entries/list": {}
+  }
+}

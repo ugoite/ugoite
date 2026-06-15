@@ -1,16 +1,12 @@
 const commands = [
-  new Deno.Command("uv", {
-    cwd: "backend",
-    args: [
-      "run",
-      "uvicorn",
-      "src.app.main:app",
-      "--reload",
-      "--host",
-      "0.0.0.0",
-      "--port",
-      "8000",
-    ],
+  new Deno.Command("cargo", {
+    env: {
+      UGOITE_BOOTSTRAP_TOKEN: Deno.env.get("UGOITE_BOOTSTRAP_TOKEN") ??
+        "dev-token",
+      UGOITE_DEV_USER_ID: Deno.env.get("UGOITE_DEV_USER_ID") ??
+        "dev-local-user",
+    },
+    args: ["run", "-p", "ugoite-server"],
   }),
   new Deno.Command("deno", {
     args: ["task", "frontend:dev"],

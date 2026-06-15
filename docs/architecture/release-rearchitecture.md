@@ -1,5 +1,9 @@
 # Pre-release Rust and Deno rearchitecture
 
+> Migration status: Phases 0 through 3 are implemented. `mise run dev` starts
+> the Rust `ugoite-server`; the Python backend remains temporarily for Phase 4
+> removal and contract comparison.
+
 ## Decision
 
 Ugoite's release architecture converges on Rust for application, storage,

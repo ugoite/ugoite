@@ -3,9 +3,8 @@
 **"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
 > **Positioning today:** local-first most directly describes Ugoite's storage
-> model and CLI `core` path today. The current browser route is still
-> server-backed, runs through the backend + frontend stack, and requires an
-> explicit `/login` flow.
+> model and CLI `core` path today. The browser route is server-backed and the
+> canonical source-development backend is the Rust `ugoite-server`.
 
 ## Vision
 
@@ -110,7 +109,7 @@ the `v0.2` roadmap.
 | Component    | Technology                           |
 | ------------ | ------------------------------------ |
 | Frontend     | Bun + SolidStart + TailwindCSS       |
-| Backend      | Python 3.13+ (FastAPI)               |
+| Backend      | Rust (`ugoite-server`, Axum)          |
 | Core         | Rust (`ugoite-domain` + `ugoite-core`) |
 | Storage      | OpenDAL + Apache Iceberg             |
 | AI Interface | MCP (resource-first integration today) |
@@ -123,11 +122,11 @@ the `v0.2` roadmap.
 frontend/           # SolidStart frontend
   ├─ src/
   └─ public/
-backend/            # FastAPI backend (REST & MCP server)
-  └─ src/
 crates/ugoite-cli/         # Command-line interface for power users
   └─ src/
 crates/ugoite-core/        # Rust core logic + Python bindings
+  └─ src/
+crates/ugoite-server/      # Rust REST & MCP server
   └─ src/
 ugoite-domain/     # Portable Rust core layer for embedding/WASM-focused use
   └─ src/
