@@ -1,6 +1,7 @@
 // Library exports
 export * from "./types";
 export * from "./api";
+export * from "./ugoite-client";
 export * from "./space-api";
 export * from "./form-api";
 export * from "./entry-api";

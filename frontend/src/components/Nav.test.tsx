@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createRoot } from "solid-js";
+import { setLocale } from "~/lib/i18n";
 import Nav from "./Nav";
 
 let mockPathname = "/";
@@ -28,6 +29,9 @@ describe("Nav", () => {
 	});
 
 	beforeEach(() => {
+		localStorage.clear();
+		sessionStorage.clear();
+		setLocale("en");
 		mockPathname = "/";
 		navigateMock.mockReset();
 		getSessionMock.mockReset();

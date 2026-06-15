@@ -54,6 +54,17 @@ describe("apiFetch auth forwarding", () => {
 		expect(seenAuthorization).toBe("Bearer forwarded-token");
 	});
 
+	it("exposes the current server-backed runtime capabilities", async () => {
+		const { runtimeCapabilities } = await import("./ugoite-client");
+
+		expect(runtimeCapabilities).toEqual({
+			mode: "server-backed",
+			serverBacked: true,
+			browserLocal: false,
+			sync: "none",
+		});
+	});
+
 	it("REQ-OPS-015: preserves explicit request auth headers during SSR", async () => {
 		let seenCookie: string | null = null;
 		let seenAuthorization: string | null = null;

@@ -7,6 +7,7 @@ use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::sample_data::SampleDataOptions;
+use ugoite_core::service::UgoiteService;
 
 const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
@@ -262,8 +263,8 @@ pub async fn create_space_cmd(
         return Ok(());
     }
     let root_path = require_local_root(root_path, command_name)?;
-    let op = operator_for_path(root_path)?;
-    ugoite_core::space::create_space(&op, space_id, root_path).await?;
+    let service = UgoiteService::new(root_path)?;
+    service.create_space(space_id).await?;
     print_json(&serde_json::json!({"created": true, "id": space_id}));
     Ok(())
 }
@@ -283,8 +284,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            ugoite_core::space::create_space(&op, &space_id, &root).await?;
+            let service = UgoiteService::new(&root)?;
+            service.create_space(&space_id).await?;
             print_json(&serde_json::json!({"created": true, "id": space_id}));
         }
         SpaceSubCmd::List { root_path } => {
@@ -300,8 +301,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 return Ok(());
             }
             let root_path = require_space_list_root(root_path.as_deref())?;
-            let op = operator_for_path(&root_path)?;
-            let spaces = ugoite_core::space::list_spaces(&op).await?;
+            let service = UgoiteService::new(&root_path)?;
+            let spaces = service.list_space_ids().await?;
             if fmt != Format::Json {
                 print_list_table("SPACE_ID", &spaces);
             } else {
@@ -315,8 +316,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let space = ugoite_core::space::get_space_raw(&op, &space_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let space = service.get_space(&space_id).await?;
             print_json(&space);
         }
         SpaceSubCmd::Patch {
@@ -348,10 +349,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let result =
-                ugoite_core::space::patch_space(&op, &space_id, &serde_json::Value::Object(patch))
-                    .await?;
+            let service = UgoiteService::new(&root)?;
+            let result = service
+                .patch_space(&space_id, &serde_json::Value::Object(patch))
+                .await?;
             print_json(&result);
         }
         SpaceSubCmd::SampleData {
