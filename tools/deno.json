@@ -2,6 +2,9 @@
   "name": "@ugoite/tools",
   "version": "0.0.0",
   "exports": "./dev.ts",
+  "tasks": {
+    "create-pr": "deno run -A create_pr.ts"
+  },
   "imports": {
     "@std/assert/equals": "jsr:@std/assert@1/equals"
   }
