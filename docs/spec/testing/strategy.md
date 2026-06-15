@@ -26,9 +26,9 @@ Ugoite follows **Test-Driven Development (TDD)**:
 
 | Module | Framework | Location |
 |--------|-----------|----------|
-| ugoite-minimum | cargo test | `ugoite-minimum/tests/` |
-| ugoite-core | cargo test + pytest | `ugoite-core/tests/` |
-| ugoite-cli | cargo test | `ugoite-cli/tests/` |
+| ugoite-domain | cargo test | `ugoite-domain/tests/` |
+| ugoite-core | cargo test + pytest | `crates/ugoite-core/tests/` |
+| ugoite-cli | cargo test | `crates/ugoite-cli/tests/` |
 | backend | pytest | `backend/tests/` |
 | frontend | vitest | `frontend/src/**/*.test.ts(x)` |
 | docsite | vitest | `docsite/src/**/*.test.ts` |
@@ -56,7 +56,7 @@ gates as the backend, ugoite-core, and docs CI lanes.
 
 ### Individual Packages
 ```bash
-mise run //ugoite-minimum:test # Portable Rust core tests with 100% coverage enforcement
+mise run //ugoite-domain:test # Portable Rust core tests with 100% coverage enforcement
 mise run //ugoite-core:test    # OpenDAL adapter + Python binding tests (+ Python warnings as errors, no skips)
 mise run //backend:test    # Backend pytest (+ warnings as errors, no skips)
 mise run //backend:test:targeted:no-build # Backend pytest without the coverage gate for focused iteration
@@ -110,7 +110,7 @@ you need a faster local feedback loop.
 
 | Module | Target | Current |
 |--------|--------|---------|
-| ugoite-minimum | 100% | 100% (enforced) |
+| ugoite-domain | 100% | 100% (enforced) |
 | ugoite-cli | 100% | 100% (enforced) |
 | backend | >80% | ~75% |
 | frontend | >70% | ~70% |
@@ -150,16 +150,16 @@ Details:
 ### Test Files
 
 ```
-ugoite-minimum/tests/
+ugoite-domain/tests/
 ├── test_coverage.rs     # Portable coverage-focused tests for storage/integrity/metadata
 └── ...
 
-ugoite-core/tests/
+crates/ugoite-core/tests/
 ├── test_space.rs        # Space adapter tests
 ├── test_entry.rs        # Entry tests
 └── ...
 
-ugoite-cli/tests/
+crates/ugoite-cli/tests/
 ├── test_space.rs        # Space tests
 ├── test_entries.rs      # Entry tests
 ├── test_indexer.rs      # Indexer tests
@@ -208,7 +208,7 @@ def test_all_requirements_have_tests() -> None:
     ...
 ```
 
-Rust tests in `ugoite-minimum/tests/` and `ugoite-core/tests/` use a
+Rust tests in `ugoite-domain/tests/` and `crates/ugoite-core/tests/` use a
 requirement-aware naming convention:
 
 ```rust
