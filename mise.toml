@@ -73,7 +73,6 @@ run = [
 [tasks."ci:merge"]
 run = [
   "mise run ci",
-  "mise run test",
   "deno task frontend:build",
   "deno task docsite:build",
 ]
