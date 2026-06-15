@@ -66,7 +66,7 @@ repository ruleset must keep the `CodeQL` summary check aligned with the
 workflow and the code-quality gate must not become a stale second blocker.
 
 Backend image builds in Docker Build CI, E2E CI, and SBOM CI pass `ugoite-core`,
-`ugoite-minimum`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
+`ugoite-domain`, and `ugoite-cli` as Buildx contexts so Rust path dependencies
 resolve inside the container build. Docker Build CI, E2E CI, and SBOM CI share
 the reusable `.github/workflows/docker-images.yml` image-definition contract for
 CI validation and local-image artifact export, while Release Publish uses
@@ -215,9 +215,9 @@ exclude those template paths while continuing to lint chart metadata such as
 ```yaml
 jobs:
   ci:
-    - cd ugoite-minimum && cargo fmt --check
-    - cd ugoite-minimum && cargo clippy -- -D warnings
-    - cd ugoite-minimum && cargo test
+    - cd ugoite-domain && cargo fmt --check
+    - cd ugoite-domain && cargo clippy -- -D warnings
+    - cd ugoite-domain && cargo test
     - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
@@ -428,9 +428,9 @@ jobs:
   ci:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/rust
-    - cd ugoite-minimum && cargo fmt --check
-    - cd ugoite-minimum && cargo clippy -- -D warnings
-    - cd ugoite-minimum && cargo test
+    - cd ugoite-domain && cargo fmt --check
+    - cd ugoite-domain && cargo clippy -- -D warnings
+    - cd ugoite-domain && cargo test
     - python3 scripts/check_minimum_coverage.py
     - cd ugoite-core && uv run ty check .
     - cd ugoite-core && cargo fmt --check
@@ -445,10 +445,10 @@ jobs:
     - cd ugoite-cli && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 ```
 
-The package-local `mise run //ugoite-minimum:test` task installs
+The package-local `mise run //ugoite-domain:test` task installs
 `cargo-llvm-cov` when needed and runs `python3 ../scripts/check_minimum_coverage.py`,
 which executes `cargo llvm-cov --test test_coverage --json` and normalizes
-delimiter-only line-mapping noise before enforcing the same 100% ugoite-minimum line-coverage gate.
+delimiter-only line-mapping noise before enforcing the same 100% ugoite-domain line-coverage gate.
 That keeps the root `mise run test` path aligned with Rust CI while still surfacing
 substantive uncovered lines from the portable crate.
 
@@ -468,7 +468,7 @@ cleans both package-local and workspace coverage artifacts, and enforces the
 same 100% CLI line-coverage gate as Rust CI. `mise run //ugoite-cli:test:clean`
 provides a package-local destructive rerun when CLI artifacts are stale.
 `mise run cleanup:rust-targets` removes both the shared target root and the
-legacy `~/.cache/ugoite/ugoite-core/target` path when artifacts grow
+legacy `~/.cache/ugoite/crates/ugoite-core/target` path when artifacts grow
 unexpectedly. Pre-commit still enforces the same 100% CLI line-coverage gate
 through `cargo llvm-cov`.
 
@@ -500,7 +500,7 @@ only if the hooks need repair.
 
 Hooks configured in `.pre-commit-config.yaml`:
 - **Fast default hooks**: Ruff, Yamllint, Actionlint, root artifact hygiene, shell quality, Rust fmt/clippy, backend ty, and docsite lint/typecheck/validation
-- **Pre-push coverage hooks**: Rust coverage gates for `ugoite-minimum`, `ugoite-core`, and `ugoite-cli`, plus 100% Vitest coverage for `frontend/` and `docsite/`
+- **Pre-push coverage hooks**: Rust coverage gates for `ugoite-domain`, `ugoite-core`, and `ugoite-cli`, plus 100% Vitest coverage for `frontend/` and `docsite/`
 
 Conventional Commit enforcement (local):
 
@@ -572,7 +572,7 @@ Before pushing, run the same checks as CI:
 
 ```bash
 # Rust
-cd ugoite-minimum && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd ugoite-domain && cargo fmt --check && cargo clippy -- -D warnings && cargo test
 cd ../ugoite-core && uv run ty check . && cargo fmt --check && cargo clippy -- -D warnings && cargo test --no-run && RUSTFLAGS='-C debuginfo=0' uv run maturin develop && report="$(mktemp)" && trap 'rm -f "$report"' EXIT && uv run pytest -W error --junitxml="$report" && python3 ../scripts/check_pytest_no_skips.py "$report" "ugoite-core tests"
 cd ../ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && cargo llvm-cov --summary-only --fail-under-lines 100 --no-default-features --jobs 1
 

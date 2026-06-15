@@ -5,6 +5,7 @@ CARGO_HOME = "{{env.HOME}}/.cargo"
 RUSTUP_HOME = "{{env.HOME}}/.rustup"
 CARGO_TARGET_DIR = "target/rust"
 RUST_BACKTRACE = "1"
+RUST_TEST_THREADS = "1"
 DENO_NO_UPDATE_CHECK = "1"
 
 [tools]
@@ -38,26 +39,26 @@ run = [
 
 [tasks.lint]
 run = [
-  "cargo clippy --workspace --lib --bins --no-default-features -- -D warnings",
+  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
   "deno lint tools",
 ]
 
 [tasks.check]
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
-  "cargo check -p ugoite-minimum --target wasm32-unknown-unknown --locked",
+  "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
   "deno task check",
 ]
 
 [tasks.test]
 run = [
-  "cargo test -p ugoite-minimum --locked",
+  "cargo test --workspace --locked",
   "deno task test",
 ]
 
 [tasks."test:smoke"]
 run = [
-  "cargo test -p ugoite-minimum -p ugoite-core -p ugoite-cli --locked",
+  "cargo test -p ugoite-domain -p ugoite-core -p ugoite-server --locked",
   "deno task frontend:test",
 ]
 
@@ -80,5 +81,7 @@ run = [
 [tasks."ci:release"]
 run = [
   "mise run ci:merge",
+  "cargo build -p ugoite-server --release --locked",
   "cargo build -p ugoite-cli --release --locked",
+  "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
 ]
