@@ -73,3 +73,25 @@ Deno.test("Phase 4 removes Python from tracked source and contributor tooling", 
     );
   }
 });
+
+Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async () => {
+  for (
+    const path of [
+      "frontend/package.json",
+      "docsite/package.json",
+      "e2e/package.json",
+      "frontend/bun.lock",
+      "docsite/bun.lock",
+      "e2e/package-lock.json",
+    ]
+  ) {
+    try {
+      await Deno.stat(path);
+      throw new Error(`${path} must be removed`);
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        throw error;
+      }
+    }
+  }
+});

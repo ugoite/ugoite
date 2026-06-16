@@ -2,6 +2,20 @@ import { loadingState } from "./loading";
 import { getRequestEvent } from "solid-js/web";
 import { getFrontendTestApiBase, getRuntimeFrontendApiBase } from "./frontend-origin";
 
+export type RuntimeCapabilities = {
+	mode: "server-backed";
+	serverBacked: true;
+	browserLocal: false;
+	sync: "none";
+};
+
+export const runtimeCapabilities: RuntimeCapabilities = {
+	mode: "server-backed",
+	serverBacked: true,
+	browserLocal: false,
+	sync: "none",
+};
+
 export const getBackendBase = (): string => {
 	// In test environment, use absolute URL for MSW to intercept
 	/* v8 ignore start */

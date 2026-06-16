@@ -1,8 +1,10 @@
 # Pre-release Rust and Deno rearchitecture
 
-> Migration status: Phases 0 through 3 are implemented. `mise run dev` starts
-> the Rust `ugoite-server`; the Python backend remains temporarily for Phase 4
-> removal and contract comparison.
+> Migration status: Phases 0 through 6 are implemented. `mise run dev` starts
+> the Rust `ugoite-server`; tracked Python sources and workspace package-manager
+> metadata have been removed. Phase 6 fixes the current runtime boundaries:
+> server-backed browser, direct-core CLI, and shared `ugoite-core` service
+> facade.
 
 ## Decision
 
@@ -53,8 +55,10 @@ adopts the root Rust/Deno toolchain, Deno workspace, and single lockfile while
 removing root npm tooling, sub-mise files, Biome configuration, Husky, and
 pre-commit.
 
-Later phases move crates into their target layout, replace FastAPI with a Rust
-server, remove Python completely, finish the package-manager-free Deno
-workspace, consolidate Actions, and harden release artifacts. Until those phases
-land, Deno tasks may adapt existing package metadata and the development server
-may still launch the transitional Python backend.
+Phases 2 through 5 moved crates into their target layout, replaced FastAPI with
+the Rust server, removed Python, and completed the package-manager-free Deno
+workspace. Phase 6 fixes adapter boundaries: `ugoite-server` stays a thin HTTP
+adapter, the CLI uses the shared core service facade for direct-core operations,
+and frontend code exposes a server-backed client boundary with explicit
+capabilities. Later phases consolidate the remaining Actions and harden release
+artifacts.

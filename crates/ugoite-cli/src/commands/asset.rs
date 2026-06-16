@@ -1,10 +1,8 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct AssetCmd {
@@ -63,9 +61,8 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let assets = ugoite_core::asset::list_assets(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            let assets = service.list_assets(&space_id).await?;
             print_json(&assets);
         }
         AssetSubCmd::Upload {
@@ -77,8 +74,6 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             if validated_base_url(&config)?.is_some() {
                 anyhow::bail!("asset upload in remote mode not yet supported via CLI");
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
             let data = std::fs::read(&file_path)?;
             let name = filename.unwrap_or_else(|| {
                 std::path::Path::new(&file_path)
@@ -87,7 +82,8 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            let asset = ugoite_core::asset::save_asset(&op, &ws, &name, &data).await?;
+            let service = UgoiteService::new(&root)?;
+            let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);
         }
         AssetSubCmd::Delete {
@@ -102,9 +98,8 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::asset::delete_asset(&op, &ws, &asset_id).await?;
+            let service = UgoiteService::new(&root)?;
+            service.delete_asset(&space_id, &asset_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
     }
