@@ -15,6 +15,7 @@ use std::env;
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 use ugoite_core::{
@@ -47,6 +48,17 @@ impl AppState {
 
     fn operator(&self) -> &Operator {
         self.service.operator()
+    }
+
+    pub async fn bootstrap_default_space_from_env(&self) -> anyhow::Result<()> {
+        if !env_flag("UGOITE_BOOTSTRAP_DEFAULT_SPACE") {
+            return Ok(());
+        }
+        match self.service.create_space("default").await {
+            Ok(()) => Ok(()),
+            Err(error) if error.to_string().to_lowercase().contains("already exists") => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -97,8 +109,8 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
-pub fn app(state: AppState) -> Router {
-    let protected = Router::new()
+fn protected_routes() -> Router<AppState> {
+    Router::new()
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
         .route("/spaces/{space_id}/test-connection", post(test_connection))
@@ -142,17 +154,19 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/spaces/{space_id}/assets/{asset_id}", delete(delete_asset))
         .route("/mcp/resources/{space_id}/entries/list", get(mcp_entries))
-        .route_layer(middleware::from_fn(require_auth));
+        .route_layer(middleware::from_fn(require_auth))
+}
 
+fn api_routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/",
-            get(|| async { Json(json!({"message": "Hello World!"})) }),
-        )
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/openapi.json", get(|| async { OPENAPI_JSON }))
         .route("/auth/config", get(auth_config))
-        .merge(protected)
+        .merge(protected_routes())
+}
+
+fn app_layers(router: Router<AppState>, state: AppState) -> Router {
+    router
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
@@ -171,6 +185,37 @@ pub fn app(state: AppState) -> Router {
                 .allow_headers(Any),
         )
         .with_state(state)
+}
+
+pub fn app(state: AppState) -> Router {
+    let router = if let Ok(static_dir) = env::var("UGOITE_STATIC_DIR") {
+        Router::new()
+            .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
+            .route("/openapi.json", get(|| async { OPENAPI_JSON }))
+            .route_service("/", ServeFile::new(format!("{static_dir}/index.html")))
+            .nest("/api", api_routes())
+            .fallback_service(
+                ServeDir::new(&static_dir)
+                    .fallback(ServeFile::new(format!("{static_dir}/index.html"))),
+            )
+    } else {
+        api_routes().route(
+            "/",
+            get(|| async { Json(json!({"message": "Hello World!"})) }),
+        )
+    };
+    app_layers(router, state)
+}
+
+fn env_flag(name: &str) -> bool {
+    env::var(name)
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
 }
 
 async fn require_auth(headers: HeaderMap, request: Request, next: Next) -> Response {

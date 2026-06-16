@@ -95,3 +95,35 @@ Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async (
     }
   }
 });
+
+Deno.test("release path does not reference removed runtimes", async () => {
+  const forbidden = [
+    /backend\//,
+    /ugoite-minimum/,
+    /uv run/,
+    /uvicorn/,
+    /bun run/,
+    /bun install/,
+    /frontend\/Dockerfile/,
+    /frontend_node_modules/,
+    /BUN_TEST_TIMEOUT_MS/,
+  ];
+  const paths = [
+    "Dockerfile",
+    "docker-compose.yaml",
+    "docker-compose.e2e.yml",
+    "docker-compose.release.yaml",
+    "e2e/scripts/run-e2e.sh",
+    "e2e/scripts/run-e2e-compose.sh",
+    ".devcontainer/devcontainer.json",
+    ".vscode/settings.json",
+    ".github/dependabot.yml",
+  ];
+
+  for (const path of paths) {
+    const contents = await Deno.readTextFile(path);
+    for (const pattern of forbidden) {
+      assertEquals(pattern.test(contents), false, `${path}: ${pattern}`);
+    }
+  }
+});
