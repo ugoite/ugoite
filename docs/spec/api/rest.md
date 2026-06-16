@@ -49,6 +49,8 @@ patch storage as a side effect.
 - `GET /auth/config`
 - `POST /auth/login`
 - `POST /auth/mock-oauth`
+- `GET /auth/session`
+- `DELETE /auth/session`
 
 Example manual TOTP login:
 
