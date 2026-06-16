@@ -1,7 +1,7 @@
 {
   "tasks": {
     "dev": "deno run -A npm:vinxi dev",
-    "build": "deno cache npm:solid-js@^1.9.10 && mkdir -p node_modules && (test -e node_modules/solid-js || tar -C ../node_modules -chf - solid-js | tar -C node_modules -xf -) && deno run -A npm:vinxi build",
+    "build": "deno cache npm:solid-js@^1.9.10 npm:tailwindcss@4.3.0 && sh -c 'mkdir -p node_modules && for pkg in solid-js tailwindcss; do test -e node_modules/$pkg || tar -C ../node_modules -chf - $pkg | tar -C node_modules -xf -; done' && deno run -A npm:vinxi build",
     "start": "deno run -A npm:vinxi start",
     "test": "deno run -A npm:vitest run",
     "coverage": "deno run -A npm:vitest run --coverage --maxWorkers=1"

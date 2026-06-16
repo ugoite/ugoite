@@ -69,6 +69,7 @@
     "npm:std-env@^4.1.0": "4.1.0",
     "npm:strict-event-emitter@~0.5.1": "0.5.1",
     "npm:svgo@^4.0.1": "4.0.1",
+    "npm:tailwindcss@4.3.0": "4.3.0",
     "npm:tinyglobby@~0.2.17": "0.2.17",
     "npm:tough-cookie@^6.0.1": "6.0.1",
     "npm:unifont@~0.7.4": "0.7.4",
