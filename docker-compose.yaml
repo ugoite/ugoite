@@ -1,48 +1,17 @@
-## NOTE: This docker-compose configuration is used to run the application in containers.
-## If you plan to use this file for production/staging, review the commands, ports,
-## volumes, and environment variables: replace `--reload` and `bun dev` with
-## production-ready servers and built frontend assets as needed.
-
 services:
-  backend:
+  ugoite:
     build:
-      context: ./backend
-      additional_contexts:
-        core: ./ugoite-core
-        minimum: ./ugoite-minimum
-        module: ./ugoite-cli
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./spaces:/data
-      - ./backend/src:/app/src
     environment:
       - UGOITE_ROOT=/data
-      - UGOITE_ALLOW_REMOTE=true
+      - UGOITE_SERVER_ADDRESS=0.0.0.0:8000
+      - UGOITE_STATIC_DIR=/app/static
+      - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
       - UGOITE_DEV_AUTH_MODE=mock-oauth
       - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
-      - UGOITE_DEV_SIGNING_KID=${UGOITE_DEV_SIGNING_KID:-dev-compose-local-v1}
-      - UGOITE_DEV_SIGNING_SECRET=${UGOITE_DEV_SIGNING_SECRET:?set UGOITE_DEV_SIGNING_SECRET}
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
-    working_dir: /app
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build:
-      context: ./frontend
-      additional_contexts:
-        shared: ./shared
-    ports:
-      - "127.0.0.1:3000:3000"
-    volumes:
-      - ./frontend:/usr/src/app
-      - frontend_node_modules:/usr/src/app/node_modules
-    environment:
-      - BACKEND_URL=http://backend:8000
-      - UGOITE_DEV_AUTH_PROXY_TOKEN=${UGOITE_DEV_AUTH_PROXY_TOKEN:?set UGOITE_DEV_AUTH_PROXY_TOKEN}
-    entrypoint: ["bun", "run", "dev"]
-    depends_on:
-      - backend
-
-volumes:
-  frontend_node_modules:
+      - UGOITE_BOOTSTRAP_TOKEN=${UGOITE_BOOTSTRAP_TOKEN:-dev-token}
