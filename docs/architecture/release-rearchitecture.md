@@ -60,5 +60,9 @@ the Rust server, removed Python, and completed the package-manager-free Deno
 workspace. Phase 6 fixes adapter boundaries: `ugoite-server` stays a thin HTTP
 adapter, the CLI uses the shared core service facade for direct-core operations,
 and frontend code exposes a server-backed client boundary with explicit
-capabilities. Later phases consolidate the remaining Actions and harden release
-artifacts.
+capabilities.
+
+Phase 9 keeps the post-SaaS direction in documentation rather than expanding the
+release implementation scope. See [North Star](north-star.md) for the long-term
+frontend-owned and peer-replicated direction, and
+[Release Scope](release-scope.md) for the boundary around the formal release.

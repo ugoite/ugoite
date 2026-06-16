@@ -2,10 +2,6 @@
 
 **"Local-First Knowledge Space with Resource-First MCP Integration for the Post-SaaS Era"**
 
-> **Positioning today:** local-first most directly describes Ugoite's storage
-> model and CLI `core` path today. The browser route is server-backed and the
-> canonical source-development backend is the Rust `ugoite-server`.
-
 ## Vision
 
 Ugoite is a knowledge management system built on three core principles:
@@ -49,7 +45,7 @@ GitHub without comparing two different onboarding maps.
 - [Use the CLI](docs/guide/cli.md) for terminal-first workflows and scripting.
 
 If you only need the portable Rust layer for WASM, embedding, or pure helper
-work, start with [`ugoite-domain`](ugoite-domain/README.md) and the portable
+work, start with [`ugoite-domain`](crates/ugoite-domain/README.md) and the portable
 contributor notes in [Contributor Workflow](CONTRIBUTING.md).
 
 ### After your first step
@@ -68,10 +64,10 @@ For a brand-new browser space, use the
 [Browser Walkthrough](docs/guide/browser-first-entry.md) when you want the
 concrete first productive in-app sequence after login.
 
-Local-first applies most directly to Ugoite's storage model and the CLI's
-`core` mode today. The current browser path still needs a running backend +
-frontend stack and an explicit login flow, even though the data remains in
-user-controlled local storage.
+For the current runtime split, see [Control Surfaces](docs/architecture/control-surfaces.md).
+The browser experience runs through the Rust `ugoite-server`, while the CLI can
+use the direct `core` path for local filesystem-backed spaces. The long-term
+direction is captured in [North Star](docs/architecture/north-star.md).
 
 Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
 default so source contributors exercise the explicit local passkey + 2FA flow,
@@ -88,7 +84,7 @@ and why source and published defaults differ.
 | --- | --- | --- | --- |
 | [Try the published release](docs/guide/container-quickstart.md) | You want the fastest visual evaluation of the published browser experience | Medium: Docker + published image pulls + frontend/backend containers + explicit login | Browser-first, but still multi-service and login-gated |
 | [Use the CLI](docs/guide/cli.md) in `core` mode | You want the lightest local-first workflow with direct filesystem access | Lowest: released CLI install + local filesystem path; no container stack required | Terminal-first experience; no browser UI or server-backed collaboration features |
-| [Work on `ugoite-domain`](ugoite-domain/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-domain` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
+| [Work on `ugoite-domain`](crates/ugoite-domain/README.md) | You are contributing portable Rust, WASM-oriented, or embedding-friendly logic without the full app stack | Medium: source checkout + `mise run setup`, then package-local `//ugoite-domain` quality gates | Narrower scope than the full repo path; no frontend/backend/docsite behavior in scope |
 | [Run from source](docs/guide/local-dev-auth-login.md) with `mise run dev` | You want the current backend, frontend, and docsite together for source-based evaluation or full-stack debugging | Highest: source checkout + toolchain install + backend/frontend/docsite processes + auth setup | Full repo surface, but also the heaviest path |
 | [Contributor Workflow](CONTRIBUTING.md) | You are changing docs, frontend, backend, or core and want the canonical setup plus targeted commands | Medium: source checkout + `mise run setup`; add only the surface-specific commands or services you need | Flexible contributor path, but cross-surface or auth changes may still need the full `mise run dev` stack |
 
@@ -108,7 +104,7 @@ the `v0.2` roadmap.
 
 | Component    | Technology                           |
 | ------------ | ------------------------------------ |
-| Frontend     | Bun + SolidStart + TailwindCSS       |
+| Frontend     | Deno + SolidStart + TailwindCSS      |
 | Backend      | Rust (`ugoite-server`, Axum)          |
 | Core         | Rust (`ugoite-domain` + `ugoite-core`) |
 | Storage      | OpenDAL + Apache Iceberg             |

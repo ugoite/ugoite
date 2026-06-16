@@ -27,7 +27,9 @@
       "frontend/deno.json",
       "docsite/deno.json",
       "e2e/deno.json",
-      "docs/architecture/release-rearchitecture.md"
+      "docs/architecture/north-star.md",
+      "docs/architecture/release-rearchitecture.md",
+      "docs/architecture/release-scope.md"
     ],
     "exclude": [
       "target",
