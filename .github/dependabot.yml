@@ -13,53 +13,6 @@ updates:
     schedule:
       interval: "daily"
 
-  - package-ecosystem: "bun"
-    directory: "/frontend"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-    groups:
-      vitest-stack:
-        patterns:
-          - "vitest"
-          - "@vitest/*"
-
-  - package-ecosystem: "bun"
-    directory: "/docsite"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "npm"
-    directory: "/"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "npm"
-    directory: "/e2e"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "uv"
-    directory: "/backend"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "uv"
-    directory: "/ugoite-core"
-    patterns: ["*"]
-    multi-ecosystem-group: "all-dependencies"
-    schedule:
-      interval: "daily"
-
   - package-ecosystem: "cargo"
     directory: "/"
     patterns: ["*"]
@@ -91,14 +44,14 @@ updates:
           - "version-update:semver-minor"
 
   - package-ecosystem: "docker"
-    directory: "/backend"
+    directory: "/"
     patterns: ["*"]
     multi-ecosystem-group: "all-dependencies"
     schedule:
       interval: "daily"
 
-  - package-ecosystem: "docker"
-    directory: "/frontend"
+  - package-ecosystem: "npm"
+    directory: "/packages/ugoite"
     patterns: ["*"]
     multi-ecosystem-group: "all-dependencies"
     schedule:

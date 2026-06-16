@@ -12,8 +12,8 @@
 
 set -e
 
-# Unset VIRTUAL_ENV to ensure we're using the environment managed by mise/uv
-# and not inheriting an active virtualenv from the current shell session.
+# Unset VIRTUAL_ENV to avoid inheriting an unrelated Python environment from
+# the current shell session while the runner uses Cargo and Deno.
 unset VIRTUAL_ENV
 export BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true
 export BROWSERSLIST_IGNORE_OLD_DATA=true
@@ -24,7 +24,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
 DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret-0123456789abcdef}"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
-STATIC_E2E_TOKENS_JSON='{"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
+STATIC_E2E_TOKENS_JSON='{"e2e-token":{"user_id":"e2e-user","principal_type":"user"},"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
 ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
 
 if [ "$ENFORCE_CI_GATES" = "true" ]; then
@@ -56,8 +56,6 @@ echo "Checking that ports 8000 and 3000 are free..."
 ensure_port_available 8000 "Backend"
 ensure_port_available 3000 "Frontend"
 
-echo "Creating default space..."
-cd "$ROOT_DIR/backend"
 E2E_STORAGE_ROOT="${E2E_STORAGE_ROOT:-}"
 if [ -z "$E2E_STORAGE_ROOT" ]; then
   E2E_STORAGE_ROOT="/tmp/ugoite-e2e"
@@ -68,39 +66,20 @@ fi
 
 mkdir -p "$E2E_STORAGE_ROOT"
 
-UGOITE_ROOT="$E2E_STORAGE_ROOT" uv run python - <<'PY'
-import asyncio
-
-import ugoite_core
-
-from app.core.config import get_root_path
-from app.core.storage import storage_config_from_root
-
-
-async def main() -> None:
-    config = storage_config_from_root(get_root_path())
-    try:
-        await ugoite_core.create_space(config, "default")
-    except RuntimeError as exc:
-        if "already exists" not in str(exc).lower():
-            raise
-
-
-asyncio.run(main())
-PY
-
 echo "Starting backend server..."
-cd "$ROOT_DIR/backend"
+cd "$ROOT_DIR"
 UGOITE_ROOT="$E2E_STORAGE_ROOT" \
-  UGOITE_ALLOW_REMOTE=true \
+  UGOITE_SERVER_ADDRESS=0.0.0.0:8000 \
+  UGOITE_BOOTSTRAP_DEFAULT_SPACE=true \
+  UGOITE_BOOTSTRAP_TOKEN=e2e-token \
   UGOITE_DEV_AUTH_MODE=mock-oauth \
   UGOITE_DEV_USER_ID=e2e-user \
   UGOITE_DEV_SIGNING_KID="$DEV_SIGNING_KID" \
   UGOITE_DEV_SIGNING_SECRET="$DEV_SIGNING_SECRET" \
-  UGOITE_AUTH_BEARER_SECRETS="$DEV_SIGNING_KID:$DEV_SIGNING_SECRET" \
+  UGOITE_AUTH_BEARER_TOKENS="$STATIC_E2E_TOKENS_JSON" \
+  UGOITE_AUTH_BEARER_SIGNING_SECRETS="$DEV_SIGNING_KID:$DEV_SIGNING_SECRET" \
   UGOITE_AUTH_BEARER_ACTIVE_KIDS="$DEV_SIGNING_KID" \
-  UGOITE_AUTH_BEARER_TOKENS_JSON="$STATIC_E2E_TOKENS_JSON" \
-  uv run uvicorn src.app.main:app --host 0.0.0.0 --port 8000 &
+  cargo run -p ugoite-server --locked &
 BACKEND_PID=$!
 
 echo "Starting frontend server..."
@@ -108,11 +87,11 @@ cd "$ROOT_DIR/frontend"
 FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
 if [ "$FRONTEND_MODE" = "prod" ]; then
   echo "Building frontend for production..."
-  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" bun run build
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" deno task build
   echo "Starting production frontend server..."
-  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production bun run start &
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production deno task start &
 else
-  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" bun run dev &
+  BACKEND_URL=http://localhost:8000 UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" deno task dev &
 fi
 FRONTEND_PID=$!
 
@@ -146,9 +125,7 @@ for i in {1..30}; do
   sleep 1
 done
 
-E2E_AUTH_BEARER_TOKEN="$(
-  curl -fsS -X POST http://localhost:8000/auth/mock-oauth | python -c 'import json, sys; print(json.load(sys.stdin)["bearer_token"])'
-)"
+E2E_AUTH_BEARER_TOKEN="e2e-token"
 export E2E_AUTH_BEARER_TOKEN
 
 echo "Waiting for frontend (port 3000)..."
@@ -183,16 +160,16 @@ fi
 
 case "$TEST_TYPE" in
   smoke)
-    npm run test:smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    deno task smoke -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
     ;;
   entries)
-    npm run test:entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    deno task entries -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
     ;;
   screenshot)
-    npm run test:screenshot -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    deno task screenshot -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
     ;;
   full)
-    npm run test -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
+    deno task full -- "${TEST_TIMEOUT_ARGS[@]+"${TEST_TIMEOUT_ARGS[@]}"}"
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
@@ -202,26 +179,18 @@ case "$TEST_TYPE" in
 esac
 
 if [ "$ENFORCE_CI_GATES" = "true" ]; then
-  python3 - <<'PY'
-import os
-import sys
-import xml.etree.ElementTree as ET
-from pathlib import Path
-
-report = Path(os.environ["PLAYWRIGHT_JUNIT_OUTPUT_FILE"])
-if not report.exists():
-    raise SystemExit(f"missing junit report: {report}")
-
-root = ET.parse(report).getroot()
-suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-skipped = sum(int(float(s.attrib.get("skipped", "0") or 0)) for s in suites)
-tests = sum(int(float(s.attrib.get("tests", "0") or 0)) for s in suites)
-if tests == 0:
-    raise SystemExit("e2e tests: zero executed tests")
-if skipped > 0:
-    raise SystemExit(f"e2e tests: skipped={skipped} is not allowed")
-sys.stdout.write(f"e2e tests OK: tests={tests}, skipped={skipped}\n")
-PY
+  deno eval '
+    const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
+    if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
+    const xml = await Deno.readTextFile(report);
+    const suites = [...xml.matchAll(/<testsuite\b[^>]*>/g)].map((match) => match[0]);
+    const attr = (text, name) => Number(text.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? 0);
+    const tests = suites.reduce((sum, suite) => sum + attr(suite, "tests"), 0);
+    const skipped = suites.reduce((sum, suite) => sum + attr(suite, "skipped"), 0);
+    if (tests === 0) throw new Error("e2e tests: zero executed tests");
+    if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
+    console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
+  '
 fi
 
 echo ""
