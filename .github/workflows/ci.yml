@@ -24,6 +24,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /opt/ghc /usr/local/.ghcup /usr/local/lib/android /usr/share/dotnet
+          sudo docker system prune --all --force
+          df -h
+
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v3
         with:
           install: true
