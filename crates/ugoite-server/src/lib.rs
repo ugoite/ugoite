@@ -1,7 +1,7 @@
 //! Thin HTTP and MCP adapters over `ugoite-core`.
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Extension, Multipart, Path, Query, Request, State},
     http::{HeaderMap, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -11,7 +11,10 @@ use axum::{
 use opendal::Operator;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::env;
+use std::{
+    env,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -54,7 +57,12 @@ impl AppState {
         if !env_flag("UGOITE_BOOTSTRAP_DEFAULT_SPACE") {
             return Ok(());
         }
-        match self.service.create_space("default").await {
+        self.create_space_if_missing("admin-space").await?;
+        self.create_space_if_missing("default").await
+    }
+
+    async fn create_space_if_missing(&self, space_id: &str) -> anyhow::Result<()> {
+        match self.service.create_space(space_id).await {
             Ok(()) => Ok(()),
             Err(error) if error.to_string().to_lowercase().contains("already exists") => Ok(()),
             Err(error) => Err(error),
@@ -109,11 +117,47 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
+#[derive(Clone, Debug)]
+struct AuthIdentity {
+    user_id: String,
+}
+
 fn protected_routes() -> Router<AppState> {
     Router::new()
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
         .route("/spaces/{space_id}/test-connection", post(test_connection))
+        .route(
+            "/preferences/me",
+            get(get_preferences).patch(patch_preferences),
+        )
+        .route("/spaces/{space_id}/members", get(list_members))
+        .route(
+            "/spaces/{space_id}/members/invitations",
+            post(invite_member),
+        )
+        .route("/spaces/{space_id}/members/accept", post(accept_member))
+        .route(
+            "/spaces/{space_id}/members/{member_user_id}/role",
+            post(update_member_role),
+        )
+        .route(
+            "/spaces/{space_id}/members/{member_user_id}",
+            delete(revoke_member),
+        )
+        .route("/spaces/{space_id}/sql-sessions", post(create_sql_session))
+        .route(
+            "/spaces/{space_id}/sql-sessions/{session_id}",
+            get(get_sql_session),
+        )
+        .route(
+            "/spaces/{space_id}/sql-sessions/{session_id}/count",
+            get(get_sql_session_count),
+        )
+        .route(
+            "/spaces/{space_id}/sql-sessions/{session_id}/rows",
+            get(get_sql_session_rows),
+        )
         .route(
             "/spaces/{space_id}/entries",
             get(list_entries).post(create_entry),
@@ -162,7 +206,14 @@ fn api_routes() -> Router<AppState> {
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/openapi.json", get(|| async { OPENAPI_JSON }))
         .route("/auth/config", get(auth_config))
+        .route("/auth/login", post(auth_login))
+        .route("/auth/mock-oauth", post(auth_mock_oauth))
+        .route(
+            "/auth/session",
+            get(auth_session).delete(auth_session_delete),
+        )
         .merge(protected_routes())
+        .fallback(api_not_found)
 }
 
 fn app_layers(router: Router<AppState>, state: AppState) -> Router {
@@ -218,14 +269,35 @@ fn env_flag(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn require_auth(headers: HeaderMap, request: Request, next: Next) -> Response {
+async fn require_auth(headers: HeaderMap, mut request: Request, next: Next) -> Response {
+    let cookie_token = auth_cookie_token(&headers);
     let authorization = headers
         .get("authorization")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| cookie_token.map(|token| format!("Bearer {token}")));
     let api_key = headers
         .get("x-api-key")
         .and_then(|value| value.to_str().ok());
-    let result = ugoite_core::auth::authenticate_headers_core(
+    let result = authenticate_headers(authorization.as_deref(), api_key);
+    if !result.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"detail": result.get("error").cloned().unwrap_or_default()})),
+        )
+            .into_response();
+    }
+    let user_id = result
+        .pointer("/identity/user_id")
+        .and_then(Value::as_str)
+        .unwrap_or("api-user")
+        .to_string();
+    request.extensions_mut().insert(AuthIdentity { user_id });
+    next.run(request).await
+}
+
+fn authenticate_headers(authorization: Option<&str>, api_key: Option<&str>) -> Value {
+    ugoite_core::auth::authenticate_headers_core(
         authorization,
         api_key,
         env::var("UGOITE_AUTH_BEARER_TOKENS").ok().as_deref(),
@@ -237,22 +309,122 @@ async fn require_auth(headers: HeaderMap, request: Request, next: Next) -> Respo
         env::var("UGOITE_AUTH_REVOKED_KEY_IDS").ok().as_deref(),
         env::var("UGOITE_BOOTSTRAP_TOKEN").ok().as_deref(),
         env::var("UGOITE_DEV_USER_ID").ok().as_deref(),
-    );
-    if !result.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"detail": result.get("error").cloned().unwrap_or_default()})),
-        )
-            .into_response();
-    }
-    next.run(request).await
+    )
 }
 
 async fn auth_config() -> Json<Value> {
+    let mode = env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_else(|_| "passkey-totp".to_string());
+    let normalized = if mode == "mock-oauth" {
+        "mock-oauth"
+    } else {
+        "passkey-totp"
+    };
     Json(json!({
-        "mode": env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_else(|_| "token".to_string()),
+        "mode": normalized,
+        "username_hint": env::var("UGOITE_DEV_USER_ID").unwrap_or_else(|_| "dev-local-user".to_string()),
+        "supports_passkey_totp": normalized == "passkey-totp",
+        "supports_mock_oauth": normalized == "mock-oauth",
         "login_required": true
     }))
+}
+
+async fn api_not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({"detail": "API route not found"})),
+    )
+}
+
+async fn auth_login() -> ApiResult<Response> {
+    if env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_default() != "passkey-totp" {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "passkey/TOTP login is not enabled for this session.",
+        ));
+    }
+    Err(ApiError::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "passkey/TOTP login is not implemented by the Rust server yet.",
+    ))
+}
+
+async fn auth_mock_oauth() -> ApiResult<Response> {
+    if env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_default() != "mock-oauth" {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "mock-oauth login is not enabled for this session.",
+        ));
+    }
+    let token = env::var("UGOITE_BOOTSTRAP_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "UGOITE_BOOTSTRAP_TOKEN is required for mock-oauth login.",
+            )
+        })?;
+    let user_id = env::var("UGOITE_DEV_USER_ID").unwrap_or_else(|_| "dev-local-user".to_string());
+    let expires_at = unix_seconds_now() + 60 * 60 * 24 * 30;
+    Ok((
+        StatusCode::OK,
+        [("set-cookie", auth_cookie(&token, 60 * 60 * 24 * 30))],
+        Json(json!({
+            "user_id": user_id,
+            "bearer_token": token,
+            "expires_at": expires_at,
+        })),
+    )
+        .into_response())
+}
+
+async fn auth_session(headers: HeaderMap) -> Json<Value> {
+    let authenticated = auth_cookie_token(&headers)
+        .map(|token| format!("Bearer {token}"))
+        .map(|authorization| {
+            authenticate_headers(Some(&authorization), None)
+                .get("ok")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    Json(json!({ "authenticated": authenticated }))
+}
+
+async fn auth_session_delete() -> Response {
+    (
+        StatusCode::OK,
+        [("set-cookie", clear_auth_cookie())],
+        Json(json!({ "authenticated": false })),
+    )
+        .into_response()
+}
+
+fn auth_cookie_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("cookie")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (name, value) = cookie.trim().split_once('=')?;
+                (name == "ugoite_auth_bearer_token").then(|| value.to_string())
+            })
+        })
+}
+
+fn auth_cookie(token: &str, max_age_seconds: i64) -> String {
+    format!("ugoite_auth_bearer_token={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}")
+}
+
+fn clear_auth_cookie() -> String {
+    "ugoite_auth_bearer_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT".to_string()
+}
+
+fn unix_seconds_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 fn validate_id(value: &str, name: &str) -> ApiResult<()> {
@@ -351,6 +523,226 @@ async fn patch_space(
         state
             .service
             .patch_space(&space_id, &payload)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn get_preferences(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        serde_json::to_value(
+            state
+                .service
+                .get_user_preferences(&identity.user_id)
+                .await
+                .map_err(ApiError::from_core)?,
+        )
+        .map_err(|error| ApiError::from_core(error.into()))?,
+    ))
+}
+
+async fn patch_preferences(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
+    Json(payload): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        serde_json::to_value(
+            state
+                .service
+                .patch_user_preferences(&identity.user_id, &payload)
+                .await
+                .map_err(ApiError::from_core)?,
+        )
+        .map_err(|error| ApiError::from_core(error.into()))?,
+    ))
+}
+
+async fn list_members(
+    State(state): State<AppState>,
+    Path(space_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    Ok(Json(Value::Array(
+        state
+            .service
+            .list_members(&space_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    )))
+}
+
+#[derive(Deserialize)]
+struct MemberInvite {
+    user_id: String,
+    role: String,
+    expires_in_seconds: Option<i64>,
+}
+
+async fn invite_member(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<MemberInvite>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    ensure_space(&state, &space_id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            state
+                .service
+                .invite_member(
+                    &space_id,
+                    &payload.user_id,
+                    &payload.role,
+                    &identity.user_id,
+                    payload.expires_in_seconds,
+                )
+                .await
+                .map_err(ApiError::from_core)?,
+        ),
+    ))
+}
+
+#[derive(Deserialize)]
+struct MemberAccept {
+    token: String,
+}
+
+async fn accept_member(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<MemberAccept>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    Ok(Json(
+        state
+            .service
+            .accept_invitation(&space_id, &payload.token, &identity.user_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct MemberRoleUpdate {
+    role: String,
+}
+
+async fn update_member_role(
+    State(state): State<AppState>,
+    Path((space_id, member_user_id)): Path<(String, String)>,
+    Json(payload): Json<MemberRoleUpdate>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    Ok(Json(
+        state
+            .service
+            .update_member_role(&space_id, &member_user_id, &payload.role)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn revoke_member(
+    State(state): State<AppState>,
+    Path((space_id, member_user_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    Ok(Json(
+        state
+            .service
+            .revoke_member(&space_id, &member_user_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct SqlSessionCreate {
+    sql: String,
+}
+
+async fn create_sql_session(
+    State(state): State<AppState>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<SqlSessionCreate>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    ensure_space(&state, &space_id).await?;
+    if payload.sql.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "sql is required",
+        ));
+    }
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            state
+                .service
+                .create_sql_session(&space_id, &payload.sql)
+                .await
+                .map_err(ApiError::from_core)?,
+        ),
+    ))
+}
+
+async fn get_sql_session(
+    State(state): State<AppState>,
+    Path((space_id, session_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    validate_id(&session_id, "session_id")?;
+    Ok(Json(
+        state
+            .service
+            .get_sql_session(&space_id, &session_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ))
+}
+
+async fn get_sql_session_count(
+    State(state): State<AppState>,
+    Path((space_id, session_id)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    validate_id(&session_id, "session_id")?;
+    Ok(Json(json!({
+        "count": state
+            .service
+            .get_sql_session_count(&space_id, &session_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    })))
+}
+
+#[derive(Deserialize)]
+struct SqlSessionRowsQuery {
+    offset: Option<usize>,
+    limit: Option<usize>,
+}
+
+async fn get_sql_session_rows(
+    State(state): State<AppState>,
+    Path((space_id, session_id)): Path<(String, String)>,
+    Query(query): Query<SqlSessionRowsQuery>,
+) -> ApiResult<Json<Value>> {
+    ensure_space(&state, &space_id).await?;
+    validate_id(&session_id, "session_id")?;
+    Ok(Json(
+        state
+            .service
+            .get_sql_session_rows(
+                &space_id,
+                &session_id,
+                query.offset.unwrap_or_default(),
+                query.limit.unwrap_or(50).min(1000),
+            )
             .await
             .map_err(ApiError::from_core)?,
     ))
