@@ -18,8 +18,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_core::{
-    asset, entry, form, index, integrity::RealIntegrityProvider, saved_sql, search, space,
-    storage::operator_from_uri,
+    entry, form, index, integrity::RealIntegrityProvider, saved_sql, service::UgoiteService, space,
 };
 use uuid::Uuid;
 
@@ -27,16 +26,14 @@ pub const OPENAPI_JSON: &str = include_str!("openapi.json");
 
 #[derive(Clone)]
 pub struct AppState {
-    operator: Operator,
-    root_uri: String,
+    service: UgoiteService,
 }
 
 impl AppState {
     pub fn new(root_uri: impl Into<String>) -> anyhow::Result<Self> {
         let root_uri = root_uri.into();
         Ok(Self {
-            operator: operator_from_uri(&root_uri)?,
-            root_uri,
+            service: UgoiteService::new(root_uri)?,
         })
     }
 
@@ -45,7 +42,11 @@ impl AppState {
     }
 
     fn workspace(&self, space_id: &str) -> String {
-        format!("spaces/{space_id}")
+        self.service.workspace_path(space_id)
+    }
+
+    fn operator(&self) -> &Operator {
+        self.service.operator()
     }
 }
 
@@ -226,19 +227,24 @@ fn validate_id(value: &str, name: &str) -> ApiResult<()> {
 
 async fn ensure_space(state: &AppState, space_id: &str) -> ApiResult<()> {
     validate_id(space_id, "space_id")?;
-    space::get_space(&state.operator, space_id)
+    state
+        .service
+        .ensure_space(space_id)
         .await
-        .map(|_| ())
         .map_err(ApiError::from_core)
 }
 
 async fn list_spaces(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let ids = space::list_spaces(&state.operator)
+    let ids = state
+        .service
+        .list_space_ids()
         .await
         .map_err(ApiError::from_core)?;
     let mut items = Vec::new();
     for id in ids {
-        let mut value = space::get_space_raw(&state.operator, &id)
+        let mut value = state
+            .service
+            .get_space(&id)
             .await
             .map_err(ApiError::from_core)?;
         if let Some(object) = value.as_object_mut() {
@@ -263,7 +269,9 @@ async fn create_space(
     Json(payload): Json<SpaceCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     validate_id(&payload.name, "space_id")?;
-    space::create_space(&state.operator, &payload.name, &state.root_uri)
+    state
+        .service
+        .create_space(&payload.name)
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -280,7 +288,9 @@ async fn get_space(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(
-        space::get_space_raw(&state.operator, &space_id)
+        state
+            .service
+            .get_space(&space_id)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -293,7 +303,9 @@ async fn patch_space(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(
-        space::patch_space(&state.operator, &space_id, &payload)
+        state
+            .service
+            .patch_space(&space_id, &payload)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -335,20 +347,9 @@ async fn create_entry(
     ensure_space(&state, &space_id).await?;
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
-    let integrity = RealIntegrityProvider::from_space(&state.operator, &space_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    entry::create_entry(
-        &state.operator,
-        &state.workspace(&space_id),
-        &entry_id,
-        &payload.markdown,
-        "api-user",
-        &integrity,
-    )
-    .await
-    .map_err(ApiError::from_core)?;
-    let created = entry::get_entry(&state.operator, &state.workspace(&space_id), &entry_id)
+    let created = state
+        .service
+        .create_entry(&space_id, &entry_id, &payload.markdown, "api-user")
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -363,7 +364,9 @@ async fn list_entries(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(Value::Array(
-        entry::list_entries(&state.operator, &state.workspace(&space_id))
+        state
+            .service
+            .list_entries(&space_id)
             .await
             .map_err(ApiError::from_core)?,
     )))
@@ -383,7 +386,7 @@ async fn entry_options(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     let options = entry::list_entry_summaries(
-        &state.operator,
+        state.service.operator(),
         &state.workspace(&space_id),
         query.form.as_deref(),
         query.q.as_deref(),
@@ -401,7 +404,9 @@ async fn get_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
-    let mut value = entry::get_entry(&state.operator, &state.workspace(&space_id), &entry_id)
+    let mut value = state
+        .service
+        .get_entry(&space_id, &entry_id)
         .await
         .map_err(ApiError::from_core)?;
     if let Some(content) = value.get("content").cloned() {
@@ -423,11 +428,11 @@ async fn update_entry(
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
-    let integrity = RealIntegrityProvider::from_space(&state.operator, &space_id)
+    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
     let value = entry::update_entry(
-        &state.operator,
+        state.operator(),
         &state.workspace(&space_id),
         &entry_id,
         &payload.markdown,
@@ -449,7 +454,7 @@ async fn delete_entry(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     entry::delete_entry(
-        &state.operator,
+        state.operator(),
         &state.workspace(&space_id),
         &entry_id,
         false,
@@ -465,7 +470,7 @@ async fn entry_history(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(
-        entry::get_entry_history(&state.operator, &state.workspace(&space_id), &entry_id)
+        entry::get_entry_history(state.operator(), &state.workspace(&space_id), &entry_id)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -478,7 +483,7 @@ async fn entry_revision(
     ensure_space(&state, &space_id).await?;
     Ok(Json(
         entry::get_entry_revision(
-            &state.operator,
+            state.operator(),
             &state.workspace(&space_id),
             &entry_id,
             &revision_id,
@@ -499,12 +504,12 @@ async fn restore_entry(
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
-    let integrity = RealIntegrityProvider::from_space(&state.operator, &space_id)
+    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(
         entry::restore_entry(
-            &state.operator,
+            state.operator(),
             &state.workspace(&space_id),
             &entry_id,
             &payload.revision_id,
@@ -522,7 +527,9 @@ async fn list_forms(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(Value::Array(
-        form::list_forms(&state.operator, &state.workspace(&space_id))
+        state
+            .service
+            .list_forms(&space_id)
             .await
             .map_err(ApiError::from_core)?,
     )))
@@ -549,7 +556,9 @@ async fn get_form(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(
-        form::get_form(&state.operator, &state.workspace(&space_id), &form_name)
+        state
+            .service
+            .get_form(&space_id, &form_name)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -561,7 +570,9 @@ async fn upsert_form(
     Json(payload): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     ensure_space(&state, &space_id).await?;
-    form::upsert_form(&state.operator, &state.workspace(&space_id), &payload)
+    state
+        .service
+        .upsert_form(&space_id, &payload)
         .await
         .map_err(ApiError::from_core)?;
     Ok((StatusCode::CREATED, Json(payload)))
@@ -580,7 +591,9 @@ async fn search_entries(
     ensure_space(&state, &space_id).await?;
     Ok(Json(
         serde_json::to_value(
-            search::search_entries(&state.operator, &state.workspace(&space_id), &query.q)
+            state
+                .service
+                .search_entries(&space_id, &query.q)
                 .await
                 .map_err(ApiError::from_core)?,
         )
@@ -597,7 +610,7 @@ async fn query_entries(
     let filter = payload.get("filter").cloned().unwrap_or(payload);
     Ok(Json(Value::Array(
         index::query_index(
-            &state.operator,
+            state.operator(),
             &state.workspace(&space_id),
             &filter.to_string(),
         )
@@ -612,7 +625,7 @@ async fn list_sql(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(Value::Array(
-        saved_sql::list_sql(&state.operator, &state.workspace(&space_id))
+        saved_sql::list_sql(state.operator(), &state.workspace(&space_id))
             .await
             .map_err(ApiError::from_core)?,
     )))
@@ -625,11 +638,11 @@ async fn create_sql(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     ensure_space(&state, &space_id).await?;
     let id = Uuid::new_v4().to_string();
-    let integrity = RealIntegrityProvider::from_space(&state.operator, &space_id)
+    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
     let value = saved_sql::create_sql(
-        &state.operator,
+        state.operator(),
         &state.workspace(&space_id),
         &id,
         &payload,
@@ -650,7 +663,7 @@ async fn get_sql(
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
     Ok(Json(
-        saved_sql::get_sql(&state.operator, &state.workspace(&space_id), &sql_id)
+        saved_sql::get_sql(state.operator(), &state.workspace(&space_id), &sql_id)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -662,12 +675,12 @@ async fn update_sql(
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
-    let integrity = RealIntegrityProvider::from_space(&state.operator, &space_id)
+    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(
         saved_sql::update_sql(
-            &state.operator,
+            state.operator(),
             &state.workspace(&space_id),
             &sql_id,
             &payload,
@@ -685,7 +698,7 @@ async fn delete_sql(
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
     ensure_space(&state, &space_id).await?;
-    saved_sql::delete_sql(&state.operator, &state.workspace(&space_id), &sql_id)
+    saved_sql::delete_sql(state.operator(), &state.workspace(&space_id), &sql_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok(StatusCode::NO_CONTENT)
@@ -698,7 +711,9 @@ async fn list_assets(
     ensure_space(&state, &space_id).await?;
     Ok(Json(
         serde_json::to_value(
-            asset::list_assets(&state.operator, &state.workspace(&space_id))
+            state
+                .service
+                .list_assets(&space_id)
                 .await
                 .map_err(ApiError::from_core)?,
         )
@@ -722,7 +737,9 @@ async fn upload_asset(
         .bytes()
         .await
         .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?;
-    let value = asset::save_asset(&state.operator, &state.workspace(&space_id), &name, &bytes)
+    let value = state
+        .service
+        .save_asset(&space_id, &name, &bytes)
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -736,7 +753,9 @@ async fn delete_asset(
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     ensure_space(&state, &space_id).await?;
-    asset::delete_asset(&state.operator, &state.workspace(&space_id), &asset_id)
+    state
+        .service
+        .delete_asset(&space_id, &asset_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": asset_id, "status": "deleted"})))
