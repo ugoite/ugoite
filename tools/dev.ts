@@ -1,9 +1,4 @@
 const repoRoot = new URL("..", import.meta.url).pathname;
-const frontendUrl = "http://localhost:3000";
-const backendUrl = "http://localhost:8000";
-
-const shellQuote = (value: string): string =>
-  `'${value.replaceAll("'", `'\\''`)}'`;
 
 const commands = [
   new Deno.Command("cargo", {
@@ -21,33 +16,18 @@ const commands = [
     },
     args: ["run", "-p", "ugoite-server"],
   }),
-  new Deno.Command("sh", {
+  new Deno.Command("deno", {
     cwd: `${repoRoot}frontend`,
-    args: [
-      "-lc",
-      [
-        `BACKEND_URL=${shellQuote(Deno.env.get("BACKEND_URL") ?? backendUrl)}`,
-        `UGOITE_STATIC_SPA=${
-          shellQuote(Deno.env.get("UGOITE_STATIC_SPA") ?? "true")
-        }`,
-        `VITE_API_PROXY=${
-          shellQuote(Deno.env.get("VITE_API_PROXY") ?? "true")
-        }`,
-        "node ./node_modules/vinxi/bin/cli.mjs dev --host 127.0.0.1 --strictPort --port 3000",
-      ].join(" "),
-    ],
+    args: ["task", "dev"],
+    env: {
+      BACKEND_URL: Deno.env.get("BACKEND_URL") ?? "http://localhost:8000",
+      UGOITE_STATIC_SPA: Deno.env.get("UGOITE_STATIC_SPA") ?? "true",
+      VITE_API_PROXY: Deno.env.get("VITE_API_PROXY") ?? "true",
+    },
   }),
-  new Deno.Command("node", {
+  new Deno.Command("deno", {
     cwd: `${repoRoot}docsite`,
-    args: [
-      "./node_modules/astro/bin/astro.mjs",
-      "dev",
-      "--host",
-      "127.0.0.1",
-      "--strictPort",
-      "--port",
-      "4321",
-    ],
+    args: ["task", "dev"],
   }),
 ];
 

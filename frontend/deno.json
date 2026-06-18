@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "node ./node_modules/vinxi/bin/cli.mjs dev --host 127.0.0.1 --strictPort --port 3000",
+    "dev": "deno run -A npm:vinxi dev",
     "build": "deno cache npm:solid-js@^1.9.10 npm:tailwindcss@4.3.0 && sh -c 'mkdir -p node_modules && for pkg in solid-js tailwindcss; do test -e node_modules/$pkg || tar -C ../node_modules -chf - $pkg | tar -C node_modules -xf -; done' && deno run -A npm:vinxi build",
     "start": "deno run -A npm:vinxi start",
     "test": "deno run -A npm:vitest run",

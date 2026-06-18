@@ -1,8 +1,9 @@
 // REQ-FE-010: SpaceShell layout component
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen } from "@solidjs/testing-library";
 import { SpaceShell } from "./SpaceShell";
+import { setLocale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 
 vi.mock("@solidjs/router", () => ({
@@ -27,6 +28,10 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 describe("SpaceShell", () => {
+	beforeEach(() => {
+		setLocale("en");
+	});
+
 	it("renders children", () => {
 		render(() => (
 			<SpaceShell spaceId="my-space">
