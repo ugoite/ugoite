@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "node ./node_modules/astro/bin/astro.mjs dev --host 127.0.0.1 --strictPort --port 4321",
+    "dev": "deno run -A npm:astro dev --host 127.0.0.1 --strictPort --port 4321",
     "build": "deno run -A npm:astro build",
     "check": "deno run -A npm:astro check",
     "test": "deno run -A npm:vitest run",
