@@ -32,31 +32,19 @@ app.kubernetes.io/name: {{ include "ugoite.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "ugoite.backendFullname" -}}
-{{- printf "%s-backend" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "ugoite.frontendFullname" -}}
-{{- printf "%s-frontend" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "ugoite.backendServiceName" -}}
-{{- include "ugoite.backendFullname" . -}}
-{{- end -}}
-
-{{- define "ugoite.frontendServiceName" -}}
-{{- include "ugoite.frontendFullname" . -}}
+{{- define "ugoite.serviceName" -}}
+{{- include "ugoite.fullname" . -}}
 {{- end -}}
 
 {{- define "ugoite.authSecretName" -}}
 {{- printf "%s-auth" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "ugoite.backendPvcName" -}}
-{{- if .Values.backend.persistence.existingClaim -}}
-{{- .Values.backend.persistence.existingClaim -}}
+{{- define "ugoite.pvcName" -}}
+{{- if .Values.persistence.existingClaim -}}
+{{- .Values.persistence.existingClaim -}}
 {{- else -}}
-{{- printf "%s-data" (include "ugoite.backendFullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-data" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}
 
@@ -73,13 +61,5 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- join "," .Values.auth.bearerActiveKids -}}
 {{- else -}}
 {{- .Values.auth.signingKid -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ugoite.frontendBackendUrl" -}}
-{{- if .Values.frontend.backendUrl -}}
-{{- .Values.frontend.backendUrl -}}
-{{- else -}}
-{{- printf "http://%s:%v" (include "ugoite.backendServiceName" .) .Values.backend.service.port -}}
 {{- end -}}
 {{- end -}}

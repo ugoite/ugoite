@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server";
+import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server.ts";
 
 const docPath = "/docs/spec/index";
 

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client";
+import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
 
 const spaceId = "default";
 const maxVisitedPages = 16;

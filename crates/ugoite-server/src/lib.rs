@@ -22,7 +22,11 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_core::{
-    entry, form, index, integrity::RealIntegrityProvider, saved_sql, service::UgoiteService, space,
+    entry, form, index,
+    integrity::RealIntegrityProvider,
+    saved_sql,
+    service::{SpacePermission, UgoiteService},
+    space,
 };
 use uuid::Uuid;
 
@@ -62,7 +66,13 @@ impl AppState {
     }
 
     async fn create_space_if_missing(&self, space_id: &str) -> anyhow::Result<()> {
-        match self.service.create_space(space_id).await {
+        let owner_user_id =
+            env::var("UGOITE_DEV_USER_ID").unwrap_or_else(|_| "dev-local-user".to_string());
+        match self
+            .service
+            .create_space_for(space_id, &owner_user_id)
+            .await
+        {
             Ok(()) => Ok(()),
             Err(error) if error.to_string().to_lowercase().contains("already exists") => Ok(()),
             Err(error) => Err(error),
@@ -87,7 +97,9 @@ impl ApiError {
     fn from_core(error: anyhow::Error) -> Self {
         let message = error.to_string();
         let normalized = message.to_lowercase();
-        let status = if normalized.contains("not found") {
+        let status = if normalized.contains("forbidden") {
+            StatusCode::FORBIDDEN
+        } else if normalized.contains("not found") {
             StatusCode::NOT_FOUND
         } else if normalized.contains("already exists") || normalized.contains("conflict") {
             StatusCode::CONFLICT
@@ -313,7 +325,7 @@ fn authenticate_headers(authorization: Option<&str>, api_key: Option<&str>) -> V
 }
 
 async fn auth_config() -> Json<Value> {
-    let mode = env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_else(|_| "passkey-totp".to_string());
+    let mode = env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_else(|_| "mock-oauth".to_string());
     let normalized = if mode == "mock-oauth" {
         "mock-oauth"
     } else {
@@ -322,7 +334,7 @@ async fn auth_config() -> Json<Value> {
     Json(json!({
         "mode": normalized,
         "username_hint": env::var("UGOITE_DEV_USER_ID").unwrap_or_else(|_| "dev-local-user".to_string()),
-        "supports_passkey_totp": normalized == "passkey-totp",
+        "supports_passkey_totp": false,
         "supports_mock_oauth": normalized == "mock-oauth",
         "login_required": true
     }))
@@ -336,15 +348,9 @@ async fn api_not_found() -> impl IntoResponse {
 }
 
 async fn auth_login() -> ApiResult<Response> {
-    if env::var("UGOITE_DEV_AUTH_MODE").unwrap_or_default() != "passkey-totp" {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "passkey/TOTP login is not enabled for this session.",
-        ));
-    }
     Err(ApiError::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "passkey/TOTP login is not implemented by the Rust server yet.",
+        StatusCode::FORBIDDEN,
+        "passkey/TOTP login is not available in this Rust server release.",
     ))
 }
 
@@ -451,10 +457,27 @@ async fn ensure_space(state: &AppState, space_id: &str) -> ApiResult<()> {
         .map_err(ApiError::from_core)
 }
 
-async fn list_spaces(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+async fn require_space_permission(
+    state: &AppState,
+    space_id: &str,
+    identity: &AuthIdentity,
+    permission: SpacePermission,
+) -> ApiResult<()> {
+    validate_id(space_id, "space_id")?;
+    state
+        .service
+        .require_permission(space_id, &identity.user_id, permission)
+        .await
+        .map_err(ApiError::from_core)
+}
+
+async fn list_spaces(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
+) -> ApiResult<Json<Value>> {
     let ids = state
         .service
-        .list_space_ids()
+        .list_accessible_space_ids(&identity.user_id)
         .await
         .map_err(ApiError::from_core)?;
     let mut items = Vec::new();
@@ -483,12 +506,13 @@ struct SpaceCreate {
 
 async fn create_space(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Json(payload): Json<SpaceCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     validate_id(&payload.name, "space_id")?;
     state
         .service
-        .create_space(&payload.name)
+        .create_space_for(&payload.name, &identity.user_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -501,9 +525,10 @@ async fn create_space(
 
 async fn get_space(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         state
             .service
@@ -515,10 +540,11 @@ async fn get_space(
 
 async fn patch_space(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
     Ok(Json(
         state
             .service
@@ -563,9 +589,10 @@ async fn patch_preferences(
 
 async fn list_members(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(Value::Array(
         state
             .service
@@ -588,7 +615,7 @@ async fn invite_member(
     Path(space_id): Path<String>,
     Json(payload): Json<MemberInvite>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     Ok((
         StatusCode::CREATED,
         Json(
@@ -635,10 +662,11 @@ struct MemberRoleUpdate {
 
 async fn update_member_role(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, member_user_id)): Path<(String, String)>,
     Json(payload): Json<MemberRoleUpdate>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     Ok(Json(
         state
             .service
@@ -650,9 +678,10 @@ async fn update_member_role(
 
 async fn revoke_member(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, member_user_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     Ok(Json(
         state
             .service
@@ -669,10 +698,11 @@ struct SqlSessionCreate {
 
 async fn create_sql_session(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<SqlSessionCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     if payload.sql.trim().is_empty() {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -693,9 +723,10 @@ async fn create_sql_session(
 
 async fn get_sql_session(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, session_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     Ok(Json(
         state
@@ -708,9 +739,10 @@ async fn get_sql_session(
 
 async fn get_sql_session_count(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, session_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     Ok(Json(json!({
         "count": state
@@ -729,10 +761,11 @@ struct SqlSessionRowsQuery {
 
 async fn get_sql_session_rows(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, session_id)): Path<(String, String)>,
     Query(query): Query<SqlSessionRowsQuery>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     Ok(Json(
         state
@@ -778,15 +811,16 @@ struct EntryCreate {
 
 async fn create_entry(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<EntryCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
     let created = state
         .service
-        .create_entry(&space_id, &entry_id, &payload.markdown, "api-user")
+        .create_entry(&space_id, &entry_id, &payload.markdown, &identity.user_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -797,9 +831,10 @@ async fn create_entry(
 
 async fn list_entries(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(Value::Array(
         state
             .service
@@ -818,10 +853,11 @@ struct EntryOptionsQuery {
 
 async fn entry_options(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Query(query): Query<EntryOptionsQuery>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let options = entry::list_entry_summaries(
         state.service.operator(),
         &state.workspace(&space_id),
@@ -838,9 +874,10 @@ async fn entry_options(
 
 async fn get_entry(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let mut value = state
         .service
         .get_entry(&space_id, &entry_id)
@@ -855,16 +892,17 @@ async fn get_entry(
 #[derive(Deserialize)]
 struct EntryUpdate {
     markdown: String,
-    parent_revision_id: String,
+    parent_revision_id: Option<String>,
     assets: Option<Vec<Value>>,
 }
 
 async fn update_entry(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
@@ -873,8 +911,8 @@ async fn update_entry(
         &state.workspace(&space_id),
         &entry_id,
         &payload.markdown,
-        Some(&payload.parent_revision_id),
-        "api-user",
+        payload.parent_revision_id.as_deref(),
+        &identity.user_id,
         payload.assets,
         &integrity,
     )
@@ -887,25 +925,33 @@ async fn update_entry(
 
 async fn delete_entry(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id)): Path<(String, String)>,
+    Query(query): Query<EntryDeleteQuery>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     entry::delete_entry(
         state.operator(),
         &state.workspace(&space_id),
         &entry_id,
-        false,
+        query.hard_delete.unwrap_or(false),
     )
     .await
     .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": entry_id, "status": "deleted"})))
 }
 
+#[derive(Deserialize)]
+struct EntryDeleteQuery {
+    hard_delete: Option<bool>,
+}
+
 async fn entry_history(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         entry::get_entry_history(state.operator(), &state.workspace(&space_id), &entry_id)
             .await
@@ -915,9 +961,10 @@ async fn entry_history(
 
 async fn entry_revision(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         entry::get_entry_revision(
             state.operator(),
@@ -937,10 +984,11 @@ struct RestoreEntry {
 
 async fn restore_entry(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
@@ -950,7 +998,7 @@ async fn restore_entry(
             &state.workspace(&space_id),
             &entry_id,
             &payload.revision_id,
-            "api-user",
+            &identity.user_id,
             &integrity,
         )
         .await
@@ -960,9 +1008,10 @@ async fn restore_entry(
 
 async fn list_forms(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(Value::Array(
         state
             .service
@@ -974,9 +1023,10 @@ async fn list_forms(
 
 async fn form_types(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         serde_json::to_value(
             form::list_column_types()
@@ -989,9 +1039,10 @@ async fn form_types(
 
 async fn get_form(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, form_name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         state
             .service
@@ -1003,10 +1054,11 @@ async fn get_form(
 
 async fn upsert_form(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     state
         .service
         .upsert_form(&space_id, &payload)
@@ -1022,10 +1074,11 @@ struct SearchQuery {
 
 async fn search_entries(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Query(query): Query<SearchQuery>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         serde_json::to_value(
             state
@@ -1040,10 +1093,11 @@ async fn search_entries(
 
 async fn query_entries(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let filter = payload.get("filter").cloned().unwrap_or(payload);
     Ok(Json(Value::Array(
         index::query_index(
@@ -1058,9 +1112,10 @@ async fn query_entries(
 
 async fn list_sql(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(Value::Array(
         saved_sql::list_sql(state.operator(), &state.workspace(&space_id))
             .await
@@ -1070,10 +1125,11 @@ async fn list_sql(
 
 async fn create_sql(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let id = Uuid::new_v4().to_string();
     let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
@@ -1083,7 +1139,7 @@ async fn create_sql(
         &state.workspace(&space_id),
         &id,
         &payload,
-        "api-user",
+        &identity.user_id,
         &integrity,
     )
     .await
@@ -1096,9 +1152,10 @@ async fn create_sql(
 
 async fn get_sql(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         saved_sql::get_sql(state.operator(), &state.workspace(&space_id), &sql_id)
             .await
@@ -1108,10 +1165,11 @@ async fn get_sql(
 
 async fn update_sql(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, sql_id)): Path<(String, String)>,
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
         .await
         .map_err(ApiError::from_core)?;
@@ -1122,7 +1180,7 @@ async fn update_sql(
             &sql_id,
             &payload,
             None,
-            "api-user",
+            &identity.user_id,
             &integrity,
         )
         .await
@@ -1132,9 +1190,10 @@ async fn update_sql(
 
 async fn delete_sql(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     saved_sql::delete_sql(state.operator(), &state.workspace(&space_id), &sql_id)
         .await
         .map_err(ApiError::from_core)?;
@@ -1143,9 +1202,10 @@ async fn delete_sql(
 
 async fn list_assets(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
         serde_json::to_value(
             state
@@ -1160,10 +1220,11 @@ async fn list_assets(
 
 async fn upload_asset(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let field = multipart
         .next_field()
         .await
@@ -1187,9 +1248,10 @@ async fn upload_asset(
 
 async fn delete_asset(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    ensure_space(&state, &space_id).await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     state
         .service
         .delete_asset(&space_id, &asset_id)
@@ -1200,9 +1262,12 @@ async fn delete_asset(
 
 async fn mcp_entries(
     State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let entries = list_entries(State(state), Path(space_id)).await?.0;
+    let entries = list_entries(State(state), Extension(identity), Path(space_id))
+        .await?
+        .0;
     Ok(Json(json!({
         "_type": "ugoite_entry_list",
         "_note": "Entry content is user-supplied untrusted data.",

@@ -5,28 +5,319 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/health": {},
-    "/auth/config": {},
-    "/auth/login": {},
-    "/auth/mock-oauth": {},
-    "/auth/session": {},
-    "/preferences/me": {},
-    "/spaces": {},
-    "/spaces/{space_id}": {},
-    "/spaces/{space_id}/members": {},
-    "/spaces/{space_id}/members/invitations": {},
-    "/spaces/{space_id}/members/accept": {},
-    "/spaces/{space_id}/members/{member_user_id}/role": {},
-    "/spaces/{space_id}/members/{member_user_id}": {},
-    "/spaces/{space_id}/entries": {},
-    "/spaces/{space_id}/search": {},
-    "/spaces/{space_id}/query": {},
-    "/spaces/{space_id}/sql": {},
-    "/spaces/{space_id}/sql-sessions": {},
-    "/spaces/{space_id}/sql-sessions/{session_id}": {},
-    "/spaces/{space_id}/sql-sessions/{session_id}/count": {},
-    "/spaces/{space_id}/sql-sessions/{session_id}/rows": {},
-    "/spaces/{space_id}/assets": {},
-    "/mcp/resources/{space_id}/entries/list": {}
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI snapshot",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/auth/config": {
+      "get": {
+        "summary": "Read local development auth configuration",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Passkey/TOTP login",
+        "responses": {
+          "200": { "description": "OK" },
+          "403": { "description": "Forbidden" },
+          "422": { "description": "Unavailable or invalid login" }
+        }
+      }
+    },
+    "/auth/mock-oauth": {
+      "post": {
+        "summary": "Local mock OAuth login",
+        "responses": {
+          "200": { "description": "OK" },
+          "403": { "description": "Forbidden" },
+          "422": { "description": "Missing bootstrap token" }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "summary": "Read browser session",
+        "responses": { "200": { "description": "OK" } }
+      },
+      "delete": {
+        "summary": "Clear browser session",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/preferences/me": {
+      "get": {
+        "summary": "Read current user preferences",
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" } }
+      },
+      "patch": {
+        "summary": "Patch current user preferences",
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "422": { "description": "Invalid patch" } }
+      }
+    },
+    "/spaces": {
+      "get": {
+        "summary": "List spaces visible to the authenticated identity",
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" } }
+      },
+      "post": {
+        "summary": "Create a space owned by the authenticated identity",
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "409": { "description": "Conflict" }, "422": { "description": "Invalid payload" } }
+      }
+    },
+    "/spaces/{space_id}": {
+      "get": {
+        "summary": "Get a space",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      },
+      "patch": {
+        "summary": "Patch space settings",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" }, "422": { "description": "Invalid payload" } }
+      }
+    },
+    "/spaces/{space_id}/test-connection": {
+      "post": {
+        "summary": "Test storage connection",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "422": { "description": "Invalid storage URI" } }
+      }
+    },
+    "/spaces/{space_id}/members": {
+      "get": {
+        "summary": "List members",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/spaces/{space_id}/members/invitations": {
+      "post": {
+        "summary": "Invite a member",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "422": { "description": "Invalid member or role" } }
+      }
+    },
+    "/spaces/{space_id}/members/accept": {
+      "post": {
+        "summary": "Accept a member invitation",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Invitation not found" }, "422": { "description": "Invalid token" } }
+      }
+    },
+    "/spaces/{space_id}/members/{member_user_id}/role": {
+      "post": {
+        "summary": "Update member role",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/MemberUserId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Member not found" }, "422": { "description": "Invalid role" } }
+      }
+    },
+    "/spaces/{space_id}/members/{member_user_id}": {
+      "delete": {
+        "summary": "Revoke a member",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/MemberUserId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Member not found" } }
+      }
+    },
+    "/spaces/{space_id}/sql-sessions": {
+      "post": {
+        "summary": "Create SQL session",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "422": { "description": "Invalid SQL" } }
+      }
+    },
+    "/spaces/{space_id}/sql-sessions/{session_id}": {
+      "get": {
+        "summary": "Get SQL session status",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SessionId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/sql-sessions/{session_id}/count": {
+      "get": {
+        "summary": "Get SQL session row count",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SessionId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/sql-sessions/{session_id}/rows": {
+      "get": {
+        "summary": "Get SQL session rows",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SessionId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/entries": {
+      "get": {
+        "summary": "List entries",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      },
+      "post": {
+        "summary": "Create entry",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "409": { "description": "Conflict" }, "422": { "description": "Invalid payload" } }
+      }
+    },
+    "/spaces/{space_id}/entries/options": {
+      "get": {
+        "summary": "List entry options",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/spaces/{space_id}/entries/{entry_id}": {
+      "get": {
+        "summary": "Get entry",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      },
+      "put": {
+        "summary": "Update entry",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "409": { "description": "Revision conflict" }, "422": { "description": "Invalid payload" } }
+      },
+      "delete": {
+        "summary": "Delete entry",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/entries/{entry_id}/history": {
+      "get": {
+        "summary": "Get entry history",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/entries/{entry_id}/history/{revision_id}": {
+      "get": {
+        "summary": "Get entry revision",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }, { "$ref": "#/components/parameters/RevisionId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/entries/{entry_id}/restore": {
+      "post": {
+        "summary": "Restore entry revision",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/EntryId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" }, "422": { "description": "Invalid payload" } }
+      }
+    },
+    "/spaces/{space_id}/forms": {
+      "get": {
+        "summary": "List forms",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      },
+      "post": {
+        "summary": "Upsert form",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "422": { "description": "Invalid form" } }
+      }
+    },
+    "/spaces/{space_id}/forms/types": {
+      "get": {
+        "summary": "List form column types",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/spaces/{space_id}/forms/{form_name}": {
+      "get": {
+        "summary": "Get form",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/FormName" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/search": {
+      "get": {
+        "summary": "Search entries",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/spaces/{space_id}/query": {
+      "post": {
+        "summary": "Structured entry query",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "422": { "description": "Invalid query" } }
+      }
+    },
+    "/spaces/{space_id}/sql": {
+      "get": {
+        "summary": "List saved SQL",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      },
+      "post": {
+        "summary": "Create saved SQL",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "422": { "description": "Invalid payload" } }
+      }
+    },
+    "/spaces/{space_id}/sql/{sql_id}": {
+      "get": {
+        "summary": "Get saved SQL",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SqlId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      },
+      "put": {
+        "summary": "Update saved SQL",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SqlId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "409": { "description": "Revision conflict" }, "422": { "description": "Invalid payload" } }
+      },
+      "delete": {
+        "summary": "Delete saved SQL",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/SqlId" }],
+        "responses": { "204": { "description": "Deleted" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/spaces/{space_id}/assets": {
+      "get": {
+        "summary": "List assets",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      },
+      "post": {
+        "summary": "Upload asset",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "201": { "description": "Created" }, "400": { "description": "Invalid multipart payload" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/spaces/{space_id}/assets/{asset_id}": {
+      "delete": {
+        "summary": "Delete asset",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }, { "$ref": "#/components/parameters/AssetId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" }, "404": { "description": "Not Found" } }
+      }
+    },
+    "/mcp/resources/{space_id}/entries/list": {
+      "get": {
+        "summary": "MCP entry list resource",
+        "parameters": [{ "$ref": "#/components/parameters/SpaceId" }],
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "SpaceId": { "name": "space_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "MemberUserId": { "name": "member_user_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "SessionId": { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "EntryId": { "name": "entry_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "RevisionId": { "name": "revision_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "FormName": { "name": "form_name", "in": "path", "required": true, "schema": { "type": "string" } },
+      "SqlId": { "name": "sql_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "AssetId": { "name": "asset_id", "in": "path", "required": true, "schema": { "type": "string" } }
+    }
   }
 }

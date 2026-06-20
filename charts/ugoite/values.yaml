@@ -1,76 +1,58 @@
 nameOverride: ""
 fullnameOverride: ""
 
+replicaCount: 1
+
 image:
+  repository: ghcr.io/ugoite/ugoite
   tag: stable
   pullPolicy: IfNotPresent
 
-backend:
-  replicaCount: 1
-  image:
-    repository: ghcr.io/ugoite/ugoite/backend
-  service:
-    type: ClusterIP
-    port: 8000
-  containerPort: 8000
-  allowRemote: true
-  persistence:
-    enabled: true
-    mountPath: /data
-    existingClaim: ""
-    storageClassName: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 10Gi
-  extraEnv: []
-  podAnnotations: {}
-  podSecurityContext:
-    fsGroup: 10001
-  resources: {}
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    runAsGroup: 10001
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    seccompProfile:
-      type: RuntimeDefault
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
+service:
+  type: ClusterIP
+  port: 8000
 
-frontend:
-  replicaCount: 1
-  image:
-    repository: ghcr.io/ugoite/ugoite/frontend
-  service:
-    type: ClusterIP
-    port: 3000
-  containerPort: 3000
-  backendUrl: ""
-  extraEnv: []
-  podAnnotations: {}
-  resources: {}
-  securityContext:
-    runAsNonRoot: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    seccompProfile:
-      type: RuntimeDefault
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
+containerPort: 8000
+staticDir: /app/static
+bootstrapDefaultSpace: true
+extraEnv: []
+podAnnotations: {}
+
+persistence:
+  enabled: true
+  mountPath: /data
+  existingClaim: ""
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+podSecurityContext:
+  fsGroup: 10001
+
+resources: {}
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
 
 auth:
-  mode: passkey-totp
-  devUserId: ""
+  mode: mock-oauth
+  devUserId: dev-local-user
+  bootstrapToken: ""
   signingKid: release-compose-local-v1
   signingSecret: ""
   bearerSecrets: ""
   bearerActiveKids:
     - release-compose-local-v1
-  proxyToken: ""

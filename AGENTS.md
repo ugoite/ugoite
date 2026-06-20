@@ -9,7 +9,7 @@
 **Key Architecture**:
 - Storage: shared Rust/OpenDAL abstraction (not traditional DB)
 - AI Interface: MCP with resource-first integration
-- Stack: SolidStart (Bun) + FastAPI (Python 3.12+) + Rust (ugoite-core/ugoite-cli) + uv
+- Stack: SolidStart frontend/docsite on Deno + Rust `ugoite-server` (Axum) + Rust crates (`ugoite-core`, `ugoite-cli`, `ugoite-storage`)
 - Data Model: Markdown sections as structured fields
 
 **Documentation** (ALWAYS consult for details):
@@ -24,17 +24,18 @@
 ```bash
 # Setup & run
 mise run setup            # Install all dependencies and pre-commit hooks
-mise run dev              # Start frontend + backend
+mise run dev              # Start frontend + Rust server + docsite
 mise run test             # Run all tests
 mise run e2e              # Run E2E tests
 
 # Quality checks (see .github/workflows/ for exact CI commands)
-uvx ruff check --select ALL --ignore-noqa .  # Lint Python (CI-aligned)
-uvx ruff format --check .                    # Format check (CI-aligned)
-cd backend && uv run ty check .              # Type check backend
-cd ugoite-core && uv run ty check .          # Type check core Python bindings
-cd ugoite-cli && cargo fmt --check && cargo clippy --no-default-features -- -D warnings && mise run test:coverage
-cd frontend && biome ci .                    # Check frontend
+cargo fmt --all --check                      # Format Rust (CI-aligned)
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo check --workspace --all-targets --all-features --locked
+deno fmt --check
+deno lint tools
+deno task check
+deno task test
 
 ```
 

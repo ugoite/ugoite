@@ -7,7 +7,7 @@ GHCR images, and starts the stack without cloning the repository or rebuilding
 images from source.
 
 This is the fastest **browser** path, but it is not the lowest-overhead path:
-it still needs Docker, published image pulls, and a two-service stack. If you
+it still needs Docker and a published image pull. If you
 want the lightest local-first start, use the [CLI Guide](cli.md) in `core`
 mode instead.
 
@@ -20,8 +20,8 @@ default first step on those desktop platforms.
 
 For local development from source, keep using
 [Docker Compose Guide](docker-compose.md).
-If you want the same published two-service topology on Kubernetes, use
-[Helm Chart Guide](helm-chart.md).
+The published Compose path is a single Rust server image that serves both the
+API and the built browser assets.
 
 ## Quick start
 
@@ -33,26 +33,19 @@ demo-login opt-in:
 mkdir -p ugoite-release
 cd ugoite-release
 curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-compose.release.yaml"
-python3 - <<PY > .env
-import secrets
-
-demo_mode = "mock-oauth"
-signing_kid = "release-compose-local-v1"
-signing_secret = secrets.token_urlsafe(32)
-proxy_token = secrets.token_urlsafe(32)
-
-print("UGOITE_VERSION=stable")
-print("UGOITE_SPACES_DIR=./spaces")
-print("UGOITE_FRONTEND_PORT=3000")
-print("UGOITE_BACKEND_PORT=8000")
-print(f"UGOITE_DEV_AUTH_MODE={demo_mode}")
-print("UGOITE_DEV_USER_ID=dev-local-user")
-print(f"UGOITE_DEV_SIGNING_KID={signing_kid}")
-print(f"UGOITE_DEV_SIGNING_SECRET={signing_secret}")
-print(f"UGOITE_AUTH_BEARER_SECRETS={signing_kid}:{signing_secret}")
-print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")
-print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")
-PY
+signing_kid="release-compose-local-v1"
+signing_secret="$(openssl rand -base64 32 | tr -d '\n')"
+cat > .env <<EOF
+UGOITE_VERSION=stable
+UGOITE_SPACES_DIR=./spaces
+UGOITE_PORT=8000
+UGOITE_DEV_AUTH_MODE=mock-oauth
+UGOITE_DEV_USER_ID=dev-local-user
+UGOITE_DEV_SIGNING_KID=${signing_kid}
+UGOITE_DEV_SIGNING_SECRET=${signing_secret}
+UGOITE_AUTH_BEARER_SIGNING_SECRETS=${signing_kid}:${signing_secret}
+UGOITE_AUTH_BEARER_ACTIVE_KIDS=${signing_kid}
+EOF
 mkdir -p ./spaces
 if command -v setfacl >/dev/null 2>&1; then
   setfacl -m u:10001:rwx,d:u:10001:rwx ./spaces
@@ -62,18 +55,13 @@ else
 fi
 ```
 
-The shipped manifest itself now stays on the safer `passkey-totp` default and
-requires operator-supplied auth values. The example above explicitly opts into
-loopback-only `mock-oauth` for the published local demo flow.
+The shipped manifest now uses the implemented `mock-oauth` local demo flow by default. Keep install-specific auth values for any shared or long-lived environment. If `openssl` is unavailable, generate an equivalent high-entropy secret with your preferred local secret tool before writing `.env`.
 
 The published backend container runs as uid/gid `10001`. Prefer an ACL when the
 host supports it, because that keeps the host user in control of `./spaces`
 while still granting the published backend image write access. If ACL tooling is
 not available, keep your current user as the owner and grant gid `10001` write
 access instead. Keep `chmod 0777` as a last-resort troubleshooting step only.
-
-If you do not have `python3` locally, generate equivalent random values with
-your preferred secret tool before writing `.env`.
 
 Pull and start the published stack:
 
@@ -83,19 +71,18 @@ docker compose -f docker-compose.release.yaml up -d
 ```
 
 If the stack does not start cleanly, ports are already occupied, or the browser
-cannot reach the backend, follow
+cannot reach the server, follow
 [Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md)
 before debugging login/auth behavior.
 
-The compose file pulls these canonical published images:
+The compose file pulls this canonical published image:
 
-- `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
-- `ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}`
+- `ghcr.io/ugoite/ugoite:${UGOITE_VERSION}`
 
 Then open:
 
-- Frontend UI login: http://localhost:3000/login
-- Backend API: http://localhost:8000
+- Browser UI login: http://localhost:8000/login
+- Backend API: http://localhost:8000/api
 
 Click **Continue with Local Demo Login** to reach `/spaces`. That button starts
 the local demo login path (`mock-oauth`), so no external OAuth provider is
@@ -109,30 +96,7 @@ comparison, see [Local Development Authentication and Login]
 For the concrete post-login space -> form -> entry path, continue to
 [Browser Walkthrough: First Space, Form, and Entry](browser-first-entry.md).
 
-This published quick start intentionally differs from `mise run dev`: the
-manifest defaults to `passkey-totp` with operator-supplied auth material, while
-the example above explicitly opts into `mock-oauth` for a loopback-only browser
-demo. Source development still keeps `passkey-totp` as the default so
-contributors exercise the explicit passkey + 2FA flow.
-
-## Why does release compose set `UGOITE_ALLOW_REMOTE=true`?
-
-The shipped `docker-compose.release.yaml` runs the frontend and backend as two
-separate containers. The frontend reaches the backend through the Compose
-network at `http://backend:8000`, so the backend must accept non-loopback
-traffic **inside that private container network**. That is why the published
-compose file sets `UGOITE_ALLOW_REMOTE=true`.
-
-This does **not** make the quick start publicly reachable by default. The
-published host ports still bind to `127.0.0.1`, so the browser UI and backend
-API remain localhost-only on the host unless you edit the compose file
-yourself.
-
-If you want stricter host exposure, remove the backend `ports:` mapping and use
-the browser only through the frontend container; it will still reach
-`http://backend:8000` over the Compose network. If you need a topology that
-keeps `UGOITE_ALLOW_REMOTE=false`, use the CLI in `core` mode or a non-Compose
-workflow where the client talks to a loopback-bound backend directly.
+This published quick start matches `mise run dev`: both use the implemented `mock-oauth` local demo flow so the browser path reaches `/login` and `/spaces` without an unfinished passkey/TOTP dependency.
 
 ## Where browser-created data lives
 
@@ -189,20 +153,16 @@ These are the supported release-compose environment variables for the shipped
 | --- | --- | --- |
 | `UGOITE_VERSION` | required | Published image tag selector. Set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact published version to pin the stack. |
 | `UGOITE_SPACES_DIR` | `./spaces` | Host path mounted into `/data` so the backend keeps the local-first storage directory outside the container. |
-| `UGOITE_FRONTEND_PORT` | `3000` | Host port exposed for the frontend UI. |
-| `UGOITE_BACKEND_PORT` | `8000` | Host port exposed for the backend API. |
-| `UGOITE_DEV_AUTH_MODE` | `passkey-totp` | Dev login mode inside the shipped manifest. Set it to `mock-oauth` only for an explicit local demo flow. |
+| `UGOITE_PORT` | `8000` | Host port exposed for the single Rust server, including browser UI and `/api/*`. |
+| `UGOITE_DEV_AUTH_MODE` | `mock-oauth` | Dev login mode inside the shipped manifest. `passkey-totp` is planned but not implemented in the current Rust server. |
 | `UGOITE_DEV_USER_ID` | required | Username/user id for the explicit login flow you enable. The quick-start example above sets `dev-local-user` explicitly. |
 | `UGOITE_DEV_SIGNING_KID` | `release-compose-local-v1` | Key id paired with your install-specific bearer signing material. |
 | `UGOITE_DEV_SIGNING_SECRET` | required 32-byte random secret | Secret used to mint dev bearer tokens for this install. |
-| `UGOITE_AUTH_BEARER_SECRETS` | required 32-byte random secret | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
+| `UGOITE_AUTH_BEARER_SIGNING_SECRETS` | required 32-byte random secret | Bearer verification secret set accepted by the backend. For the quick start, reuse the same signing kid + secret pair. |
 | `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids exposed to the backend. |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | required 32-byte random secret | Shared token between frontend and backend so `/login` can reach the explicit auth endpoints. |
-
-The shipped compose file keeps `BACKEND_URL=http://backend:8000` fixed inside
-the Compose network. By default it stays on `passkey-totp`; the quick-start
-example above opts into `mock-oauth` only after generating install-specific
-secrets. For the canonical auth-mode comparison, see
+By default the shipped compose file uses `mock-oauth`; keep install-specific
+secrets for any shared or long-lived environment. For the canonical auth-mode
+comparison, see
 [Local Development Authentication and Login](local-dev-auth-login.md). For a
 broader mode-by-mode reference, see [Environment Variable Matrix](env-matrix.md).
 
@@ -220,12 +180,6 @@ Choose the release channel that matches your goal:
 
 - By default, the release compose file keeps data on the host under `./spaces`
   to preserve the local-first storage model.
-- The shipped manifest itself stays on `passkey-totp` and refuses repository-known
-  auth secrets. The quick-start example above explicitly opts into loopback-only
-  `mock-oauth` with install-specific signing and proxy values.
-- The frontend container talks to the backend through the Compose network via
-  `http://backend:8000`, which is why the shipped backend environment keeps
-  `UGOITE_ALLOW_REMOTE=true` inside the container network even though host
-  access still stays on `127.0.0.1`.
+- The shipped manifest uses `mock-oauth` for the current Rust server and should be paired with install-specific signing and proxy values.
 - If you want source-mounted development containers instead, use
   `docker-compose.yaml` and build locally.

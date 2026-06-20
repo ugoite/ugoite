@@ -29,37 +29,33 @@ assert_json_equals() {
   local expected_json="$2"
   local actual_json="$3"
 
-  python3 - "$label" "$expected_json" "$actual_json" <<'PY'
-import json
-import sys
+  ASSERT_LABEL="$label" \
+    EXPECTED_JSON="$expected_json" \
+    ACTUAL_JSON="$actual_json" \
+    deno eval '
+const label = Deno.env.get("ASSERT_LABEL") ?? "JSON assertion";
+const expectedRaw = Deno.env.get("EXPECTED_JSON") ?? "";
+const actualRaw = Deno.env.get("ACTUAL_JSON") ?? "";
 
-label, expected_raw, actual_raw = sys.argv[1:4]
-
-try:
-    expected = json.loads(expected_raw)
-except json.JSONDecodeError as exc:
-    print(
-        f"{label}: expected JSON fixture could not be decoded: {exc}: {expected_raw!r}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-try:
-    actual = json.loads(actual_raw)
-except json.JSONDecodeError as exc:
-    print(
-        f"{label}: command output was not valid JSON: {exc}: {actual_raw!r}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-if actual != expected:
-    print(
-        f"{label}: expected {expected!r} but got {actual!r}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-PY
+let expected;
+let actual;
+try {
+  expected = JSON.parse(expectedRaw);
+} catch (error) {
+  console.error(`${label}: expected JSON fixture could not be decoded: ${error.message}: ${expectedRaw}`);
+  Deno.exit(1);
+}
+try {
+  actual = JSON.parse(actualRaw);
+} catch (error) {
+  console.error(`${label}: command output was not valid JSON: ${error.message}: ${actualRaw}`);
+  Deno.exit(1);
+}
+if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  console.error(`${label}: expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`);
+  Deno.exit(1);
+}
+'
 }
 
 assert_help_output() {
@@ -78,7 +74,7 @@ if [ ! -f "$INSTALL_SCRIPT_PATH" ]; then
   fail "Install script not found: $INSTALL_SCRIPT_PATH"
 fi
 
-require_command python3
+require_command deno
 
 cleanup_mode="cleanup"
 if [ -n "$WORK_ROOT_INPUT" ]; then
