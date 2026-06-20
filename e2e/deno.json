@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "install:browsers": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install chromium",
+    "install:browsers": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install --with-deps chromium",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts",
     "entries": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts",
     "forms": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test forms.test.ts",

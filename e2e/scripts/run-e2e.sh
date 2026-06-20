@@ -97,6 +97,17 @@ fi
 
 mkdir -p "$E2E_STORAGE_ROOT"
 
+ensure_playwright_browsers() {
+  if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
+    echo "Skipping Playwright browser install because UGOITE_SKIP_PLAYWRIGHT_DEPS=1"
+    return
+  fi
+  echo "Installing Playwright browsers..."
+  (cd "$ROOT_DIR/e2e" && deno task install:browsers)
+}
+
+ensure_playwright_browsers
+
 STATIC_DIR=""
 if [ "$FRONTEND_MODE" = "static" ]; then
   echo "Building static frontend..."
