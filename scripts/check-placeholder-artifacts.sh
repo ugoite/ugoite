@@ -8,22 +8,23 @@ placeholder_files=()
 while IFS= read -r placeholder_file; do
   placeholder_files+=("$placeholder_file")
 done < <(
-  python3 - <<'PY'
-from pathlib import Path
-
-SENTINEL = "This file is intentionally left blank."
-root = Path(".")
-
-for path in sorted(root.iterdir()):
-    if not path.is_file() or path.name.startswith("."):
-        continue
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        continue
-    if text.strip() == SENTINEL:
-        print(path.as_posix())
-PY
+  deno eval '
+const sentinel = "This file is intentionally left blank.";
+const entries = [];
+for await (const entry of Deno.readDir(".")) {
+  if (!entry.isFile || entry.name.startsWith(".")) continue;
+  entries.push(entry.name);
+}
+for (const name of entries.sort()) {
+  let text;
+  try {
+    text = await Deno.readTextFile(name);
+  } catch {
+    continue;
+  }
+  if (text.trim() === sentinel) console.log(name);
+}
+'
 )
 
 if [ "${#placeholder_files[@]}" -gt 0 ]; then

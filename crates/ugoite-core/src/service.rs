@@ -9,6 +9,14 @@ use crate::{
     asset, entry, form, preferences, search, space, sql_session, storage::operator_from_uri,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpacePermission {
+    Read,
+    WriteContent,
+    ManageSpace,
+    ManageMembers,
+}
+
 #[derive(Clone)]
 pub struct UgoiteService {
     operator: Operator,
@@ -45,8 +53,31 @@ impl UgoiteService {
         space::create_space(&self.operator, space_id, &self.root_uri).await
     }
 
+    pub async fn create_space_for(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
+        validate_member_user_id(actor_user_id)?;
+        match self.create_space(space_id).await {
+            Ok(()) => {}
+            Err(error) if error.to_string().to_lowercase().contains("already exists") => {}
+            Err(error) => return Err(error),
+        }
+        self.bootstrap_admin_member(space_id, actor_user_id).await
+    }
+
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
         space::list_spaces(&self.operator).await
+    }
+
+    pub async fn list_accessible_space_ids(&self, actor_user_id: &str) -> Result<Vec<String>> {
+        let mut accessible = Vec::new();
+        for space_id in self.list_space_ids().await? {
+            if self
+                .has_permission(&space_id, actor_user_id, SpacePermission::Read)
+                .await?
+            {
+                accessible.push(space_id);
+            }
+        }
+        Ok(accessible)
     }
 
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {
@@ -59,6 +90,23 @@ impl UgoiteService {
 
     pub async fn ensure_space(&self, space_id: &str) -> Result<()> {
         space::get_space(&self.operator, space_id).await.map(|_| ())
+    }
+
+    pub async fn require_permission(
+        &self,
+        space_id: &str,
+        actor_user_id: &str,
+        permission: SpacePermission,
+    ) -> Result<()> {
+        if self
+            .has_permission(space_id, actor_user_id, permission)
+            .await?
+        {
+            return Ok(());
+        }
+        Err(anyhow!(
+            "Forbidden: user {actor_user_id} does not have {permission:?} permission for space {space_id}"
+        ))
     }
 
     pub async fn list_forms(&self, space_id: &str) -> Result<Vec<Value>> {
@@ -280,6 +328,9 @@ impl UgoiteService {
             .and_then(Value::as_str)
             .unwrap_or(accepted_by)
             .to_string();
+        if user_id != accepted_by {
+            return Err(anyhow!("Forbidden: invitation belongs to a different user"));
+        }
         let role = invitation
             .get("role")
             .and_then(Value::as_str)
@@ -349,6 +400,60 @@ impl UgoiteService {
         Ok(json!({ "member": response }))
     }
 
+    async fn bootstrap_admin_member(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
+        let mut settings = self.read_space_settings(space_id).await?;
+        let members = settings
+            .get_mut("members")
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| anyhow!("Invalid members format in settings.json"))?;
+        if members
+            .get(actor_user_id)
+            .and_then(|member| member.get("state"))
+            .and_then(Value::as_str)
+            == Some("active")
+        {
+            return Ok(());
+        }
+        let now = now_iso();
+        members.insert(
+            actor_user_id.to_string(),
+            json!({
+                "user_id": actor_user_id,
+                "role": "admin",
+                "state": "active",
+                "invited_by": actor_user_id,
+                "invited_at": now,
+                "activated_at": now,
+                "revoked_at": Value::Null,
+                "updated_at": now,
+            }),
+        );
+        bump_membership_version(&mut settings);
+        self.write_space_settings(space_id, &settings).await
+    }
+
+    async fn has_permission(
+        &self,
+        space_id: &str,
+        actor_user_id: &str,
+        permission: SpacePermission,
+    ) -> Result<bool> {
+        validate_member_user_id(actor_user_id)?;
+        let settings = self.read_space_settings(space_id).await?;
+        let Some(member) = settings
+            .get("members")
+            .and_then(Value::as_object)
+            .and_then(|members| members.get(actor_user_id))
+        else {
+            return Ok(false);
+        };
+        if member.get("state").and_then(Value::as_str) != Some("active") {
+            return Ok(false);
+        }
+        let role = member.get("role").and_then(Value::as_str).unwrap_or("");
+        Ok(role_allows(role, permission))
+    }
+
     async fn read_space_settings(&self, space_id: &str) -> Result<Value> {
         self.ensure_space(space_id).await?;
         let path = format!("{}/settings.json", self.workspace_path(space_id));
@@ -414,5 +519,17 @@ fn validate_assignable_role(role: &str) -> Result<()> {
     match role {
         "admin" | "editor" | "viewer" => Ok(()),
         _ => Err(anyhow!("Invalid member role")),
+    }
+}
+
+fn role_allows(role: &str, permission: SpacePermission) -> bool {
+    match role {
+        "admin" => true,
+        "editor" => matches!(
+            permission,
+            SpacePermission::Read | SpacePermission::WriteContent
+        ),
+        "viewer" => matches!(permission, SpacePermission::Read),
+        _ => false,
     }
 }

@@ -15,17 +15,16 @@ Use the same Compose command prefix that you used to start the stack:
 - Source checkout: `docker compose`
 - Published release quick start: `docker compose -f docker-compose.release.yaml`
 
-## 1. Check whether ports 3000 and 8000 are already occupied
+## 1. Check whether port 8000 is already occupied
 
 ```bash
-ss -ltnp | grep -E ':(3000|8000)\s'
+ss -ltnp | grep -E ':8000\s'
 ```
 
-- If another local process already owns one of these ports, stop that process
+- If another local process already owns this port, stop that process
   before retrying Ugoite.
-- For the published quick start you can also change `UGOITE_FRONTEND_PORT` and
-  `UGOITE_BACKEND_PORT` in `.env`, then run the same release compose commands
-  again.
+- For the published quick start you can also change `UGOITE_PORT` in `.env`,
+  then run the same release compose commands again.
 
 ## 2. Confirm backend readiness before debugging the frontend
 
@@ -42,7 +41,7 @@ Expected output:
 If this health check fails, continue with the backend log checks below. For the
 health endpoint contract, see [Backend Healthcheck](backend-healthcheck.md).
 
-## 3. Inspect frontend and backend logs together
+## 3. Inspect server logs
 
 Check the current service state first:
 
@@ -50,25 +49,23 @@ Check the current service state first:
 docker compose ps
 ```
 
-Then inspect both services:
+Then inspect the single Rust server service:
 
 ```bash
-docker compose logs --tail=100 backend
-docker compose logs --tail=100 frontend
+docker compose logs --tail=100 ugoite
 ```
 
 If you are using the published release quick start, replace those commands with
 `docker compose -f docker-compose.release.yaml ...`.
 
-Focus on these two checks:
+Focus on these checks:
 
-- The backend should bind successfully and answer `GET /health`.
-- The frontend container must reach the backend through the Compose network at
-  `http://backend:8000`, not through `http://localhost:8000`.
+- The server should bind successfully and answer `GET /health`.
+- `UGOITE_STATIC_DIR` should point at the built browser assets in the image or
+  source checkout.
 
 If the browser shows a blank page or repeated API failures, inspect the
-frontend logs for proxy errors and the backend logs for startup exceptions at
-the same time.
+server logs for startup exceptions, static asset path issues, or API errors.
 
 ## 4. Validate that the local spaces directory is writable
 

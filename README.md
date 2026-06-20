@@ -19,7 +19,7 @@ README mirrors the same top-level path names so you can choose a first step on
 GitHub without comparing two different onboarding maps.
 
 > **Browser path today:** the current browser route still needs a running
-> backend + frontend stack and an explicit `/login` flow. If you want the
+> server-backed browser stack and an explicit `/login` flow. If you want the
 > lowest-setup-cost local-first path, start with the CLI in `core` mode.
 
 ### Choose your first step
@@ -31,8 +31,8 @@ GitHub without comparing two different onboarding maps.
   backend, frontend, and docsite together for full-stack evaluation or
   debugging; choose the repo Devcontainer / GitHub Codespaces path when you
   want the preloaded contributor environment (`mise`, `gh`, `oathtool`,
-  `mise install`, `mise run setup`, and `npx playwright install --with-deps
-  chromium`), or run `mise run setup` on your host when you already manage the
+  `mise install`, `mise run setup`, and `deno task e2e:install:browsers`), or
+  run `mise run setup` on your host when you already manage the
   toolchain yourself; both paths continue with `mise run dev`, followed by the
   explicit `/login` flow. If you are contributing to one surface at a time, use
   the [Contributor Workflow](CONTRIBUTING.md) after setup for targeted commands
@@ -69,14 +69,12 @@ The browser experience runs through the Rust `ugoite-server`, while the CLI can
 use the direct `core` path for local filesystem-backed spaces. The long-term
 direction is captured in [North Star](docs/architecture/north-star.md).
 
-Auth defaults differ by entry path: `mise run dev` uses `passkey-totp` by
-default so source contributors exercise the explicit local passkey + 2FA flow,
-while the published `docker-compose.release.yaml` quick start uses the local
-demo login mode (`mock-oauth`) by default so browser evaluators can reach
-`/login` and `/spaces` with fewer steps and no external provider. See the
+Auth defaults are now intentionally boring for local evaluation: `mise run dev`
+and the checked-in Compose paths use the explicit local demo login mode
+(`mock-oauth`) so `/login` and `/spaces` work without an unfinished
+passkey/TOTP implementation. See the
 [canonical auth reference](docs/guide/local-dev-auth-login.md) for the
-`passkey-totp` vs `mock-oauth` comparison, the explicit `/login` mental model,
-and why source and published defaults differ.
+implemented `mock-oauth` flow and the planned `passkey-totp` boundary.
 
 ### Which entry path should you choose?
 
@@ -131,7 +129,7 @@ docs/
   ├─ spec/          # Technical specifications (YAML + Markdown)
   ├─ tests/         # Documentation consistency tests
   └─ version/       # Versioned roadmap YAML + release metadata
-e2e/                # End-to-end tests (Bun)
+e2e/                # End-to-end tests (Playwright via Deno)
 ```
 
 ---
@@ -235,7 +233,7 @@ Choose the contributor setup path that matches your machine:
 | Path | Choose it when | What it handles for you |
 | --- | --- | --- |
 | Host-managed toolchain | You already want the repo toolchain on your machine or you are not using VS Code/Codespaces | You run `mise run setup` yourself to install dependencies plus the fast pre-commit hook chain and the heavier pre-push coverage hook, then continue with `mise run dev`. |
-| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
+| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `deno task e2e:install:browsers` for you. |
 
 Install and cache the minimal development toolchain:
 
@@ -249,7 +247,7 @@ gates are `mise run ci`, `mise run ci:merge`, and `mise run ci:release`.
 The devcontainer path runs that same bootstrap for you during container
 creation, so both contributor setups land on the same local commands and hooks.
 
-Start development (backend + frontend + docsite — `passkey-totp` is the default local auth mode):
+Start development (Rust server + frontend + docsite; `mock-oauth` is the default local auth mode):
 
 ```bash
 mise run dev
@@ -314,24 +312,24 @@ context, supported auth modes, and the `dev:backend`, `dev:frontend`, or
 [CLI Guide](docs/guide/cli.md) for the direct sample-data commands behind
 `mise run seed`.
 
-Important: During development we expect `BACKEND_URL` to be set to the backend host reachable from the dev server (e.g. `http://localhost:8000`). The frontend dev server proxies `/api` requests to this URL. Client code uses `/api` to access the backend.
-When running with `docker-compose`, we set: `BACKEND_URL=http://backend:8000`.
+Important: During source development the frontend dev server proxies `/api`
+requests to the Rust backend at `BACKEND_URL` (default:
+`http://localhost:8000`). The release Compose path serves the built frontend
+and API from the same Rust server on port 8000.
 
 Details:
 
 Backend (dev) example:
 
 ```bash
-cd backend
-uv run uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+cargo run -p ugoite-server
 ```
 
 Frontend (dev) example:
 
 ```bash
 cd frontend
-bun install --frozen-lockfile
-bun dev
+deno task dev
 ```
 
 ---
@@ -343,14 +341,14 @@ Important: this repo provides two distinct container-based workflows:
 - Devcontainer / GitHub Codespaces (development):
   - `.devcontainer/devcontainer.json` is the supported contributor container
     path. It preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`,
-    `mise run setup`, and `npx playwright install --with-deps chromium` for
+    `mise run setup`, and `deno task e2e:install:browsers` for
     you.
   - Use the devcontainer when you want onboarding or day-to-day development in
     a reproducible VS Code/Codespaces workspace without installing the full
     toolchain on your host.
 
 - Docker Compose (deployment / CI):
-  - `docker-compose.yaml` is for containerized deployments or CI systems. If you use this for production, verify commands and configuration (e.g., remove `--reload` or `bun dev` and opt for production servers and built frontend assets).
+  - `docker-compose.yaml` is for containerized deployments or CI systems. If you use this for production, verify commands and configuration and use production-built frontend assets.
 
 These two environments are separate and intended for different uses—use the
 devcontainer for contributor development and Docker Compose for deployments.
@@ -370,42 +368,36 @@ then pull and start the published stack:
 mkdir -p ugoite-release
 cd ugoite-release
 curl -fsSLO "https://github.com/ugoite/ugoite/releases/latest/download/docker-compose.release.yaml"
-python3 - <<PY > .env
-import secrets
-
-demo_mode = "mock-oauth"
-signing_kid = "release-compose-local-v1"
-signing_secret = secrets.token_urlsafe(32)
-proxy_token = secrets.token_urlsafe(32)
-
-print("UGOITE_VERSION=stable")
-print("UGOITE_SPACES_DIR=./spaces")
-print("UGOITE_FRONTEND_PORT=3000")
-print("UGOITE_BACKEND_PORT=8000")
-print(f"UGOITE_DEV_AUTH_MODE={demo_mode}")
-print("UGOITE_DEV_USER_ID=dev-local-user")
-print(f"UGOITE_DEV_SIGNING_KID={signing_kid}")
-print(f"UGOITE_DEV_SIGNING_SECRET={signing_secret}")
-print(f"UGOITE_AUTH_BEARER_SECRETS={signing_kid}:{signing_secret}")
-print(f"UGOITE_AUTH_BEARER_ACTIVE_KIDS={signing_kid}")
-print(f"UGOITE_DEV_AUTH_PROXY_TOKEN={proxy_token}")
-PY
+signing_kid="release-compose-local-v1"
+signing_secret="$(openssl rand -base64 32 | tr -d '\n')"
+cat > .env <<EOF
+UGOITE_VERSION=stable
+UGOITE_SPACES_DIR=./spaces
+UGOITE_PORT=8000
+UGOITE_DEV_AUTH_MODE=mock-oauth
+UGOITE_DEV_USER_ID=dev-local-user
+UGOITE_DEV_SIGNING_KID=${signing_kid}
+UGOITE_DEV_SIGNING_SECRET=${signing_secret}
+UGOITE_AUTH_BEARER_SIGNING_SECRETS=${signing_kid}:${signing_secret}
+UGOITE_AUTH_BEARER_ACTIVE_KIDS=${signing_kid}
+EOF
 mkdir -p ./spaces
 docker compose -f docker-compose.release.yaml pull
 docker compose -f docker-compose.release.yaml up -d
 ```
 
-Then open `http://localhost:3000/login`, click **Continue with Local Demo Login**,
-and you will land on `/spaces`. The shipped compose file bootstraps the `default` space at startup so the first browser and CLI session both have a ready workspace. The shipped manifest itself stays on the safer `passkey-totp`
-default; the example above explicitly opts into loopback-only `mock-oauth` with
-install-specific secrets. For more background on the explicit browser login
+Then open `http://localhost:8000/login`, click **Continue with Local Demo Login**,
+and you will land on `/spaces`. The shipped compose file bootstraps the
+`default` space at startup so the first browser and CLI session both have a
+ready workspace. The checked-in Compose defaults use loopback-oriented
+`mock-oauth`; use install-specific secrets for any shared environment. For more
+background on the explicit browser login
 flow, see [Local Development Authentication and Login](docs/guide/local-dev-auth-login.md).
 
-The compose file pulls the canonical release image names used by
+The compose file pulls the canonical release image name used by
 `docker-compose.release.yaml`:
 
-- `ghcr.io/ugoite/ugoite/backend:${UGOITE_VERSION}`
-- `ghcr.io/ugoite/ugoite/frontend:${UGOITE_VERSION}`
+- `ghcr.io/ugoite/ugoite:${UGOITE_VERSION}`
 
 Tag conventions:
 
@@ -418,16 +410,14 @@ Tag conventions:
 | Variable                      | Default                      | Purpose                                                                                                                                                                               |
 | ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `UGOITE_VERSION`              | `required`                   | Published image tag selector; set it to `stable` or `latest` for the newest stable release, `alpha` or `beta` for the newest prerelease channel, or an exact version to pin the stack |
-| `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the backend container at `/data`                                                                                                                               |
-| `UGOITE_FRONTEND_PORT`        | `3000`                       | Host port that exposes the frontend UI                                                                                                                                                |
-| `UGOITE_BACKEND_PORT`         | `8000`                       | Host port that exposes the backend API                                                                                                                                                |
-| `UGOITE_DEV_AUTH_MODE`        | `passkey-totp`               | Shipped auth-mode default; set it to `mock-oauth` only for an explicit local demo flow                                                                                               |
+| `UGOITE_SPACES_DIR`           | `./spaces`                   | Host path mounted into the container at `/data`                                                                                                                                       |
+| `UGOITE_PORT`                 | `8000`                       | Host port that exposes the single Rust server, including the browser UI and `/api/*`                                                                                                  |
+| `UGOITE_DEV_AUTH_MODE`        | `mock-oauth`                 | Shipped local auth-mode default for the current Rust server; `passkey-totp` remains planned until implemented end-to-end                                                             |
 | `UGOITE_DEV_USER_ID`          | `required`                   | Username/user id for the explicit login flow you enable; the quick-start example sets `dev-local-user`                                                                               |
 | `UGOITE_DEV_SIGNING_KID`      | `release-compose-local-v1`   | Key id paired with the install-specific bearer signing material                                                                                                                       |
 | `UGOITE_DEV_SIGNING_SECRET`   | `required 32-byte random secret` | Secret used to mint dev bearer tokens for this install                                                                                                                                 |
-| `UGOITE_AUTH_BEARER_SECRETS`  | `required 32-byte random secret` | Bearer verification secret set accepted by the backend                                                                                                                                 |
+| `UGOITE_AUTH_BEARER_SIGNING_SECRETS` | `required 32-byte random secret` | Bearer verification secret set accepted by the backend                                                                                                                                 |
 | `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | `release-compose-local-v1` | Active bearer-token key ids accepted by the backend; keep this aligned with the signing key ids you expose for this install                                                          |
-| `UGOITE_DEV_AUTH_PROXY_TOKEN` | `required 32-byte random secret` | Shared token wiring between the frontend proxy and backend dev auth flow                                                                                                              |
 
 For more examples, authenticated GHCR pulls, and shutdown steps, see
 [Container Quick Start](docs/guide/container-quickstart.md).
@@ -461,13 +451,6 @@ docker compose up -d --build
 
 ## Tests
 
-Run backend tests:
-
-```bash
-cd backend
-uv run pytest
-```
-
 Run all tests from repo root:
 
 ```bash
@@ -488,19 +471,21 @@ production-style host runner with the same Playwright JUnit/no-skips gates:
 mise run e2e
 ```
 
-For faster local iteration against direct dev servers (not CI parity):
+For faster local smoke coverage:
 
 ```bash
-mise run e2e:dev
+mise run e2e:smoke
 ```
 
 Where you can run this:
 
 - Dev Container: everything needed to run tests is available; run `mise run test`.
-- GitHub Actions `python-ci`: runs `ruff`, `ty`, and `pytest` for `backend/` and `crates/ugoite-cli/`.
-- Local (non-container): install `uv`, then run the commands above.
+- GitHub Actions `ci-required`: runs `mise run ci` for pull requests.
+- Local (non-container): install the pinned `mise` tools with `mise run setup`,
+  then run the commands above.
 
-Frontend tests: check `frontend/package.json`.
+Frontend and docsite tests are included in `mise run test` through the root
+Deno tasks.
 
 ---
 

@@ -31,7 +31,7 @@ when to choose MCP, CLI, or REST.
 
 ### Getting Started & Concepts
 - [Core Concepts](../guide/concepts.md) - Plain-language introduction to spaces, entries, forms, and search
-- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path, with backend + frontend runtime and explicit login
+- [Container Quick Start](../guide/container-quickstart.md) - Fastest published browser path, with the single Rust server runtime and explicit login
 - [CLI Guide](../guide/cli.md) - Lightest local-first path when you want direct filesystem access in `core` mode
 - [Local Dev Auth/Login](../guide/local-dev-auth-login.md) - Canonical local sign-in and `/login` flow for source development
 - [Browser Walkthrough](../guide/browser-first-entry.md) - Concrete post-login path for the first space, form, and entry
@@ -40,7 +40,7 @@ when to choose MCP, CLI, or REST.
 
 | Path | Best for | Trade-off |
 | --- | --- | --- |
-| [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires the backend/runtime stack plus explicit login before `/spaces` becomes useful |
+| [Container Quick Start](../guide/container-quickstart.md) | Fast visual evaluation of the shipped UI | Requires Docker plus explicit login before `/spaces` becomes useful |
 | [CLI Guide](../guide/cli.md) in `core` mode | Lowest-friction local-first workflow | Terminal-first only; skips the browser shell and server-backed behavior |
 | [Run from source](../guide/local-dev-auth-login.md) with `mise run dev` | Contributor work and full-surface debugging | Highest setup and auth overhead, but exercises backend, frontend, and docsite together |
 
@@ -105,8 +105,8 @@ when to choose MCP, CLI, or REST.
 | `ugoite-domain` | Portable domain models, integrity primitives, storage traits | Rust |
 | `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
-| `backend` | REST API, MCP server (delegates to ugoite-core) | Python (FastAPI) |
-| `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart) |
+| `ugoite-server` | REST API, MCP server, and static browser asset serving (delegates to ugoite-core) | Rust (Axum) |
+| `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart via Deno) |
 
 ---
 

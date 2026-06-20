@@ -323,7 +323,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry revision")?;
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_get(&format!(
-                    "{base}/spaces/{space_id}/entries/{entry_id}/revisions/{revision_id}"
+                    "{base}/spaces/{space_id}/entries/{entry_id}/history/{revision_id}"
                 ))
                 .await?;
                 print_json(&result);
@@ -344,8 +344,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry restore")?;
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/entries/{entry_id}/restore/{revision_id}"),
-                    &serde_json::json!({"author": author}),
+                    &format!("{base}/spaces/{space_id}/entries/{entry_id}/restore"),
+                    &serde_json::json!({"revision_id": revision_id, "author": author}),
                 )
                 .await?;
                 print_json(&result);

@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
-use support::spawn_recording_server;
+use support::{spawn_recording_server, spawn_recording_server_sequence};
 
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().expect("current exe");
@@ -756,7 +756,7 @@ fn test_cli_req_ops_006_form_local_and_remote_paths() {
         .recv_timeout(Duration::from_secs(5))
         .expect("remote form update request");
     handle.join().expect("join remote form update server");
-    assert!(remote_update_request.starts_with("PUT /spaces/remote-space/forms/Entry HTTP/1.1"));
+    assert!(remote_update_request.starts_with("POST /spaces/remote-space/forms HTTP/1.1"));
     assert!(remote_update_request.contains(r#""name":"Entry""#));
 }
 
@@ -789,45 +789,44 @@ fn test_cli_req_ops_006_search_index_query_and_link_paths() {
     assert!(String::from_utf8_lossy(&local_search_output.stdout).contains("entry-alpha"));
 
     let remote_config_path = dir.path().join("remote-search-config.json");
-    let (base, requests, handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"{"reindexed":true}"#);
     write_endpoint_config(
         &remote_config_path,
         "backend",
-        &base,
-        &format!("{base}/api"),
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let remote_index_run_output = cli_command(&remote_config_path)
         .args(["index", "run", "remote-space"])
         .output()
         .expect("remote index run");
-    assert_success(&remote_index_run_output, "remote index run");
-    let remote_index_run_request = requests
-        .recv_timeout(Duration::from_secs(5))
-        .expect("remote index run request");
-    handle.join().expect("join remote index run server");
-    assert!(remote_index_run_request.starts_with("POST /spaces/remote-space/index HTTP/1.1"));
+    assert!(!remote_index_run_output.status.success());
+    assert!(String::from_utf8_lossy(&remote_index_run_output.stderr)
+        .contains("index run is not available in backend/api mode"));
 
-    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"entries":2}"#);
     write_endpoint_config(
         &remote_config_path,
         "backend",
-        &base,
-        &format!("{base}/api"),
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let remote_index_stats_output = cli_command(&remote_config_path)
         .args(["index", "stats", "remote-space"])
         .output()
         .expect("remote index stats");
-    assert_success(&remote_index_stats_output, "remote index stats");
-    let remote_index_stats_request = requests
-        .recv_timeout(Duration::from_secs(5))
-        .expect("remote index stats request");
-    handle.join().expect("join remote index stats server");
-    assert!(remote_index_stats_request.starts_with("GET /spaces/remote-space/stats HTTP/1.1"));
+    assert!(!remote_index_stats_output.status.success());
+    assert!(String::from_utf8_lossy(&remote_index_stats_output.stderr)
+        .contains("index stats is not available in backend/api mode"));
 
-    let (base, requests, handle) =
-        spawn_recording_server("HTTP/1.1 200 OK", r#"[{"id":"entry-alpha"}]"#);
+    let (base, requests, handle) = spawn_recording_server_sequence(vec![
+        (
+            "HTTP/1.1 201 Created",
+            r#"{"id":"session-1","status":"ready"}"#,
+        ),
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"rows":[{"id":"entry-alpha"}],"total_count":1}"#,
+        ),
+    ]);
     write_endpoint_config(
         &remote_config_path,
         "backend",
@@ -839,12 +838,20 @@ fn test_cli_req_ops_006_search_index_query_and_link_paths() {
         .output()
         .expect("remote query");
     assert_success(&remote_query_output, "remote query");
-    let remote_query_request = requests
+    let remote_query_create_request = requests
         .recv_timeout(Duration::from_secs(5))
-        .expect("remote query request");
+        .expect("remote query create request");
+    assert!(
+        remote_query_create_request.starts_with("POST /spaces/remote-space/sql-sessions HTTP/1.1")
+    );
+    assert!(remote_query_create_request.contains(r#""sql":"SELECT id FROM entries""#));
+    let remote_query_rows_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("remote query rows request");
     handle.join().expect("join remote query server");
-    assert!(remote_query_request.starts_with("GET /spaces/remote-space/query?sql="));
-    assert!(remote_query_request.contains("SELECT"));
+    assert!(remote_query_rows_request.starts_with(
+        "GET /spaces/remote-space/sql-sessions/session-1/rows?offset=0&limit=1000 HTTP/1.1"
+    ));
 
     let (base, requests, handle) =
         spawn_recording_server("HTTP/1.1 200 OK", r#"[{"id":"entry-alpha"}]"#);
@@ -1239,36 +1246,27 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     assert!(remote_array_settings_patch_request.starts_with("PATCH /spaces/remote-space HTTP/1.1",));
     assert!(remote_array_settings_patch_request.contains(r#""settings":[]}"#));
 
-    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"[]"#);
     write_endpoint_config(
         &remote_config_path,
         "backend",
-        &base,
-        &format!("{base}/api"),
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let remote_service_account_list_output = cli_command(&remote_config_path)
         .args(["space", "service-account-list", "remote-space"])
         .output()
         .expect("remote service-account-list");
-    assert_success(
-        &remote_service_account_list_output,
-        "remote service-account-list",
+    assert!(!remote_service_account_list_output.status.success());
+    assert!(
+        String::from_utf8_lossy(&remote_service_account_list_output.stderr)
+            .contains("service-account-list for remote-space is not available")
     );
-    let remote_service_account_list_request = requests
-        .recv_timeout(Duration::from_secs(5))
-        .expect("remote service-account-list request");
-    handle
-        .join()
-        .expect("join remote service-account-list server");
-    assert!(remote_service_account_list_request
-        .starts_with("GET /spaces/remote-space/service-accounts HTTP/1.1"));
 
-    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"id":"svc-1"}"#);
     write_endpoint_config(
         &remote_config_path,
         "backend",
-        &base,
-        &format!("{base}/api"),
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let remote_service_account_create_output = cli_command(&remote_config_path)
         .args([
@@ -1282,20 +1280,11 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         ])
         .output()
         .expect("remote service-account-create");
-    assert_success(
-        &remote_service_account_create_output,
-        "remote service-account-create",
+    assert!(!remote_service_account_create_output.status.success());
+    assert!(
+        String::from_utf8_lossy(&remote_service_account_create_output.stderr)
+            .contains("service-account-create for remote-space")
     );
-    let remote_service_account_create_request = requests
-        .recv_timeout(Duration::from_secs(5))
-        .expect("remote service-account-create request");
-    handle
-        .join()
-        .expect("join remote service-account-create server");
-    assert!(remote_service_account_create_request
-        .starts_with("POST /spaces/remote-space/service-accounts HTTP/1.1"));
-    assert!(remote_service_account_create_request.contains(r#""display_name":"Bot""#));
-    assert!(remote_service_account_create_request.contains(r#""scopes":["read","write"]"#));
 
     let (base, requests, handle) =
         spawn_recording_server("HTTP/1.1 200 OK", r#"[{"user_id":"alice"}]"#);
@@ -1316,12 +1305,11 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
     handle.join().expect("join remote members server");
     assert!(remote_members_request.starts_with("GET /spaces/remote-space/members HTTP/1.1"));
 
-    let (base, requests, handle) = spawn_recording_server("HTTP/1.1 200 OK", r#"{"events":[]}"#);
     write_endpoint_config(
         &remote_config_path,
         "backend",
-        &base,
-        &format!("{base}/api"),
+        "http://127.0.0.1:9",
+        "http://127.0.0.1:9/api",
     );
     let remote_audit_events_output = cli_command(&remote_config_path)
         .args([
@@ -1335,13 +1323,9 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         ])
         .output()
         .expect("remote audit-events");
-    assert_success(&remote_audit_events_output, "remote audit-events");
-    let remote_audit_events_request = requests
-        .recv_timeout(Duration::from_secs(5))
-        .expect("remote audit-events request");
-    handle.join().expect("join remote audit-events server");
-    assert!(remote_audit_events_request
-        .starts_with("GET /spaces/remote-space/audit-events?offset=5&limit=10 HTTP/1.1"));
+    assert!(!remote_audit_events_output.status.success());
+    assert!(String::from_utf8_lossy(&remote_audit_events_output.stderr)
+        .contains("audit-events for remote-space"));
 }
 
 /// REQ-OPS-016: sample-data CLI owner flags must preserve discoverable seeded membership.
@@ -1741,7 +1725,7 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
         .expect("remote entry revision request");
     handle.join().expect("join remote entry revision server");
     assert!(remote_revision_request
-        .starts_with("GET /spaces/remote-space/entries/entry-1/revisions/rev-1 HTTP/1.1"));
+        .starts_with("GET /spaces/remote-space/entries/entry-1/history/rev-1 HTTP/1.1"));
 
     let (base, requests, handle) =
         spawn_recording_server("HTTP/1.1 200 OK", r#"{"restored":true}"#);
@@ -1769,8 +1753,9 @@ fn test_cli_req_ops_006_entry_local_and_remote_paths() {
         .expect("remote entry restore request");
     handle.join().expect("join remote entry restore server");
     assert!(remote_restore_request
-        .starts_with("POST /spaces/remote-space/entries/entry-1/restore/rev-1 HTTP/1.1"));
+        .starts_with("POST /spaces/remote-space/entries/entry-1/restore HTTP/1.1"));
     assert!(remote_restore_request.contains(r#""author":"remote-author""#));
+    assert!(remote_restore_request.contains(r#""revision_id":"rev-1""#));
 }
 
 /// REQ-OPS-006: SQL commands must keep lint, local CRUD, and remote routing covered.

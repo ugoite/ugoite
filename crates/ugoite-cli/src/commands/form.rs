@@ -103,15 +103,8 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
             if let Some(base) = validated_base_url(&config)? {
-                let form_name = form_def
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let result = http::http_put(
-                    &format!("{base}/spaces/{space_id}/forms/{form_name}"),
-                    &form_def,
-                )
-                .await?;
+                let result =
+                    http::http_post(&format!("{base}/spaces/{space_id}/forms"), &form_def).await?;
                 print_json(&result);
                 return Ok(());
             }

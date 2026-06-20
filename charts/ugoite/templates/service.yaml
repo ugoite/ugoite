@@ -1,17 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ugoite.frontendServiceName" . }}
+  name: {{ include "ugoite.serviceName" . }}
   labels:
     {{- include "ugoite.labels" . | nindent 4 }}
-    app.kubernetes.io/component: frontend
 spec:
-  type: {{ .Values.frontend.service.type }}
+  type: {{ .Values.service.type }}
   selector:
     {{- include "ugoite.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: frontend
   ports:
     - name: http
-      port: {{ .Values.frontend.service.port }}
+      port: {{ .Values.service.port }}
       targetPort: http
       protocol: TCP

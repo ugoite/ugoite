@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, type ReporterDescription } from "@playwright/test";
 
 const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 const frontendOrigin = new URL(frontendUrl);
@@ -15,7 +15,7 @@ const e2eTestTimeoutMs =
 		? Number(e2eTestTimeoutEnv)
 		: 60_000;
 
-const reporter =
+const reporter: "list" | ReporterDescription[] =
 	ciReporter === "junit"
 		? [["list"], ["junit", { outputFile: junitOutputFile }]]
 		: "list";

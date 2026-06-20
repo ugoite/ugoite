@@ -4482,6 +4482,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "ugoite-domain",
+ "ugoite-storage",
  "url",
  "uuid",
 ]
@@ -4523,6 +4524,12 @@ dependencies = [
 name = "ugoite-storage"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "opendal 0.57.0",
+ "tempfile",
+ "tokio",
  "ugoite-domain",
 ]
 
