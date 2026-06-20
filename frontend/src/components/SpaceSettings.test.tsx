@@ -1,8 +1,9 @@
 // REQ-FE-017: Space storage configuration
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@solidjs/testing-library";
 import { SpaceSettings } from "./SpaceSettings";
 import type { Space } from "~/lib/types";
+import { setLocale } from "~/lib/i18n";
 
 const mockSpace: Space = {
 	id: "ws-1",
@@ -21,6 +22,10 @@ const mockSpace: Space = {
 };
 
 describe("SpaceSettings", () => {
+	beforeEach(() => {
+		setLocale("en");
+	});
+
 	it("should display space name", () => {
 		render(() => <SpaceSettings space={mockSpace} onSave={vi.fn()} />);
 		expect(screen.getByDisplayValue("Test Space")).toBeInTheDocument();
