@@ -35,6 +35,17 @@ export UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS"
 export FRONTEND_URL="${FRONTEND_URL:-http://localhost:8000}"
 export BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 
+ensure_playwright_browsers() {
+  if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
+    echo "Skipping Playwright browser install because UGOITE_SKIP_PLAYWRIGHT_DEPS=1"
+    return
+  fi
+  echo "Installing Playwright browsers..."
+  (cd "$ROOT_DIR/e2e" && deno task install:browsers)
+}
+
+ensure_playwright_browsers
+
 backend_start_timeout="${E2E_BACKEND_START_TIMEOUT_SECONDS:-120}"
 export PLAYWRIGHT_CI_REPORTER=junit
 export PLAYWRIGHT_JUNIT_OUTPUT_FILE="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
