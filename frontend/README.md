@@ -121,7 +121,7 @@ npm test
 npm run test:run
 ```
 
-Important: E2E tests are located in the root `/e2e` directory and use Bun's native test runner. See the main project README for details.
+Important: E2E tests are located in the root `/e2e` directory and use Playwright via Deno. See the main project README for details.
 
 ### Linting & Formatting
 
@@ -185,7 +185,7 @@ When you add a deeper dynamic segment, keep the same rule: the dynamic segment
 file is the layout for that branch, and its `index.tsx` is the leaf page for
 the default view under that segment.
 
-E2E tests are located in the root `/e2e` directory using Bun's native test runner.
+E2E tests are located in the root `/e2e` directory using Playwright via Deno.
 
 ## API Integration
 
@@ -220,5 +220,5 @@ npm start
 - [Solid Start](https://start.solidjs.com) - Meta-framework
 - [TailwindCSS](https://tailwindcss.com) - Styling
 - [Vitest](https://vitest.dev) - Unit testing
-- [Bun Test](https://bun.sh/docs/cli/test) - E2E testing (in /e2e directory)
+- Playwright - E2E testing (in /e2e directory, run through Deno)
 - [MSW](https://mswjs.io) - API mocking

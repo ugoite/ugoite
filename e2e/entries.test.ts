@@ -8,7 +8,7 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client";
+import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 async function settleUiLoading(page: Page): Promise<void> {
 	await page.waitForTimeout(150);

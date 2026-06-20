@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client";
+import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 const spaceId = "default";
 

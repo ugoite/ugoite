@@ -7,9 +7,8 @@ VERSION_INPUT="${UGOITE_VERSION:-}"
 WORK_ROOT_INPUT="${UGOITE_QUICKSTART_WORKDIR:-}"
 KEEP_WORK_ROOT="${UGOITE_QUICKSTART_KEEP_WORKDIR:-0}"
 ASSET_BASE_URL_INPUT="${UGOITE_RELEASE_ASSET_BASE_URL:-}"
-BACKEND_TIMEOUT_SECONDS="${UGOITE_BACKEND_START_TIMEOUT_SECONDS:-120}"
-FRONTEND_TIMEOUT_SECONDS="${UGOITE_FRONTEND_START_TIMEOUT_SECONDS:-120}"
 CLI_INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
+STACK_TIMEOUT_SECONDS="${UGOITE_STACK_START_TIMEOUT_SECONDS:-120}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -41,31 +40,28 @@ download_asset() {
   done
 }
 
+deno_json_query() {
+  local expression="$1"
+  local json_input="$2"
+  JSON_INPUT="$json_input" deno eval "
+const value = JSON.parse(Deno.env.get('JSON_INPUT') ?? '');
+const result = (${expression});
+if (typeof result === 'string') {
+  console.log(result);
+} else {
+  console.log(JSON.stringify(result));
+}
+"
+}
+
 if [ -z "$VERSION_INPUT" ]; then
   fail "UGOITE_VERSION must be set to the exact release version to verify"
 fi
 
-require_command curl
-require_command docker
-require_command npm
-require_command npx
-require_command python3
 require_command bash
-
-generate_secret() {
-  python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-}
-
-DEV_AUTH_MODE="${UGOITE_DEV_AUTH_MODE:-mock-oauth}"
-DEV_USER_ID="${UGOITE_DEV_USER_ID:-dev-local-user}"
-DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-release-compose-local-v1}"
-DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-$(generate_secret)}"
-AUTH_BEARER_SECRETS="${UGOITE_AUTH_BEARER_SECRETS:-${DEV_SIGNING_KID}:${DEV_SIGNING_SECRET}}"
-AUTH_BEARER_ACTIVE_KIDS="${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-${DEV_SIGNING_KID}}"
-DEV_AUTH_PROXY_TOKEN="${UGOITE_DEV_AUTH_PROXY_TOKEN:-$(generate_secret)}"
+require_command curl
+require_command deno
+require_command docker
 
 cleanup_mode="cleanup"
 if [ -n "$WORK_ROOT_INPUT" ]; then
@@ -83,19 +79,11 @@ fi
 STACK_DIR="$WORK_ROOT/release-stack"
 DOWNLOAD_DIR="$WORK_ROOT/release-assets"
 CLI_HOME="$WORK_ROOT/cli-home"
-if [ -n "$CLI_INSTALL_DIR_INPUT" ]; then
-  CLI_INSTALL_DIR="$CLI_INSTALL_DIR_INPUT"
-else
-  CLI_INSTALL_DIR="$CLI_HOME/.local/bin"
-fi
+CLI_INSTALL_DIR="${CLI_INSTALL_DIR_INPUT:-$CLI_HOME/.local/bin}"
 CLI_BINARY="$CLI_INSTALL_DIR/ugoite"
 ASSET_BASE_URL="${ASSET_BASE_URL_INPUT:-https://github.com/ugoite/ugoite/releases/download/v${VERSION_INPUT}}"
 COMPOSE_PROJECT="ugoite-release-quickstart-${VERSION_INPUT//[^A-Za-z0-9]/-}-$$"
 compose_cmd=(docker compose -p "$COMPOSE_PROJECT" -f docker-compose.release.yaml)
-PLAYWRIGHT_TESTS=(
-  smoke.test.ts
-  search-ui.test.ts
-)
 
 mkdir -p "$STACK_DIR/spaces" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
 chmod 0777 "$STACK_DIR/spaces"
@@ -112,7 +100,6 @@ cleanup() {
           "${compose_cmd[@]}" logs --no-color
       ) || true
     fi
-
     (
       cd "$STACK_DIR" &&
         "${compose_cmd[@]}" down --remove-orphans -v
@@ -120,16 +107,7 @@ cleanup() {
   fi
 
   if [ "$cleanup_mode" = "cleanup" ]; then
-    if ! rm -rf "$WORK_ROOT" 2>/dev/null; then
-      log "Host cleanup hit permission issues; retrying inside a container."
-      docker run --rm \
-        --user 0:0 \
-        -v "$WORK_ROOT:/work" \
-        --entrypoint /bin/sh \
-        "ghcr.io/ugoite/ugoite/backend:${VERSION_INPUT}" \
-        -c 'rm -rf /work/* /work/.[!.]* /work/..?*'
-      rm -rf "$WORK_ROOT"
-    fi
+    rm -rf "$WORK_ROOT"
   else
     log "Retained quick-start workdir: $WORK_ROOT"
   fi
@@ -140,101 +118,53 @@ trap cleanup EXIT HUP INT TERM
 
 log "Downloading released container quick-start assets for ${VERSION_INPUT}"
 download_asset "docker-compose.release.yaml" "$STACK_DIR/docker-compose.release.yaml"
-download_asset \
-  "ugoite-backend-v${VERSION_INPUT}.docker.tar.gz" \
-  "$DOWNLOAD_DIR/backend-image.tar.gz"
-download_asset \
-  "ugoite-frontend-v${VERSION_INPUT}.docker.tar.gz" \
-  "$DOWNLOAD_DIR/frontend-image.tar.gz"
+download_asset "ugoite-v${VERSION_INPUT}.docker.tar.gz" "$DOWNLOAD_DIR/ugoite-image.tar.gz"
 
-log "Loading released Docker images"
-gzip -dc "$DOWNLOAD_DIR/backend-image.tar.gz" | docker load
-gzip -dc "$DOWNLOAD_DIR/frontend-image.tar.gz" | docker load
+log "Loading released Docker image"
+gzip -dc "$DOWNLOAD_DIR/ugoite-image.tar.gz" | docker load
 
 cat >"$STACK_DIR/.env" <<EOF
 UGOITE_VERSION=${VERSION_INPUT}
 UGOITE_SPACES_DIR=./spaces
-UGOITE_FRONTEND_PORT=3000
-UGOITE_BACKEND_PORT=8000
-UGOITE_DEV_AUTH_MODE=${DEV_AUTH_MODE}
-UGOITE_DEV_USER_ID=${DEV_USER_ID}
-UGOITE_DEV_SIGNING_KID=${DEV_SIGNING_KID}
-UGOITE_DEV_SIGNING_SECRET=${DEV_SIGNING_SECRET}
-UGOITE_AUTH_BEARER_SECRETS=${AUTH_BEARER_SECRETS}
-UGOITE_AUTH_BEARER_ACTIVE_KIDS=${AUTH_BEARER_ACTIVE_KIDS}
-UGOITE_DEV_AUTH_PROXY_TOKEN=${DEV_AUTH_PROXY_TOKEN}
+UGOITE_PORT=8000
+UGOITE_DEV_AUTH_MODE=mock-oauth
+UGOITE_DEV_USER_ID=dev-local-user
+UGOITE_BOOTSTRAP_TOKEN=dev-token
 EOF
-mkdir -p "$STACK_DIR/spaces"
 
 log "Starting released compose stack"
 (
   cd "$STACK_DIR" &&
-    UGOITE_VERSION="$VERSION_INPUT" "${compose_cmd[@]}" up -d
+    "${compose_cmd[@]}" up -d
 )
 
-log "Waiting for backend"
+log "Waiting for Ugoite"
 bash "$SCRIPT_DIR/wait-for-http.sh" \
   "http://127.0.0.1:8000/health" \
-  "$BACKEND_TIMEOUT_SECONDS"
-log "Waiting for frontend"
+  "$STACK_TIMEOUT_SECONDS"
 bash "$SCRIPT_DIR/wait-for-http.sh" \
-  "http://127.0.0.1:3000/login" \
-  "$FRONTEND_TIMEOUT_SECONDS"
+  "http://127.0.0.1:8000/login" \
+  "$STACK_TIMEOUT_SECONDS"
 
-E2E_AUTH_BEARER_TOKEN="$(
-  python3 - <<'PY'
-import http.cookies
-import json
-from urllib.parse import unquote
-from urllib.request import Request, urlopen
-
-request = Request("http://127.0.0.1:3000/api/auth/mock-oauth", method="POST")
-with urlopen(request) as response:
-    payload = json.load(response)
-    bearer_token = payload.get("bearer_token")
-    if isinstance(bearer_token, str) and bearer_token:
-        print(bearer_token)
-        raise SystemExit(0)
-
-    for set_cookie in response.headers.get_all("Set-Cookie", []):
-        cookie = http.cookies.SimpleCookie()
-        cookie.load(set_cookie)
-        morsel = cookie.get("ugoite_auth_bearer_token")
-        if morsel is not None and morsel.value:
-            print(unquote(morsel.value))
-            raise SystemExit(0)
-
-raise SystemExit(
-    "release quick-start auth proxy did not return a bearer_token or auth cookie"
-)
-PY
-)"
+login_payload="$(curl -fsS -X POST http://127.0.0.1:8000/auth/mock-oauth)"
+E2E_AUTH_BEARER_TOKEN="$(deno_json_query "value.bearer_token" "$login_payload")"
+if [ -z "$E2E_AUTH_BEARER_TOKEN" ] || [ "$E2E_AUTH_BEARER_TOKEN" = "null" ]; then
+  fail "release quick-start mock OAuth did not return a bearer token"
+fi
 export E2E_AUTH_BEARER_TOKEN
-
-log "Installing Playwright dependencies"
-(
-  cd "$REPO_ROOT/e2e"
-  npm ci
-  npx playwright install --with-deps chromium
-)
 
 log "Running release browser quick-start stories"
 (
   cd "$REPO_ROOT/e2e"
-  playwright_junit_output_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/release-quickstart-junit.xml}"
-  mkdir -p "$(dirname "$playwright_junit_output_file")"
-  FRONTEND_URL="http://127.0.0.1:3000" \
+  FRONTEND_URL="http://127.0.0.1:8000" \
     BACKEND_URL="http://127.0.0.1:8000" \
     E2E_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
-    PLAYWRIGHT_CI_REPORTER="${PLAYWRIGHT_CI_REPORTER:-junit}" \
-    PLAYWRIGHT_JUNIT_OUTPUT_FILE="$playwright_junit_output_file" \
-    npx playwright test "${PLAYWRIGHT_TESTS[@]}"
+    deno task smoke
 )
 
 log "Installing released CLI for remote backend verification"
-CLI_PATH="$CLI_INSTALL_DIR:$PATH"
 HOME="$CLI_HOME" \
-  PATH="$CLI_PATH" \
+  PATH="$CLI_INSTALL_DIR:$PATH" \
   UGOITE_VERSION="$VERSION_INPUT" \
   UGOITE_INSTALL_DIR="$CLI_INSTALL_DIR" \
   /bin/bash "$SCRIPT_DIR/install-ugoite-cli.sh"
@@ -249,101 +179,48 @@ printf '%s' "$help_output" | grep -Fq "Ugoite CLI - Knowledge base management" |
 )
 log "Verified: installed CLI answers --help"
 
-HOME="$CLI_HOME" PATH="$CLI_PATH" "$CLI_BINARY" \
+HOME="$CLI_HOME" PATH="$CLI_INSTALL_DIR:$PATH" "$CLI_BINARY" \
   config set --mode backend --backend-url http://127.0.0.1:8000 >/dev/null
-
-login_output="$(
-  HOME="$CLI_HOME" \
-    PATH="$CLI_PATH" \
-    UGOITE_DEV_AUTH_PROXY_TOKEN="$DEV_AUTH_PROXY_TOKEN" \
-    "$CLI_BINARY" auth login --mock-oauth
-)"
-case "$login_output" in
-  export\ UGOITE_AUTH_BEARER_TOKEN=*)
-    # `ugoite auth login` prints a POSIX-shell-quoted export; parse it back to the raw token.
-    UGOITE_AUTH_BEARER_TOKEN="$(
-      python3 - "$login_output" <<'PY'
-import shlex
-import sys
-
-command = sys.argv[1]
-parts = shlex.split(command, posix=True)
-if len(parts) != 2 or parts[0] != "export":
-    raise SystemExit("unexpected export command")
-
-name, separator, value = parts[1].partition("=")
-if name != "UGOITE_AUTH_BEARER_TOKEN" or separator != "=":
-    raise SystemExit("unexpected bearer token export format")
-
-sys.stdout.write(value)
-PY
-    )" || fail "auth login --mock-oauth did not print a parseable bearer token export"
-    export UGOITE_AUTH_BEARER_TOKEN
-    ;;
-  *)
-    fail "auth login --mock-oauth did not print a bearer token export"
-    ;;
-esac
 
 profile_output="$(
   HOME="$CLI_HOME" \
-    PATH="$CLI_PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
+    PATH="$CLI_INSTALL_DIR:$PATH" \
+    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
     "$CLI_BINARY" auth profile
 )"
-python3 - "$profile_output" <<'PY'
-import json
-import sys
-
-profile = json.loads(sys.argv[1])
-value = profile.get("UGOITE_AUTH_BEARER_TOKEN")
-if not isinstance(value, str) or not value:
-    raise SystemExit("missing active CLI bearer token profile")
-PY
+active_token="$(deno_json_query "value.UGOITE_AUTH_BEARER_TOKEN ?? ''" "$profile_output")"
+if [ -z "$active_token" ]; then
+  fail "missing active CLI bearer token profile"
+fi
 log "Verified: CLI auth profile exposes a bearer token"
 
 space_list_before="$(
   HOME="$CLI_HOME" \
-    PATH="$CLI_PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
+    PATH="$CLI_INSTALL_DIR:$PATH" \
+    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
     "$CLI_BINARY" space list
 )"
-python3 - "$space_list_before" <<'PY'
-import json
-import sys
-
-spaces = json.loads(sys.argv[1])
-if not any(isinstance(item, dict) and item.get("name") == "default" for item in spaces):
-    raise SystemExit("default space missing from remote CLI space list")
-PY
+has_default="$(deno_json_query "value.some((item) => item?.name === 'default')" "$space_list_before")"
+if [ "$has_default" != "true" ]; then
+  fail "default space missing from remote CLI space list"
+fi
 log "Verified: remote CLI can list release backend spaces"
 
 remote_space="release-quickstart-remote-$(date +%s)"
-legacy_space="${remote_space}-legacy"
 HOME="$CLI_HOME" \
-  PATH="$CLI_PATH" \
-  UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
+  PATH="$CLI_INSTALL_DIR:$PATH" \
+  UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
   "$CLI_BINARY" space create "$remote_space" >/dev/null
-HOME="$CLI_HOME" \
-  PATH="$CLI_PATH" \
-  UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
-  "$CLI_BINARY" create-space "$legacy_space" >/dev/null
 space_list_after="$(
   HOME="$CLI_HOME" \
-    PATH="$CLI_PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$UGOITE_AUTH_BEARER_TOKEN" \
+    PATH="$CLI_INSTALL_DIR:$PATH" \
+    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
     "$CLI_BINARY" space list
 )"
-python3 - "$remote_space" "$legacy_space" "$space_list_after" <<'PY'
-import json
-import sys
-
-space_names = sys.argv[1:3]
-spaces = json.loads(sys.argv[3])
-for space_name in space_names:
-    if not any(isinstance(item, dict) and item.get("name") == space_name for item in spaces):
-        raise SystemExit(f"{space_name} missing from remote CLI space list")
-PY
-log "Verified: remote CLI can create and observe release backend spaces via space create and create-space"
+has_remote="$(REMOTE_SPACE="$remote_space" deno_json_query "value.some((item) => item?.name === Deno.env.get('REMOTE_SPACE'))" "$space_list_after")"
+if [ "$has_remote" != "true" ]; then
+  fail "${remote_space} missing from remote CLI space list"
+fi
+log "Verified: remote CLI can create and observe release backend spaces"
 
 log "Release container quick-start verification passed for ${VERSION_INPUT}"

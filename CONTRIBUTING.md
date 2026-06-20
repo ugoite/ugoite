@@ -20,7 +20,7 @@ commands, hooks, and CI-parity checks:
 | Path | Choose it when | What it does for you |
 | --- | --- | --- |
 | Managed host toolchain | You are happy installing the repo toolchain on your machine or you are not using VS Code/Codespaces | Run `mise run setup` yourself to install the shared dependencies, the fast default hook chain, and the heavier pre-push coverage hook, so local commits stay quick by default. |
-| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `npx playwright install --with-deps chromium` for you. |
+| Devcontainer / GitHub Codespaces | You want a reproducible VS Code/Codespaces workspace or do not want to install the full toolchain on your host | `.devcontainer/devcontainer.json` preinstalls `mise`, `gh`, `oathtool`, then runs `mise install`, `mise run setup`, and `deno task e2e:install:browsers` for you. |
 
 If you are on the managed host toolchain path, start with:
 
@@ -28,17 +28,16 @@ If you are on the managed host toolchain path, start with:
 mise run setup
 ```
 
-That path installs the shared dependencies and runs `uvx pre-commit install`
-plus the pre-push hook install, so local commits use the fast hook chain by
-default while the heavier coverage gates still run before push. The devcontainer
-runs that same bootstrap for you during container creation.
+That path installs the shared dependencies and prepares the browser test
+runtime. The devcontainer runs that same bootstrap for you during container
+creation.
 
 Common follow-up commands inside either setup:
 
 ```bash
 mise run dev
 mise run test
-mise run test:low-memory
+mise run ci
 ```
 
 Before adding a new workflow-specific command, check `.github/workflows/` and
@@ -128,34 +127,25 @@ value:
 
 | Event | What it covers |
 | --- | --- |
-| `push` on `main` | Fast, low-noise checks plus post-merge automation such as `Shell CI`, `YAML Workflow CI`, `README Command Guard`, `Release CI`, `Docsite Pages`, and `CodeQL` |
-| `pull_request` | The normal developer feedback set: `Commitlint CI`, `CodeQL`, `Devcontainer CI`, `Docsite CI`, `Frontend CI`, `Python CI`, plus the cheap static checks |
-| `merge_group` | The final gate before `main`: `Docker Build CI`, `E2E Tests`, `Rust CI`, `SBOM CI`, `ScanCode`, and `Release Quickstart Verify CI` |
+| `pull_request` | `ci-required`, which runs `mise run ci` |
+| `merge_group` | `ci-required`, which runs `mise run ci:merge` |
+| `push` on `main` | `ci-required`, which runs `mise run ci:merge` |
 
 push on `main` is reserved for fast, low-noise checks and post-merge automation.
 `pull_request` keeps the normal developer feedback set.
 `merge_group` is the final gate for expensive validation.
 
-Keep `.github/required-status-checks.json` as the machine-readable source of
-truth, keep `docs/spec/testing/ci-cd.md` as the human-readable policy, and
-update both whenever a workflow moves between those event buckets.
-
-Local hooks follow the same split:
-
-- `uvx pre-commit run --all-files` is the fast default commit-time path
-- `uvx pre-commit run --hook-stage pre-push --all-files` exercises the heavier
-  coverage gates before push
-- `uvx pre-commit install --hook-type pre-push` keeps the heavier stage
-  available automatically after `mise run setup`
+Keep `.github/workflows/ci.yml` and `mise.toml` as the executable source of
+truth, and keep `docs/spec/testing/ci-cd.md` as the human-readable policy when
+updating the gate shape.
 
 When CodeQL or other branch-protection policy changes depend on GitHub ruleset
 state, update the live repository ruleset as well as the checked-in JSON. PR
 1559 switched `main only pr` to require the `CodeQL` summary check directly so the branch gate no longer depends on the separate code-quality rule, and merge queue plus `main` merge were re-verified after that repository-side update.
 
-local validation maps to the same CI event split: use `mise run test` for the
-repo baseline, `mise run test:low-memory` for devcontainers, Codespaces, and
-memory-constrained machines, `mise run test:docs` for docs, spec, or REQ-traceability changes,
-`mise run e2e` for browser flows, and focused surface commands when only one
+Local validation maps to the same CI event split: use `mise run ci` for pull
+request parity, `mise run ci:merge` before merging or queueing, `mise run
+ci:release` for release artifacts, and focused surface commands when only one
 package changed.
 
 ## 7. Prepare the PR as one coherent change

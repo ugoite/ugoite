@@ -426,11 +426,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             print_json(&serde_json::json!({"status": "ok", "mode": mode}));
         }
         SpaceSubCmd::ServiceAccountList { space_id } => {
-            if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/service-accounts")).await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                bail!(
+                    "space service-account-list for {space_id} is not available in backend/api mode in this release"
+                );
             }
             bail!(
                 "{}",
@@ -442,17 +441,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             display_name,
             scopes,
         } => {
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/service-accounts"),
-                    &serde_json::json!({
-                        "display_name": display_name,
-                        "scopes": scopes,
-                    }),
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                bail!(
+                    "space service-account-create for {space_id} ({display_name}, scopes: {}) is not available in backend/api mode in this release",
+                    scopes.join(",")
+                );
             }
             bail!(
                 "{}",
@@ -474,13 +467,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             limit,
         } => {
             let (_, space_id) = parse_space_path(&space_path);
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!(
-                    "{base}/spaces/{space_id}/audit-events?offset={offset}&limit={limit}"
-                ))
-                .await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                bail!(
+                    "space audit-events for {space_id} (offset {offset}, limit {limit}) is not available in backend/api mode in this release"
+                );
             }
             bail!("{}", backend_api_mode_error(&config, "audit-events"));
         }
