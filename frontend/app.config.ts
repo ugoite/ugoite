@@ -102,13 +102,23 @@ export default defineConfig({
       },
     },
     resolve: {
+      conditions: ["development", "browser", "solid"],
       dedupe: [
+        "@solidjs/router",
+        "@solidjs/start",
         "@codemirror/autocomplete",
         "@codemirror/lang-sql",
         "@codemirror/lint",
         "@codemirror/state",
         "@codemirror/view",
+        "solid-js",
+        "solid-js/web",
       ],
+    },
+    ssr: {
+      resolve: {
+        conditions: ["development", "node", "solid"],
+      },
     },
   },
 });
