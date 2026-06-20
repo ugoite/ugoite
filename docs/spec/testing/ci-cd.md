@@ -285,8 +285,7 @@ jobs:
     - all other pull_request changes => full
   e2e:
     - cd docsite && bun install --frozen-lockfile
-    - cd e2e && npm ci
-    - cd e2e && npx playwright install --with-deps chromium
+    - deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install chromium
     - download and load pre-built backend/frontend images
     - Start backend (background)
     - Start frontend (background)
@@ -316,7 +315,7 @@ jobs:
     - docker load the published images
     - generate an install-specific release `.env` file for the explicit demo flow
     - UGOITE_VERSION=<version> docker compose -f docker-compose.release.yaml up -d
-    - npx playwright test smoke.test.ts search-ui.test.ts
+    - deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts search-ui.test.ts
     - install the released CLI and verify backend-mode auth + `space create`
 ```
 
@@ -419,7 +418,7 @@ health cannot depend on a disappearing required check. The canonical devcontaine
 The base image tag stays explicitly pinned in `devcontainer.json`. Devcontainer
 CI also sets `UGOITE_SKIP_PLAYWRIGHT_DEPS=1` so the CI-only smoke path can skip
 the apt and browser-dependency install while contributor bootstrap keeps the full
-`npx playwright install --with-deps chromium` step.
+`deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install chromium` step.
 
 ## Rust CI
 
