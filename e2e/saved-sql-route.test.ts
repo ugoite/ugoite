@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client";
+import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 const spaceId = "default";
 

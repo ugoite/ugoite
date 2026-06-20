@@ -7,7 +7,7 @@
  */
 
 import { expect, test } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client";
+import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
 
 test.describe("Smoke Tests", () => {
 	test.beforeAll(async ({ request }) => {

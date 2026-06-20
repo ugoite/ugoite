@@ -4,8 +4,7 @@ Use this guide when you want the human-facing explanation of how authentication
 works across the browser, CLI, and backend today.
 
 This guide explains the current auth model. If you need the exact
-`passkey-totp` vs `mock-oauth` comparison or why source and published defaults
-differ, use [Local Development Authentication and Login](local-dev-auth-login.md)
+implemented local login mode, use [Local Development Authentication and Login](local-dev-auth-login.md)
 as the canonical auth-mode reference. If you are actively running the local
 development stack, read that guide next: it is the step-by-step workflow for
 `mise run dev`, `/login`, and `ugoite auth login`.
@@ -27,8 +26,8 @@ MCP access. The implemented authentication building blocks are:
 
 - signed or static **bearer tokens** for interactive user sessions
 - **API keys** for service-style access
-- explicit local development login flows for `passkey-totp` and the local demo
-  login mode (`mock-oauth`)
+- the explicit local development login flow for the local demo login mode
+  (`mock-oauth`)
 
 Some security specifications also describe future passkey/WebAuthn directions.
 Treat those as planned work unless a guide explicitly tells you they are already
@@ -61,8 +60,8 @@ experiences:
 
 | Local dev auth mode | What it is for | How login works |
 | --- | --- | --- |
-| `passkey-totp` | Default local development path | You choose a local admin username, prove a current 2FA code, then sign in explicitly in the browser or CLI |
-| `mock-oauth` | Development-only local demo login path | You still sign in explicitly after startup, but the backend issues a bearer token through the local demo login route instead of username + TOTP. No external OAuth provider is involved. |
+| `mock-oauth` | Default local development path | You still sign in explicitly after startup, but the backend issues a bearer token through the local demo login route. No external OAuth provider is involved. |
+| `passkey-totp` | Planned future path | Not advertised by the current Rust server until the endpoint is implemented end to end. |
 
 Both modes are intentionally **explicit login** flows. Startup prepares login
 context; it does not silently inject an already-authenticated session.
@@ -76,13 +75,8 @@ The browser experience is meant to feel like a real application session:
 3. complete that login flow
 4. receive a bearer token only after successful authentication
 
-In `passkey-totp`, the form asks for the same username and current 2FA code that
-match your local development setup.
-
-In `mock-oauth`, the page offers an explicit local demo login action instead.
-The login page follows whichever explicit local auth mode the backend
-advertises. Use the canonical local auth guide above for the exact
-`passkey-totp` and `mock-oauth` steps.
+In `mock-oauth`, the page offers an explicit local demo login action. Use the
+canonical local auth guide above for the exact steps.
 
 After login, the frontend proxy stores the bearer token in an HttpOnly browser
 session cookie for proxied `/api/*` requests. Frontend JavaScript does not read

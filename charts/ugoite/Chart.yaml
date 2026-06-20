@@ -1,6 +1,6 @@
 apiVersion: v2
 name: ugoite
-description: Minimal Helm chart for the published Ugoite frontend and backend topology
+description: Unsupported placeholder for a future single-image Ugoite Helm chart
 type: application
 version: 0.0.1
 appVersion: "stable"

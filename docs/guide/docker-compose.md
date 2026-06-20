@@ -17,35 +17,23 @@ If you want pre-built release images from GHCR instead of local builds, use
 
 ## Start the stack
 
-If you skip the exports below, `docker compose up --build` fails immediately
-with the missing-variable error from `docker-compose.yaml`.
-
 ```bash
-export UGOITE_DEV_SIGNING_SECRET="$(openssl rand -hex 32)"
-export UGOITE_DEV_AUTH_PROXY_TOKEN="$(openssl rand -hex 32)"
 docker compose up --build
 ```
 
 The stack exposes:
 
-- Backend API: http://127.0.0.1:8000
-- Frontend UI: http://127.0.0.1:3000
+- Browser UI login: http://127.0.0.1:8000/login
+- Backend API: http://127.0.0.1:8000/api
 
-The backend persists data in `./spaces` on the host. You can safely remove the
+The server persists data in `./spaces` on the host. You can safely remove the
 folder to reset local data.
-
-The source Compose file expects unique values for
-`UGOITE_DEV_SIGNING_SECRET` and `UGOITE_DEV_AUTH_PROXY_TOKEN` before startup.
-Use at least 32 characters of random secret material for both values.
-The backend derives `UGOITE_AUTH_BEARER_SECRETS` and
-`UGOITE_AUTH_BEARER_ACTIVE_KIDS` from that signing material automatically, so
-you only need to export the signing secret and proxy token once per local stack.
 
 The shipped Compose file enables the explicit local demo login mode
 (`mock-oauth`). On startup the backend bootstraps the configured
 `UGOITE_DEV_USER_ID` into the reserved `admin-space`, so that user becomes the
 local admin who can create new spaces after signing in at
-`http://127.0.0.1:3000/login`.
+`http://127.0.0.1:8000/login`.
 
 ## Verify status and logs
 
@@ -54,15 +42,10 @@ docker compose ps
 ```
 
 ```bash
-docker compose logs -f backend
+docker compose logs -f ugoite
 ```
 
-```bash
-docker compose logs -f frontend
-```
-
-If the stack fails before login, the browser stays blank, or the frontend and
-backend cannot reach each other, continue with
+If the stack fails before login or the browser stays blank, continue with
 [Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md).
 
 ## Stop the stack

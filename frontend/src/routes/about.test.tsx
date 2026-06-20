@@ -46,7 +46,7 @@ describe("/about", () => {
 
 		render(() => <About />);
 
-		expect(screen.getByText("FastAPI (Python 3.13+)")).toBeInTheDocument();
+		expect(screen.getByText("Rust (Axum)")).toBeInTheDocument();
 		setLocale("ja");
 
 		expect(screen.getByRole("heading", { name: "Ugoite について" })).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("/about", () => {
 		expect(screen.getByRole("heading", { name: "仕組み" })).toBeInTheDocument();
 		expect(screen.getByText("技術スタック")).toBeInTheDocument();
 		expect(screen.getByText("SolidStart + Tailwind CSS")).toBeInTheDocument();
-		expect(screen.getByText("FastAPI (Python 3.13+)")).toBeInTheDocument();
+		expect(screen.getByText("Rust (Axum)")).toBeInTheDocument();
 	});
 
 	it("REQ-OPS-015: authenticated about page keeps Open Spaces on /spaces", async () => {

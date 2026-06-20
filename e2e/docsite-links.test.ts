@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server";
+import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server.ts";
 
 let docsiteServer: DocsiteServer | undefined;
 

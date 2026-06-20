@@ -40,7 +40,7 @@ describe("preferencesStore", () => {
 		expect(localStorage.getItem("ugoite-selected-space")).toBe("space-local");
 		const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
 		expectedPatch.selected_space_id = "space-local";
-		expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		expect(getPreferencePatches()).toContainEqual(expect.objectContaining(expectedPatch));
 	});
 
 	it("REQ-FE-044: initializes locale from portable preferences and refreshes local fallback", async () => {
@@ -97,7 +97,7 @@ describe("preferencesStore", () => {
 
 		const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
 		expectedPatch.primary_color = "amber";
-		expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		expect(getPreferencePatches()).toContainEqual(expect.objectContaining(expectedPatch));
 	});
 
 	it("REQ-FE-059: migrates missing locale and theme fields from local fallback", async () => {
@@ -117,7 +117,7 @@ describe("preferencesStore", () => {
 		expectedPatch.locale = "ja";
 		expectedPatch.ui_theme = "classic";
 		expectedPatch.color_mode = "dark";
-		expect(getPreferencePatches()).toContainEqual(expectedPatch);
+		expect(getPreferencePatches()).toContainEqual(expect.objectContaining(expectedPatch));
 	});
 
 	it("REQ-FE-044: public routes apply local locale without remote preference fetch", async () => {

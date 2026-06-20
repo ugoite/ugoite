@@ -5,11 +5,13 @@ use axum::{
 use serde_json::Value;
 use std::{fs, time::SystemTime};
 use tower::ServiceExt;
+use ugoite_core::service::UgoiteService;
 use ugoite_server::{app, openapi_snapshot, AppState};
 
 const AUTH_FIXTURE_TOKENS: &str = r#"{
     "test-token":{"user_id":"test-user"},
     "alice-token":{"user_id":"alice"},
+    "bob-token":{"user_id":"bob"},
     "dev-token":{"user_id":"dev-local-user"}
 }"#;
 
@@ -48,6 +50,41 @@ async fn health_and_openapi_are_public() {
 }
 
 #[tokio::test]
+async fn openapi_snapshot_has_methods_for_runtime_routes() {
+    let snapshot = openapi_snapshot();
+    let paths = snapshot["paths"].as_object().expect("paths object");
+    assert!(!paths.is_empty());
+    for (path, value) in paths {
+        assert!(
+            value.as_object().is_some_and(|object| !object.is_empty()),
+            "OpenAPI path object must not be empty: {path}"
+        );
+    }
+
+    for (path, method) in [
+        ("/spaces", "get"),
+        ("/spaces", "post"),
+        ("/spaces/{space_id}", "patch"),
+        (
+            "/spaces/{space_id}/entries/{entry_id}/history/{revision_id}",
+            "get",
+        ),
+        ("/spaces/{space_id}/entries/{entry_id}/restore", "post"),
+        ("/spaces/{space_id}/forms", "post"),
+        ("/spaces/{space_id}/sql-sessions", "post"),
+        ("/spaces/{space_id}/assets/{asset_id}", "delete"),
+    ] {
+        assert!(
+            paths
+                .get(path)
+                .and_then(|methods| methods.get(method))
+                .is_some(),
+            "OpenAPI snapshot missing {method} {path}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn protected_routes_require_authentication() {
     let response = app(AppState::new("memory://server-auth").unwrap())
         .oneshot(Request::get("/spaces").body(Body::empty()).unwrap())
@@ -59,6 +96,7 @@ async fn protected_routes_require_authentication() {
 #[tokio::test]
 async fn bootstrap_default_space_from_env_is_idempotent() {
     std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
     let state = AppState::new("memory://server-bootstrap").unwrap();
     state.bootstrap_default_space_from_env().await.unwrap();
@@ -83,6 +121,43 @@ async fn bootstrap_default_space_from_env_is_idempotent() {
         .iter()
         .any(|space| space["name"] == "admin-space" && space["is_admin_space"] == true));
     std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+}
+
+#[tokio::test]
+async fn bootstrap_default_space_repairs_existing_owner_membership() {
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
+    set_auth_fixture();
+    let root_uri = "memory://server-bootstrap-existing-membership";
+    UgoiteService::new(root_uri)
+        .unwrap()
+        .create_space("default")
+        .await
+        .unwrap();
+
+    let state = AppState::new(root_uri).unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+
+    let response = app(state)
+        .oneshot(authenticated(
+            Request::post("/spaces/default/forms")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r##"{
+                        "name": "Entry",
+                        "version": 1,
+                        "template": "# Entry\n\n## Body\n",
+                        "fields": {"Body": {"type": "markdown"}}
+                    }"##,
+                ))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 }
 
 #[tokio::test]
@@ -104,11 +179,13 @@ async fn static_dir_serves_frontend_and_api_prefix() {
     std::env::set_var("UGOITE_STATIC_DIR", static_dir.as_os_str());
 
     std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     let state = AppState::new("memory://server-static").unwrap();
     state.bootstrap_default_space_from_env().await.unwrap();
     let router = app(state);
     std::env::remove_var("UGOITE_STATIC_DIR");
     std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 
     let page = router
         .clone()
@@ -340,19 +417,18 @@ async fn members_lifecycle_contract() {
 
     let invited = router
         .clone()
-        .oneshot(authenticated_with(
+        .oneshot(authenticated(
             Request::post("/spaces/team/members/invitations")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"user_id":"bob","role":"editor"}"#))
                 .unwrap(),
-            "alice-token",
         ))
         .await
         .unwrap();
     assert_eq!(invited.status(), StatusCode::CREATED);
     let invited_body = response_json(invited).await;
     assert_eq!(invited_body["invitation"]["state"], "pending");
-    assert_eq!(invited_body["invitation"]["invited_by"], "alice");
+    assert_eq!(invited_body["invitation"]["invited_by"], "test-user");
     let token = invited_body["invitation"]["token"].as_str().unwrap();
 
     let listed = router
@@ -373,7 +449,7 @@ async fn members_lifecycle_contract() {
                 .header("content-type", "application/json")
                 .body(Body::from(format!(r#"{{"token":"{token}"}}"#)))
                 .unwrap(),
-            "alice-token",
+            "bob-token",
         ))
         .await
         .unwrap();
@@ -403,6 +479,161 @@ async fn members_lifecycle_contract() {
         .unwrap();
     assert_eq!(revoked.status(), StatusCode::OK);
     assert_eq!(response_json(revoked).await["member"]["state"], "revoked");
+}
+
+#[tokio::test]
+async fn space_membership_authorization_contract() {
+    set_auth_fixture();
+    let router = app(AppState::new("memory://server-members-authz").unwrap());
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(authenticated(
+                Request::post("/spaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"team"}"#))
+                    .unwrap(),
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CREATED
+    );
+
+    let non_member_read = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::get("/spaces/team").body(Body::empty()).unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(non_member_read.status(), StatusCode::FORBIDDEN);
+
+    let invited = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/members/invitations")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"user_id":"alice","role":"viewer"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(invited.status(), StatusCode::CREATED);
+    let token = response_json(invited).await["invitation"]["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let wrong_user_accept = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::post("/spaces/team/members/accept")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"token":"{token}"}}"#)))
+                .unwrap(),
+            "bob-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(wrong_user_accept.status(), StatusCode::FORBIDDEN);
+
+    let accepted = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::post("/spaces/team/members/accept")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"token":"{token}"}}"#)))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(accepted.status(), StatusCode::OK);
+
+    let viewer_read = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::get("/spaces/team").body(Body::empty()).unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(viewer_read.status(), StatusCode::OK);
+
+    let viewer_patch = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::patch("/spaces/team")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"settings":{"default_form":"Entry"}}"#))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(viewer_patch.status(), StatusCode::FORBIDDEN);
+
+    let promoted = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/members/alice/role")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"role":"editor"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(promoted.status(), StatusCode::OK);
+
+    let editor_write = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::post("/spaces/team/entries")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"id":"viewer-now-editor","markdown":"---\nform: Entry\n---\n# Editor\n\n## Body\nhello"}"#,
+                ))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(editor_write.status(), StatusCode::CREATED);
+
+    let editor_space_patch = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::patch("/spaces/team")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"settings":{"default_form":"Entry"}}"#))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(editor_space_patch.status(), StatusCode::FORBIDDEN);
+
+    let revoked = router
+        .clone()
+        .oneshot(authenticated(
+            Request::delete("/spaces/team/members/alice")
+                .body(Body::empty())
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), StatusCode::OK);
+
+    let revoked_read = router
+        .oneshot(authenticated_with(
+            Request::get("/spaces/team").body(Body::empty()).unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(revoked_read.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
