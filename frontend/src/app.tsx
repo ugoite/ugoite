@@ -1,4 +1,4 @@
-import { A, Router } from "@solidjs/router";
+import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { type JSXElement, Suspense } from "solid-js";
 import Nav from "~/components/Nav";

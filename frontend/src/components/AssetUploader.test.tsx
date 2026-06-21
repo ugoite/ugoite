@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { AssetUploader } from "./AssetUploader";
 import { setLocale } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
-import { A } from "@solidjs/router";
 
 describe("AssetUploader", () => {
   beforeEach(() => {
