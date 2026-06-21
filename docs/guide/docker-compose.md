@@ -21,10 +21,17 @@ If you want pre-built release images from GHCR instead of local builds, use
 docker compose up --build
 ```
 
+The stack publishes the server on a loopback-only host port chosen by Docker.
+After startup, discover the browser/API URL with:
+
+```bash
+docker compose port ugoite 8000
+```
+
 The stack exposes:
 
-- Browser UI login: http://127.0.0.1:8000/login
-- Backend API: http://127.0.0.1:8000/api
+- Browser UI login: the published loopback port plus `/login`
+- Backend API: the published loopback port plus `/api`
 
 The server persists data in `./spaces` on the host. You can safely remove the
 folder to reset local data.
@@ -32,8 +39,8 @@ folder to reset local data.
 The shipped Compose file enables the explicit local demo login mode
 (`mock-oauth`). On startup the backend bootstraps the configured
 `UGOITE_DEV_USER_ID` into the reserved `admin-space`, so that user becomes the
-local admin who can create new spaces after signing in at
-`http://127.0.0.1:8000/login`.
+local admin who can create new spaces after signing in at the published
+loopback login URL.
 
 ## Verify status and logs
 
@@ -64,9 +71,9 @@ rm -rf ./spaces
 
 - The backend container enables remote access internally so the frontend can
   reach it across the Compose network.
-- The source Compose stack binds both published ports to `127.0.0.1` by
-  default, so the mock-oauth browser flow stays local-only unless you
-  intentionally widen the `ports:` mappings.
+- The source Compose stack keeps the published server on `127.0.0.1` with a
+  Docker-assigned host port, so the mock-oauth browser flow stays local-only
+  unless you intentionally widen the `ports:` mapping.
 - The configured `UGOITE_DEV_USER_ID` becomes the local `admin-space` admin for
   this source-based Compose stack.
 - If you want the canonical contributor workflow, follow

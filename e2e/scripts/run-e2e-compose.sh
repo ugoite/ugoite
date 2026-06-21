@@ -68,9 +68,20 @@ fi
 echo "Starting services via docker-compose.e2e.yml..."
 "${compose_cmd[@]}" up -d
 
-echo "Waiting for backend (port 8000)..."
+compose_host_port="$("${compose_cmd[@]}" port ugoite 8000 | sed -E 's/.*:([0-9]+)$/\1/')"
+if [ -z "$compose_host_port" ]; then
+  echo "✗ ERROR: could not determine the published compose port"
+  "${compose_cmd[@]}" logs ugoite
+  exit 1
+fi
+
+export FRONTEND_URL="http://127.0.0.1:${compose_host_port}"
+export BACKEND_URL="http://127.0.0.1:${compose_host_port}"
+
+echo "Published compose port: ${compose_host_port}"
+echo "Waiting for backend (${BACKEND_URL})..."
 for i in $(seq 1 "$backend_start_timeout"); do
-  if curl -sf "http://localhost:8000/health" >/dev/null 2>&1; then
+  if curl -sf "${BACKEND_URL%/}/health" >/dev/null 2>&1; then
     echo "✓ Backend is ready!"
     break
   fi

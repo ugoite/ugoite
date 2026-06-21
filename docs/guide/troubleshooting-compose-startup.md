@@ -15,18 +15,31 @@ Use the same Compose command prefix that you used to start the stack:
 - Source checkout: `docker compose`
 - Published release quick start: `docker compose -f docker-compose.release.yaml`
 
-## 1. Check whether port 8000 is already occupied
+## 1. Check the published compose port
+
+The source Compose stack now publishes the server on a loopback-only host port
+chosen by Docker. After startup, inspect the active browser/API URL with:
+
+```bash
+docker compose port ugoite 8000
+```
+
+If you intentionally pin a fixed host port with a local override, check that
+port for conflicts before retrying.
 
 ```bash
 ss -ltnp | grep -E ':8000\s'
 ```
 
-- If another local process already owns this port, stop that process
-  before retrying Ugoite.
+- If another local process already owns your pinned host port, stop that
+  process before retrying Ugoite.
 - For the published quick start you can also change `UGOITE_PORT` in `.env`,
   then run the same release compose commands again.
 
 ## 2. Confirm backend readiness before debugging the frontend
+
+If `docker compose port ugoite 8000` printed a different loopback port, use
+that port in the health check below.
 
 ```bash
 curl -sS http://localhost:8000/health

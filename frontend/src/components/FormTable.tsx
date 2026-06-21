@@ -1,849 +1,969 @@
 import {
-	For,
-	createResource,
-	createSignal,
-	createMemo,
-	untrack,
-	Show,
-	onMount,
-	onCleanup,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
 } from "solid-js";
-import type { Form, EntryRecord } from "~/lib/types";
+import type { EntryRecord, Form } from "~/lib/types";
 import { entryApi } from "~/lib/entry-api";
 import { searchApi } from "~/lib/search-api";
-import { replaceFirstH1, ensureFormFrontmatter, updateH2Section } from "~/lib/markdown";
+import {
+  ensureFormFrontmatter,
+  replaceFirstH1,
+  updateH2Section,
+} from "~/lib/markdown";
 
 interface FormTableProps {
-	spaceId: string;
-	entryForm: Form;
-	onEntryClick: (entryId: string) => void;
+  spaceId: string;
+  entryForm: Form;
+  onEntryClick: (entryId: string) => void;
 }
 
 type SortDirection = "asc" | "desc" | null;
 
 /** Helper to filter entries by title or properties */
-function filterEntries(entries: EntryRecord[], fields: string[], query: string) {
-	if (!query) return entries;
-	const text = query.toLowerCase();
-	return entries.filter((entry) => {
-		/* v8 ignore start */
-		const title = (entry.title || "").toLowerCase();
-		if (title.includes(text)) return true;
-		for (const field of fields) {
-			const val = String(entry.properties?.[field] ?? "").toLowerCase();
-			if (val.includes(text)) return true;
-		}
-		/* v8 ignore stop */
-		return false;
-	});
+function filterEntries(
+  entries: EntryRecord[],
+  fields: string[],
+  query: string,
+) {
+  if (!query) return entries;
+  const text = query.toLowerCase();
+  return entries.filter((entry) => {
+    /* v8 ignore start */
+    const title = (entry.title || "").toLowerCase();
+    if (title.includes(text)) return true;
+    for (const field of fields) {
+      const val = String(entry.properties?.[field] ?? "").toLowerCase();
+      if (val.includes(text)) return true;
+    }
+    /* v8 ignore stop */
+    return false;
+  });
 }
 
 /** Helper for column-specific filtering */
-function applyColumnFilters(entries: EntryRecord[], filters: Record<string, string>) {
-	/* v8 ignore next */
-	const activeFilters = Object.entries(filters).filter(([_, val]) => !!val);
-	if (activeFilters.length === 0) return entries;
+function applyColumnFilters(
+  entries: EntryRecord[],
+  filters: Record<string, string>,
+) {
+  /* v8 ignore next */
+  const activeFilters = Object.entries(filters).filter(([_, val]) => !!val);
+  if (activeFilters.length === 0) return entries;
 
-	return entries.filter((entry) => {
-		for (const [field, filter] of activeFilters) {
-			const filterLower = filter.toLowerCase();
-			let val = "";
-			/* v8 ignore start */
-			if (field === "title") val = entry.title || "";
-			else if (field === "updated_at") val = new Date(entry.updated_at).toLocaleDateString();
-			else val = String(entry.properties?.[field] ?? "");
-			/* v8 ignore stop */
+  return entries.filter((entry) => {
+    for (const [field, filter] of activeFilters) {
+      const filterLower = filter.toLowerCase();
+      let val = "";
+      /* v8 ignore start */
+      if (field === "title") val = entry.title || "";
+      else if (field === "updated_at") {
+        val = new Date(entry.updated_at).toLocaleDateString();
+      } else val = String(entry.properties?.[field] ?? "");
+      /* v8 ignore stop */
 
-			if (!val.toLowerCase().includes(filterLower)) return false;
-		}
-		return true;
-	});
+      if (!val.toLowerCase().includes(filterLower)) return false;
+    }
+    return true;
+  });
 }
 
-function sortEntries(entries: EntryRecord[], field: string, direction: SortDirection) {
-	if (!field || !direction) return entries;
-	return [...entries].sort((a, b) => {
-		let valA: string | number | unknown;
-		let valB: string | number | unknown;
+function sortEntries(
+  entries: EntryRecord[],
+  field: string,
+  direction: SortDirection,
+) {
+  if (!field || !direction) return entries;
+  return [...entries].sort((a, b) => {
+    let valA: string | number | unknown;
+    let valB: string | number | unknown;
 
-		if (field === "title") {
-			/* v8 ignore start */
-			valA = a.title || "";
-			valB = b.title || "";
-			/* v8 ignore stop */
-			/* v8 ignore start */
-		} else if (field === "updated_at") {
-			valA = a.updated_at;
-			valB = b.updated_at;
-		} else {
-			valA = a.properties?.[field] ?? "";
-			valB = b.properties?.[field] ?? "";
-		}
-		/* v8 ignore stop */
+    if (field === "title") {
+      /* v8 ignore start */
+      valA = a.title || "";
+      valB = b.title || "";
+      /* v8 ignore stop */
+      /* v8 ignore start */
+    } else if (field === "updated_at") {
+      valA = a.updated_at;
+      valB = b.updated_at;
+    } else {
+      valA = a.properties?.[field] ?? "";
+      valB = b.properties?.[field] ?? "";
+    }
+    /* v8 ignore stop */
 
-		/* v8 ignore start */
-		if (valA < valB) return direction === "asc" ? -1 : 1;
-		if (valA > valB) return direction === "asc" ? 1 : -1;
-		/* v8 ignore stop */
-		/* v8 ignore start */
-		return 0;
-		/* v8 ignore stop */
-	});
+    /* v8 ignore start */
+    if (valA < valB) return direction === "asc" ? -1 : 1;
+    if (valA > valB) return direction === "asc" ? 1 : -1;
+    /* v8 ignore stop */
+    /* v8 ignore start */
+    return 0;
+    /* v8 ignore stop */
+  });
 }
 
 function SortIcon(props: { active: boolean; direction: SortDirection }) {
-	/* v8 ignore start */
-	if (!props.active || !props.direction) {
-		return (
-			<svg
-				class="w-4 h-4 ui-muted opacity-50"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-			>
-				<title>Sort</title>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
-				/>
-			</svg>
-		);
-	}
-	if (props.direction === "asc") {
-		return (
-			<svg class="w-4 h-4 ui-accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<title>Sorted Ascending</title>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"
-				/>
-			</svg>
-		);
-	}
-	return (
-		<svg class="w-4 h-4 ui-accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<title>Sorted Descending</title>
-			<path
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				stroke-width="2"
-				d="M3 4h13M3 8h9m-9 4h5m1 5v6m0 0l4-4m-4 4l-4-4"
-			/>
-		</svg>
-	);
+  /* v8 ignore start */
+  if (!props.active || !props.direction) {
+    return (
+      <svg
+        class="w-4 h-4 ui-muted opacity-50"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <title>Sort</title>
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+        />
+      </svg>
+    );
+  }
+  if (props.direction === "asc") {
+    return (
+      <svg
+        class="w-4 h-4 ui-accent-text"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <title>Sorted Ascending</title>
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      class="w-4 h-4 ui-accent-text"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <title>Sorted Descending</title>
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M3 4h13M3 8h9m-9 4h5m1 5v6m0 0l4-4m-4 4l-4-4"
+      />
+    </svg>
+  );
 }
 /* v8 ignore stop */
 
 /** Helper to format a single entry as a CSV row */
 /* v8 ignore start */
 function formatCsvRow(entry: EntryRecord, headers: string[]) {
-	return headers
-		.map((field) => {
-			let val = "";
-			if (field === "title") val = entry.title || "";
-			else if (field === "updated_at") {
-				try {
-					val = new Date(entry.updated_at).toISOString();
-				} catch {
-					val = entry.updated_at;
-				}
-			} else {
-				val = String(entry.properties?.[field] ?? "");
-			}
-			return `"${val.replace(/"/g, '""')}"`;
-		})
-		.join(",");
+  return headers
+    .map((field) => {
+      let val = "";
+      if (field === "title") val = entry.title || "";
+      else if (field === "updated_at") {
+        try {
+          val = new Date(entry.updated_at).toISOString();
+        } catch {
+          val = entry.updated_at;
+        }
+      } else {
+        val = String(entry.properties?.[field] ?? "");
+      }
+      return `"${val.replace(/"/g, '""')}"`;
+    })
+    .join(",");
 }
 /* v8 ignore stop */
 
 export function FormTable(props: FormTableProps) {
-	let sortMenuRef: HTMLDivElement | undefined;
-	// State for filtering and sorting
-	const [globalFilter, setGlobalFilter] = createSignal("");
-	const [sortField, setSortField] = createSignal<string | null>(null);
-	const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
-	const [columnFilters, setColumnFilters] = createSignal<Record<string, string>>({});
-	const [showColumnFilters, setShowColumnFilters] = createSignal(true);
-	const [showSortMenu, setShowSortMenu] = createSignal(false);
-	const [isEditMode, setIsEditMode] = createSignal(false);
-	const [editingCell, setEditingCell] = createSignal<{ id: string; field: string } | null>(null);
+  let sortMenuRef: HTMLDivElement | undefined;
+  // State for filtering and sorting
+  const [globalFilter, setGlobalFilter] = createSignal("");
+  const [sortField, setSortField] = createSignal<string | null>(null);
+  const [sortDirection, setSortDirection] = createSignal<SortDirection>(null);
+  const [columnFilters, setColumnFilters] = createSignal<
+    Record<string, string>
+  >({});
+  const [showColumnFilters, setShowColumnFilters] = createSignal(true);
+  const [showSortMenu, setShowSortMenu] = createSignal(false);
+  const [isEditMode, setIsEditMode] = createSignal(false);
+  const [editingCell, setEditingCell] = createSignal<
+    { id: string; field: string } | null
+  >(null);
 
-	const [entries, { refetch }] = createResource(
-		() => {
-			/* v8 ignore start */
-			if (!props.spaceId || !props.entryForm?.name) return false;
-			/* v8 ignore stop */
-			return { id: props.spaceId, formName: props.entryForm.name };
-		},
-		async ({ id, formName }) => {
-			return await searchApi.query(id, { form: formName });
-		},
-	);
+  const [entries, { refetch }] = createResource(
+    () => {
+      /* v8 ignore start */
+      if (!props.spaceId || !props.entryForm?.name) return false;
+      /* v8 ignore stop */
+      return { id: props.spaceId, formName: props.entryForm.name };
+    },
+    async ({ id, formName }) => {
+      return await searchApi.query(id, { form: formName });
+    },
+  );
 
-	const fields = createMemo(
-		() =>
-			/* v8 ignore start */
-			props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
-		/* v8 ignore stop */
-	);
+  const fields = createMemo(
+    () =>
+      /* v8 ignore start */
+      props.entryForm?.fields ? Object.keys(props.entryForm.fields) : [],
+    /* v8 ignore stop */
+  );
 
-	const sortableFields = createMemo(() => ["title", ...fields(), "updated_at"]);
+  const sortableFields = createMemo(() => ["title", ...fields(), "updated_at"]);
 
-	const processedEntries = createMemo(() => {
-		const currentEntries = entries();
-		if (!currentEntries) return [] as EntryRecord[];
+  const processedEntries = createMemo(() => {
+    const currentEntries = entries();
+    if (!currentEntries) return [] as EntryRecord[];
 
-		// 1. Global Filter
-		let result = filterEntries([...currentEntries], fields(), globalFilter());
+    // 1. Global Filter
+    let result = filterEntries([...currentEntries], fields(), globalFilter());
 
-		// 2. Column Filters
-		result = applyColumnFilters(result, columnFilters());
+    // 2. Column Filters
+    result = applyColumnFilters(result, columnFilters());
 
-		// 3. Sorting
-		return sortEntries(result, sortField() || "", sortDirection());
-	});
+    // 3. Sorting
+    return sortEntries(result, sortField() || "", sortDirection());
+  });
 
-	const handleHeaderClick = (field: string) => {
-		if (sortField() === field) {
-			if (sortDirection() === "asc") setSortDirection("desc");
-			else setSortDirection(null);
-		} else {
-			setSortField(field);
-			setSortDirection("asc");
-		}
-	};
+  const handleHeaderClick = (field: string) => {
+    if (sortField() === field) {
+      if (sortDirection() === "asc") setSortDirection("desc");
+      else setSortDirection(null);
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
 
-	const handleSortFieldChange = (value: string) => {
-		if (!value) {
-			setSortField(null);
-			setSortDirection(null);
-			return;
-		}
-		setSortField(value);
-		/* v8 ignore start */
-		if (!sortDirection()) setSortDirection("asc");
-		/* v8 ignore stop */
-	};
+  const handleSortFieldChange = (value: string) => {
+    if (!value) {
+      setSortField(null);
+      setSortDirection(null);
+      return;
+    }
+    setSortField(value);
+    /* v8 ignore start */
+    if (!sortDirection()) setSortDirection("asc");
+    /* v8 ignore stop */
+  };
 
-	/* v8 ignore start */
-	const handleSortMenuPointer = (event: PointerEvent) => {
-		if (!showSortMenu()) return;
-		if (!sortMenuRef || sortMenuRef.contains(event.target as Node)) return;
-		setShowSortMenu(false);
-	};
+  /* v8 ignore start */
+  const handleSortMenuPointer = (event: PointerEvent) => {
+    if (!showSortMenu()) return;
+    if (!sortMenuRef || sortMenuRef.contains(event.target as Node)) return;
+    setShowSortMenu(false);
+  };
 
-	const handleSortMenuKeydown = (event: KeyboardEvent) => {
-		if (event.key === "Escape") {
-			setShowSortMenu(false);
-		}
-	};
-	/* v8 ignore stop */
+  const handleSortMenuKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      setShowSortMenu(false);
+    }
+  };
+  /* v8 ignore stop */
 
-	onMount(() => {
-		/* v8 ignore start */
-		if (typeof document === "undefined") return;
-		/* v8 ignore stop */
-		document.addEventListener("pointerdown", handleSortMenuPointer);
-		document.addEventListener("keydown", handleSortMenuKeydown);
-	});
+  onMount(() => {
+    /* v8 ignore start */
+    if (typeof document === "undefined") return;
+    /* v8 ignore stop */
+    document.addEventListener("pointerdown", handleSortMenuPointer);
+    document.addEventListener("keydown", handleSortMenuKeydown);
+  });
 
-	onCleanup(() => {
-		/* v8 ignore start */
-		if (typeof document === "undefined") return;
-		/* v8 ignore stop */
-		document.removeEventListener("pointerdown", handleSortMenuPointer);
-		document.removeEventListener("keydown", handleSortMenuKeydown);
-	});
+  onCleanup(() => {
+    /* v8 ignore start */
+    if (typeof document === "undefined") return;
+    /* v8 ignore stop */
+    document.removeEventListener("pointerdown", handleSortMenuPointer);
+    document.removeEventListener("keydown", handleSortMenuKeydown);
+  });
 
-	const updateColumnFilter = (field: string, value: string) => {
-		setColumnFilters((prev) => ({ ...prev, [field]: value }));
-	};
+  const updateColumnFilter = (field: string, value: string) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: value }));
+  };
 
-	const downloadCSV = () => {
-		// Use untrack and try-catch for robustness in handler
-		try {
-			const { data, fieldNames, formName } = untrack(() => ({
-				data: processedEntries(),
-				fieldNames: fields(),
-				/* v8 ignore start */
-				formName: props.entryForm?.name || "export",
-				/* v8 ignore stop */
-			}));
+  const downloadCSV = () => {
+    // Use untrack and try-catch for robustness in handler
+    try {
+      const { data, fieldNames, formName } = untrack(() => ({
+        data: processedEntries(),
+        fieldNames: fields(),
+        /* v8 ignore start */
+        formName: props.entryForm?.name || "export",
+        /* v8 ignore stop */
+      }));
 
-			const headers = ["title", ...fieldNames, "updated_at"];
-			/* v8 ignore start */
-			const csvContent = [headers.join(","), ...data.map((n) => formatCsvRow(n, headers))].join(
-				"\n",
-			);
-			/* v8 ignore stop */
+      const headers = ["title", ...fieldNames, "updated_at"];
+      /* v8 ignore start */
+      const csvContent = [
+        headers.join(","),
+        ...data.map((n) => formatCsvRow(n, headers)),
+      ].join(
+        "\n",
+      );
+      /* v8 ignore stop */
 
-			const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.setAttribute("href", url);
-			link.setAttribute("download", `${formName}_export.csv`);
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			// Clean up the URL object after some time
-			setTimeout(() => URL.revokeObjectURL(url), 100);
-		} catch (err) {
-			/* v8 ignore start */
-			// biome-ignore lint/suspicious/noConsole: error reporting
-			console.error("CSV Export failed:", err);
-			alert("Failed to export CSV. Please check the console for details.");
-			/* v8 ignore stop */
-		}
-	};
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${formName}_export.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      // Clean up the URL object after some time
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (err) {
+      /* v8 ignore start */
+      // biome-ignore lint/suspicious/noConsole: error reporting
+      console.error("CSV Export failed:", err);
+      alert("Failed to export CSV. Please check the console for details.");
+      /* v8 ignore stop */
+    }
+  };
 
-	const handleAddRow = async () => {
-		try {
-			let content = props.entryForm.template || `# New ${props.entryForm.name}\n`;
-			content = ensureFormFrontmatter(content, props.entryForm.name);
+  const handleAddRow = async () => {
+    try {
+      let content = props.entryForm.template ||
+        `# New ${props.entryForm.name}\n`;
+      content = ensureFormFrontmatter(content, props.entryForm.name);
 
-			await entryApi.create(props.spaceId, {
-				content,
-			});
-			refetch();
-		} catch (err) {
-			/* v8 ignore start */
-			// biome-ignore lint/suspicious/noConsole: error logging
-			console.error("Failed to add row", err);
-			alert(`Failed to add row: ${err instanceof Error ? err.message : String(err)}`);
-			/* v8 ignore stop */
-		}
-	};
+      await entryApi.create(props.spaceId, {
+        content,
+      });
+      refetch();
+    } catch (err) {
+      /* v8 ignore start */
+      // biome-ignore lint/suspicious/noConsole: error logging
+      console.error("Failed to add row", err);
+      alert(
+        `Failed to add row: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      /* v8 ignore stop */
+    }
+  };
 
-	const handleCellUpdate = async (entryId: string, field: string, value: string) => {
-		try {
-			const currentRow = entries()?.find((item) => item.id === entryId);
+  const handleCellUpdate = async (
+    entryId: string,
+    field: string,
+    value: string,
+  ) => {
+    try {
+      const currentRow = entries()?.find((item) => item.id === entryId);
 
-			// Fetch full entry to get content and revision_id
-			const entry = await entryApi.get(props.spaceId, entryId);
-			let updatedMarkdown = entry.content;
+      // Fetch full entry to get content and revision_id
+      const entry = await entryApi.get(props.spaceId, entryId);
+      let updatedMarkdown = entry.content;
 
-			if (field === "title") {
-				/* v8 ignore start */
-				if (entry.title === value) return;
-				/* v8 ignore stop */
-				updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
-			} else {
-				/* v8 ignore start */
-				const currentValue = String(currentRow?.properties?.[field] ?? "");
-				if (currentValue === value) return;
-				/* v8 ignore stop */
-				updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
-			}
+      if (field === "title") {
+        /* v8 ignore start */
+        if (entry.title === value) return;
+        /* v8 ignore stop */
+        updatedMarkdown = replaceFirstH1(updatedMarkdown, value);
+      } else {
+        /* v8 ignore start */
+        const currentValue = String(currentRow?.properties?.[field] ?? "");
+        if (currentValue === value) return;
+        /* v8 ignore stop */
+        updatedMarkdown = updateH2Section(updatedMarkdown, field, value);
+      }
 
-			const updatedEntry = await entryApi.update(props.spaceId, entryId, {
-				markdown: updatedMarkdown,
-				parent_revision_id: entry.revision_id,
-			});
-			void updatedEntry;
-			refetch();
-		} catch (err) {
-			/* v8 ignore start */
-			// biome-ignore lint/suspicious/noConsole: error logging
-			console.error("Update failed", err);
-			alert(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
-			/* v8 ignore stop */
-		}
-	};
+      const updatedEntry = await entryApi.update(props.spaceId, entryId, {
+        markdown: updatedMarkdown,
+        parent_revision_id: entry.revision_id,
+      });
+      void updatedEntry;
+      refetch();
+    } catch (err) {
+      /* v8 ignore start */
+      // biome-ignore lint/suspicious/noConsole: error logging
+      console.error("Update failed", err);
+      alert(
+        `Update failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      /* v8 ignore stop */
+    }
+  };
 
-	// Determine if a cell is being edited
-	const isCellEditing = (id: string, field: string) =>
-		isEditMode() && editingCell()?.id === id && editingCell()?.field === field;
+  // Determine if a cell is being edited
+  const isCellEditing = (id: string, field: string) =>
+    isEditMode() && editingCell()?.id === id && editingCell()?.field === field;
 
-	// --- Drag Selection Logic ---
-	const [selection, setSelection] = createSignal<{
-		start: { r: number; c: number } | null;
-		end: { r: number; c: number } | null;
-	}>({ start: null, end: null });
-	const [isSelecting, setIsSelecting] = createSignal(false);
+  // --- Drag Selection Logic ---
+  const [selection, setSelection] = createSignal<{
+    start: { r: number; c: number } | null;
+    end: { r: number; c: number } | null;
+  }>({ start: null, end: null });
+  const [isSelecting, setIsSelecting] = createSignal(false);
+  const handleGlobalMouseUp = () => setIsSelecting(false);
+  const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+    /* v8 ignore start */
+    if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+      // If focus is in an input or textarea, let the default copy behavior handle it
+      const active = document.activeElement;
+      if (
+        active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      await copySelection();
+    }
+    /* v8 ignore stop */
+  };
 
-	onMount(() => {
-		document.addEventListener("mouseup", handleGlobalMouseUp);
-		document.addEventListener("keydown", handleGlobalKeyDown);
-	});
+  onMount(() => {
+    document.addEventListener("mouseup", handleGlobalMouseUp);
+    document.addEventListener("keydown", handleGlobalKeyDown);
+  });
 
-	onCleanup(() => {
-		document.removeEventListener("mouseup", handleGlobalMouseUp);
-		document.removeEventListener("keydown", handleGlobalKeyDown);
-	});
+  onCleanup(() => {
+    document.removeEventListener("mouseup", handleGlobalMouseUp);
+    document.removeEventListener("keydown", handleGlobalKeyDown);
+  });
 
-	const handleGlobalMouseUp = () => setIsSelecting(false);
+  const getRowData = (
+    entry: EntryRecord,
+    currentFields: string[],
+    c1: number,
+    c2: number,
+  ) => {
+    const rowData = [];
+    // Col 0: Title
+    /* v8 ignore start */
+    if (c1 <= 0 && c2 >= 0) rowData.push(entry.title || "");
+    /* v8 ignore stop */
 
-	const getRowData = (entry: EntryRecord, currentFields: string[], c1: number, c2: number) => {
-		const rowData = [];
-		// Col 0: Title
-		/* v8 ignore start */
-		if (c1 <= 0 && c2 >= 0) rowData.push(entry.title || "");
-		/* v8 ignore stop */
+    // Cols 1..N: Fields
+    for (let i = 0; i < currentFields.length; i++) {
+      const colIdx = i + 1;
+      /* v8 ignore start */
+      if (colIdx >= c1 && colIdx <= c2) {
+        rowData.push(String(entry.properties?.[currentFields[i]] ?? ""));
+      }
+      /* v8 ignore stop */
+    }
 
-		// Cols 1..N: Fields
-		for (let i = 0; i < currentFields.length; i++) {
-			const colIdx = i + 1;
-			/* v8 ignore start */
-			if (colIdx >= c1 && colIdx <= c2) {
-				rowData.push(String(entry.properties?.[currentFields[i]] ?? ""));
-			}
-			/* v8 ignore stop */
-		}
+    // Col N+1: Updated
+    const lastCol = currentFields.length + 1;
+    if (c1 <= lastCol && c2 >= lastCol) {
+      rowData.push(new Date(entry.updated_at).toLocaleDateString());
+    }
+    return rowData.join("\t");
+  };
 
-		// Col N+1: Updated
-		const lastCol = currentFields.length + 1;
-		if (c1 <= lastCol && c2 >= lastCol) {
-			rowData.push(new Date(entry.updated_at).toLocaleDateString());
-		}
-		return rowData.join("\t");
-	};
+  const copySelection = async () => {
+    const sel = selection();
+    /* v8 ignore start */
+    if (!sel.start || !sel.end || editingCell()) return;
+    /* v8 ignore stop */
 
-	const copySelection = async () => {
-		const sel = selection();
-		/* v8 ignore start */
-		if (!sel.start || !sel.end || editingCell()) return;
-		/* v8 ignore stop */
+    const r1 = Math.min(sel.start.r, sel.end.r);
+    const r2 = Math.max(sel.start.r, sel.end.r);
+    const c1 = Math.min(sel.start.c, sel.end.c);
+    const c2 = Math.max(sel.start.c, sel.end.c);
 
-		const r1 = Math.min(sel.start.r, sel.end.r);
-		const r2 = Math.max(sel.start.r, sel.end.r);
-		const c1 = Math.min(sel.start.c, sel.end.c);
-		const c2 = Math.max(sel.start.c, sel.end.c);
+    const currentEntries = processedEntries();
+    const currentFields = fields();
 
-		const currentEntries = processedEntries();
-		const currentFields = fields();
+    const rowsData = [];
+    for (let r = r1; r <= r2; r++) {
+      const entry = currentEntries[r];
+      /* v8 ignore start */
+      if (!entry) continue;
+      /* v8 ignore stop */
+      rowsData.push(getRowData(entry, currentFields, c1, c2));
+    }
 
-		const rowsData = [];
-		for (let r = r1; r <= r2; r++) {
-			const entry = currentEntries[r];
-			/* v8 ignore start */
-			if (!entry) continue;
-			/* v8 ignore stop */
-			rowsData.push(getRowData(entry, currentFields, c1, c2));
-		}
+    try {
+      await navigator.clipboard.writeText(rowsData.join("\n"));
+    } catch (err) {
+      /* v8 ignore start */
+      // biome-ignore lint/suspicious/noConsole: debugging
+      console.error("Failed to copy", err);
+      /* v8 ignore stop */
+    }
+  };
 
-		try {
-			await navigator.clipboard.writeText(rowsData.join("\n"));
-		} catch (err) {
-			/* v8 ignore start */
-			// biome-ignore lint/suspicious/noConsole: debugging
-			console.error("Failed to copy", err);
-			/* v8 ignore stop */
-		}
-	};
+  const handleCellMouseDown = (r: number, c: number) => {
+    // Only set start/end, don't set isSelecting yet to allow text selection
+    setSelection({ start: { r, c }, end: { r, c } });
+  };
 
-	const handleGlobalKeyDown = async (e: KeyboardEvent) => {
-		/* v8 ignore start */
-		if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-			// If focus is in an input or textarea, let the default copy behavior handle it
-			const active = document.activeElement;
-			if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
-				return;
-			}
-			e.preventDefault();
-			await copySelection();
-		}
-		/* v8 ignore stop */
-	};
+  const handleCellMouseEnter = (e: MouseEvent, r: number, c: number) => {
+    /* v8 ignore start */
+    if (isSelecting()) {
+      setSelection((prev) => ({ ...prev, end: { r, c } }));
+    } else if (selection().start && e.buttons === 1) {
+      // Start drag selection if moving between cells with button down
+      setIsSelecting(true);
+      setSelection((prev) => ({ ...prev, end: { r, c } }));
+    }
+    /* v8 ignore stop */
+  };
 
-	const handleCellMouseDown = (r: number, c: number) => {
-		// Only set start/end, don't set isSelecting yet to allow text selection
-		setSelection({ start: { r, c }, end: { r, c } });
-	};
+  const isSelected = (r: number, c: number) => {
+    const sel = selection();
+    if (!sel.start || !sel.end) return false;
+    const r1 = Math.min(sel.start.r, sel.end.r);
+    const r2 = Math.max(sel.start.r, sel.end.r);
+    const c1 = Math.min(sel.start.c, sel.end.c);
+    const c2 = Math.max(sel.start.c, sel.end.c);
+    return r >= r1 && r <= r2 && c >= c1 && c <= c2;
+  };
 
-	const handleCellMouseEnter = (e: MouseEvent, r: number, c: number) => {
-		/* v8 ignore start */
-		if (isSelecting()) {
-			setSelection((prev) => ({ ...prev, end: { r, c } }));
-		} else if (selection().start && e.buttons === 1) {
-			// Start drag selection if moving between cells with button down
-			setIsSelecting(true);
-			setSelection((prev) => ({ ...prev, end: { r, c } }));
-		}
-		/* v8 ignore stop */
-	};
+  /* v8 ignore start */
+  return (
+    <div
+      class={`flex-1 h-full overflow-auto ui-surface ${
+        isSelecting() ? "select-none" : ""
+      }`}
+    >
+      <div class="p-4 sm:p-6">
+        <div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
+          <div>
+            <p class="ui-muted text-sm">
+              {entries.loading && !entries()
+                ? "Loading..."
+                : `${processedEntries().length} records found`}
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              onClick={downloadCSV}
+              class="ui-button ui-button-secondary text-sm flex items-center gap-2"
+            >
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <title>Download CSV</title>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditMode(!isEditMode())}
+              class={`ui-button text-sm flex items-center gap-2 ${
+                isEditMode() ? "ui-button-primary" : "ui-button-secondary"
+              }`}
+              title={isEditMode() ? "Disable Editing" : "Enable Editing"}
+            >
+              {isEditMode()
+                ? (
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <title>Unlocked</title>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                    />
+                  </svg>
+                )
+                : (
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <title>Locked</title>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                    />
+                  </svg>
+                )}
+              {isEditMode() ? "Editable" : "Locked"}
+            </button>
+            <Show when={isEditMode()}>
+              <button
+                type="button"
+                onClick={handleAddRow}
+                class="ui-button ui-button-primary text-sm flex items-center gap-2"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Add Row
+              </button>
+            </Show>
+          </div>
+        </div>
 
-	const isSelected = (r: number, c: number) => {
-		const sel = selection();
-		if (!sel.start || !sel.end) return false;
-		const r1 = Math.min(sel.start.r, sel.end.r);
-		const r2 = Math.max(sel.start.r, sel.end.r);
-		const c1 = Math.min(sel.start.c, sel.end.c);
-		const c2 = Math.max(sel.start.c, sel.end.c);
-		return r >= r1 && r <= r2 && c >= c1 && c <= c2;
-	};
+        <div class="mb-4 ui-card ui-stack-sm">
+          <div class="flex flex-wrap items-center gap-2 justify-between">
+            <input
+              type="text"
+              placeholder="Global Search..."
+              class="ui-input w-full max-w-md"
+              value={globalFilter()}
+              onInput={(e) => setGlobalFilter(e.currentTarget.value)}
+            />
+            <div class="flex flex-wrap gap-2">
+              <div
+                class="ui-menu"
+                ref={(el) => {
+                  sortMenuRef = el;
+                }}
+              >
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary text-sm"
+                  onClick={() => setShowSortMenu((value) => !value)}
+                  aria-label="Sort menu"
+                  aria-expanded={showSortMenu()}
+                >
+                  Sort
+                </button>
+                <Show when={showSortMenu()}>
+                  <div class="ui-menu-panel">
+                    <div class="ui-menu-section">
+                      <p class="ui-menu-title">Sort Field</p>
+                      <select
+                        aria-label="Sort field"
+                        class="ui-input"
+                        value={sortField() ?? ""}
+                        onChange={(e) =>
+                          handleSortFieldChange(e.currentTarget.value)}
+                      >
+                        <option value="">None</option>
+                        <For each={sortableFields()}>
+                          {(field) => <option value={field}>{field}</option>}
+                        </For>
+                      </select>
+                    </div>
+                    <div class="ui-menu-section">
+                      <p class="ui-menu-title">Direction</p>
+                      <div class="ui-menu-options">
+                        <label class="ui-radio">
+                          <input
+                            type="radio"
+                            name="sort-direction"
+                            value="asc"
+                            checked={sortDirection() === "asc"}
+                            onChange={() => setSortDirection("asc")}
+                          />
+                          <span>Ascending</span>
+                        </label>
+                        <label class="ui-radio">
+                          <input
+                            type="radio"
+                            name="sort-direction"
+                            value="desc"
+                            checked={sortDirection() === "desc"}
+                            onChange={() => setSortDirection("desc")}
+                          />
+                          <span>Descending</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </Show>
+              </div>
+              <button
+                type="button"
+                class={`ui-button text-sm ${
+                  showColumnFilters()
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
+                }`}
+                onClick={() => setShowColumnFilters((value) => !value)}
+              >
+                Filter
+              </button>
+            </div>
+          </div>
+        </div>
 
-	/* v8 ignore start */
-	return (
-		<div class={`flex-1 h-full overflow-auto ui-surface ${isSelecting() ? "select-none" : ""}`}>
-			<div class="p-4 sm:p-6">
-				<div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
-					<div>
-						<p class="ui-muted text-sm">
-							{entries.loading && !entries()
-								? "Loading..."
-								: `${processedEntries().length} records found`}
-						</p>
-					</div>
-					<div class="flex gap-2">
-						<button
-							type="button"
-							onClick={downloadCSV}
-							class="ui-button ui-button-secondary text-sm flex items-center gap-2"
-						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<title>Download CSV</title>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-								/>
-							</svg>
-							Export CSV
-						</button>
-						<button
-							type="button"
-							onClick={() => setIsEditMode(!isEditMode())}
-							class={`ui-button text-sm flex items-center gap-2 ${
-								isEditMode() ? "ui-button-primary" : "ui-button-secondary"
-							}`}
-							title={isEditMode() ? "Disable Editing" : "Enable Editing"}
-						>
-							{isEditMode() ? (
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<title>Unlocked</title>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
-									/>
-								</svg>
-							) : (
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<title>Locked</title>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
-									/>
-								</svg>
-							)}
-							{isEditMode() ? "Editable" : "Locked"}
-						</button>
-						<Show when={isEditMode()}>
-							<button
-								type="button"
-								onClick={handleAddRow}
-								class="ui-button ui-button-primary text-sm flex items-center gap-2"
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M12 4v16m8-8H4"
-									/>
-								</svg>
-								Add Row
-							</button>
-						</Show>
-					</div>
-				</div>
+        <div class="ui-table-wrapper overflow-x-auto">
+          <table class="ui-table">
+            <thead class="ui-table-head">
+              <tr>
+                <th
+                  scope="col"
+                  class="ui-table-header-cell w-10 sticky top-0 z-10"
+                  aria-label="Actions"
+                >
+                  <span class="sr-only">Actions</span>
+                </th>
+                <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
+                  <div class="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      class="ui-table-header-button select-none"
+                      onClick={() => handleHeaderClick("title")}
+                    >
+                      Title
+                      <SortIcon
+                        active={sortField() === "title"}
+                        direction={sortDirection()}
+                      />
+                    </button>
+                    <Show when={showColumnFilters()}>
+                      <input
+                        type="text"
+                        class="ui-input ui-input-sm ui-table-filter text-xs"
+                        placeholder="Filter..."
+                        value={columnFilters().title || ""}
+                        onInput={(e) =>
+                          updateColumnFilter("title", e.currentTarget.value)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Show>
+                  </div>
+                </th>
 
-				<div class="mb-4 ui-card ui-stack-sm">
-					<div class="flex flex-wrap items-center gap-2 justify-between">
-						<input
-							type="text"
-							placeholder="Global Search..."
-							class="ui-input w-full max-w-md"
-							value={globalFilter()}
-							onInput={(e) => setGlobalFilter(e.currentTarget.value)}
-						/>
-						<div class="flex flex-wrap gap-2">
-							<div
-								class="ui-menu"
-								ref={(el) => {
-									sortMenuRef = el;
-								}}
-							>
-								<button
-									type="button"
-									class="ui-button ui-button-secondary text-sm"
-									onClick={() => setShowSortMenu((value) => !value)}
-									aria-label="Sort menu"
-									aria-expanded={showSortMenu()}
-								>
-									Sort
-								</button>
-								<Show when={showSortMenu()}>
-									<div class="ui-menu-panel">
-										<div class="ui-menu-section">
-											<p class="ui-menu-title">Sort Field</p>
-											<select
-												aria-label="Sort field"
-												class="ui-input"
-												value={sortField() ?? ""}
-												onChange={(e) => handleSortFieldChange(e.currentTarget.value)}
-											>
-												<option value="">None</option>
-												<For each={sortableFields()}>
-													{(field) => <option value={field}>{field}</option>}
-												</For>
-											</select>
-										</div>
-										<div class="ui-menu-section">
-											<p class="ui-menu-title">Direction</p>
-											<div class="ui-menu-options">
-												<label class="ui-radio">
-													<input
-														type="radio"
-														name="sort-direction"
-														value="asc"
-														checked={sortDirection() === "asc"}
-														onChange={() => setSortDirection("asc")}
-													/>
-													<span>Ascending</span>
-												</label>
-												<label class="ui-radio">
-													<input
-														type="radio"
-														name="sort-direction"
-														value="desc"
-														checked={sortDirection() === "desc"}
-														onChange={() => setSortDirection("desc")}
-													/>
-													<span>Descending</span>
-												</label>
-											</div>
-										</div>
-									</div>
-								</Show>
-							</div>
-							<button
-								type="button"
-								class={`ui-button text-sm ${
-									showColumnFilters() ? "ui-button-primary" : "ui-button-secondary"
-								}`}
-								onClick={() => setShowColumnFilters((value) => !value)}
-							>
-								Filter
-							</button>
-						</div>
-					</div>
-				</div>
+                <For each={fields()}>
+                  {(field) => (
+                    <th
+                      scope="col"
+                      class="ui-table-header-cell sticky top-0 z-10"
+                    >
+                      <div class="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          class="ui-table-header-button select-none"
+                          onClick={() => handleHeaderClick(field)}
+                        >
+                          {field}
+                          <SortIcon
+                            active={sortField() === field}
+                            direction={sortDirection()}
+                          />
+                        </button>
+                        <Show when={showColumnFilters()}>
+                          <input
+                            type="text"
+                            class="ui-input ui-input-sm ui-table-filter text-xs"
+                            placeholder="Filter..."
+                            value={columnFilters()[field] || ""}
+                            onInput={(e) =>
+                              updateColumnFilter(field, e.currentTarget.value)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Show>
+                      </div>
+                    </th>
+                  )}
+                </For>
 
-				<div class="ui-table-wrapper overflow-x-auto">
-					<table class="ui-table">
-						<thead class="ui-table-head">
-							<tr>
-								<th
-									scope="col"
-									class="ui-table-header-cell w-10 sticky top-0 z-10"
-									aria-label="Actions"
-								>
-									<span class="sr-only">Actions</span>
-								</th>
-								<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-									<div class="flex flex-col gap-2">
-										<button
-											type="button"
-											class="ui-table-header-button select-none"
-											onClick={() => handleHeaderClick("title")}
-										>
-											Title
-											<SortIcon active={sortField() === "title"} direction={sortDirection()} />
-										</button>
-										<Show when={showColumnFilters()}>
-											<input
-												type="text"
-												class="ui-input ui-input-sm ui-table-filter text-xs"
-												placeholder="Filter..."
-												value={columnFilters().title || ""}
-												onInput={(e) => updateColumnFilter("title", e.currentTarget.value)}
-												onClick={(e) => e.stopPropagation()}
-											/>
-										</Show>
-									</div>
-								</th>
-
-								<For each={fields()}>
-									{(field) => (
-										<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-											<div class="flex flex-col gap-2">
-												<button
-													type="button"
-													class="ui-table-header-button select-none"
-													onClick={() => handleHeaderClick(field)}
-												>
-													{field}
-													<SortIcon active={sortField() === field} direction={sortDirection()} />
-												</button>
-												<Show when={showColumnFilters()}>
-													<input
-														type="text"
-														class="ui-input ui-input-sm ui-table-filter text-xs"
-														placeholder="Filter..."
-														value={columnFilters()[field] || ""}
-														onInput={(e) => updateColumnFilter(field, e.currentTarget.value)}
-														onClick={(e) => e.stopPropagation()}
-													/>
-												</Show>
-											</div>
-										</th>
-									)}
-								</For>
-
-								<th scope="col" class="ui-table-header-cell sticky top-0 z-10">
-									<div class="flex flex-col gap-2">
-										<button
-											type="button"
-											class="ui-table-header-button select-none"
-											onClick={() => handleHeaderClick("updated_at")}
-										>
-											Updated
-											<SortIcon active={sortField() === "updated_at"} direction={sortDirection()} />
-										</button>
-										<Show when={showColumnFilters()}>
-											<input
-												type="text"
-												class="ui-input ui-input-sm ui-table-filter text-xs"
-												placeholder="Filter..."
-												value={columnFilters().updated_at || ""}
-												onInput={(e) => updateColumnFilter("updated_at", e.currentTarget.value)}
-												onClick={(e) => e.stopPropagation()}
-											/>
-										</Show>
-									</div>
-								</th>
-							</tr>
-						</thead>
-						<tbody class="ui-table-body">
-							<For each={processedEntries()}>
-								{(entry, rowIndex) => (
-									<tr class="ui-table-row">
-										<td class="ui-table-cell ui-table-cell-muted whitespace-nowrap">
-											<button
-												type="button"
-												onClick={() => props.onEntryClick(entry.id)}
-												class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-xs"
-												title="View Entry"
-												aria-label="View Entry"
-											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<title>View Entry</title>
-													<path
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														stroke-width="2"
-														d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-													/>
-												</svg>
-												<span>View</span>
-											</button>
-										</td>
-										{/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
-										<td
-											class={`ui-table-cell whitespace-nowrap font-medium ${
-												isSelected(rowIndex(), 0) ? "ui-table-cell-selected" : ""
-											}`}
-											onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
-											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), 0)}
-											onClick={(e) => {
-												if (isEditMode()) {
-													e.stopPropagation();
-													setEditingCell({ id: entry.id, field: "title" });
-												}
-											}}
-										>
-											<Show
-												when={isCellEditing(entry.id, "title")}
-												fallback={entry.title || "Untitled"}
-											>
-												<input
-													value={entry.title || ""}
-													onBlur={(e) => {
-														const newVal = e.currentTarget.value;
-														handleCellUpdate(entry.id, "title", newVal);
-														if (
-															editingCell()?.id === entry.id &&
-															editingCell()?.field === "title"
-														) {
-															setEditingCell(null);
-														}
-													}}
-													onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-													class="ui-table-cell-input"
-													autofocus
-													onClick={(e) => e.stopPropagation()}
-												/>
-											</Show>
-										</td>
-										<For each={fields()}>
-											{(field, fieldIndex) => (
-												// biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now
-												<td
-													class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-														isSelected(rowIndex(), fieldIndex() + 1) ? "ui-table-cell-selected" : ""
-													}`}
-													onMouseDown={() => handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
-													onMouseEnter={(e) =>
-														handleCellMouseEnter(e, rowIndex(), fieldIndex() + 1)
-													}
-													onClick={(e) => {
-														if (isEditMode()) {
-															e.stopPropagation();
-															setEditingCell({ id: entry.id, field });
-														}
-													}}
-												>
-													<Show
-														when={isCellEditing(entry.id, field)}
-														fallback={String(entry.properties?.[field] ?? "-")}
-													>
-														<input
-															value={String(entry.properties?.[field] ?? "")}
-															onBlur={(e) => {
-																const newVal = e.currentTarget.value;
-																handleCellUpdate(entry.id, field, newVal);
-																if (
-																	editingCell()?.id === entry.id &&
-																	editingCell()?.field === field
-																) {
-																	setEditingCell(null);
-																}
-															}}
-															onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-															class="ui-table-cell-input"
-															autofocus
-															onClick={(e) => e.stopPropagation()}
-														/>
-													</Show>
-												</td>
-											)}
-										</For>
-										<td
-											class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
-												isSelected(rowIndex(), fields().length + 1) ? "ui-table-cell-selected" : ""
-											}`}
-											onMouseDown={() => handleCellMouseDown(rowIndex(), fields().length + 1)}
-											onMouseEnter={(e) => handleCellMouseEnter(e, rowIndex(), fields().length + 1)}
-										>
-											{new Date(entry.updated_at).toLocaleDateString()}
-										</td>
-									</tr>
-								)}
-							</For>
-						</tbody>
-					</table>
-				</div>
-			</div>
-		</div>
-	);
+                <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
+                  <div class="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      class="ui-table-header-button select-none"
+                      onClick={() => handleHeaderClick("updated_at")}
+                    >
+                      Updated
+                      <SortIcon
+                        active={sortField() === "updated_at"}
+                        direction={sortDirection()}
+                      />
+                    </button>
+                    <Show when={showColumnFilters()}>
+                      <input
+                        type="text"
+                        class="ui-input ui-input-sm ui-table-filter text-xs"
+                        placeholder="Filter..."
+                        value={columnFilters().updated_at || ""}
+                        onInput={(e) =>
+                          updateColumnFilter(
+                            "updated_at",
+                            e.currentTarget.value,
+                          )}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Show>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody class="ui-table-body">
+              <For each={processedEntries()}>
+                {(entry, rowIndex) => (
+                  <tr class="ui-table-row">
+                    <td class="ui-table-cell ui-table-cell-muted whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => props.onEntryClick(entry.id)}
+                        class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-xs"
+                        title="View Entry"
+                        aria-label="View Entry"
+                      >
+                        <svg
+                          class="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <title>View Entry</title>
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                          />
+                        </svg>
+                        <span>View</span>
+                      </button>
+                    </td>
+                    {/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
+                    <td
+                      class={`ui-table-cell whitespace-nowrap font-medium ${
+                        isSelected(rowIndex(), 0)
+                          ? "ui-table-cell-selected"
+                          : ""
+                      }`}
+                      onMouseDown={() => handleCellMouseDown(rowIndex(), 0)}
+                      onMouseEnter={(e) =>
+                        handleCellMouseEnter(e, rowIndex(), 0)}
+                      onClick={(e) => {
+                        if (isEditMode()) {
+                          e.stopPropagation();
+                          setEditingCell({ id: entry.id, field: "title" });
+                        }
+                      }}
+                    >
+                      <Show
+                        when={isCellEditing(entry.id, "title")}
+                        fallback={entry.title || "Untitled"}
+                      >
+                        <input
+                          value={entry.title || ""}
+                          onBlur={(e) => {
+                            const newVal = e.currentTarget.value;
+                            handleCellUpdate(entry.id, "title", newVal);
+                            if (
+                              editingCell()?.id === entry.id &&
+                              editingCell()?.field === "title"
+                            ) {
+                              setEditingCell(null);
+                            }
+                          }}
+                          onKeyDown={(e) =>
+                            e.key === "Enter" && e.currentTarget.blur()}
+                          class="ui-table-cell-input"
+                          autofocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </Show>
+                    </td>
+                    <For each={fields()}>
+                      {(field, fieldIndex) => (
+                        // biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now
+                        <td
+                          class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+                            isSelected(rowIndex(), fieldIndex() + 1)
+                              ? "ui-table-cell-selected"
+                              : ""
+                          }`}
+                          onMouseDown={() =>
+                            handleCellMouseDown(rowIndex(), fieldIndex() + 1)}
+                          onMouseEnter={(e) =>
+                            handleCellMouseEnter(
+                              e,
+                              rowIndex(),
+                              fieldIndex() + 1,
+                            )}
+                          onClick={(e) => {
+                            if (isEditMode()) {
+                              e.stopPropagation();
+                              setEditingCell({ id: entry.id, field });
+                            }
+                          }}
+                        >
+                          <Show
+                            when={isCellEditing(entry.id, field)}
+                            fallback={String(entry.properties?.[field] ?? "-")}
+                          >
+                            <input
+                              value={String(entry.properties?.[field] ?? "")}
+                              onBlur={(e) => {
+                                const newVal = e.currentTarget.value;
+                                handleCellUpdate(entry.id, field, newVal);
+                                if (
+                                  editingCell()?.id === entry.id &&
+                                  editingCell()?.field === field
+                                ) {
+                                  setEditingCell(null);
+                                }
+                              }}
+                              onKeyDown={(e) =>
+                                e.key === "Enter" && e.currentTarget.blur()}
+                              class="ui-table-cell-input"
+                              autofocus
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </Show>
+                        </td>
+                      )}
+                    </For>
+                    <td
+                      class={`ui-table-cell ui-table-cell-muted whitespace-nowrap ${
+                        isSelected(rowIndex(), fields().length + 1)
+                          ? "ui-table-cell-selected"
+                          : ""
+                      }`}
+                      onMouseDown={() =>
+                        handleCellMouseDown(rowIndex(), fields().length + 1)}
+                      onMouseEnter={(e) =>
+                        handleCellMouseEnter(
+                          e,
+                          rowIndex(),
+                          fields().length + 1,
+                        )}
+                    >
+                      {new Date(entry.updated_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
 /* v8 ignore stop */

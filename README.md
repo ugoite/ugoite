@@ -447,6 +447,13 @@ Run detached:
 docker compose up -d --build
 ```
 
+The source compose stack publishes the server on a loopback-only host port
+chosen by Docker. After startup, inspect the browser/API URL with:
+
+```bash
+docker compose port ugoite 8000
+```
+
 ---
 
 ## Tests
