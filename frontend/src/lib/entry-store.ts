@@ -1,7 +1,7 @@
 import { createResource, createSignal } from "solid-js";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
-import { entryApi, RevisionConflictError } from "./entry-api";
-import { searchApi } from "./search-api";
+import { entryApi, RevisionConflictError } from "./ugoite-client";
+import { searchApi } from "./ugoite-client";
 
 export interface EntryStoreState {
   entries: EntryRecord[];

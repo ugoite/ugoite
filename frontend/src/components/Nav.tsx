@@ -6,7 +6,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
-import { authApi } from "~/lib/auth-api";
+import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 
 const toMessage = (error: unknown, fallback: string): string => {

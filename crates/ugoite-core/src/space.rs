@@ -5,8 +5,10 @@ use opendal::Operator;
 use rand::TryRng;
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
+use url::Url;
 
 use crate::form;
+use crate::storage::operator_from_uri;
 use crate::storage::{OpendalStorage, StorageBackend};
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 
@@ -287,17 +289,64 @@ pub async fn patch_space(
 
 /// Test a storage connection by checking if the URI is accessible.
 pub async fn test_storage_connection(uri: &str) -> Result<serde_json::Value> {
-    if uri.starts_with("memory://") {
-        Ok(serde_json::json!({"status": "ok", "mode": "memory"}))
-    } else if uri.starts_with("file://")
-        || uri.starts_with("fs://")
-        || uri.starts_with('/')
-        || uri.starts_with('.')
-    {
-        Ok(serde_json::json!({"status": "ok", "mode": "local"}))
-    } else if uri.starts_with("s3://") {
-        Ok(serde_json::json!({"status": "ok", "mode": "s3"}))
-    } else {
-        anyhow::bail!("unsupported storage URI: {uri}")
+    let trimmed = uri.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("storage URI is required");
     }
+    let mode = storage_connection_mode(trimmed)?;
+    let operator = operator_from_uri(trimmed)?;
+    operator
+        .exists("")
+        .await
+        .map_err(|error| anyhow!("storage connection failed: {error}"))?;
+    Ok(serde_json::json!({"status": "ok", "mode": mode}))
+}
+
+fn storage_connection_mode(uri: &str) -> Result<&'static str> {
+    if uri.starts_with("memory://") {
+        return Ok("memory");
+    }
+    if uri.starts_with("file://") || uri.starts_with("fs://") || uri.starts_with('/') {
+        return Ok("local");
+    }
+    if uri.starts_with("s3://") {
+        validate_remote_storage_uri(uri)?;
+        return Ok("s3");
+    }
+    anyhow::bail!("unsupported storage URI: {uri}")
+}
+
+fn validate_remote_storage_uri(uri: &str) -> Result<()> {
+    let parsed = Url::parse(uri).map_err(|_| anyhow!("invalid storage URI"))?;
+    if let Some(host) = parsed.host_str() {
+        if is_blocked_storage_host(host) {
+            anyhow::bail!("blocked storage endpoint host: {host}");
+        }
+    }
+    Ok(())
+}
+
+fn is_blocked_storage_host(host: &str) -> bool {
+    let normalized = host
+        .trim_matches('[')
+        .trim_matches(']')
+        .to_ascii_lowercase();
+    if matches!(normalized.as_str(), "localhost" | "0.0.0.0" | "::1") {
+        return true;
+    }
+    if normalized.starts_with("127.")
+        || normalized.starts_with("10.")
+        || normalized.starts_with("192.168.")
+        || normalized.starts_with("169.254.")
+    {
+        return true;
+    }
+    if let Some(second_octet) = normalized
+        .strip_prefix("172.")
+        .and_then(|rest| rest.split('.').next())
+        .and_then(|value| value.parse::<u8>().ok())
+    {
+        return (16..=31).contains(&second_octet);
+    }
+    false
 }

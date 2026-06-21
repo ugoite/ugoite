@@ -1,7 +1,7 @@
 // REQ-FE-050: SQL query management
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { sqlApi } from "./sql-api";
+import { sqlApi } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";

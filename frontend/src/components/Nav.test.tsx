@@ -16,7 +16,7 @@ vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigateMock,
 }));
 
-vi.mock("~/lib/auth-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   authApi: {
     getSession: (...args: unknown[]) => getSessionMock(...args),
     clearSession: (...args: unknown[]) => clearSessionMock(...args),

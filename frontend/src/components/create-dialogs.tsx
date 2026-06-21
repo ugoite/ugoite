@@ -14,7 +14,7 @@ import {
   type EntryInputMode,
 } from "~/lib/entry-input";
 import { t } from "~/lib/i18n";
-import { searchApi } from "~/lib/search-api";
+import { searchApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import {
   isReservedMetadataColumn,

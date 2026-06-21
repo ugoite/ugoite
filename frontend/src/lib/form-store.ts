@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Form, FormCreatePayload } from "./types";
-import { formApi } from "./form-api";
+import { formApi } from "./ugoite-client";
 
 export function createFormStore(spaceId: () => string) {
   const [forms, setForms] = createSignal<Form[]>([]);

@@ -40,7 +40,7 @@ run = [
 [tasks.lint]
 run = [
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-  "deno lint tools",
+  "deno lint tools e2e frontend/src docsite/src",
 ]
 
 [tasks.check]
@@ -48,6 +48,9 @@ run = [
   "cargo check --workspace --all-targets --all-features --locked",
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
   "deno task check",
+  "cargo run -p xtask -- openapi-check",
+  "cargo run -p xtask -- architecture-check",
+  "cargo run -p xtask -- docs-current-stack-check",
 ]
 
 [tasks.test]

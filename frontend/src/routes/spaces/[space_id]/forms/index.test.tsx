@@ -32,7 +32,7 @@ vi.mock("~/components/create-dialogs", () => ({
   CreateFormDialog: () => <div>Create form dialog</div>,
 }));
 
-vi.mock("~/lib/sql-session-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   sqlSessionApi: {
     get: vi.fn(),
     rows: vi.fn(),

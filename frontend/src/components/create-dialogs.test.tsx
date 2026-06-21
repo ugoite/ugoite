@@ -7,7 +7,7 @@ import {
   EditFormDialog,
 } from "./create-dialogs";
 import { setLocale } from "~/lib/i18n";
-import { searchApi } from "~/lib/search-api";
+import { searchApi } from "~/lib/ugoite-client";
 import type { Form } from "~/lib/types";
 
 beforeEach(() => {

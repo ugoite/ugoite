@@ -2,9 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import SpaceDashboardRoute from "./dashboard";
-import { spaceApi } from "~/lib/space-api";
-import { formApi } from "~/lib/form-api";
-import { assetApi } from "~/lib/asset-api";
+import { spaceApi } from "~/lib/ugoite-client";
+import { formApi } from "~/lib/ugoite-client";
+import { assetApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -34,25 +34,19 @@ vi.mock("~/lib/entry-store", () => ({
   }),
 }));
 
-vi.mock("~/lib/space-api", () => ({
-  spaceApi: {
-    get: vi.fn(),
+vi.mock("~/lib/ugoite-client", () => ({
+  assetApi: {
+    list: vi.fn(),
+    upload: vi.fn(),
+    delete: vi.fn(),
   },
-}));
-
-vi.mock("~/lib/form-api", () => ({
   formApi: {
     list: vi.fn(),
     listTypes: vi.fn(),
     create: vi.fn(),
   },
-}));
-
-vi.mock("~/lib/asset-api", () => ({
-  assetApi: {
-    list: vi.fn(),
-    upload: vi.fn(),
-    delete: vi.fn(),
+  spaceApi: {
+    get: vi.fn(),
   },
 }));
 

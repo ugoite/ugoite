@@ -19,10 +19,10 @@ import {
   type EntryInputMode,
 } from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/sql-session-api";
+import { sqlSessionApi } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 
 export default function SpaceEntriesIndexPane() {

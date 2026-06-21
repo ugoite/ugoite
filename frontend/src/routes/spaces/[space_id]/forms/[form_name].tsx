@@ -10,7 +10,7 @@ import { FormTable } from "~/components/FormTable";
 import { EditFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
 export default function SpaceFormDetailRoute() {

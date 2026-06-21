@@ -1,6 +1,6 @@
 import { createRoot, createSignal } from "solid-js";
 import { initializeLocale, setLocale } from "~/lib/i18n";
-import { preferencesApi } from "~/lib/preferences-api";
+import { preferencesApi } from "~/lib/ugoite-client";
 import {
   emptyUserPreferences,
   readLocalPreferences,
