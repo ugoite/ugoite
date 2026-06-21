@@ -2,7 +2,7 @@ import { A, useParams } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
 import { createMemo, createResource } from "solid-js";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 

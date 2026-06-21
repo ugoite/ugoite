@@ -13,10 +13,10 @@ import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/sql-session-api";
+import { sqlSessionApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
 export default function SpaceFormsIndexPane() {

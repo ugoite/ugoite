@@ -13,7 +13,7 @@ import {
   sortSpaces,
 } from "./space-list";
 import type { Space } from "./types";
-import { spaceApi } from "./space-api";
+import { spaceApi } from "./ugoite-client";
 
 /**
  * Creates a reactive space store.

@@ -2,7 +2,7 @@
 // REQ-FE-059: Portable theme preferences surface explicit API errors
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { preferencesApi } from "./preferences-api";
+import { preferencesApi } from "./ugoite-client";
 import { resetMockData } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";

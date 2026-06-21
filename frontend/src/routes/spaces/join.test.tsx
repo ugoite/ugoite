@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceInvitationJoinRoute from "./join";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 
 // REQ-SEC-007: browser invitation acceptance flow
 const navigateMock = vi.fn();
@@ -17,7 +17,7 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/space-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   spaceApi: {
     acceptInvitation: vi.fn(),
   },

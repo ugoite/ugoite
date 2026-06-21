@@ -2,11 +2,11 @@
 // REQ-API-002: Entry CRUD
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { assetApi } from "./asset-api";
-import { formApi } from "./form-api";
-import { entryApi, RevisionConflictError } from "./entry-api";
-import { searchApi } from "./search-api";
-import { spaceApi } from "./space-api";
+import { assetApi } from "./ugoite-client";
+import { formApi } from "./ugoite-client";
+import { entryApi, RevisionConflictError } from "./ugoite-client";
+import { searchApi } from "./ugoite-client";
+import { spaceApi } from "./ugoite-client";
 import { joinUrl } from "./api";
 import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";

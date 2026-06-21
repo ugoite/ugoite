@@ -1,6 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createResource, For, Show } from "solid-js";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 
 export default function SpaceFormTypesRoute() {
   const params = useParams<{ space_id: string }>();

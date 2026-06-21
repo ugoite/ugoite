@@ -30,7 +30,6 @@ runtime settings so browser-oriented installs do not start with root-only privil
 | Rust | 1.75+ | Core language |
 | [OpenDAL](https://opendal.apache.org/) | Latest | Storage adapter implementation (local, S3, GCS, memory) |
 | [serde](https://serde.rs/) | Latest | JSON serialization |
-| [pyo3](https://pyo3.rs/) | Latest | Python bindings |
 | [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/) | Latest | WebAssembly bindings (future) |
 
 ### ugoite-cli (Rust)
@@ -42,20 +41,20 @@ runtime settings so browser-oriented installs do not start with root-only privil
 | [reqwest](https://docs.rs/reqwest/) | Latest | Backend/API routing |
 | `ugoite-core` crate | Workspace path dependency | Shared core integration |
 
-### Backend (Python/FastAPI)
+### ugoite-server (Rust/Axum)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Python | 3.13+ | Runtime |
-| FastAPI | Latest | Web framework |
-| uvicorn | Latest | ASGI server |
-| Pydantic | v2 | Request/response validation |
+| Rust | 1.93.0 | HTTP/MCP server runtime |
+| Axum | 0.8 | REST and MCP route handling |
+| tower-http | 0.6 | CORS, static files, request IDs, and tracing |
+| `ugoite-core` crate | Workspace path dependency | Shared application service facade |
 
 ### Frontend (TypeScript/SolidStart)
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Bun | Latest | JavaScript runtime & package manager |
+| Deno | 2.8.3 | TypeScript runtime, workspace tasks, and package resolution |
 | SolidJS | Latest | Reactive UI framework |
 | SolidStart | Latest | Full-stack framework |
 | TailwindCSS | Latest | Styling |
@@ -66,15 +65,11 @@ runtime settings so browser-oriented installs do not start with root-only privil
 |------|---------|
 | cargo | Rust build, run, and test orchestration |
 | mise | Task runner and version management |
-| uv | Python package management |
-| ruff | Python linting and formatting |
-| ty | Python type checking |
 | rustfmt | Rust formatting |
 | clippy | Rust linting |
-| biome | TypeScript/JavaScript linting |
-| pytest | Python testing |
+| deno fmt/lint/check | TypeScript formatting, linting, and static checks |
 | vitest | Frontend unit testing |
-| bun:test | E2E testing |
+| Playwright on Deno | E2E testing |
 
 ## Storage Backends
 
@@ -95,7 +90,7 @@ The Rust core layer targets multiple runtimes:
 | Layer / Target | Use Case |
 |----------------|----------|
 | `ugoite-minimum` (native) | Portable domain logic for adapters and future runtimes |
-| `ugoite-core` (native + Python bindings) | Backend integration over OpenDAL-backed storage |
+| `ugoite-core` (native) | Server and CLI integration over OpenDAL-backed storage |
 | `ugoite-cli` (native) | Native Rust CLI binary using Clap and backend/API routing |
 | `ugoite-minimum` (future WebAssembly) | Browser-based frontend and other sandboxed clients |
 | Tauri integration | Desktop application |
@@ -104,8 +99,8 @@ The Rust core layer targets multiple runtimes:
 
 | Stage | Tools | Trigger |
 |-------|-------|---------|
-| Lint | ruff, biome | Push, PR |
-| Type Check | ty, TypeScript | Push, PR |
-| Unit Test | pytest, vitest | Push, PR |
-| E2E Test | bun:test | Push, PR |
+| Lint | clippy, deno lint | Push, PR |
+| Type Check | cargo check, deno check | Push, PR |
+| Unit Test | cargo test, vitest | Push, PR |
+| E2E Test | Playwright on Deno | Push, PR |
 | Build | Docker, Cargo | Release |

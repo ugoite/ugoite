@@ -9,8 +9,8 @@ import {
   untrack,
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
-import { entryApi } from "~/lib/entry-api";
-import { searchApi } from "~/lib/search-api";
+import { entryApi } from "~/lib/ugoite-client";
+import { searchApi } from "~/lib/ugoite-client";
 import {
   ensureFormFrontmatter,
   replaceFirstH1,
