@@ -5,6 +5,7 @@ import { initializeLocale, locale, setLocale, t } from "./i18n";
 describe("i18n", () => {
   beforeEach(() => {
     localStorage.clear();
+    window.localStorage.clear();
     setLocale("en");
   });
 
@@ -34,7 +35,7 @@ describe("i18n", () => {
   });
 
   it("restores locale from localStorage during initializeLocale", async () => {
-    localStorage.setItem("ugoite-locale", "ja");
+    window.localStorage.setItem("ugoite-locale", "ja");
     vi.resetModules();
 
     const i18n = await import("./i18n");
@@ -51,7 +52,7 @@ describe("i18n", () => {
 
     expect(i18n.locale()).toBe("en");
 
-    localStorage.setItem("ugoite-locale", "ja");
+    window.localStorage.setItem("ugoite-locale", "ja");
     i18n.initializeLocale();
 
     expect(i18n.locale()).toBe("ja");
