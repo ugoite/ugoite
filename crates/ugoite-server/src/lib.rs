@@ -25,7 +25,7 @@ use ugoite_core::{
     entry, form, index,
     integrity::RealIntegrityProvider,
     saved_sql,
-    service::{SpacePermission, UgoiteService},
+    service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
     space,
 };
 use uuid::Uuid;
@@ -74,7 +74,11 @@ impl AppState {
             .await
         {
             Ok(()) => Ok(()),
-            Err(error) if error.to_string().to_lowercase().contains("already exists") => Ok(()),
+            Err(error) if error.to_string().to_lowercase().contains("already exists") => {
+                self.service
+                    .bootstrap_admin_member(space_id, &owner_user_id)
+                    .await
+            }
             Err(error) => Err(error),
         }
     }
@@ -482,18 +486,14 @@ async fn list_spaces(
         .map_err(ApiError::from_core)?;
     let mut items = Vec::new();
     for id in ids {
-        let mut value = state
-            .service
-            .get_space(&id)
-            .await
-            .map_err(ApiError::from_core)?;
-        if let Some(object) = value.as_object_mut() {
-            object.remove("hmac_key");
-            object.insert(
-                "is_admin_space".to_string(),
-                Value::Bool(id == "admin-space"),
-            );
-        }
+        let mut value = sanitize_space_response(
+            state
+                .service
+                .get_space(&id)
+                .await
+                .map_err(ApiError::from_core)?,
+        );
+        insert_admin_space_flag(&mut value, &id);
         items.push(value);
     }
     Ok(Json(Value::Array(items)))
@@ -510,6 +510,19 @@ async fn create_space(
     Json(payload): Json<SpaceCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     validate_id(&payload.name, "space_id")?;
+    if payload.name == "admin-space" {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "reserved space id admin-space cannot be created through the public API",
+        ));
+    }
+    require_space_permission(
+        &state,
+        "admin-space",
+        &identity,
+        SpacePermission::ManageSpace,
+    )
+    .await?;
     state
         .service
         .create_space_for(&payload.name, &identity.user_id)
@@ -529,13 +542,15 @@ async fn get_space(
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    Ok(Json(
+    let mut value = sanitize_space_response(
         state
             .service
             .get_space(&space_id)
             .await
             .map_err(ApiError::from_core)?,
-    ))
+    );
+    insert_admin_space_flag(&mut value, &space_id);
+    Ok(Json(value))
 }
 
 async fn patch_space(
@@ -545,13 +560,15 @@ async fn patch_space(
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    Ok(Json(
+    let mut value = sanitize_space_response(
         state
             .service
             .patch_space(&space_id, &payload)
             .await
             .map_err(ApiError::from_core)?,
-    ))
+    );
+    insert_admin_space_flag(&mut value, &space_id);
+    Ok(Json(value))
 }
 
 async fn get_preferences(
@@ -800,6 +817,64 @@ async fn test_connection(
             .await
             .map_err(ApiError::from_core)?,
     ))
+}
+
+fn sanitize_space_response(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        for key in ["hmac_key", "hmac_key_id", "last_rotation"] {
+            object.remove(key);
+        }
+        if let Some(storage_config) = object.get_mut("storage_config") {
+            redact_sensitive_storage_config(storage_config);
+        }
+        if let Some(settings) = object.get_mut("settings").and_then(Value::as_object_mut) {
+            for key in MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS {
+                settings.remove(*key);
+            }
+        }
+    }
+    value
+}
+
+fn insert_admin_space_flag(value: &mut Value, space_id: &str) {
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "is_admin_space".to_string(),
+            Value::Bool(space_id == "admin-space"),
+        );
+    }
+}
+
+fn redact_sensitive_storage_config(value: &mut Value) {
+    const REDACTED_KEYS: &[&str] = &[
+        "access_key",
+        "client_secret",
+        "credential",
+        "credentials",
+        "password",
+        "secret",
+        "secret_access_key",
+        "secret_key",
+        "session_token",
+        "token",
+    ];
+
+    match value {
+        Value::Object(object) => {
+            for key in REDACTED_KEYS {
+                object.remove(*key);
+            }
+            for nested in object.values_mut() {
+                redact_sensitive_storage_config(nested);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_sensitive_storage_config(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[derive(Deserialize)]

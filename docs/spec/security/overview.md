@@ -24,6 +24,9 @@ targets an **Authenticated Access by Default** model.
 - Shipped release Compose and Helm surfaces require operator-supplied auth
   secrets, and local-demo `mock-oauth` remains an explicit opt-in instead of
   the manifest default.
+- Public Space API responses redact `hmac_key`, membership state, invitation
+  tokens, and other membership-managed settings; those values stay in the
+  member-management endpoints and storage layer.
 - CLI endpoint configuration only allows cleartext `http://` for loopback
   development hosts (`localhost`, `127.0.0.1`, `[::1]`); remote credentialed
   endpoints MUST use `https://`.
@@ -50,8 +53,9 @@ targets an **Authenticated Access by Default** model.
 - `UGOITE_TRUST_PROXY_HEADERS=true` only trusts forwarded client headers from
   loopback proxy peers; direct remote clients cannot spoof `X-Forwarded-For`
   into looking like localhost
-- The source `docker-compose.yaml` keeps both published ports on `127.0.0.1`
-  and expects unique dev signing/proxy secrets before startup
+- The source `docker-compose.yaml` keeps the published server on `127.0.0.1`
+  with a Docker-assigned host port and expects unique dev signing/proxy
+  secrets before startup
 - The Helm chart requires install-specific dev auth secrets instead of shipping
   repository-known signing or proxy defaults
 
