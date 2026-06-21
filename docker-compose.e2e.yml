@@ -5,7 +5,10 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:8000:8000"
+      - target: 8000
+        published: 0
+        host_ip: 127.0.0.1
+        protocol: tcp
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_SERVER_ADDRESS=0.0.0.0:8000

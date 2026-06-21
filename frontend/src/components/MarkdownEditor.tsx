@@ -2,139 +2,140 @@ import { createSignal, Show } from "solid-js";
 import { renderMarkdownPreview } from "~/lib/markdown";
 
 export interface MarkdownEditorProps {
-	content: string | undefined;
-	onChange: (content: string) => void;
-	onSave?: () => void;
-	disabled?: boolean;
-	isDirty?: boolean;
-	isSaving?: boolean;
-	conflictMessage?: string;
-	showPreview?: boolean;
-	mode?: "edit" | "preview" | "split";
-	placeholder?: string;
+  content: string | undefined;
+  onChange: (content: string) => void;
+  onSave?: () => void;
+  disabled?: boolean;
+  isDirty?: boolean;
+  isSaving?: boolean;
+  conflictMessage?: string;
+  showPreview?: boolean;
+  mode?: "edit" | "preview" | "split";
+  placeholder?: string;
 }
 
 export function MarkdownEditor(props: MarkdownEditorProps) {
-	const [isPreviewMode, setIsPreviewMode] = createSignal(false);
+  const [isPreviewMode, setIsPreviewMode] = createSignal(false);
 
-	const isSplitMode = () => props.mode === "split";
-	const isForcedPreview = () => props.mode === "preview";
+  const isSplitMode = () => props.mode === "split";
+  const isForcedPreview = () => props.mode === "preview";
 
-	const handleInput = (e: Event) => {
-		const target = e.target as HTMLTextAreaElement;
-		props.onChange(target.value);
-	};
+  const handleInput = (e: Event) => {
+    const target = e.target as HTMLTextAreaElement;
+    props.onChange(target.value);
+  };
 
-	const handleKeyDown = (e: KeyboardEvent) => {
-		// Cmd/Ctrl + S to save
-		if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-			e.preventDefault();
-			if (props.onSave && props.isDirty) {
-				props.onSave();
-			}
-		}
-	};
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // Cmd/Ctrl + S to save
+    if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+      e.preventDefault();
+      if (props.onSave && props.isDirty) {
+        props.onSave();
+      }
+    }
+  };
 
-	return (
-		<div class="markdown-editor flex flex-col h-full">
-			{/* Toolbar */}
-			<div class="toolbar ui-toolbar">
-				<div class="flex items-center gap-2">
-					<Show when={props.showPreview && !props.mode}>
-						<button
-							type="button"
-							class={`ui-button text-sm ${
-								isPreviewMode() ? "ui-button-primary" : "ui-button-secondary"
-							}`}
-							onClick={() => setIsPreviewMode(!isPreviewMode())}
-							aria-label={isPreviewMode() ? "Edit" : "Preview"}
-						>
-							{isPreviewMode() ? "Edit" : "Preview"}
-						</button>
-					</Show>
-				</div>
+  return (
+    <div class="markdown-editor flex flex-col h-full">
+      {/* Toolbar */}
+      <div class="toolbar ui-toolbar">
+        <div class="flex items-center gap-2">
+          <Show when={props.showPreview && !props.mode}>
+            <button
+              type="button"
+              class={`ui-button text-sm ${
+                isPreviewMode() ? "ui-button-primary" : "ui-button-secondary"
+              }`}
+              onClick={() => setIsPreviewMode(!isPreviewMode())}
+              aria-label={isPreviewMode() ? "Edit" : "Preview"}
+            >
+              {isPreviewMode() ? "Edit" : "Preview"}
+            </button>
+          </Show>
+        </div>
 
-				<div class="flex items-center gap-2">
-					<Show when={props.isDirty}>
-						<span class="text-sm ui-warning flex items-center gap-1">
-							<span class="ui-indicator-dot" />
-							Unsaved changes
-						</span>
-					</Show>
+        <div class="flex items-center gap-2">
+          <Show when={props.isDirty}>
+            <span class="text-sm ui-warning flex items-center gap-1">
+              <span class="ui-indicator-dot" />
+              Unsaved changes
+            </span>
+          </Show>
 
-					<Show when={props.onSave}>
-						<button
-							type="button"
-							class="ui-button ui-button-primary text-sm"
-							onClick={props.onSave}
-							disabled={!props.isDirty || props.isSaving || props.disabled}
-							aria-label="Save"
-						>
-							{props.isSaving ? "Saving..." : "Save"}
-						</button>
-					</Show>
-				</div>
-			</div>
+          <Show when={props.onSave}>
+            <button
+              type="button"
+              class="ui-button ui-button-primary text-sm"
+              onClick={props.onSave}
+              disabled={!props.isDirty || props.isSaving || props.disabled}
+              aria-label="Save"
+            >
+              {props.isSaving ? "Saving..." : "Save"}
+            </button>
+          </Show>
+        </div>
+      </div>
 
-			{/* Conflict Warning */}
-			<Show when={props.conflictMessage}>
-				<div class="conflict-message ui-alert ui-alert-error">
-					<div class="flex items-center gap-2">
-						<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-							<path
-								fill-rule="evenodd"
-								d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-						<span>{props.conflictMessage}</span>
-					</div>
-				</div>
-			</Show>
+      {/* Conflict Warning */}
+      <Show when={props.conflictMessage}>
+        <div class="conflict-message ui-alert ui-alert-error">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fill-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span>{props.conflictMessage}</span>
+          </div>
+        </div>
+      </Show>
 
-			{/* Editor / Preview */}
-			<div class="flex-1 overflow-hidden">
-				<Show when={isSplitMode()}>
-					<div class="flex h-full">
-						<textarea
-							class="ui-editor ui-editor-split w-1/2 h-full"
-							value={props.content ?? ""}
-							onInput={handleInput}
-							onKeyDown={handleKeyDown}
-							disabled={props.disabled}
-							placeholder={props.placeholder || "Start writing in Markdown..."}
-							spellcheck={false}
-						/>
-						<div
-							class="preview ui-preview w-1/2 h-full"
-							innerHTML={renderMarkdownPreview(props.content)}
-						/>
-					</div>
-				</Show>
-				<Show when={!isSplitMode()}>
-					<Show
-						when={isPreviewMode() || isForcedPreview()}
-						fallback={
-							<textarea
-								class="ui-editor w-full h-full"
-								value={props.content ?? ""}
-								onInput={handleInput}
-								onKeyDown={handleKeyDown}
-								disabled={props.disabled}
-								placeholder={props.placeholder || "Start writing in Markdown..."}
-								spellcheck={false}
-							/>
-						}
-					>
-						<div
-							class="preview ui-preview h-full"
-							innerHTML={renderMarkdownPreview(props.content)}
-						/>
-					</Show>
-				</Show>
-			</div>
-		</div>
-	);
-	/* v8 ignore start */
+      {/* Editor / Preview */}
+      <div class="flex-1 overflow-hidden">
+        <Show when={isSplitMode()}>
+          <div class="flex h-full">
+            <textarea
+              class="ui-editor ui-editor-split w-1/2 h-full"
+              value={props.content ?? ""}
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              disabled={props.disabled}
+              placeholder={props.placeholder || "Start writing in Markdown..."}
+              spellcheck={false}
+            />
+            <div
+              class="preview ui-preview w-1/2 h-full"
+              innerHTML={renderMarkdownPreview(props.content)}
+            />
+          </div>
+        </Show>
+        <Show when={!isSplitMode()}>
+          <Show
+            when={isPreviewMode() || isForcedPreview()}
+            fallback={
+              <textarea
+                class="ui-editor w-full h-full"
+                value={props.content ?? ""}
+                onInput={handleInput}
+                onKeyDown={handleKeyDown}
+                disabled={props.disabled}
+                placeholder={props.placeholder ||
+                  "Start writing in Markdown..."}
+                spellcheck={false}
+              />
+            }
+          >
+            <div
+              class="preview ui-preview h-full"
+              innerHTML={renderMarkdownPreview(props.content)}
+            />
+          </Show>
+        </Show>
+      </div>
+    </div>
+  );
+  /* v8 ignore start */
 }
 /* v8 ignore stop */

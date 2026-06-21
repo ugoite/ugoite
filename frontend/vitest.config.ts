@@ -1,10 +1,12 @@
 import { defineConfig } from "vitest/config";
 import solidPlugin from "vite-plugin-solid";
 
+const frontendRoot = "/Volumes/myssd/work/ugoite-1/frontend";
 const frontendTestOrigin = process.env.FRONTEND_TEST_ORIGIN ??
   "http://localhost:3000";
 
 export default defineConfig({
+  root: frontendRoot,
   plugins: [solidPlugin() as never],
   define: {
     "process.env.NODE_ENV": JSON.stringify("test"),

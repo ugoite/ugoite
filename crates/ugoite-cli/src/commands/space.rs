@@ -7,16 +7,7 @@ use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
 use ugoite_core::sample_data::SampleDataOptions;
-use ugoite_core::service::UgoiteService;
-
-const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
-    "admin_user_ids",
-    "invitations",
-    "member_roles",
-    "members",
-    "membership_version",
-    "owner_user_id",
-];
+use ugoite_core::service::{validate_public_space_patch, UgoiteService};
 
 fn backend_api_mode_error(config: &EndpointConfig, command_name: &str) -> String {
     format!(
@@ -226,25 +217,8 @@ fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
 }
 
 fn validate_patch_settings(settings: &serde_json::Value) -> Result<()> {
-    let Some(settings_obj) = settings.as_object() else {
-        return Ok(());
-    };
-
-    let mut reserved_keys: Vec<&str> = settings_obj
-        .keys()
-        .map(String::as_str)
-        .filter(|key| MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS.contains(key))
-        .collect();
-    reserved_keys.sort_unstable();
-
-    if reserved_keys.is_empty() {
-        return Ok(());
-    }
-
-    bail!(
-        "space patch does not allow membership-managed settings keys: {}. Use the dedicated member commands instead.",
-        reserved_keys.join(", ")
-    )
+    let patch = serde_json::json!({ "settings": settings });
+    validate_public_space_patch(&patch).map_err(|error| anyhow::anyhow!(error.to_string()))
 }
 
 pub async fn create_space_cmd(

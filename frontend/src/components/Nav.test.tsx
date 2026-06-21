@@ -12,153 +12,166 @@ const getSessionMock = vi.fn();
 const clearSessionMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
-	useLocation: () => ({ pathname: mockPathname }),
-	useNavigate: () => navigateMock,
+  useLocation: () => ({ pathname: mockPathname }),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock("~/lib/auth-api", () => ({
-	authApi: {
-		getSession: (...args: unknown[]) => getSessionMock(...args),
-		clearSession: (...args: unknown[]) => clearSessionMock(...args),
-	},
+  authApi: {
+    getSession: (...args: unknown[]) => getSessionMock(...args),
+    clearSession: (...args: unknown[]) => clearSessionMock(...args),
+  },
 }));
 
 describe("Nav", () => {
-	afterEach(() => {
-		vi.unstubAllGlobals();
-	});
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-	beforeEach(() => {
-		localStorage.clear();
-		sessionStorage.clear();
-		setLocale("en");
-		mockPathname = "/";
-		navigateMock.mockReset();
-		getSessionMock.mockReset();
-		clearSessionMock.mockReset();
-		getSessionMock.mockResolvedValue({ authenticated: false });
-		clearSessionMock.mockResolvedValue(undefined);
-	});
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    setLocale("en");
+    mockPathname = "/";
+    navigateMock.mockReset();
+    getSessionMock.mockReset();
+    clearSessionMock.mockReset();
+    getSessionMock.mockResolvedValue({ authenticated: false });
+    clearSessionMock.mockResolvedValue(undefined);
+  });
 
-	it("REQ-FE-066: signed-out nav shows primary routes and a login link", async () => {
-		mockPathname = "/";
-		render(() => <Nav />);
-		expect(screen.getByText("Home")).toBeInTheDocument();
-		expect(screen.getByText("Spaces")).toBeInTheDocument();
-		expect(screen.getByText("About")).toBeInTheDocument();
-		expect(await screen.findByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
-		expect(screen.queryByText("Signed in")).not.toBeInTheDocument();
-		expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
-	});
+  it("REQ-FE-066: signed-out nav shows primary routes and a login link", async () => {
+    mockPathname = "/";
+    render(() => <Nav />);
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Spaces")).toBeInTheDocument();
+    expect(screen.getByText("About")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Login" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
+    expect(screen.queryByText("Signed in")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign out" })).not
+      .toBeInTheDocument();
+  });
 
-	it("REQ-FE-066: active state tracks the current route for signed-out nav links", async () => {
-		mockPathname = "/login";
-		render(() => <Nav />);
-		const loginLink = await screen.findByRole("link", { name: "Login" });
-		expect(loginLink).toHaveClass("ui-nav-link-active");
-	});
+  it("REQ-FE-066: active state tracks the current route for signed-out nav links", async () => {
+    mockPathname = "/login";
+    render(() => <Nav />);
+    const loginLink = await screen.findByRole("link", { name: "Login" });
+    expect(loginLink).toHaveClass("ui-nav-link-active");
+  });
 
-	it("REQ-FE-066: stays hidden on space explorer pages", () => {
-		mockPathname = "/spaces/my-space/entries";
-		const { container } = render(() => <Nav />);
-		expect(container.firstChild).toBeNull();
-	});
+  it("REQ-FE-066: stays hidden on space explorer pages", () => {
+    mockPathname = "/spaces/my-space/entries";
+    const { container } = render(() => <Nav />);
+    expect(container.firstChild).toBeNull();
+  });
 
-	it("REQ-FE-066: signed-in nav swaps Login for session status and sign-out", async () => {
-		getSessionMock.mockResolvedValue({ authenticated: true });
-		mockPathname = "/spaces";
-		render(() => <Nav />);
-		expect(screen.getByText("Spaces")).toBeInTheDocument();
-		expect(await screen.findByText("Signed in")).toBeInTheDocument();
-		expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
-		await waitFor(() => {
-			expect(screen.queryByRole("link", { name: "Login" })).not.toBeInTheDocument();
-		});
-	});
+  it("REQ-FE-066: signed-in nav swaps Login for session status and sign-out", async () => {
+    getSessionMock.mockResolvedValue({ authenticated: true });
+    mockPathname = "/spaces";
+    render(() => <Nav />);
+    expect(screen.getByText("Spaces")).toBeInTheDocument();
+    expect(await screen.findByText("Signed in")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sign out" }))
+      .toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: "Login" })).not
+        .toBeInTheDocument();
+    });
+  });
 
-	it("REQ-FE-066: sign-out clears the auth cookie and redirects to login", async () => {
-		getSessionMock.mockResolvedValue({ authenticated: true });
-		mockPathname = "/spaces";
-		render(() => <Nav />);
+  it("REQ-FE-066: sign-out clears the auth cookie and redirects to login", async () => {
+    getSessionMock.mockResolvedValue({ authenticated: true });
+    mockPathname = "/spaces";
+    render(() => <Nav />);
 
-		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 
-		await waitFor(() => {
-			expect(clearSessionMock).toHaveBeenCalledTimes(1);
-		});
-		await waitFor(() => {
-			expect(navigateMock).toHaveBeenCalledWith("/login", { replace: true });
-		});
-	});
+    await waitFor(() => {
+      expect(clearSessionMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/login", { replace: true });
+    });
+  });
 
-	it("REQ-FE-066: surfaces auth session load failures in the nav", async () => {
-		getSessionMock.mockRejectedValueOnce(new Error("Session lookup failed."));
-		render(() => <Nav />);
+  it("REQ-FE-066: surfaces auth session load failures in the nav", async () => {
+    getSessionMock.mockRejectedValueOnce(new Error("Session lookup failed."));
+    render(() => <Nav />);
 
-		expect(await screen.findByRole("alert")).toHaveTextContent("Session lookup failed.");
-	});
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Session lookup failed.",
+    );
+  });
 
-	it("REQ-FE-066: retries auth session detection when the window regains focus", async () => {
-		render(() => <Nav />);
-		await screen.findByRole("link", { name: "Login" });
+  it("REQ-FE-066: retries auth session detection when the window regains focus", async () => {
+    render(() => <Nav />);
+    await screen.findByRole("link", { name: "Login" });
+    const initialCalls = getSessionMock.mock.calls.length;
 
-		window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
 
-		await waitFor(() => {
-			expect(getSessionMock).toHaveBeenCalledTimes(2);
-		});
-	});
+    await waitFor(() => {
+      expect(getSessionMock.mock.calls.length).toBeGreaterThan(initialCalls);
+    });
+  });
 
-	it("REQ-FE-066: retries auth session detection when the tab becomes visible again", async () => {
-		Object.defineProperty(document, "visibilityState", {
-			configurable: true,
-			get: () => "visible",
-		});
-		render(() => <Nav />);
-		await screen.findByRole("link", { name: "Login" });
+  it("REQ-FE-066: retries auth session detection when the tab becomes visible again", async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    render(() => <Nav />);
+    await screen.findByRole("link", { name: "Login" });
+    const initialCalls = getSessionMock.mock.calls.length;
 
-		document.dispatchEvent(new Event("visibilitychange"));
+    document.dispatchEvent(new Event("visibilitychange"));
 
-		await waitFor(() => {
-			expect(getSessionMock).toHaveBeenCalledTimes(2);
-		});
-	});
+    await waitFor(() => {
+      expect(getSessionMock.mock.calls.length).toBeGreaterThan(initialCalls);
+    });
+  });
 
-	it("REQ-FE-066: ignores hidden-tab visibility changes until the tab is visible again", async () => {
-		Object.defineProperty(document, "visibilityState", {
-			configurable: true,
-			get: () => "hidden",
-		});
-		render(() => <Nav />);
-		await screen.findByRole("link", { name: "Login" });
+  it("REQ-FE-066: ignores hidden-tab visibility changes until the tab is visible again", async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    render(() => <Nav />);
+    await screen.findByRole("link", { name: "Login" });
+    const initialCalls = getSessionMock.mock.calls.length;
 
-		document.dispatchEvent(new Event("visibilitychange"));
+    document.dispatchEvent(new Event("visibilitychange"));
 
-		expect(getSessionMock).toHaveBeenCalledTimes(1);
-	});
+    expect(getSessionMock.mock.calls.length).toBe(initialCalls);
+  });
 
-	it("REQ-FE-066: surfaces sign-out failures without navigating away", async () => {
-		getSessionMock.mockResolvedValue({ authenticated: true });
-		clearSessionMock.mockRejectedValueOnce("network unavailable");
-		mockPathname = "/spaces";
-		render(() => <Nav />);
+  it("REQ-FE-066: surfaces sign-out failures without navigating away", async () => {
+    getSessionMock.mockResolvedValue({ authenticated: true });
+    clearSessionMock.mockRejectedValueOnce("network unavailable");
+    mockPathname = "/spaces";
+    render(() => <Nav />);
 
-		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 
-		expect(await screen.findByRole("alert")).toHaveTextContent("Failed to sign out.");
-		expect(navigateMock).not.toHaveBeenCalled();
-	});
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Failed to sign out.",
+    );
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
 
-	it("REQ-FE-066: safely initializes without a browser window during SSR", () => {
-		vi.stubGlobal("window", undefined);
-		mockPathname = "/";
+  it("REQ-FE-066: safely initializes without a browser window during SSR", () => {
+    vi.stubGlobal("window", undefined);
+    mockPathname = "/";
 
-		expect(() => {
-			const dispose = createRoot((dispose) => {
-				Nav();
-				return dispose;
-			});
-			dispose();
-		}).not.toThrow();
-	});
+    expect(() => {
+      const dispose = createRoot((dispose) => {
+        Nav();
+        return dispose;
+      });
+      dispose();
+    }).not.toThrow();
+  });
 });

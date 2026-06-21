@@ -1,79 +1,82 @@
 // REQ-FE-044: Frontend multilingual dictionary and locale switching
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { locale, setLocale, t, initializeLocale } from "./i18n";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { initializeLocale, locale, setLocale, t } from "./i18n";
 
 describe("i18n", () => {
-	beforeEach(() => {
-		localStorage.clear();
-		setLocale("en");
-	});
+  beforeEach(() => {
+    localStorage.clear();
+    setLocale("en");
+  });
 
-	it("switches locale and translates labels", () => {
-		expect(t("themeMenu.language")).toBe("Language");
+  it("switches locale and translates labels", () => {
+    expect(t("themeMenu.language")).toBe("Language");
 
-		setLocale("ja");
+    setLocale("ja");
 
-		expect(locale()).toBe("ja");
-		expect(t("themeMenu.language")).toBe("言語");
-		expect(localStorage.getItem("ugoite-locale")).toBe("ja");
-	});
+    expect(locale()).toBe("ja");
+    expect(t("themeMenu.language")).toBe("言語");
+    expect(localStorage.getItem("ugoite-locale")).toBe("ja");
+  });
 
-	it("applies locale attributes on initialize", () => {
-		setLocale("ja");
-		initializeLocale();
+  it("applies locale attributes on initialize", () => {
+    setLocale("ja");
+    initializeLocale();
 
-		expect(document.documentElement.lang).toBe("ja");
-		expect(document.documentElement.dataset.locale).toBe("ja");
-	});
+    expect(document.documentElement.lang).toBe("ja");
+    expect(document.documentElement.dataset.locale).toBe("ja");
+  });
 
-	it("falls back to key text when translation key is unknown", () => {
-		setLocale("ja");
-		expect(t("missing.translation.key" as never)).toBe("missing.translation.key");
-	});
+  it("falls back to key text when translation key is unknown", () => {
+    setLocale("ja");
+    expect(t("missing.translation.key" as never)).toBe(
+      "missing.translation.key",
+    );
+  });
 
-	it("restores locale from localStorage during initializeLocale", async () => {
-		localStorage.setItem("ugoite-locale", "ja");
-		vi.resetModules();
+  it("restores locale from localStorage during initializeLocale", async () => {
+    localStorage.setItem("ugoite-locale", "ja");
+    vi.resetModules();
 
-		const i18n = await import("./i18n");
-		expect(i18n.locale()).toBe("ja");
-		i18n.initializeLocale();
-		expect(i18n.locale()).toBe("ja");
-		expect(document.documentElement.lang).toBe("ja");
-		expect(document.documentElement.dataset.locale).toBe("ja");
-		expect(i18n.t("themeMenu.language")).toBe("言語");
-	});
+    const i18n = await import("./i18n");
+    i18n.initializeLocale();
+    expect(i18n.locale()).toBe("ja");
+    expect(document.documentElement.lang).toBe("ja");
+    expect(document.documentElement.dataset.locale).toBe("ja");
+    expect(i18n.t("themeMenu.language")).toBe("言語");
+  });
 
-	it("REQ-FE-044: initializeLocale refreshes locale from stored preferences", async () => {
-		vi.resetModules();
-		const i18n = await import("./i18n");
+  it("REQ-FE-044: initializeLocale refreshes locale from stored preferences", async () => {
+    vi.resetModules();
+    const i18n = await import("./i18n");
 
-		expect(i18n.locale()).toBe("en");
+    expect(i18n.locale()).toBe("en");
 
-		localStorage.setItem("ugoite-locale", "ja");
-		i18n.initializeLocale();
+    localStorage.setItem("ugoite-locale", "ja");
+    i18n.initializeLocale();
 
-		expect(i18n.locale()).toBe("ja");
-		expect(document.documentElement.lang).toBe("ja");
-		expect(document.documentElement.dataset.locale).toBe("ja");
-		expect(i18n.t("themeMenu.language")).toBe("言語");
-	});
+    expect(i18n.locale()).toBe("ja");
+    expect(document.documentElement.lang).toBe("ja");
+    expect(document.documentElement.dataset.locale).toBe("ja");
+    expect(i18n.t("themeMenu.language")).toBe("言語");
+  });
 
-	it("ignores invalid locale", () => {
-		setLocale("en");
-		setLocale("invalid" as never);
-		expect(locale()).toBe("en");
-	});
+  it("ignores invalid locale", () => {
+    setLocale("en");
+    setLocale("invalid" as never);
+    expect(locale()).toBe("en");
+  });
 
-	it("REQ-FE-044: interpolates localized placeholders", () => {
-		expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 })).toBe(
-			"2 forms available",
-		);
+  it("REQ-FE-044: interpolates localized placeholders", () => {
+    expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 }))
+      .toBe(
+        "2 forms available",
+      );
 
-		setLocale("ja");
+    setLocale("ja");
 
-		expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 })).toBe(
-			"利用可能なフォーム 2 件",
-		);
-	});
+    expect(t("dashboard.section.createEntry.formsAvailable", { count: 2 }))
+      .toBe(
+        "利用可能なフォーム 2 件",
+      );
+  });
 });

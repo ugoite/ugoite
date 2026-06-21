@@ -7,7 +7,7 @@ use opendal::Operator;
 use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::{form, space};
+use ugoite_core::{form, service::UgoiteService, space};
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004
@@ -97,6 +97,69 @@ async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()>
     // Should fail (result err) when creating again
     let result = space::create_space(&op, ws_id, "/tmp").await;
     assert!(result.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_create_space_for_does_not_repair_existing_space(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-create-for-duplicate")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let before = service.list_members("team-space").await?;
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0]["user_id"], "owner-a");
+
+    let result = service.create_space_for("team-space", "owner-b").await;
+    assert!(result.is_err(), "duplicate create should fail");
+
+    let after = service.list_members("team-space").await?;
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["user_id"], "owner-a");
+    assert_eq!(after[0]["role"], "admin");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_patch_rejects_membership_managed_settings() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-patch-guard")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let patch = serde_json::json!({
+        "settings": {
+            "default_form": "Entry",
+            "members": {
+                "owner-a": {"role": "viewer"}
+            }
+        }
+    });
+
+    let result = service.patch_space("team-space", &patch).await;
+    assert!(result.is_err(), "membership-managed patch should fail");
+
+    let space = service.get_space("team-space").await?;
+    assert!(space.get("settings").is_some());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_list_accessible_spaces_keeps_admin_space_last() -> anyhow::Result<()>
+{
+    let service = UgoiteService::new("memory://space-list-order")?;
+    service.create_space_for("default", "owner-a").await?;
+    service.create_space_for("admin-space", "owner-a").await?;
+
+    let listed = service.list_accessible_space_ids("owner-a").await?;
+    assert_eq!(
+        listed,
+        vec!["default".to_string(), "admin-space".to_string()]
+    );
 
     Ok(())
 }
