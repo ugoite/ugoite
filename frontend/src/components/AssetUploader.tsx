@@ -1,7 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
-import { A } from "@solidjs/router";
 
 export interface AssetUploaderProps {
   onUpload: (file: File) => Promise<Asset>;
