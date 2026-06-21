@@ -1,7 +1,8 @@
 import { defineConfig } from "vitest/config";
 import solidPlugin from "vite-plugin-solid";
+import { fileURLToPath } from "node:url";
 
-const frontendRoot = "/Volumes/myssd/work/ugoite-1/frontend";
+const frontendRoot = fileURLToPath(new URL(".", import.meta.url));
 const frontendTestOrigin = process.env.FRONTEND_TEST_ORIGIN ??
   "http://localhost:3000";
 
