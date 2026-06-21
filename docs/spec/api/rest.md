@@ -116,6 +116,9 @@ GET /spaces
 ]
 ```
 
+The reserved `admin-space` is listed after ordinary user spaces when it is
+visible to the caller.
+
 #### Create Space
 ```http
 POST /spaces
@@ -144,6 +147,9 @@ GET /spaces/{id}
 
 **Response**: `200 OK`
 
+The public response redacts HMAC material and membership internals. Client code
+must use the dedicated member endpoints for invitations and role management.
+
 #### Update Space
 ```http
 PATCH /spaces/{id}
@@ -162,6 +168,7 @@ Notes:
 - `storage_config` updates saved connector metadata only. The backend continues
   writing through the deployment storage root until per-space routing or
   migration support is available.
+- The public response redacts HMAC material and membership-managed settings.
 
 #### Test Connection
 ```http

@@ -9,6 +9,16 @@ use crate::{
     asset, entry, form, preferences, search, space, sql_session, storage::operator_from_uri,
 };
 
+pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
+    "admin_user_ids",
+    "invitations",
+    "member_roles",
+    "members",
+    "member_invitations",
+    "membership_version",
+    "owner_user_id",
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpacePermission {
     Read,
@@ -55,11 +65,7 @@ impl UgoiteService {
 
     pub async fn create_space_for(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
         validate_member_user_id(actor_user_id)?;
-        match self.create_space(space_id).await {
-            Ok(()) => {}
-            Err(error) if error.to_string().to_lowercase().contains("already exists") => {}
-            Err(error) => return Err(error),
-        }
+        self.create_space(space_id).await?;
         self.bootstrap_admin_member(space_id, actor_user_id).await
     }
 
@@ -77,6 +83,13 @@ impl UgoiteService {
                 accessible.push(space_id);
             }
         }
+        accessible.sort_by(|left, right| {
+            let left_reserved = left == "admin-space";
+            let right_reserved = right == "admin-space";
+            left_reserved
+                .cmp(&right_reserved)
+                .then_with(|| left.cmp(right))
+        });
         Ok(accessible)
     }
 
@@ -85,6 +98,7 @@ impl UgoiteService {
     }
 
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {
+        validate_public_space_patch(patch)?;
         space::patch_space(&self.operator, space_id, patch).await
     }
 
@@ -400,7 +414,7 @@ impl UgoiteService {
         Ok(json!({ "member": response }))
     }
 
-    async fn bootstrap_admin_member(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
+    pub async fn bootstrap_admin_member(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
         let mut settings = self.read_space_settings(space_id).await?;
         let members = settings
             .get_mut("members")
@@ -477,6 +491,38 @@ impl UgoiteService {
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
+    let reserved_keys: Vec<&str> = patch
+        .as_object()
+        .map(|object| {
+            object
+                .keys()
+                .map(String::as_str)
+                .filter(|key| MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS.contains(key))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut reserved_keys = reserved_keys;
+    if let Some(settings_obj) = patch.get("settings").and_then(Value::as_object) {
+        for key in settings_obj.keys().map(String::as_str) {
+            if MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS.contains(&key) {
+                reserved_keys.push(key);
+            }
+        }
+    }
+    reserved_keys.sort_unstable();
+    reserved_keys.dedup();
+    if reserved_keys.is_empty() {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "space patch does not allow membership-managed settings keys: {}. Use the dedicated member commands instead.",
+        reserved_keys.join(", ")
+    ))
 }
 
 fn ensure_membership_objects(settings: &mut Value) -> Result<()> {

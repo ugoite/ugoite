@@ -1,9 +1,15 @@
+#![allow(clippy::await_holding_lock)]
+
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
 use serde_json::Value;
-use std::{fs, time::SystemTime};
+use std::{
+    fs,
+    sync::{Mutex, OnceLock},
+    time::SystemTime,
+};
 use tower::ServiceExt;
 use ugoite_core::service::UgoiteService;
 use ugoite_server::{app, openapi_snapshot, AppState};
@@ -17,6 +23,11 @@ const AUTH_FIXTURE_TOKENS: &str = r#"{
 
 fn set_auth_fixture() {
     std::env::set_var("UGOITE_AUTH_BEARER_TOKENS", AUTH_FIXTURE_TOKENS);
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn authenticated(request: Request<Body>) -> Request<Body> {
@@ -36,7 +47,13 @@ fn authenticated_with(request: Request<Body>, token: &str) -> Request<Body> {
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
-    serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    serde_json::from_slice(&body).unwrap_or_else(|error| {
+        panic!(
+            "response body was not valid JSON: {error}; body={}",
+            String::from_utf8_lossy(&body)
+        )
+    })
 }
 
 #[tokio::test]
@@ -95,6 +112,7 @@ async fn protected_routes_require_authentication() {
 
 #[tokio::test]
 async fn bootstrap_default_space_from_env_is_idempotent() {
+    let _guard = env_lock().lock().expect("env lock");
     std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
     std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
@@ -110,6 +128,8 @@ async fn bootstrap_default_space_from_env_is_idempotent() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
+    assert_eq!(body[0]["name"], "default");
+    assert_eq!(body[1]["name"], "admin-space");
     assert!(body
         .as_array()
         .unwrap()
@@ -125,7 +145,119 @@ async fn bootstrap_default_space_from_env_is_idempotent() {
 }
 
 #[tokio::test]
+async fn public_space_create_requires_admin_space_admin_and_rejects_reserved_id() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
+    set_auth_fixture();
+    let state = AppState::new("memory://server-public-create").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
+
+    let forbidden = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::post("/spaces")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"alpha"}"#))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let created = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"alpha"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let reserved = router
+        .oneshot(authenticated(
+            Request::post("/spaces")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"admin-space"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(reserved.status(), StatusCode::CONFLICT);
+    assert!(response_json(reserved).await["detail"]
+        .as_str()
+        .unwrap()
+        .contains("admin-space"));
+
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+}
+
+#[tokio::test]
+async fn public_space_get_and_patch_redact_secret_fields() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
+    set_auth_fixture();
+    let state = AppState::new("memory://server-redaction").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
+
+    let space = router
+        .clone()
+        .oneshot(authenticated(
+            Request::get("/spaces/default").body(Body::empty()).unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(space.status(), StatusCode::OK);
+    let body = response_json(space).await;
+    assert!(body.get("hmac_key").is_none());
+    assert!(body.get("hmac_key_id").is_none());
+    assert!(body.get("last_rotation").is_none());
+    assert!(body
+        .get("settings")
+        .and_then(Value::as_object)
+        .is_some_and(|settings| settings.get("members").is_none()));
+    assert!(body
+        .get("settings")
+        .and_then(Value::as_object)
+        .is_some_and(|settings| settings.get("member_invitations").is_none()));
+    assert!(body
+        .get("settings")
+        .and_then(Value::as_object)
+        .is_some_and(|settings| settings.get("membership_version").is_none()));
+
+    let patched = router
+        .clone()
+        .oneshot(authenticated(
+            Request::patch("/spaces/default")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"name":"default-renamed","settings":{"default_form":"Entry"}}"#,
+                ))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(patched.status(), StatusCode::OK);
+    let body = response_json(patched).await;
+    assert_eq!(body["name"], "default-renamed");
+    assert!(body.get("hmac_key").is_none());
+    assert!(body.get("storage_config").is_none());
+
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+}
+
+#[tokio::test]
 async fn bootstrap_default_space_repairs_existing_owner_membership() {
+    let _guard = env_lock().lock().expect("env lock");
     std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
     std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
@@ -162,6 +294,7 @@ async fn bootstrap_default_space_repairs_existing_owner_membership() {
 
 #[tokio::test]
 async fn static_dir_serves_frontend_and_api_prefix() {
+    let _guard = env_lock().lock().expect("env lock");
     set_auth_fixture();
     let static_dir = std::env::temp_dir().join(format!(
         "ugoite-server-static-{}",
@@ -232,8 +365,13 @@ async fn static_dir_serves_frontend_and_api_prefix() {
 
 #[tokio::test]
 async fn space_entry_search_and_mcp_contract() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
-    let router = app(AppState::new("memory://server-contract").unwrap());
+    let state = AppState::new("memory://server-contract").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
     let create_space = authenticated(
         Request::post("/spaces")
             .header("content-type", "application/json")
@@ -275,10 +413,13 @@ async fn space_entry_search_and_mcp_contract() {
     );
     let response = router.oneshot(mcp).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 }
 
 #[tokio::test]
 async fn auth_config_mock_oauth_and_session_contract() {
+    let _guard = env_lock().lock().expect("env lock");
     set_auth_fixture();
     std::env::set_var("UGOITE_DEV_AUTH_MODE", "mock-oauth");
     std::env::set_var("UGOITE_DEV_USER_ID", "dev-local-user");
@@ -349,10 +490,14 @@ async fn auth_config_mock_oauth_and_session_contract() {
         .and_then(|value| value.to_str().ok())
         .unwrap()
         .contains("Max-Age=0"));
+    std::env::remove_var("UGOITE_DEV_AUTH_MODE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+    std::env::remove_var("UGOITE_BOOTSTRAP_TOKEN");
 }
 
 #[tokio::test]
 async fn preferences_are_scoped_to_authenticated_identity() {
+    let _guard = env_lock().lock().expect("env lock");
     set_auth_fixture();
     let router = app(AppState::new("memory://server-preferences").unwrap());
 
@@ -398,8 +543,13 @@ async fn preferences_are_scoped_to_authenticated_identity() {
 
 #[tokio::test]
 async fn members_lifecycle_contract() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
-    let router = app(AppState::new("memory://server-members").unwrap());
+    let state = AppState::new("memory://server-members").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
     assert_eq!(
         router
             .clone()
@@ -479,12 +629,19 @@ async fn members_lifecycle_contract() {
         .unwrap();
     assert_eq!(revoked.status(), StatusCode::OK);
     assert_eq!(response_json(revoked).await["member"]["state"], "revoked");
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 }
 
 #[tokio::test]
 async fn space_membership_authorization_contract() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
-    let router = app(AppState::new("memory://server-members-authz").unwrap());
+    let state = AppState::new("memory://server-members-authz").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
     assert_eq!(
         router
             .clone()
@@ -634,12 +791,19 @@ async fn space_membership_authorization_contract() {
         .await
         .unwrap();
     assert_eq!(revoked_read.status(), StatusCode::FORBIDDEN);
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 }
 
 #[tokio::test]
 async fn sql_session_routes_create_status_count_and_rows() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
     set_auth_fixture();
-    let router = app(AppState::new("memory://server-sql-sessions").unwrap());
+    let state = AppState::new("memory://server-sql-sessions").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
     assert_eq!(
         router
             .clone()
@@ -723,4 +887,6 @@ async fn sql_session_routes_create_status_count_and_rows() {
     let rows_body = response_json(rows).await;
     assert_eq!(rows_body["total_count"], 1);
     assert_eq!(rows_body["rows"][0]["id"], "first");
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
 }
