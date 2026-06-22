@@ -72,6 +72,35 @@ fn architecture_check() -> Result<()> {
         }
     }
 
+    for path in collect_files(Path::new("crates/ugoite-cli/src/commands"))? {
+        let path_text = path.to_string_lossy();
+        if path_text.ends_with("form.rs") || path_text.ends_with("space.rs") {
+            continue;
+        }
+        let content = fs::read_to_string(&path).with_context(|| format!("read {path_text}"))?;
+        for raw_call in [
+            "ugoite_core::entry::update_entry",
+            "ugoite_core::entry::delete_entry",
+            "ugoite_core::entry::get_entry_history",
+            "ugoite_core::entry::get_entry_revision",
+            "ugoite_core::entry::restore_entry",
+            "ugoite_core::index::execute_sql_query",
+            "ugoite_core::index::get_space_stats",
+            "ugoite_core::index::reindex_all",
+            "ugoite_core::saved_sql::create_sql",
+            "ugoite_core::saved_sql::delete_sql",
+            "ugoite_core::saved_sql::get_sql",
+            "ugoite_core::saved_sql::list_sql",
+            "ugoite_core::saved_sql::update_sql",
+        ] {
+            if content.contains(raw_call) {
+                violations.push(format!(
+                    "{path_text} calls {raw_call} directly; use UgoiteService for stateful CLI operations"
+                ));
+            }
+        }
+    }
+
     let domain_manifest = fs::read_to_string("crates/ugoite-domain/Cargo.toml")
         .context("read ugoite-domain Cargo.toml")?;
     let domain_dependencies = domain_manifest

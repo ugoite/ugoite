@@ -5,7 +5,8 @@ export {
   joinUrl,
   type RuntimeCapabilities,
   runtimeCapabilities,
-} from "../api";
+} from "./http";
+export type * from "./types";
 export { assetApi } from "../asset-api";
 export { authApi } from "../auth-api";
 export { entryApi } from "../entry-api";
