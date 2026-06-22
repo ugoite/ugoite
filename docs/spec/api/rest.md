@@ -303,12 +303,12 @@ Content-Type: application/json
 }
 ```
 
-Update MUST authorize both the current stored entry and the submitted Markdown
-target before writing. This prevents a caller from using an update to move an
-entry into a Form whose write ACL they do not satisfy.
+Update MUST enforce the current space-level write policy before writing. Form
+write ACL checks are planned future behavior and are not part of the current
+v0.1 REST contract.
 
 **Error**: `409 Conflict` if `parent_revision_id` doesn't match current
-**Error**: `403 Forbidden` when space or form write authorization fails.
+**Error**: `403 Forbidden` when space write authorization fails.
 
 #### Delete Entry
 ```http
@@ -352,12 +352,11 @@ Content-Type: application/json
 
 **Response**: `200 OK`
 
-Restore MUST authorize both the current stored entry and the target revision
-content before writing the restored revision. Future import or bulk-migration
-adapters that submit Markdown MUST follow this same contract unless a more
-specific spec section overrides it.
+Restore MUST enforce the current space-level write policy before writing the
+restored revision. Future Form ACL support will also authorize the current
+stored entry and target revision content against their Form policies.
 
-**Error**: `403 Forbidden` when space or form write authorization fails.
+**Error**: `403 Forbidden` when space write authorization fails.
 
 ---
 

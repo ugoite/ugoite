@@ -4446,6 +4446,7 @@ dependencies = [
  "tower",
  "tower-http",
  "ugoite-core",
+ "ugoite-domain",
  "uuid",
 ]
 
@@ -4460,6 +4461,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "ugoite-domain",
+ "url",
 ]
 
 [[package]]
@@ -5094,6 +5096,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde_json",
 ]
 
 [[package]]

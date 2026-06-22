@@ -1,7 +1,7 @@
 //! Thin HTTP and MCP adapters over `ugoite-core`.
 
 use axum::{
-    extract::{DefaultBodyLimit, Extension, Multipart, Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Extension, Multipart, OriginalUri, Path, Query, Request, State},
     http::{HeaderMap, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -21,9 +21,12 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_core::{
+    error::{AppError, ErrorKind},
     form, saved_sql,
     service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
+    space,
 };
+use ugoite_domain::id::{validate_identifier, IdentifierKind};
 use uuid::Uuid;
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
@@ -81,35 +84,52 @@ impl ApiError {
     }
 
     fn from_core(error: anyhow::Error) -> Self {
-        let message = error.to_string();
-        let normalized = message.to_lowercase();
-        let status = if normalized.contains("forbidden") {
-            StatusCode::FORBIDDEN
-        } else if normalized.contains("not found") {
-            StatusCode::NOT_FOUND
-        } else if normalized.contains("already exists") || normalized.contains("conflict") {
-            StatusCode::CONFLICT
-        } else if normalized.contains("form")
-            || normalized.contains("invalid")
-            || normalized.contains("unknown")
-            || normalized.contains("unsupported")
-        {
-            StatusCode::UNPROCESSABLE_ENTITY
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
-        let detail = if status == StatusCode::INTERNAL_SERVER_ERROR {
-            Value::String("Internal server error".to_string())
-        } else {
-            Value::String(message)
-        };
-        Self { status, detail }
+        if let Some(app_error) = error.downcast_ref::<AppError>() {
+            let status = match app_error.kind() {
+                ErrorKind::InvalidInput => StatusCode::UNPROCESSABLE_ENTITY,
+                ErrorKind::Forbidden => StatusCode::FORBIDDEN,
+                ErrorKind::NotFound => StatusCode::NOT_FOUND,
+                ErrorKind::Conflict => StatusCode::CONFLICT,
+                ErrorKind::Expired => StatusCode::GONE,
+                ErrorKind::Unimplemented => StatusCode::NOT_IMPLEMENTED,
+                ErrorKind::DependencyUnavailable => StatusCode::BAD_GATEWAY,
+                ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            return Self {
+                status,
+                detail: json!({
+                    "code": app_error.code_str(),
+                    "message": app_error.message(),
+                }),
+            };
+        }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            detail: json!({
+                "code": "INTERNAL_ERROR",
+                "message": "Internal server error",
+            }),
+        }
+    }
+
+    fn invalid_identifier(kind: IdentifierKind, error: ugoite_domain::id::IdentifierError) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            detail: json!({
+                "code": "INVALID_IDENTIFIER",
+                "message": format!("Invalid {}: {}", kind.as_str(), error.reason()),
+            }),
+        }
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.status, Json(json!({ "detail": self.detail }))).into_response()
+        if self.detail.is_object() {
+            (self.status, Json(self.detail)).into_response()
+        } else {
+            (self.status, Json(json!({ "detail": self.detail }))).into_response()
+        }
     }
 }
 
@@ -337,11 +357,15 @@ async fn auth_config() -> Json<Value> {
     }))
 }
 
-async fn api_not_found() -> impl IntoResponse {
+async fn api_not_found(OriginalUri(uri): OriginalUri) -> impl IntoResponse {
+    if uri.path().starts_with("/api//") {
+        return (StatusCode::BAD_REQUEST, "Invalid API proxy path").into_response();
+    }
     (
         StatusCode::NOT_FOUND,
         Json(json!({"detail": "API route not found"})),
     )
+        .into_response()
 }
 
 async fn auth_login() -> ApiResult<Response> {
@@ -431,18 +455,17 @@ fn unix_seconds_now() -> i64 {
 }
 
 fn validate_id(value: &str, name: &str) -> ApiResult<()> {
-    if value.is_empty()
-        || value.len() > 128
-        || !value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-    {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            format!("Invalid {name}"),
-        ));
-    }
-    Ok(())
+    let kind = match name {
+        "space_id" => IdentifierKind::Space,
+        "entry_id" => IdentifierKind::Entry,
+        "form_name" => IdentifierKind::Form,
+        "asset_id" => IdentifierKind::Asset,
+        "sql_id" => IdentifierKind::Sql,
+        "session_id" | "sql_session_id" => IdentifierKind::SqlSession,
+        "revision_id" => IdentifierKind::Revision,
+        _ => IdentifierKind::Entry,
+    };
+    validate_identifier(kind, value).map_err(|error| ApiError::invalid_identifier(kind, error))
 }
 
 async fn ensure_space(state: &AppState, space_id: &str) -> ApiResult<()> {
@@ -799,11 +822,12 @@ async fn test_connection(
 ) -> ApiResult<Json<Value>> {
     validate_id(&space_id, "space_id")?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    let uri = payload
-        .pointer("/storage_config/uri")
-        .or_else(|| payload.get("uri"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
+    let config_value = payload
+        .get("storage_config")
+        .cloned()
+        .unwrap_or_else(|| payload.clone());
+    let config: space::StorageConnectionTestConfig =
+        serde_json::from_value(config_value).map_err(|_| {
             ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "storage_config.uri is required",
@@ -812,25 +836,17 @@ async fn test_connection(
     Ok(Json(
         state
             .service
-            .test_storage_connection(uri)
+            .test_storage_connection(&config)
             .await
             .map_err(storage_connection_error)?,
     ))
 }
 
 fn storage_connection_error(error: anyhow::Error) -> ApiError {
-    let message = error.to_string();
-    let normalized = message.to_lowercase();
-    let status = if normalized.contains("unsupported")
-        || normalized.contains("invalid")
-        || normalized.contains("blocked")
-        || normalized.contains("required")
-    {
-        StatusCode::UNPROCESSABLE_ENTITY
-    } else {
-        StatusCode::BAD_GATEWAY
-    };
-    ApiError::new(status, message)
+    if error.downcast_ref::<AppError>().is_some() {
+        return ApiError::from_core(error);
+    }
+    ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string())
 }
 
 fn sanitize_space_response(mut value: Value) -> Value {
@@ -968,6 +984,7 @@ async fn get_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
     let mut value = state
         .service
         .get_entry(&space_id, &entry_id)
@@ -993,6 +1010,7 @@ async fn update_entry(
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&entry_id, "entry_id")?;
     let value = state
         .service
         .update_entry(
@@ -1017,6 +1035,7 @@ async fn delete_entry(
     Query(query): Query<EntryDeleteQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&entry_id, "entry_id")?;
     state
         .service
         .delete_entry(&space_id, &entry_id, query.hard_delete.unwrap_or(false))
@@ -1036,6 +1055,7 @@ async fn entry_history(
     Path((space_id, entry_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
     Ok(Json(
         state
             .service
@@ -1051,6 +1071,8 @@ async fn entry_revision(
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&entry_id, "entry_id")?;
+    validate_id(&revision_id, "revision_id")?;
     Ok(Json(
         state
             .service
@@ -1072,6 +1094,8 @@ async fn restore_entry(
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&entry_id, "entry_id")?;
+    validate_id(&payload.revision_id, "revision_id")?;
     Ok(Json(
         state
             .service
@@ -1123,6 +1147,7 @@ async fn get_form(
     Path((space_id, form_name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    validate_id(&form_name, "form_name")?;
     Ok(Json(
         state
             .service
@@ -1244,6 +1269,7 @@ async fn update_sql(
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&sql_id, "sql_id")?;
     Ok(Json(
         state
             .service
@@ -1259,6 +1285,7 @@ async fn delete_sql(
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&sql_id, "sql_id")?;
     state
         .service
         .delete_saved_sql(&space_id, &sql_id)
@@ -1319,6 +1346,7 @@ async fn delete_asset(
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
+    validate_id(&asset_id, "asset_id")?;
     state
         .service
         .delete_asset(&space_id, &asset_id)

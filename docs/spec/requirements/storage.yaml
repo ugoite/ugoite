@@ -262,20 +262,15 @@ requirements:
   priority: medium
   status: implemented
   tests:
-    pytest:
-    - file: backend/tests/test_api.py
+    rust:
+    - file: crates/ugoite-server/tests/api_contract.rs
       tests:
-      - test_update_space_storage_connector
-      - test_test_connection_endpoint
-      - test_test_connection_req_sto_006_rejects_link_local_endpoint_before_core
-      - test_test_connection_runtime_error_returns_502
-    - file: ugoite-core/tests/test_bindings.py
-      tests:
-      - test_storage_req_sto_006_rejects_link_local_endpoint
-      - test_storage_req_sto_006_strips_inputs_before_validation
-    - file: ugoite-core/tests/test_space.rs
+      - test_connection_requires_manage_space_and_probes_uri
+    - file: crates/ugoite-core/tests/test_space.rs
       tests:
       - test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme
+      - test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint
+      - test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.

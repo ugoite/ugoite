@@ -1,6 +1,7 @@
 #![warn(warnings)]
 #![deny(clippy::all)]
 
+pub mod id;
 pub mod integrity;
 pub mod link;
 pub mod metadata;

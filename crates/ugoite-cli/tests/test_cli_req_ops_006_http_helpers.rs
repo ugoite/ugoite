@@ -200,6 +200,23 @@ async fn test_cli_req_ops_006_http_get_rejects_invalid_json_success_body() {
     );
 }
 
+/// REQ-OPS-006: HTML success bodies should explain the missing /api prefix in single-image mode.
+#[tokio::test]
+async fn test_cli_req_ops_006_http_get_reports_html_as_wrong_api_base() {
+    let (base, _requests, handle) =
+        spawn_recording_server("HTTP/1.1 200 OK", "<!doctype html><html></html>");
+    let get_err = http_get(&format!("{base}/spaces"))
+        .await
+        .expect_err("http_get should fail on SPA HTML");
+    handle.join().expect("join html server");
+    let message = get_err.to_string();
+    assert!(
+        message.contains("returned HTML instead of JSON"),
+        "{message}"
+    );
+    assert!(message.contains("--api-url <app-url>/api"), "{message}");
+}
+
 /// REQ-OPS-006: HTTP helpers must surface transport errors when loopback endpoints are unreachable.
 #[tokio::test]
 async fn test_cli_req_ops_006_http_helpers_surface_unreachable_loopback_transport_errors() {

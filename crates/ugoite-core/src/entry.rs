@@ -1,3 +1,4 @@
+use crate::error::{AppError, ErrorCode};
 use crate::form;
 use crate::iceberg_store;
 use crate::index;
@@ -30,6 +31,27 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
+
+fn entry_not_found(entry_id: &str) -> AppError {
+    AppError::not_found(
+        ErrorCode::EntryNotFound,
+        format!("Entry not found: {entry_id}"),
+    )
+}
+
+fn entry_content_not_found(entry_id: &str) -> AppError {
+    AppError::not_found(
+        ErrorCode::EntryNotFound,
+        format!("Entry content not found: {entry_id}"),
+    )
+}
+
+fn revision_not_found(entry_id: &str, revision_id: &str) -> AppError {
+    AppError::not_found(
+        ErrorCode::RevisionNotFound,
+        format!("Revision {revision_id} not found for entry {entry_id}"),
+    )
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct IntegrityPayload {
@@ -1710,7 +1732,7 @@ pub(crate) async fn read_entry_row(
             selected = Some(row);
         }
     }
-    let mut selected = selected.ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+    let mut selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
     if let Some(latest) =
         latest_revision_for_entry(op, ws_path, form_name, &form_def, entry_id).await?
     {
@@ -2022,10 +2044,10 @@ pub async fn list_entry_summaries(
 pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     if row.deleted {
-        return Err(anyhow!("Entry not found: {}", entry_id));
+        return Err(entry_not_found(entry_id).into());
     }
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
@@ -2069,7 +2091,7 @@ pub async fn get_entry_content(
 ) -> Result<EntryContent> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry content not found: {}", entry_id))?;
+        .ok_or_else(|| entry_content_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let field_order = form_field_names(&form_def);
@@ -2104,10 +2126,10 @@ pub async fn get_entry_revision_content(
 ) -> Result<EntryContent> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry content not found: {}", entry_id))?;
+        .ok_or_else(|| entry_content_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     if row.deleted {
-        return Err(anyhow!("Entry content not found: {}", entry_id));
+        return Err(entry_content_not_found(entry_id).into());
     }
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
@@ -2117,7 +2139,7 @@ pub async fn get_entry_revision_content(
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
-        .ok_or_else(|| anyhow!("Revision {} not found for entry {}", revision_id, entry_id))?;
+        .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
 
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
@@ -2156,16 +2178,19 @@ pub async fn update_entry<I: IntegrityProvider>(
 ) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     if let Some(expected_parent) = parent_revision_id {
         if row.revision_id != expected_parent {
-            return Err(anyhow!(
-                "Revision conflict: expected {}, got {}",
-                expected_parent,
-                row.revision_id
-            ));
+            return Err(AppError::conflict(
+                ErrorCode::RevisionConflict,
+                format!(
+                    "Revision conflict: expected {}, got {}",
+                    expected_parent, row.revision_id
+                ),
+            )
+            .into());
         }
     }
 
@@ -2267,7 +2292,7 @@ pub async fn delete_entry(
 ) -> Result<()> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     let mut delete_ts = now_ts();
@@ -2292,7 +2317,7 @@ pub async fn delete_entry(
 pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
     let batches = scan_table_batches(&table).await?;
@@ -2331,7 +2356,7 @@ pub async fn get_entry_revision(
 ) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
     let batches = scan_table_batches(&table).await?;
@@ -2340,8 +2365,7 @@ pub async fn get_entry_revision(
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id);
 
-    let revision = revision
-        .ok_or_else(|| anyhow!("Revision {} not found for entry {}", revision_id, entry_id))?;
+    let revision = revision.ok_or_else(|| revision_not_found(entry_id, revision_id))?;
     Ok(serde_json::to_value(revision)?)
 }
 
@@ -2355,7 +2379,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
 ) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
-        .ok_or_else(|| anyhow!("Entry not found: {}", entry_id))?;
+        .ok_or_else(|| entry_not_found(entry_id))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
     let batches = scan_table_batches(&revisions_table).await?;
@@ -2363,7 +2387,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
-        .ok_or_else(|| anyhow!("Revision {} not found for entry {}", revision_id, entry_id))?;
+        .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
 
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
     let new_rev_id = Uuid::new_v4().to_string();
