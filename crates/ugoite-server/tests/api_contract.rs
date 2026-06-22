@@ -103,6 +103,43 @@ async fn openapi_snapshot_has_methods_for_runtime_routes() {
 }
 
 #[tokio::test]
+async fn openapi_snapshot_has_public_contract_schemas() {
+    let snapshot = openapi_snapshot();
+    let schemas = snapshot
+        .pointer("/components/schemas")
+        .and_then(Value::as_object)
+        .expect("components.schemas object");
+
+    for schema in [
+        "ErrorResponse",
+        "AuthConfig",
+        "AuthSession",
+        "SpaceSummary",
+        "SpaceDetail",
+        "PublicStorageSummary",
+        "PublicSpaceSettings",
+        "SpaceCreateRequest",
+        "SpaceCreateResponse",
+        "SpacePatchRequest",
+        "SpaceMember",
+        "Invitation",
+        "StorageConnectionTestRequest",
+        "StorageConnectionTestResponse",
+        "EntryMutationRequest",
+        "EntryMutationResponse",
+        "Form",
+        "SqlSession",
+        "SavedSql",
+        "Asset",
+        "McpEntryResource",
+    ] {
+        assert!(schemas.contains_key(schema), "missing schema: {schema}");
+    }
+    assert!(schemas["SpaceSummary"]["not"].is_object());
+    assert!(schemas["PublicSpaceSettings"]["not"].is_object());
+}
+
+#[tokio::test]
 async fn protected_routes_require_authentication() {
     let response = app(AppState::new("memory://server-auth").unwrap())
         .oneshot(Request::get("/spaces").body(Body::empty()).unwrap())

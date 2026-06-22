@@ -318,6 +318,233 @@
       "FormName": { "name": "form_name", "in": "path", "required": true, "schema": { "type": "string" } },
       "SqlId": { "name": "sql_id", "in": "path", "required": true, "schema": { "type": "string" } },
       "AssetId": { "name": "asset_id", "in": "path", "required": true, "schema": { "type": "string" } }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["detail"],
+        "properties": {
+          "detail": { "oneOf": [{ "type": "string" }, { "type": "object" }, { "type": "array" }] }
+        }
+      },
+      "AuthConfig": {
+        "type": "object",
+        "required": ["mode", "username_hint", "supports_passkey_totp", "supports_mock_oauth", "login_required"],
+        "properties": {
+          "mode": { "type": "string", "enum": ["mock-oauth", "passkey-totp"] },
+          "username_hint": { "type": "string" },
+          "supports_passkey_totp": { "type": "boolean" },
+          "supports_mock_oauth": { "type": "boolean" },
+          "login_required": { "type": "boolean" }
+        }
+      },
+      "AuthSession": {
+        "type": "object",
+        "required": ["authenticated"],
+        "properties": {
+          "authenticated": { "type": "boolean" }
+        }
+      },
+      "SpaceSummary": {
+        "type": "object",
+        "required": ["id", "name", "created_at", "is_admin_space"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "created_at": { "oneOf": [{ "type": "number" }, { "type": "string" }] },
+          "is_admin_space": { "type": "boolean" },
+          "storage": { "$ref": "#/components/schemas/PublicStorageSummary" },
+          "settings": { "$ref": "#/components/schemas/PublicSpaceSettings" }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["hmac_key"] },
+            { "required": ["hmac_key_id"] },
+            { "required": ["last_rotation"] }
+          ]
+        }
+      },
+      "SpaceDetail": {
+        "allOf": [{ "$ref": "#/components/schemas/SpaceSummary" }]
+      },
+      "PublicStorageSummary": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "type": { "type": "string" },
+          "root": { "type": "string" }
+        }
+      },
+      "PublicSpaceSettings": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "default_form": { "type": "string" }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["members"] },
+            { "required": ["member_invitations"] },
+            { "required": ["membership_version"] },
+            { "required": ["admin_user_ids"] },
+            { "required": ["invitations"] },
+            { "required": ["member_roles"] },
+            { "required": ["owner_user_id"] }
+          ]
+        }
+      },
+      "SpaceCreateRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" }
+        }
+      },
+      "SpaceCreateResponse": {
+        "type": "object",
+        "required": ["id", "name", "path"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      },
+      "SpacePatchRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "storage_config": { "type": "object", "additionalProperties": true },
+          "settings": { "$ref": "#/components/schemas/PublicSpaceSettings" }
+        }
+      },
+      "SpaceMember": {
+        "type": "object",
+        "required": ["user_id", "role", "state", "updated_at"],
+        "properties": {
+          "user_id": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+          "state": { "type": "string", "enum": ["active", "invited", "revoked"] },
+          "invited_by": { "type": ["string", "null"] },
+          "invited_at": { "type": ["string", "null"] },
+          "activated_at": { "type": ["string", "null"] },
+          "revoked_at": { "type": ["string", "null"] },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "Invitation": {
+        "type": "object",
+        "required": ["token", "user_id", "role", "state", "expires_at"],
+        "properties": {
+          "token": { "type": "string", "description": "Returned only when the invitation is created." },
+          "user_id": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+          "state": { "type": "string", "enum": ["pending", "accepted", "revoked", "expired"] },
+          "invited_by": { "type": "string" },
+          "invited_at": { "type": "string" },
+          "expires_at": { "type": "string" }
+        }
+      },
+      "StorageConnectionTestRequest": {
+        "type": "object",
+        "properties": {
+          "uri": { "type": "string" },
+          "storage_config": {
+            "type": "object",
+            "required": ["uri"],
+            "properties": {
+              "uri": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "anyOf": [
+          { "required": ["uri"] },
+          { "required": ["storage_config"] }
+        ]
+      },
+      "StorageConnectionTestResponse": {
+        "type": "object",
+        "required": ["status", "mode"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "mode": { "type": "string", "enum": ["memory", "local", "s3"] }
+        }
+      },
+      "EntryMutationRequest": {
+        "type": "object",
+        "required": ["markdown"],
+        "properties": {
+          "id": { "type": "string" },
+          "markdown": { "type": "string" },
+          "content": { "type": "string" },
+          "parent_revision_id": { "type": "string" },
+          "assets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "EntryMutationResponse": {
+        "type": "object",
+        "required": ["id", "revision_id"],
+        "properties": {
+          "id": { "type": "string" },
+          "revision_id": { "type": "string" }
+        }
+      },
+      "Form": {
+        "type": "object",
+        "required": ["name", "fields"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "integer" },
+          "fields": { "type": "object", "additionalProperties": true },
+          "template": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "SqlSession": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string" },
+          "sql": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "SavedSql": {
+        "type": "object",
+        "required": ["id", "name", "sql"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "sql": { "type": "string" },
+          "variables": { "type": "array" }
+        },
+        "additionalProperties": true
+      },
+      "Asset": {
+        "type": "object",
+        "required": ["id", "filename"],
+        "properties": {
+          "id": { "type": "string" },
+          "filename": { "type": "string" },
+          "size": { "type": "integer" },
+          "content_type": { "type": ["string", "null"] }
+        },
+        "additionalProperties": true
+      },
+      "McpEntryResource": {
+        "type": "object",
+        "required": ["id", "title", "form", "tags", "properties", "_untrusted_content"],
+        "properties": {
+          "id": {},
+          "title": {},
+          "form": {},
+          "tags": { "type": "array" },
+          "properties": {},
+          "_untrusted_content": { "type": "boolean", "const": true }
+        }
+      }
     }
   }
 }
