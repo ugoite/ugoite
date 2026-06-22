@@ -32,7 +32,7 @@ on `reqwest`, `tokio`, `axum`, `web-sys`, `wasm-bindgen`, `ugoite-core`,
 Run the focused structural guard from the repository root:
 
 ```bash
-python3 scripts/check-portable-api-client.py
+deno run -A scripts/check-portable-api-client.ts
 ```
 
 Run the native tests with:
