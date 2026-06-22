@@ -5,6 +5,7 @@ pub mod asset;
 pub mod audit;
 pub mod auth;
 pub mod entry;
+pub mod error;
 pub mod form;
 pub mod iceberg_store;
 pub mod index;

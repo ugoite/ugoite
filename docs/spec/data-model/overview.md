@@ -107,29 +107,33 @@ Reserved metadata Form names include:
 `User` and `UserGroup` metadata Forms are system-owned identity catalogs for
 space-scoped authentication and authorization.
 
-### Form-Level Access Control Metadata
+### Planned Form-Level Access Control Metadata
 
-Each Form MAY define authorization metadata for read and write operations.
+Form-level ACL is a planned extension and is not enforced by the current v0.1
+runtime. Current authorization is space-scoped: viewer, editor, and admin roles
+control read, content-write, space-management, and member-management behavior.
+
+Future Form definitions MAY define authorization metadata for read and write operations.
 Canonical field definitions live in `data-model/file-schemas.yaml`
 (`form_definition`).
 
-Current baseline fields are:
+Planned fields are:
 
 - `read_principals`: allowed `User` / `UserGroup` principals
 - `write_principals`: allowed `User` / `UserGroup` principals
 
-When omitted, Form access inherits the default space policy. Access control
+When omitted, Form access will inherit the default space policy. Access control
 evaluation MUST run in `ugoite-core`; backend and other adapters are
 orchestration only.
 
-For Markdown-driven writes, the frontmatter-derived `form` ID is the canonical
+For future Markdown-driven writes, the frontmatter-derived `form` ID is the canonical
 selector for Form ACL enforcement. Create/import-style writes evaluate the
 submitted Markdown against that target Form, while update/restore flows also
 authorize the existing entry being mutated. If the Markdown or revision content
 does not resolve a Form, absence of a form falls back to the space-level
 `entry_write` policy.
 
-Materialized views derived from one or more Forms inherit the effective access
+Future materialized views derived from one or more Forms inherit the effective access
 policy from those source Forms. If multiple source Forms are referenced, the
 effective policy MUST be the intersection (deny-by-default on ambiguity).
 

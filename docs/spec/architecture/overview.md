@@ -33,7 +33,7 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
 │   - OpenDAL-backed storage adapter                              │
 │   - Iceberg/Parquet integrations + application service facade  │
 ├─────────────────────────────────────────────────────────────────┤
-│               ugoite-minimum (Rust portable crate)              │
+│               ugoite-domain (Rust portable crate)               │
 │   - Portable domain logic + storage abstraction traits          │
 │   - Foundation for native and future WebAssembly targets        │
 └─────────────────────────────────────────────────────────────────┘
@@ -50,7 +50,7 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
 
 ## 2. Module Responsibilities
 
-### ugoite-minimum (Rust)
+### ugoite-domain (Rust)
 
 The portable core library owns runtime-neutral abstractions and shared models:
 
@@ -63,11 +63,11 @@ The portable core library owns runtime-neutral abstractions and shared models:
 
 ### ugoite-core (Rust)
 
-The adapter crate depends on `ugoite-minimum` and keeps the heavier integrations:
+The adapter crate depends on `ugoite-domain` and keeps the heavier integrations:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `storage/` | OpenDAL adapter implementation for `ugoite-minimum::storage` |
+| `storage/` | OpenDAL adapter implementation for `ugoite-domain::storage` |
 | `space.rs` | Space CRUD, directory scaffolding |
 | `entry.rs` | Entry CRUD via Iceberg tables, revision history, conflict detection |
 | `form.rs` | Iceberg form schema management |
@@ -151,5 +151,5 @@ Frontend                 Backend              ugoite-core           Storage
 | **Local-First** | All data in user-controlled storage; no required cloud services |
 | **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
 | **Resource-First MCP** | `v0.1` ships one read-only MCP resource; broader MCP resources, prompts, and tools are planned for `v0.2` |
-| **Layered** | Clear separation: ugoite-minimum → ugoite-core → {CLI, Backend} → Frontend |
+| **Layered** | Clear separation: ugoite-domain → ugoite-core → {CLI, Backend} → Frontend |
 | **Testable** | Each layer independently testable; memory storage for fast tests |

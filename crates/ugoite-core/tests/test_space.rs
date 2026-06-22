@@ -303,7 +303,11 @@ async fn test_space_req_sto_008_list_spaces_ignores_missing_meta() -> anyhow::Re
 #[tokio::test]
 /// REQ-STO-002
 async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Result<()> {
-    let result = space::test_storage_connection("memory://").await?;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "memory://".to_string(),
+        endpoint: None,
+    })
+    .await?;
     assert_eq!(result["status"], "ok");
     assert_eq!(result["mode"], "memory");
     Ok(())
@@ -315,7 +319,11 @@ async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Resu
 async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let local_uri = format!("file://{}", dir.path().display());
-    let result = space::test_storage_connection(&local_uri).await?;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: local_uri,
+        endpoint: None,
+    })
+    .await?;
     assert_eq!(result["status"], "ok");
     assert_eq!(result["mode"], "local");
 
@@ -326,7 +334,40 @@ async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Resul
 /// REQ-STO-006
 async fn test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme(
 ) -> anyhow::Result<()> {
-    let result = space::test_storage_connection("ftp://somehost").await;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "ftp://somehost".to_string(),
+        endpoint: None,
+    })
+    .await;
     assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-006
+async fn test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint(
+) -> anyhow::Result<()> {
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "s3://bucket-name/prefix".to_string(),
+        endpoint: Some("http://127.0.0.1:9000".to_string()),
+    })
+    .await;
+    assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-006
+async fn test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation(
+) -> anyhow::Result<()> {
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "s3://bucket-name/prefix".to_string(),
+        endpoint: Some("https://s3.example.test".to_string()),
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "unreachable custom endpoint should not be a false success"
+    );
     Ok(())
 }

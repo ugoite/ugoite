@@ -146,7 +146,7 @@ bash "$SCRIPT_DIR/wait-for-http.sh" \
   "http://127.0.0.1:8000/login" \
   "$STACK_TIMEOUT_SECONDS"
 
-login_payload="$(curl -fsS -X POST http://127.0.0.1:8000/auth/mock-oauth)"
+login_payload="$(curl -fsS -X POST http://127.0.0.1:8000/api/auth/mock-oauth)"
 E2E_AUTH_BEARER_TOKEN="$(deno_json_query "value.bearer_token" "$login_payload")"
 if [ -z "$E2E_AUTH_BEARER_TOKEN" ] || [ "$E2E_AUTH_BEARER_TOKEN" = "null" ]; then
   fail "release quick-start mock OAuth did not return a bearer token"
@@ -157,7 +157,7 @@ log "Running release browser quick-start stories"
 (
   cd "$REPO_ROOT/e2e"
   FRONTEND_URL="http://127.0.0.1:8000" \
-    BACKEND_URL="http://127.0.0.1:8000" \
+    BACKEND_URL="http://127.0.0.1:8000/api" \
     E2E_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
     deno task smoke
 )
@@ -180,7 +180,7 @@ printf '%s' "$help_output" | grep -Fq "Ugoite CLI - Knowledge base management" |
 log "Verified: installed CLI answers --help"
 
 HOME="$CLI_HOME" PATH="$CLI_INSTALL_DIR:$PATH" "$CLI_BINARY" \
-  config set --mode backend --backend-url http://127.0.0.1:8000 >/dev/null
+  config set --mode api --api-url http://127.0.0.1:8000/api >/dev/null
 
 profile_output="$(
   HOME="$CLI_HOME" \

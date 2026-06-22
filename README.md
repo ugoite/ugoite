@@ -118,11 +118,11 @@ frontend/           # SolidStart frontend
   └─ public/
 crates/ugoite-cli/         # Command-line interface for power users
   └─ src/
-crates/ugoite-core/        # Rust core logic + Python bindings
+crates/ugoite-core/        # Rust OpenDAL/Iceberg adapter and application service
   └─ src/
 crates/ugoite-server/      # Rust REST & MCP server
   └─ src/
-ugoite-domain/     # Portable Rust core layer for embedding/WASM-focused use
+crates/ugoite-domain/      # Portable Rust domain layer for embedding/WASM-focused use
   └─ src/
 docs/
   ├─ guide/         # User-facing guides and operator workflows
@@ -315,7 +315,8 @@ context, supported auth modes, and the `dev:backend`, `dev:frontend`, or
 Important: During source development the frontend dev server proxies `/api`
 requests to the Rust backend at `BACKEND_URL` (default:
 `http://localhost:8000`). The release Compose path serves the built frontend
-and API from the same Rust server on port 8000.
+and API from the same Rust server on port 8000, with the browser at
+`http://localhost:8000` and the API at `http://localhost:8000/api`.
 
 Details:
 

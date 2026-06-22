@@ -9,7 +9,10 @@ async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<(
     space::create_space(&op, "test-space", "/tmp").await?;
     let ws_path = "spaces/test-space";
 
-    index::reindex_all(&op, ws_path).await?;
+    let error = index::reindex_all(&op, ws_path).await.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("reindex is not implemented in this release"));
 
     // Indexes are derived from Iceberg; no on-disk index files are created
     assert!(!op.exists(&format!("{}/index/index.json", ws_path)).await?);
@@ -62,7 +65,6 @@ async fn test_index_req_idx_003_query_index() -> anyhow::Result<()> {
     space::create_space(&op, "test-ws", "/tmp").await?;
     let ws_path = "spaces/test-ws";
 
-    index::reindex_all(&op, ws_path).await?;
     let results = index::query_index(&op, ws_path, "{}").await?;
     assert!(results.is_empty());
     Ok(())
@@ -75,7 +77,10 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
     space::create_space(&op, "test-ws", "/tmp").await?;
     let ws_path = "spaces/test-ws";
 
-    index::reindex_all(&op, ws_path).await?;
+    let error = index::reindex_all(&op, ws_path).await.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("reindex is not implemented in this release"));
     assert!(
         !op.exists(&format!("{}/index/inverted_index.json", ws_path))
             .await?

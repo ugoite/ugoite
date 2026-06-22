@@ -55,7 +55,7 @@ Once `/spaces` loads, continue to
 
 ## CLI Login
 
-Configure the CLI to target the backend:
+Configure the CLI to target the raw source-development backend:
 
 ```bash
 cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
@@ -66,6 +66,13 @@ If you installed the published CLI, use:
 
 ```bash
 ugoite config set --mode backend --backend-url http://localhost:8000
+ugoite auth login --mock-oauth
+```
+
+For the published single-image container, use API mode instead:
+
+```bash
+ugoite config set --mode api --api-url http://localhost:8000/api
 ugoite auth login --mock-oauth
 ```
 
