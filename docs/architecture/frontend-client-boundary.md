@@ -1,8 +1,8 @@
 # Frontend Client Boundary
 
-Frontend UI code should depend on the Ugoite client boundary instead of raw
-HTTP details. The boundary is exported from `frontend/src/lib/ugoite-client/`
-and currently wraps the existing API modules.
+Frontend UI code depends on the Ugoite client boundary instead of raw HTTP
+details. The boundary is exported from `frontend/src/lib/ugoite-client/`.
+Components and stores must not import endpoint modules or `apiFetch` directly.
 
 The current runtime capabilities are fixed as:
 
@@ -16,5 +16,13 @@ The current runtime capabilities are fixed as:
 ```
 
 This makes today's behavior explicit while leaving room for future adapters.
-Components and stores should call the boundary modules; OpenAPI-generated or
-raw fetch details stay behind that boundary.
+
+Remote operations pass through `ugoite-client/protocol.ts`. The portable Rust
+crate `ugoite-api-client`, compiled through `ugoite-wasm`, owns HTTP methods,
+encoded paths and queries, JSON serialization, and response/error semantics.
+TypeScript retains only runtime-specific transport policy: browser/SSR fetch,
+cookie and Authorization forwarding, loading state, cancellation, and
+`FormData`.
+
+See [Portable API Client](portable-api-client.md) for the dependency boundary
+and extension rules.

@@ -1,4 +1,4 @@
-import { apiFetch } from "./api";
+import { protocolFetch } from "./ugoite-client/protocol";
 
 export type AuthConfig = {
   mode: "passkey-totp" | "mock-oauth";
@@ -14,24 +14,6 @@ export type AuthLoginResponse = {
 
 export type AuthSessionState = {
   authenticated: boolean;
-};
-
-const formatAuthError = async (
-  response: Response,
-  fallback: string,
-): Promise<string> => {
-  try {
-    const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === "string" && payload.detail.trim()) {
-      return payload.detail;
-    }
-    if (payload.detail && typeof payload.detail === "object") {
-      return JSON.stringify(payload.detail);
-    }
-  } catch {
-    // ignore parse errors and fall back to status text
-  }
-  return fallback;
 };
 
 const readString = (payload: Record<string, unknown>, key: string): string => {
@@ -63,32 +45,22 @@ const readNumber = (payload: Record<string, unknown>, key: string): number => {
 
 export const authApi = {
   async getSession(): Promise<AuthSessionState> {
-    const response = await apiFetch("/auth/session", { trackLoading: false });
-    if (!response.ok) {
-      throw new Error(
-        await formatAuthError(
-          response,
-          `Failed to load auth session: ${response.statusText}`,
-        ),
-      );
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
-    return {
-      authenticated: readBoolean(payload, "authenticated"),
-    };
+    const payload = await protocolFetch<Record<string, unknown>>(
+      "auth.get_session",
+      {},
+      undefined,
+      { trackLoading: false },
+    );
+    return { authenticated: readBoolean(payload, "authenticated") };
   },
 
   async getConfig(): Promise<AuthConfig> {
-    const response = await apiFetch("/auth/config", { trackLoading: false });
-    if (!response.ok) {
-      throw new Error(
-        await formatAuthError(
-          response,
-          `Failed to load auth config: ${response.statusText}`,
-        ),
-      );
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
+    const payload = await protocolFetch<Record<string, unknown>>(
+      "auth.get_config",
+      {},
+      undefined,
+      { trackLoading: false },
+    );
     return {
       mode: readString(payload, "mode") as AuthConfig["mode"],
       usernameHint: readString(payload, "username_hint"),
@@ -101,24 +73,11 @@ export const authApi = {
     username: string,
     totpCode: string,
   ): Promise<AuthLoginResponse> {
-    const loginPayload = Object.fromEntries([
-      ["username", username],
-      ["totp_code", totpCode],
-    ]);
-    const response = await apiFetch("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(loginPayload),
-    });
-    if (!response.ok) {
-      throw new Error(
-        await formatAuthError(
-          response,
-          `Failed to log in: ${response.statusText}`,
-        ),
-      );
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
+    const payload = await protocolFetch<Record<string, unknown>>(
+      "auth.login",
+      {},
+      { username, totp_code: totpCode },
+    );
     return {
       userId: readString(payload, "user_id"),
       expiresAt: readNumber(payload, "expires_at"),
@@ -126,18 +85,11 @@ export const authApi = {
   },
 
   async loginWithMockOauth(): Promise<AuthLoginResponse> {
-    const response = await apiFetch("/auth/mock-oauth", {
-      method: "POST",
-    });
-    if (!response.ok) {
-      throw new Error(
-        await formatAuthError(
-          response,
-          `Failed to start mock OAuth login: ${response.statusText}`,
-        ),
-      );
-    }
-    const payload = (await response.json()) as Record<string, unknown>;
+    const payload = await protocolFetch<Record<string, unknown>>(
+      "auth.mock_oauth",
+      {},
+      {},
+    );
     return {
       userId: readString(payload, "user_id"),
       expiresAt: readNumber(payload, "expires_at"),
@@ -145,17 +97,8 @@ export const authApi = {
   },
 
   async clearSession(): Promise<void> {
-    const response = await apiFetch("/auth/session", {
-      method: "DELETE",
+    await protocolFetch<unknown>("auth.clear_session", {}, undefined, {
       trackLoading: false,
     });
-    if (!response.ok) {
-      throw new Error(
-        await formatAuthError(
-          response,
-          `Failed to clear auth session: ${response.statusText}`,
-        ),
-      );
-    }
   },
 };

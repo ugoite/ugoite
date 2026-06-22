@@ -1,9 +1,8 @@
 import type { Asset } from "./types";
-import { apiFetch } from "./api";
+import { protocolFetch } from "./ugoite-client/protocol";
 
-/** Asset API client */
+/** Asset API client backed by the shared Rust/WASM protocol. */
 export const assetApi = {
-  /** Upload an asset */
   async upload(
     spaceId: string,
     file: File | Blob,
@@ -11,41 +10,25 @@ export const assetApi = {
   ): Promise<Asset> {
     const formData = new FormData();
     formData.append("file", file, filename);
-    const res = await apiFetch(`/spaces/${spaceId}/assets`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to upload asset: ${res.statusText}`);
-    }
-    return (await res.json()) as Asset;
+    return await protocolFetch<Asset>(
+      "asset.upload",
+      { space_id: spaceId },
+      undefined,
+      { body: formData },
+    );
   },
 
-  /** List all assets in space */
   async list(spaceId: string): Promise<Asset[]> {
-    const res = await apiFetch(`/spaces/${spaceId}/assets`);
-    if (!res.ok) {
-      throw new Error(`Failed to list assets: ${res.statusText}`);
-    }
-    return (await res.json()) as Asset[];
+    return await protocolFetch<Asset[]>("asset.list", { space_id: spaceId });
   },
 
-  /** Delete an asset (fails if referenced) */
   async delete(
     spaceId: string,
     assetId: string,
   ): Promise<{ status: string; id: string }> {
-    const res = await apiFetch(`/spaces/${spaceId}/assets/${assetId}`, {
-      method: "DELETE",
+    return await protocolFetch<{ status: string; id: string }>("asset.delete", {
+      space_id: spaceId,
+      asset_id: assetId,
     });
-    if (!res.ok) {
-      /* v8 ignore start */
-      const error = (await res.json()) as { detail?: string };
-      throw new Error(
-        error.detail || `Failed to delete asset: ${res.statusText}`,
-      );
-      /* v8 ignore stop */
-    }
-    return (await res.json()) as { status: string; id: string };
   },
 };
