@@ -1,10 +1,8 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct IndexCmd {
@@ -48,9 +46,8 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                     "index run is not available in backend/api mode in this release; use core mode for local reindexing"
                 );
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::index::reindex_all(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            service.reindex(&space_id).await?;
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {
@@ -60,9 +57,8 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                     "index stats is not available in backend/api mode in this release; use core mode for local index stats"
                 );
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let stats = ugoite_core::index::get_space_stats(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            let stats = service.space_stats(&space_id).await?;
             print_json(&stats);
         }
     }
@@ -89,9 +85,8 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
         print_json(&rows);
         return Ok(());
     }
-    let op = operator_for_path(&root)?;
-    let ws = space_ws_path(&root, &space_id);
-    let results = ugoite_core::index::execute_sql_query(&op, &ws, sql).await?;
+    let service = UgoiteService::new(&root)?;
+    let results = service.execute_sql_query(&space_id, sql).await?;
     print_json(&results);
     Ok(())
 }

@@ -1,5 +1,5 @@
 import { createSignal, onMount } from "solid-js";
-import { apiFetch } from "../lib/api";
+import { apiFetch } from "../lib/ugoite-client";
 
 export default function HelloWorld() {
   const [message, setMessage] = createSignal<string>("");

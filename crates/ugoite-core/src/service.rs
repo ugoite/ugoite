@@ -290,6 +290,18 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn execute_sql_query(&self, space_id: &str, sql: &str) -> Result<Vec<Value>> {
+        index::execute_sql_query(&self.operator, &self.workspace_path(space_id), sql).await
+    }
+
+    pub async fn reindex(&self, space_id: &str) -> Result<()> {
+        index::reindex_all(&self.operator, &self.workspace_path(space_id)).await
+    }
+
+    pub async fn space_stats(&self, space_id: &str) -> Result<Value> {
+        index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await
+    }
+
     pub async fn list_assets(&self, space_id: &str) -> Result<Vec<asset::AssetInfo>> {
         asset::list_assets(&self.operator, &self.workspace_path(space_id)).await
     }
