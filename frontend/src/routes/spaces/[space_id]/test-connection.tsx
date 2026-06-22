@@ -1,6 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
 
 export default function SpaceTestConnectionRoute() {

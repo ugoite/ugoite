@@ -1,8 +1,8 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
-import { sqlSessionApi } from "~/lib/sql-session-api";
-import { sqlApi } from "~/lib/sql-api";
+import { sqlSessionApi } from "~/lib/ugoite-client";
+import { sqlApi } from "~/lib/ugoite-client";
 import type { SqlVariable } from "~/lib/types";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;

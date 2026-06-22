@@ -26,7 +26,7 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/auth-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   authApi: (() => {
     const authApiMock: AuthApiMock = {
       getSession: vi.fn(),

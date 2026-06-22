@@ -8,7 +8,7 @@
   "nodeModulesDir": "auto",
   "tasks": {
     "dev": "deno run -A tools/dev.ts",
-    "check": "deno check tools/**/*.ts e2e/**/*.ts",
+    "check": "deno check tools/**/*.ts e2e/**/*.ts && deno task frontend:build && deno task --cwd docsite check",
     "test": "deno test -A tools/*_test.ts && deno task frontend:test && deno task docsite:test",
     "frontend:dev": "deno task --cwd frontend dev",
     "frontend:build": "deno task --cwd frontend build",
@@ -41,6 +41,18 @@
     ]
   },
   "lint": {
-    "include": ["tools"]
+    "include": ["tools", "e2e", "frontend/src", "docsite/src"],
+    "rules": {
+      "exclude": [
+        "no-explicit-any",
+        "no-sloppy-imports",
+        "no-unused-vars",
+        "no-window",
+        "no-window-prefix",
+        "require-await",
+        "jsx-boolean-value",
+        "jsx-curly-braces"
+      ]
+    }
   }
 }

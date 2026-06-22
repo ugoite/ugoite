@@ -8,7 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 import { partitionSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 

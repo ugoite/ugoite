@@ -1,6 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
-import { assetApi } from "~/lib/asset-api";
+import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 
 export default function SpaceAssetDetailRoute() {

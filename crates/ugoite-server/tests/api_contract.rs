@@ -18,7 +18,8 @@ const AUTH_FIXTURE_TOKENS: &str = r#"{
     "test-token":{"user_id":"test-user"},
     "alice-token":{"user_id":"alice"},
     "bob-token":{"user_id":"bob"},
-    "dev-token":{"user_id":"dev-local-user"}
+    "dev-token":{"user_id":"dev-local-user"},
+    "scoped-token":{"user_id":"test-user","principal_type":"service","scopes":["space_read"],"scope_enforced":true,"service_account_id":"svc-readonly"}
 }"#;
 
 fn set_auth_fixture() {
@@ -387,7 +388,7 @@ async fn space_entry_search_and_mcp_contract() {
         Request::post("/spaces/demo/entries")
             .header("content-type", "application/json")
             .body(Body::from(
-                r#"{"id":"first","markdown":"---\nform: Entry\n---\n# First\n\n## Body\nhello"}"#,
+                r#"{"id":"first","markdown":"---\nform: Entry\n---\n# <script>alert(1)</script>First\n\n## Body\nhello <!-- hidden --> <b>bold</b>\n\n```html\n<script>kept in code</script>\n```"}"#,
             ))
             .unwrap(),
     );
@@ -413,6 +414,13 @@ async fn space_entry_search_and_mcp_contract() {
     );
     let response = router.oneshot(mcp).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+    let serialized = serde_json::to_string(&body).unwrap();
+    assert!(!serialized.contains("alert(1)"));
+    assert!(!serialized.contains("<!-- hidden -->"));
+    assert!(!serialized.contains("<b>"));
+    assert!(serialized.contains("<script>kept in code</script>"));
+    assert_eq!(body["_untrusted_content"], true);
     std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
     std::env::remove_var("UGOITE_DEV_USER_ID");
 }
@@ -493,6 +501,26 @@ async fn auth_config_mock_oauth_and_session_contract() {
     std::env::remove_var("UGOITE_DEV_AUTH_MODE");
     std::env::remove_var("UGOITE_DEV_USER_ID");
     std::env::remove_var("UGOITE_BOOTSTRAP_TOKEN");
+}
+
+#[tokio::test]
+async fn scope_enforced_service_identity_is_not_accepted_in_this_release() {
+    let _guard = env_lock().lock().expect("env lock");
+    set_auth_fixture();
+    let router = app(AppState::new("memory://server-scoped-identity").unwrap());
+
+    let response = router
+        .oneshot(authenticated_with(
+            Request::get("/spaces").body(Body::empty()).unwrap(),
+            "scoped-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(response_json(response).await["detail"]
+        .as_str()
+        .unwrap()
+        .contains("scope-enforced"));
 }
 
 #[tokio::test]
@@ -791,6 +819,117 @@ async fn space_membership_authorization_contract() {
         .await
         .unwrap();
     assert_eq!(revoked_read.status(), StatusCode::FORBIDDEN);
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+}
+
+#[tokio::test]
+async fn test_connection_requires_manage_space_and_probes_uri() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
+    set_auth_fixture();
+    let state = AppState::new("memory://server-test-connection").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(authenticated(
+                Request::post("/spaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"team"}"#))
+                    .unwrap(),
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CREATED
+    );
+    let invited = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/members/invitations")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"user_id":"alice","role":"viewer"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    let token = response_json(invited).await["invitation"]["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(authenticated_with(
+                Request::post("/spaces/team/members/accept")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(r#"{{"token":"{token}"}}"#)))
+                    .unwrap(),
+                "alice-token",
+            ))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+
+    let viewer = router
+        .clone()
+        .oneshot(authenticated_with(
+            Request::post("/spaces/team/test-connection")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"storage_config":{"uri":"memory://probe-viewer"}}"#,
+                ))
+                .unwrap(),
+            "alice-token",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(viewer.status(), StatusCode::FORBIDDEN);
+
+    let missing = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/missing/test-connection")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"storage_config":{"uri":"memory://probe"}}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    let unsupported = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/test-connection")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"storage_config":{"uri":"ftp://example.test"}}"#,
+                ))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(unsupported.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let ok = router
+        .oneshot(authenticated(
+            Request::post("/spaces/team/test-connection")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"storage_config":{"uri":"memory://probe-ok"}}"#,
+                ))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+    assert_eq!(response_json(ok).await["status"], "ok");
     std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
     std::env::remove_var("UGOITE_DEV_USER_ID");
 }

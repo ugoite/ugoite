@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Asset } from "./types";
-import { assetApi } from "./asset-api";
+import { assetApi } from "./ugoite-client";
 
 export function createAssetStore(spaceId: () => string) {
   const [assets, setAssets] = createSignal<Asset[]>([]);

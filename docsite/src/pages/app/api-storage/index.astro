@@ -23,7 +23,7 @@ const toc = [
         Serverless-Ready API with Portable Storage
       </h1>
       <p style="color: var(--doc-muted); margin-top: 0.5rem; max-width: 40rem; line-height: 1.6;">
-        The API is a thin FastAPI adapter with zero business logic. All data operations are delegated to ugoite-core, which uses OpenDAL for storage abstraction across S3, local filesystem, and compatible object stores.
+        The API is a thin Rust Axum adapter with zero business logic. All data operations are delegated to ugoite-core, which uses OpenDAL for storage abstraction across S3, local filesystem, and compatible object stores.
       </p>
     </div>
   </section>
@@ -50,7 +50,7 @@ const toc = [
         <div class="doc-arch-row">
           <div class="doc-arch-node">
             <div class="doc-arch-node-icon">⚡</div>
-            <div class="doc-arch-node-title">FastAPI</div>
+            <div class="doc-arch-node-title">Axum</div>
             <div class="doc-arch-node-desc">Protocol boundary — no business logic</div>
           </div>
         </div>

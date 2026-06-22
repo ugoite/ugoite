@@ -1,6 +1,6 @@
 import { A, useSearchParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 
 const toMessage = (value: unknown): string => {
   if (value instanceof Error && value.message.trim()) {

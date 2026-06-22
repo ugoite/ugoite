@@ -1,7 +1,7 @@
 // REQ-OPS-015: Local dev auth mode selection.
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { authApi } from "./auth-api";
+import { authApi } from "./ugoite-client";
 import { resetMockData, seedDevAuthConfig } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";

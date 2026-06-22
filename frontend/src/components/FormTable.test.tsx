@@ -2,8 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { FormTable } from "./FormTable";
-import { entryApi } from "~/lib/entry-api";
-import { searchApi } from "~/lib/search-api";
+import { entryApi } from "~/lib/ugoite-client";
+import { searchApi } from "~/lib/ugoite-client";
 
 describe("FormTable", () => {
   it("renders '-' for missing properties and does not throw", async () => {

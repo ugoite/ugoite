@@ -12,8 +12,8 @@ import { SqlQueryEditor } from "~/components";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
-import { sqlApi } from "~/lib/sql-api";
-import { sqlSessionApi } from "~/lib/sql-session-api";
+import { sqlApi } from "~/lib/ugoite-client";
+import { sqlSessionApi } from "~/lib/ugoite-client";
 
 const READ_ONLY_SQL_SCHEMA = buildSqlSchema([]);
 

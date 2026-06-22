@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onMount, Show } from "solid-js";
-import { authApi, type AuthLoginResponse } from "~/lib/auth-api";
+import { authApi, type AuthLoginResponse } from "~/lib/ugoite-client";
 import { getDocsiteHref } from "~/lib/docsite-links";
 
 const containerQuickStartGuideUrl = getDocsiteHref(

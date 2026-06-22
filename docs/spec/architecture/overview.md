@@ -20,9 +20,9 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
                │                                 │
                ▼                                 ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
-│     Backend (FastAPI)       │   │       ugoite-cli (Rust)      │
+│  ugoite-server (Rust/Axum)  │   │       ugoite-cli (Rust)      │
 │  - REST API & MCP Server    │   │  - Clap-based CLI           │
-│  - Auth & Orchestration     │   │  - Direct data access       │
+│  - Auth & Orchestration     │   │  - Core/API data access     │
 └──────────────┬──────────────┘   └──────────────┬──────────────┘
                │                                 │
                └────────────────┬────────────────┘
@@ -31,7 +31,7 @@ Ugoite follows a **Local-First, Server-Relay** architecture. The system is desig
 ┌─────────────────────────────────────────────────────────────────┐
 │               ugoite-core (Rust adapter crate)                  │
 │   - OpenDAL-backed storage adapter                              │
-│   - Iceberg/Parquet integrations + Python bindings             │
+│   - Iceberg/Parquet integrations + application service facade  │
 ├─────────────────────────────────────────────────────────────────┤
 │               ugoite-minimum (Rust portable crate)              │
 │   - Portable domain logic + storage abstraction traits          │
@@ -86,16 +86,16 @@ Command-line interface for power users:
 | `src/main.rs` | Clap command tree and runtime bootstrap |
 | `src/commands/*.rs` | Command implementations and backend/api routing |
 
-### Backend (Python/FastAPI)
+### ugoite-server (Rust/Axum)
 
 API layer providing access to frontend and AI agents:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `api/endpoints/` | REST route handlers (call ugoite-core bindings) |
-| `mcp/` | MCP protocol implementation |
-| `models/` | Pydantic request/response models |
-| `core/` | Configuration, middleware |
+| `crates/ugoite-server/src/lib.rs` | REST/MCP route handlers over `UgoiteService` |
+| `AppState` | Runtime configuration and service wiring |
+| `AuthIdentity` middleware | Authentication boundary for browser, CLI, REST, and MCP |
+| `openapi.json` | Runtime API snapshot served by the Rust server |
 
 ### Frontend (TypeScript/SolidStart)
 
