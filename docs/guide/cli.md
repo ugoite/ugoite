@@ -284,8 +284,8 @@ If you are choosing for the first time, use this rule of thumb:
 | Mode | Choose it when | Practical trade-off |
 | --- | --- | --- |
 | `core` | You are working directly with a local checkout or local `spaces/` directory on this machine | Reads and writes your filesystem directly with no backend required. This is the default because it is the shortest local-first path. |
-| `backend` | You want the CLI to talk to a backend server directly | Uses backend REST endpoints and the server's storage/auth behavior instead of your local filesystem. |
-| `api` | You want the CLI to use the same proxied `/api` surface as the frontend | Follows the frontend-facing API path and its proxy/auth behavior instead of direct local access. |
+| `backend` | You want the CLI to talk to a raw source-development Rust server directly, such as `http://localhost:8000` from `mise run dev` | Uses backend REST endpoints and the server's storage/auth behavior instead of your local filesystem. |
+| `api` | You want the CLI to use the same proxied `/api` surface as the frontend, including the single-image app at `http://localhost:8000/api` | Follows the frontend-facing API path and its proxy/auth behavior instead of direct local access. |
 
 Switch away from `core` only when you specifically want server-backed behavior
 or the same frontend proxy path the browser uses.
@@ -301,11 +301,14 @@ cargo run -q -p ugoite-cli -- config show
 # Show the active mode in plain language
 cargo run -q -p ugoite-cli -- config current
 
-# Route commands to backend directly
+# Route commands to a raw source-development backend directly
 cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 
-# Route commands to API endpoint
+# Route commands to the frontend-facing API endpoint
 cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:3000/api
+
+# Route commands to the published single-image app
+cargo run -q -p ugoite-cli -- config set --mode api --api-url http://localhost:8000/api
 
 # Return to direct local filesystem access
 cargo run -q -p ugoite-cli -- config set --mode core
@@ -323,7 +326,7 @@ In `backend` / `api` modes, CLI and frontend share the same bearer token env con
 - `UGOITE_AUTH_API_KEY`
 
 ```bash
-# Route auth commands to the backend
+# Route auth commands to the raw source-development backend
 cargo run -q -p ugoite-cli -- config set --mode backend --backend-url http://localhost:8000
 
 # Exchange username + 2FA for a bearer token in passkey-totp mode

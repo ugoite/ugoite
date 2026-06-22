@@ -25,7 +25,7 @@ pub async fn http_get(url: &str) -> Result<serde_json::Value> {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await?)
+    response_json_or_api_base_error(resp, url).await
 }
 
 pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
@@ -40,7 +40,7 @@ pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    response_json_or_null_or_api_base_error(resp, url).await
 }
 
 pub async fn http_post_with_dev_auth_proxy(
@@ -58,7 +58,7 @@ pub async fn http_post_with_dev_auth_proxy(
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    response_json_or_null_or_api_base_error(resp, url).await
 }
 
 pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
@@ -73,7 +73,7 @@ pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json:
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    response_json_or_null_or_api_base_error(resp, url).await
 }
 
 pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
@@ -88,7 +88,7 @@ pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_jso
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    response_json_or_null_or_api_base_error(resp, url).await
 }
 
 pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
@@ -103,7 +103,54 @@ pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
         let status = resp.status();
         bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    response_json_or_null_or_api_base_error(resp, url).await
+}
+
+async fn response_json_or_api_base_error(
+    resp: reqwest::Response,
+    url: &str,
+) -> Result<serde_json::Value> {
+    let headers = resp.headers().clone();
+    let text = resp.text().await?;
+    parse_json_or_api_base_error(&headers, &text, url)
+}
+
+async fn response_json_or_null_or_api_base_error(
+    resp: reqwest::Response,
+    url: &str,
+) -> Result<serde_json::Value> {
+    let headers = resp.headers().clone();
+    let text = resp.text().await?;
+    if text.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    parse_json_or_api_base_error(&headers, &text, url)
+}
+
+fn parse_json_or_api_base_error(
+    headers: &reqwest::header::HeaderMap,
+    text: &str,
+    url: &str,
+) -> Result<serde_json::Value> {
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            let content_type = headers
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let looks_like_html = content_type.contains("text/html")
+                || text.trim_start().starts_with("<!doctype html")
+                || text.trim_start().starts_with("<html");
+            if looks_like_html {
+                bail!(
+                    "API endpoint returned HTML instead of JSON for {url}. If this is the single-image app root, configure the CLI with `ugoite config set --mode api --api-url <app-url>/api`."
+                );
+            }
+            Err(error.into())
+        }
+    }
 }
 
 fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

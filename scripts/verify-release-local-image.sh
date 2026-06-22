@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+WORK_ROOT="${UGOITE_RELEASE_LOCAL_WORKDIR:-$(mktemp -d)}"
+KEEP_WORK_ROOT="${UGOITE_RELEASE_LOCAL_KEEP_WORKDIR:-0}"
+PROJECT="ugoite-release-local-$$"
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/rust}"
+case "$CARGO_TARGET_DIR" in
+  /*) CLI_BINARY="${CARGO_TARGET_DIR}/release/ugoite" ;;
+  *) CLI_BINARY="${REPO_ROOT}/${CARGO_TARGET_DIR}/release/ugoite" ;;
+esac
+
+log() {
+  printf '%s\n' "$*" >&2
+}
+
+fail() {
+  log "$*"
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+cleanup() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  (
+    cd "$WORK_ROOT" &&
+      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" down --remove-orphans -v
+  ) >/dev/null 2>&1 || true
+  if [ "$KEEP_WORK_ROOT" != "1" ] && [ -z "${UGOITE_RELEASE_LOCAL_WORKDIR:-}" ]; then
+    rm -rf "$WORK_ROOT"
+  else
+    log "Retained release local workdir: $WORK_ROOT"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT HUP INT TERM
+
+require_command cargo
+require_command curl
+require_command deno
+require_command docker
+
+mkdir -p "$WORK_ROOT/spaces" "$WORK_ROOT/cli-home"
+chmod 0777 "$WORK_ROOT/spaces"
+
+log "Building release CLI binary"
+(
+  cd "$REPO_ROOT" &&
+    cargo build -p ugoite-cli --release --locked
+)
+
+log "Building and starting release-like single-image container"
+(
+  cd "$WORK_ROOT" &&
+    UGOITE_DEV_USER_ID=dev-local-user \
+      UGOITE_BOOTSTRAP_TOKEN=dev-token \
+      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" up -d --build
+)
+
+HOST_PORT="$(
+  cd "$WORK_ROOT" &&
+    docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" port ugoite 8000 |
+      awk -F: '{print $NF}'
+)"
+if [ -z "$HOST_PORT" ]; then
+  fail "Could not discover release-like container host port"
+fi
+
+APP_URL="http://127.0.0.1:${HOST_PORT}"
+API_URL="${APP_URL}/api"
+
+bash "$SCRIPT_DIR/wait-for-http.sh" "${APP_URL}/health" 180
+bash "$SCRIPT_DIR/wait-for-http.sh" "${APP_URL}/login" 180
+
+login_payload="$(curl -fsS -X POST "${API_URL}/auth/mock-oauth")"
+token="$(
+  JSON_INPUT="$login_payload" deno eval "const value = JSON.parse(Deno.env.get('JSON_INPUT') ?? '{}'); console.log(value.bearer_token ?? '');"
+)"
+if [ -z "$token" ]; then
+  fail "release-like /api mock OAuth did not return a bearer token"
+fi
+
+HOME="$WORK_ROOT/cli-home" "$CLI_BINARY" config set --mode api --api-url "$API_URL" >/dev/null
+HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space list >/dev/null
+space_id="release-local-$(date +%s)"
+HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space create "$space_id" >/dev/null
+HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space list |
+  grep -Fq "$space_id" || fail "release-like CLI-created space was not listed"
+
+curl -fsS "${APP_URL}/" | grep -Fqi "<html" || fail "release-like root did not serve frontend HTML"
+log "Release-like local image verification passed at ${APP_URL}"

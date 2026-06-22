@@ -1,4 +1,5 @@
 use crate::entry;
+use crate::error::AppError;
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
 use crate::metadata;
@@ -6,6 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
+use ugoite_domain::id::validate_form_name;
 use uuid::Uuid;
 
 pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
@@ -44,6 +46,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
 }
 
 pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<Value> {
+    validate_form_path_segment(form_name)?;
     let form_def = read_form_definition(op, ws_path, form_name).await?;
     enrich_form_definition(&form_def)
 }
@@ -266,6 +269,7 @@ fn normalize_form_definition_with_options(
         .get("name")
         .and_then(|v| v.as_str())
         .context("Form definition missing 'name' field")?;
+    validate_form_path_segment(name)?;
     if !allow_reserved_metadata_form && is_reserved_metadata_form(name) {
         return Err(anyhow!(
             "Form name '{}' is reserved for metadata forms",
@@ -322,6 +326,7 @@ fn validate_row_reference_field_defs(field_map: &Map<String, Value>) -> Result<(
             .map(|v| v.trim())
             .filter(|v| !v.is_empty())
             .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
+        validate_form_path_segment(target_form)?;
         if is_reserved_metadata_form(target_form) {
             return Err(anyhow!(
                 "row_reference field '{}' target_form '{}' is reserved",
@@ -361,6 +366,7 @@ async fn validate_row_reference_targets(
             .map(|v| v.trim())
             .filter(|v| !v.is_empty())
             .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
+        validate_form_path_segment(target_form)?;
         if !available.contains(target_form) {
             return Err(anyhow!(
                 "row_reference field '{}' target_form '{}' not found",
@@ -371,6 +377,10 @@ async fn validate_row_reference_targets(
     }
 
     Ok(())
+}
+
+fn validate_form_path_segment(name: &str) -> Result<()> {
+    validate_form_name(name).map_err(|error| AppError::invalid_identifier(error.to_string()).into())
 }
 
 fn is_reserved_metadata_column(name: &str) -> bool {

@@ -95,4 +95,5 @@ run = [
   "cargo build -p ugoite-server --release --locked",
   "cargo build -p ugoite-cli --release --locked",
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
+  "bash scripts/verify-release-local-image.sh",
 ]
