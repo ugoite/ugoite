@@ -1,6 +1,6 @@
 use crate::config::{
-    effective_format, load_config, operator_for_path, print_json, print_json_table,
-    resolve_space_reference, space_ws_path, validated_base_url, Format,
+    effective_format, load_config, print_json, print_json_table, resolve_space_reference,
+    validated_base_url, Format,
 };
 use crate::http;
 use anyhow::{bail, Result};
@@ -254,26 +254,22 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity =
-                ugoite_core::integrity::RealIntegrityProvider::from_space(&op, &space_id).await?;
+            let service = UgoiteService::new(&root)?;
             let assets_vec: Option<Vec<serde_json::Value>> = if let Some(a) = assets {
                 Some(serde_json::from_str(&a)?)
             } else {
                 None
             };
-            let result = ugoite_core::entry::update_entry(
-                &op,
-                &ws,
-                &entry_id,
-                &markdown,
-                parent_revision_id.as_deref(),
-                &author,
-                assets_vec,
-                &integrity,
-            )
-            .await?;
+            let result = service
+                .update_entry(
+                    &space_id,
+                    &entry_id,
+                    &markdown,
+                    parent_revision_id.as_deref(),
+                    &author,
+                    assets_vec,
+                )
+                .await?;
             print_json(&result);
         }
         EntrySubCmd::Delete {
@@ -292,9 +288,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::entry::delete_entry(&op, &ws, &entry_id, hard_delete).await?;
+            let service = UgoiteService::new(&root)?;
+            service
+                .delete_entry(&space_id, &entry_id, hard_delete)
+                .await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
         EntrySubCmd::History {
@@ -310,9 +307,8 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let history = ugoite_core::entry::get_entry_history(&op, &ws, &entry_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let history = service.entry_history(&space_id, &entry_id).await?;
             print_json(&history);
         }
         EntrySubCmd::Revision {
@@ -329,10 +325,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let rev =
-                ugoite_core::entry::get_entry_revision(&op, &ws, &entry_id, &revision_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let rev = service
+                .entry_revision(&space_id, &entry_id, &revision_id)
+                .await?;
             print_json(&rev);
         }
         EntrySubCmd::Restore {
@@ -351,19 +347,10 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity =
-                ugoite_core::integrity::RealIntegrityProvider::from_space(&op, &space_id).await?;
-            let result = ugoite_core::entry::restore_entry(
-                &op,
-                &ws,
-                &entry_id,
-                &revision_id,
-                &author,
-                &integrity,
-            )
-            .await?;
+            let service = UgoiteService::new(&root)?;
+            let result = service
+                .restore_entry(&space_id, &entry_id, &revision_id, &author)
+                .await?;
             print_json(&result);
         }
     }
